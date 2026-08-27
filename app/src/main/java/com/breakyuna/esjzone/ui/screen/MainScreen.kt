@@ -1,0 +1,88 @@
+package com.breakyuna.esjzone.ui.screen
+
+import androidx.compose.foundation.layout.RowScope
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.Icon
+import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.Modifier
+import cafe.adriel.voyager.core.screen.Screen
+import cafe.adriel.voyager.navigator.Navigator
+import cafe.adriel.voyager.navigator.tab.CurrentTab
+import cafe.adriel.voyager.navigator.tab.LocalTabNavigator
+import cafe.adriel.voyager.navigator.tab.Tab
+import cafe.adriel.voyager.navigator.tab.TabNavigator
+import cafe.adriel.voyager.transitions.SlideTransition
+import com.breakyuna.esjzone.network.Authorization
+import com.breakyuna.esjzone.network.LocalAuthorization
+import com.breakyuna.esjzone.ui.navigation.LocalBaseNavigator
+import com.breakyuna.esjzone.ui.tab.CategoryTab
+import com.breakyuna.esjzone.ui.tab.HomeTab
+import com.breakyuna.esjzone.ui.tab.ProfileTab
+import com.breakyuna.esjzone.ui.tab.SearchTab
+
+class MainScreen(val authorization: Authorization) : Screen {
+
+    @Composable
+    override fun Content() {
+        CompositionLocalProvider(value = LocalAuthorization provides authorization) {
+            Navigator(screen = TabScreen) { navigator ->
+
+                SlideTransition(navigator = navigator) { screen ->
+                    CompositionLocalProvider(value = LocalBaseNavigator provides navigator) {
+                        screen.Content()
+                    }
+                }
+            }
+        }
+    }
+
+}
+
+private object TabScreen : Screen {
+    private fun readResolve(): Any = TabScreen
+
+    @Composable
+    override fun Content() {
+        TabNavigator(tab = HomeTab) {
+            Scaffold(
+                bottomBar = {
+                    NavigationBar {
+                        TabNavigationItem(tab = HomeTab)
+                        TabNavigationItem(tab = CategoryTab)
+                        TabNavigationItem(tab = SearchTab)
+                        TabNavigationItem(tab = ProfileTab)
+                    }
+                }
+            ) {
+                Surface(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(it)
+                ) {
+                    CurrentTab()
+                }
+            }
+        }
+    }
+
+}
+
+@Composable
+private fun RowScope.TabNavigationItem(tab: Tab) {
+    val tabNavigator = LocalTabNavigator.current
+
+    NavigationBarItem(
+        selected = tabNavigator.current == tab,
+        onClick = { tabNavigator.current = tab },
+        icon = {
+            if (tab.options.icon != null)
+                Icon(painter = tab.options.icon!!, contentDescription = tab.options.title)
+        }
+    )
+}

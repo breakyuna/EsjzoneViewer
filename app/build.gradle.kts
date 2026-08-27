@@ -12,11 +12,11 @@ val app_version_index = project.properties["app_version_index"].toString().toInt
 val app_version = project.properties["app_version"].toString()
 
 android {
-    namespace = "net.deechael.esjzone"
+    namespace = "com.breakyuna.esjzone"
     compileSdk = 34
 
     defaultConfig {
-        applicationId = "net.deechael.esjzone"
+        applicationId = "com.breakyuna.esjzone"
         minSdk = 29
         targetSdk = 34
         versionCode = app_version_index
