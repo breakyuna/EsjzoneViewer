@@ -50,6 +50,7 @@ import kotlinx.coroutines.launch
 import net.deechael.esjzone.MainActivity
 import net.deechael.esjzone.R
 import net.deechael.esjzone.network.EsjzoneClient
+import net.deechael.esjzone.network.EsjzoneUrls
 import net.deechael.esjzone.network.LocalAuthorization
 import net.deechael.esjzone.network.features.getUserProfile
 import net.deechael.esjzone.novellibrary.user.UserProfile
@@ -100,7 +101,7 @@ object ProfileTab : Tab {
             } else {
                 SubcomposeAsyncImage(
                     model = ImageRequest.Builder(LocalContext.current)
-                        .data("https://www.esjzone.me${data!!.avatarUrl}")
+                        .data("${EsjzoneUrls.Base}${data!!.avatarUrl}")
                         .crossfade(true)
                         .build(),
                     contentDescription = data!!.name,

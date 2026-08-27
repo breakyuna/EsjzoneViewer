@@ -68,4 +68,8 @@
     <string name="build_version">构建版本</string>
     <string name="build_date">构建日期</string>
     <string name="commit_id">提交 Id</string>
+    <string name="settings_category_network">网络与站点</string>
+    <string name="settings_domain">定向网址</string>
+    <string name="settings_domain_description">在可用的 ESJ Zone 镜像站之间切换</string>
+    <string name="domain_switched">已切换至站点：%1$s</string>
 </resources>

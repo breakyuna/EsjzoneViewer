@@ -18,10 +18,13 @@ import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.ColorLens
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Language
 import androidx.compose.material.icons.filled.NoAdultContent
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardColors
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -90,6 +93,76 @@ object SettingsPage : Screen {
                     .verticalScroll(rememberScrollState())
             ) {
                 SettingsText(text = stringResource(id = R.string.settings_category_preference))
+                SettingsCustom(
+                    imageVector = Icons.Filled.Language,
+                    text = stringResource(id = R.string.settings_domain)
+                ) {
+                    var currentDomain by remember {
+                        GlobalSettings.domain
+                    }
+
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(end = 16.dp)
+                    ) {
+                        for (domain in GlobalSettings.DOMAINS) {
+                            val selected = currentDomain == domain
+                            Card(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 4.dp)
+                                    .clickable {
+                                        currentDomain = domain
+                                        GlobalSettings.domain.value = domain
+                                        scope.launch(Dispatchers.IO) {
+                                            val dao = MainActivity.database.cacheDao()
+                                            if (dao.exists("domain")) {
+                                                val domainCache = dao.findByKey("domain")
+                                                domainCache.value = domain
+                                                dao.update(domainCache)
+                                            } else {
+                                                dao.insertNotExists(
+                                                    net.deechael.esjzone.database.entity.Cache(
+                                                        key = "domain",
+                                                        value = domain
+                                                    )
+                                                )
+                                            }
+                                        }
+                                    },
+                                colors = if (selected) {
+                                    CardDefaults.cardColors(
+                                        containerColor = MaterialTheme.colorScheme.primaryContainer,
+                                        contentColor = MaterialTheme.colorScheme.onPrimaryContainer
+                                    )
+                                } else {
+                                    CardDefaults.outlinedCardColors()
+                                }
+                            ) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 16.dp, vertical = 12.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = "https://$domain",
+                                        fontSize = 15.sp,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    if (selected) {
+                                        Icon(
+                                            imageVector = Icons.Filled.Check,
+                                            contentDescription = null,
+                                            tint = MaterialTheme.colorScheme.primary
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
                 SettingsCustom(
                     imageVector = Icons.Filled.ColorLens,
                     text = stringResource(id = R.string.settings_theme)

@@ -69,7 +69,17 @@ class MainActivity : ComponentActivity() {
                 )
             }
 
+            if (!dao.exists("domain")) {
+                dao.insertNotExists(
+                    Cache(
+                        key = "domain",
+                        value = GlobalSettings.domain.value
+                    )
+                )
+            }
+
             GlobalSettings.theme.value = CatppuccinThemeType.valueOf(dao.findByKey("theme").value)
+            GlobalSettings.domain.value = dao.findByKey("domain").value
 
             this.launch(Dispatchers.Main) {
                 setContent {

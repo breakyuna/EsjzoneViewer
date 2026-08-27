@@ -4,14 +4,17 @@ import android.widget.Toast
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Email
 import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.Visibility
@@ -19,6 +22,8 @@ import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.PlainTooltip
@@ -50,8 +55,10 @@ import cafe.adriel.voyager.navigator.LocalNavigator
 import cafe.adriel.voyager.navigator.currentOrThrow
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import net.deechael.esjzone.GlobalSettings
 import net.deechael.esjzone.MainActivity
 import net.deechael.esjzone.R
+import net.deechael.esjzone.database.entity.Cache
 import net.deechael.esjzone.network.EsjzoneClient
 import net.deechael.esjzone.network.features.login
 
@@ -64,6 +71,7 @@ object LoginScreen : Screen {
     override fun Content() {
         val context = LocalContext.current
         val navigator = LocalNavigator.currentOrThrow
+        val scope = rememberCoroutineScope()
 
         Column(
             modifier = Modifier.fillMaxSize(),
@@ -75,7 +83,57 @@ object LoginScreen : Screen {
                 fontSize = 12.em
             )
 
-            Spacer(modifier = Modifier.height(50.dp))
+            Spacer(modifier = Modifier.height(16.dp))
+
+            var currentDomain by remember {
+                GlobalSettings.domain
+            }
+
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 32.dp),
+                horizontalArrangement = Arrangement.Center
+            ) {
+                for (domain in GlobalSettings.DOMAINS) {
+                    val selected = currentDomain == domain
+                    FilterChip(
+                        selected = selected,
+                        onClick = {
+                            currentDomain = domain
+                            GlobalSettings.domain.value = domain
+                            scope.launch(Dispatchers.IO) {
+                                val dao = MainActivity.database.cacheDao()
+                                if (dao.exists("domain")) {
+                                    val domainCache = dao.findByKey("domain")
+                                    domainCache.value = domain
+                                    dao.update(domainCache)
+                                } else {
+                                    dao.insertNotExists(
+                                        Cache(
+                                            key = "domain",
+                                            value = domain
+                                        )
+                                    )
+                                }
+                            }
+                        },
+                        label = { Text(domain) },
+                        modifier = Modifier.padding(horizontal = 4.dp),
+                        leadingIcon = if (selected) {
+                            @Composable {
+                                Icon(
+                                    imageVector = Icons.Filled.Check,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(FilterChipDefaults.IconSize)
+                                )
+                            }
+                        } else null
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(32.dp))
 
             var email by remember {
                 mutableStateOf("")
@@ -92,8 +150,6 @@ object LoginScreen : Screen {
             var loggingIn by remember {
                 mutableStateOf(false)
             }
-
-            val scope = rememberCoroutineScope()
 
             var emailError by remember {
                 mutableStateOf(false)

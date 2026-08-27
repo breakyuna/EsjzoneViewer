@@ -190,7 +190,7 @@ object AboutPage : Screen {
             ) {
                 Text(text = "Designed with ")
                 Image(
-                    painter = painterResource(id = R.drawable.catppuccin_x_high),
+                    painter = painterResource(id = R.drawable.catppuccin_high),
                     contentScale = ContentScale.Inside,
                     contentDescription = "catppuccin",
                     modifier = Modifier.height(20.dp)

@@ -10,7 +10,13 @@ import okhttp3.Request
 import okhttp3.internal.EMPTY_REQUEST
 
 fun EsjzoneClient.changeFavorites(authorization: Authorization, novel: Novel) {
-    val fullUrl = "${EsjzoneUrls.Home}${novel.url}"
+    val fullUrl = if (novel.url.startsWith("http://") || novel.url.startsWith("https://")) {
+        novel.url.replaceFirst(Regex("^https?://[^/]+"), EsjzoneUrls.Base)
+    } else if (novel.url.startsWith("/")) {
+        "${EsjzoneUrls.Base}${novel.url}"
+    } else {
+        "${EsjzoneUrls.Base}/${novel.url}"
+    }
     val authToken = this.requestAuthToken(authorization, fullUrl)
 
     val httpClient = OkHttpClient.Builder()

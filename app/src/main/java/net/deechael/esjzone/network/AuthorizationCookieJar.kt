@@ -8,9 +8,9 @@ class AuthorizationCookieJar(private val authorization: Authorization) : CookieJ
 
     override fun loadForRequest(url: HttpUrl): List<Cookie> {
         return listOf(
-            Cookie.Builder().domain(EsjzoneUrls.BaseWithoutProtocol).name("ews_key")
+            Cookie.Builder().domain(url.host).name("ews_key")
                 .value(authorization.ewsKey).build(),
-            Cookie.Builder().domain(EsjzoneUrls.BaseWithoutProtocol).name("ews_token")
+            Cookie.Builder().domain(url.host).name("ews_token")
                 .value(authorization.ewsToken).build()
         )
     }

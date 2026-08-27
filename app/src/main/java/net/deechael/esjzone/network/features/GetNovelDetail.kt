@@ -24,9 +24,17 @@ fun EsjzoneClient.getNovelDetail(authorization: Authorization, novel: Novel): De
         .build()
 
 
+    val targetUrl = if (novel.url.startsWith("http://") || novel.url.startsWith("https://")) {
+        novel.url.replaceFirst(Regex("^https?://[^/]+"), EsjzoneUrls.Base)
+    } else if (novel.url.startsWith("/")) {
+        "${EsjzoneUrls.Base}${novel.url}"
+    } else {
+        "${EsjzoneUrls.Base}/${novel.url}"
+    }
+
     val response = httpClient.newCall(
         Request.Builder()
-            .url("${EsjzoneUrls.Home}${novel.url}")
+            .url(targetUrl)
             .get()
             .headers(this.headers)
             .build()

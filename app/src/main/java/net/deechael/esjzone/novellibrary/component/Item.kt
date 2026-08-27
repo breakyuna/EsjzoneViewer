@@ -139,7 +139,7 @@ class ChapterItem(val chapter: Chapter) : Item {
                     .fillMaxWidth()
                     .padding(8.dp)
                     .clickable {
-                        if (chapter.url.contains("esjzone"))
+                        if (chapter.url.contains("esjzone") || chapter.url.contains("forum"))
                             navigator.push(ChapterPage(novelId, chapter, history))
                     }
             ) {
@@ -163,7 +163,7 @@ class ChapterItem(val chapter: Chapter) : Item {
                     .fillMaxWidth()
                     .padding(8.dp)
                     .clickable {
-                        if (chapter.url.contains("esjzone")) {
+                        if (chapter.url.contains("esjzone") || chapter.url.contains("forum")) {
                             historied = true
                             rememberedHistory = this.chapter
                             navigator.push(ChapterPage(novelId, chapter, history))
@@ -262,7 +262,7 @@ class ChapterListItem(private val name: TextComponent, val chapters: List<Chapte
                                             end = 8.dp
                                         )
                                         .clickable {
-                                            if (chapter.url.contains("esjzone"))
+                                            if (chapter.url.contains("esjzone") || chapter.url.contains("forum"))
                                                 navigator.push(
                                                     ChapterPage(
                                                         novelId,
@@ -291,7 +291,7 @@ class ChapterListItem(private val name: TextComponent, val chapters: List<Chapte
                                             end = 8.dp
                                         )
                                         .clickable {
-                                            if (chapter.url.contains("esjzone")) {
+                                            if (chapter.url.contains("esjzone") || chapter.url.contains("forum")) {
                                                 historied = true
                                                 rememberedHistory = chapter
                                                 navigator.push(

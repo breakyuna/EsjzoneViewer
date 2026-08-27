@@ -1,0 +1,6 @@
+{
+  "name": "Esjzone",
+  "description": "Novel reader and viewer for Esjzone with browse, search, favorites, history, and reading modes.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

@@ -7,7 +7,7 @@ import net.deechael.esjzone.database.dao.SearchHistoryDao
 import net.deechael.esjzone.database.entity.Cache
 import net.deechael.esjzone.database.entity.SearchHistory
 
-@Database(entities = [Cache::class, SearchHistory::class], version = 1)
+@Database(entities = [Cache::class, SearchHistory::class], version = 1, exportSchema = false)
 abstract class GeneralDatabase : RoomDatabase() {
 
     abstract fun cacheDao(): CacheDao

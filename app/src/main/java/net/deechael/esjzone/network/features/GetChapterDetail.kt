@@ -3,6 +3,7 @@ package net.deechael.esjzone.network.features
 import net.deechael.esjzone.network.Authorization
 import net.deechael.esjzone.network.AuthorizationCookieJar
 import net.deechael.esjzone.network.EsjzoneClient
+import net.deechael.esjzone.network.EsjzoneUrls
 import net.deechael.esjzone.network.EsjzoneXPaths
 import net.deechael.esjzone.novellibrary.component.analyseComponents
 import net.deechael.esjzone.novellibrary.novel.Chapter
@@ -20,9 +21,17 @@ fun EsjzoneClient.getChapterDetail(
         .cookieJar(AuthorizationCookieJar(authorization))
         .build()
 
+    val targetUrl = if (chapter.url.startsWith("http://") || chapter.url.startsWith("https://")) {
+        chapter.url.replaceFirst(Regex("^https?://[^/]+"), EsjzoneUrls.Base)
+    } else if (chapter.url.startsWith("/")) {
+        "${EsjzoneUrls.Base}${chapter.url}"
+    } else {
+        "${EsjzoneUrls.Base}/${chapter.url}"
+    }
+
     val response = httpClient.newCall(
         Request.Builder()
-            .url(chapter.url)
+            .url(targetUrl)
             .get()
             .headers(this.headers)
             .build()

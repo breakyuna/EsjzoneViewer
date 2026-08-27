@@ -431,7 +431,7 @@ fun FooterPreview() {
     ) {
         Text(text = "Powered by ")
         Image(
-            painter = painterResource(id = R.drawable.jetpack_compose_xxx_high),
+            painter = painterResource(id = R.drawable.jetpack_compose_high),
             contentScale = ContentScale.Inside,
             contentDescription = "jetpack compose",
             modifier = Modifier.height(20.dp)

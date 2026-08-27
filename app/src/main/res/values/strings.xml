@@ -67,4 +67,8 @@
     <string name="build_version">Build Version</string>
     <string name="build_date">Build Date</string>
     <string name="commit_id">Commit Id</string>
+    <string name="settings_category_network">Network &amp; Domain</string>
+    <string name="settings_domain">Target Domain</string>
+    <string name="settings_domain_description">Switch between available ESJ Zone mirrors</string>
+    <string name="domain_switched">Switched to domain: %1$s</string>
 </resources>

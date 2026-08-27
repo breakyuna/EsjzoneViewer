@@ -3,7 +3,7 @@ package net.deechael.esjzone.novellibrary.novel
 import net.deechael.esjzone.novellibrary.component.Component
 import java.io.Serializable
 
-private val URL_REGEX = "https://www\\.esjzone\\.me/forum/([0-9]+)/[0-9]+\\.html".toRegex()
+private val URL_REGEX = "(?:https?://[^/]+)?/forum/([0-9]+)/[0-9]+\\.html".toRegex()
 
 data class Chapter(
     val name: String,
