@@ -30,7 +30,7 @@ fun EsjzoneClient.listNovels(
             .build()
     ).execute()
 
-    val responseBody = response.body!!.string()
+    val responseBody = response.body?.string() ?: ""
     response.close()
 
     val document = Jsoup.parse(responseBody)
@@ -39,10 +39,12 @@ fun EsjzoneClient.listNovels(
 
     for (element in EsjzoneXPaths.Forum.Novel.evaluate(document).elements) {
         val forumUrl = element.attr("href")
+        val detailMatch = FORUM_URL_REGEX.find(forumUrl)?.groupValues?.getOrNull(1)
+        val detailUrl = if (detailMatch != null) "/detail/$detailMatch.html" else forumUrl
         novels.add(
             CategoryNovel(
                 element.text(),
-                "/detail/${FORUM_URL_REGEX.find(forumUrl)!!.groupValues[1]}.html",
+                detailUrl,
                 forumUrl
             )
         )

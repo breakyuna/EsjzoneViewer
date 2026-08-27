@@ -131,7 +131,8 @@ object HistoryPage : Screen {
                                 historyChapter
                             }
 
-                            if (detailedNovel == null) {
+                            val novel = detailedNovel
+                            if (novel == null) {
                                 Column(
                                     modifier = Modifier.fillMaxSize(),
                                     horizontalAlignment = Alignment.CenterHorizontally
@@ -141,15 +142,20 @@ object HistoryPage : Screen {
 
                                 LaunchedEffect(currentCompositeKeyHash) {
                                     scope.launch(Dispatchers.IO) {
-                                        detailedNovel = EsjzoneClient.getNovelDetail(
-                                            authorization,
-                                            historyNovel
-                                        )
-                                        cache[historyNovel.url] = detailedNovel!!
+                                        try {
+                                            val fetched = EsjzoneClient.getNovelDetail(
+                                                authorization,
+                                                historyNovel
+                                            )
+                                            detailedNovel = fetched
+                                            cache[historyNovel.url] = fetched
+                                        } catch (e: Exception) {
+                                            com.breakyuna.esjzone.util.AppLogger.e("HistoryPage", "Failed to load novel detail for ${historyNovel.name}", e)
+                                        }
                                     }
                                 }
                             } else {
-                                if (adult || !detailedNovel!!.isAdult) {
+                                if (adult || !novel.isAdult) {
                                     var deleted by remember {
                                         mutableStateOf(false)
                                     }
@@ -181,8 +187,8 @@ object HistoryPage : Screen {
                                                         onClick = {
                                                             navigator.push(
                                                                 NovelPage(
-                                                                    historyNovel,
-                                                                    historyChapter
+                                                                  historyNovel,
+                                                                  historyChapter
                                                                 )
                                                             )
                                                         },
@@ -222,7 +228,7 @@ object HistoryPage : Screen {
                                                 ) {
                                                     SubcomposeAsyncImage(
                                                         model = ImageRequest.Builder(LocalContext.current)
-                                                            .data(detailedNovel!!.coverUrl)
+                                                            .data(novel.coverUrl)
                                                             .crossfade(true)
                                                             .build(),
                                                         contentDescription = historyNovel.name,
@@ -240,13 +246,13 @@ object HistoryPage : Screen {
                                                         modifier = Modifier.weight(1f)
                                                     ) {
                                                         Text(
-                                                            text = detailedNovel!!.name,
+                                                            text = novel.name,
                                                             maxLines = 1,
                                                             overflow = TextOverflow.Ellipsis,
                                                             modifier = Modifier.padding(8.dp)
                                                         )
                                                         Text(
-                                                            text = historyChapter.value!!.name,
+                                                            text = historyChapter.value?.name ?: "",
                                                             maxLines = 1,
                                                             overflow = TextOverflow.Ellipsis,
                                                             fontSize = 10.sp,
@@ -255,13 +261,15 @@ object HistoryPage : Screen {
                                                     }
                                                     TextButton(
                                                         onClick = {
-                                                            navigator.push(
-                                                                ChapterPage(
-                                                                    detailedNovel!!.id(),
-                                                                    rememberedHistory!!,
-                                                                    historyChapter
+                                                            rememberedHistory?.let { currChapter ->
+                                                                navigator.push(
+                                                                    ChapterPage(
+                                                                        novel.id(),
+                                                                        currChapter,
+                                                                        historyChapter
+                                                                    )
                                                                 )
-                                                            )
+                                                            }
                                                         },
                                                         modifier = Modifier.padding(8.dp)
                                                     ) {
@@ -320,7 +328,12 @@ class HistoryPageModel(
     fun getNovels() {
         scope.launch(Dispatchers.IO) {
             mutableState.value = State.Loading
-            mutableState.value = State.Result(EsjzoneClient.getHistories(authorization))
+            try {
+                val histories = EsjzoneClient.getHistories(authorization)
+                mutableState.value = State.Result(histories)
+            } catch (e: Exception) {
+                com.breakyuna.esjzone.util.AppLogger.e("HistoryPageModel", "Failed to load histories", e)
+            }
         }
     }
 

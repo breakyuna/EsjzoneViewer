@@ -17,13 +17,17 @@ fun String.toHexUIntOrNull(): UInt? {
 }
 
 fun String.removeLeft(length: Int): String {
+    if (this.length <= length) return ""
     return this.substring(length)
 }
 
 fun String.removeRight(length: Int): String {
+    if (this.length <= length) return ""
     return this.substring(0, this.length - length)
 }
 
 fun String.removeBefore(index: Int, keepIndex: Boolean): String {
-    return this.substring(if (keepIndex) index else index + 1)
+    val targetIndex = if (keepIndex) index else index + 1
+    if (targetIndex < 0 || targetIndex > this.length) return ""
+    return this.substring(targetIndex)
 }

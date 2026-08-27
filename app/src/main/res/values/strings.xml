@@ -1,3 +1,4 @@
+<?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Esjzone</string>
     <string name="navigation_home">Home</string>
@@ -71,4 +72,20 @@
     <string name="settings_domain">Target Domain</string>
     <string name="settings_domain_description">Switch between available ESJ Zone mirrors</string>
     <string name="domain_switched">Switched to domain: %1$s</string>
+    <string name="system_logs">System Logs</string>
+    <string name="logs_copy_all">Copy All</string>
+    <string name="logs_share">Share Logs</string>
+    <string name="logs_clear">Clear Logs</string>
+    <string name="logs_clear_title">Clear Logs</string>
+    <string name="logs_clear_message">Are you sure you want to clear all recorded system logs and crash history?</string>
+    <string name="logs_cleared_toast">Logs cleared</string>
+    <string name="logs_copied_toast">Logs copied to clipboard</string>
+    <string name="logs_filter_all">All</string>
+    <string name="logs_search_placeholder">Search logs by keyword or tag...</string>
+    <string name="logs_empty">No logs recorded yet</string>
+    <string name="logs_last_crash_title">Recent Crash Diagnostics Report</string>
+    <string name="logs_crash_report_btn">Crash Report</string>
+    <string name="logs_copy_report">Copy Report</string>
+    <string name="logs_show_stacktrace">Show Stack Trace</string>
+    <string name="logs_hide_stacktrace">Hide Stack Trace</string>
 </resources>

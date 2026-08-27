@@ -27,15 +27,14 @@ fun EsjzoneClient.getFavorites(
             .build()
     ).execute()
 
-    val responseBody = response.body!!.string()
+    val responseBody = response.body?.string() ?: ""
     response.close()
-
 
     val document = Jsoup.parse(responseBody)
 
-    val matcher = pagesRegex.find(EsjzoneXPaths.Profile.Favorite.Pages.evaluate(document).get())
-
-    val pages = matcher?.groupValues?.get(1)?.toInt() ?: 0
+    val pagesRaw = EsjzoneXPaths.Profile.Favorite.Pages.evaluate(document).get()
+    val matcher = if (pagesRaw != null) pagesRegex.find(pagesRaw) else null
+    val pages = matcher?.groupValues?.getOrNull(1)?.toIntOrNull() ?: 1
 
     val novels = mutableListOf<FavoriteNovel>()
 

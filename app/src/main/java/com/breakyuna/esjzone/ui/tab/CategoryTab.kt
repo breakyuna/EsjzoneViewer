@@ -207,7 +207,12 @@ class CategoryModel(
     fun getCategories() {
         scope.launch(Dispatchers.IO) {
             mutableState.value = State.Loading
-            mutableState.value = State.Result(EsjzoneClient.getCategories(authorization))
+            try {
+                val categories = EsjzoneClient.getCategories(authorization)
+                mutableState.value = State.Result(categories)
+            } catch (e: Exception) {
+                com.breakyuna.esjzone.util.AppLogger.e("CategoryModel", "Failed to load categories", e)
+            }
         }
     }
 

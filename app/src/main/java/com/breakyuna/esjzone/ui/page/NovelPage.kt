@@ -249,13 +249,15 @@ class NovelPage(
                                 Button(
                                     enabled = rememberedHistory != null,
                                     onClick = {
-                                        navigator.push(
-                                            ChapterPage(
-                                                result.detailed.id(),
-                                                rememberedHistory!!,
-                                                history
+                                        rememberedHistory?.let { currChapter ->
+                                            navigator.push(
+                                                ChapterPage(
+                                                    result.detailed.id(),
+                                                    currChapter,
+                                                    history
+                                                )
                                             )
-                                        )
+                                        }
                                     }
                                 ) {
                                     val id = if (rememberedHasHistory)
@@ -304,7 +306,12 @@ class NovelPageModel(
     fun getDetail() {
         scope.launch(Dispatchers.IO) {
             mutableState.value = State.Loading
-            mutableState.value = State.Result(EsjzoneClient.getNovelDetail(authorization, novel))
+            try {
+                val detail = EsjzoneClient.getNovelDetail(authorization, novel)
+                mutableState.value = State.Result(detail)
+            } catch (e: Exception) {
+                com.breakyuna.esjzone.util.AppLogger.e("NovelPageModel", "Failed to load novel detail for ${novel.name}", e)
+            }
         }
     }
 

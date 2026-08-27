@@ -15,6 +15,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Logout
+import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.ColorLens
 import androidx.compose.material.icons.filled.Info
@@ -392,6 +393,12 @@ object SettingsPage : Screen {
                 }
 
                 SettingsText(text = stringResource(id = R.string.settings_category_app))
+                SettingsButton(
+                    imageVector = Icons.Filled.BugReport,
+                    text = stringResource(id = R.string.system_logs)
+                ) {
+                    navigator.push(LogsPage)
+                }
                 SettingsButton(
                     imageVector = Icons.Filled.Info,
                     text = stringResource(id = R.string.about)

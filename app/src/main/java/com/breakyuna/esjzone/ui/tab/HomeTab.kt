@@ -304,7 +304,12 @@ class HomeTabModel(
     fun getHomeData() {
         scope.launch(Dispatchers.IO) {
             mutableState.value = State.Loading
-            mutableState.value = State.Result(EsjzoneClient.getHomeData(authorization))
+            try {
+                val data = EsjzoneClient.getHomeData(authorization)
+                mutableState.value = State.Result(data)
+            } catch (e: Exception) {
+                com.breakyuna.esjzone.util.AppLogger.e("HomeTabModel", "Failed to load home data", e)
+            }
         }
     }
 

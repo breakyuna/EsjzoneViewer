@@ -73,17 +73,17 @@ class SearchPage(private val keyword: String) : Screen {
                     val result = (state as SearchPageModel.State.Result)
                     val requester = result.requester
 
-                    var current by remember {
+                    var current by remember(result) {
                         mutableIntStateOf(2)
                     }
 
                     val max = requester.pages()
 
-                    val items = remember {
-                        mutableStateListOf<CoveredNovel>()
+                    val items = remember(result) {
+                        mutableStateListOf<CoveredNovel>().apply {
+                            addAll(result.firstPage)
+                        }
                     }
-
-                    items.addAll(result.firstPage)
 
                     val listState = rememberLazyListState()
 
@@ -167,8 +167,12 @@ class SearchPageModel(
     fun getRequester() {
         scope.launch(Dispatchers.IO) {
             mutableState.value = State.Loading
-            val (requester, novels) = EsjzoneClient.search(authorization, keyword)
-            mutableState.value = State.Result(requester, novels)
+            try {
+                val (requester, novels) = EsjzoneClient.search(authorization, keyword)
+                mutableState.value = State.Result(requester, novels)
+            } catch (e: Exception) {
+                com.breakyuna.esjzone.util.AppLogger.e("SearchPageModel", "Failed to search for keyword: $keyword", e)
+            }
         }
     }
 

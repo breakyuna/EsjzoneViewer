@@ -57,7 +57,7 @@ private fun favoriteSortResource(name: String): Int {
     return when (name) {
         "new" -> R.string.favorites_recently_added
         "udate" -> R.string.favorites_recently_update
-        else -> throw RuntimeException()
+        else -> R.string.favorites_recently_added
     }
 }
 
@@ -120,21 +120,21 @@ object FavoritePage : Screen {
                     val result = (state as FavoritePageModel.State.Result)
                     val requester = result.requester
 
-                    var current by remember {
+                    var current by remember(result) {
                         mutableIntStateOf(2)
                     }
 
                     val max = requester.pages()
 
-                    val items = remember {
-                        mutableStateListOf<FavoriteNovel>()
+                    val items = remember(result) {
+                        mutableStateListOf<FavoriteNovel>().apply {
+                            addAll(result.firstPage)
+                        }
                     }
 
                     val cache = remember {
                         mutableStateMapOf<String, DetailedNovel>()
                     }
-
-                    items.addAll(result.firstPage)
 
                     LazyColumn(
                         modifier = Modifier.fillMaxSize()
@@ -144,7 +144,8 @@ object FavoritePage : Screen {
                                 mutableStateOf(cache[favoriteNovel.url])
                             }
 
-                            if (detailedNovel == null) {
+                            val novel = detailedNovel
+                            if (novel == null) {
                                 Column(
                                     modifier = Modifier.fillMaxSize(),
                                     horizontalAlignment = Alignment.CenterHorizontally
@@ -154,15 +155,20 @@ object FavoritePage : Screen {
 
                                 LaunchedEffect(currentCompositeKeyHash) {
                                     scope.launch(Dispatchers.IO) {
-                                        detailedNovel = EsjzoneClient.getNovelDetail(
-                                            authorization,
-                                            favoriteNovel
-                                        )
-                                        cache[favoriteNovel.url] = detailedNovel!!
+                                        try {
+                                            val fetched = EsjzoneClient.getNovelDetail(
+                                                authorization,
+                                                favoriteNovel
+                                            )
+                                            detailedNovel = fetched
+                                            cache[favoriteNovel.url] = fetched
+                                        } catch (e: Exception) {
+                                            com.breakyuna.esjzone.util.AppLogger.e("FavoritePage", "Failed to load novel detail for ${favoriteNovel.name}", e)
+                                        }
                                     }
                                 }
                             } else {
-                                if (adult || !detailedNovel!!.isAdult) {
+                                if (adult || !novel.isAdult) {
                                     val favorite = rememberSaveable {
                                         mutableStateOf(true)
                                     }
@@ -171,8 +177,8 @@ object FavoritePage : Screen {
                                         favorite
                                     }
 
-                                    if (rememberedFavorite && detailedNovel!!.isFavorite) {
-                                        Novel(covered = detailedNovel!!) {
+                                    if (rememberedFavorite && novel.isFavorite) {
+                                        Novel(covered = novel) {
                                             navigator.push(
                                                 NovelPage(
                                                     favoriteNovel,
@@ -252,11 +258,15 @@ class FavoritePageModel(
     fun getRequester() {
         scope.launch(Dispatchers.IO) {
             mutableState.value = State.Loading
-            val (requester, novels) = EsjzoneClient.getFavorites(
-                authorization,
-                sort.value
-            )
-            mutableState.value = State.Result(requester, novels)
+            try {
+                val (requester, novels) = EsjzoneClient.getFavorites(
+                    authorization,
+                    sort.value
+                )
+                mutableState.value = State.Result(requester, novels)
+            } catch (e: Exception) {
+                com.breakyuna.esjzone.util.AppLogger.e("FavoritePageModel", "Failed to load favorites", e)
+            }
         }
     }
 

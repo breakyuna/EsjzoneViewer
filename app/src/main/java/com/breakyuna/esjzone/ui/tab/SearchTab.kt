@@ -100,16 +100,22 @@ object SearchTab : Tab {
                 ),
                 keyboardActions = KeyboardActions(
                     onSearch = {
-                        navigator.push(SearchPage(keyword))
-                        scope.launch(Dispatchers.IO) {
-                            val dao = MainActivity.database.searchHistoryDao()
-                            val history =
-                                if (dao.exists(keyword)) dao.findByKeyword(keyword) else SearchHistory(
-                                    keyword = keyword,
-                                    time = currentDateString()
-                                )
-                            history.time = currentDateString()
-                            dao.insertAll(history)
+                        val trimmed = keyword.trim()
+                        if (trimmed.isNotEmpty()) {
+                            navigator.push(SearchPage(trimmed))
+                            scope.launch(Dispatchers.IO) {
+                                val dao = MainActivity.database.searchHistoryDao()
+                                val history = if (dao.exists(trimmed)) {
+                                    dao.findByKeyword(trimmed)
+                                } else {
+                                    SearchHistory(
+                                        keyword = trimmed,
+                                        time = currentDateString()
+                                    )
+                                }
+                                history.time = currentDateString()
+                                dao.insertAll(history)
+                            }
                         }
                     }
                 ),
@@ -179,7 +185,9 @@ object SearchTab : Tab {
 
         LaunchedEffect(currentCompositeKeyHash) {
             scope.launch(Dispatchers.IO) {
-                histories.addAll(MainActivity.database.searchHistoryDao().getAll())
+                val dbHistories = MainActivity.database.searchHistoryDao().getAll()
+                histories.clear()
+                histories.addAll(dbHistories)
                 loadingHistory = false
             }
         }

@@ -171,14 +171,18 @@ class ChapterPage(
                                     OutlinedButton(
                                         enabled = detailed.previous != null,
                                         onClick = {
-                                            val previous = detailed.previous!!
-                                            if (novelId == previous.novelId()) { // README 吐槽#4
-                                                rememberedHistory = previous
+                                            detailed.previous?.let { previous ->
+                                                if (novelId == previous.novelId()) {
+                                                    rememberedHistory = previous
+                                                }
+                                                requestedChapter.value = previous
+                                                chapterName = previous.name
+                                                chapter = previous
+                                                chapterPageModel.getDetail()
+                                                scope.launch(Dispatchers.Main) {
+                                                    scrollState.scrollTo(0)
+                                                }
                                             }
-                                            requestedChapter.value = previous
-                                            chapterName = previous.name
-                                            chapter = previous
-                                            chapterPageModel.getDetail()
                                         }
                                     ) {
                                         Text(text = stringResource(id = R.string.previous_chapter))
@@ -199,14 +203,18 @@ class ChapterPage(
                                     OutlinedButton(
                                         enabled = detailed.next != null,
                                         onClick = {
-                                            val next = detailed.next!!
-                                            if (novelId == next.novelId()) { // README 吐槽#4
-                                                rememberedHistory = next
+                                            detailed.next?.let { next ->
+                                                if (novelId == next.novelId()) {
+                                                    rememberedHistory = next
+                                                }
+                                                requestedChapter.value = next
+                                                chapterName = next.name
+                                                chapter = next
+                                                chapterPageModel.getDetail()
+                                                scope.launch(Dispatchers.Main) {
+                                                    scrollState.scrollTo(0)
+                                                }
                                             }
-                                            requestedChapter.value = next
-                                            chapterName = next.name
-                                            chapter = next
-                                            chapterPageModel.getDetail()
                                         }
                                     ) {
                                         Text(text = stringResource(id = R.string.next_chapter))
@@ -348,15 +356,15 @@ class ChapterPageModel(
     fun getDetail() {
         scope.launch(Dispatchers.IO) {
             mutableState.value = State.Loading
-            mutableState.value =
-                State.Result(
-                    mutableStateOf(
-                        EsjzoneClient.getChapterDetail(
-                            authorization,
-                            chapter.value
-                        )
-                    )
+            try {
+                val detail = EsjzoneClient.getChapterDetail(
+                    authorization,
+                    chapter.value
                 )
+                mutableState.value = State.Result(mutableStateOf(detail))
+            } catch (e: Exception) {
+                com.breakyuna.esjzone.util.AppLogger.e("ChapterPageModel", "Failed to load chapter detail for ${chapter.value.name}", e)
+            }
         }
     }
 

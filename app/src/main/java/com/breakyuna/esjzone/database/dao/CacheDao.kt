@@ -14,7 +14,7 @@ interface CacheDao {
     @Query("SELECT * FROM cache")
     fun getAll(): List<Cache>
 
-    @Query("SELECT * FROM cache WHERE cache_key LIKE :key LIMIT 1")
+    @Query("SELECT * FROM cache WHERE cache_key = :key LIMIT 1")
     fun findByKey(key: String): Cache
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)

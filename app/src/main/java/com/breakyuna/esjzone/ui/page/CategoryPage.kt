@@ -94,7 +94,8 @@ class CategoryPage(private val category: Category) : Screen {
                                 mutableStateOf(cache[categoryNovel.url])
                             }
 
-                            if (detailedNovel == null) {
+                            val novel = detailedNovel
+                            if (novel == null) {
                                 Column(
                                     modifier = Modifier.fillMaxSize(),
                                     horizontalAlignment = Alignment.CenterHorizontally
@@ -104,16 +105,21 @@ class CategoryPage(private val category: Category) : Screen {
 
                                 LaunchedEffect(currentCompositeKeyHash) {
                                     scope.launch(Dispatchers.IO) {
-                                        detailedNovel = EsjzoneClient.getNovelDetail(
-                                            authorization,
-                                            categoryNovel
-                                        )
-                                        cache[categoryNovel.url] = detailedNovel!!
+                                        try {
+                                            val fetched = EsjzoneClient.getNovelDetail(
+                                                authorization,
+                                                categoryNovel
+                                            )
+                                            detailedNovel = fetched
+                                            cache[categoryNovel.url] = fetched
+                                        } catch (e: Exception) {
+                                            com.breakyuna.esjzone.util.AppLogger.e("CategoryPage", "Failed to load novel detail for ${categoryNovel.name}", e)
+                                        }
                                     }
                                 }
                             } else {
-                                if (adult || !detailedNovel!!.isAdult) {
-                                    Novel(covered = detailedNovel!!)
+                                if (adult || !novel.isAdult) {
+                                    Novel(covered = novel)
                                 }
                             }
                         }
@@ -156,7 +162,12 @@ class CategoryPageModel(
     fun getNovels() {
         scope.launch(Dispatchers.IO) {
             mutableState.value = State.Loading
-            mutableState.value = State.Result(EsjzoneClient.listNovels(authorization, category))
+            try {
+                val novels = EsjzoneClient.listNovels(authorization, category)
+                mutableState.value = State.Result(novels)
+            } catch (e: Exception) {
+                com.breakyuna.esjzone.util.AppLogger.e("CategoryPageModel", "Failed to list novels for category: ${category.name}", e)
+            }
         }
     }
 

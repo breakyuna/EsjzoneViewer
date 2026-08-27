@@ -11,6 +11,7 @@ import com.breakyuna.esjzone.novellibrary.novel.NovelChapterList
 import com.breakyuna.esjzone.novellibrary.novel.NovelDescription
 import com.breakyuna.esjzone.novellibrary.novel.analyseChapterList
 import com.breakyuna.esjzone.novellibrary.novel.analyseDescription
+import com.breakyuna.esjzone.util.AppLogger
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.jsoup.Jsoup
@@ -23,7 +24,6 @@ fun EsjzoneClient.getNovelDetail(authorization: Authorization, novel: Novel): De
         .cookieJar(AuthorizationCookieJar(authorization))
         .build()
 
-
     val targetUrl = if (novel.url.startsWith("http://") || novel.url.startsWith("https://")) {
         novel.url.replaceFirst(Regex("^https?://[^/]+"), EsjzoneUrls.Base)
     } else if (novel.url.startsWith("/")) {
@@ -31,6 +31,8 @@ fun EsjzoneClient.getNovelDetail(authorization: Authorization, novel: Novel): De
     } else {
         "${EsjzoneUrls.Base}/${novel.url}"
     }
+
+    AppLogger.i("GetNovelDetail", "Fetching novel detail: ${novel.name} at $targetUrl")
 
     val response = httpClient.newCall(
         Request.Builder()
@@ -40,7 +42,7 @@ fun EsjzoneClient.getNovelDetail(authorization: Authorization, novel: Novel): De
             .build()
     ).execute()
 
-    val responseBody = response.body!!.string()
+    val responseBody = response.body?.string() ?: ""
     response.close()
 
     val document = Jsoup.parse(responseBody)
@@ -52,28 +54,33 @@ fun EsjzoneClient.getNovelDetail(authorization: Authorization, novel: Novel): De
     else
         EsjzoneUrls.EmptyCover
 
-    val views = EsjzoneXPaths.Detail.Views.evaluate(document).get().toInt()
-    val likes = EsjzoneXPaths.Detail.Likes.evaluate(document).get().toInt()
-    val words = EsjzoneXPaths.Detail.Words.evaluate(document).get().replace(",", "").toInt()
+    val viewsStr = EsjzoneXPaths.Detail.Views.evaluate(document).get() ?: "0"
+    val views = viewsStr.replace(Regex("[^0-9]"), "").toIntOrNull() ?: 0
 
-    val type = EsjzoneXPaths.Detail.Type.evaluate(document).get()
-    val author = EsjzoneXPaths.Detail.Author.evaluate(document).get()
+    val likesStr = EsjzoneXPaths.Detail.Likes.evaluate(document).get() ?: "0"
+    val likes = likesStr.replace(Regex("[^0-9]"), "").toIntOrNull() ?: 0
 
-    val forumUrl = EsjzoneXPaths.Detail.ForumUrl.evaluate(document).get()
+    val wordsStr = EsjzoneXPaths.Detail.Words.evaluate(document).get() ?: "0"
+    val words = wordsStr.replace(",", "").replace(Regex("[^0-9]"), "").toIntOrNull() ?: 0
+
+    val type = EsjzoneXPaths.Detail.Type.evaluate(document).get() ?: ""
+    val author = EsjzoneXPaths.Detail.Author.evaluate(document).get() ?: ""
+
+    val forumUrl = EsjzoneXPaths.Detail.ForumUrl.evaluate(document).get() ?: ""
 
     val tags = EsjzoneXPaths.Detail.Tags.evaluate(document).list().toList()
 
-    val favorite = EsjzoneXPaths.Detail.FavoriteText.evaluate(document).get()
+    val favorite = EsjzoneXPaths.Detail.FavoriteText.evaluate(document).get() ?: ""
 
     val descriptionElements = EsjzoneXPaths.Detail.Description.evaluate(document).elements
     val chapterListElements = EsjzoneXPaths.Detail.ChapterList.evaluate(document).elements
 
-    val description = if (descriptionElements.size == 0)
+    val description = if (descriptionElements.isEmpty())
         NovelDescription(listOf())
     else
         analyseDescription(descriptionElements[0])
 
-    val chapterList = if (chapterListElements.size == 0)
+    val chapterList = if (chapterListElements.isEmpty())
         NovelChapterList(listOf())
     else
         analyseChapterList(chapterListElements[0])

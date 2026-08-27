@@ -14,7 +14,7 @@ interface SearchHistoryDao {
     @Query("SELECT * FROM searchhistory")
     fun getAll(): List<SearchHistory>
 
-    @Query("SELECT * FROM searchhistory WHERE keyword LIKE :keyword LIMIT 1")
+    @Query("SELECT * FROM searchhistory WHERE keyword = :keyword LIMIT 1")
     fun findByKeyword(keyword: String): SearchHistory
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)

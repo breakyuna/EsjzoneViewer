@@ -23,13 +23,16 @@ fun EsjzoneClient.getUserProfile(authorization: Authorization): UserProfile {
             .build()
     ).execute()
 
-    val responseBody = response.body!!.string()
+    val responseBody = response.body?.string() ?: ""
     response.close()
 
     val document = Jsoup.parse(responseBody)
 
+    val name = EsjzoneXPaths.Profile.Username.evaluate(document).get() ?: "User"
+    val avatarUrl = EsjzoneXPaths.Profile.AvatarUrl.evaluate(document).get() ?: ""
+
     return UserProfile(
-        EsjzoneXPaths.Profile.Username.evaluate(document).get(),
-        EsjzoneXPaths.Profile.AvatarUrl.evaluate(document).get(),
+        name,
+        avatarUrl,
     )
 }

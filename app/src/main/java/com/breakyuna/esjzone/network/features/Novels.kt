@@ -29,26 +29,35 @@ fun EsjzoneClient.novels(
             .build()
     ).execute()
 
-    val responseBody = response.body!!.string()
+    val responseBody = response.body?.string() ?: ""
     response.close()
 
     val document = Jsoup.parse(responseBody)
 
-    val pages =
-        pagesRegex.find(EsjzoneXPaths.Tags.Pages.evaluate(document).get())!!.groupValues[1].toInt()
+    val pagesRaw = EsjzoneXPaths.Tags.Pages.evaluate(document).get()
+    val pages = if (pagesRaw != null) {
+        pagesRegex.find(pagesRaw)?.groupValues?.getOrNull(1)?.toIntOrNull() ?: 1
+    } else 1
+
+    fun parseCount(raw: String?): Int {
+        if (raw.isNullOrBlank()) return 0
+        return raw.replace(Regex("[^0-9]"), "").toIntOrNull() ?: 0
+    }
 
     val novels = mutableListOf<CoveredNovel>()
 
     for (novelData in EsjzoneXPaths.Tags.Novel.All.evaluate(document).elements) {
+        val r18Elements = EsjzoneXPaths.Tags.Novel.R18Badge.evaluate(novelData).elements
+        val isR18 = r18Elements.firstOrNull()?.attr("class")?.contains("badge") == true
+
         novels.add(
             CoveredNovelImpl(
-                EsjzoneXPaths.Tags.Novel.Cover.evaluate(novelData).get(),
-                EsjzoneXPaths.Tags.Novel.Name.evaluate(novelData).get(),
-                EsjzoneXPaths.Tags.Novel.Url.evaluate(novelData).get(),
-                EsjzoneXPaths.Tags.Novel.Views.evaluate(novelData).get().substring(1).toInt(),
-                EsjzoneXPaths.Tags.Novel.Likes.evaluate(novelData).get().substring(1).toInt(),
-                EsjzoneXPaths.Tags.Novel.R18Badge.evaluate(novelData).elements[0].attr("class")
-                    .contains("badge")
+                EsjzoneXPaths.Tags.Novel.Cover.evaluate(novelData).get() ?: EsjzoneUrls.EmptyCover,
+                EsjzoneXPaths.Tags.Novel.Name.evaluate(novelData).get() ?: "",
+                EsjzoneXPaths.Tags.Novel.Url.evaluate(novelData).get() ?: "",
+                parseCount(EsjzoneXPaths.Tags.Novel.Views.evaluate(novelData).get()),
+                parseCount(EsjzoneXPaths.Tags.Novel.Likes.evaluate(novelData).get()),
+                isR18
             )
         )
     }
@@ -88,23 +97,30 @@ private class ListNovelRequester(
                 .build()
         ).execute()
 
-        val responseBody = response.body!!.string()
+        val responseBody = response.body?.string() ?: ""
         response.close()
 
         val document = Jsoup.parse(responseBody)
 
+        fun parseCount(raw: String?): Int {
+            if (raw.isNullOrBlank()) return 0
+            return raw.replace(Regex("[^0-9]"), "").toIntOrNull() ?: 0
+        }
+
         val novels = mutableListOf<CoveredNovel>()
 
         for (novelData in EsjzoneXPaths.Tags.Novel.All.evaluate(document).elements) {
+            val r18Elements = EsjzoneXPaths.Tags.Novel.R18Badge.evaluate(novelData).elements
+            val isR18 = r18Elements.firstOrNull()?.attr("class")?.contains("badge") == true
+
             novels.add(
                 CoveredNovelImpl(
-                    EsjzoneXPaths.Tags.Novel.Cover.evaluate(novelData).get(),
-                    EsjzoneXPaths.Tags.Novel.Name.evaluate(novelData).get(),
-                    EsjzoneXPaths.Tags.Novel.Url.evaluate(novelData).get(),
-                    EsjzoneXPaths.Tags.Novel.Views.evaluate(novelData).get().substring(1).toInt(),
-                    EsjzoneXPaths.Tags.Novel.Likes.evaluate(novelData).get().substring(1).toInt(),
-                    EsjzoneXPaths.Tags.Novel.R18Badge.evaluate(novelData).elements[0].attr("class")
-                        .contains("badge")
+                    EsjzoneXPaths.Tags.Novel.Cover.evaluate(novelData).get() ?: EsjzoneUrls.EmptyCover,
+                    EsjzoneXPaths.Tags.Novel.Name.evaluate(novelData).get() ?: "",
+                    EsjzoneXPaths.Tags.Novel.Url.evaluate(novelData).get() ?: "",
+                    parseCount(EsjzoneXPaths.Tags.Novel.Views.evaluate(novelData).get()),
+                    parseCount(EsjzoneXPaths.Tags.Novel.Likes.evaluate(novelData).get()),
+                    isR18
                 )
             )
         }

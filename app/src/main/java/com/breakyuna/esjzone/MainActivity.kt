@@ -18,6 +18,8 @@ import com.breakyuna.esjzone.database.entity.Cache
 import com.breakyuna.esjzone.ui.app.App
 import com.breakyuna.esjzone.ui.theme.catppuccin.CatppuccinDynamicTheme
 import com.breakyuna.esjzone.ui.theme.catppuccin.CatppuccinThemeType
+import com.breakyuna.esjzone.util.AppLogger
+import com.breakyuna.esjzone.util.CrashHandler
 
 class MainActivity : ComponentActivity() {
 
@@ -31,6 +33,11 @@ class MainActivity : ComponentActivity() {
     @SuppressLint("CoroutineCreationDuringComposition")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        // Initialize Logging and Crash Monitoring
+        AppLogger.init(applicationContext)
+        CrashHandler.init(applicationContext)
+        AppLogger.i("MainActivity", "Activity onCreate started")
 
         imageLoader = ImageLoader.Builder(this)
             .components {
@@ -53,40 +60,48 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
 
         lifecycleScope.launch(Dispatchers.IO) {
-            database = Room.databaseBuilder(
-                this@MainActivity,
-                GeneralDatabase::class.java, "general"
-            ).build()
+            try {
+                AppLogger.i("MainActivity", "Initializing Room database...")
+                database = Room.databaseBuilder(
+                    this@MainActivity,
+                    GeneralDatabase::class.java, "general"
+                ).build()
 
-            val dao = database.cacheDao()
+                val dao = database.cacheDao()
 
-            if (!dao.exists("theme")) {
-                dao.insertNotExists(
-                    Cache(
-                        key = "theme",
-                        value = GlobalSettings.theme.value.name
+                if (!dao.exists("theme")) {
+                    dao.insertNotExists(
+                        Cache(
+                            key = "theme",
+                            value = GlobalSettings.theme.value.name
+                        )
                     )
-                )
-            }
+                }
 
-            if (!dao.exists("domain")) {
-                dao.insertNotExists(
-                    Cache(
-                        key = "domain",
-                        value = GlobalSettings.domain.value
+                if (!dao.exists("domain")) {
+                    dao.insertNotExists(
+                        Cache(
+                            key = "domain",
+                            value = GlobalSettings.domain.value
+                        )
                     )
-                )
-            }
+                }
 
-            GlobalSettings.theme.value = CatppuccinThemeType.valueOf(dao.findByKey("theme").value)
-            GlobalSettings.domain.value = dao.findByKey("domain").value
+                val savedTheme = dao.findByKey("theme").value
+                val savedDomain = dao.findByKey("domain").value
+                GlobalSettings.theme.value = CatppuccinThemeType.valueOf(savedTheme)
+                GlobalSettings.domain.value = savedDomain
+                AppLogger.i("MainActivity", "Settings restored: Domain=$savedDomain, Theme=$savedTheme")
 
-            this.launch(Dispatchers.Main) {
-                setContent {
-                    CatppuccinDynamicTheme {
-                        App()
+                this.launch(Dispatchers.Main) {
+                    setContent {
+                        CatppuccinDynamicTheme {
+                            App()
+                        }
                     }
                 }
+            } catch (e: Exception) {
+                AppLogger.e("MainActivity", "Failed to initialize database or settings", e)
             }
         }
     }

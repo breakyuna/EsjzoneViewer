@@ -38,7 +38,10 @@ fun analyseItems(element: Element): List<Item> {
 
     for (child in element.children()) {
         if (child.nameIs("p")) {
-            items.add(TextItem(analyseParagraph(child)[0] as TextComponent))
+            val paragraphs = analyseParagraph(child)
+            val textComp = paragraphs.filterIsInstance<TextComponent>().firstOrNull()
+                ?: TextComponent(child.text())
+            items.add(TextItem(textComp))
         } else if (child.nameIs("a")) {
             items.add(ChapterItem(analyseChapter(child)))
         } else if (child.nameIs("details")) {
@@ -50,8 +53,14 @@ fun analyseItems(element: Element): List<Item> {
 }
 
 private fun analyseChapterList(element: Element): ChapterListItem {
-    val title =
-        analyseParagraph(EsjzoneXPaths.Detail.ChapterListDetails.Title.evaluate(element).elements[0])[0] as TextComponent
+    val titleElements = EsjzoneXPaths.Detail.ChapterListDetails.Title.evaluate(element).elements
+    val title = if (titleElements.isNotEmpty()) {
+        val paragraphs = analyseParagraph(titleElements[0])
+        paragraphs.filterIsInstance<TextComponent>().firstOrNull()
+            ?: TextComponent(titleElements[0].text())
+    } else {
+        TextComponent("")
+    }
 
     val chapters = mutableListOf<Chapter>()
     for (child in element.children()) {

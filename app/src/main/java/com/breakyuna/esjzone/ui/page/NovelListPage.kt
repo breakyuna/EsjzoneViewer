@@ -55,7 +55,7 @@ private fun typeResource(type: Int): Int {
         1 -> R.string.novel_list_japanese
         2 -> R.string.novel_list_original
         3 -> R.string.novel_list_korean
-        else -> throw RuntimeException()
+        else -> R.string.novel_list_all
     }
 }
 
@@ -69,7 +69,7 @@ private fun sortResource(type: Int): Int {
         6 -> R.string.novel_filter_mostcomments
         7 -> R.string.novel_filter_mostfavorites
         8 -> R.string.novel_filter_mostwords
-        else -> throw RuntimeException()
+        else -> R.string.novel_filter_recentlyupdate
     }
 }
 
@@ -170,17 +170,17 @@ class NovelListPage(
                     val result = (state as NovelListPageModel.State.Result)
                     val requester = result.requester
 
-                    var current by remember {
+                    var current by remember(result) {
                         mutableIntStateOf(2)
                     }
 
                     val max = requester.pages()
 
-                    val items = remember {
-                        mutableStateListOf<CoveredNovel>()
+                    val items = remember(result) {
+                        mutableStateListOf<CoveredNovel>().apply {
+                            addAll(result.firstPage)
+                        }
                     }
-
-                    items.addAll(result.firstPage)
 
                     LazyColumn {
                         items(items.toList().filter {
@@ -263,12 +263,16 @@ class NovelListPageModel(
     fun getRequester() {
         scope.launch(Dispatchers.IO) {
             mutableState.value = State.Loading
-            val (requester, novels) = EsjzoneClient.novels(
-                authorization,
-                novelType.intValue,
-                sortType.intValue
-            )
-            mutableState.value = State.Result(requester, novels)
+            try {
+                val (requester, novels) = EsjzoneClient.novels(
+                    authorization,
+                    novelType.intValue,
+                    sortType.intValue
+                )
+                mutableState.value = State.Result(requester, novels)
+            } catch (e: Exception) {
+                com.breakyuna.esjzone.util.AppLogger.e("NovelListPageModel", "Failed to load novel list for type=${novelType.intValue}, sort=${sortType.intValue}", e)
+            }
         }
     }
 

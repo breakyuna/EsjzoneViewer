@@ -99,12 +99,20 @@ object ProfileTab : Tab {
                     CircularProgressIndicator()
                 }
             } else {
+                val profile = data ?: return@Column
+                val avatarUrl = if (profile.avatarUrl.startsWith("http://") || profile.avatarUrl.startsWith("https://")) {
+                    profile.avatarUrl
+                } else if (profile.avatarUrl.startsWith("/")) {
+                    "${EsjzoneUrls.Base}${profile.avatarUrl}"
+                } else {
+                    "${EsjzoneUrls.Base}/${profile.avatarUrl}"
+                }
                 SubcomposeAsyncImage(
                     model = ImageRequest.Builder(LocalContext.current)
-                        .data("${EsjzoneUrls.Base}${data!!.avatarUrl}")
+                        .data(avatarUrl)
                         .crossfade(true)
                         .build(),
-                    contentDescription = data!!.name,
+                    contentDescription = profile.name,
                     imageLoader = MainActivity.imageLoader,
                     loading = {
                         CircularProgressIndicator()
@@ -117,7 +125,7 @@ object ProfileTab : Tab {
                         .width((configuration.screenWidthDp / 4).dp)
                 )
                 Text(
-                    text = data!!.name,
+                    text = profile.name,
                     fontSize = 24.sp,
                     modifier = Modifier.padding(8.dp)
                 )
@@ -219,7 +227,11 @@ object ProfileTab : Tab {
 
         LaunchedEffect(currentCompositeKeyHash) {
             scope.launch(Dispatchers.IO) {
-                data = EsjzoneClient.getUserProfile(authorization)
+                try {
+                    data = EsjzoneClient.getUserProfile(authorization)
+                } catch (e: Exception) {
+                    com.breakyuna.esjzone.util.AppLogger.e("ProfileTab", "Failed to fetch user profile", e)
+                }
             }
         }
     }

@@ -8,6 +8,7 @@ import com.breakyuna.esjzone.network.EsjzoneXPaths
 import com.breakyuna.esjzone.novellibrary.component.analyseComponents
 import com.breakyuna.esjzone.novellibrary.novel.Chapter
 import com.breakyuna.esjzone.novellibrary.novel.DetailedChapter
+import com.breakyuna.esjzone.util.AppLogger
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.jsoup.Jsoup
@@ -29,6 +30,8 @@ fun EsjzoneClient.getChapterDetail(
         "${EsjzoneUrls.Base}/${chapter.url}"
     }
 
+    AppLogger.i("GetChapterDetail", "Fetching chapter: ${chapter.name} at $targetUrl")
+
     val response = httpClient.newCall(
         Request.Builder()
             .url(targetUrl)
@@ -37,13 +40,18 @@ fun EsjzoneClient.getChapterDetail(
             .build()
     ).execute()
 
-
-    val responseBody = response.body!!.string()
+    val responseBody = response.body?.string() ?: ""
     response.close()
 
     val document = Jsoup.parse(responseBody)
 
-    val components = analyseComponents(EsjzoneXPaths.Forum.Content.evaluate(document).elements[0])
+    val contentElements = EsjzoneXPaths.Forum.Content.evaluate(document).elements
+    val components = if (contentElements.isNotEmpty()) {
+        analyseComponents(contentElements[0])
+    } else {
+        AppLogger.w("GetChapterDetail", "No content element found in chapter page: $targetUrl")
+        listOf()
+    }
 
     val previousChapter = EsjzoneXPaths.Forum.PreviousChapter.evaluate(document).elements
     val nextChapter = EsjzoneXPaths.Forum.NextChapter.evaluate(document).elements
