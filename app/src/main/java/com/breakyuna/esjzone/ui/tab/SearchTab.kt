@@ -1,8 +1,12 @@
 package com.breakyuna.esjzone.ui.tab
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -10,17 +14,29 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.DeleteSweep
+import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TextField
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.currentCompositeKeyHash
@@ -33,8 +49,10 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.rememberVectorPainter
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -62,10 +80,10 @@ object SearchTab : Tab {
             icon = rememberVectorPainter(image = Icons.Filled.Search)
         )
 
+    @OptIn(ExperimentalLayoutApi::class)
     @Composable
     override fun Content() {
         val navigator = LocalBaseNavigator.current
-
         val scope = rememberCoroutineScope()
 
         var loadingHistory by remember {
@@ -76,111 +94,252 @@ object SearchTab : Tab {
             mutableStateListOf<SearchHistory>()
         }
 
-        Column(
-            modifier = Modifier.fillMaxSize()
-        ) {
-            Spacer(modifier = Modifier.height(10.dp))
+        var keyword by rememberSaveable {
+            mutableStateOf("")
+        }
 
-            var keyword by rememberSaveable {
-                mutableStateOf("")
+        fun performSearch(query: String) {
+            val trimmed = query.trim()
+            if (trimmed.isNotEmpty()) {
+                navigator.push(SearchPage(trimmed))
+                scope.launch(Dispatchers.IO) {
+                    val dao = MainActivity.database.searchHistoryDao()
+                    val history = if (dao.exists(trimmed)) {
+                        dao.findByKeyword(trimmed)
+                    } else {
+                        SearchHistory(
+                            keyword = trimmed,
+                            time = currentDateString()
+                        )
+                    }
+                    history.time = currentDateString()
+                    dao.insertAll(history)
+
+                    val updated = dao.getAll()
+                    histories.clear()
+                    histories.addAll(updated)
+                }
+            }
+        }
+
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .statusBarsPadding()
+                .verticalScroll(rememberScrollState())
+        ) {
+            // Header
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp, vertical = 16.dp)
+            ) {
+                Text(
+                    text = stringResource(id = R.string.screen_main_tab_search),
+                    style = MaterialTheme.typography.headlineMedium.copy(
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                )
+                Text(
+                    text = "Find stories, translations & authors",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f)
+                )
             }
 
-            TextField(
-                value = keyword,
-                onValueChange = { keyword = it },
-                modifier = Modifier.fillMaxWidth(),
-                label = {
-                    Text(text = stringResource(id = R.string.search_placeholder))
-                },
-                leadingIcon = {
-                    Icon(imageVector = Icons.Filled.Search, contentDescription = "")
-                },
-                keyboardOptions = KeyboardOptions(
-                    imeAction = ImeAction.Search
-                ),
-                keyboardActions = KeyboardActions(
-                    onSearch = {
-                        val trimmed = keyword.trim()
-                        if (trimmed.isNotEmpty()) {
-                            navigator.push(SearchPage(trimmed))
-                            scope.launch(Dispatchers.IO) {
-                                val dao = MainActivity.database.searchHistoryDao()
-                                val history = if (dao.exists(trimmed)) {
-                                    dao.findByKeyword(trimmed)
-                                } else {
-                                    SearchHistory(
-                                        keyword = trimmed,
-                                        time = currentDateString()
-                                    )
-                                }
-                                history.time = currentDateString()
-                                dao.insertAll(history)
-                            }
-                        }
-                    }
-                ),
-                singleLine = true
-            )
-
-            Text(
-                text = stringResource(id = R.string.search_history),
-                fontSize = 20.sp,
-                modifier = Modifier.padding(24.dp)
-            )
-
-            if (loadingHistory) {
-                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    CircularProgressIndicator()
-                }
-            } else {
-                Column(
-                    modifier = Modifier.fillMaxSize()
-                ) {
-                    for (history in histories.toList()
-                        .sortedByDescending { it.time.formattedDate() }) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable {
-                                    navigator.push(SearchPage(history.keyword))
-                                    scope.launch(Dispatchers.IO) {
-                                        history.time = currentDateString()
-                                        MainActivity.database
-                                            .searchHistoryDao()
-                                            .update(history)
-                                    }
-                                }
-                        ) {
-                            Text(
-                                text = history.keyword,
-                                modifier = Modifier.padding(
-                                    top = 24.dp,
-                                    bottom = 24.dp,
-                                    start = 32.dp
+            // Search Bar
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp)
+            ) {
+                OutlinedTextField(
+                    value = keyword,
+                    onValueChange = { keyword = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    placeholder = {
+                        Text(
+                            text = stringResource(id = R.string.search_placeholder),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                        )
+                    },
+                    leadingIcon = {
+                        Icon(
+                            imageVector = Icons.Filled.Search,
+                            contentDescription = "Search",
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                    },
+                    trailingIcon = {
+                        if (keyword.isNotEmpty()) {
+                            IconButton(onClick = { keyword = "" }) {
+                                Icon(
+                                    imageVector = Icons.Filled.Clear,
+                                    contentDescription = "Clear",
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
-                            )
-                            Spacer(modifier = Modifier.weight(1f))
-                            TextButton(
-                                onClick = {
-                                    histories.remove(history)
-                                    scope.launch(Dispatchers.IO) {
-                                        MainActivity.database.searchHistoryDao().delete(history)
-                                    }
-                                },
-                                modifier = Modifier
-                                    .padding(top = 16.dp, bottom = 16.dp, end = 32.dp)
-                                    .size(40.dp)
-                            ) {
-                                Icon(imageVector = Icons.Filled.Close, contentDescription = "")
                             }
                         }
-                        HorizontalDivider(
-                            thickness = 1.dp,
-                            modifier = Modifier.padding(start = 16.dp, end = 16.dp)
+                    },
+                    shape = RoundedCornerShape(24.dp),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
+                        unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.25f),
+                        focusedBorderColor = MaterialTheme.colorScheme.primary,
+                        unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+                    ),
+                    keyboardOptions = KeyboardOptions(
+                        imeAction = ImeAction.Search
+                    ),
+                    keyboardActions = KeyboardActions(
+                        onSearch = { performSearch(keyword) }
+                    ),
+                    singleLine = true
+                )
+            }
+
+            Spacer(modifier = Modifier.height(24.dp))
+
+            // History Section Header
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    imageVector = Icons.Filled.History,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(20.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = stringResource(id = R.string.search_history),
+                    style = MaterialTheme.typography.titleMedium.copy(
+                        fontWeight = FontWeight.Bold
+                    ),
+                    color = MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.weight(1f)
+                )
+
+                if (histories.isNotEmpty()) {
+                    TextButton(
+                        onClick = {
+                            val items = histories.toList()
+                            histories.clear()
+                            scope.launch(Dispatchers.IO) {
+                                for (item in items) {
+                                    MainActivity.database.searchHistoryDao().delete(item)
+                                }
+                            }
+                        }
+                    ) {
+                        Text(
+                            text = "Clear",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.error
                         )
                     }
                 }
             }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            if (loadingHistory) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(100.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    CircularProgressIndicator(strokeWidth = 2.5.dp, modifier = Modifier.size(28.dp))
+                }
+            } else if (histories.isEmpty()) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 48.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Box(
+                            modifier = Modifier
+                                .size(56.dp)
+                                .clip(CircleShape)
+                                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.Search,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                                modifier = Modifier.size(28.dp)
+                            )
+                        }
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Text(
+                            text = "No search history yet",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                        )
+                    }
+                }
+            } else {
+                FlowRow(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    val sortedList = histories.toList()
+                        .sortedByDescending { it.time.formattedDate() }
+
+                    for (history in sortedList) {
+                        Surface(
+                            shape = RoundedCornerShape(20.dp),
+                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
+                            modifier = Modifier.clickable {
+                                keyword = history.keyword
+                                performSearch(history.keyword)
+                            }
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(start = 12.dp, end = 6.dp, top = 6.dp, bottom = 6.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = history.keyword,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                IconButton(
+                                    onClick = {
+                                        histories.remove(history)
+                                        scope.launch(Dispatchers.IO) {
+                                            MainActivity.database.searchHistoryDao().delete(history)
+                                        }
+                                    },
+                                    modifier = Modifier.size(22.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Filled.Close,
+                                        contentDescription = "Remove",
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                                        modifier = Modifier.size(14.dp)
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(40.dp))
         }
 
         LaunchedEffect(currentCompositeKeyHash) {

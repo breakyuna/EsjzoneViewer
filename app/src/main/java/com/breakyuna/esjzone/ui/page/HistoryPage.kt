@@ -1,8 +1,10 @@
 package com.breakyuna.esjzone.ui.page
 
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -11,16 +13,21 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -38,6 +45,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
@@ -45,6 +53,7 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
@@ -163,68 +172,76 @@ object HistoryPage : Screen {
                                     var touchPoint: Offset by remember { mutableStateOf(Offset.Zero) }
 
                                     if (!deleted) {
-                                        BoxWithConstraints {
-                                            val maxHeightScope by remember {
-                                                derivedStateOf {
-                                                    maxHeight
+                                        Card(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .padding(horizontal = 12.dp, vertical = 6.dp)
+                                                .pointerInput(Unit) {
+                                                    detectTapGestures(
+                                                        onPress = {
+                                                            touchPoint = it
+                                                        },
+                                                        onLongPress = {
+                                                            touchPoint = it
+                                                        }
+                                                    )
                                                 }
-                                            }
-                                            Card(
-                                                modifier = Modifier
-                                                    .fillMaxSize()
-                                                    .padding(start = 8.dp, top = 4.dp, end = 8.dp)
-                                                    .pointerInput(Unit) {
-                                                        detectTapGestures(
-                                                            onPress = {
-                                                                touchPoint = it
-                                                            },
-                                                            onLongPress = {
-                                                                touchPoint = it
-                                                            }
-                                                        )
-                                                    }
-                                                    .combinedClickable(
-                                                        onClick = {
-                                                            navigator.push(
-                                                                NovelPage(
-                                                                  historyNovel,
-                                                                  historyChapter
-                                                                )
+                                                .combinedClickable(
+                                                    onClick = {
+                                                        navigator.push(
+                                                            NovelPage(
+                                                                historyNovel,
+                                                                historyChapter
                                                             )
-                                                        },
-                                                        onLongClick = {
-                                                            expanded = true
-                                                        }
-                                                    )
-                                            ) {
-                                                val (xDp, yDp) = with(density) {
-                                                    (touchPoint.x.toDp()) to (touchPoint.y.toDp())
-                                                }
-                                                DropdownMenu(
-                                                    expanded = expanded,
-                                                    offset = DpOffset(xDp, yDp),
-                                                    onDismissRequest = {
-                                                        expanded = false
+                                                        )
+                                                    },
+                                                    onLongClick = {
+                                                        expanded = true
                                                     }
-                                                ) {
-                                                    DropdownMenuItem(
-                                                        onClick = {
-                                                            scope.launch(Dispatchers.IO) {
-                                                                EsjzoneClient.removeHistory(
-                                                                    authorization,
-                                                                    historyNovel.vid
-                                                                )
-                                                            }
-                                                            expanded = false
-                                                            deleted = true
-                                                        },
-                                                        text = {
-                                                            Text(text = stringResource(id = R.string.delete_history))
-                                                        }
-                                                    )
+                                                ),
+                                            shape = RoundedCornerShape(16.dp),
+                                            colors = CardDefaults.cardColors(
+                                                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                                            )
+                                        ) {
+                                            val (xDp, yDp) = with(density) {
+                                                (touchPoint.x.toDp()) to (touchPoint.y.toDp())
+                                            }
+                                            DropdownMenu(
+                                                expanded = expanded,
+                                                offset = DpOffset(xDp, yDp),
+                                                onDismissRequest = {
+                                                    expanded = false
                                                 }
-                                                Row(
-                                                    verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                DropdownMenuItem(
+                                                    onClick = {
+                                                        scope.launch(Dispatchers.IO) {
+                                                            EsjzoneClient.removeHistory(
+                                                                authorization,
+                                                                historyNovel.vid
+                                                            )
+                                                        }
+                                                        expanded = false
+                                                        deleted = true
+                                                    },
+                                                    text = {
+                                                        Text(text = stringResource(id = R.string.delete_history))
+                                                    }
+                                                )
+                                            }
+                                            Row(
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .padding(10.dp),
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                Box(
+                                                    modifier = Modifier
+                                                        .width(72.dp)
+                                                        .height(100.dp)
+                                                        .clip(RoundedCornerShape(10.dp))
+                                                        .background(MaterialTheme.colorScheme.surface)
                                                 ) {
                                                     SubcomposeAsyncImage(
                                                         model = ImageRequest.Builder(LocalContext.current)
@@ -234,55 +251,56 @@ object HistoryPage : Screen {
                                                         contentDescription = historyNovel.name,
                                                         imageLoader = MainActivity.imageLoader,
                                                         loading = {
-                                                            CircularProgressIndicator()
+                                                            CircularProgressIndicator(strokeWidth = 2.dp)
                                                         },
-                                                        contentScale = ContentScale.FillHeight,
-                                                        modifier = Modifier
-                                                            .padding(8.dp)
-                                                            .height((configuration.screenHeightDp / 10).dp)
-                                                            .width((configuration.screenWidthDp / 7).dp)
+                                                        contentScale = ContentScale.Crop,
+                                                        modifier = Modifier.fillMaxSize()
                                                     )
-                                                    Column(
-                                                        modifier = Modifier.weight(1f)
-                                                    ) {
-                                                        Text(
-                                                            text = novel.name,
-                                                            maxLines = 1,
-                                                            overflow = TextOverflow.Ellipsis,
-                                                            modifier = Modifier.padding(8.dp)
-                                                        )
-                                                        Text(
-                                                            text = historyChapter.value?.name ?: "",
-                                                            maxLines = 1,
-                                                            overflow = TextOverflow.Ellipsis,
-                                                            fontSize = 10.sp,
-                                                            modifier = Modifier.align(Alignment.CenterHorizontally)
-                                                        )
-                                                    }
-                                                    TextButton(
-                                                        onClick = {
-                                                            rememberedHistory?.let { currChapter ->
-                                                                navigator.push(
-                                                                    ChapterPage(
-                                                                        novel.id(),
-                                                                        currChapter,
-                                                                        historyChapter
-                                                                    )
+                                                }
+
+                                                Spacer(modifier = Modifier.width(12.dp))
+
+                                                Column(
+                                                    modifier = Modifier.weight(1f)
+                                                ) {
+                                                    Text(
+                                                        text = novel.name,
+                                                        style = MaterialTheme.typography.titleSmall.copy(
+                                                            fontWeight = FontWeight.SemiBold
+                                                        ),
+                                                        maxLines = 2,
+                                                        overflow = TextOverflow.Ellipsis,
+                                                        color = MaterialTheme.colorScheme.onSurface
+                                                    )
+                                                    Spacer(modifier = Modifier.height(6.dp))
+                                                    Text(
+                                                        text = historyChapter.value?.name ?: "",
+                                                        style = MaterialTheme.typography.bodySmall,
+                                                        color = MaterialTheme.colorScheme.primary,
+                                                        maxLines = 1,
+                                                        overflow = TextOverflow.Ellipsis
+                                                    )
+                                                }
+
+                                                Spacer(modifier = Modifier.width(8.dp))
+
+                                                FilledTonalIconButton(
+                                                    onClick = {
+                                                        rememberedHistory?.let { currChapter ->
+                                                            navigator.push(
+                                                                ChapterPage(
+                                                                    novel.id(),
+                                                                    currChapter,
+                                                                    historyChapter
                                                                 )
-                                                            }
-                                                        },
-                                                        modifier = Modifier.padding(8.dp)
-                                                    ) {
-                                                        Column(
-                                                            horizontalAlignment = Alignment.CenterHorizontally
-                                                        ) {
-                                                            Icon(
-                                                                imageVector = Icons.Filled.PlayArrow,
-                                                                contentDescription = ""
                                                             )
-                                                            Text(text = stringResource(id = R.string.continue_reading))
                                                         }
                                                     }
+                                                ) {
+                                                    Icon(
+                                                        imageVector = Icons.Filled.PlayArrow,
+                                                        contentDescription = stringResource(id = R.string.continue_reading)
+                                                    )
                                                 }
                                             }
                                         }

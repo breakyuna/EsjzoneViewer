@@ -2,10 +2,13 @@ package com.breakyuna.esjzone.ui.page
 
 import android.annotation.SuppressLint
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -14,15 +17,25 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ElevatedCard
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
 import androidx.compose.material3.LocalTextStyle
-import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -40,10 +53,12 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -78,13 +93,11 @@ class ChapterPage(
     @Composable
     override fun Content() {
         val navigator = LocalBaseNavigator.current
-
         val authorization = LocalAuthorization.current
 
         val textMeasurer = rememberTextMeasurer()
         val textStyle = LocalTextStyle.current
         val density = LocalDensity.current
-
         val scope = rememberCoroutineScope()
 
         val requestedChapter = rememberSaveable {
@@ -113,7 +126,7 @@ class ChapterPage(
             mutableStateOf(chapter.name)
         }
 
-        if (scrollState.isScrollInProgress) {
+        if (scrollState.isScrollInProgress && scrollState.maxValue > 0) {
             sliderPosition = scrollState.value.toFloat() / scrollState.maxValue.toFloat()
         }
 
@@ -121,11 +134,12 @@ class ChapterPage(
             topBar = {
                 AnimatedVisibility(
                     visible = showToolbar,
-                    enter = slideInVertically(),
-                    exit = shrinkVertically()
+                    enter = slideInVertically() + fadeIn(),
+                    exit = slideOutVertically() + fadeOut()
                 ) {
                     Surface(
-                        modifier = Modifier.fillMaxWidth()
+                        modifier = Modifier.fillMaxWidth(),
+                        shadowElevation = 4.dp
                     ) {
                         AppBar(
                             title = chapterName,
@@ -139,22 +153,24 @@ class ChapterPage(
             bottomBar = {
                 AnimatedVisibility(
                     visible = showToolbar,
-                    enter = slideInVertically(
-                        initialOffsetY = {
-                            it / 2
-                        },
-                    ),
-                    exit = shrinkVertically(shrinkTowards = Alignment.Top)
+                    enter = slideInVertically(initialOffsetY = { it }) + fadeIn(),
+                    exit = slideOutVertically(targetOffsetY = { it }) + fadeOut()
                 ) {
-                    Surface(
-                        modifier = Modifier.fillMaxWidth()
+                    ElevatedCard(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 12.dp, vertical = 12.dp),
+                        shape = RoundedCornerShape(20.dp),
+                        colors = CardDefaults.elevatedCardColors(
+                            containerColor = MaterialTheme.colorScheme.surface
+                        ),
+                        elevation = CardDefaults.elevatedCardElevation(defaultElevation = 8.dp)
                     ) {
                         Column(
-                            modifier = Modifier.fillMaxWidth()
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(16.dp)
                         ) {
-                            HorizontalDivider(thickness = 2.dp)
-                            Spacer(modifier = Modifier.height(10.dp))
-
                             if (state is ChapterPageModel.State.Result) {
                                 var rememberedHistory by rememberSaveable {
                                     history
@@ -164,11 +180,13 @@ class ChapterPage(
                                 val detailed by remember {
                                     result.detailed
                                 }
+
                                 Row(
-                                    modifier = Modifier.fillMaxWidth()
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween
                                 ) {
-                                    Spacer(modifier = Modifier.width(5.dp))
-                                    OutlinedButton(
+                                    FilledTonalButton(
                                         enabled = detailed.previous != null,
                                         onClick = {
                                             detailed.previous?.let { previous ->
@@ -183,24 +201,25 @@ class ChapterPage(
                                                     scrollState.scrollTo(0)
                                                 }
                                             }
-                                        }
+                                        },
+                                        shape = RoundedCornerShape(12.dp)
                                     ) {
+                                        Icon(
+                                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                                            contentDescription = null,
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(4.dp))
                                         Text(text = stringResource(id = R.string.previous_chapter))
                                     }
-                                    Spacer(modifier = Modifier.width(5.dp))
-                                    Slider(
-                                        value = sliderPosition,
-                                        onValueChange = {
-                                            sliderPosition = it
-                                            val scrollTo = (maxScroll * it).toInt()
-                                            scope.launch(Dispatchers.Main) {
-                                                scrollState.animateScrollTo(scrollTo)
-                                            }
-                                        },
-                                        modifier = Modifier.weight(1f)
+
+                                    Text(
+                                        text = "${(sliderPosition * 100).toInt()}%",
+                                        style = MaterialTheme.typography.labelMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
-                                    Spacer(modifier = Modifier.width(5.dp))
-                                    OutlinedButton(
+
+                                    FilledTonalButton(
                                         enabled = detailed.next != null,
                                         onClick = {
                                             detailed.next?.let { next ->
@@ -215,41 +234,37 @@ class ChapterPage(
                                                     scrollState.scrollTo(0)
                                                 }
                                             }
+                                        },
+                                        shape = RoundedCornerShape(12.dp)
+                                    ) {
+                                        Text(text = stringResource(id = R.string.next_chapter))
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Icon(
+                                            imageVector = Icons.AutoMirrored.Filled.ArrowForward,
+                                            contentDescription = null,
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                    }
+                                }
+
+                                Spacer(modifier = Modifier.height(8.dp))
+
+                                Slider(
+                                    value = sliderPosition,
+                                    onValueChange = {
+                                        sliderPosition = it
+                                        val scrollTo = (maxScroll * it).toInt()
+                                        scope.launch(Dispatchers.Main) {
+                                            scrollState.animateScrollTo(scrollTo)
                                         }
-                                    ) {
-                                        Text(text = stringResource(id = R.string.next_chapter))
-                                    }
-                                    Spacer(modifier = Modifier.width(5.dp))
-                                }
-                            } else {
-                                Row(
+                                    },
+                                    colors = SliderDefaults.colors(
+                                        thumbColor = MaterialTheme.colorScheme.primary,
+                                        activeTrackColor = MaterialTheme.colorScheme.primary
+                                    ),
                                     modifier = Modifier.fillMaxWidth()
-                                ) {
-                                    Spacer(modifier = Modifier.width(5.dp))
-                                    OutlinedButton(
-                                        enabled = false,
-                                        onClick = {}
-                                    ) {
-                                        Text(text = stringResource(id = R.string.previous_chapter))
-                                    }
-                                    Spacer(modifier = Modifier.width(5.dp))
-                                    Slider(
-                                        value = 0f,
-                                        onValueChange = {},
-                                        enabled = false,
-                                        modifier = Modifier.weight(1f)
-                                    )
-                                    Spacer(modifier = Modifier.width(5.dp))
-                                    OutlinedButton(
-                                        enabled = false,
-                                        onClick = {}
-                                    ) {
-                                        Text(text = stringResource(id = R.string.next_chapter))
-                                    }
-                                    Spacer(modifier = Modifier.width(5.dp))
-                                }
+                                )
                             }
-                            Spacer(modifier = Modifier.height(30.dp))
                         }
                     }
                 }
@@ -259,34 +274,42 @@ class ChapterPage(
             Surface(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(16.dp)
                     .clickable(
                         interactionSource = interactionSource,
                         indication = null
-                    ) { showToolbar = !showToolbar }
+                    ) { showToolbar = !showToolbar },
+                color = MaterialTheme.colorScheme.background
             ) {
                 Column(
                     modifier = Modifier
                         .fillMaxSize()
-                        .verticalScroll(
-                            scrollState
-                        )
+                        .padding(horizontal = 20.dp)
+                        .verticalScroll(scrollState)
                 ) {
+                    Spacer(modifier = Modifier.height(32.dp))
+
                     Text(
                         text = chapter.name,
-                        fontSize = 28.sp,
-                        modifier = Modifier.padding(start = 16.dp, bottom = 32.dp, top = 32.dp)
+                        style = MaterialTheme.typography.headlineSmall.copy(
+                            fontWeight = FontWeight.Bold,
+                            lineHeight = 34.sp
+                        ),
+                        color = MaterialTheme.colorScheme.onBackground,
+                        modifier = Modifier.padding(bottom = 24.dp)
                     )
 
                     when (state) {
                         is ChapterPageModel.State.Loading -> Box(
-                            modifier = Modifier.fillMaxSize(),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(300.dp),
                             contentAlignment = Alignment.Center
-                        ) { CircularProgressIndicator() }
+                        ) {
+                            CircularProgressIndicator(strokeWidth = 2.5.dp)
+                        }
 
                         is ChapterPageModel.State.Result -> Column(
-                            modifier = Modifier
-                                .fillMaxSize()
+                            modifier = Modifier.fillMaxSize()
                         ) {
                             val result = state as ChapterPageModel.State.Result
                             for (component in result.detailed.value.content) {
@@ -298,39 +321,41 @@ class ChapterPage(
                                     )
                                     Text(
                                         text = str,
-                                        inlineContent = inlines
+                                        inlineContent = inlines,
+                                        style = MaterialTheme.typography.bodyLarge.copy(
+                                            lineHeight = 28.sp,
+                                            letterSpacing = 0.3.sp
+                                        ),
+                                        color = MaterialTheme.colorScheme.onBackground
                                     )
-                                    /*
-                                                        Text(
-                                                            text = component.toAnnotatedString(),
-                                                            modifier = Modifier.padding(3.dp)
-                                                        )
-                                                        */
                                 } else if (component is ImageComponent) {
                                     SubcomposeAsyncImage(
                                         model = ImageRequest.Builder(LocalContext.current)
                                             .data(component.url)
                                             .crossfade(true)
                                             .build(),
-                                        contentDescription = "description",
+                                        contentDescription = "chapter image",
                                         imageLoader = MainActivity.imageLoader,
                                         loading = {
-                                            CircularProgressIndicator()
+                                            Box(
+                                                modifier = Modifier.fillMaxWidth().height(150.dp),
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                CircularProgressIndicator(strokeWidth = 2.dp)
+                                            }
                                         },
                                         contentScale = ContentScale.FillWidth,
                                         modifier = Modifier
                                             .fillMaxWidth()
-                                            .padding(
-                                                start = 8.dp,
-                                                end = 8.dp,
-                                                top = 3.dp,
-                                                bottom = 3.dp
-                                            )
+                                            .padding(vertical = 12.dp)
+                                            .clip(RoundedCornerShape(8.dp))
                                     )
                                 }
                             }
                         }
                     }
+
+                    Spacer(modifier = Modifier.height(80.dp))
                 }
             }
         }

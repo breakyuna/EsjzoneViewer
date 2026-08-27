@@ -4,13 +4,18 @@ import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
 import cafe.adriel.voyager.core.screen.Screen
 import cafe.adriel.voyager.navigator.Navigator
 import cafe.adriel.voyager.navigator.tab.CurrentTab
@@ -52,7 +57,10 @@ private object TabScreen : Screen {
         TabNavigator(tab = HomeTab) {
             Scaffold(
                 bottomBar = {
-                    NavigationBar {
+                    NavigationBar(
+                        tonalElevation = 3.dp,
+                        containerColor = MaterialTheme.colorScheme.surface
+                    ) {
                         TabNavigationItem(tab = HomeTab)
                         TabNavigationItem(tab = CategoryTab)
                         TabNavigationItem(tab = SearchTab)
@@ -63,7 +71,8 @@ private object TabScreen : Screen {
                 Surface(
                     modifier = Modifier
                         .fillMaxSize()
-                        .padding(it)
+                        .padding(it),
+                    color = MaterialTheme.colorScheme.background
                 ) {
                     CurrentTab()
                 }
@@ -76,13 +85,28 @@ private object TabScreen : Screen {
 @Composable
 private fun RowScope.TabNavigationItem(tab: Tab) {
     val tabNavigator = LocalTabNavigator.current
+    val isSelected = tabNavigator.current == tab
 
     NavigationBarItem(
-        selected = tabNavigator.current == tab,
+        selected = isSelected,
         onClick = { tabNavigator.current = tab },
         icon = {
-            if (tab.options.icon != null)
+            if (tab.options.icon != null) {
                 Icon(painter = tab.options.icon!!, contentDescription = tab.options.title)
-        }
+            }
+        },
+        label = {
+            Text(
+                text = tab.options.title,
+                fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal
+            )
+        },
+        colors = NavigationBarItemDefaults.colors(
+            selectedIconColor = MaterialTheme.colorScheme.onPrimaryContainer,
+            selectedTextColor = MaterialTheme.colorScheme.primary,
+            indicatorColor = MaterialTheme.colorScheme.primaryContainer,
+            unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+            unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+        )
     )
 }

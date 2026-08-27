@@ -6,17 +6,24 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.LocalTextStyle
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
@@ -45,16 +52,23 @@ fun Description(description: NovelDescription, modifier: Modifier = Modifier) {
     val density = LocalDensity.current
 
     Card(
-        modifier = modifier.fillMaxWidth()
+        modifier = modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(18.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)
+        )
     ) {
         Column(
-            modifier = Modifier.padding(8.dp)
+            modifier = Modifier.padding(18.dp)
         ) {
             Text(
                 text = stringResource(id = R.string.description),
-                fontSize = 20.sp,
-                modifier = Modifier.padding(4.dp)
+                style = MaterialTheme.typography.titleMedium.copy(
+                    fontWeight = FontWeight.Bold
+                ),
+                color = MaterialTheme.colorScheme.primary
             )
+            Spacer(modifier = Modifier.height(10.dp))
             for (component in description.components) {
                 if (component is TextComponent) {
                     val (str, inlines) = component.toInlineAnnotatedString(
@@ -64,14 +78,12 @@ fun Description(description: NovelDescription, modifier: Modifier = Modifier) {
                     )
                     Text(
                         text = str,
-                        inlineContent = inlines
+                        inlineContent = inlines,
+                        style = MaterialTheme.typography.bodyMedium.copy(
+                            lineHeight = 22.sp
+                        ),
+                        color = MaterialTheme.colorScheme.onSurface
                     )
-                    /*
-                                        Text(
-                                            text = component.toAnnotatedString(),
-                                            modifier = Modifier.padding(3.dp)
-                                        )
-                                        */
                 } else if (component is ImageComponent) {
                     SubcomposeAsyncImage(
                         model = ImageRequest.Builder(LocalContext.current)
@@ -81,17 +93,13 @@ fun Description(description: NovelDescription, modifier: Modifier = Modifier) {
                         contentDescription = "description",
                         imageLoader = MainActivity.imageLoader,
                         loading = {
-                            CircularProgressIndicator()
+                            CircularProgressIndicator(strokeWidth = 2.dp)
                         },
                         contentScale = ContentScale.FillWidth,
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(
-                                start = 8.dp,
-                                end = 8.dp,
-                                top = 3.dp,
-                                bottom = 3.dp
-                            )
+                            .padding(vertical = 6.dp)
+                            .clip(RoundedCornerShape(8.dp))
                     )
                 }
             }

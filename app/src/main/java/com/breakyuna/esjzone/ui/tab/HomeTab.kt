@@ -1,29 +1,44 @@
 package com.breakyuna.esjzone.ui.tab
 
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.IntrinsicSize
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowForwardIos
+import androidx.compose.material.icons.filled.AutoStories
 import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.LocalFireDepartment
+import androidx.compose.material.icons.filled.Recommend
 import androidx.compose.material.icons.filled.RemoveRedEye
 import androidx.compose.material.icons.filled.ThumbUp
+import androidx.compose.material.icons.filled.Translate
 import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -34,9 +49,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.vector.rememberVectorPainter
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -44,7 +60,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.em
+import androidx.compose.ui.unit.sp
 import cafe.adriel.voyager.core.model.StateScreenModel
 import cafe.adriel.voyager.core.model.rememberScreenModel
 import cafe.adriel.voyager.navigator.tab.Tab
@@ -63,7 +79,6 @@ import com.breakyuna.esjzone.network.LocalAuthorization
 import com.breakyuna.esjzone.network.features.getHomeData
 import com.breakyuna.esjzone.novellibrary.data.HomeData
 import com.breakyuna.esjzone.novellibrary.novel.CoveredNovel
-import com.breakyuna.esjzone.ui.compose.SubcomposeRow
 import com.breakyuna.esjzone.ui.navigation.LocalBaseNavigator
 import com.breakyuna.esjzone.ui.page.NovelListPage
 import com.breakyuna.esjzone.ui.page.NovelPage
@@ -83,205 +98,124 @@ object HomeTab : Tab {
     @Composable
     override fun Content() {
         val navigator = LocalBaseNavigator.current
-
         val authorization = LocalAuthorization.current
         val scope = rememberCoroutineScope()
 
         val homeTabModel = rememberScreenModel { HomeTabModel(authorization, scope) }
         val state by homeTabModel.state.collectAsState()
 
+        val adult by remember {
+            GlobalSettings.adult
+        }
+
         Column(
             modifier = Modifier
                 .fillMaxSize()
+                .statusBarsPadding()
                 .verticalScroll(rememberScrollState())
         ) {
-            Text(
-                text = stringResource(id = R.string.app_name),
-                fontSize = 8.0.em,
-                fontWeight = FontWeight.Black,
-                modifier = Modifier.padding(
-                    top = 24.dp,
-                    start = 16.dp,
-                    bottom = 16.dp
-                )
+            // Header Banner
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp, vertical = 16.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = stringResource(id = R.string.app_name),
+                        style = MaterialTheme.typography.headlineMedium.copy(
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    )
+                    Text(
+                        text = "Explore light novels & translations",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f)
+                    )
+                }
+            }
+
+            // Recommendation Section
+            SectionHeader(
+                icon = Icons.Filled.Recommend,
+                title = stringResource(id = R.string.tab_home_recommendation),
+                onMoreClick = null
             )
-
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(16.dp)
-            ) {
-                Row(
-                    modifier = Modifier.clickable {
-                        navigator.push(NovelListPage(1, 1, false))
-                    }
-                ) {
-                    Text(
-                        text = stringResource(id = R.string.tab_home_recentlyupdate_tranlated),
-                        fontSize = 6.em,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier
-                            .padding(8.dp)
-                    )
-                    Spacer(modifier = Modifier.weight(1f))
-                    Icon(
-                        imageVector = Icons.AutoMirrored.Filled.ArrowForwardIos,
-                        contentDescription = "",
-                        modifier = Modifier
-                            .padding(10.dp)
-                    )
-                }
-
-                if (state !is HomeTabModel.State.Result) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.align(Alignment.CenterHorizontally)
-                    )
-                } else {
-                    NovelSets(novels = (state as HomeTabModel.State.Result).homeData.recentlyUpdateTranslated)
-                }
-
+            if (state !is HomeTabModel.State.Result) {
+                LoadingPlaceholder()
+            } else {
+                NovelSets(novels = (state as HomeTabModel.State.Result).homeData.recommendation)
             }
 
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(16.dp)
-            ) {
-                Row(
-                    modifier = Modifier.clickable {
-                        navigator.push(NovelListPage(2, 1, false))
-                    }
-                ) {
-                    Text(
-                        text = stringResource(id = R.string.tab_home_recentlyupdate_original),
-                        fontSize = 6.em,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier
-                            .padding(8.dp)
-                    )
-                    Spacer(modifier = Modifier.weight(1f))
-                    Icon(
-                        imageVector = Icons.AutoMirrored.Filled.ArrowForwardIos,
-                        contentDescription = "",
-                        modifier = Modifier
-                            .padding(10.dp)
-                    )
-                }
+            Spacer(modifier = Modifier.height(16.dp))
 
-                if (state !is HomeTabModel.State.Result) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.align(Alignment.CenterHorizontally)
-                    )
-                } else {
-                    NovelSets(novels = (state as HomeTabModel.State.Result).homeData.recentlyUpdateOriginal)
+            // Translated Section
+            SectionHeader(
+                icon = Icons.Filled.Translate,
+                title = stringResource(id = R.string.tab_home_recentlyupdate_tranlated),
+                onMoreClick = {
+                    navigator.push(NovelListPage(1, 1, false))
                 }
-
+            )
+            if (state !is HomeTabModel.State.Result) {
+                LoadingPlaceholder()
+            } else {
+                NovelSets(novels = (state as HomeTabModel.State.Result).homeData.recentlyUpdateTranslated)
             }
 
-            val adult by remember {
-                GlobalSettings.adult
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // Original Section
+            SectionHeader(
+                icon = Icons.Filled.AutoStories,
+                title = stringResource(id = R.string.tab_home_recentlyupdate_original),
+                onMoreClick = {
+                    navigator.push(NovelListPage(2, 1, false))
+                }
+            )
+            if (state !is HomeTabModel.State.Result) {
+                LoadingPlaceholder()
+            } else {
+                NovelSets(novels = (state as HomeTabModel.State.Result).homeData.recentlyUpdateOriginal)
             }
 
             if (adult) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp)
-                ) {
-                    Row(
-                        modifier = Modifier.clickable {
-                            navigator.push(NovelListPage(1, 1, true))
-                        }
-                    ) {
-                        Text(
-                            text = stringResource(id = R.string.tab_home_recentlyupdate_tranlated_r18),
-                            fontSize = 6.em,
-                            fontWeight = FontWeight.Bold,
-                            modifier = Modifier
-                                .padding(8.dp)
-                        )
-                        Spacer(modifier = Modifier.weight(1f))
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.ArrowForwardIos,
-                            contentDescription = "",
-                            modifier = Modifier
-                                .padding(10.dp)
-                        )
+                Spacer(modifier = Modifier.height(16.dp))
+
+                // Translated R18 Section
+                SectionHeader(
+                    icon = Icons.Filled.LocalFireDepartment,
+                    title = stringResource(id = R.string.tab_home_recentlyupdate_tranlated_r18),
+                    onMoreClick = {
+                        navigator.push(NovelListPage(1, 1, true))
                     }
-
-                    if (state !is HomeTabModel.State.Result) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.align(Alignment.CenterHorizontally)
-                        )
-                    } else {
-                        NovelSets(novels = (state as HomeTabModel.State.Result).homeData.recentlyUpdateTranslatedR18)
-                    }
-
-                }
-
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp)
-                ) {
-                    Row(
-                        modifier = Modifier.clickable {
-                            navigator.push(NovelListPage(2, 1, true))
-                        }
-                    ) {
-                        Text(
-                            text = stringResource(id = R.string.tab_home_recentlyupdate_original_r18),
-                            fontSize = 6.em,
-                            fontWeight = FontWeight.Bold,
-                            modifier = Modifier
-                                .padding(8.dp)
-                        )
-                        Spacer(modifier = Modifier.weight(1f))
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.ArrowForwardIos,
-                            contentDescription = "",
-                            modifier = Modifier
-                                .padding(10.dp)
-                        )
-                    }
-
-                    if (state !is HomeTabModel.State.Result) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.align(Alignment.CenterHorizontally)
-                        )
-                    } else {
-                        NovelSets(novels = (state as HomeTabModel.State.Result).homeData.recentlyUpdateOriginalR18)
-                    }
-
-                }
-            }
-
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(16.dp)
-            ) {
-                Row {
-                    Text(
-                        text = stringResource(id = R.string.tab_home_recommendation),
-                        fontSize = 6.em,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier
-                            .padding(8.dp)
-                    )
-                }
-
+                )
                 if (state !is HomeTabModel.State.Result) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.align(Alignment.CenterHorizontally)
-                    )
+                    LoadingPlaceholder()
                 } else {
-                    NovelSets(novels = (state as HomeTabModel.State.Result).homeData.recommendation)
+                    NovelSets(novels = (state as HomeTabModel.State.Result).homeData.recentlyUpdateTranslatedR18)
                 }
 
+                Spacer(modifier = Modifier.height(16.dp))
+
+                // Original R18 Section
+                SectionHeader(
+                    icon = Icons.Filled.LocalFireDepartment,
+                    title = stringResource(id = R.string.tab_home_recentlyupdate_original_r18),
+                    onMoreClick = {
+                        navigator.push(NovelListPage(2, 1, true))
+                    }
+                )
+                if (state !is HomeTabModel.State.Result) {
+                    LoadingPlaceholder()
+                } else {
+                    NovelSets(novels = (state as HomeTabModel.State.Result).homeData.recentlyUpdateOriginalR18)
+                }
             }
 
-            Spacer(modifier = Modifier.height(80.dp))
+            Spacer(modifier = Modifier.height(32.dp))
         }
 
         LaunchedEffect(currentCompositeKeyHash) {
@@ -289,6 +223,74 @@ object HomeTab : Tab {
         }
     }
 
+}
+
+@Composable
+private fun SectionHeader(
+    icon: ImageVector,
+    title: String,
+    onMoreClick: (() -> Unit)?
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .then(
+                if (onMoreClick != null) Modifier.clickable(onClick = onMoreClick)
+                else Modifier
+            )
+            .padding(horizontal = 16.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(
+            modifier = Modifier
+                .size(36.dp)
+                .clip(RoundedCornerShape(10.dp))
+                .background(MaterialTheme.colorScheme.primaryContainer),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                modifier = Modifier.size(20.dp)
+            )
+        }
+
+        Spacer(modifier = Modifier.width(12.dp))
+
+        Text(
+            text = title,
+            style = MaterialTheme.typography.titleMedium.copy(
+                fontWeight = FontWeight.Bold
+            ),
+            color = MaterialTheme.colorScheme.onSurface,
+            modifier = Modifier.weight(1f)
+        )
+
+        if (onMoreClick != null) {
+            Icon(
+                imageVector = Icons.AutoMirrored.Filled.ArrowForwardIos,
+                contentDescription = "More",
+                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                modifier = Modifier.size(16.dp)
+            )
+        }
+    }
+}
+
+@Composable
+private fun LoadingPlaceholder() {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(140.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        CircularProgressIndicator(
+            strokeWidth = 2.5.dp,
+            modifier = Modifier.size(32.dp)
+        )
+    }
 }
 
 class HomeTabModel(
@@ -317,32 +319,42 @@ class HomeTabModel(
 
 @Composable
 fun NovelSets(novels: List<CoveredNovel>) {
-    val configuration = LocalConfiguration.current
     val navigator = LocalBaseNavigator.current
-
     val adult by remember {
         GlobalSettings.adult
     }
 
     val finalNovels = novels.filter {
         !(it.isAdult && !adult)
-    }.toList()
+    }
 
-    SubcomposeRow(
-        modifier = Modifier.horizontalScroll(rememberScrollState())
+    LazyRow(
+        contentPadding = PaddingValues(horizontal = 16.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        val length = finalNovels.size
-        for (index in 0 until length) {
-            val novel = finalNovels[index]
+        items(finalNovels) { novel ->
             Card(
                 modifier = Modifier
-                    .widthIn(max = (configuration.screenWidthDp / 2).dp)
+                    .width(136.dp)
                     .clickable {
                         navigator.push(NovelPage(novel))
-                    }
+                    },
+                shape = RoundedCornerShape(14.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)
+                ),
+                elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
             ) {
-                Column {
-                    Column {
+                Column(
+                    modifier = Modifier.padding(8.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(180.dp)
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(MaterialTheme.colorScheme.surface)
+                    ) {
                         SubcomposeAsyncImage(
                             model = ImageRequest.Builder(LocalContext.current)
                                 .data(novel.coverUrl)
@@ -351,76 +363,113 @@ fun NovelSets(novels: List<CoveredNovel>) {
                             contentDescription = novel.name,
                             imageLoader = MainActivity.imageLoader,
                             loading = {
-                                CircularProgressIndicator()
+                                Box(
+                                    modifier = Modifier.fillMaxSize(),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(20.dp),
+                                        strokeWidth = 2.dp
+                                    )
+                                }
+                            },
+                            error = {
+                                Image(
+                                    painter = painterResource(id = R.drawable.empty_cover),
+                                    contentDescription = "",
+                                    contentScale = ContentScale.Crop,
+                                    modifier = Modifier.fillMaxSize()
+                                )
                             },
                             contentScale = ContentScale.Crop,
-                            modifier = Modifier
-                                .padding(8.dp)
-                                .height((configuration.screenHeightDp / 3.5).dp)
+                            modifier = Modifier.fillMaxSize()
                         )
-                        Text(
-                            text = novel.name,
-                            maxLines = 2,
-                            minLines = 2,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.padding(8.dp)
-                        )
+
+                        if (novel.isAdult) {
+                            Surface(
+                                modifier = Modifier
+                                    .align(Alignment.TopStart)
+                                    .padding(4.dp),
+                                shape = RoundedCornerShape(4.dp),
+                                color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.9f)
+                            ) {
+                                Text(
+                                    text = "18+",
+                                    color = MaterialTheme.colorScheme.onErrorContainer,
+                                    fontSize = 9.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
+                                )
+                            }
+                        }
                     }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    Text(
+                        text = novel.name,
+                        style = MaterialTheme.typography.bodyMedium.copy(
+                            fontWeight = FontWeight.SemiBold,
+                            lineHeight = 18.sp
+                        ),
+                        maxLines = 2,
+                        minLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+
+                    Spacer(modifier = Modifier.height(6.dp))
+
                     Row(
-                        modifier = Modifier
-                            .padding(8.dp)
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
                         Row(
-                            modifier = Modifier
-                                .padding(
-                                    top = 4.dp,
-                                    bottom = 4.dp,
-                                    start = 8.dp,
-                                    end = 4.dp
-                                )
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(3.dp)
                         ) {
                             Icon(
                                 imageVector = Icons.Filled.RemoveRedEye,
-                                contentDescription = ""
+                                contentDescription = "Views",
+                                modifier = Modifier.size(13.dp),
+                                tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.8f)
                             )
                             Text(
-                                text = "${novel.views}",
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                                fontSize = 3.em,
-                                modifier = Modifier.padding(start = 4.dp)
+                                text = formatCount(novel.views),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
-                        Spacer(modifier = Modifier.weight(1f))
+
                         Row(
-                            modifier = Modifier
-                                .padding(
-                                    top = 4.dp,
-                                    bottom = 4.dp,
-                                    start = 4.dp,
-                                    end = 8.dp
-                                )
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(3.dp)
                         ) {
                             Icon(
                                 imageVector = Icons.Filled.ThumbUp,
-                                contentDescription = ""
+                                contentDescription = "Likes",
+                                modifier = Modifier.size(12.dp),
+                                tint = MaterialTheme.colorScheme.tertiary.copy(alpha = 0.8f)
                             )
                             Text(
-                                text = "${novel.likes}",
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                                fontSize = 3.em,
-                                modifier = Modifier.padding(start = 4.dp)
+                                text = formatCount(novel.likes),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
                     }
                 }
             }
-
-            if (index != (length - 1)) {
-                Spacer(modifier = Modifier.width(8.dp))
-            }
         }
+    }
+}
+
+private fun formatCount(count: Int): String {
+    return when {
+        count >= 1_000_000 -> "%.1fM".format(count / 1_000_000.0)
+        count >= 1_000 -> "%.1fK".format(count / 1_000.0)
+        else -> count.toString()
     }
 }
 

@@ -1,19 +1,34 @@
 package com.breakyuna.esjzone.novellibrary.component
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.MenuBook
+import androidx.compose.material.icons.filled.Bookmark
+import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LocalTextStyle
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedCard
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.MutableState
@@ -24,9 +39,13 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.breakyuna.esjzone.network.EsjzoneXPaths
 import com.breakyuna.esjzone.novellibrary.novel.Chapter
 import com.breakyuna.esjzone.ui.navigation.LocalBaseNavigator
@@ -118,7 +137,11 @@ class TextItem(private val component: TextComponent) : Item {
         Text(
             text = str,
             inlineContent = inlines,
-            modifier = Modifier.padding(8.dp)
+            style = MaterialTheme.typography.bodyMedium.copy(
+                fontWeight = FontWeight.SemiBold
+            ),
+            color = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.padding(horizontal = 4.dp, vertical = 8.dp)
         )
     }
 
@@ -142,57 +165,60 @@ class ChapterItem(val chapter: Chapter) : Item {
             history
         }
 
-        if (historied && chapter == rememberedHistory) {
-            Card(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(8.dp)
-                    .clickable {
-                        if (chapter.url.contains("esjzone") || chapter.url.contains("forum"))
-                            navigator.push(ChapterPage(novelId, chapter, history))
-                    }
-            ) {
-                Text(
-                    text = chapter.name,
-                    modifier = Modifier.padding(
-                        start = 16.dp,
-                        end = 16.dp,
-                        top = 12.dp,
-                        bottom = 12.dp
-                    )
-                )
-            }
-            HorizontalDivider(
-                thickness = 2.dp,
-                modifier = Modifier.padding(start = 16.dp, end = 16.dp)
-            )
-        } else {
+        val isCurrent = (historied && chapter == rememberedHistory) || chapter.isHistory
+
+        Surface(
+            onClick = {
+                if (chapter.url.contains("esjzone") || chapter.url.contains("forum")) {
+                    historied = true
+                    rememberedHistory = this.chapter
+                    navigator.push(ChapterPage(novelId, chapter, history))
+                }
+            },
+            shape = RoundedCornerShape(12.dp),
+            color = if (isCurrent) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.25f),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 3.dp)
+        ) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(8.dp)
-                    .clickable {
-                        if (chapter.url.contains("esjzone") || chapter.url.contains("forum")) {
-                            historied = true
-                            rememberedHistory = this.chapter
-                            navigator.push(ChapterPage(novelId, chapter, history))
-                        }
-                    }
+                    .padding(horizontal = 14.dp, vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                Text(
-                    text = chapter.name,
-                    modifier = Modifier.padding(
-                        start = 16.dp,
-                        end = 16.dp,
-                        top = 12.dp,
-                        bottom = 12.dp
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    if (isCurrent) {
+                        Icon(
+                            imageVector = Icons.Filled.Bookmark,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                    }
+                    Text(
+                        text = chapter.name,
+                        style = MaterialTheme.typography.bodyMedium.copy(
+                            fontWeight = if (isCurrent) FontWeight.Bold else FontWeight.Normal
+                        ),
+                        color = if (isCurrent) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
                     )
+                }
+
+                Icon(
+                    imageVector = Icons.Default.ChevronRight,
+                    contentDescription = null,
+                    tint = if (isCurrent) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                    modifier = Modifier.size(18.dp)
                 )
             }
-            HorizontalDivider(
-                thickness = 2.dp,
-                modifier = Modifier.padding(start = 16.dp, end = 16.dp)
-            )
         }
     }
 
@@ -220,33 +246,37 @@ class ChapterListItem(private val name: TextComponent, val chapters: List<Chapte
             history
         }
 
-        OutlinedCard(
+        Card(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(8.dp)
+                .padding(vertical = 4.dp),
+            shape = RoundedCornerShape(14.dp),
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
+            )
         ) {
             var expanded by remember {
                 mutableStateOf(false)
             }
             Column(
-                modifier = Modifier
-                    .fillMaxWidth()
+                modifier = Modifier.fillMaxWidth()
             ) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clickable { expanded = !expanded },
+                        .clip(RoundedCornerShape(14.dp))
+                        .clickable { expanded = !expanded }
+                        .padding(horizontal = 14.dp, vertical = 12.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    val vector = if (expanded)
-                        Icons.Filled.ExpandLess
-                    else
-                        Icons.Filled.ExpandMore
                     Icon(
-                        imageVector = vector,
-                        contentDescription = "",
-                        modifier = Modifier.padding(12.dp)
+                        imageVector = Icons.Filled.Folder,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(18.dp)
                     )
+                    Spacer(modifier = Modifier.width(8.dp))
+
                     val (str, inlines) = name.toInlineAnnotatedString(
                         textMeasurer,
                         textStyle,
@@ -255,78 +285,89 @@ class ChapterListItem(private val name: TextComponent, val chapters: List<Chapte
                     Text(
                         text = str,
                         inlineContent = inlines,
-                        modifier = Modifier
-                            .padding(8.dp)
+                        style = MaterialTheme.typography.bodyMedium.copy(
+                            fontWeight = FontWeight.SemiBold
+                        ),
+                        color = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.weight(1f)
+                    )
+
+                    val vector = if (expanded)
+                        Icons.Filled.ExpandLess
+                    else
+                        Icons.Filled.ExpandMore
+                    Icon(
+                        imageVector = vector,
+                        contentDescription = if (expanded) "Collapse" else "Expand",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(20.dp)
                     )
                 }
+
                 AnimatedVisibility(expanded) {
-                    Column {
+                    Column(
+                        modifier = Modifier.padding(start = 12.dp, end = 12.dp, bottom = 10.dp)
+                    ) {
                         for (chapter in chapters) {
-                            if (chapter == rememberedHistory) {
-                                Card(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(
-                                            start = 8.dp,
-                                            end = 8.dp
+                            val isCurrent = (historied && chapter == rememberedHistory) || chapter.isHistory
+                            Surface(
+                                onClick = {
+                                    if (chapter.url.contains("esjzone") || chapter.url.contains("forum")) {
+                                        historied = true
+                                        rememberedHistory = chapter
+                                        navigator.push(
+                                            ChapterPage(
+                                                novelId,
+                                                chapter,
+                                                history
+                                            )
                                         )
-                                        .clickable {
-                                            if (chapter.url.contains("esjzone") || chapter.url.contains("forum"))
-                                                navigator.push(
-                                                    ChapterPage(
-                                                        novelId,
-                                                        chapter,
-                                                        history
-                                                    )
-                                                )
-                                        }
-                                ) {
-                                    Text(
-                                        text = chapter.name,
-                                        modifier = Modifier.padding(
-                                            start = 16.dp,
-                                            end = 16.dp,
-                                            top = 12.dp,
-                                            bottom = 12.dp
-                                        )
-                                    )
-                                }
-                            } else {
+                                    }
+                                },
+                                shape = RoundedCornerShape(10.dp),
+                                color = if (isCurrent) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface.copy(alpha = 0.6f),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 2.dp)
+                            ) {
                                 Row(
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .padding(
-                                            start = 8.dp,
-                                            end = 8.dp
-                                        )
-                                        .clickable {
-                                            if (chapter.url.contains("esjzone") || chapter.url.contains("forum")) {
-                                                historied = true
-                                                rememberedHistory = chapter
-                                                navigator.push(
-                                                    ChapterPage(
-                                                        novelId,
-                                                        chapter,
-                                                        history
-                                                    )
-                                                )
-                                            }
-                                        }
+                                        .padding(horizontal = 12.dp, vertical = 10.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween
                                 ) {
-                                    Text(
-                                        text = chapter.name,
-                                        modifier = Modifier.padding(
-                                            start = 16.dp,
-                                            end = 16.dp,
-                                            top = 12.dp,
-                                            bottom = 12.dp
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        modifier = Modifier.weight(1f)
+                                    ) {
+                                        if (isCurrent) {
+                                            Icon(
+                                                imageVector = Icons.Filled.Bookmark,
+                                                contentDescription = null,
+                                                tint = MaterialTheme.colorScheme.primary,
+                                                modifier = Modifier.size(14.dp)
+                                            )
+                                            Spacer(modifier = Modifier.width(6.dp))
+                                        }
+                                        Text(
+                                            text = chapter.name,
+                                            style = MaterialTheme.typography.bodySmall.copy(
+                                                fontWeight = if (isCurrent) FontWeight.Bold else FontWeight.Normal
+                                            ),
+                                            color = if (isCurrent) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface,
+                                            maxLines = 2,
+                                            overflow = TextOverflow.Ellipsis
                                         )
+                                    }
+
+                                    Icon(
+                                        imageVector = Icons.Default.ChevronRight,
+                                        contentDescription = null,
+                                        tint = if (isCurrent) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
+                                        modifier = Modifier.size(16.dp)
                                     )
                                 }
-                                HorizontalDivider(
-                                    thickness = 2.dp,
-                                    modifier = Modifier.padding(start = 16.dp, end = 16.dp)
-                                )
                             }
                         }
                     }
