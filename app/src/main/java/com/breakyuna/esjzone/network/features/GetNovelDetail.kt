@@ -42,8 +42,7 @@ fun EsjzoneClient.getNovelDetail(authorization: Authorization, novel: Novel): De
             .build()
     ).execute()
 
-    val responseBody = response.body?.string() ?: ""
-    response.close()
+    val responseBody = response.bodyStringOrEmpty()
 
     val document = Jsoup.parse(responseBody)
 
@@ -75,15 +74,13 @@ fun EsjzoneClient.getNovelDetail(authorization: Authorization, novel: Novel): De
     val descriptionElements = EsjzoneXPaths.Detail.Description.evaluate(document).elements
     val chapterListElements = EsjzoneXPaths.Detail.ChapterList.evaluate(document).elements
 
-    val description = if (descriptionElements.isEmpty())
-        NovelDescription(listOf())
-    else
-        analyseDescription(descriptionElements[0])
+    val description = descriptionElements.firstOrNull()
+        ?.let(::analyseDescription)
+        ?: NovelDescription(emptyList())
 
-    val chapterList = if (chapterListElements.isEmpty())
-        NovelChapterList(listOf())
-    else
-        analyseChapterList(chapterListElements[0])
+    val chapterList = chapterListElements.firstOrNull()
+        ?.let(::analyseChapterList)
+        ?: NovelChapterList(emptyList())
 
     return DetailedNovel(
         novel.name,

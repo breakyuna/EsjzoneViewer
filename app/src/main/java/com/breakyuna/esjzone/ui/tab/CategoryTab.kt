@@ -158,7 +158,7 @@ object CategoryTab : Tab {
                                     .fillMaxWidth()
                                     .aspectRatio(1.15f)
                                     .clickable {
-                                        navigator.push(CategoryPage(category))
+                                        navigator?.push(CategoryPage(category))
                                     },
                                 shape = RoundedCornerShape(18.dp),
                                 colors = CardDefaults.cardColors(

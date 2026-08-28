@@ -24,8 +24,7 @@ fun EsjzoneClient.getHistories(authorization: Authorization): List<HistoryNovel>
             .build()
     ).execute()
 
-    val responseBody = response.body?.string() ?: ""
-    response.close()
+    val responseBody = response.bodyStringOrEmpty()
 
     val document = Jsoup.parse(responseBody)
 
@@ -37,9 +36,9 @@ fun EsjzoneClient.getHistories(authorization: Authorization): List<HistoryNovel>
         val titleElements = EsjzoneXPaths.Profile.View.TitleAndUrl.evaluate(element).elements
         val chapterElements = EsjzoneXPaths.Profile.View.Chapter.evaluate(element).elements
 
-        if (titleElements.isNotEmpty() && chapterElements.isNotEmpty()) {
-            val novelData = titleElements[0]
-            val chapterData = chapterElements[0]
+        val novelData = titleElements.firstOrNull()
+        val chapterData = chapterElements.firstOrNull()
+        if (novelData != null && chapterData != null) {
             val chapterHref = chapterData.attr("href")
             val fullChapterUrl = if (chapterHref.startsWith("http://") || chapterHref.startsWith("https://")) {
                 chapterHref

@@ -6,6 +6,7 @@ import com.breakyuna.esjzone.network.EsjzoneClient
 import com.breakyuna.esjzone.network.EsjzoneUrls
 import com.breakyuna.esjzone.network.EsjzoneXPaths
 import com.breakyuna.esjzone.util.AppLogger
+import kotlinx.coroutines.CancellationException
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.jsoup.Jsoup
@@ -31,13 +32,14 @@ fun EsjzoneClient.isAuthorized(authorization: Authorization): Boolean {
                 .build()
         ).execute()
 
-        val responseBody = response.body?.string() ?: ""
-        response.close()
+        val responseBody = response.bodyStringOrEmpty()
 
         val document = Jsoup.parse(responseBody)
         val isAuth = EsjzoneXPaths.Profile.Username.evaluate(document).list().isNotEmpty()
         AppLogger.i("IsAuthorized", "Authorization check result: isAuthorized=$isAuth")
         isAuth
+    } catch (e: CancellationException) {
+        throw e
     } catch (e: Exception) {
         AppLogger.e("IsAuthorized", "Failed to check authorization due to network/parsing exception", e)
         false

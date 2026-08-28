@@ -11,14 +11,16 @@ import androidx.compose.ui.Modifier
 import cafe.adriel.voyager.core.screen.Screen
 import cafe.adriel.voyager.navigator.LocalNavigator
 import cafe.adriel.voyager.navigator.currentOrThrow
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import com.breakyuna.esjzone.GlobalSettings
 import com.breakyuna.esjzone.MainActivity
-import com.breakyuna.esjzone.database.entity.Cache
+import com.breakyuna.esjzone.database.dao.put
 import com.breakyuna.esjzone.network.Authorization
 import com.breakyuna.esjzone.network.EsjzoneClient
 import com.breakyuna.esjzone.network.features.isAuthorized
+import com.breakyuna.esjzone.util.AppLogger
 
 class LoadingScreen : Screen {
 
@@ -34,49 +36,42 @@ class LoadingScreen : Screen {
         }
 
         LaunchedEffect(currentCompositeKeyHash) {
-            launch(Dispatchers.IO) {
-                val dao = MainActivity.database.cacheDao()
+            val authorization = withContext(Dispatchers.IO) {
+                try {
+                    val dao = MainActivity.database.cacheDao()
+                    if (dao.findByKey("ews_key") == null) {
+                        dao.put("ews_key", "null")
+                    }
+                    if (dao.findByKey("ews_token") == null) {
+                        dao.put("ews_token", "null")
+                    }
+                    if (dao.findByKey("show_adult") == null) {
+                        dao.put("show_adult", "false")
+                    }
 
-                if (!dao.exists("ews_key")) {
-                    dao.insertNotExists(
-                        Cache(
-                            key = "ews_key",
-                            value = "null"
-                        )
-                    )
+                    val ewsKey = dao.findByKey("ews_key")?.value ?: "null"
+                    val ewsToken = dao.findByKey("ews_token")?.value ?: "null"
+                    GlobalSettings.adult.value =
+                        dao.findByKey("show_adult")?.value?.toBooleanStrictOrNull() ?: false
+
+                    val storedAuthorization = Authorization(ewsKey, ewsToken)
+                    if (EsjzoneClient.isAuthorized(authorization = storedAuthorization)) {
+                        storedAuthorization
+                    } else {
+                        null
+                    }
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    AppLogger.e("LoadingScreen", "Failed to restore local state", e)
+                    null
                 }
+            }
 
-                if (!dao.exists("ews_token")) {
-                    dao.insertNotExists(
-                        Cache(
-                            key = "ews_token",
-                            value = "null"
-                        )
-                    )
-                }
-
-                if (!dao.exists("show_adult")) {
-                    dao.insertNotExists(
-                        Cache(
-                            key = "show_adult",
-                            value = "false"
-                        )
-                    )
-                }
-
-                val ewsKey = dao.findByKey("ews_key")
-                val ewsToken = dao.findByKey("ews_token")
-
-                GlobalSettings.adult.value =
-                    dao.findByKey("show_adult").value.toBooleanStrictOrNull() ?: false
-
-                val authorization = Authorization(ewsKey.value, ewsToken.value)
-
-                if (EsjzoneClient.isAuthorized(authorization = authorization)) {
-                    navigator.replace(MainScreen(authorization = authorization))
-                } else {
-                    navigator.replace(LoginScreen)
-                }
+            if (authorization != null) {
+                navigator.replace(MainScreen(authorization = authorization))
+            } else {
+                navigator.replace(LoginScreen)
             }
         }
     }

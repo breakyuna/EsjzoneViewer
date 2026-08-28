@@ -12,7 +12,7 @@ data class Chapter(
 ) : Serializable {
 
     fun novelId(): String {
-        return URL_REGEX.find(this.url)!!.groupValues[1]
+        return URL_REGEX.find(this.url)?.groupValues?.getOrNull(1).orEmpty()
     }
 
     override fun equals(other: Any?): Boolean {

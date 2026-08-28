@@ -40,11 +40,13 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import cafe.adriel.voyager.core.screen.Screen
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import com.breakyuna.esjzone.GlobalSettings
 import com.breakyuna.esjzone.MainActivity
 import com.breakyuna.esjzone.R
+import com.breakyuna.esjzone.database.dao.put
 import com.breakyuna.esjzone.network.EsjzoneClient
 import com.breakyuna.esjzone.network.LocalAuthorization
 import com.breakyuna.esjzone.network.features.logout
@@ -73,6 +75,22 @@ object SettingsPage : Screen {
 
         val scope = rememberCoroutineScope()
 
+        fun persistCache(key: String, value: String) {
+            scope.launch(Dispatchers.IO) {
+                try {
+                    MainActivity.database.cacheDao().put(key, value)
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    com.breakyuna.esjzone.util.AppLogger.e(
+                        "SettingsPage",
+                        "Failed to persist setting: $key",
+                        e
+                    )
+                }
+            }
+        }
+
         var adult by remember {
             GlobalSettings.adult
         }
@@ -84,7 +102,7 @@ object SettingsPage : Screen {
             AppBar(
                 title = stringResource(id = R.string.settings),
                 onBack = {
-                    navigator.pop()
+                    navigator?.pop()
                 }
             )
 
@@ -116,21 +134,7 @@ object SettingsPage : Screen {
                                     .clickable {
                                         currentDomain = domain
                                         GlobalSettings.domain.value = domain
-                                        scope.launch(Dispatchers.IO) {
-                                            val dao = MainActivity.database.cacheDao()
-                                            if (dao.exists("domain")) {
-                                                val domainCache = dao.findByKey("domain")
-                                                domainCache.value = domain
-                                                dao.update(domainCache)
-                                            } else {
-                                                dao.insertNotExists(
-                                                    com.breakyuna.esjzone.database.entity.Cache(
-                                                        key = "domain",
-                                                        value = domain
-                                                    )
-                                                )
-                                            }
-                                        }
+                                        persistCache("domain", domain)
                                     },
                                 colors = if (selected) {
                                     CardDefaults.cardColors(
@@ -191,15 +195,8 @@ object SettingsPage : Screen {
                                     .height(((configuration.screenWidthDp / 5) * 0.65).dp)
                                     .padding(4.dp)
                                     .clickable {
-                                        scope.launch(Dispatchers.IO) {
-                                            val dao = MainActivity.database.cacheDao()
-
-                                            val themeCache = dao.findByKey("theme")
-                                            themeCache.value = type.name
-
-                                            dao.update(themeCache)
-                                        }
                                         theme = type
+                                        persistCache("theme", type.name)
                                     },
                                 colors = CardColors(
                                     containerColor = type.baseColor,
@@ -242,15 +239,8 @@ object SettingsPage : Screen {
                                     .height(((configuration.screenWidthDp / 5) * 0.65).dp)
                                     .padding(4.dp)
                                     .clickable {
-                                        scope.launch(Dispatchers.IO) {
-                                            val dao = MainActivity.database.cacheDao()
-
-                                            val themeCache = dao.findByKey("theme")
-                                            themeCache.value = type.name
-
-                                            dao.update(themeCache)
-                                            theme = type
-                                        }
+                                        theme = type
+                                        persistCache("theme", type.name)
                                     },
                                 colors = CardColors(
                                     containerColor = type.baseColor,
@@ -293,15 +283,8 @@ object SettingsPage : Screen {
                                     .height(((configuration.screenWidthDp / 5) * 0.65).dp)
                                     .padding(4.dp)
                                     .clickable {
-                                        scope.launch(Dispatchers.IO) {
-                                            val dao = MainActivity.database.cacheDao()
-
-                                            val themeCache = dao.findByKey("theme")
-                                            themeCache.value = type.name
-
-                                            dao.update(themeCache)
-                                        }
                                         theme = type
+                                        persistCache("theme", type.name)
                                     },
                                 colors = CardColors(
                                     containerColor = type.baseColor,
@@ -344,15 +327,8 @@ object SettingsPage : Screen {
                                     .height(((configuration.screenWidthDp / 5) * 0.65).dp)
                                     .padding(4.dp)
                                     .clickable {
-                                        scope.launch(Dispatchers.IO) {
-                                            val dao = MainActivity.database.cacheDao()
-
-                                            val themeCache = dao.findByKey("theme")
-                                            themeCache.value = type.name
-
-                                            dao.update(themeCache)
-                                            theme = type
-                                        }
+                                        theme = type
+                                        persistCache("theme", type.name)
                                     },
                                 colors = CardColors(
                                     containerColor = type.baseColor,
@@ -384,12 +360,7 @@ object SettingsPage : Screen {
                     checked = adult
                 ) {
                     adult = it
-                    scope.launch(Dispatchers.IO) {
-                        val dao = MainActivity.database.cacheDao()
-                        val showAdult = dao.findByKey("show_adult")
-                        showAdult.value = it.toString()
-                        dao.update(showAdult)
-                    }
+                    persistCache("show_adult", it.toString())
                 }
 
                 SettingsText(text = stringResource(id = R.string.settings_category_app))
@@ -397,27 +368,46 @@ object SettingsPage : Screen {
                     imageVector = Icons.Filled.BugReport,
                     text = stringResource(id = R.string.system_logs)
                 ) {
-                    navigator.push(LogsPage)
+                    navigator?.push(LogsPage)
                 }
                 SettingsButton(
                     imageVector = Icons.Filled.Info,
                     text = stringResource(id = R.string.about)
                 ) {
-                    navigator.push(AboutPage)
+                    navigator?.push(AboutPage)
                 }
                 SettingsButton(
                     imageVector = Icons.AutoMirrored.Filled.Logout,
                     text = stringResource(id = R.string.button_logout)
                 ) {
                     scope.launch(Dispatchers.IO) {
-                        EsjzoneClient.logout(authorization)
-                        val dao = MainActivity.database.cacheDao()
-                        dao.delete(
-                            dao.findByKey("ews_key"),
-                            dao.findByKey("ews_token"),
-                        )
+                        try {
+                            EsjzoneClient.logout(authorization)
+                        } catch (e: CancellationException) {
+                            throw e
+                        } catch (e: Exception) {
+                            com.breakyuna.esjzone.util.AppLogger.w(
+                                "SettingsPage",
+                                "Logout request failed; clearing local session anyway",
+                                e
+                            )
+                        }
+
+                        try {
+                            val dao = MainActivity.database.cacheDao()
+                            dao.deleteByKey("ews_key")
+                            dao.deleteByKey("ews_token")
+                        } catch (e: CancellationException) {
+                            throw e
+                        } catch (e: Exception) {
+                            com.breakyuna.esjzone.util.AppLogger.e(
+                                "SettingsPage",
+                                "Failed to clear local session",
+                                e
+                            )
+                        }
                     }
-                    appNavigator.replaceAll(LoginScreen)
+                    appNavigator?.replaceAll(LoginScreen)
                 }
             }
         }

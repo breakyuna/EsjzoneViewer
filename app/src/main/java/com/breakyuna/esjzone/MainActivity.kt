@@ -14,7 +14,7 @@ import coil.memory.MemoryCache
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import com.breakyuna.esjzone.database.GeneralDatabase
-import com.breakyuna.esjzone.database.entity.Cache
+import com.breakyuna.esjzone.database.dao.put
 import com.breakyuna.esjzone.ui.app.App
 import com.breakyuna.esjzone.ui.theme.catppuccin.CatppuccinDynamicTheme
 import com.breakyuna.esjzone.ui.theme.catppuccin.CatppuccinThemeType
@@ -69,28 +69,25 @@ class MainActivity : ComponentActivity() {
 
                 val dao = database.cacheDao()
 
-                if (!dao.exists("theme")) {
-                    dao.insertNotExists(
-                        Cache(
-                            key = "theme",
-                            value = GlobalSettings.theme.value.name
-                        )
-                    )
+                if (dao.findByKey("theme") == null) {
+                    dao.put("theme", GlobalSettings.theme.value.name)
+                }
+                if (dao.findByKey("domain") == null) {
+                    dao.put("domain", GlobalSettings.domain.value)
                 }
 
-                if (!dao.exists("domain")) {
-                    dao.insertNotExists(
-                        Cache(
-                            key = "domain",
-                            value = GlobalSettings.domain.value
-                        )
-                    )
-                }
-
-                val savedTheme = dao.findByKey("theme").value
-                val savedDomain = dao.findByKey("domain").value
-                GlobalSettings.theme.value = CatppuccinThemeType.valueOf(savedTheme)
+                val savedTheme = dao.findByKey("theme")?.value
+                    ?: GlobalSettings.theme.value.name
+                val savedDomain = dao.findByKey("domain")?.value
+                    ?.takeIf { it in GlobalSettings.DOMAINS }
+                    ?: GlobalSettings.domain.value
                 GlobalSettings.domain.value = savedDomain
+                GlobalSettings.theme.value = runCatching {
+                    CatppuccinThemeType.valueOf(savedTheme)
+                }.getOrElse {
+                    AppLogger.w("MainActivity", "Invalid cached theme, using default", it)
+                    CatppuccinThemeType.LATTE_YELLOW
+                }
                 AppLogger.i("MainActivity", "Settings restored: Domain=$savedDomain, Theme=$savedTheme")
 
                 this.launch(Dispatchers.Main) {

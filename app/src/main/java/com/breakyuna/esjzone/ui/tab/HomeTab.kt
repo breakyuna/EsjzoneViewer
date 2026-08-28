@@ -156,7 +156,7 @@ object HomeTab : Tab {
                 icon = Icons.Filled.Translate,
                 title = stringResource(id = R.string.tab_home_recentlyupdate_tranlated),
                 onMoreClick = {
-                    navigator.push(NovelListPage(1, 1, false))
+                    navigator?.push(NovelListPage(1, 1, false))
                 }
             )
             if (state !is HomeTabModel.State.Result) {
@@ -172,7 +172,7 @@ object HomeTab : Tab {
                 icon = Icons.Filled.AutoStories,
                 title = stringResource(id = R.string.tab_home_recentlyupdate_original),
                 onMoreClick = {
-                    navigator.push(NovelListPage(2, 1, false))
+                    navigator?.push(NovelListPage(2, 1, false))
                 }
             )
             if (state !is HomeTabModel.State.Result) {
@@ -189,7 +189,7 @@ object HomeTab : Tab {
                     icon = Icons.Filled.LocalFireDepartment,
                     title = stringResource(id = R.string.tab_home_recentlyupdate_tranlated_r18),
                     onMoreClick = {
-                        navigator.push(NovelListPage(1, 1, true))
+                        navigator?.push(NovelListPage(1, 1, true))
                     }
                 )
                 if (state !is HomeTabModel.State.Result) {
@@ -205,7 +205,7 @@ object HomeTab : Tab {
                     icon = Icons.Filled.LocalFireDepartment,
                     title = stringResource(id = R.string.tab_home_recentlyupdate_original_r18),
                     onMoreClick = {
-                        navigator.push(NovelListPage(2, 1, true))
+                        navigator?.push(NovelListPage(2, 1, true))
                     }
                 )
                 if (state !is HomeTabModel.State.Result) {
@@ -337,7 +337,7 @@ fun NovelSets(novels: List<CoveredNovel>) {
                 modifier = Modifier
                     .width(136.dp)
                     .clickable {
-                        navigator.push(NovelPage(novel))
+                        navigator?.push(NovelPage(novel))
                     },
                 shape = RoundedCornerShape(14.dp),
                 colors = CardDefaults.cardColors(

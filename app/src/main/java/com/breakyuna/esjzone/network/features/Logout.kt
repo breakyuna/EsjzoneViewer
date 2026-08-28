@@ -8,15 +8,17 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 
 fun EsjzoneClient.logout(authorization: Authorization) {
-    val httpClient = OkHttpClient.Builder()
-        .cookieJar(AuthorizationCookieJar(authorization))
-        .build()
-
-    httpClient.newCall(
-        Request.Builder()
-            .url(EsjzoneUrls.My.Logout)
-            .get()
-            .headers(this.headers)
+    runNetworkSafely("Logout", Unit) {
+        val httpClient = OkHttpClient.Builder()
+            .cookieJar(AuthorizationCookieJar(authorization))
             .build()
-    ).execute().close()
+
+        httpClient.newCall(
+            Request.Builder()
+                .url(EsjzoneUrls.My.Logout)
+                .get()
+                .headers(this.headers)
+                .build()
+        ).execute().use { }
+    }
 }

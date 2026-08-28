@@ -62,7 +62,7 @@ class SearchPage(private val keyword: String) : Screen {
             AppBar(
                 title = "${stringResource(id = R.string.search_result)}: $keyword",
                 onBack = {
-                    navigator.pop()
+                    navigator?.pop()
                 }
             )
 

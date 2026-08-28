@@ -108,7 +108,7 @@ object LogsPage : Screen {
         ) {
             AppBar(
                 title = stringResource(id = R.string.system_logs),
-                onBack = { navigator.pop() }
+                onBack = { navigator?.pop() }
             ) {
                 // Action row in top bar
                 Row(

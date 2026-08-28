@@ -101,7 +101,7 @@ object SearchTab : Tab {
         fun performSearch(query: String) {
             val trimmed = query.trim()
             if (trimmed.isNotEmpty()) {
-                navigator.push(SearchPage(trimmed))
+                navigator?.push(SearchPage(trimmed))
                 scope.launch(Dispatchers.IO) {
                     val dao = MainActivity.database.searchHistoryDao()
                     val history = if (dao.exists(trimmed)) {

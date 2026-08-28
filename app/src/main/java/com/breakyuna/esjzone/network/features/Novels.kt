@@ -29,8 +29,7 @@ fun EsjzoneClient.novels(
             .build()
     ).execute()
 
-    val responseBody = response.body?.string() ?: ""
-    response.close()
+    val responseBody = response.bodyStringOrEmpty()
 
     val document = Jsoup.parse(responseBody)
 
@@ -88,7 +87,10 @@ private class ListNovelRequester(
         return more
     }
 
-    override fun more(page: Int): List<CoveredNovel> {
+    override fun more(page: Int): List<CoveredNovel> = runNetworkSafely(
+        tag = "ListNovelRequester",
+        fallback = emptyList()
+    ) {
         val response = httpClient.newCall(
             Request.Builder()
                 .url("${EsjzoneUrls.Base}/list-$novelType$sortType/$page.html")
@@ -97,8 +99,7 @@ private class ListNovelRequester(
                 .build()
         ).execute()
 
-        val responseBody = response.body?.string() ?: ""
-        response.close()
+        val responseBody = response.bodyStringOrEmpty()
 
         val document = Jsoup.parse(responseBody)
 
@@ -125,7 +126,7 @@ private class ListNovelRequester(
             )
         }
 
-        return novels.toList()
+        novels.toList()
     }
 
     override fun end(): Boolean {

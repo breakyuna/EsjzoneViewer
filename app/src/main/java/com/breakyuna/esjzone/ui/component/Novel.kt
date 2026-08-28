@@ -60,7 +60,7 @@ fun Novel(covered: CoveredNovel, onClick: (() -> Unit)? = null) {
                 if (onClick != null) {
                     onClick()
                 } else {
-                    navigator.push(NovelPage(covered))
+                    navigator?.push(NovelPage(covered))
                 }
             },
         shape = RoundedCornerShape(16.dp),

@@ -63,7 +63,7 @@ class CategoryPage(private val category: Category) : Screen {
             AppBar(
                 title = category.name,
                 onBack = {
-                    navigator.pop()
+                    navigator?.pop()
                 }
             )
 

@@ -77,7 +77,7 @@ data class DetailedNovel(
 ) : CoveredNovel {
 
     fun id(): String {
-        return FORUM_URL_REGEX.find(this.forumUrl)!!.groupValues[1]
+        return FORUM_URL_REGEX.find(this.forumUrl)?.groupValues?.getOrNull(1).orEmpty()
     }
 
 }

@@ -73,10 +73,11 @@ fun analyseItems(element: Element): List<Item> {
 
 private fun analyseChapterList(element: Element): ChapterListItem {
     val titleElements = EsjzoneXPaths.Detail.ChapterListDetails.Title.evaluate(element).elements
-    val title = if (titleElements.isNotEmpty()) {
-        val paragraphs = analyseParagraph(titleElements[0])
+    val titleElement = titleElements.firstOrNull()
+    val title = if (titleElement != null) {
+        val paragraphs = analyseParagraph(titleElement)
         paragraphs.filterIsInstance<TextComponent>().firstOrNull()
-            ?: TextComponent(titleElements[0].text())
+            ?: TextComponent(titleElement.text())
     } else {
         TextComponent("")
     }
@@ -91,17 +92,11 @@ private fun analyseChapterList(element: Element): ChapterListItem {
 }
 
 private fun analyseChapter(element: Element): Chapter {
-    val children = element.children()
-    val isHistory = if (children.isNotEmpty()) {
-        val first = children[0]
-        if (first.hasAttr("class")) {
-            first.attr("class").contains("active")
-        } else {
-            false
-        }
-    } else {
-        false
-    }
+    val isHistory = element.children()
+        .firstOrNull()
+        ?.takeIf { it.hasAttr("class") }
+        ?.attr("class")
+        ?.contains("active") == true
 
     return Chapter(
         element.attr("data-title"),
@@ -172,7 +167,7 @@ class ChapterItem(val chapter: Chapter) : Item {
                 if (chapter.url.contains("esjzone") || chapter.url.contains("forum")) {
                     historied = true
                     rememberedHistory = this.chapter
-                    navigator.push(ChapterPage(novelId, chapter, history))
+                    navigator?.push(ChapterPage(novelId, chapter, history))
                 }
             },
             shape = RoundedCornerShape(12.dp),
@@ -315,7 +310,7 @@ class ChapterListItem(private val name: TextComponent, val chapters: List<Chapte
                                     if (chapter.url.contains("esjzone") || chapter.url.contains("forum")) {
                                         historied = true
                                         rememberedHistory = chapter
-                                        navigator.push(
+                                        navigator?.push(
                                             ChapterPage(
                                                 novelId,
                                                 chapter,

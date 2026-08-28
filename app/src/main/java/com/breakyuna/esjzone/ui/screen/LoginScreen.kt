@@ -53,14 +53,17 @@ import androidx.compose.ui.unit.sp
 import cafe.adriel.voyager.core.screen.Screen
 import cafe.adriel.voyager.navigator.LocalNavigator
 import cafe.adriel.voyager.navigator.currentOrThrow
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import com.breakyuna.esjzone.GlobalSettings
 import com.breakyuna.esjzone.MainActivity
 import com.breakyuna.esjzone.R
-import com.breakyuna.esjzone.database.entity.Cache
+import com.breakyuna.esjzone.database.dao.put
 import com.breakyuna.esjzone.network.EsjzoneClient
 import com.breakyuna.esjzone.network.features.login
+import com.breakyuna.esjzone.util.AppLogger
 
 object LoginScreen : Screen {
 
@@ -103,18 +106,12 @@ object LoginScreen : Screen {
                             currentDomain = domain
                             GlobalSettings.domain.value = domain
                             scope.launch(Dispatchers.IO) {
-                                val dao = MainActivity.database.cacheDao()
-                                if (dao.exists("domain")) {
-                                    val domainCache = dao.findByKey("domain")
-                                    domainCache.value = domain
-                                    dao.update(domainCache)
-                                } else {
-                                    dao.insertNotExists(
-                                        Cache(
-                                            key = "domain",
-                                            value = domain
-                                        )
-                                    )
+                                try {
+                                    MainActivity.database.cacheDao().put("domain", domain)
+                                } catch (e: CancellationException) {
+                                    throw e
+                                } catch (e: Exception) {
+                                    AppLogger.e("LoginScreen", "Failed to persist selected domain", e)
                                 }
                             }
                         },
@@ -280,28 +277,33 @@ object LoginScreen : Screen {
                         return@Button
                     buttonEnabled = false
                     loggingIn = true
-                    scope.launch(Dispatchers.IO) {
-                        val authorization = EsjzoneClient.login(email, password)
-                        if (authorization != null) {
-                            val ewsKeyCache = MainActivity.database.cacheDao().findByKey("ews_key")
-                            val ewsTokenCache =
-                                MainActivity.database.cacheDao().findByKey("ews_token")
+                    scope.launch {
+                        try {
+                            val authorization = withContext(Dispatchers.IO) {
+                                val result = EsjzoneClient.login(email, password)
+                                if (result != null) {
+                                    val dao = MainActivity.database.cacheDao()
+                                    dao.put("ews_key", result.ewsKey)
+                                    dao.put("ews_token", result.ewsToken)
+                                }
+                                result
+                            }
 
-                            ewsKeyCache.value = authorization.ewsKey
-                            ewsTokenCache.value = authorization.ewsToken
-
-                            MainActivity.database.cacheDao().update(ewsKeyCache, ewsTokenCache)
-
-                            launch(Dispatchers.Main) {
+                            if (authorization != null) {
                                 Toast.makeText(context, R.string.login_success, Toast.LENGTH_SHORT)
                                     .show()
                                 navigator.replace(MainScreen(authorization = authorization))
-                            }
-                        } else {
-                            launch(Dispatchers.Main) {
+                            } else {
                                 Toast.makeText(context, R.string.login_fail, Toast.LENGTH_SHORT)
                                     .show()
                             }
+                        } catch (e: CancellationException) {
+                            throw e
+                        } catch (e: Exception) {
+                            AppLogger.e("LoginScreen", "Login flow failed", e)
+                            Toast.makeText(context, R.string.login_fail, Toast.LENGTH_SHORT)
+                                .show()
+                        } finally {
                             loggingIn = false
                             buttonEnabled = true
                         }

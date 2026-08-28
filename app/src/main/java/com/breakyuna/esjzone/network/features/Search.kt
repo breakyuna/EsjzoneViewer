@@ -30,8 +30,7 @@ fun EsjzoneClient.search(
             .build()
     ).execute()
 
-    val responseBody = response.body?.string() ?: ""
-    response.close()
+    val responseBody = response.bodyStringOrEmpty()
 
     val document = Jsoup.parse(responseBody)
 
@@ -87,7 +86,10 @@ private class SearchNovelRequester(
         return more
     }
 
-    override fun more(page: Int): List<CoveredNovel> {
+    override fun more(page: Int): List<CoveredNovel> = runNetworkSafely(
+        tag = "SearchNovelRequester",
+        fallback = emptyList()
+    ) {
         val response = httpClient.newCall(
             Request.Builder()
                 .url("${EsjzoneUrls.Tags}-01/$keyword/$page.html")
@@ -96,8 +98,7 @@ private class SearchNovelRequester(
                 .build()
         ).execute()
 
-        val responseBody = response.body?.string() ?: ""
-        response.close()
+        val responseBody = response.bodyStringOrEmpty()
 
         val document = Jsoup.parse(responseBody)
 
@@ -124,7 +125,7 @@ private class SearchNovelRequester(
             )
         }
 
-        return novels.toList()
+        novels.toList()
     }
 
     override fun end(): Boolean {

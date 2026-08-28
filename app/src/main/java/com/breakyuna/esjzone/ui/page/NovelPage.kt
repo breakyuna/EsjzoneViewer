@@ -103,7 +103,7 @@ class NovelPage(
             AppBar(
                 title = novel.name,
                 onBack = {
-                    navigator.pop()
+                    navigator?.pop()
                 }
             )
 
@@ -241,7 +241,7 @@ class NovelPage(
                                 enabled = rememberedHistory != null,
                                 onClick = {
                                     rememberedHistory?.let { currChapter ->
-                                        navigator.push(
+                                        navigator?.push(
                                             ChapterPage(
                                                 result.detailed.id(),
                                                 currChapter,
@@ -349,5 +349,4 @@ class NovelPageModel(
     }
 
 }
-
 

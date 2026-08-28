@@ -28,8 +28,7 @@ fun EsjzoneClient.getHomeData(authorization: Authorization): HomeData {
             .build()
     ).execute()
 
-    val responseBody = response.body?.string() ?: ""
-    response.close()
+    val responseBody = response.bodyStringOrEmpty()
 
     val document = Jsoup.parse(responseBody)
 

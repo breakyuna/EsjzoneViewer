@@ -59,7 +59,7 @@ object AboutPage : Screen {
             AppBar(
                 title = stringResource(id = R.string.about),
                 onBack = {
-                    navigator.pop()
+                    navigator?.pop()
                 }
             )
 

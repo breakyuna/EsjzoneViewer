@@ -78,30 +78,31 @@ private fun analyseText(node: Node, styles: List<TextStyle>): List<TextComponent
         val list = mutableListOf<TextComponent>()
 
         if (node.nameIs("ruby")) {
-            val rts = node.getElementsByTag("rt")
-            if (rts.isNotEmpty()) {
+            val rt = node.getElementsByTag("rt").firstOrNull()
+            if (rt != null) {
                 val furiganaComponents = mutableListOf<TextComponent>()
 
-                furiganaComponents.addAll(analyseText(rts[0], listOf()))
+                furiganaComponents.addAll(analyseText(rt, listOf()))
 
                 if (furiganaComponents.isNotEmpty()) {
                     val newStyles = mutableListOf<TextStyle>()
                     newStyles.addAll(styles)
 
-                    val single = furiganaComponents.toSingle()[0]
+                    val single = furiganaComponents.toSingle().firstOrNull()
+                    if (single != null) {
+                        newStyles.add(FuriganaTextStyle(single))
 
-                    newStyles.add(FuriganaTextStyle(single))
-
-                    for (childNode in node.childNodes()) {
-                        if (childNode is TextNode)
-                            list.addAll(analyseText(childNode, newStyles))
-                        else if (childNode is Element) {
-                            if (!childNode.nameIs("rp") && !childNode.nameIs("rt")) {
+                        for (childNode in node.childNodes()) {
+                            if (childNode is TextNode)
                                 list.addAll(analyseText(childNode, newStyles))
+                            else if (childNode is Element) {
+                                if (!childNode.nameIs("rp") && !childNode.nameIs("rt")) {
+                                    list.addAll(analyseText(childNode, newStyles))
+                                }
                             }
                         }
+                        return list
                     }
-                    return list
                 }
             }
             for (childNode in node.childNodes()) {
@@ -144,34 +145,37 @@ private fun analyseStyles(styleString: String): List<TextStyle> {
     val list = mutableListOf<TextStyle>()
 
     for (result in STYLE_COLOR_REGEX.findAll(styleString)) {
-        list.add(
-            ColorTextStyle(
-                Color(
-                    result.groupValues[1].toInt(),
-                    result.groupValues[2].toInt(),
-                    result.groupValues[3].toInt()
-                )
-            )
-        )
+        parseRgbColor(result)?.let { color ->
+            list.add(ColorTextStyle(color))
+        }
     }
 
     for (result in STYLE_BACKGROUND_COLOR_REGEX.findAll(styleString)) {
-        list.add(
-            BackgroundColorTextStyle(
-                Color(
-                    result.groupValues[1].toInt(),
-                    result.groupValues[2].toInt(),
-                    result.groupValues[3].toInt()
-                )
-            )
-        )
+        parseRgbColor(result)?.let { color ->
+            list.add(BackgroundColorTextStyle(color))
+        }
     }
 
     for (result in STYLE_FONT_SIZE_REGEX.findAll(styleString)) {
-        list.add(FontSizeTextStyle(result.groupValues[1].toInt()))
+        val size = result.groupValues.getOrNull(1)?.toIntOrNull()
+        if (size != null && size in 1..512) {
+            list.add(FontSizeTextStyle(size))
+        }
     }
 
     return list.toList()
+}
+
+private fun parseRgbColor(result: MatchResult): Color? {
+    val red = result.groupValues.getOrNull(1)?.toIntOrNull() ?: return null
+    val green = result.groupValues.getOrNull(2)?.toIntOrNull() ?: return null
+    val blue = result.groupValues.getOrNull(3)?.toIntOrNull() ?: return null
+
+    if (red !in 0..255 || green !in 0..255 || blue !in 0..255) {
+        return null
+    }
+
+    return Color(red, green, blue)
 }
 
 interface Component : Serializable
@@ -235,7 +239,8 @@ open class TextComponent(val text: String) : Component {
                 basicSpanStyle = it.apply(basicSpanStyle)
             }
 
-            if (inline != null) {
+            val inlineStyle = inline
+            if (inlineStyle != null) {
                 withStyle(basicSpanStyle) {
                     appendInlineContent(
                         this@TextComponent.text,
@@ -248,7 +253,7 @@ open class TextComponent(val text: String) : Component {
                 val width = with(localDensity) { size.width.toDp().toSp() }
                 val height = with(localDensity) { size.height.toDp().toSp() }
 
-                inlineContent[this@TextComponent.text] = inline!!.inline(
+                inlineContent[this@TextComponent.text] = inlineStyle.inline(
                     width,
                     height,
                     basicSpanStyle,
@@ -449,13 +454,10 @@ class FuriganaTextStyle(text: TextComponent) : TextStyle {
 }
 
 private fun List<TextComponent>.toSingle(): List<TextComponent> {
-    if (this.isEmpty())
-        return listOf()
+    val first = firstOrNull() ?: return emptyList()
 
-    val first = this[0]
-
-    for (i in 1 until this.size)
-        first.append(this[i])
+    for (component in drop(1))
+        first.append(component)
 
     return listOf(first)
 }

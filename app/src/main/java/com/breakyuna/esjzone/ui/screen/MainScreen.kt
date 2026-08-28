@@ -91,8 +91,8 @@ private fun RowScope.TabNavigationItem(tab: Tab) {
         selected = isSelected,
         onClick = { tabNavigator.current = tab },
         icon = {
-            if (tab.options.icon != null) {
-                Icon(painter = tab.options.icon!!, contentDescription = tab.options.title)
+            tab.options.icon?.let { icon ->
+                Icon(painter = icon, contentDescription = tab.options.title)
             }
         },
         label = {

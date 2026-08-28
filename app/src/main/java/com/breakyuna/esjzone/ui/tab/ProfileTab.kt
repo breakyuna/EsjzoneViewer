@@ -143,7 +143,7 @@ object ProfileTab : Tab {
                         if (data == null) {
                             CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
                         } else {
-                            val profile = data!!
+                            val profile = data ?: return@Box
                             val avatarUrl = if (profile.avatarUrl.startsWith("http://") || profile.avatarUrl.startsWith("https://")) {
                                 profile.avatarUrl
                             } else if (profile.avatarUrl.startsWith("/")) {
@@ -218,7 +218,7 @@ object ProfileTab : Tab {
                     iconBg = MaterialTheme.colorScheme.primaryContainer,
                     title = stringResource(id = R.string.favorites),
                     subtitle = "Manage your saved novels and bookmarks",
-                    onClick = { navigator.push(FavoritePage) }
+                    onClick = { navigator?.push(FavoritePage) }
                 )
 
                 ProfileMenuItem(
@@ -227,7 +227,7 @@ object ProfileTab : Tab {
                     iconBg = MaterialTheme.colorScheme.secondaryContainer,
                     title = stringResource(id = R.string.history),
                     subtitle = "Pick up where you left off reading",
-                    onClick = { navigator.push(HistoryPage) }
+                    onClick = { navigator?.push(HistoryPage) }
                 )
 
                 ProfileMenuItem(
@@ -236,7 +236,7 @@ object ProfileTab : Tab {
                     iconBg = MaterialTheme.colorScheme.tertiaryContainer,
                     title = stringResource(id = R.string.settings),
                     subtitle = "App theme, content preferences & mirrors",
-                    onClick = { navigator.push(SettingsPage) }
+                    onClick = { navigator?.push(SettingsPage) }
                 )
 
                 ProfileMenuItem(
@@ -245,7 +245,7 @@ object ProfileTab : Tab {
                     iconBg = MaterialTheme.colorScheme.surfaceVariant,
                     title = stringResource(id = R.string.about),
                     subtitle = "Version, contributors & open source licenses",
-                    onClick = { navigator.push(AboutPage) }
+                    onClick = { navigator?.push(AboutPage) }
                 )
             }
 

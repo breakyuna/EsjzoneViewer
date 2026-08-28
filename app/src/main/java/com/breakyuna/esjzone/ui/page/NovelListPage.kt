@@ -111,7 +111,7 @@ class NovelListPage(
             AppBar(
                 title = stringResource(id = R.string.novel_list),
                 onBack = {
-                    navigator.pop()
+                    navigator?.pop()
                 }
             ) {
                 Row {

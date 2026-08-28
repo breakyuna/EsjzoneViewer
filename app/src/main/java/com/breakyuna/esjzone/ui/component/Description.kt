@@ -314,5 +314,8 @@ fun DescriptionAnalysisPreview7() {
 }
 
 private fun Document.testResolve(): Element {
-    return this.getElementsByTag("html")[0].getElementsByTag("body")[0].getElementsByTag("div")[0]
+    return this.getElementsByTag("html").firstOrNull()
+        ?.getElementsByTag("body")?.firstOrNull()
+        ?.getElementsByTag("div")?.firstOrNull()
+        ?: Element("div")
 }

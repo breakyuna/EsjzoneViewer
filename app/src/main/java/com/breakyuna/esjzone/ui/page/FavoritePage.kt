@@ -90,7 +90,7 @@ object FavoritePage : Screen {
             AppBar(
                 title = stringResource(id = R.string.favorites),
                 onBack = {
-                    navigator.pop()
+                    navigator?.pop()
                 }
             ) {
                 Row {
@@ -179,7 +179,7 @@ object FavoritePage : Screen {
 
                                     if (rememberedFavorite && novel.isFavorite) {
                                         Novel(covered = novel) {
-                                            navigator.push(
+                                            navigator?.push(
                                                 NovelPage(
                                                     favoriteNovel,
                                                     favorite = favorite

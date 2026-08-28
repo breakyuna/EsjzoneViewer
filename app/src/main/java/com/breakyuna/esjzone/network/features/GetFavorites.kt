@@ -27,8 +27,7 @@ fun EsjzoneClient.getFavorites(
             .build()
     ).execute()
 
-    val responseBody = response.body?.string() ?: ""
-    response.close()
+    val responseBody = response.bodyStringOrEmpty()
 
     val document = Jsoup.parse(responseBody)
 
@@ -72,7 +71,10 @@ private class FavoriteNovelRequester(
         return more
     }
 
-    override fun more(page: Int): List<FavoriteNovel> {
+    override fun more(page: Int): List<FavoriteNovel> = runNetworkSafely(
+        tag = "FavoriteNovelRequester",
+        fallback = emptyList()
+    ) {
         val response = httpClient.newCall(
             Request.Builder()
                 .url("${EsjzoneUrls.My.Favorite}/$sort/$page")
@@ -81,9 +83,7 @@ private class FavoriteNovelRequester(
                 .build()
         ).execute()
 
-        val responseBody = response.body!!.string()
-        response.close()
-
+        val responseBody = response.bodyStringOrEmpty()
         val document = Jsoup.parse(responseBody)
 
         val novels = mutableListOf<FavoriteNovel>()
@@ -97,7 +97,7 @@ private class FavoriteNovelRequester(
             )
         }
 
-        return novels.toList()
+        novels.toList()
     }
 
     override fun end(): Boolean {

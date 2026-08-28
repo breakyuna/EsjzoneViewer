@@ -104,7 +104,7 @@ object HistoryPage : Screen {
             AppBar(
                 title = stringResource(id = R.string.history),
                 onBack = {
-                    navigator.pop()
+                    navigator?.pop()
                 }
             )
 
@@ -188,7 +188,7 @@ object HistoryPage : Screen {
                                                 }
                                                 .combinedClickable(
                                                     onClick = {
-                                                        navigator.push(
+                                                        navigator?.push(
                                                             NovelPage(
                                                                 historyNovel,
                                                                 historyChapter
@@ -287,7 +287,7 @@ object HistoryPage : Screen {
                                                 FilledTonalIconButton(
                                                     onClick = {
                                                         rememberedHistory?.let { currChapter ->
-                                                            navigator.push(
+                                                            navigator?.push(
                                                                 ChapterPage(
                                                                     novel.id(),
                                                                     currChapter,

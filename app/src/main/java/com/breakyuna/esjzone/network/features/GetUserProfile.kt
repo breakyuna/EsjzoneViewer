@@ -23,8 +23,7 @@ fun EsjzoneClient.getUserProfile(authorization: Authorization): UserProfile {
             .build()
     ).execute()
 
-    val responseBody = response.body?.string() ?: ""
-    response.close()
+    val responseBody = response.bodyStringOrEmpty()
 
     val document = Jsoup.parse(responseBody)
 

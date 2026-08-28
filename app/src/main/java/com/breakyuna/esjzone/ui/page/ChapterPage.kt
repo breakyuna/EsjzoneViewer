@@ -144,7 +144,7 @@ class ChapterPage(
                         AppBar(
                             title = chapterName,
                             onBack = {
-                                navigator.pop()
+                                navigator?.pop()
                             }
                         )
                     }
@@ -394,5 +394,4 @@ class ChapterPageModel(
     }
 
 }
-
 

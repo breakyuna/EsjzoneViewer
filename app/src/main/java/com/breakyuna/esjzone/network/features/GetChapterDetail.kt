@@ -40,14 +40,13 @@ fun EsjzoneClient.getChapterDetail(
             .build()
     ).execute()
 
-    val responseBody = response.body?.string() ?: ""
-    response.close()
+    val responseBody = response.bodyStringOrEmpty()
 
     val document = Jsoup.parse(responseBody)
 
-    val contentElements = EsjzoneXPaths.Forum.Content.evaluate(document).elements
-    val components = if (contentElements.isNotEmpty()) {
-        analyseComponents(contentElements[0])
+    val contentElement = EsjzoneXPaths.Forum.Content.evaluate(document).elements.firstOrNull()
+    val components = if (contentElement != null) {
+        analyseComponents(contentElement)
     } else {
         AppLogger.w("GetChapterDetail", "No content element found in chapter page: $targetUrl")
         listOf()
