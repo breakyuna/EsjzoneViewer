@@ -277,14 +277,18 @@ object LoginScreen : Screen {
                         return@Button
                     buttonEnabled = false
                     loggingIn = true
+                    val selectedDomain = GlobalSettings.domain.value
                     scope.launch {
                         try {
                             val authorization = withContext(Dispatchers.IO) {
                                 val result = EsjzoneClient.login(email, password)
                                 if (result != null) {
-                                    val dao = MainActivity.database.cacheDao()
-                                    dao.put("ews_key", result.ewsKey)
-                                    dao.put("ews_token", result.ewsToken)
+                                    MainActivity.database.runInTransaction {
+                                        val dao = MainActivity.database.cacheDao()
+                                        dao.put("domain", selectedDomain)
+                                        dao.put("ews_key", result.ewsKey)
+                                        dao.put("ews_token", result.ewsToken)
+                                    }
                                 }
                                 result
                             }

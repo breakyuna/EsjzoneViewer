@@ -19,7 +19,9 @@ import com.breakyuna.esjzone.MainActivity
 import com.breakyuna.esjzone.database.dao.put
 import com.breakyuna.esjzone.network.Authorization
 import com.breakyuna.esjzone.network.EsjzoneClient
-import com.breakyuna.esjzone.network.features.isAuthorized
+import com.breakyuna.esjzone.network.hasCredentials
+import com.breakyuna.esjzone.network.features.AuthorizationCheckResult
+import com.breakyuna.esjzone.network.features.checkAuthorization
 import com.breakyuna.esjzone.util.AppLogger
 
 class LoadingScreen : Screen {
@@ -55,10 +57,26 @@ class LoadingScreen : Screen {
                         dao.findByKey("show_adult")?.value?.toBooleanStrictOrNull() ?: false
 
                     val storedAuthorization = Authorization(ewsKey, ewsToken)
-                    if (EsjzoneClient.isAuthorized(authorization = storedAuthorization)) {
-                        storedAuthorization
-                    } else {
+                    if (!storedAuthorization.hasCredentials()) {
                         null
+                    } else {
+                        when (EsjzoneClient.checkAuthorization(storedAuthorization)) {
+                            AuthorizationCheckResult.AUTHORIZED -> storedAuthorization
+                            AuthorizationCheckResult.UNAUTHORIZED -> {
+                                AppLogger.w(
+                                    "LoadingScreen",
+                                    "Stored session was rejected by the server"
+                                )
+                                null
+                            }
+                            AuthorizationCheckResult.UNKNOWN -> {
+                                AppLogger.w(
+                                    "LoadingScreen",
+                                    "Could not verify stored session; keeping local session"
+                                )
+                                storedAuthorization
+                            }
+                        }
                     }
                 } catch (e: CancellationException) {
                     throw e
