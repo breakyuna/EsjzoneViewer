@@ -164,9 +164,13 @@ object GuestbookPage : Screen {
 
     @Composable
     override fun Content() {
+        val authorization = LocalAuthorization.current
+        val scope = rememberCoroutineScope()
+        val model = rememberScreenModel { CommentPageModel(authorization, scope, null) }
         CommentListPage(
             title = stringResource(id = R.string.guestbook),
-            chapterUrl = null
+            chapterUrl = null,
+            model = model
         )
     }
 }
@@ -177,18 +181,20 @@ class ChapterCommentsPage(
 ) : Screen {
     @Composable
     override fun Content() {
-        CommentListPage(title = chapterName, chapterUrl = chapterUrl)
+        val authorization = LocalAuthorization.current
+        val scope = rememberCoroutineScope()
+        val model = rememberScreenModel { CommentPageModel(authorization, scope, chapterUrl) }
+        CommentListPage(title = chapterName, chapterUrl = chapterUrl, model = model)
     }
 }
 
 @Composable
-private fun CommentListPage(title: String, chapterUrl: String?) {
+private fun CommentListPage(
+    title: String,
+    chapterUrl: String?,
+    model: CommentPageModel
+) {
     val navigator = LocalBaseNavigator.current
-    val authorization = LocalAuthorization.current
-    val scope = rememberCoroutineScope()
-    val model = rememberScreenModel {
-        CommentPageModel(authorization, scope, chapterUrl)
-    }
     val state by model.state.collectAsState()
     val isSubmitting by model.isSubmitting
     val submitError by model.submitError
@@ -216,7 +222,7 @@ private fun CommentListPage(title: String, chapterUrl: String?) {
                 )
             }
         }
-        if (chapterUrl != null && state is CommunityState.Result) {
+        if (chapterUrl != null && state is CommunityState.Result<*>) {
             CommentComposer(
                 draft = draft,
                 replyAuthor = replyAuthor,
