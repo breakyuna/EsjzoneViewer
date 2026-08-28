@@ -80,14 +80,15 @@ app/src/main/java/com/breakyuna/esjzone/
 - 用户可见文本优先放在 `app/src/main/res/values/strings.xml`，并同步维护 `values-zh-rCN/strings.xml`。
 - Compose 页面应复用现有组件和 Material 3 组件，保持加载、成功和空数据状态完整。
 - 涉及成人内容的列表、分类和主页分区必须遵守 `GlobalSettings.adult` 的显示状态。
+- 设计、添加或修改功能与解析时，必须先查阅 `NETWORK/` 目录下的网站逆向分析文档（如 `API_ENDPOINTS.md`、`AUTH.md`、`DATA_MODELS.md`、`FEATURE_MATRIX.md`、`HTML_PARSERS.md`、`SITE_MAP.md`），基于已验证的实际 DOM 结构与接口规范进行设计与实现。
 - 章节阅读内容可能包含正文样式、注音和远程图片，修改 `Component` 或 `ChapterPage` 时要避免破坏这些内容。
-- 改动站点 URL、XPath 或登录流程时，同时更新 `NETWORK.md` 中对应的技术说明。
+- 改动站点 URL、XPath 或登录流程时，同步更新 `NETWORK/` 目录下对应的技术说明文档。
 - 不要把网络请求、数据库操作或大型列表计算直接放进 Compose 重组过程；使用现有的协程和 `StateScreenModel` 模式。
 - 保持现有 GPL-3.0 许可证文件和第三方开源库归属信息。
 
 ## 文档与截图资源
 
-`NETWORK.md` 当前引用 `screenshots/docs/1.png` 和 `screenshots/docs/2.png`。修改或清理截图资源前，必须先用全仓库静态搜索确认引用关系，并同步更新引用方；不能仅因为资源未被 README 使用就删除它们。
+`NETWORK/` 中的文档或技术说明可能引用相关截图资源。修改或清理截图资源前，必须先用全仓库静态搜索确认引用关系，并同步更新引用方；不能仅因为资源未被 README 使用就删除它们。
 
 ## 验证清单
 
