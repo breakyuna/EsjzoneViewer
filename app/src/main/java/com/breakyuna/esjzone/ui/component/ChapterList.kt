@@ -76,8 +76,14 @@ fun ChapterList(
 
             Spacer(modifier = Modifier.height(4.dp))
 
+            val chapterOrder = chapterList.orderedChapters
             for (item in chapterList.items) {
-                item.Render(novelId, history, hasHistory)
+                item.Render(
+                    novelId = novelId,
+                    history = history,
+                    hasHistory = hasHistory,
+                    chapterOrder = chapterOrder
+                )
             }
         }
     }

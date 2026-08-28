@@ -291,7 +291,8 @@ object HistoryPage : Screen {
                                                                 ChapterPage(
                                                                     novel.id(),
                                                                     currChapter,
-                                                                    historyChapter
+                                                                    historyChapter,
+                                                                    novel.chapterList.orderedChapters
                                                                 )
                                                             )
                                                         }

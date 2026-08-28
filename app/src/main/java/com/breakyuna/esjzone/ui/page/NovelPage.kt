@@ -245,7 +245,8 @@ class NovelPage(
                                             ChapterPage(
                                                 result.detailed.id(),
                                                 currChapter,
-                                                historyState
+                                                historyState,
+                                                chapterList.orderedChapters
                                             )
                                         )
                                     }
@@ -349,4 +350,3 @@ class NovelPageModel(
     }
 
 }
-

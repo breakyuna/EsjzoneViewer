@@ -5,6 +5,8 @@ import java.nio.charset.StandardCharsets
 import java.security.MessageDigest
 import kotlinx.coroutines.CancellationException
 import okhttp3.Headers
+import okhttp3.Cookie
+import okhttp3.HttpUrl
 import okhttp3.OkHttpClient
 import okhttp3.Request
 
@@ -44,8 +46,13 @@ object EsjzoneClient {
     @Volatile
     private var sharedHttpClient: OkHttpClient = OkHttpClient()
 
+    @Volatile
+    internal var persistentCookieJar: PersistentCookieJar? = null
+        private set
+
     /** Initializes the shared connection pool and page cache during app startup. */
     fun initialize(context: Context) {
+        persistentCookieJar = PersistentCookieJar(context.applicationContext)
         PageCache.initialize(context.applicationContext)
         // PageCache owns response persistence. The shared client is intentionally kept
         // without OkHttp's URL-only HTTP cache so one account can never receive another
@@ -97,6 +104,26 @@ object EsjzoneClient {
 
     fun clearPageCache() {
         PageCache.clear()
+    }
+
+    /** Returns the persisted session for a host, importing the legacy Room format once. */
+    fun restoreAuthorization(host: String, legacy: Authorization? = null): Authorization? {
+        val jar = persistentCookieJar ?: return legacy?.takeIf { it.hasCredentials() }
+        jar.authorizationFor(host)?.let { return it }
+        if (legacy?.hasCredentials() == true && jar.importLegacyAuthorization(host, legacy)) {
+            return jar.authorizationFor(host)
+        }
+        return null
+    }
+
+    /** Stores all cookies returned by the login flow without exposing their values to logs. */
+    internal fun persistCookies(url: HttpUrl, cookies: List<Cookie>) {
+        persistentCookieJar?.saveFromResponse(url, cookies)
+    }
+
+    /** Clears only the selected site's session; a null host clears every persisted session. */
+    fun clearSession(host: String? = null) {
+        persistentCookieJar?.clear(host)
     }
 
     private fun pageCacheKey(authorization: Authorization, url: String): String {

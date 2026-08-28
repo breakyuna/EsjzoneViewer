@@ -397,6 +397,9 @@ object SettingsPage : Screen {
                         }
 
                         try {
+                            EsjzoneClient.clearSession(
+                                authorization.domain.ifBlank { GlobalSettings.domain.value }
+                            )
                             val dao = MainActivity.database.cacheDao()
                             dao.deleteByKey("ews_key")
                             dao.deleteByKey("ews_token")

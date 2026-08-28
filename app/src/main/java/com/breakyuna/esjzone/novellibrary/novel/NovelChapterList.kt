@@ -11,6 +11,16 @@ data class NovelChapterList(
     val items: List<Item>
 ) : Serializable {
 
+    /** Chapters in the order shown by the detail page's canonical table of contents. */
+    val orderedChapters: List<Chapter>
+        get() = items.flatMap { item ->
+            when (item) {
+                is ChapterItem -> listOf(item.chapter)
+                is ChapterListItem -> item.chapters
+                else -> emptyList()
+            }
+        }
+
     val hasHistory: Boolean
     val toRead: Chapter?
 

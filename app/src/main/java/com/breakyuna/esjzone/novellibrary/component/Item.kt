@@ -117,7 +117,12 @@ private fun analyseChapter(element: Element): Chapter {
 interface Item {
 
     @Composable
-    fun Render(novelId: String, history: MutableState<Chapter?>, hasHistory: MutableState<Boolean>)
+    fun Render(
+        novelId: String,
+        history: MutableState<Chapter?>,
+        hasHistory: MutableState<Boolean>,
+        chapterOrder: List<Chapter>
+    )
 
 }
 
@@ -127,7 +132,8 @@ class TextItem(private val component: TextComponent) : Item {
     override fun Render(
         novelId: String,
         history: MutableState<Chapter?>,
-        hasHistory: MutableState<Boolean>
+        hasHistory: MutableState<Boolean>,
+        chapterOrder: List<Chapter>
     ) {
         val textMeasurer = rememberTextMeasurer()
         val textStyle = LocalTextStyle.current
@@ -157,7 +163,8 @@ class ChapterItem(val chapter: Chapter) : Item {
     override fun Render(
         novelId: String,
         history: MutableState<Chapter?>,
-        hasHistory: MutableState<Boolean>
+        hasHistory: MutableState<Boolean>,
+        chapterOrder: List<Chapter>
     ) {
         val navigator = LocalBaseNavigator.current
 
@@ -176,7 +183,7 @@ class ChapterItem(val chapter: Chapter) : Item {
                 if (chapter.url.contains("esjzone") || chapter.url.contains("forum")) {
                     historied = true
                     rememberedHistory = this.chapter
-                    navigator?.push(ChapterPage(novelId, chapter, history))
+                    navigator?.push(ChapterPage(novelId, chapter, history, chapterOrder))
                 }
             },
             shape = RoundedCornerShape(12.dp),
@@ -234,7 +241,8 @@ class ChapterListItem(private val name: TextComponent, val chapters: List<Chapte
     override fun Render(
         novelId: String,
         history: MutableState<Chapter?>,
-        hasHistory: MutableState<Boolean>
+        hasHistory: MutableState<Boolean>,
+        chapterOrder: List<Chapter>
     ) {
         val navigator = LocalBaseNavigator.current
 
@@ -323,7 +331,8 @@ class ChapterListItem(private val name: TextComponent, val chapters: List<Chapte
                                             ChapterPage(
                                                 novelId,
                                                 chapter,
-                                                history
+                                                history,
+                                                chapterOrder
                                             )
                                         )
                                     }

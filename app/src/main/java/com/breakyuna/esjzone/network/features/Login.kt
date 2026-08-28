@@ -15,32 +15,13 @@ import okhttp3.Request
 
 fun EsjzoneClient.login(email: String, password: String): Authorization? {
     return try {
-        var authorization: Authorization? = null
+        var loginResponseUrl: HttpUrl? = null
+        val cookieJar = LoginCookieJar()
         val httpClient = OkHttpClient.Builder()
-            .cookieJar(object : CookieJar {
-                override fun loadForRequest(url: HttpUrl): List<Cookie> = emptyList()
-
-                override fun saveFromResponse(url: HttpUrl, cookies: List<Cookie>) {
-                    var ewsKey: String? = null
-                    var ewsToken: String? = null
-
-                    for (cookie in cookies) {
-                        when (cookie.name) {
-                            "ews_key" -> ewsKey = cookie.value
-                            "ews_token" -> ewsToken = cookie.value
-                        }
-                    }
-
-                    val key = ewsKey?.takeIf { it.isNotBlank() }
-                    val token = ewsToken?.takeIf { it.isNotBlank() }
-                    if (key != null && token != null) {
-                        authorization = Authorization(key, token)
-                    }
-                }
-            })
+            .cookieJar(cookieJar)
             .build()
 
-        val authorizationToken = EMPTY_HTTP_CLIENT.newCall(
+        val authorizationToken = httpClient.newCall(
             Request.Builder()
                 .url(EsjzoneUrls.My.Login)
                 .post(
@@ -77,6 +58,7 @@ fun EsjzoneClient.login(email: String, password: String): Authorization? {
                 .header("Authorization", authorizationToken)
                 .build()
         ).execute().use { response ->
+            loginResponseUrl = response.request.url
             if (!response.isSuccessful) {
                 null
             } else {
@@ -88,13 +70,56 @@ fun EsjzoneClient.login(email: String, password: String): Authorization? {
             return null
         }
 
-        authorization
+        val cookies = cookieJar.allCookies()
+        val key = cookies.firstOrNull { it.name == "ews_key" }?.value
+        val token = cookies.firstOrNull { it.name == "ews_token" }?.value
+        if (key.isNullOrBlank() || token.isNullOrBlank()) {
+            AppLogger.w("Login", "Login succeeded without the required session cookies")
+            return null
+        }
+
+        loginResponseUrl?.let { persistCookies(it, cookies) }
+        Authorization(key, token, EsjzoneUrls.BaseWithoutProtocol)
     } catch (e: CancellationException) {
         throw e
     } catch (e: Exception) {
         AppLogger.e("Login", "Login request or response parsing failed", e)
         null
     }
+}
+
+/** Collects the complete login cookie exchange before it is committed to persistent storage. */
+private class LoginCookieJar : CookieJar {
+
+    private val lock = Any()
+    private val cookies = mutableListOf<Cookie>()
+
+    override fun loadForRequest(url: HttpUrl): List<Cookie> = synchronized(lock) {
+        cookies.removeAll { it.expiresAt <= System.currentTimeMillis() }
+        cookies.filter { it.matches(url) }
+    }
+
+    override fun saveFromResponse(url: HttpUrl, responseCookies: List<Cookie>) {
+        synchronized(lock) {
+            for (cookie in responseCookies) {
+                val index = cookies.indexOfFirst { it.sameIdentity(cookie) }
+                if (cookie.expiresAt <= System.currentTimeMillis()) {
+                    if (index >= 0) cookies.removeAt(index)
+                } else if (index >= 0) {
+                    cookies[index] = cookie
+                } else {
+                    cookies += cookie
+                }
+            }
+        }
+    }
+
+    fun allCookies(): List<Cookie> = synchronized(lock) { cookies.toList() }
+
+    private fun Cookie.sameIdentity(other: Cookie): Boolean =
+        name == other.name &&
+            domain.equals(other.domain, ignoreCase = true) &&
+            path == other.path
 }
 
 private fun parseLoginStatus(body: String): Int? {

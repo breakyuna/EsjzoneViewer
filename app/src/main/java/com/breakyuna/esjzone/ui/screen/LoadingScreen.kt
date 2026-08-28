@@ -53,11 +53,21 @@ class LoadingScreen : Screen {
 
                     val ewsKey = dao.findByKey("ews_key")?.value ?: "null"
                     val ewsToken = dao.findByKey("ews_token")?.value ?: "null"
+                    val sessionDomain = dao.findByKey("session_domain")?.value
                     GlobalSettings.adult.value =
                         dao.findByKey("show_adult")?.value?.toBooleanStrictOrNull() ?: false
 
-                    val storedAuthorization = Authorization(ewsKey, ewsToken)
-                    if (!storedAuthorization.hasCredentials()) {
+                    val selectedDomain = GlobalSettings.domain.value
+                    val legacyAuthorization = Authorization(ewsKey, ewsToken, selectedDomain)
+                    val legacySession = legacyAuthorization.takeIf {
+                        it.hasCredentials() &&
+                            (sessionDomain.isNullOrBlank() || sessionDomain == selectedDomain)
+                    }
+                    val storedAuthorization = EsjzoneClient.restoreAuthorization(
+                        selectedDomain,
+                        legacySession
+                    )
+                    if (storedAuthorization == null || !storedAuthorization.hasCredentials()) {
                         null
                     } else {
                         when (EsjzoneClient.checkAuthorization(storedAuthorization)) {
@@ -68,6 +78,10 @@ class LoadingScreen : Screen {
                                     "Stored session was rejected by the server"
                                 )
                                 EsjzoneClient.clearPageCache()
+                                EsjzoneClient.clearSession(selectedDomain)
+                                dao.deleteByKey("ews_key")
+                                dao.deleteByKey("ews_token")
+                                dao.deleteByKey("session_domain")
                                 null
                             }
                             AuthorizationCheckResult.UNKNOWN -> {

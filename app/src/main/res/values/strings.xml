@@ -61,6 +61,7 @@
     <string name="continue_reading">Continue</string>
     <string name="previous_chapter">Previous</string>
     <string name="next_chapter">Next</string>
+    <string name="chapter_load_failed">Failed to load chapter</string>
     <string name="favorites_recently_added">Recently Added</string>
     <string name="favorites_recently_update">Recently Update</string>
     <string name="delete_history">Delete</string>

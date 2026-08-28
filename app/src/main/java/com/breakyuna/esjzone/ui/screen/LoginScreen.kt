@@ -287,6 +287,7 @@ object LoginScreen : Screen {
                                     MainActivity.database.runInTransaction {
                                         val dao = MainActivity.database.cacheDao()
                                         dao.put("domain", selectedDomain)
+                                        dao.put("session_domain", selectedDomain)
                                         dao.put("ews_key", result.ewsKey)
                                         dao.put("ews_token", result.ewsToken)
                                     }

@@ -29,7 +29,6 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.FilledTonalButton
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
@@ -50,6 +49,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -60,6 +60,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import cafe.adriel.voyager.core.model.StateScreenModel
@@ -67,26 +68,34 @@ import cafe.adriel.voyager.core.model.rememberScreenModel
 import cafe.adriel.voyager.core.screen.Screen
 import coil.compose.SubcomposeAsyncImage
 import coil.request.ImageRequest
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 import com.breakyuna.esjzone.MainActivity
 import com.breakyuna.esjzone.R
 import com.breakyuna.esjzone.network.Authorization
 import com.breakyuna.esjzone.network.EsjzoneClient
+import com.breakyuna.esjzone.network.EsjzoneUrls
 import com.breakyuna.esjzone.network.LocalAuthorization
 import com.breakyuna.esjzone.network.features.getChapterDetail
+import com.breakyuna.esjzone.network.features.getNovelDetail
 import com.breakyuna.esjzone.novellibrary.component.ImageComponent
 import com.breakyuna.esjzone.novellibrary.component.TextComponent
 import com.breakyuna.esjzone.novellibrary.novel.Chapter
 import com.breakyuna.esjzone.novellibrary.novel.DetailedChapter
+import com.breakyuna.esjzone.novellibrary.novel.FavoriteNovel
 import com.breakyuna.esjzone.ui.component.AppBar
 import com.breakyuna.esjzone.ui.navigation.LocalBaseNavigator
+import com.breakyuna.esjzone.util.AppLogger
 
 class ChapterPage(
     private val novelId: String,
-    private var chapter: Chapter,
-    private val history: MutableState<Chapter?>
+    private val chapter: Chapter,
+    private val history: MutableState<Chapter?>,
+    private val chapterOrder: List<Chapter> = emptyList()
 ) : Screen {
 
     @SuppressLint("UnusedMaterial3ScaffoldPaddingParameter")
@@ -105,7 +114,15 @@ class ChapterPage(
         }
 
         val chapterPageModel =
-            rememberScreenModel { ChapterPageModel(authorization, scope, requestedChapter) }
+            rememberScreenModel {
+                ChapterPageModel(
+                    authorization = authorization,
+                    scope = scope,
+                    requestedChapter = requestedChapter,
+                    novelId = novelId,
+                    chapterOrder = chapterOrder
+                )
+            }
         val state by chapterPageModel.state.collectAsState()
 
         var showToolbar by remember {
@@ -125,6 +142,8 @@ class ChapterPage(
         var chapterName by remember {
             mutableStateOf(chapter.name)
         }
+
+        val continuousLoadThreshold = with(LocalDensity.current) { 720.dp.toPx().toInt() }
 
         if (scrollState.isScrollInProgress && scrollState.maxValue > 0) {
             sliderPosition = scrollState.value.toFloat() / scrollState.maxValue.toFloat()
@@ -177,9 +196,6 @@ class ChapterPage(
                                 }
 
                                 val result = state as ChapterPageModel.State.Result
-                                val detailed by remember {
-                                    result.detailed
-                                }
 
                                 Row(
                                     modifier = Modifier.fillMaxWidth(),
@@ -187,16 +203,14 @@ class ChapterPage(
                                     horizontalArrangement = Arrangement.SpaceBetween
                                 ) {
                                     FilledTonalButton(
-                                        enabled = detailed.previous != null,
+                                        enabled = result.previous != null,
                                         onClick = {
-                                            detailed.previous?.let { previous ->
+                                            result.previous?.let { previous ->
                                                 if (novelId == previous.novelId()) {
                                                     rememberedHistory = previous
                                                 }
-                                                requestedChapter.value = previous
                                                 chapterName = previous.name
-                                                chapter = previous
-                                                chapterPageModel.getDetail()
+                                                chapterPageModel.openChapter(previous)
                                                 scope.launch(Dispatchers.Main) {
                                                     scrollState.scrollTo(0)
                                                 }
@@ -220,16 +234,14 @@ class ChapterPage(
                                     )
 
                                     FilledTonalButton(
-                                        enabled = detailed.next != null,
+                                        enabled = result.next != null,
                                         onClick = {
-                                            detailed.next?.let { next ->
+                                            result.next?.let { next ->
                                                 if (novelId == next.novelId()) {
                                                     rememberedHistory = next
                                                 }
-                                                requestedChapter.value = next
                                                 chapterName = next.name
-                                                chapter = next
-                                                chapterPageModel.getDetail()
+                                                chapterPageModel.openChapter(next)
                                                 scope.launch(Dispatchers.Main) {
                                                     scrollState.scrollTo(0)
                                                 }
@@ -289,7 +301,7 @@ class ChapterPage(
                     Spacer(modifier = Modifier.height(32.dp))
 
                     Text(
-                        text = chapter.name,
+                        text = chapterName,
                         style = MaterialTheme.typography.headlineSmall.copy(
                             fontWeight = FontWeight.Bold,
                             lineHeight = 34.sp
@@ -308,48 +320,52 @@ class ChapterPage(
                             CircularProgressIndicator(strokeWidth = 2.5.dp)
                         }
 
+                        is ChapterPageModel.State.Error -> Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(300.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = stringResource(id = R.string.chapter_load_failed),
+                                color = MaterialTheme.colorScheme.error
+                            )
+                        }
+
                         is ChapterPageModel.State.Result -> Column(
                             modifier = Modifier.fillMaxSize()
                         ) {
                             val result = state as ChapterPageModel.State.Result
-                            for (component in result.detailed.value.content) {
-                                if (component is TextComponent) {
-                                    val (str, inlines) = component.toInlineAnnotatedString(
-                                        textMeasurer,
-                                        textStyle,
-                                        density
-                                    )
+                            for ((index, entry) in result.chapters.withIndex()) {
+                                if (index > 0) {
+                                    Spacer(modifier = Modifier.height(32.dp))
                                     Text(
-                                        text = str,
-                                        inlineContent = inlines,
-                                        style = MaterialTheme.typography.bodyLarge.copy(
-                                            lineHeight = 28.sp,
-                                            letterSpacing = 0.3.sp
+                                        text = entry.chapter.name,
+                                        style = MaterialTheme.typography.headlineSmall.copy(
+                                            fontWeight = FontWeight.Bold,
+                                            lineHeight = 34.sp
                                         ),
-                                        color = MaterialTheme.colorScheme.onBackground
+                                        color = MaterialTheme.colorScheme.onBackground,
+                                        modifier = Modifier.padding(bottom = 24.dp)
                                     )
-                                } else if (component is ImageComponent) {
-                                    SubcomposeAsyncImage(
-                                        model = ImageRequest.Builder(LocalContext.current)
-                                            .data(component.url)
-                                            .crossfade(true)
-                                            .build(),
-                                        contentDescription = "chapter image",
-                                        imageLoader = MainActivity.imageLoader,
-                                        loading = {
-                                            Box(
-                                                modifier = Modifier.fillMaxWidth().height(150.dp),
-                                                contentAlignment = Alignment.Center
-                                            ) {
-                                                CircularProgressIndicator(strokeWidth = 2.dp)
-                                            }
-                                        },
-                                        contentScale = ContentScale.FillWidth,
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .padding(vertical = 12.dp)
-                                            .clip(RoundedCornerShape(8.dp))
-                                    )
+                                }
+
+                                ChapterContent(
+                                    detail = entry.detail,
+                                    textMeasurer = textMeasurer,
+                                    textStyle = textStyle,
+                                    density = density
+                                )
+                            }
+
+                            if (result.isLoadingNext) {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(120.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    CircularProgressIndicator(strokeWidth = 2.5.dp)
                                 }
                             }
                         }
@@ -363,35 +379,413 @@ class ChapterPage(
         LaunchedEffect(currentCompositeKeyHash) {
             chapterPageModel.getDetail()
         }
-    }
 
-}
+        LaunchedEffect(scrollState, chapterPageModel, continuousLoadThreshold) {
+            snapshotFlow { scrollState.value to scrollState.maxValue }
+                .collect { (value, maxValue) ->
+                    if (maxValue > 0 && value > 0 && maxValue - value <= continuousLoadThreshold) {
+                        chapterPageModel.loadNextChapter()
+                    }
+                }
+        }
 
-class ChapterPageModel(
-    private val authorization: Authorization,
-    private val scope: CoroutineScope,
-    private val chapter: MutableState<Chapter>
-) : StateScreenModel<ChapterPageModel.State>(State.Loading) {
-
-    sealed class State {
-        data object Loading : State()
-        data class Result(val detailed: MutableState<DetailedChapter>) : State()
-    }
-
-    fun getDetail() {
-        scope.launch(Dispatchers.IO) {
-            mutableState.value = State.Loading
-            try {
-                val detail = EsjzoneClient.getChapterDetail(
-                    authorization,
-                    chapter.value
-                )
-                mutableState.value = State.Result(mutableStateOf(detail))
-            } catch (e: Exception) {
-                com.breakyuna.esjzone.util.AppLogger.e("ChapterPageModel", "Failed to load chapter detail for ${chapter.value.name}", e)
+        LaunchedEffect(state) {
+            val result = state as? ChapterPageModel.State.Result
+            if (result != null && result.chapters.size > 1) {
+                history.value = result.chapters.last().chapter
             }
         }
     }
 
 }
 
+@Composable
+private fun ChapterContent(
+    detail: DetailedChapter,
+    textMeasurer: androidx.compose.ui.text.TextMeasurer,
+    textStyle: androidx.compose.ui.text.TextStyle,
+    density: Density
+) {
+    for (component in detail.content) {
+        if (component is TextComponent) {
+            val (str, inlines) = component.toInlineAnnotatedString(
+                textMeasurer,
+                textStyle,
+                density
+            )
+            Text(
+                text = str,
+                inlineContent = inlines,
+                style = MaterialTheme.typography.bodyLarge.copy(
+                    lineHeight = 28.sp,
+                    letterSpacing = 0.3.sp
+                ),
+                color = MaterialTheme.colorScheme.onBackground
+            )
+        } else if (component is ImageComponent) {
+            SubcomposeAsyncImage(
+                model = ImageRequest.Builder(LocalContext.current)
+                    .data(component.url)
+                    .crossfade(true)
+                    .build(),
+                contentDescription = "chapter image",
+                imageLoader = MainActivity.imageLoader,
+                loading = {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(150.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        CircularProgressIndicator(strokeWidth = 2.dp)
+                    }
+                },
+                contentScale = ContentScale.FillWidth,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 12.dp)
+                    .clip(RoundedCornerShape(8.dp))
+            )
+        }
+    }
+}
+
+data class ReaderChapter(
+    val chapter: Chapter,
+    val detail: DetailedChapter
+)
+
+class ChapterPageModel(
+    private val authorization: Authorization,
+    private val scope: CoroutineScope,
+    private val requestedChapter: MutableState<Chapter>,
+    private val novelId: String,
+    chapterOrder: List<Chapter>
+) : StateScreenModel<ChapterPageModel.State>(State.Loading) {
+
+    sealed class State {
+        data object Loading : State()
+        data object Error : State()
+        data class Result(
+            val chapters: List<ReaderChapter>,
+            val previous: Chapter?,
+            val next: Chapter?,
+            val isLoadingNext: Boolean
+        ) : State()
+    }
+
+    private val lock = Any()
+    private val loadedChapters = mutableListOf<ReaderChapter>()
+    private val prefetchedDetails = mutableMapOf<String, DetailedChapter>()
+    private val prefetchJobs = mutableMapOf<String, Job>()
+    private var orderedChapters = normalizeChapterOrder(chapterOrder)
+    private var orderResolved = orderedChapters.isNotEmpty()
+    private var sessionId = 0L
+    private var initialJob: Job? = null
+    private var appendJob: Job? = null
+    private var orderJob: Job? = null
+    private var orderRequestId = 0L
+    private var loadingNext = false
+    private var orderLoading = false
+    private var pendingNextRequest = false
+
+    fun getDetail() {
+        openChapter(requestedChapter.value)
+    }
+
+    fun openChapter(chapter: Chapter) {
+        requestedChapter.value = chapter
+        var currentSession = 0L
+        synchronized(lock) {
+            sessionId += 1
+            currentSession = sessionId
+            initialJob?.cancel()
+            appendJob?.cancel()
+            orderJob?.cancel()
+            orderRequestId += 1
+            loadedChapters.clear()
+            loadingNext = false
+            orderLoading = false
+            pendingNextRequest = false
+        }
+        mutableState.value = State.Loading
+
+        initialJob = scope.launch(Dispatchers.IO) {
+            val detail = loadDetail(chapter)
+            if (!isCurrentSession(currentSession)) return@launch
+            if (detail == null) {
+                mutableState.value = State.Error
+                return@launch
+            }
+
+            synchronized(lock) {
+                if (isCurrentSessionLocked(currentSession)) {
+                    loadedChapters += ReaderChapter(chapter, detail)
+                }
+            }
+            publish(currentSession)
+
+            val hasCanonicalOrder = synchronized(lock) { orderResolved }
+            if (hasCanonicalOrder || novelId.isBlank()) {
+                prefetchNext(chapter, detail)
+            } else {
+                requestChapterOrder(currentSession, chapter, detail)
+            }
+        }
+    }
+
+    /** Loads the next canonical TOC chapter when the reader reaches the end buffer. */
+    fun loadNextChapter() {
+        val shouldWaitForOrder = synchronized(lock) {
+            !orderResolved && novelId.isNotBlank()
+        }
+        if (shouldWaitForOrder) {
+            synchronized(lock) {
+                pendingNextRequest = true
+            }
+            requestChapterOrder(sessionId, null, null)
+            return
+        }
+
+        var currentSession: Long? = null
+        var nextChapter: Chapter? = null
+        synchronized(lock) {
+            if (loadingNext || loadedChapters.isEmpty()) return
+            val last = loadedChapters.last()
+            val candidate = adjacentChapter(last.chapter, 1, last.detail) ?: return
+            if (loadedChapters.any { sameChapter(it.chapter, candidate) }) return
+            nextChapter = candidate
+            loadingNext = true
+            currentSession = sessionId
+        }
+        val chapterToLoad = nextChapter ?: return
+        val session = currentSession ?: return
+        publish(session)
+
+        appendJob = scope.launch(Dispatchers.IO) {
+            try {
+                val detail = loadDetail(chapterToLoad)
+                if (detail != null && isCurrentSession(session)) {
+                    synchronized(lock) {
+                        if (isCurrentSessionLocked(session) &&
+                            loadedChapters.none { sameChapter(it.chapter, chapterToLoad) }
+                        ) {
+                            loadedChapters += ReaderChapter(chapterToLoad, detail)
+                        }
+                    }
+                    publish(session)
+                    prefetchNext(chapterToLoad, detail)
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                AppLogger.e(
+                    "ChapterPageModel",
+                    "Failed to append chapter ${chapterToLoad.name}",
+                    e
+                )
+            } finally {
+                synchronized(lock) {
+                    if (isCurrentSessionLocked(session)) {
+                        loadingNext = false
+                    }
+                }
+                publish(session)
+            }
+        }
+    }
+
+    private fun requestChapterOrder(
+        currentSession: Long,
+        chapter: Chapter?,
+        detail: DetailedChapter?
+    ) {
+        var requestId = 0L
+        synchronized(lock) {
+            if (orderResolved || orderLoading) return
+            orderLoading = true
+            orderRequestId += 1
+            requestId = orderRequestId
+            orderJob = scope.launch(Dispatchers.IO) {
+                try {
+                    ensureChapterOrder()
+                    if (!isCurrentSession(currentSession)) return@launch
+                    publish(currentSession)
+                    if (chapter != null && detail != null) {
+                        prefetchNext(chapter, detail)
+                    }
+                    val shouldLoadNext = synchronized(lock) {
+                        val requested = pendingNextRequest
+                        pendingNextRequest = false
+                        requested
+                    }
+                    if (shouldLoadNext) loadNextChapter()
+                } finally {
+                    synchronized(lock) {
+                        if (orderRequestId == requestId) {
+                            orderLoading = false
+                            orderJob = null
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private suspend fun loadDetail(chapter: Chapter): DetailedChapter? {
+        val key = chapterKey(chapter)
+        val prefetched = synchronized(lock) { prefetchedDetails.remove(key) }
+        if (prefetched != null) return prefetched
+
+        val prefetchJob = synchronized(lock) { prefetchJobs[key] }
+        if (prefetchJob != null) {
+            try {
+                prefetchJob.join()
+            } catch (e: CancellationException) {
+                throw e
+            }
+            synchronized(lock) { prefetchedDetails.remove(key) }?.let { return it }
+        }
+
+        // The prefetch can finish between the first cache check and job lookup.
+        // Check one more time before issuing a duplicate request.
+        synchronized(lock) { prefetchedDetails.remove(key) }?.let { return it }
+
+        return try {
+            EsjzoneClient.getChapterDetail(authorization, chapter)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            AppLogger.e(
+                "ChapterPageModel",
+                "Failed to load chapter detail for ${chapter.name}",
+                e
+            )
+            null
+        }
+    }
+
+    private fun prefetchNext(chapter: Chapter, detail: DetailedChapter) {
+        adjacentChapter(chapter, 1, detail)?.let(::prefetch)
+    }
+
+    private fun prefetch(chapter: Chapter) {
+        val key = chapterKey(chapter)
+        if (key.isBlank()) return
+        synchronized(lock) {
+            if (loadedChapters.any { sameChapter(it.chapter, chapter) } ||
+                prefetchedDetails.containsKey(key) || prefetchJobs.containsKey(key)
+            ) {
+                return
+            }
+            prefetchJobs[key] = scope.launch(Dispatchers.IO) {
+                val detail = try {
+                    EsjzoneClient.getChapterDetail(authorization, chapter)
+                } catch (e: CancellationException) {
+                    synchronized(lock) {
+                        prefetchJobs.remove(key)
+                    }
+                    throw e
+                } catch (e: Exception) {
+                    AppLogger.w(
+                        "ChapterPageModel",
+                        "Prefetch failed for chapter ${chapter.name}",
+                        e
+                    )
+                    null
+                }
+                synchronized(lock) {
+                    if (detail != null) prefetchedDetails[key] = detail
+                    prefetchJobs.remove(key)
+                }
+            }
+        }
+    }
+
+    private suspend fun ensureChapterOrder() {
+        synchronized(lock) {
+            if (orderResolved) return
+            if (novelId.isBlank()) {
+                orderResolved = true
+                return
+            }
+        }
+
+        val source = FavoriteNovel(
+            name = "",
+            url = "${EsjzoneUrls.Base}/detail/$novelId.html"
+        )
+        val fetchedOrder = try {
+            EsjzoneClient.getNovelDetail(authorization, source)
+                .chapterList
+                .orderedChapters
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            AppLogger.w(
+                "ChapterPageModel",
+                "Failed to load canonical chapter order for novel $novelId",
+                e
+            )
+            emptyList()
+        }
+
+        synchronized(lock) {
+            if (fetchedOrder.isNotEmpty()) {
+                orderedChapters = normalizeChapterOrder(fetchedOrder)
+            }
+            orderResolved = true
+        }
+    }
+
+    private fun adjacentChapter(
+        chapter: Chapter,
+        offset: Int,
+        fallback: DetailedChapter?
+    ): Chapter? {
+        val adjacent = synchronized(lock) {
+            val index = orderedChapters.indexOfFirst { sameChapter(it, chapter) }
+            if (index >= 0) orderedChapters.getOrNull(index + offset) else null
+        }
+        if (adjacent != null) return adjacent
+        return if (offset > 0) fallback?.next else fallback?.previous
+    }
+
+    private fun publish(currentSession: Long? = null) {
+        val snapshot: List<ReaderChapter>
+        val previous: Chapter?
+        val next: Chapter?
+        val loading: Boolean
+        synchronized(lock) {
+            if (currentSession != null && !isCurrentSessionLocked(currentSession)) return
+            snapshot = loadedChapters.toList()
+            val first = snapshot.firstOrNull()
+            previous = first?.let { adjacentChapter(it.chapter, -1, it.detail) }
+            next = first?.let { adjacentChapter(it.chapter, 1, it.detail) }
+            loading = loadingNext
+        }
+        if (snapshot.isNotEmpty()) {
+            mutableState.value = State.Result(snapshot, previous, next, loading)
+        }
+    }
+
+    private fun isCurrentSession(currentSession: Long): Boolean =
+        synchronized(lock) { isCurrentSessionLocked(currentSession) }
+
+    private fun isCurrentSessionLocked(currentSession: Long): Boolean = sessionId == currentSession
+
+    private fun sameChapter(first: Chapter, second: Chapter): Boolean =
+        chapterKey(first) == chapterKey(second)
+
+    private fun chapterKey(chapter: Chapter): String =
+        chapter.url.trim()
+            .replaceFirst(Regex("^https?://[^/]+", RegexOption.IGNORE_CASE), "")
+            .replaceFirst(Regex("^//[^/]+"), "")
+            .substringBefore('#')
+
+    private fun normalizeChapterOrder(chapters: List<Chapter>): List<Chapter> =
+        chapters.asSequence()
+            .filter { chapterKey(it).isNotBlank() }
+            .distinctBy { chapterKey(it) }
+            .toList()
+}

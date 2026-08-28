@@ -36,5 +36,9 @@ class ChapterListParserTest {
         assertEquals("第一章", volume.chapters[0].name)
         assertEquals("第二章", volume.chapters[1].name)
         assertEquals("/forum/123/2.html", volume.chapters[1].url)
+        assertEquals(
+            listOf("第一章", "第二章"),
+            chapterList.orderedChapters.map { it.name }
+        )
     }
 }

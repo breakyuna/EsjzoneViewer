@@ -26,6 +26,25 @@ fun EsjzoneClient.checkAuthorization(authorization: Authorization): Authorizatio
         return AuthorizationCheckResult.UNAUTHORIZED
     }
 
+    val first = checkAuthorizationOnce(authorization)
+    if (!first.retryableStatus) return first.result
+
+    // A single 401/403 can be produced by a proxy, rate limiter, or a transient
+    // server edge. Confirm it before treating the persisted session as expired.
+    val second = checkAuthorizationOnce(authorization)
+    return if (second.retryableStatus) {
+        AuthorizationCheckResult.UNAUTHORIZED
+    } else {
+        second.result
+    }
+}
+
+private data class AuthorizationProbe(
+    val result: AuthorizationCheckResult,
+    val retryableStatus: Boolean = false
+)
+
+private fun EsjzoneClient.checkAuthorizationOnce(authorization: Authorization): AuthorizationProbe {
     return try {
         AppLogger.i("IsAuthorized", "Checking authorization with server at ${EsjzoneUrls.My.Profile}")
         val response = authenticatedClient(authorization).newCall(
@@ -47,28 +66,32 @@ fun EsjzoneClient.checkAuthorization(authorization: Authorization): Authorizatio
             .isNotEmpty()
         val redirectedToLogin = finalPath.contains("/my/login") ||
             LOGIN_REDIRECT_PATTERN.containsMatchIn(responseBody)
-        val hasLoginForm = document.select("form.login-box, input[name=pwd]").isNotEmpty()
+        val hasLoginForm = document.select("form.login-box").isNotEmpty() ||
+            (document.select("input[name=pwd]").isNotEmpty() &&
+                responseBody.contains("/my/login", ignoreCase = true))
+        val explicitLoginPage = finalPath.contains("/my/login") ||
+            (redirectedToLogin && hasLoginForm)
 
         val result = when {
+            explicitLoginPage ->
+                AuthorizationProbe(AuthorizationCheckResult.UNAUTHORIZED)
             responseCode == 401 || responseCode == 403 ->
-                AuthorizationCheckResult.UNAUTHORIZED
-            redirectedToLogin || hasLoginForm ->
-                AuthorizationCheckResult.UNAUTHORIZED
+                AuthorizationProbe(AuthorizationCheckResult.UNKNOWN, retryableStatus = true)
             !isSuccessful ->
-                AuthorizationCheckResult.UNKNOWN
+                AuthorizationProbe(AuthorizationCheckResult.UNKNOWN)
             hasProfileMarker || finalPath.contains("/my/profile") ->
-                AuthorizationCheckResult.AUTHORIZED
+                AuthorizationProbe(AuthorizationCheckResult.AUTHORIZED)
             else ->
-                AuthorizationCheckResult.UNKNOWN
+                AuthorizationProbe(AuthorizationCheckResult.UNKNOWN)
         }
 
-        AppLogger.i("IsAuthorized", "Authorization check result: $result")
+        AppLogger.i("IsAuthorized", "Authorization check result: ${result.result}")
         result
     } catch (e: CancellationException) {
         throw e
     } catch (e: Exception) {
         AppLogger.e("IsAuthorized", "Failed to check authorization due to network/parsing exception", e)
-        AuthorizationCheckResult.UNKNOWN
+        AuthorizationProbe(AuthorizationCheckResult.UNKNOWN)
     }
 }
 
