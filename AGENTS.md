@@ -49,12 +49,13 @@ app/src/main/java/com/breakyuna/esjzone/
 
 ### 主界面
 
-`MainScreen` 提供四个 Tab：
+`MainScreen` 提供五个 Tab：
 
 - `HomeTab`：主页数据、推荐和最新更新。
+- `HistoryTab`：观看记录；单击浏览历史，双击直接继续最近一次阅读。
 - `CategoryTab`：分类和分类小说列表。
 - `SearchTab`：关键词搜索和搜索历史。
-- `ProfileTab`：用户信息、收藏、历史、设置和关于页面入口。
+- `ProfileTab`：用户信息、收藏、设置和关于页面入口。
 
 具体作品通过 `NovelPage` 展示详情，章节通过 `ChapterPage` 获取并解析后阅读。
 

@@ -1,32 +1,31 @@
 package com.breakyuna.esjzone.ui.tab
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowForwardIos
 import androidx.compose.material.icons.filled.Favorite
-import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -50,6 +49,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import cafe.adriel.voyager.navigator.tab.Tab
@@ -68,7 +68,6 @@ import com.breakyuna.esjzone.novellibrary.user.UserProfile
 import com.breakyuna.esjzone.ui.navigation.LocalBaseNavigator
 import com.breakyuna.esjzone.ui.page.AboutPage
 import com.breakyuna.esjzone.ui.page.FavoritePage
-import com.breakyuna.esjzone.ui.page.HistoryPage
 import com.breakyuna.esjzone.ui.page.SettingsPage
 
 object ProfileTab : Tab {
@@ -78,7 +77,7 @@ object ProfileTab : Tab {
     override val options: TabOptions
         @Composable
         get() = TabOptions(
-            index = 3u,
+            index = 4u,
             title = stringResource(id = R.string.screen_main_tab_profile),
             icon = rememberVectorPainter(image = Icons.Filled.Person)
         )
@@ -87,167 +86,73 @@ object ProfileTab : Tab {
     override fun Content() {
         val navigator = LocalBaseNavigator.current
         val authorization = LocalAuthorization.current
-
-        var data: UserProfile? by remember {
-            mutableStateOf(null)
-        }
-
         val scope = rememberCoroutineScope()
+        var data: UserProfile? by remember { mutableStateOf(null) }
 
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .verticalScroll(rememberScrollState())
-        ) {
-            // Header
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 20.dp, vertical = 16.dp)
+        BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+            val isWide = maxWidth >= 700.dp
+            val horizontalPadding = if (isWide) 32.dp else 20.dp
+
+            LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(
+                    horizontal = horizontalPadding,
+                    vertical = 24.dp
+                ),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                Text(
-                    text = stringResource(id = R.string.screen_main_tab_profile),
-                    style = MaterialTheme.typography.headlineMedium.copy(
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.primary
-                    )
-                )
-            }
-
-            // User Info Card
-            Card(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp),
-                shape = RoundedCornerShape(20.dp),
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f)
-                )
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(20.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .size(76.dp)
-                            .clip(CircleShape)
-                            .background(MaterialTheme.colorScheme.surface)
-                            .border(2.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.4f), CircleShape),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        if (data == null) {
-                            CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
-                        } else {
-                            val profile = data ?: return@Box
-                            val avatarUrl = if (profile.avatarUrl.startsWith("http://") || profile.avatarUrl.startsWith("https://")) {
-                                profile.avatarUrl
-                            } else if (profile.avatarUrl.startsWith("/")) {
-                                "${EsjzoneUrls.Base}${profile.avatarUrl}"
-                            } else {
-                                "${EsjzoneUrls.Base}/${profile.avatarUrl}"
-                            }
-                            SubcomposeAsyncImage(
-                                model = ImageRequest.Builder(LocalContext.current)
-                                    .data(avatarUrl)
-                                    .crossfade(true)
-                                    .build(),
-                                contentDescription = profile.name,
-                                imageLoader = MainActivity.imageLoader,
-                                loading = {
-                                    CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
-                                },
-                                error = {
-                                    Icon(
-                                        imageVector = Icons.Filled.Person,
-                                        contentDescription = null,
-                                        modifier = Modifier.size(36.dp),
-                                        tint = MaterialTheme.colorScheme.primary
-                                    )
-                                },
-                                contentScale = ContentScale.Crop,
-                                modifier = Modifier.fillMaxSize()
-                            )
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.width(18.dp))
-
-                    Column {
+                item {
+                    Column(modifier = Modifier.fillMaxWidth()) {
                         Text(
-                            text = data?.name ?: "Loading...",
-                            style = MaterialTheme.typography.titleLarge.copy(
+                            text = stringResource(R.string.profile_eyebrow),
+                            style = MaterialTheme.typography.labelMedium.copy(
+                                fontWeight = FontWeight.Bold,
+                                letterSpacing = 1.8.sp
+                            ),
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Text(
+                            text = stringResource(R.string.screen_main_tab_profile),
+                            style = MaterialTheme.typography.headlineLarge.copy(
                                 fontWeight = FontWeight.Bold
                             ),
-                            color = MaterialTheme.colorScheme.onSurface
+                            color = MaterialTheme.colorScheme.onBackground
                         )
-
                         Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = stringResource(R.string.profile_description),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
 
-                        Surface(
-                            shape = RoundedCornerShape(8.dp),
-                            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)
+                item {
+                    if (isWide) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(20.dp),
+                            verticalAlignment = Alignment.Top
                         ) {
-                            Text(
-                                text = "ESJ Member",
-                                style = MaterialTheme.typography.labelMedium,
-                                color = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
+                            ProfileHero(
+                                data = data,
+                                modifier = Modifier.weight(1f)
                             )
+                            ProfileMenu(
+                                modifier = Modifier.weight(1f),
+                                navigator = navigator
+                            )
+                        }
+                    } else {
+                        Column(modifier = Modifier.fillMaxWidth()) {
+                            ProfileHero(data = data)
+                            Spacer(modifier = Modifier.height(18.dp))
+                            ProfileMenu(navigator = navigator)
                         }
                     }
                 }
             }
-
-            Spacer(modifier = Modifier.height(24.dp))
-
-            // Navigation Menu List
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                ProfileMenuItem(
-                    icon = Icons.Filled.Favorite,
-                    iconTint = MaterialTheme.colorScheme.primary,
-                    iconBg = MaterialTheme.colorScheme.primaryContainer,
-                    title = stringResource(id = R.string.favorites),
-                    subtitle = "Manage your saved novels and bookmarks",
-                    onClick = { navigator?.push(FavoritePage) }
-                )
-
-                ProfileMenuItem(
-                    icon = Icons.Filled.History,
-                    iconTint = MaterialTheme.colorScheme.secondary,
-                    iconBg = MaterialTheme.colorScheme.secondaryContainer,
-                    title = stringResource(id = R.string.history),
-                    subtitle = "Pick up where you left off reading",
-                    onClick = { navigator?.push(HistoryPage) }
-                )
-
-                ProfileMenuItem(
-                    icon = Icons.Filled.Settings,
-                    iconTint = MaterialTheme.colorScheme.tertiary,
-                    iconBg = MaterialTheme.colorScheme.tertiaryContainer,
-                    title = stringResource(id = R.string.settings),
-                    subtitle = "App theme, content preferences & mirrors",
-                    onClick = { navigator?.push(SettingsPage) }
-                )
-
-                ProfileMenuItem(
-                    icon = Icons.Filled.Info,
-                    iconTint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    iconBg = MaterialTheme.colorScheme.surfaceVariant,
-                    title = stringResource(id = R.string.about),
-                    subtitle = "Version, contributors & open source licenses",
-                    onClick = { navigator?.push(AboutPage) }
-                )
-            }
-
-            Spacer(modifier = Modifier.height(40.dp))
         }
 
         LaunchedEffect(currentCompositeKeyHash) {
@@ -255,12 +160,167 @@ object ProfileTab : Tab {
                 try {
                     data = EsjzoneClient.getUserProfile(authorization)
                 } catch (e: Exception) {
-                    com.breakyuna.esjzone.util.AppLogger.e("ProfileTab", "Failed to fetch user profile", e)
+                    com.breakyuna.esjzone.util.AppLogger.e(
+                        "ProfileTab",
+                        "Failed to fetch user profile",
+                        e
+                    )
                 }
             }
         }
     }
+}
 
+@Composable
+private fun ProfileHero(
+    data: UserProfile?,
+    modifier: Modifier = Modifier
+) {
+    Surface(
+        modifier = modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(28.dp),
+        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.72f),
+        border = BorderStroke(
+            1.dp,
+            MaterialTheme.colorScheme.primary.copy(alpha = 0.14f)
+        )
+    ) {
+        Box(modifier = Modifier.fillMaxWidth()) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .offset(x = 38.dp, y = (-46).dp)
+                    .size(150.dp)
+                    .clip(CircleShape)
+                    .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.1f))
+            )
+
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(20.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                ProfileAvatar(data = data)
+                Spacer(modifier = Modifier.width(16.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = data?.name ?: "…",
+                        style = MaterialTheme.typography.headlineSmall.copy(
+                            fontWeight = FontWeight.Bold
+                        ),
+                        color = MaterialTheme.colorScheme.onPrimaryContainer,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Spacer(modifier = Modifier.height(7.dp))
+                    Surface(
+                        shape = RoundedCornerShape(50),
+                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.14f)
+                    ) {
+                        Text(
+                            text = stringResource(R.string.profile_member_badge),
+                            style = MaterialTheme.typography.labelMedium.copy(
+                                fontWeight = FontWeight.SemiBold
+                            ),
+                            color = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(7.dp))
+                    Text(
+                        text = stringResource(R.string.profile_signed_in),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.72f)
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ProfileAvatar(data: UserProfile?) {
+    Surface(
+        modifier = Modifier.size(86.dp),
+        shape = CircleShape,
+        color = MaterialTheme.colorScheme.surface,
+        border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.28f))
+    ) {
+        if (data == null) {
+            Box(contentAlignment = Alignment.Center) {
+                CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
+            }
+        } else {
+            SubcomposeAsyncImage(
+                model = ImageRequest.Builder(LocalContext.current)
+                    .data(resolveAvatarUrl(data.avatarUrl))
+                    .crossfade(true)
+                    .build(),
+                contentDescription = data.name,
+                imageLoader = MainActivity.imageLoader,
+                loading = {
+                    CircularProgressIndicator(modifier = Modifier.size(22.dp), strokeWidth = 2.dp)
+                },
+                error = {
+                    Icon(
+                        imageVector = Icons.Filled.Person,
+                        contentDescription = null,
+                        modifier = Modifier.size(34.dp),
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                },
+                contentScale = ContentScale.Crop,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .clip(CircleShape)
+            )
+        }
+    }
+}
+
+private fun resolveAvatarUrl(avatarUrl: String): String {
+    return when {
+        avatarUrl.startsWith("http://") || avatarUrl.startsWith("https://") -> avatarUrl
+        avatarUrl.startsWith("/") -> "${EsjzoneUrls.Base}$avatarUrl"
+        else -> "${EsjzoneUrls.Base}/$avatarUrl"
+    }
+}
+
+@Composable
+private fun ProfileMenu(
+    navigator: cafe.adriel.voyager.navigator.Navigator?,
+    modifier: Modifier = Modifier
+) {
+    Column(
+        modifier = modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        ProfileMenuItem(
+            icon = Icons.Filled.Favorite,
+            iconTint = MaterialTheme.colorScheme.primary,
+            iconBg = MaterialTheme.colorScheme.primaryContainer,
+            title = stringResource(R.string.favorites),
+            subtitle = stringResource(R.string.profile_favorites_description),
+            onClick = { navigator?.push(FavoritePage) }
+        )
+        ProfileMenuItem(
+            icon = Icons.Filled.Settings,
+            iconTint = MaterialTheme.colorScheme.tertiary,
+            iconBg = MaterialTheme.colorScheme.tertiaryContainer,
+            title = stringResource(R.string.settings),
+            subtitle = stringResource(R.string.profile_settings_description),
+            onClick = { navigator?.push(SettingsPage) }
+        )
+        ProfileMenuItem(
+            icon = Icons.Filled.Info,
+            iconTint = MaterialTheme.colorScheme.onSurfaceVariant,
+            iconBg = MaterialTheme.colorScheme.surfaceVariant,
+            title = stringResource(R.string.about),
+            subtitle = stringResource(R.string.profile_about_description),
+            onClick = { navigator?.push(AboutPage) }
+        )
+    }
 }
 
 @Composable
@@ -272,26 +332,27 @@ private fun ProfileMenuItem(
     subtitle: String,
     onClick: () -> Unit
 ) {
-    Card(
+    Surface(
         modifier = Modifier
             .fillMaxWidth()
             .clickable(onClick = onClick),
-        shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
-        ),
-        elevation = CardDefaults.cardElevation(defaultElevation = 0.5.dp)
+        shape = RoundedCornerShape(20.dp),
+        color = MaterialTheme.colorScheme.surface,
+        border = BorderStroke(
+            1.dp,
+            MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.58f)
+        )
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(16.dp),
+                .padding(horizontal = 14.dp, vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Box(
                 modifier = Modifier
-                    .size(46.dp)
-                    .clip(RoundedCornerShape(12.dp))
+                    .size(48.dp)
+                    .clip(CircleShape)
                     .background(iconBg),
                 contentAlignment = Alignment.Center
             ) {
@@ -299,12 +360,10 @@ private fun ProfileMenuItem(
                     imageVector = icon,
                     contentDescription = null,
                     tint = iconTint,
-                    modifier = Modifier.size(24.dp)
+                    modifier = Modifier.size(23.dp)
                 )
             }
-
-            Spacer(modifier = Modifier.width(16.dp))
-
+            Spacer(modifier = Modifier.width(14.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = title,
@@ -313,18 +372,21 @@ private fun ProfileMenuItem(
                     ),
                     color = MaterialTheme.colorScheme.onSurface
                 )
+                Spacer(modifier = Modifier.height(2.dp))
                 Text(
                     text = subtitle,
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.75f)
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                 )
             }
-
+            Spacer(modifier = Modifier.width(8.dp))
             Icon(
                 imageVector = Icons.AutoMirrored.Filled.ArrowForwardIos,
                 contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
-                modifier = Modifier.size(15.dp)
+                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.55f),
+                modifier = Modifier.size(16.dp)
             )
         }
     }

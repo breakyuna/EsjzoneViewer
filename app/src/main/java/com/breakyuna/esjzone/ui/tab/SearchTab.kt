@@ -74,7 +74,7 @@ object SearchTab : Tab {
     override val options: TabOptions
         @Composable
         get() = TabOptions(
-            index = 2u,
+            index = 3u,
             title = stringResource(id = R.string.screen_main_tab_search),
             icon = rememberVectorPainter(image = Icons.Filled.Search)
         )

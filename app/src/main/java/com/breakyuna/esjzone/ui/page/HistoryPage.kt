@@ -89,6 +89,12 @@ object HistoryPage : Screen {
     @OptIn(ExperimentalFoundationApi::class)
     @Composable
     override fun Content() {
+        Content(showBack = true)
+    }
+
+    @OptIn(ExperimentalFoundationApi::class)
+    @Composable
+    fun Content(showBack: Boolean) {
         val navigator = LocalBaseNavigator.current
 
         val authorization = LocalAuthorization.current
@@ -100,13 +106,33 @@ object HistoryPage : Screen {
         val historyPageModel = rememberScreenModel { HistoryPageModel(authorization, scope) }
         val state by historyPageModel.state.collectAsState()
 
-        Column {
-            AppBar(
-                title = stringResource(id = R.string.history),
-                onBack = {
-                    navigator?.pop()
+        Column(modifier = Modifier.fillMaxSize()) {
+            if (showBack) {
+                AppBar(
+                    title = stringResource(id = R.string.history),
+                    onBack = {
+                        navigator?.pop()
+                    }
+                )
+            } else {
+                Column(
+                    modifier = Modifier.padding(horizontal = 20.dp, vertical = 24.dp)
+                ) {
+                    Text(
+                        text = stringResource(id = R.string.history),
+                        style = MaterialTheme.typography.headlineLarge.copy(
+                            fontWeight = FontWeight.Bold
+                        ),
+                        color = MaterialTheme.colorScheme.onBackground
+                    )
+                    Text(
+                        text = stringResource(id = R.string.history_description),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 4.dp)
+                    )
                 }
-            )
+            }
 
             when (state) {
                 is HistoryPageModel.State.Loading -> Loading()
@@ -125,7 +151,9 @@ object HistoryPage : Screen {
                     }
 
                     LazyColumn(
-                        modifier = Modifier.fillMaxSize()
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxWidth()
                     ) {
                         items(novels) { historyNovel ->
                             var detailedNovel: DetailedNovel? by remember {

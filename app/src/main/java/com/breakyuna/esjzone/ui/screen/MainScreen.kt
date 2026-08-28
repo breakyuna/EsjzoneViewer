@@ -1,5 +1,6 @@
 package com.breakyuna.esjzone.ui.screen
 
+import android.os.SystemClock
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
@@ -13,6 +14,8 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -27,6 +30,7 @@ import com.breakyuna.esjzone.network.Authorization
 import com.breakyuna.esjzone.network.LocalAuthorization
 import com.breakyuna.esjzone.ui.navigation.LocalBaseNavigator
 import com.breakyuna.esjzone.ui.tab.CategoryTab
+import com.breakyuna.esjzone.ui.tab.HistoryTab
 import com.breakyuna.esjzone.ui.tab.HomeTab
 import com.breakyuna.esjzone.ui.tab.ProfileTab
 import com.breakyuna.esjzone.ui.tab.SearchTab
@@ -62,6 +66,10 @@ private object TabScreen : Screen {
                         containerColor = MaterialTheme.colorScheme.surface
                     ) {
                         TabNavigationItem(tab = HomeTab)
+                        TabNavigationItem(
+                            tab = HistoryTab,
+                            onDoubleClick = HistoryTab::requestOpenLastReading
+                        )
                         TabNavigationItem(tab = CategoryTab)
                         TabNavigationItem(tab = SearchTab)
                         TabNavigationItem(tab = ProfileTab)
@@ -83,13 +91,31 @@ private object TabScreen : Screen {
 }
 
 @Composable
-private fun RowScope.TabNavigationItem(tab: Tab) {
+private fun RowScope.TabNavigationItem(
+    tab: Tab,
+    onDoubleClick: (() -> Unit)? = null
+) {
     val tabNavigator = LocalTabNavigator.current
     val isSelected = tabNavigator.current == tab
+    val lastTapAt = remember { mutableLongStateOf(0L) }
 
     NavigationBarItem(
         selected = isSelected,
-        onClick = { tabNavigator.current = tab },
+        onClick = {
+            val now = SystemClock.uptimeMillis()
+            val wasAlreadySelected = tabNavigator.current == tab
+            val isDoubleClick = onDoubleClick != null &&
+                wasAlreadySelected &&
+                now - lastTapAt.longValue in 1..420
+            if (isDoubleClick) {
+                lastTapAt.longValue = 0L
+                tabNavigator.current = tab
+                onDoubleClick?.invoke()
+            } else {
+                lastTapAt.longValue = now
+                tabNavigator.current = tab
+            }
+        },
         icon = {
             tab.options.icon?.let { icon ->
                 Icon(painter = icon, contentDescription = tab.options.title)

@@ -45,6 +45,7 @@ import androidx.compose.runtime.currentCompositeKeyHash
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -55,6 +56,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
@@ -74,6 +76,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
+import kotlin.math.roundToInt
 import com.breakyuna.esjzone.MainActivity
 import com.breakyuna.esjzone.R
 import com.breakyuna.esjzone.network.Authorization
@@ -131,22 +134,54 @@ class ChapterPage(
 
         val scrollState = rememberScrollState()
 
-        val maxScroll by remember {
-            derivedStateOf {
-                scrollState.maxValue
-            }
-        }
-
         var sliderPosition by remember { mutableFloatStateOf(0f) }
-
-        var chapterName by remember {
-            mutableStateOf(chapter.name)
-        }
+        var isSliderDragging by remember { mutableStateOf(false) }
+        val chapterHeights = remember { mutableStateMapOf<String, Int>() }
 
         val continuousLoadThreshold = with(LocalDensity.current) { 720.dp.toPx().toInt() }
+        val chapterActivationOffset = with(density) { 56.dp.toPx() }
+        val firstChapterTop = with(density) { 32.dp.toPx().roundToInt() }
+        val result = state as? ChapterPageModel.State.Result
+        val chapterLayouts by remember(result, chapterHeights, firstChapterTop) {
+            derivedStateOf {
+                buildReaderChapterLayouts(
+                    chapters = result?.chapters.orEmpty(),
+                    heights = chapterHeights,
+                    firstTop = firstChapterTop
+                )
+            }
+        }
+        val activeChapterIndex by remember(result, chapterLayouts, scrollState, chapterActivationOffset) {
+            derivedStateOf {
+                if (result == null) {
+                    0
+                } else {
+                    val marker = scrollState.value.toFloat() + chapterActivationOffset
+                    result.chapters.indexOfLast { entry ->
+                        chapterLayouts[entry.chapter.url]?.let { layout ->
+                            layout.height > 0 && layout.top <= marker
+                        } == true
+                    }.coerceAtLeast(0)
+                }
+            }
+        }
+        val activeChapter = result?.chapters?.getOrNull(activeChapterIndex)
+        val activeLayout = activeChapter?.let { chapterLayouts[it.chapter.url] }
+        val chapterProgress = chapterProgressFor(scrollState.value, activeLayout)
+        val displayedProgress = if (isSliderDragging) sliderPosition else chapterProgress
+        val currentChapterName = activeChapter?.chapter?.name ?: requestedChapter.value.name
 
-        if (scrollState.isScrollInProgress && scrollState.maxValue > 0) {
-            sliderPosition = scrollState.value.toFloat() / scrollState.maxValue.toFloat()
+        LaunchedEffect(requestedChapter.value.url) {
+            chapterHeights.clear()
+            sliderPosition = 0f
+            scrollState.scrollTo(0)
+        }
+
+        LaunchedEffect(scrollState, activeChapterIndex, activeLayout, isSliderDragging) {
+            if (isSliderDragging) return@LaunchedEffect
+            snapshotFlow { scrollState.value }.collect { scrollValue ->
+                sliderPosition = chapterProgressFor(scrollValue, activeLayout)
+            }
         }
 
         Scaffold(
@@ -161,7 +196,7 @@ class ChapterPage(
                         shadowElevation = 4.dp
                     ) {
                         AppBar(
-                            title = chapterName,
+                            title = currentChapterName,
                             onBack = {
                                 navigator?.pop()
                             }
@@ -194,8 +229,16 @@ class ChapterPage(
                                 var rememberedHistory by rememberSaveable {
                                     history
                                 }
+                                val readerResult = state as ChapterPageModel.State.Result
 
-                                val result = state as ChapterPageModel.State.Result
+                                val activePrevious = if (activeChapterIndex > 0) {
+                                    readerResult.chapters.getOrNull(activeChapterIndex - 1)?.chapter
+                                } else {
+                                    readerResult.previous
+                                }
+                                val activeNext = readerResult.chapters
+                                    .getOrNull(activeChapterIndex + 1)?.chapter
+                                    ?: readerResult.next
 
                                 Row(
                                     modifier = Modifier.fillMaxWidth(),
@@ -203,13 +246,12 @@ class ChapterPage(
                                     horizontalArrangement = Arrangement.SpaceBetween
                                 ) {
                                     FilledTonalButton(
-                                        enabled = result.previous != null,
+                                        enabled = activePrevious != null,
                                         onClick = {
-                                            result.previous?.let { previous ->
+                                            activePrevious?.let { previous ->
                                                 if (novelId == previous.novelId()) {
                                                     rememberedHistory = previous
                                                 }
-                                                chapterName = previous.name
                                                 chapterPageModel.openChapter(previous)
                                                 scope.launch(Dispatchers.Main) {
                                                     scrollState.scrollTo(0)
@@ -228,19 +270,18 @@ class ChapterPage(
                                     }
 
                                     Text(
-                                        text = "${(sliderPosition * 100).toInt()}%",
+                                        text = "${(displayedProgress * 100).toInt()}%",
                                         style = MaterialTheme.typography.labelMedium,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
 
                                     FilledTonalButton(
-                                        enabled = result.next != null,
+                                        enabled = activeNext != null,
                                         onClick = {
-                                            result.next?.let { next ->
+                                            activeNext?.let { next ->
                                                 if (novelId == next.novelId()) {
                                                     rememberedHistory = next
                                                 }
-                                                chapterName = next.name
                                                 chapterPageModel.openChapter(next)
                                                 scope.launch(Dispatchers.Main) {
                                                     scrollState.scrollTo(0)
@@ -262,13 +303,21 @@ class ChapterPage(
                                 Spacer(modifier = Modifier.height(8.dp))
 
                                 Slider(
-                                    value = sliderPosition,
+                                    value = displayedProgress,
                                     onValueChange = {
+                                        isSliderDragging = true
                                         sliderPosition = it
-                                        val scrollTo = (maxScroll * it).toInt()
-                                        scope.launch(Dispatchers.Main) {
-                                            scrollState.animateScrollTo(scrollTo)
+                                        activeLayout?.let { layout ->
+                                            val scrollTo = (layout.top + layout.height * it)
+                                                .roundToInt()
+                                                .coerceIn(0, scrollState.maxValue)
+                                            scope.launch(Dispatchers.Main) {
+                                                scrollState.animateScrollTo(scrollTo)
+                                            }
                                         }
+                                    },
+                                    onValueChangeFinished = {
+                                        isSliderDragging = false
                                     },
                                     colors = SliderDefaults.colors(
                                         thumbColor = MaterialTheme.colorScheme.primary,
@@ -300,65 +349,50 @@ class ChapterPage(
                 ) {
                     Spacer(modifier = Modifier.height(32.dp))
 
-                    Text(
-                        text = chapterName,
-                        style = MaterialTheme.typography.headlineSmall.copy(
-                            fontWeight = FontWeight.Bold,
-                            lineHeight = 34.sp
-                        ),
-                        color = MaterialTheme.colorScheme.onBackground,
-                        modifier = Modifier.padding(bottom = 24.dp)
-                    )
-
                     when (state) {
-                        is ChapterPageModel.State.Loading -> Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(300.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            CircularProgressIndicator(strokeWidth = 2.5.dp)
+                        is ChapterPageModel.State.Loading -> Column {
+                            ChapterHeading(currentChapterName)
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(300.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                CircularProgressIndicator(strokeWidth = 2.5.dp)
+                            }
                         }
 
-                        is ChapterPageModel.State.Error -> Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(300.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text(
-                                text = stringResource(id = R.string.chapter_load_failed),
-                                color = MaterialTheme.colorScheme.error
-                            )
+                        is ChapterPageModel.State.Error -> Column {
+                            ChapterHeading(currentChapterName)
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(300.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = stringResource(id = R.string.chapter_load_failed),
+                                    color = MaterialTheme.colorScheme.error
+                                )
+                            }
                         }
 
-                        is ChapterPageModel.State.Result -> Column(
-                            modifier = Modifier.fillMaxSize()
-                        ) {
-                            val result = state as ChapterPageModel.State.Result
-                            for ((index, entry) in result.chapters.withIndex()) {
-                                if (index > 0) {
-                                    Spacer(modifier = Modifier.height(32.dp))
-                                    Text(
-                                        text = entry.chapter.name,
-                                        style = MaterialTheme.typography.headlineSmall.copy(
-                                            fontWeight = FontWeight.Bold,
-                                            lineHeight = 34.sp
-                                        ),
-                                        color = MaterialTheme.colorScheme.onBackground,
-                                        modifier = Modifier.padding(bottom = 24.dp)
-                                    )
-                                }
-
-                                ChapterContent(
-                                    detail = entry.detail,
+                        is ChapterPageModel.State.Result -> {
+                            val readerResult = state as ChapterPageModel.State.Result
+                            for ((index, entry) in readerResult.chapters.withIndex()) {
+                                ReaderChapterBlock(
+                                    entry = entry,
+                                    index = index,
                                     textMeasurer = textMeasurer,
                                     textStyle = textStyle,
-                                    density = density
+                                    density = density,
+                                    onSizeChanged = { height ->
+                                        chapterHeights[entry.chapter.url] = height
+                                    }
                                 )
                             }
 
-                            if (result.isLoadingNext) {
+                            if (readerResult.isLoadingNext) {
                                 Box(
                                     modifier = Modifier
                                         .fillMaxWidth()
@@ -389,14 +423,84 @@ class ChapterPage(
                 }
         }
 
-        LaunchedEffect(state) {
-            val result = state as? ChapterPageModel.State.Result
-            if (result != null && result.chapters.size > 1) {
-                history.value = result.chapters.last().chapter
+        LaunchedEffect(activeChapter?.chapter?.url) {
+            activeChapter?.chapter?.let { current ->
+                if (novelId == current.novelId()) {
+                    history.value = current
+                }
             }
         }
     }
 
+}
+
+private data class ReaderChapterLayout(
+    val top: Int,
+    val height: Int
+)
+
+private fun buildReaderChapterLayouts(
+    chapters: List<ReaderChapter>,
+    heights: Map<String, Int>,
+    firstTop: Int
+): Map<String, ReaderChapterLayout> {
+    val layouts = mutableMapOf<String, ReaderChapterLayout>()
+    var top = firstTop
+    for (entry in chapters) {
+        val height = heights[entry.chapter.url] ?: 0
+        layouts[entry.chapter.url] = ReaderChapterLayout(top = top, height = height)
+        top += height
+    }
+    return layouts
+}
+
+private fun chapterProgressFor(
+    scrollValue: Int,
+    layout: ReaderChapterLayout?
+): Float {
+    if (layout == null || layout.height <= 0) return 0f
+    return ((scrollValue - layout.top).toFloat() / layout.height.toFloat())
+        .coerceIn(0f, 1f)
+}
+
+@Composable
+private fun ChapterHeading(name: String) {
+    Text(
+        text = name,
+        style = MaterialTheme.typography.headlineSmall.copy(
+            fontWeight = FontWeight.Bold,
+            lineHeight = 34.sp
+        ),
+        color = MaterialTheme.colorScheme.onBackground,
+        modifier = Modifier.padding(bottom = 24.dp)
+    )
+}
+
+@Composable
+private fun ReaderChapterBlock(
+    entry: ReaderChapter,
+    index: Int,
+    textMeasurer: androidx.compose.ui.text.TextMeasurer,
+    textStyle: androidx.compose.ui.text.TextStyle,
+    density: Density,
+    onSizeChanged: (height: Int) -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .onSizeChanged { size -> onSizeChanged(size.height) }
+    ) {
+        if (index > 0) {
+            Spacer(modifier = Modifier.height(32.dp))
+        }
+        ChapterHeading(entry.chapter.name)
+        ChapterContent(
+            detail = entry.detail,
+            textMeasurer = textMeasurer,
+            textStyle = textStyle,
+            density = density
+        )
+    }
 }
 
 @Composable
@@ -760,8 +864,9 @@ class ChapterPageModel(
             if (currentSession != null && !isCurrentSessionLocked(currentSession)) return
             snapshot = loadedChapters.toList()
             val first = snapshot.firstOrNull()
+            val last = snapshot.lastOrNull()
             previous = first?.let { adjacentChapter(it.chapter, -1, it.detail) }
-            next = first?.let { adjacentChapter(it.chapter, 1, it.detail) }
+            next = last?.let { adjacentChapter(it.chapter, 1, it.detail) }
             loading = loadingNext
         }
         if (snapshot.isNotEmpty()) {
