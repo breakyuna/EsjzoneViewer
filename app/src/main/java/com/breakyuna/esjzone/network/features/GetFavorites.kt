@@ -1,33 +1,20 @@
 package com.breakyuna.esjzone.network.features
 
 import com.breakyuna.esjzone.network.Authorization
-import com.breakyuna.esjzone.network.AuthorizationCookieJar
 import com.breakyuna.esjzone.network.EsjzoneClient
 import com.breakyuna.esjzone.network.EsjzoneUrls
 import com.breakyuna.esjzone.network.EsjzoneXPaths
+import com.breakyuna.esjzone.network.PageCacheTtl
 import com.breakyuna.esjzone.network.PageableRequester
 import com.breakyuna.esjzone.novellibrary.novel.FavoriteNovel
-import okhttp3.OkHttpClient
-import okhttp3.Request
 import org.jsoup.Jsoup
 
 fun EsjzoneClient.getFavorites(
     authorization: Authorization,
     sort: String
 ): Pair<PageableRequester<FavoriteNovel>, List<FavoriteNovel>> {
-    val httpClient = OkHttpClient.Builder()
-        .cookieJar(AuthorizationCookieJar(authorization))
-        .build()
-
-    val response = httpClient.newCall(
-        Request.Builder()
-            .url("${EsjzoneUrls.My.Favorite}/$sort/1")
-            .get()
-            .headers(this.headers)
-            .build()
-    ).execute()
-
-    val responseBody = response.bodyStringOrEmpty()
+    val firstPageUrl = "${EsjzoneUrls.My.Favorite}/$sort/1"
+    val responseBody = getPage(authorization, firstPageUrl, PageCacheTtl.ACCOUNT_LIST)
 
     val document = Jsoup.parse(responseBody)
 
@@ -51,14 +38,10 @@ fun EsjzoneClient.getFavorites(
 
 
 private class FavoriteNovelRequester(
-    authorization: Authorization,
+    private val authorization: Authorization,
     private val sort: String,
     private val pages: Int
 ) : PageableRequester<FavoriteNovel> {
-
-    private val httpClient = OkHttpClient.Builder()
-        .cookieJar(AuthorizationCookieJar(authorization))
-        .build()
 
     private var current: Int = 2
     override fun pages(): Int {
@@ -75,15 +58,12 @@ private class FavoriteNovelRequester(
         tag = "FavoriteNovelRequester",
         fallback = emptyList()
     ) {
-        val response = httpClient.newCall(
-            Request.Builder()
-                .url("${EsjzoneUrls.My.Favorite}/$sort/$page")
-                .get()
-                .headers(EsjzoneClient.headers)
-                .build()
-        ).execute()
-
-        val responseBody = response.bodyStringOrEmpty()
+        val pageUrl = "${EsjzoneUrls.My.Favorite}/$sort/$page"
+        val responseBody = EsjzoneClient.getPage(
+            authorization,
+            pageUrl,
+            PageCacheTtl.ACCOUNT_LIST
+        )
         val document = Jsoup.parse(responseBody)
 
         val novels = mutableListOf<FavoriteNovel>()

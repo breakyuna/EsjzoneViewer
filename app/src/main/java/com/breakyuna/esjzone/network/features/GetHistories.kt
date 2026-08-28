@@ -1,30 +1,16 @@
 package com.breakyuna.esjzone.network.features
 
 import com.breakyuna.esjzone.network.Authorization
-import com.breakyuna.esjzone.network.AuthorizationCookieJar
 import com.breakyuna.esjzone.network.EsjzoneClient
 import com.breakyuna.esjzone.network.EsjzoneUrls
 import com.breakyuna.esjzone.network.EsjzoneXPaths
+import com.breakyuna.esjzone.network.PageCacheTtl
 import com.breakyuna.esjzone.novellibrary.novel.Chapter
 import com.breakyuna.esjzone.novellibrary.novel.HistoryNovel
-import okhttp3.OkHttpClient
-import okhttp3.Request
 import org.jsoup.Jsoup
 
 fun EsjzoneClient.getHistories(authorization: Authorization): List<HistoryNovel> {
-    val httpClient = OkHttpClient.Builder()
-        .cookieJar(AuthorizationCookieJar(authorization))
-        .build()
-
-    val response = httpClient.newCall(
-        Request.Builder()
-            .url(EsjzoneUrls.My.View)
-            .get()
-            .headers(this.headers)
-            .build()
-    ).execute()
-
-    val responseBody = response.bodyStringOrEmpty()
+    val responseBody = getPage(authorization, EsjzoneUrls.My.View, PageCacheTtl.ACCOUNT_LIST)
 
     val document = Jsoup.parse(responseBody)
 
@@ -40,11 +26,7 @@ fun EsjzoneClient.getHistories(authorization: Authorization): List<HistoryNovel>
         val chapterData = chapterElements.firstOrNull()
         if (novelData != null && chapterData != null) {
             val chapterHref = chapterData.attr("href")
-            val fullChapterUrl = if (chapterHref.startsWith("http://") || chapterHref.startsWith("https://")) {
-                chapterHref
-            } else {
-                "${EsjzoneUrls.Base}$chapterHref"
-            }
+            val fullChapterUrl = EsjzoneUrls.resolve(chapterHref)
             novels.add(
                 HistoryNovel(
                     novelData.text(),

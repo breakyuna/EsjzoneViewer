@@ -81,7 +81,7 @@ object EsjzoneXPaths {
         val Description: XPathEvaluator =
             Xsoup.compile("/html/body/div[3]/section/div/div[1]/div[2]/div/div/div") // used with NovelDescription#analyseDescription
         val ChapterList: XPathEvaluator =
-            Xsoup.compile("/html/body/div[3]/section/div/div[1]/div[5]/div/div/div/div[2]")
+            Xsoup.compile("//*[@id='integration']")
 
         val FavoriteText: XPathEvaluator =
             Xsoup.compile("/html/body/div[3]/section/div/div[1]/div[1]/div[2]/div[2]/div/button[1]/span/text()") // 已收藏/收藏

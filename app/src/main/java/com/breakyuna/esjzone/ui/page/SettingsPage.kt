@@ -134,6 +134,9 @@ object SettingsPage : Screen {
                                     .clickable {
                                         currentDomain = domain
                                         GlobalSettings.domain.value = domain
+                                        scope.launch(Dispatchers.IO) {
+                                            EsjzoneClient.clearPageCache()
+                                        }
                                         persistCache("domain", domain)
                                     },
                                 colors = if (selected) {

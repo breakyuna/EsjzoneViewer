@@ -4,6 +4,17 @@ import com.breakyuna.esjzone.GlobalSettings
 
 object EsjzoneUrls {
 
+    /** Resolves a page link without rewriting a valid cross-host URL from the site. */
+    fun resolve(rawUrl: String): String {
+        val url = rawUrl.trim()
+        return when {
+            url.startsWith("http://") || url.startsWith("https://") -> url
+            url.startsWith("//") -> "https:$url"
+            url.startsWith("/") -> "$Base$url"
+            else -> "$Base/$url"
+        }
+    }
+
     val BaseWithoutProtocol: String
         get() = GlobalSettings.domain.value
 

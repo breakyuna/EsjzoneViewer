@@ -1,29 +1,15 @@
 package com.breakyuna.esjzone.network.features
 
 import com.breakyuna.esjzone.network.Authorization
-import com.breakyuna.esjzone.network.AuthorizationCookieJar
 import com.breakyuna.esjzone.network.EsjzoneClient
 import com.breakyuna.esjzone.network.EsjzoneUrls
 import com.breakyuna.esjzone.network.EsjzoneXPaths
+import com.breakyuna.esjzone.network.PageCacheTtl
 import com.breakyuna.esjzone.novellibrary.novel.Category
-import okhttp3.OkHttpClient
-import okhttp3.Request
 import org.jsoup.Jsoup
 
 fun EsjzoneClient.getCategories(authorization: Authorization): List<Category> {
-    val httpClient = OkHttpClient.Builder()
-        .cookieJar(AuthorizationCookieJar(authorization))
-        .build()
-
-    val response = httpClient.newCall(
-        Request.Builder()
-            .url(EsjzoneUrls.Forum)
-            .get()
-            .headers(this.headers)
-            .build()
-    ).execute()
-
-    val responseBody = response.bodyStringOrEmpty()
+    val responseBody = getPage(authorization, EsjzoneUrls.Forum, PageCacheTtl.CATEGORIES)
 
     val document = Jsoup.parse(responseBody)
 

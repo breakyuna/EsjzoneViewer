@@ -67,6 +67,7 @@ class LoadingScreen : Screen {
                                     "LoadingScreen",
                                     "Stored session was rejected by the server"
                                 )
+                                EsjzoneClient.clearPageCache()
                                 null
                             }
                             AuthorizationCheckResult.UNKNOWN -> {

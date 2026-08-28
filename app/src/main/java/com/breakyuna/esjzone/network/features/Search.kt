@@ -1,15 +1,13 @@
 package com.breakyuna.esjzone.network.features
 
 import com.breakyuna.esjzone.network.Authorization
-import com.breakyuna.esjzone.network.AuthorizationCookieJar
 import com.breakyuna.esjzone.network.EsjzoneClient
 import com.breakyuna.esjzone.network.EsjzoneUrls
 import com.breakyuna.esjzone.network.EsjzoneXPaths
+import com.breakyuna.esjzone.network.PageCacheTtl
 import com.breakyuna.esjzone.network.PageableRequester
 import com.breakyuna.esjzone.novellibrary.novel.CoveredNovel
 import com.breakyuna.esjzone.novellibrary.novel.CoveredNovelImpl
-import okhttp3.OkHttpClient
-import okhttp3.Request
 import org.jsoup.Jsoup
 
 internal val pagesRegex = "total: ([0-9]+)".toRegex()
@@ -18,19 +16,8 @@ fun EsjzoneClient.search(
     authorization: Authorization,
     keyword: String
 ): Pair<PageableRequester<CoveredNovel>, List<CoveredNovel>> {
-    val httpClient = OkHttpClient.Builder()
-        .cookieJar(AuthorizationCookieJar(authorization))
-        .build()
-
-    val response = httpClient.newCall(
-        Request.Builder()
-            .url("${EsjzoneUrls.Tags}/$keyword")
-            .get()
-            .headers(this.headers)
-            .build()
-    ).execute()
-
-    val responseBody = response.bodyStringOrEmpty()
+    val searchUrl = "${EsjzoneUrls.Tags}/$keyword"
+    val responseBody = getPage(authorization, searchUrl, PageCacheTtl.SEARCH)
 
     val document = Jsoup.parse(responseBody)
 
@@ -66,14 +53,10 @@ fun EsjzoneClient.search(
 }
 
 private class SearchNovelRequester(
-    authorization: Authorization,
+    private val authorization: Authorization,
     private val keyword: String,
     private val pages: Int
 ) : PageableRequester<CoveredNovel> {
-
-    private val httpClient = OkHttpClient.Builder()
-        .cookieJar(AuthorizationCookieJar(authorization))
-        .build()
 
     private var current: Int = 2
     override fun pages(): Int {
@@ -90,15 +73,12 @@ private class SearchNovelRequester(
         tag = "SearchNovelRequester",
         fallback = emptyList()
     ) {
-        val response = httpClient.newCall(
-            Request.Builder()
-                .url("${EsjzoneUrls.Tags}-01/$keyword/$page.html")
-                .get()
-                .headers(EsjzoneClient.headers)
-                .build()
-        ).execute()
-
-        val responseBody = response.bodyStringOrEmpty()
+        val pageUrl = "${EsjzoneUrls.Tags}-01/$keyword/$page.html"
+        val responseBody = EsjzoneClient.getPage(
+            authorization,
+            pageUrl,
+            PageCacheTtl.SEARCH
+        )
 
         val document = Jsoup.parse(responseBody)
 

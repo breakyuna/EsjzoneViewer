@@ -283,6 +283,7 @@ object LoginScreen : Screen {
                             val authorization = withContext(Dispatchers.IO) {
                                 val result = EsjzoneClient.login(email, password)
                                 if (result != null) {
+                                    EsjzoneClient.clearPageCache()
                                     MainActivity.database.runInTransaction {
                                         val dao = MainActivity.database.cacheDao()
                                         dao.put("domain", selectedDomain)

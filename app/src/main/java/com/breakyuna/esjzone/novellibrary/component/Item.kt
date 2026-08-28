@@ -68,12 +68,21 @@ fun analyseItems(element: Element): List<Item> {
         }
     }
 
+    // Some pages wrap the <details> nodes in an extra layout div. Keep the direct-child
+    // path above for normal pages, then fall back to descendant details without duplicating
+    // a chapter group that was already parsed.
+    if (items.none { it is ChapterListItem }) {
+        for (details in element.select("details")) {
+            items.add(analyseChapterList(details))
+        }
+    }
+
     return items.toList()
 }
 
 private fun analyseChapterList(element: Element): ChapterListItem {
-    val titleElements = EsjzoneXPaths.Detail.ChapterListDetails.Title.evaluate(element).elements
-    val titleElement = titleElements.firstOrNull()
+    val titleElement = element.children().firstOrNull { it.nameIs("summary") }
+        ?: EsjzoneXPaths.Detail.ChapterListDetails.Title.evaluate(element).elements.firstOrNull()
     val title = if (titleElement != null) {
         val paragraphs = analyseParagraph(titleElement)
         paragraphs.filterIsInstance<TextComponent>().firstOrNull()
@@ -83,23 +92,23 @@ private fun analyseChapterList(element: Element): ChapterListItem {
     }
 
     val chapters = mutableListOf<Chapter>()
-    for (child in element.children()) {
-        if (child.nameIs("a"))
-            chapters.add(analyseChapter(child))
+    for (chapterElement in element.select("a[data-title], a[href*='/forum/']")) {
+        if (chapterElement.attr("href").isNotBlank()) {
+            chapters.add(analyseChapter(chapterElement))
+        }
     }
 
     return ChapterListItem(title, chapters.toList())
 }
 
 private fun analyseChapter(element: Element): Chapter {
-    val isHistory = element.children()
-        .firstOrNull()
-        ?.takeIf { it.hasAttr("class") }
-        ?.attr("class")
-        ?.contains("active") == true
+    val isHistory = element.hasClass("active") || element.selectFirst(".active") != null
+    val title = element.attr("data-title").trim()
+        .ifBlank { element.selectFirst("p")?.text()?.trim().orEmpty() }
+        .ifBlank { element.text().trim() }
 
     return Chapter(
-        element.attr("data-title"),
+        title,
         element.attr("href"),
         isHistory
     )

@@ -1,15 +1,13 @@
 package com.breakyuna.esjzone.network.features
 
 import com.breakyuna.esjzone.network.Authorization
-import com.breakyuna.esjzone.network.AuthorizationCookieJar
 import com.breakyuna.esjzone.network.EsjzoneClient
 import com.breakyuna.esjzone.network.EsjzoneUrls
 import com.breakyuna.esjzone.network.EsjzoneXPaths
+import com.breakyuna.esjzone.network.PageCacheTtl
 import com.breakyuna.esjzone.network.PageableRequester
 import com.breakyuna.esjzone.novellibrary.novel.CoveredNovel
 import com.breakyuna.esjzone.novellibrary.novel.CoveredNovelImpl
-import okhttp3.OkHttpClient
-import okhttp3.Request
 import org.jsoup.Jsoup
 
 fun EsjzoneClient.novels(
@@ -17,19 +15,8 @@ fun EsjzoneClient.novels(
     novelType: Int,
     sortType: Int
 ): Pair<PageableRequester<CoveredNovel>, List<CoveredNovel>> {
-    val httpClient = OkHttpClient.Builder()
-        .cookieJar(AuthorizationCookieJar(authorization))
-        .build()
-
-    val response = httpClient.newCall(
-        Request.Builder()
-            .url("${EsjzoneUrls.Base}/list-$novelType$sortType")
-            .get()
-            .headers(this.headers)
-            .build()
-    ).execute()
-
-    val responseBody = response.bodyStringOrEmpty()
+    val firstPageUrl = "${EsjzoneUrls.Base}/list-$novelType$sortType"
+    val responseBody = getPage(authorization, firstPageUrl, PageCacheTtl.LIST)
 
     val document = Jsoup.parse(responseBody)
 
@@ -66,15 +53,11 @@ fun EsjzoneClient.novels(
 
 
 private class ListNovelRequester(
-    authorization: Authorization,
+    private val authorization: Authorization,
     private val pages: Int,
     private val novelType: Int,
     private val sortType: Int
 ) : PageableRequester<CoveredNovel> {
-
-    private val httpClient = OkHttpClient.Builder()
-        .cookieJar(AuthorizationCookieJar(authorization))
-        .build()
 
     private var current: Int = 2
     override fun pages(): Int {
@@ -91,15 +74,12 @@ private class ListNovelRequester(
         tag = "ListNovelRequester",
         fallback = emptyList()
     ) {
-        val response = httpClient.newCall(
-            Request.Builder()
-                .url("${EsjzoneUrls.Base}/list-$novelType$sortType/$page.html")
-                .get()
-                .headers(EsjzoneClient.headers)
-                .build()
-        ).execute()
-
-        val responseBody = response.bodyStringOrEmpty()
+        val pageUrl = "${EsjzoneUrls.Base}/list-$novelType$sortType/$page.html"
+        val responseBody = EsjzoneClient.getPage(
+            authorization,
+            pageUrl,
+            PageCacheTtl.LIST
+        )
 
         val document = Jsoup.parse(responseBody)
 
