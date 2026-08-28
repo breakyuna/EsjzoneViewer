@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -49,7 +50,11 @@ import com.breakyuna.esjzone.ui.navigation.LocalBaseNavigator
 import com.breakyuna.esjzone.ui.page.NovelPage
 
 @Composable
-fun Novel(covered: CoveredNovel, onClick: (() -> Unit)? = null) {
+fun Novel(
+    covered: CoveredNovel,
+    summary: String? = null,
+    onClick: (() -> Unit)? = null
+) {
     val navigator = LocalBaseNavigator.current
 
     Card(
@@ -139,7 +144,7 @@ fun Novel(covered: CoveredNovel, onClick: (() -> Unit)? = null) {
             Column(
                 modifier = Modifier
                     .weight(1f)
-                    .height(132.dp),
+                    .heightIn(min = 132.dp),
                 verticalArrangement = Arrangement.SpaceBetween
             ) {
                 Column {
@@ -153,6 +158,21 @@ fun Novel(covered: CoveredNovel, onClick: (() -> Unit)? = null) {
                         overflow = TextOverflow.Ellipsis,
                         color = MaterialTheme.colorScheme.onSurface
                     )
+
+                    summary
+                        ?.takeIf { it.isNotBlank() }
+                        ?.let {
+                            Text(
+                                text = it,
+                                style = MaterialTheme.typography.bodySmall.copy(
+                                    lineHeight = 18.sp
+                                ),
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.padding(top = 6.dp)
+                            )
+                        }
                 }
 
                 Row(

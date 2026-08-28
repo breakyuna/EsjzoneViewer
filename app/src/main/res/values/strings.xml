@@ -37,6 +37,9 @@
     <string name="novel_filter_mostwords">Most Words</string>
     <string name="search_history">Search History</string>
     <string name="button_logout">Logout</string>
+    <string name="logout_confirm_message">Are you sure you want to log out?</string>
+    <string name="logout_cancel">Oops, not now</string>
+    <string name="logout_confirm">Confirm</string>
     <string name="field_required">This field is required</string>
     <string name="categories">Categories</string>
     <string name="categories_eyebrow">EXPLORE</string>
@@ -44,6 +47,7 @@
     <string name="settings">Settings</string>
     <string name="settings_showadultcontent">Show Adult Content</string>
     <string name="favorites">Favorites</string>
+    <string name="favorites_description">Keep your favorite stories close at hand</string>
     <string name="description">Description</string>
     <string name="history">History</string>
     <string name="history_description">Tap once to browse; double-tap to continue reading</string>

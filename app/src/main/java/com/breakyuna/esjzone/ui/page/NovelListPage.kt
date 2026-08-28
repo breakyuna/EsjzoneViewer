@@ -20,6 +20,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.currentCompositeKeyHash
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -41,8 +42,10 @@ import com.breakyuna.esjzone.network.Authorization
 import com.breakyuna.esjzone.network.EsjzoneClient
 import com.breakyuna.esjzone.network.LocalAuthorization
 import com.breakyuna.esjzone.network.PageableRequester
+import com.breakyuna.esjzone.network.features.getNovelDetail
 import com.breakyuna.esjzone.network.features.novels
 import com.breakyuna.esjzone.novellibrary.novel.CoveredNovel
+import com.breakyuna.esjzone.novellibrary.novel.preview
 import com.breakyuna.esjzone.ui.component.AppBar
 import com.breakyuna.esjzone.ui.component.DropdownSelection
 import com.breakyuna.esjzone.ui.component.Loading
@@ -192,8 +195,22 @@ class NovelListPage(
                             } else {
                                 return@filter !it.isAdult
                             }
-                        }.distinct()) { novel ->
-                            Novel(covered = novel)
+                        }.distinct(), key = { novel ->
+                            novel.url.ifBlank { novel.name }
+                        }) { novel ->
+                            val summaryKey = novel.url.ifBlank { novel.name }
+                            val summary = novelListModel.summaries[summaryKey]
+
+                            Novel(
+                                covered = novel,
+                                summary = summary
+                            )
+
+                            if (summary == null) {
+                                LaunchedEffect(summaryKey) {
+                                    novelListModel.loadSummary(novel)
+                                }
+                            }
                         }
 
                         item {
@@ -252,12 +269,60 @@ class NovelListPageModel(
     private val sortType: MutableIntState,
 ) : StateScreenModel<NovelListPageModel.State>(State.Loading) {
 
+    val summaries = mutableStateMapOf<String, String>()
+    private val summaryLock = Any()
+    private val summaryRequests = mutableSetOf<String>()
+    private val summaryFailures = mutableSetOf<String>()
+
     sealed class State {
         data object Loading : State()
         data class Result(
             val requester: PageableRequester<CoveredNovel>,
             val firstPage: List<CoveredNovel>
         ) : State()
+    }
+
+    fun loadSummary(novel: CoveredNovel) {
+        val key = novel.url.ifBlank { novel.name }
+        if (key.isBlank()) return
+
+        synchronized(summaryLock) {
+            if (summaries.containsKey(key) ||
+                key in summaryFailures ||
+                !summaryRequests.add(key)
+            ) {
+                return
+            }
+        }
+
+        scope.launch(Dispatchers.IO) {
+            try {
+                val detail = EsjzoneClient.getNovelDetail(authorization, novel)
+                val preview = detail.description.preview()
+                if (preview.isBlank()) {
+                    synchronized(summaryLock) {
+                        summaryFailures.add(key)
+                    }
+                } else {
+                    summaries[key] = preview
+                }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                synchronized(summaryLock) {
+                    summaryFailures.add(key)
+                }
+                com.breakyuna.esjzone.util.AppLogger.w(
+                    "NovelListPageModel",
+                    "Failed to load summary for ${novel.name}",
+                    e
+                )
+            } finally {
+                synchronized(summaryLock) {
+                    summaryRequests.remove(key)
+                }
+            }
+        }
     }
 
     fun getRequester() {

@@ -30,10 +30,10 @@ import com.breakyuna.esjzone.network.Authorization
 import com.breakyuna.esjzone.network.LocalAuthorization
 import com.breakyuna.esjzone.ui.navigation.LocalBaseNavigator
 import com.breakyuna.esjzone.ui.tab.CategoryTab
+import com.breakyuna.esjzone.ui.tab.FavoriteTab
 import com.breakyuna.esjzone.ui.tab.HistoryTab
 import com.breakyuna.esjzone.ui.tab.HomeTab
 import com.breakyuna.esjzone.ui.tab.ProfileTab
-import com.breakyuna.esjzone.ui.tab.SearchTab
 
 class MainScreen(val authorization: Authorization) : Screen {
 
@@ -66,12 +66,12 @@ private object TabScreen : Screen {
                         containerColor = MaterialTheme.colorScheme.surface
                     ) {
                         TabNavigationItem(tab = HomeTab)
+                        TabNavigationItem(tab = CategoryTab)
                         TabNavigationItem(
                             tab = HistoryTab,
                             onDoubleClick = HistoryTab::requestOpenLastReading
                         )
-                        TabNavigationItem(tab = CategoryTab)
-                        TabNavigationItem(tab = SearchTab)
+                        TabNavigationItem(tab = FavoriteTab)
                         TabNavigationItem(tab = ProfileTab)
                     }
                 }

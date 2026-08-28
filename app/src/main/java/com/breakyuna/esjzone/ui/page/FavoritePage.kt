@@ -4,6 +4,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -12,6 +13,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -30,6 +32,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import cafe.adriel.voyager.core.model.StateScreenModel
 import cafe.adriel.voyager.core.model.rememberScreenModel
@@ -67,6 +70,11 @@ object FavoritePage : Screen {
 
     @Composable
     override fun Content() {
+        Content(showBack = true)
+    }
+
+    @Composable
+    fun Content(showBack: Boolean) {
         val navigator = LocalBaseNavigator.current
 
         val authorization = LocalAuthorization.current
@@ -85,31 +93,55 @@ object FavoritePage : Screen {
             GlobalSettings.adult
         }
 
+        fun onSortChanged(value: String) {
+            sort.value = value
+            favoritePageModel.getRequester()
+        }
 
-        Column {
-            AppBar(
-                title = stringResource(id = R.string.favorites),
-                onBack = {
-                    navigator?.pop()
+        Column(modifier = Modifier.fillMaxSize()) {
+            if (showBack) {
+                AppBar(
+                    title = stringResource(id = R.string.favorites),
+                    onBack = {
+                        navigator?.pop()
+                    }
+                ) {
+                    Row {
+                        FavoriteSortSelector(
+                            sort = sort,
+                            onChange = ::onSortChanged
+                        )
+                    }
                 }
-            ) {
-                Row {
-                    var exposed by remember { mutableStateOf(false) }
-                    DropdownSelection(
-                        label = stringResource(id = R.string.novel_list_sort),
-                        items = listOf("new", "udate"),
-                        current = sort.value,
-                        onChange = {
-                            sort.value = it
-                            favoritePageModel.getRequester()
-                        },
-                        exposed = exposed,
-                        onExposeChanged = { exposed = it },
-                        modifier = Modifier.width(140.dp),
-                        nameProvider = {
-                            stringResource(id = favoriteSortResource(this))
-                        }
+            } else {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 20.dp, vertical = 24.dp)
+                ) {
+                    Text(
+                        text = stringResource(id = R.string.favorites),
+                        style = MaterialTheme.typography.headlineLarge.copy(
+                            fontWeight = FontWeight.Bold
+                        )
                     )
+                    Text(
+                        text = stringResource(id = R.string.favorites_description),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 4.dp)
+                    )
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 12.dp),
+                        horizontalArrangement = Arrangement.End
+                    ) {
+                        FavoriteSortSelector(
+                            sort = sort,
+                            onChange = ::onSortChanged
+                        )
+                    }
                 }
             }
 
@@ -137,7 +169,9 @@ object FavoritePage : Screen {
                     }
 
                     LazyColumn(
-                        modifier = Modifier.fillMaxSize()
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxWidth()
                     ) {
                         items(items.distinct()) { favoriteNovel ->
                             var detailedNovel: DetailedNovel? by remember {
@@ -239,6 +273,26 @@ object FavoritePage : Screen {
         }
     }
 
+}
+
+@Composable
+private fun FavoriteSortSelector(
+    sort: MutableState<String>,
+    onChange: (String) -> Unit
+) {
+    var exposed by remember { mutableStateOf(false) }
+    DropdownSelection(
+        label = stringResource(id = R.string.novel_list_sort),
+        items = listOf("new", "udate"),
+        current = sort.value,
+        onChange = onChange,
+        exposed = exposed,
+        onExposeChanged = { exposed = it },
+        modifier = Modifier.width(140.dp),
+        nameProvider = {
+            stringResource(id = favoriteSortResource(this))
+        }
+    )
 }
 
 class FavoritePageModel(

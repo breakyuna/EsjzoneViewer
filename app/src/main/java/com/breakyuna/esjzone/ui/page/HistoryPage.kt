@@ -203,30 +203,7 @@ object HistoryPage : Screen {
                                         Card(
                                             modifier = Modifier
                                                 .fillMaxWidth()
-                                                .padding(horizontal = 12.dp, vertical = 6.dp)
-                                                .pointerInput(Unit) {
-                                                    detectTapGestures(
-                                                        onPress = {
-                                                            touchPoint = it
-                                                        },
-                                                        onLongPress = {
-                                                            touchPoint = it
-                                                        }
-                                                    )
-                                                }
-                                                .combinedClickable(
-                                                    onClick = {
-                                                        navigator?.push(
-                                                            NovelPage(
-                                                                historyNovel,
-                                                                historyChapter
-                                                            )
-                                                        )
-                                                    },
-                                                    onLongClick = {
-                                                        expanded = true
-                                                    }
-                                                ),
+                                                .padding(horizontal = 12.dp, vertical = 6.dp),
                                             shape = RoundedCornerShape(16.dp),
                                             colors = CardDefaults.cardColors(
                                                 containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
@@ -264,50 +241,77 @@ object HistoryPage : Screen {
                                                     .padding(10.dp),
                                                 verticalAlignment = Alignment.CenterVertically
                                             ) {
-                                                Box(
+                                                Row(
                                                     modifier = Modifier
-                                                        .width(72.dp)
-                                                        .height(100.dp)
-                                                        .clip(RoundedCornerShape(10.dp))
-                                                        .background(MaterialTheme.colorScheme.surface)
-                                                ) {
-                                                    SubcomposeAsyncImage(
-                                                        model = ImageRequest.Builder(LocalContext.current)
-                                                            .data(novel.coverUrl)
-                                                            .crossfade(true)
-                                                            .build(),
-                                                        contentDescription = historyNovel.name,
-                                                        imageLoader = MainActivity.imageLoader,
-                                                        loading = {
-                                                            CircularProgressIndicator(strokeWidth = 2.dp)
-                                                        },
-                                                        contentScale = ContentScale.Crop,
-                                                        modifier = Modifier.fillMaxSize()
-                                                    )
-                                                }
-
-                                                Spacer(modifier = Modifier.width(12.dp))
-
-                                                Column(
-                                                    modifier = Modifier.weight(1f)
-                                                ) {
-                                                    Text(
-                                                        text = novel.name,
-                                                        style = MaterialTheme.typography.titleSmall.copy(
-                                                            fontWeight = FontWeight.SemiBold
+                                                        .weight(1f)
+                                                        .pointerInput(Unit) {
+                                                            detectTapGestures(
+                                                                onPress = {
+                                                                    touchPoint = it
+                                                                },
+                                                                onLongPress = {
+                                                                    touchPoint = it
+                                                                }
+                                                            )
+                                                        }
+                                                        .combinedClickable(
+                                                            onClick = {
+                                                                navigator?.push(
+                                                                    NovelPage(
+                                                                        historyNovel,
+                                                                        historyChapter
+                                                                    )
+                                                                )
+                                                            },
+                                                            onLongClick = {
+                                                                expanded = true
+                                                            }
                                                         ),
-                                                        maxLines = 2,
-                                                        overflow = TextOverflow.Ellipsis,
-                                                        color = MaterialTheme.colorScheme.onSurface
-                                                    )
-                                                    Spacer(modifier = Modifier.height(6.dp))
-                                                    Text(
-                                                        text = historyChapter.value?.name ?: "",
-                                                        style = MaterialTheme.typography.bodySmall,
-                                                        color = MaterialTheme.colorScheme.primary,
-                                                        maxLines = 1,
-                                                        overflow = TextOverflow.Ellipsis
-                                                    )
+                                                    verticalAlignment = Alignment.CenterVertically
+                                                ) {
+                                                    Box(
+                                                        modifier = Modifier
+                                                            .width(72.dp)
+                                                            .height(100.dp)
+                                                            .clip(RoundedCornerShape(10.dp))
+                                                            .background(MaterialTheme.colorScheme.surface)
+                                                    ) {
+                                                        SubcomposeAsyncImage(
+                                                            model = ImageRequest.Builder(LocalContext.current)
+                                                                .data(novel.coverUrl)
+                                                                .crossfade(true)
+                                                                .build(),
+                                                            contentDescription = historyNovel.name,
+                                                            imageLoader = MainActivity.imageLoader,
+                                                            loading = {
+                                                                CircularProgressIndicator(strokeWidth = 2.dp)
+                                                            },
+                                                            contentScale = ContentScale.Crop,
+                                                            modifier = Modifier.fillMaxSize()
+                                                        )
+                                                    }
+
+                                                    Spacer(modifier = Modifier.width(12.dp))
+
+                                                    Column {
+                                                        Text(
+                                                            text = novel.name,
+                                                            style = MaterialTheme.typography.titleSmall.copy(
+                                                                fontWeight = FontWeight.SemiBold
+                                                            ),
+                                                            maxLines = 2,
+                                                            overflow = TextOverflow.Ellipsis,
+                                                            color = MaterialTheme.colorScheme.onSurface
+                                                        )
+                                                        Spacer(modifier = Modifier.height(6.dp))
+                                                        Text(
+                                                            text = historyChapter.value?.name ?: "",
+                                                            style = MaterialTheme.typography.bodySmall,
+                                                            color = MaterialTheme.colorScheme.primary,
+                                                            maxLines = 1,
+                                                            overflow = TextOverflow.Ellipsis
+                                                        )
+                                                    }
                                                 }
 
                                                 Spacer(modifier = Modifier.width(8.dp))

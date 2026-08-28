@@ -36,7 +36,7 @@ app/src/main/java/com/breakyuna/esjzone/
 │   ├── navigation/              # Navigator 与 CompositionLocal
 │   ├── page/                   # 小说详情、章节阅读、搜索结果等页面
 │   ├── screen/                 # 加载、登录和主界面
-│   ├── tab/                    # 主页、分类、搜索、个人中心 Tab
+│   ├── tab/                    # 主页、历史、分类、收藏、搜索入口、个人中心 Tab
 │   └── theme/                  # Catppuccin 主题实现
 └── util/                       # 通用工具函数
 ```
@@ -52,10 +52,11 @@ app/src/main/java/com/breakyuna/esjzone/
 `MainScreen` 提供五个 Tab：
 
 - `HomeTab`：主页数据、推荐和最新更新。
-- `HistoryTab`：观看记录；单击浏览历史，双击直接继续最近一次阅读。
 - `CategoryTab`：分类和分类小说列表。
-- `SearchTab`：关键词搜索和搜索历史。
-- `ProfileTab`：用户信息、收藏、设置和关于页面入口。
+- `HistoryTab`：观看记录；单击浏览历史，双击直接继续最近一次阅读。
+- `FavoriteTab`：收藏列表和收藏作品入口。
+- `ProfileTab`：用户信息、设置和关于页面入口。
+- `SearchTab`：由主页右上角搜索按钮打开的关键词搜索和搜索历史页面。
 
 具体作品通过 `NovelPage` 展示详情，章节通过 `ChapterPage` 获取并解析后阅读。
 

@@ -126,7 +126,7 @@ object CategoryTab : Tab {
     override val options: TabOptions
         @Composable
         get() = TabOptions(
-            index = 2u,
+            index = 1u,
             title = stringResource(id = R.string.screen_main_tab_category),
             icon = rememberVectorPainter(image = Icons.Filled.Category)
         )

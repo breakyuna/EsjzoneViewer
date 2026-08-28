@@ -62,6 +62,7 @@ import kotlinx.coroutines.launch
 import com.breakyuna.esjzone.MainActivity
 import com.breakyuna.esjzone.R
 import com.breakyuna.esjzone.database.entity.SearchHistory
+import com.breakyuna.esjzone.ui.component.AppBar
 import com.breakyuna.esjzone.ui.navigation.LocalBaseNavigator
 import com.breakyuna.esjzone.ui.page.SearchPage
 import com.breakyuna.esjzone.util.currentDateString
@@ -74,7 +75,7 @@ object SearchTab : Tab {
     override val options: TabOptions
         @Composable
         get() = TabOptions(
-            index = 3u,
+            index = 5u,
             title = stringResource(id = R.string.screen_main_tab_search),
             icon = rememberVectorPainter(image = Icons.Filled.Search)
         )
@@ -127,24 +128,18 @@ object SearchTab : Tab {
                 .verticalScroll(rememberScrollState())
         ) {
             // Header
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 20.dp, vertical = 16.dp)
-            ) {
-                Text(
-                    text = stringResource(id = R.string.screen_main_tab_search),
-                    style = MaterialTheme.typography.headlineMedium.copy(
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.primary
-                    )
-                )
-                Text(
-                    text = "Find stories, translations & authors",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f)
-                )
-            }
+            AppBar(
+                title = stringResource(id = R.string.screen_main_tab_search),
+                onBack = {
+                    navigator?.pop()
+                }
+            )
+            Text(
+                text = "Find stories, translations & authors",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f),
+                modifier = Modifier.padding(horizontal = 20.dp, vertical = 16.dp)
+            )
 
             // Search Bar
             Box(

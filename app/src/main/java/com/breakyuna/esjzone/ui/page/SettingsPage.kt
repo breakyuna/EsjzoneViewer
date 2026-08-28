@@ -24,11 +24,14 @@ import androidx.compose.material.icons.filled.NoAdultContent
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardColors
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
@@ -93,6 +96,9 @@ object SettingsPage : Screen {
 
         var adult by remember {
             GlobalSettings.adult
+        }
+        var showLogoutConfirmation by remember {
+            mutableStateOf(false)
         }
 
         Column(
@@ -383,39 +389,69 @@ object SettingsPage : Screen {
                     imageVector = Icons.AutoMirrored.Filled.Logout,
                     text = stringResource(id = R.string.button_logout)
                 ) {
-                    scope.launch(Dispatchers.IO) {
-                        try {
-                            EsjzoneClient.logout(authorization)
-                        } catch (e: CancellationException) {
-                            throw e
-                        } catch (e: Exception) {
-                            com.breakyuna.esjzone.util.AppLogger.w(
-                                "SettingsPage",
-                                "Logout request failed; clearing local session anyway",
-                                e
-                            )
-                        }
-
-                        try {
-                            EsjzoneClient.clearSession(
-                                authorization.domain.ifBlank { GlobalSettings.domain.value }
-                            )
-                            val dao = MainActivity.database.cacheDao()
-                            dao.deleteByKey("ews_key")
-                            dao.deleteByKey("ews_token")
-                        } catch (e: CancellationException) {
-                            throw e
-                        } catch (e: Exception) {
-                            com.breakyuna.esjzone.util.AppLogger.e(
-                                "SettingsPage",
-                                "Failed to clear local session",
-                                e
-                            )
-                        }
-                    }
-                    appNavigator?.replaceAll(LoginScreen)
+                    showLogoutConfirmation = true
                 }
             }
+        }
+
+        if (showLogoutConfirmation) {
+            AlertDialog(
+                onDismissRequest = {
+                    showLogoutConfirmation = false
+                },
+                title = {
+                    Text(text = stringResource(id = R.string.logout_confirm_message))
+                },
+                dismissButton = {
+                    TextButton(
+                        onClick = {
+                            showLogoutConfirmation = false
+                        }
+                    ) {
+                        Text(text = stringResource(id = R.string.logout_cancel))
+                    }
+                },
+                confirmButton = {
+                    TextButton(
+                        onClick = {
+                            showLogoutConfirmation = false
+                            scope.launch(Dispatchers.IO) {
+                                try {
+                                    EsjzoneClient.logout(authorization)
+                                } catch (e: CancellationException) {
+                                    throw e
+                                } catch (e: Exception) {
+                                    com.breakyuna.esjzone.util.AppLogger.w(
+                                        "SettingsPage",
+                                        "Logout request failed; clearing local session anyway",
+                                        e
+                                    )
+                                }
+
+                                try {
+                                    EsjzoneClient.clearSession(
+                                        authorization.domain.ifBlank { GlobalSettings.domain.value }
+                                    )
+                                    val dao = MainActivity.database.cacheDao()
+                                    dao.deleteByKey("ews_key")
+                                    dao.deleteByKey("ews_token")
+                                } catch (e: CancellationException) {
+                                    throw e
+                                } catch (e: Exception) {
+                                    com.breakyuna.esjzone.util.AppLogger.e(
+                                        "SettingsPage",
+                                        "Failed to clear local session",
+                                        e
+                                    )
+                                }
+                            }
+                            appNavigator?.replaceAll(LoginScreen)
+                        }
+                    ) {
+                        Text(text = stringResource(id = R.string.logout_confirm))
+                    }
+                }
+            )
         }
     }
 

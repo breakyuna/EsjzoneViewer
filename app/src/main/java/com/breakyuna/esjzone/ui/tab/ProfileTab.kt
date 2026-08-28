@@ -22,7 +22,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowForwardIos
-import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Settings
@@ -67,7 +66,6 @@ import com.breakyuna.esjzone.network.features.getUserProfile
 import com.breakyuna.esjzone.novellibrary.user.UserProfile
 import com.breakyuna.esjzone.ui.navigation.LocalBaseNavigator
 import com.breakyuna.esjzone.ui.page.AboutPage
-import com.breakyuna.esjzone.ui.page.FavoritePage
 import com.breakyuna.esjzone.ui.page.SettingsPage
 
 object ProfileTab : Tab {
@@ -296,14 +294,6 @@ private fun ProfileMenu(
         modifier = modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
-        ProfileMenuItem(
-            icon = Icons.Filled.Favorite,
-            iconTint = MaterialTheme.colorScheme.primary,
-            iconBg = MaterialTheme.colorScheme.primaryContainer,
-            title = stringResource(R.string.favorites),
-            subtitle = stringResource(R.string.profile_favorites_description),
-            onClick = { navigator?.push(FavoritePage) }
-        )
         ProfileMenuItem(
             icon = Icons.Filled.Settings,
             iconTint = MaterialTheme.colorScheme.tertiary,

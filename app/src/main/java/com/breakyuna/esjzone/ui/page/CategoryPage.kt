@@ -41,6 +41,7 @@ import com.breakyuna.esjzone.network.features.listNovels
 import com.breakyuna.esjzone.novellibrary.novel.Category
 import com.breakyuna.esjzone.novellibrary.novel.CategoryNovel
 import com.breakyuna.esjzone.novellibrary.novel.DetailedNovel
+import com.breakyuna.esjzone.novellibrary.novel.preview
 import com.breakyuna.esjzone.ui.component.AppBar
 import com.breakyuna.esjzone.ui.component.Novel
 import com.breakyuna.esjzone.ui.navigation.LocalBaseNavigator
@@ -119,7 +120,10 @@ class CategoryPage(private val category: Category) : Screen {
                                 }
                             } else {
                                 if (adult || !novel.isAdult) {
-                                    Novel(covered = novel)
+                                    Novel(
+                                        covered = novel,
+                                        summary = novel.description.preview()
+                                    )
                                 }
                             }
                         }
