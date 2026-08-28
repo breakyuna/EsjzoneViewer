@@ -104,4 +104,27 @@
     <string name="logs_copy_report">复制诊断报告</string>
     <string name="logs_show_stacktrace">展开堆栈报错详情</string>
     <string name="logs_hide_stacktrace">收起堆栈详情</string>
+    <string name="forum">论坛</string>
+    <string name="forum_description">浏览站内讨论与社区板块</string>
+    <string name="forum_empty">暂无论坛分类</string>
+    <string name="forum_threads_empty">该板块暂无主题</string>
+    <string name="forum_topic_count">主题 %1$d</string>
+    <string name="forum_reply_count">回复 %1$d</string>
+    <string name="guestbook">留言板</string>
+    <string name="guestbook_description">查看 ESJ 社区的最新留言</string>
+    <string name="comments">评论</string>
+    <string name="comments_empty">还没有评论</string>
+    <string name="anonymous_user">匿名用户</string>
+    <string name="page_indicator">第 %1$d / %2$d 页</string>
+    <string name="community_load_failed">社区内容加载失败</string>
+    <string name="comment_hint">写下你的评论…</string>
+    <string name="comment_send">发表</string>
+    <string name="comment_submitting">发表中…</string>
+    <string name="comment_reply">回复</string>
+    <string name="comment_replying_to">正在回复 %1$s</string>
+    <string name="comment_cancel_reply">取消回复</string>
+    <string name="comment_empty_error">评论内容不能为空</string>
+    <string name="comment_submit_failed">发表失败，请检查网络或登录状态后重试</string>
+    <string name="comment_submit_unverified">请求已完成，但未能确认新评论，请刷新检查后再决定是否重发</string>
+    <string name="comment_refresh">刷新评论</string>
 </resources>

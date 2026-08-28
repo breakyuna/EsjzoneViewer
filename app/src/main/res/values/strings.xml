@@ -104,4 +104,27 @@
     <string name="logs_copy_report">Copy Report</string>
     <string name="logs_show_stacktrace">Show Stack Trace</string>
     <string name="logs_hide_stacktrace">Hide Stack Trace</string>
+    <string name="forum">Forum</string>
+    <string name="forum_description">Browse discussions and community boards</string>
+    <string name="forum_empty">No forum categories found</string>
+    <string name="forum_threads_empty">No topics found in this board</string>
+    <string name="forum_topic_count">Topics %1$d</string>
+    <string name="forum_reply_count">Replies %1$d</string>
+    <string name="guestbook">Message Board</string>
+    <string name="guestbook_description">Read messages from the ESJ community</string>
+    <string name="comments">Comments</string>
+    <string name="comments_empty">No comments yet</string>
+    <string name="anonymous_user">Anonymous</string>
+    <string name="page_indicator">%1$d / %2$d</string>
+    <string name="community_load_failed">Unable to load community content</string>
+    <string name="comment_hint">Write a comment...</string>
+    <string name="comment_send">Post</string>
+    <string name="comment_submitting">Posting...</string>
+    <string name="comment_reply">Reply</string>
+    <string name="comment_replying_to">Replying to %1$s</string>
+    <string name="comment_cancel_reply">Cancel reply</string>
+    <string name="comment_empty_error">Comment content cannot be empty</string>
+    <string name="comment_submit_failed">Failed to post. Check your connection or login status and try again.</string>
+    <string name="comment_submit_unverified">The request completed but the new comment could not be verified. Refresh before posting again.</string>
+    <string name="comment_refresh">Refresh</string>
 </resources>

@@ -14,6 +14,7 @@ internal object PageCacheTtl {
     const val LIST = 30L * 60L * 1000L
     const val SEARCH = 15L * 60L * 1000L
     const val ACCOUNT_LIST = 5L * 60L * 1000L
+    const val COMMUNITY = 5L * 60L * 1000L
 }
 
 /**
@@ -66,6 +67,11 @@ internal object PageCache {
             }
             trimToSize()
         }
+    }
+
+    fun remove(key: String) {
+        val file = fileFor(key) ?: return
+        runCatching { file.delete() }
     }
 
     fun clear() {

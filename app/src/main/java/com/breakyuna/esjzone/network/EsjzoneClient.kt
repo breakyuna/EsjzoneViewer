@@ -106,6 +106,11 @@ object EsjzoneClient {
         PageCache.clear()
     }
 
+    /** Invalidates one account-scoped page after a successful remote write. */
+    internal fun invalidatePage(authorization: Authorization, url: String) {
+        PageCache.remove(pageCacheKey(authorization, url))
+    }
+
     /** Returns the persisted session for a host, importing the legacy Room format once. */
     fun restoreAuthorization(host: String, legacy: Authorization? = null): Authorization? {
         val jar = persistentCookieJar ?: return legacy?.takeIf { it.hasCredentials() }

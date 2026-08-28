@@ -27,6 +27,8 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowForwardIos
 import androidx.compose.material.icons.filled.AutoStories
+import androidx.compose.material.icons.filled.ChatBubbleOutline
+import androidx.compose.material.icons.filled.Forum
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.LocalFireDepartment
 import androidx.compose.material.icons.filled.Recommend
@@ -85,6 +87,8 @@ import com.breakyuna.esjzone.novellibrary.novel.CoveredNovel
 import com.breakyuna.esjzone.ui.navigation.LocalBaseNavigator
 import com.breakyuna.esjzone.ui.page.NovelListPage
 import com.breakyuna.esjzone.ui.page.NovelPage
+import com.breakyuna.esjzone.ui.page.ForumPage
+import com.breakyuna.esjzone.ui.page.GuestbookPage
 
 object HomeTab : Tab {
 
@@ -159,6 +163,30 @@ object HomeTab : Tab {
                     }
                 }
             }
+
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 4.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                CommunityShortcut(
+                    icon = Icons.Filled.Forum,
+                    title = stringResource(id = R.string.forum),
+                    subtitle = stringResource(id = R.string.forum_description),
+                    modifier = Modifier.weight(1f),
+                    onClick = { navigator?.push(ForumPage) }
+                )
+                CommunityShortcut(
+                    icon = Icons.Filled.ChatBubbleOutline,
+                    title = stringResource(id = R.string.guestbook),
+                    subtitle = stringResource(id = R.string.guestbook_description),
+                    modifier = Modifier.weight(1f),
+                    onClick = { navigator?.push(GuestbookPage) }
+                )
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
 
             // Recommendation Section
             SectionHeader(
@@ -246,6 +274,50 @@ object HomeTab : Tab {
         }
     }
 
+}
+
+@Composable
+private fun CommunityShortcut(
+    icon: ImageVector,
+    title: String,
+    subtitle: String,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit
+) {
+    Card(
+        modifier = modifier
+            .height(IntrinsicSize.Min)
+            .clickable(onClick = onClick),
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.secondaryContainer
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSecondaryContainer,
+                modifier = Modifier.size(26.dp)
+            )
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSecondaryContainer,
+                modifier = Modifier.padding(top = 12.dp)
+            )
+            Text(
+                text = subtitle,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.78f),
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.padding(top = 3.dp)
+            )
+        }
+    }
 }
 
 @Composable

@@ -27,6 +27,8 @@ object EsjzoneUrls {
         get() = Base
     val Forum: String
         get() = "$Base/forum"
+    val Guestbook: String
+        get() = "$Base/guestbook/"
     val Tags: String
         get() = "$Base/tags"
 
