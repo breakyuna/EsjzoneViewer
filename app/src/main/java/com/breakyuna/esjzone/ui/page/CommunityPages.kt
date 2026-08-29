@@ -21,7 +21,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.Forum
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Send
+import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material3.Button
 import androidx.compose.material3.CardDefaults
@@ -400,7 +400,7 @@ private fun CommentComposer(
                     .align(Alignment.End)
                     .padding(top = 8.dp)
             ) {
-                Icon(imageVector = Icons.Filled.Send, contentDescription = null)
+                Icon(imageVector = Icons.AutoMirrored.Filled.Send, contentDescription = null)
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(
                     text = stringResource(

@@ -87,7 +87,6 @@
     <string name="settings_category_network">Network &amp; Domain</string>
     <string name="settings_domain">Target Domain</string>
     <string name="settings_domain_description">Switch between available ESJ Zone mirrors</string>
-    <string name="domain_switched">Switched to domain: %1$s</string>
     <string name="system_logs">System Logs</string>
     <string name="logs_copy_all">Copy All</string>
     <string name="logs_share">Share Logs</string>

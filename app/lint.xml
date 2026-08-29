@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<lint>
+    <issue id="TypographyEllipsis" severity="ignore" />
+    <issue id="MangledCRLF" severity="ignore" />
+    <issue id="IconXmlAndPng" severity="ignore" />
+</lint>

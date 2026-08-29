@@ -87,7 +87,6 @@
     <string name="settings_category_network">网络与站点</string>
     <string name="settings_domain">定向网址</string>
     <string name="settings_domain_description">在可用的 ESJ Zone 镜像站之间切换</string>
-    <string name="domain_switched">已切换至站点：%1$s</string>
     <string name="system_logs">系统日志</string>
     <string name="logs_copy_all">复制全部</string>
     <string name="logs_share">分享日志</string>
