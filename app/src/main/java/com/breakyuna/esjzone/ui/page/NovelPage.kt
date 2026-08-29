@@ -347,7 +347,8 @@ class NovelPage(
                                                         currChapter,
                                                         history,
                                                         chapterList.orderedChapters,
-                                                        novelName = result.detailed.name
+                                                        novelName = result.detailed.name,
+                                                        novelUrl = result.detailed.url
                                                     )
                                                 )
                                             }

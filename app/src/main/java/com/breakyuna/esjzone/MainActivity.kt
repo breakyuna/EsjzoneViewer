@@ -70,7 +70,10 @@ class MainActivity : ComponentActivity() {
                 database = Room.databaseBuilder(
                     this@MainActivity,
                     GeneralDatabase::class.java, "general"
-                ).addMigrations(GeneralDatabase.MIGRATION_1_2).build()
+                ).addMigrations(
+                    GeneralDatabase.MIGRATION_1_2,
+                    GeneralDatabase.MIGRATION_2_3
+                ).build()
 
                 val dao = database.cacheDao()
 

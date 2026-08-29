@@ -11,7 +11,9 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -19,11 +21,13 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import cafe.adriel.voyager.core.model.StateScreenModel
 import cafe.adriel.voyager.core.model.rememberScreenModel
@@ -60,7 +64,7 @@ class SearchPage(private val keyword: String) : Screen {
 
         val authorization = LocalAuthorization.current
 
-        val searchModel = rememberScreenModel { SearchPageModel(authorization, keyword) }
+        val searchModel = rememberScreenModel { SearchPageModel(authorization) }
         val state by searchModel.state.collectAsState()
 
         Column {
@@ -158,46 +162,195 @@ class SearchPage(private val keyword: String) : Screen {
                         }
                     }
                 }
+
+                SearchPageModel.State.Error -> Text(
+                    text = stringResource(id = R.string.search_failed),
+                    color = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.padding(20.dp)
+                )
             }
         }
 
-        LaunchedEffect(Unit) {
-            searchModel.getRequester()
+        LaunchedEffect(keyword) {
+            searchModel.search(keyword)
         }
     }
 
 }
 
+/**
+ * Renders search results directly inside the search screen. The result area
+ * uses a regular Column so it can live below the search field's scrollable
+ * content without creating a nested, unbounded LazyColumn.
+ */
+@Composable
+fun InlineSearchResults(
+    authorization: Authorization,
+    keyword: String,
+    modifier: Modifier = Modifier
+) {
+    val searchModel = rememberScreenModel { SearchPageModel(authorization) }
+    val state by searchModel.state.collectAsState()
+
+    LaunchedEffect(keyword) {
+        searchModel.search(keyword)
+    }
+
+    Column(modifier = modifier.fillMaxWidth()) {
+        Text(
+            text = stringResource(id = R.string.search_result),
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.Bold,
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)
+        )
+
+        when (val currentState = state) {
+            SearchPageModel.State.Loading -> Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(120.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                CircularProgressIndicator(strokeWidth = 2.5.dp)
+            }
+
+            SearchPageModel.State.Error -> Text(
+                text = stringResource(id = R.string.search_failed),
+                color = MaterialTheme.colorScheme.error,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 20.dp)
+            )
+
+            is SearchPageModel.State.Result -> {
+                val requester = currentState.requester
+                val items = remember(currentState) {
+                    mutableStateListOf<CoveredNovel>().apply {
+                        addAll(currentState.firstPage)
+                    }
+                }
+                var currentPage by remember(currentState) {
+                    mutableIntStateOf(2)
+                }
+                var loadingMore by remember(currentState) {
+                    androidx.compose.runtime.mutableStateOf(false)
+                }
+                val scope = rememberCoroutineScope()
+                val adult by remember {
+                    GlobalSettings.adult
+                }
+                val visibleItems = items.toList()
+                    .filter { !it.isAdult || adult }
+                    .distinct()
+
+                if (visibleItems.isEmpty()) {
+                    Text(
+                        text = stringResource(id = R.string.search_no_results),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 20.dp)
+                    )
+                } else {
+                    visibleItems.forEach { novel ->
+                        Novel(covered = novel)
+                    }
+                }
+
+                if (currentPage <= requester.pages() && requester.pages() > 1) {
+                    Box(
+                        modifier = Modifier.fillMaxWidth(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        TextButton(
+                            enabled = !loadingMore,
+                            onClick = {
+                                if (!loadingMore) {
+                                    loadingMore = true
+                                    val pageToLoad = currentPage
+                                    scope.launch(Dispatchers.IO) {
+                                        try {
+                                            val newlyLoaded = requester.more(pageToLoad)
+                                            withContext(Dispatchers.Main.immediate) {
+                                                newlyLoaded.forEach { novel ->
+                                                    if (novel !in items) items.add(novel)
+                                                }
+                                                currentPage = pageToLoad + 1
+                                                loadingMore = false
+                                            }
+                                        } catch (e: CancellationException) {
+                                            withContext(Dispatchers.Main.immediate) {
+                                                loadingMore = false
+                                            }
+                                            throw e
+                                        } catch (e: Exception) {
+                                            com.breakyuna.esjzone.util.AppLogger.e(
+                                                "SearchPage",
+                                                "Failed to load search page $pageToLoad",
+                                                e
+                                            )
+                                            withContext(Dispatchers.Main.immediate) {
+                                                loadingMore = false
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        ) {
+                            if (loadingMore) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.padding(horizontal = 12.dp),
+                                    strokeWidth = 2.dp
+                                )
+                            } else {
+                                Text(text = stringResource(id = R.string.search_load_more))
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
 class SearchPageModel(
-    private val authorization: Authorization,
-    private val keyword: String
+    private val authorization: Authorization
 ) : StateScreenModel<SearchPageModel.State>(State.Loading) {
 
     private var requestJob: Job? = null
-    private var initialRequestStarted = false
+    private var activeKeyword: String? = null
 
     sealed class State {
         data object Loading : State()
+        data object Error : State()
         data class Result(
             val requester: PageableRequester<CoveredNovel>,
             val firstPage: List<CoveredNovel>
         ) : State()
     }
 
-    fun getRequester() {
-        if (initialRequestStarted) return
-        initialRequestStarted = true
+    fun search(keyword: String) {
+        val normalizedKeyword = keyword.trim()
+        if (normalizedKeyword.isBlank()) return
+        if (activeKeyword == normalizedKeyword &&
+            (requestJob?.isActive == true || mutableState.value is State.Result)
+        ) {
+            return
+        }
+
+        activeKeyword = normalizedKeyword
         requestJob?.cancel()
         requestJob = screenModelScope.launch(Dispatchers.IO) {
             mutableState.value = State.Loading
             try {
-                val (requester, novels) = EsjzoneClient.search(authorization, keyword)
+                val (requester, novels) = EsjzoneClient.search(authorization, normalizedKeyword)
                 ensureActive()
                 mutableState.value = State.Result(requester, novels)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                com.breakyuna.esjzone.util.AppLogger.e("SearchPageModel", "Failed to search for keyword: $keyword", e)
+                mutableState.value = State.Error
+                com.breakyuna.esjzone.util.AppLogger.e(
+                    "SearchPageModel",
+                    "Failed to search for keyword: $normalizedKeyword",
+                    e
+                )
             }
         }
     }

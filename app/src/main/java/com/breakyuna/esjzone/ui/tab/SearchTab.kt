@@ -24,7 +24,6 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.CircularProgressIndicator
@@ -53,7 +52,6 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import cafe.adriel.voyager.navigator.tab.Tab
 import cafe.adriel.voyager.navigator.tab.TabOptions
 import kotlinx.coroutines.CancellationException
@@ -65,8 +63,8 @@ import com.breakyuna.esjzone.R
 import com.breakyuna.esjzone.database.entity.SearchHistory
 import com.breakyuna.esjzone.ui.component.AppBar
 import com.breakyuna.esjzone.ui.navigation.LocalBaseNavigator
-import com.breakyuna.esjzone.ui.navigation.pushIfNotCurrent
-import com.breakyuna.esjzone.ui.page.SearchPage
+import com.breakyuna.esjzone.network.LocalAuthorization
+import com.breakyuna.esjzone.ui.page.InlineSearchResults
 import com.breakyuna.esjzone.util.currentDateString
 import com.breakyuna.esjzone.util.formattedDate
 
@@ -86,6 +84,7 @@ object SearchTab : Tab {
     @Composable
     override fun Content() {
         val navigator = LocalBaseNavigator.current
+        val authorization = LocalAuthorization.current
         val scope = rememberCoroutineScope()
 
         var loadingHistory by remember {
@@ -99,11 +98,14 @@ object SearchTab : Tab {
         var keyword by rememberSaveable {
             mutableStateOf("")
         }
+        var activeSearchKeyword by rememberSaveable {
+            mutableStateOf<String?>(null)
+        }
 
         fun performSearch(query: String) {
             val trimmed = query.trim()
             if (trimmed.isNotEmpty()) {
-                navigator?.pushIfNotCurrent(SearchPage(trimmed))
+                activeSearchKeyword = trimmed
                 scope.launch(Dispatchers.IO) {
                     try {
                         val dao = MainActivity.database.searchHistoryDao()
@@ -148,13 +150,6 @@ object SearchTab : Tab {
                     navigator?.pop()
                 }
             )
-            Text(
-                text = "Find stories, translations & authors",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f),
-                modifier = Modifier.padding(horizontal = 20.dp, vertical = 16.dp)
-            )
-
             // Search Bar
             Box(
                 modifier = Modifier
@@ -175,7 +170,9 @@ object SearchTab : Tab {
                     leadingIcon = {
                         Icon(
                             imageVector = Icons.Filled.Search,
-                            contentDescription = "Search",
+                            contentDescription = stringResource(
+                                id = R.string.screen_main_tab_search
+                            ),
                             tint = MaterialTheme.colorScheme.primary
                         )
                     },
@@ -184,7 +181,7 @@ object SearchTab : Tab {
                             IconButton(onClick = { keyword = "" }) {
                                 Icon(
                                     imageVector = Icons.Filled.Clear,
-                                    contentDescription = "Clear",
+                                    contentDescription = stringResource(id = R.string.close),
                                     tint = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                             }
@@ -207,7 +204,16 @@ object SearchTab : Tab {
                 )
             }
 
-            Spacer(modifier = Modifier.height(24.dp))
+            activeSearchKeyword?.let { currentKeyword ->
+                InlineSearchResults(
+                    authorization = authorization,
+                    keyword = currentKeyword,
+                    modifier = Modifier.padding(top = 12.dp)
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
 
             // History Section Header
             Row(
@@ -255,7 +261,7 @@ object SearchTab : Tab {
                         }
                     ) {
                         Text(
-                            text = "Clear",
+                            text = stringResource(id = R.string.clear),
                             style = MaterialTheme.typography.labelMedium,
                             color = MaterialTheme.colorScheme.error
                         )
@@ -298,7 +304,7 @@ object SearchTab : Tab {
                         }
                         Spacer(modifier = Modifier.height(12.dp))
                         Text(
-                            text = "No search history yet",
+                            text = stringResource(id = R.string.search_no_history),
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
                         )
@@ -355,7 +361,7 @@ object SearchTab : Tab {
                                 ) {
                                     Icon(
                                         imageVector = Icons.Filled.Close,
-                                        contentDescription = "Remove",
+                                        contentDescription = stringResource(id = R.string.remove),
                                         tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
                                         modifier = Modifier.size(14.dp)
                                     )

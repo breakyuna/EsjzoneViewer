@@ -208,15 +208,6 @@ private fun CategoryBrowserContent(
                                 .padding(bottom = 6.dp)
                         ) {
                             Text(
-                                text = stringResource(R.string.categories_eyebrow),
-                                style = MaterialTheme.typography.labelMedium.copy(
-                                    fontWeight = FontWeight.Bold,
-                                    letterSpacing = 1.8.sp
-                                ),
-                                color = MaterialTheme.colorScheme.primary
-                            )
-                            Spacer(modifier = Modifier.height(6.dp))
-                            Text(
                                 text = stringResource(R.string.categories),
                                 style = MaterialTheme.typography.headlineLarge.copy(
                                     fontWeight = FontWeight.Bold

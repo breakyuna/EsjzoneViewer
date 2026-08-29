@@ -1,11 +1,14 @@
 package com.breakyuna.esjzone.ui.page
 
+import android.text.format.DateUtils
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -16,8 +19,12 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AutoStories
+import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -25,8 +32,11 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilledTonalIconButton
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Tab
+import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -34,12 +44,14 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -49,7 +61,6 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import cafe.adriel.voyager.core.model.StateScreenModel
 import cafe.adriel.voyager.core.model.rememberScreenModel
 import cafe.adriel.voyager.core.model.screenModelScope
@@ -60,11 +71,14 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlin.math.roundToInt
 import com.breakyuna.esjzone.GlobalSettings
 import com.breakyuna.esjzone.MainActivity
 import com.breakyuna.esjzone.R
+import com.breakyuna.esjzone.database.entity.LocalReadingActivity
 import com.breakyuna.esjzone.network.Authorization
 import com.breakyuna.esjzone.network.EsjzoneClient
 import com.breakyuna.esjzone.network.EsjzoneUrls
@@ -80,6 +94,7 @@ import com.breakyuna.esjzone.ui.component.Loading
 import com.breakyuna.esjzone.ui.navigation.LocalBaseNavigator
 import com.breakyuna.esjzone.ui.navigation.ChapterStateHolder
 import com.breakyuna.esjzone.ui.navigation.pushIfNotCurrent
+import com.breakyuna.esjzone.util.AppLogger
 
 object HistoryPage : Screen {
 
@@ -101,6 +116,35 @@ object HistoryPage : Screen {
 
         val historyPageModel = rememberScreenModel { HistoryPageModel(authorization) }
         val state by historyPageModel.state.collectAsState()
+        val localHistoryPageModel = rememberScreenModel { LocalHistoryPageModel() }
+        val localState by localHistoryPageModel.state.collectAsState()
+        var selectedPage by rememberSaveable { mutableIntStateOf(0) }
+        val pagerState = rememberPagerState(
+            initialPage = 0,
+            pageCount = { 2 }
+        )
+
+        LaunchedEffect(selectedPage) {
+            if (pagerState.currentPage != selectedPage) {
+                pagerState.animateScrollToPage(selectedPage)
+            }
+        }
+
+        LaunchedEffect(pagerState) {
+            snapshotFlow { pagerState.currentPage }.collect { page ->
+                selectedPage = page
+            }
+        }
+
+        LaunchedEffect(Unit) {
+            localHistoryPageModel.observe()
+        }
+
+        LaunchedEffect(selectedPage) {
+            if (selectedPage == 1) {
+                historyPageModel.getNovels()
+            }
+        }
 
         Column(modifier = Modifier.fillMaxSize()) {
             if (showBack) {
@@ -130,10 +174,54 @@ object HistoryPage : Screen {
                 }
             }
 
-            when (state) {
-                is HistoryPageModel.State.Loading -> Loading()
+            TabRow(selectedTabIndex = selectedPage) {
+                Tab(
+                    selected = selectedPage == 0,
+                    onClick = { selectedPage = 0 },
+                    text = { Text(text = stringResource(id = R.string.history_local)) }
+                )
+                Tab(
+                    selected = selectedPage == 1,
+                    onClick = { selectedPage = 1 },
+                    text = { Text(text = stringResource(id = R.string.history_cloud)) }
+                )
+            }
 
-                is HistoryPageModel.State.Result -> {
+            HorizontalPager(
+                state = pagerState,
+                reverseLayout = true,
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
+            ) { page ->
+                if (page == 0) {
+                    LocalHistoryContent(
+                        state = localState,
+                        onOpen = { activity ->
+                            val chapter = Chapter(
+                                activity.chapterName,
+                                activity.chapterUrl,
+                                true
+                            )
+                            navigator?.pushIfNotCurrent(
+                                ChapterPage(
+                                    novelId = activity.novelId.ifBlank { chapter.novelId() },
+                                    chapter = chapter,
+                                    history = ChapterStateHolder(chapter),
+                                    novelName = activity.novelName,
+                                    novelUrl = activity.novelUrl
+                                )
+                            )
+                        },
+                        onDelete = localHistoryPageModel::delete,
+                        onClear = localHistoryPageModel::clear,
+                        onRetry = localHistoryPageModel::retry
+                    )
+                } else {
+                    when (state) {
+                        is HistoryPageModel.State.Loading -> Loading()
+
+                        is HistoryPageModel.State.Result -> {
                     val result = state as HistoryPageModel.State.Result
 
                     val novels = result.historyNovels.distinctBy { it.url.ifBlank { it.name } }
@@ -146,11 +234,25 @@ object HistoryPage : Screen {
                         GlobalSettings.adult
                     }
 
-                    LazyColumn(
-                        modifier = Modifier
-                            .weight(1f)
-                            .fillMaxWidth()
-                    ) {
+                    if (novels.isEmpty()) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .padding(24.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.Center
+                        ) {
+                            Text(
+                                text = stringResource(id = R.string.history_cloud_empty),
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    } else {
+                        LazyColumn(
+                            modifier = Modifier
+                                .weight(1f)
+                                .fillMaxWidth()
+                        ) {
                         items(
                             novels,
                             key = { item -> item.url.ifBlank { item.name } }
@@ -337,7 +439,8 @@ object HistoryPage : Screen {
                                                                     currChapter,
                                                                     ChapterStateHolder(historyChapter),
                                                                     novel.chapterList.orderedChapters,
-                                                                    novelName = novel.name
+                                                                    novelName = novel.name,
+                                                                    novelUrl = novel.url
                                                                 )
                                                             )
                                                         }
@@ -367,13 +470,30 @@ object HistoryPage : Screen {
                                 Spacer(modifier = Modifier.weight(1f))
                             }
                         }
+                        }
+                    }
+                }
+
+                HistoryPageModel.State.Error -> {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(24.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center
+                    ) {
+                        Text(
+                            text = stringResource(id = R.string.history_load_failed),
+                            color = MaterialTheme.colorScheme.error
+                        )
+                        TextButton(onClick = { historyPageModel.reload() }) {
+                            Text(text = stringResource(id = R.string.retry))
+                        }
+                    }
+                }
                     }
                 }
             }
-        }
-
-        LaunchedEffect(Unit) {
-            historyPageModel.getNovels()
         }
     }
 
@@ -388,6 +508,7 @@ class HistoryPageModel(
 
     sealed class State {
         data object Loading : State()
+        data object Error : State()
         data class Result(val historyNovels: List<HistoryNovel>) : State()
     }
 
@@ -404,9 +525,285 @@ class HistoryPageModel(
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                com.breakyuna.esjzone.util.AppLogger.e("HistoryPageModel", "Failed to load histories", e)
+                mutableState.value = State.Error
+                AppLogger.e("HistoryPageModel", "Failed to load cloud histories", e)
             }
         }
     }
 
+    fun reload() {
+        loadStarted = false
+        getNovels()
+    }
+
+}
+
+@Composable
+private fun LocalHistoryContent(
+    state: LocalHistoryPageModel.State,
+    onOpen: (LocalReadingActivity) -> Unit,
+    onDelete: (String) -> Unit,
+    onClear: () -> Unit,
+    onRetry: () -> Unit
+) {
+    when (val current = state) {
+        LocalHistoryPageModel.State.Loading -> Loading()
+
+        LocalHistoryPageModel.State.Error -> Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(24.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.Center
+        ) {
+            Text(
+                text = stringResource(id = R.string.history_local_load_failed),
+                color = MaterialTheme.colorScheme.error
+            )
+            TextButton(onClick = onRetry) {
+                Text(text = stringResource(id = R.string.retry))
+            }
+        }
+
+        is LocalHistoryPageModel.State.Result -> {
+            if (current.activities.isEmpty()) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(24.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.AutoStories,
+                        contentDescription = null,
+                        modifier = Modifier.size(42.dp),
+                        tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.65f)
+                    )
+                    Text(
+                        text = stringResource(id = R.string.history_local_empty),
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 12.dp)
+                    )
+                }
+            } else {
+                Column(modifier = Modifier.fillMaxSize()) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(start = 20.dp, end = 12.dp, top = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = stringResource(id = R.string.history_local_device_only),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.weight(1f)
+                        )
+                        TextButton(onClick = onClear) {
+                            Text(text = stringResource(id = R.string.history_local_clear))
+                        }
+                    }
+
+                    LazyColumn(
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxWidth(),
+                        contentPadding = PaddingValues(
+                            horizontal = 12.dp,
+                            vertical = 8.dp
+                        ),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        items(
+                            items = current.activities,
+                            key = { activity -> activity.activityId }
+                        ) { activity ->
+                            LocalHistoryRow(
+                                activity = activity,
+                                onOpen = { onOpen(activity) },
+                                onDelete = { onDelete(activity.activityId) }
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun LocalHistoryRow(
+    activity: LocalReadingActivity,
+    onOpen: () -> Unit,
+    onDelete: () -> Unit
+) {
+    val progress = (activity.chapterProgress.coerceIn(0f, 1f) * 100f).roundToInt()
+    val relativeTime = DateUtils.getRelativeTimeSpanString(
+        activity.lastReadAt,
+        System.currentTimeMillis(),
+        DateUtils.MINUTE_IN_MILLIS
+    )
+    val position = if (activity.chapterIndex >= 0 && activity.totalChapters > 0) {
+        stringResource(
+            id = R.string.history_local_position,
+            activity.chapterIndex + 1,
+            activity.totalChapters,
+            progress
+        )
+    } else {
+        stringResource(id = R.string.history_local_percent, progress)
+    }
+
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onOpen),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)
+        )
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(start = 16.dp, top = 14.dp, bottom = 14.dp, end = 8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                imageVector = Icons.Filled.AutoStories,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(28.dp)
+            )
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(horizontal = 12.dp)
+            ) {
+                Text(
+                    text = activity.novelName.ifBlank { activity.novelId },
+                    style = MaterialTheme.typography.titleMedium.copy(
+                        fontWeight = FontWeight.SemiBold
+                    ),
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    text = activity.chapterName,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.primary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(top = 3.dp)
+                )
+                Text(
+                    text = position,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 5.dp)
+                )
+                Text(
+                    text = stringResource(
+                        id = R.string.history_local_meta,
+                        relativeTime,
+                        localDurationText(activity.durationMs)
+                    ),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(top = 3.dp)
+                )
+            }
+            IconButton(onClick = onDelete) {
+                Icon(
+                    imageVector = Icons.Filled.DeleteOutline,
+                    contentDescription = stringResource(id = R.string.history_local_delete)
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun localDurationText(durationMs: Long): String {
+    val totalMinutes = durationMs.coerceAtLeast(0L) / 60_000L
+    return if (totalMinutes >= 60L) {
+        stringResource(
+            id = R.string.history_local_duration_hours,
+            totalMinutes / 60L,
+            totalMinutes % 60L
+        )
+    } else if (totalMinutes > 0L) {
+        stringResource(id = R.string.history_local_duration_minutes, totalMinutes)
+    } else {
+        stringResource(
+            id = R.string.history_local_duration_seconds,
+            durationMs.coerceAtLeast(0L) / 1_000L
+        )
+    }
+}
+
+class LocalHistoryPageModel : StateScreenModel<LocalHistoryPageModel.State>(State.Loading) {
+
+    private var observeJob: Job? = null
+    private var observeStarted = false
+
+    sealed class State {
+        data object Loading : State()
+        data object Error : State()
+        data class Result(val activities: List<LocalReadingActivity>) : State()
+    }
+
+    fun observe() {
+        if (observeStarted) return
+        observeStarted = true
+        observeJob?.cancel()
+        observeJob = screenModelScope.launch(Dispatchers.IO) {
+            try {
+                MainActivity.database.localReadingActivityDao().observeAll().collect { activities ->
+                    mutableState.value = State.Result(activities)
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                mutableState.value = State.Error
+                AppLogger.e("LocalHistoryPageModel", "Failed to load local history", e)
+            }
+        }
+    }
+
+    fun retry() {
+        observeStarted = false
+        observe()
+    }
+
+    fun delete(activityId: String) {
+        screenModelScope.launch(Dispatchers.IO) {
+            try {
+                MainActivity.database.localReadingActivityDao().deleteById(activityId)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                AppLogger.e(
+                    "LocalHistoryPageModel",
+                    "Failed to delete local reading activity",
+                    e
+                )
+            }
+        }
+    }
+
+    fun clear() {
+        screenModelScope.launch(Dispatchers.IO) {
+            try {
+                MainActivity.database.localReadingActivityDao().deleteAll()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                AppLogger.e("LocalHistoryPageModel", "Failed to clear local history", e)
+            }
+        }
+    }
 }

@@ -5,9 +5,12 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.horizontalScroll
@@ -20,11 +23,11 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -33,26 +36,25 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Forum
 import androidx.compose.material.icons.filled.List
 import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.Translate
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.BookmarkBorder
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.collectAsState
@@ -70,6 +72,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
@@ -85,6 +88,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.zIndex
 import cafe.adriel.voyager.core.model.StateScreenModel
 import cafe.adriel.voyager.core.model.rememberScreenModel
 import cafe.adriel.voyager.core.model.screenModelScope
@@ -97,13 +101,18 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.debounce
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.util.UUID
 import kotlin.math.max
 import kotlin.math.roundToInt
 import com.breakyuna.esjzone.MainActivity
 import com.breakyuna.esjzone.R
+import com.breakyuna.esjzone.database.LocalReadingHistoryRecorder
+import com.breakyuna.esjzone.database.entity.LocalReadingActivity
 import com.breakyuna.esjzone.network.Authorization
 import com.breakyuna.esjzone.network.EsjzoneClient
 import com.breakyuna.esjzone.network.EsjzoneUrls
@@ -132,7 +141,8 @@ class ChapterPage(
     private val chapter: Chapter,
     private val history: ChapterStateHolder,
     private val chapterOrder: List<Chapter> = emptyList(),
-    private val novelName: String = ""
+    private val novelName: String = "",
+    private val novelUrl: String = ""
 ) : Screen {
 
     override val key: ScreenKey =
@@ -211,12 +221,17 @@ class ChapterPage(
         var isBookProgressDragging by remember { mutableStateOf(false) }
         val chapterHeights = remember { mutableStateMapOf<String, Int>() }
 
-        BackHandler(enabled = navigator != null && !showReaderSettings && !showReaderContents) {
-            if (progressPreview != null) {
-                progressPreview = null
-                progressReturnLocation = null
-            } else {
-                navigator?.pop()
+        fun dismissProgressPreview() {
+            progressPreview = null
+            progressReturnLocation = null
+        }
+
+        BackHandler(enabled = navigator != null) {
+            when {
+                showReaderSettings -> showReaderSettings = false
+                showReaderContents -> showReaderContents = false
+                progressPreview != null -> dismissProgressPreview()
+                else -> navigator?.pop()
             }
         }
 
@@ -318,6 +333,55 @@ class ChapterPage(
             chapterProgress = chapterProgress,
             chapterOrder = bookChapterOrder
         )
+        val localHistoryActivityId = remember { UUID.randomUUID().toString() }
+        val localHistoryStartedAt = remember { System.currentTimeMillis() }
+        val localHistoryPosition = rememberUpdatedState(
+            LocalReadingPosition(
+                novelId = novelId.ifBlank {
+                    (activeChapter?.chapter ?: requestedChapter.value).novelId()
+                },
+                novelName = novelName.ifBlank {
+                    novelId.ifBlank {
+                        (activeChapter?.chapter ?: requestedChapter.value).novelId()
+                    }.ifBlank { (activeChapter?.chapter ?: requestedChapter.value).name }
+                },
+                novelUrl = novelUrl.ifBlank {
+                    novelId.ifBlank {
+                        (activeChapter?.chapter ?: requestedChapter.value).novelId()
+                    }.takeIf { it.isNotBlank() }?.let { id ->
+                        EsjzoneUrls.resolve("/detail/$id.html")
+                    }.orEmpty()
+                },
+                chapterUrl = (activeChapter?.chapter ?: requestedChapter.value).url,
+                chapterName = (activeChapter?.chapter ?: requestedChapter.value).name,
+                chapterIndex = currentBookLocation?.chapterIndex ?: -1,
+                totalChapters = currentBookLocation?.totalChapters ?: bookChapterOrder.size,
+                chapterProgress = currentBookLocation?.chapterProgress ?: 0f
+            )
+        )
+        LaunchedEffect(localHistoryActivityId) {
+            snapshotFlow { localHistoryPosition.value }
+                .distinctUntilChanged()
+                .debounce(750)
+                .collect { position ->
+                    LocalReadingHistoryRecorder.upsert(
+                        position.toLocalReadingActivity(
+                            activityId = localHistoryActivityId,
+                            startedAt = localHistoryStartedAt
+                        )
+                    )
+                }
+        }
+        DisposableEffect(localHistoryActivityId) {
+            onDispose {
+                LocalReadingHistoryRecorder.upsert(
+                    localHistoryPosition.value.toLocalReadingActivity(
+                        activityId = localHistoryActivityId,
+                        startedAt = localHistoryStartedAt
+                    )
+                )
+            }
+        }
         val displayedBookProgress = if (isBookProgressDragging) {
             progressPreview?.bookProgress ?: currentBookLocation?.bookProgress ?: 0f
         } else {
@@ -490,8 +554,7 @@ class ChapterPage(
                                                 if (novelId == previous.novelId()) {
                                                     historyState.value = previous
                                                 }
-                                                progressPreview = null
-                                                progressReturnLocation = null
+                                                dismissProgressPreview()
                                                 pendingSeekLocation = null
                                                 chapterPageModel.openChapter(previous)
                                             }
@@ -501,8 +564,7 @@ class ChapterPage(
                                                 if (novelId == next.novelId()) {
                                                     historyState.value = next
                                                 }
-                                                progressPreview = null
-                                                progressReturnLocation = null
+                                                dismissProgressPreview()
                                                 pendingSeekLocation = null
                                                 chapterPageModel.openChapter(next)
                                             }
@@ -527,8 +589,7 @@ class ChapterPage(
                                         },
                                         onDragCancelled = {
                                             isBookProgressDragging = false
-                                            progressPreview = null
-                                            progressReturnLocation = null
+                                            dismissProgressPreview()
                                         }
                                     )
 
@@ -537,11 +598,6 @@ class ChapterPage(
 
                                 val commentChapter =
                                     activeChapter?.chapter ?: requestedChapter.value
-                                val nextScript = when (readerSettings.script) {
-                                    ReaderScript.ORIGINAL -> ReaderScript.SIMPLIFIED
-                                    ReaderScript.SIMPLIFIED -> ReaderScript.TRADITIONAL
-                                    ReaderScript.TRADITIONAL -> ReaderScript.ORIGINAL
-                                }
                                 Row(
                                     modifier = Modifier
                                         .fillMaxWidth()
@@ -551,7 +607,11 @@ class ChapterPage(
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     FilledTonalIconButton(
-                                        onClick = { showReaderContents = true }
+                                        onClick = {
+                                            dismissProgressPreview()
+                                            showReaderSettings = false
+                                            showReaderContents = true
+                                        }
                                     ) {
                                         Icon(
                                             imageVector = Icons.Filled.List,
@@ -562,20 +622,10 @@ class ChapterPage(
                                     }
                                     FilledTonalIconButton(
                                         onClick = {
-                                            updateReaderSettings(
-                                                readerSettings.copy(script = nextScript)
-                                            )
+                                            dismissProgressPreview()
+                                            showReaderContents = false
+                                            showReaderSettings = true
                                         }
-                                    ) {
-                                        Icon(
-                                            imageVector = Icons.Filled.Translate,
-                                            contentDescription = stringResource(
-                                                id = R.string.reader_toggle_script
-                                            )
-                                        )
-                                    }
-                                    FilledTonalIconButton(
-                                        onClick = { showReaderSettings = true }
                                     ) {
                                         Icon(
                                             imageVector = Icons.Filled.Settings,
@@ -586,7 +636,10 @@ class ChapterPage(
                                     }
                                     FilledTonalIconButton(
                                         enabled = state is ChapterPageModel.State.Result,
-                                        onClick = { toggleBookmark() }
+                                        onClick = {
+                                            dismissProgressPreview()
+                                            toggleBookmark()
+                                        }
                                     ) {
                                         Icon(
                                             imageVector = if (isBookmarked) {
@@ -606,6 +659,7 @@ class ChapterPage(
                                     FilledTonalIconButton(
                                         enabled = state is ChapterPageModel.State.Result,
                                         onClick = {
+                                            dismissProgressPreview()
                                             navigator?.pushIfNotCurrent(
                                                 ChapterCommentsPage(
                                                     chapterName = commentChapter.name,
@@ -638,8 +692,7 @@ class ChapterPage(
                             indication = null
                         ) {
                             if (progressPreview != null) {
-                                progressPreview = null
-                                progressReturnLocation = null
+                                dismissProgressPreview()
                             } else {
                                 showToolbar = !showToolbar
                             }
@@ -782,34 +835,30 @@ class ChapterPage(
             }
         }
 
-        if (showReaderSettings) {
-            ReaderSettingsSheet(
-                settings = readerSettings,
-                onSettingsChange = { updated -> updateReaderSettings(updated) },
-                onDismiss = { showReaderSettings = false }
-            )
-        }
-
-        if (showReaderContents) {
-            val readerChapters = result?.chapterOrder.orEmpty()
-                .ifEmpty { chapterOrder }
-                .ifEmpty { result?.chapters?.map { it.chapter }.orEmpty() }
-            ReaderContentsSheet(
-                chapters = readerChapters,
-                currentChapter = activeChapter?.chapter ?: requestedChapter.value,
-                onChapterSelected = { selectedChapter ->
-                    showReaderContents = false
-                    progressPreview = null
-                    progressReturnLocation = null
-                    pendingSeekLocation = null
-                    chapterPageModel.openChapter(selectedChapter)
-                    scope.launch(Dispatchers.Main) {
-                        scrollState.scrollTo(0)
-                    }
-                },
-                onDismiss = { showReaderContents = false }
-            )
-        }
+        val readerChapters = result?.chapterOrder.orEmpty()
+            .ifEmpty { chapterOrder }
+            .ifEmpty { result?.chapters?.map { it.chapter }.orEmpty() }
+        ReaderContentsDrawer(
+            visible = showReaderContents,
+            chapters = readerChapters,
+            currentChapter = activeChapter?.chapter ?: requestedChapter.value,
+            onChapterSelected = { selectedChapter ->
+                showReaderContents = false
+                dismissProgressPreview()
+                pendingSeekLocation = null
+                chapterPageModel.openChapter(selectedChapter)
+                scope.launch(Dispatchers.Main) {
+                    scrollState.scrollTo(0)
+                }
+            },
+            onDismiss = { showReaderContents = false }
+        )
+        ReaderSettingsDrawer(
+            visible = showReaderSettings,
+            settings = readerSettings,
+            onSettingsChange = { updated -> updateReaderSettings(updated) },
+            onDismiss = { showReaderSettings = false }
+        )
     }
 
 }
@@ -828,6 +877,36 @@ private data class ReaderBookLocation(
                 .coerceIn(0f, 1f)
         }
 }
+
+private data class LocalReadingPosition(
+    val novelId: String,
+    val novelName: String,
+    val novelUrl: String,
+    val chapterUrl: String,
+    val chapterName: String,
+    val chapterIndex: Int,
+    val totalChapters: Int,
+    val chapterProgress: Float
+)
+
+private fun LocalReadingPosition.toLocalReadingActivity(
+    activityId: String,
+    startedAt: Long,
+    now: Long = System.currentTimeMillis()
+): LocalReadingActivity = LocalReadingActivity(
+    activityId = activityId,
+    novelId = novelId,
+    novelName = novelName,
+    novelUrl = novelUrl,
+    chapterUrl = chapterUrl,
+    chapterName = chapterName,
+    chapterIndex = chapterIndex,
+    totalChapters = totalChapters,
+    chapterProgress = chapterProgress.coerceIn(0f, 1f),
+    startedAt = startedAt,
+    lastReadAt = now,
+    durationMs = (now - startedAt).coerceAtLeast(0L)
+)
 
 private fun readerBookLocationFor(
     activeChapter: Chapter,
@@ -1157,23 +1236,111 @@ private fun ChapterContent(
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+private enum class ReaderDrawerSide {
+    START,
+    END
+}
+
 @Composable
-private fun ReaderContentsSheet(
+private fun ReaderDrawer(
+    visible: Boolean,
+    side: ReaderDrawerSide,
+    onDismiss: () -> Unit,
+    content: @Composable () -> Unit
+) {
+    val scrimInteractionSource = remember { MutableInteractionSource() }
+    val alignment = if (side == ReaderDrawerSide.START) {
+        Alignment.CenterStart
+    } else {
+        Alignment.CenterEnd
+    }
+    val offset: (Int) -> Int = if (side == ReaderDrawerSide.START) {
+        { width: Int -> -width }
+    } else {
+        { width: Int -> width }
+    }
+    val shape = if (side == ReaderDrawerSide.START) {
+        RoundedCornerShape(topEnd = 28.dp, bottomEnd = 28.dp)
+    } else {
+        RoundedCornerShape(topStart = 28.dp, bottomStart = 28.dp)
+    }
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .zIndex(10f)
+    ) {
+        AnimatedVisibility(
+            visible = visible,
+            enter = fadeIn(),
+            exit = fadeOut(),
+            modifier = Modifier.fillMaxSize()
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black.copy(alpha = 0.32f))
+                    .clickable(
+                        interactionSource = scrimInteractionSource,
+                        indication = null,
+                        onClick = onDismiss
+                    )
+            )
+        }
+
+        AnimatedVisibility(
+            visible = visible,
+            enter = slideInHorizontally(initialOffsetX = offset) + fadeIn(),
+            exit = slideOutHorizontally(targetOffsetX = offset) + fadeOut(),
+            modifier = Modifier
+                .align(alignment)
+                .fillMaxHeight()
+                .fillMaxWidth(0.88f)
+                .widthIn(max = 420.dp)
+                .zIndex(1f)
+        ) {
+            Surface(
+                modifier = Modifier.fillMaxSize(),
+                shape = shape,
+                color = MaterialTheme.colorScheme.surface,
+                shadowElevation = 12.dp
+            ) {
+                content()
+            }
+        }
+    }
+}
+
+@Composable
+private fun ReaderContentsDrawer(
+    visible: Boolean,
     chapters: List<Chapter>,
     currentChapter: Chapter,
     onChapterSelected: (Chapter) -> Unit,
     onDismiss: () -> Unit
 ) {
-    val sheetState = rememberModalBottomSheetState()
+    val listState = rememberLazyListState()
+    val currentChapterKey = chapterIdentity(currentChapter)
 
-    ModalBottomSheet(
-        onDismissRequest = onDismiss,
-        sheetState = sheetState
+    LaunchedEffect(visible, chapters.size, currentChapterKey) {
+        if (!visible) return@LaunchedEffect
+        val currentIndex = chapters.indexOfFirst { chapter ->
+            chapterIdentity(chapter) == currentChapterKey
+        }
+        if (currentIndex >= 0) {
+            listState.scrollToItem(currentIndex)
+        }
+    }
+
+    ReaderDrawer(
+        visible = visible,
+        side = ReaderDrawerSide.START,
+        onDismiss = onDismiss
     ) {
         Column(
             modifier = Modifier
-                .fillMaxWidth()
+                .fillMaxSize()
+                .statusBarsPadding()
                 .navigationBarsPadding()
                 .padding(horizontal = 20.dp, vertical = 8.dp)
         ) {
@@ -1187,8 +1354,11 @@ private fun ReaderContentsSheet(
                     fontWeight = FontWeight.Bold,
                     modifier = Modifier.weight(1f)
                 )
-                TextButton(onClick = onDismiss) {
-                    Text(text = stringResource(id = R.string.close))
+                IconButton(onClick = onDismiss) {
+                    Icon(
+                        imageVector = Icons.Filled.Close,
+                        contentDescription = stringResource(id = R.string.close)
+                    )
                 }
             }
 
@@ -1199,7 +1369,12 @@ private fun ReaderContentsSheet(
                     modifier = Modifier.padding(vertical = 24.dp)
                 )
             } else {
-                LazyColumn(modifier = Modifier.heightIn(max = 560.dp)) {
+                LazyColumn(
+                    state = listState,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f)
+                ) {
                     items(
                         items = chapters,
                         key = { chapter -> chapterIdentity(chapter) }
@@ -1235,23 +1410,23 @@ private fun ReaderContentsSheet(
 private fun sameReaderChapter(first: Chapter, second: Chapter): Boolean =
     chapterIdentity(first) == chapterIdentity(second)
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun ReaderSettingsSheet(
+private fun ReaderSettingsDrawer(
+    visible: Boolean,
     settings: ReaderSettings,
     onSettingsChange: (ReaderSettings) -> Unit,
     onDismiss: () -> Unit
 ) {
-    val sheetState = rememberModalBottomSheetState()
-
-    ModalBottomSheet(
-        onDismissRequest = onDismiss,
-        sheetState = sheetState
+    ReaderDrawer(
+        visible = visible,
+        side = ReaderDrawerSide.END,
+        onDismiss = onDismiss
     ) {
         Column(
             modifier = Modifier
-                .fillMaxWidth()
+                .fillMaxSize()
                 .verticalScroll(rememberScrollState())
+                .statusBarsPadding()
                 .navigationBarsPadding()
                 .padding(horizontal = 20.dp, vertical = 8.dp)
         ) {
@@ -1269,6 +1444,12 @@ private fun ReaderSettingsSheet(
                     onClick = { onSettingsChange(ReaderSettings()) }
                 ) {
                     Text(text = stringResource(id = R.string.reader_reset))
+                }
+                IconButton(onClick = onDismiss) {
+                    Icon(
+                        imageVector = Icons.Filled.Close,
+                        contentDescription = stringResource(id = R.string.close)
+                    )
                 }
             }
 

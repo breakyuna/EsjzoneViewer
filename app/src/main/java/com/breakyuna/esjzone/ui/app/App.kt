@@ -6,7 +6,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Modifier
 import cafe.adriel.voyager.navigator.Navigator
-import cafe.adriel.voyager.transitions.SlideTransition
+import com.breakyuna.esjzone.ui.navigation.CoverTransition
 import com.breakyuna.esjzone.ui.navigation.LocalAppNavigator
 import com.breakyuna.esjzone.ui.screen.LoadingScreen
 
@@ -18,7 +18,7 @@ fun App() {
         Navigator(
             LoadingScreen()
         ) { navigator ->
-            SlideTransition(navigator = navigator) { screen ->
+            CoverTransition(navigator = navigator) { screen ->
                 CompositionLocalProvider(value = LocalAppNavigator provides navigator) {
                     screen.Content()
                 }

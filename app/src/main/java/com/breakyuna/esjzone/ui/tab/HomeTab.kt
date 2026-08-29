@@ -3,7 +3,6 @@ package com.breakyuna.esjzone.ui.tab
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -136,11 +135,6 @@ object HomeTab : Tab {
                             color = MaterialTheme.colorScheme.primary
                         )
                     )
-                    Text(
-                        text = "Explore light novels & translations",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f)
-                    )
                 }
 
                 Surface(
@@ -165,40 +159,30 @@ object HomeTab : Tab {
                 }
             }
 
-            LazyRow(
+            Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp, vertical = 4.dp),
-                contentPadding = PaddingValues(horizontal = 0.dp),
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                item {
-                    CommunityShortcut(
-                        icon = Icons.Filled.Category,
-                        title = stringResource(id = R.string.categories),
-                        subtitle = stringResource(id = R.string.categories_description),
-                        modifier = Modifier.width(160.dp),
-                        onClick = { navigator?.pushIfNotCurrent(CategoryBrowserPage()) }
-                    )
-                }
-                item {
-                    CommunityShortcut(
-                        icon = Icons.Filled.Forum,
-                        title = stringResource(id = R.string.forum),
-                        subtitle = stringResource(id = R.string.forum_description),
-                        modifier = Modifier.width(160.dp),
-                        onClick = { navigator?.pushIfNotCurrent(ForumPage) }
-                    )
-                }
-                item {
-                    CommunityShortcut(
-                        icon = Icons.Filled.ChatBubbleOutline,
-                        title = stringResource(id = R.string.guestbook),
-                        subtitle = stringResource(id = R.string.guestbook_description),
-                        modifier = Modifier.width(160.dp),
-                        onClick = { navigator?.pushIfNotCurrent(GuestbookPage) }
-                    )
-                }
+                CommunityShortcut(
+                    icon = Icons.Filled.Category,
+                    title = stringResource(id = R.string.categories),
+                    modifier = Modifier.weight(1f),
+                    onClick = { navigator?.pushIfNotCurrent(CategoryBrowserPage()) }
+                )
+                CommunityShortcut(
+                    icon = Icons.Filled.Forum,
+                    title = stringResource(id = R.string.forum),
+                    modifier = Modifier.weight(1f),
+                    onClick = { navigator?.pushIfNotCurrent(ForumPage) }
+                )
+                CommunityShortcut(
+                    icon = Icons.Filled.ChatBubbleOutline,
+                    title = stringResource(id = R.string.guestbook),
+                    modifier = Modifier.weight(1f),
+                    onClick = { navigator?.pushIfNotCurrent(GuestbookPage) }
+                )
             }
 
             Spacer(modifier = Modifier.height(12.dp))
@@ -295,7 +279,6 @@ object HomeTab : Tab {
 private fun CommunityShortcut(
     icon: ImageVector,
     title: String,
-    subtitle: String,
     modifier: Modifier = Modifier,
     onClick: () -> Unit
 ) {
@@ -309,7 +292,10 @@ private fun CommunityShortcut(
         ),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
     ) {
-        Column(modifier = Modifier.padding(16.dp)) {
+        Column(
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 14.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
             Icon(
                 imageVector = icon,
                 contentDescription = null,
@@ -321,15 +307,9 @@ private fun CommunityShortcut(
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onSecondaryContainer,
-                modifier = Modifier.padding(top = 12.dp)
-            )
-            Text(
-                text = subtitle,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.78f),
-                maxLines = 2,
+                maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.padding(top = 3.dp)
+                modifier = Modifier.padding(top = 10.dp)
             )
         }
     }

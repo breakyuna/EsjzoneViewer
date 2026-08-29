@@ -1,12 +1,6 @@
 package com.breakyuna.esjzone.ui.compose.modifier
 
 import androidx.compose.foundation.ScrollState
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.composed
 import androidx.compose.ui.draw.drawWithContent
@@ -15,9 +9,7 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.debugInspectorInfo
-import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.Dp
-import androidx.compose.ui.unit.dp
 import com.breakyuna.esjzone.ui.compose.local.LocalColorScheme
 
 fun Modifier.horizontalFadingEdge(
@@ -122,49 +114,5 @@ fun Modifier.verticalFadingEdge(
             ),
             topLeft = Offset(x = 0f, y = size.height - bottomFadingEdgeStrength),
         )
-    }
-}
-
-@Preview
-@Composable
-fun HorizontalPreview() {
-    val scrollState = rememberScrollState()
-    Surface {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .horizontalFadingEdge(scrollState, 400.dp)
-        ) {
-            Text(text = "testaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
-            Text(text = "testaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
-            Text(text = "testaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
-            Text(text = "testaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
-            Text(text = "testaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
-            Text(text = "testaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
-            Text(text = "testaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
-            Text(text = "testaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
-        }
-    }
-}
-
-@Preview
-@Composable
-fun VerticalPreview() {
-    val scrollState = rememberScrollState()
-    Surface {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .verticalFadingEdge(scrollState, 200.dp)
-        ) {
-            Text(text = "test")
-            Text(text = "test")
-            Text(text = "test")
-            Text(text = "test")
-            Text(text = "test")
-            Text(text = "test")
-            Text(text = "test")
-            Text(text = "test")
-        }
     }
 }

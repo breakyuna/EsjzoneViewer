@@ -26,9 +26,9 @@ import cafe.adriel.voyager.navigator.tab.CurrentTab
 import cafe.adriel.voyager.navigator.tab.LocalTabNavigator
 import cafe.adriel.voyager.navigator.tab.Tab
 import cafe.adriel.voyager.navigator.tab.TabNavigator
-import cafe.adriel.voyager.transitions.SlideTransition
 import com.breakyuna.esjzone.network.Authorization
 import com.breakyuna.esjzone.network.LocalAuthorization
+import com.breakyuna.esjzone.ui.navigation.CoverTransition
 import com.breakyuna.esjzone.ui.navigation.LocalBaseNavigator
 import com.breakyuna.esjzone.ui.tab.FavoriteTab
 import com.breakyuna.esjzone.ui.tab.HistoryTab
@@ -44,7 +44,7 @@ class MainScreen(val authorization: Authorization) : Screen {
         CompositionLocalProvider(value = LocalAuthorization provides authorization) {
             Navigator(screen = TabScreen) { navigator ->
 
-                SlideTransition(navigator = navigator) { screen ->
+                CoverTransition(navigator = navigator) { screen ->
                     CompositionLocalProvider(value = LocalBaseNavigator provides navigator) {
                         screen.Content()
                     }
