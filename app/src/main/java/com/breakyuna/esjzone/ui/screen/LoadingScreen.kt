@@ -5,10 +5,10 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.currentCompositeKeyHash
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import cafe.adriel.voyager.core.screen.Screen
+import cafe.adriel.voyager.core.screen.ScreenKey
 import cafe.adriel.voyager.navigator.LocalNavigator
 import cafe.adriel.voyager.navigator.currentOrThrow
 import kotlinx.coroutines.CancellationException
@@ -26,6 +26,8 @@ import com.breakyuna.esjzone.util.AppLogger
 
 class LoadingScreen : Screen {
 
+    override val key: ScreenKey = "LoadingScreen"
+
     @Composable
     override fun Content() {
         val navigator = LocalNavigator.currentOrThrow
@@ -37,7 +39,7 @@ class LoadingScreen : Screen {
             CircularProgressIndicator()
         }
 
-        LaunchedEffect(currentCompositeKeyHash) {
+        LaunchedEffect(Unit) {
             val authorization = withContext(Dispatchers.IO) {
                 try {
                     val dao = MainActivity.database.cacheDao()

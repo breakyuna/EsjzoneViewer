@@ -15,7 +15,6 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.currentCompositeKeyHash
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateListOf
@@ -29,9 +28,14 @@ import androidx.compose.ui.unit.dp
 import cafe.adriel.voyager.core.model.StateScreenModel
 import cafe.adriel.voyager.core.model.rememberScreenModel
 import cafe.adriel.voyager.core.screen.Screen
+import cafe.adriel.voyager.core.screen.ScreenKey
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import com.breakyuna.esjzone.GlobalSettings
 import com.breakyuna.esjzone.R
 import com.breakyuna.esjzone.network.Authorization
@@ -46,6 +50,9 @@ import com.breakyuna.esjzone.ui.component.Novel
 import com.breakyuna.esjzone.ui.navigation.LocalBaseNavigator
 
 class SearchPage(private val keyword: String) : Screen {
+
+    override val key: ScreenKey =
+        "SearchPage:" + keyword.trim()
 
     @Composable
     override fun Content() {
@@ -92,12 +99,15 @@ class SearchPage(private val keyword: String) : Screen {
                     }
 
                     LazyColumn(state = listState) {
-                        items(items.toList().filter {
-                            if (!it.isAdult)
-                                true
-                            else
-                                adult
-                        }.distinct()) { novel ->
+                        items(
+                            items = items.toList().filter {
+                                if (!it.isAdult)
+                                    true
+                                else
+                                    adult
+                            }.distinct(),
+                            key = { item -> item.url.ifBlank { item.name } }
+                        ) { novel ->
                             Novel(covered = novel)
                         }
 
@@ -111,15 +121,25 @@ class SearchPage(private val keyword: String) : Screen {
                                 ) {
                                     CircularProgressIndicator()
                                 }
-                                LaunchedEffect(currentCompositeKeyHash) {
-                                    scope.launch(Dispatchers.IO) {
-                                        val newlyLoaded = requester.more(current)
+                                LaunchedEffect(current) {
+                                    try {
+                                        val newlyLoaded = withContext(Dispatchers.IO) {
+                                            requester.more(current)
+                                        }
                                         for (item in newlyLoaded) {
                                             if (items.contains(item))
                                                 continue
                                             items.add(item)
                                         }
                                         current += 1
+                                    } catch (e: CancellationException) {
+                                        throw e
+                                    } catch (e: Exception) {
+                                        com.breakyuna.esjzone.util.AppLogger.e(
+                                            "SearchPage",
+                                            "Failed to load search page $current",
+                                            e
+                                        )
                                     }
                                 }
                             }
@@ -143,7 +163,7 @@ class SearchPage(private val keyword: String) : Screen {
             }
         }
 
-        LaunchedEffect(currentCompositeKeyHash) {
+        LaunchedEffect(Unit) {
             searchModel.getRequester()
         }
     }
@@ -156,6 +176,8 @@ class SearchPageModel(
     private val keyword: String
 ) : StateScreenModel<SearchPageModel.State>(State.Loading) {
 
+    private var requestJob: Job? = null
+
     sealed class State {
         data object Loading : State()
         data class Result(
@@ -165,11 +187,15 @@ class SearchPageModel(
     }
 
     fun getRequester() {
-        scope.launch(Dispatchers.IO) {
+        requestJob?.cancel()
+        requestJob = scope.launch(Dispatchers.IO) {
             mutableState.value = State.Loading
             try {
                 val (requester, novels) = EsjzoneClient.search(authorization, keyword)
+                ensureActive()
                 mutableState.value = State.Result(requester, novels)
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 com.breakyuna.esjzone.util.AppLogger.e("SearchPageModel", "Failed to search for keyword: $keyword", e)
             }

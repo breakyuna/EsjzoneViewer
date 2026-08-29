@@ -4,7 +4,6 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -19,7 +18,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.currentCompositeKeyHash
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateListOf
@@ -37,9 +35,13 @@ import androidx.compose.ui.unit.dp
 import cafe.adriel.voyager.core.model.StateScreenModel
 import cafe.adriel.voyager.core.model.rememberScreenModel
 import cafe.adriel.voyager.core.screen.Screen
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import com.breakyuna.esjzone.GlobalSettings
 import com.breakyuna.esjzone.R
 import com.breakyuna.esjzone.network.Authorization
@@ -55,6 +57,7 @@ import com.breakyuna.esjzone.ui.component.DropdownSelection
 import com.breakyuna.esjzone.ui.component.Loading
 import com.breakyuna.esjzone.ui.component.Novel
 import com.breakyuna.esjzone.ui.navigation.LocalBaseNavigator
+import com.breakyuna.esjzone.ui.navigation.pushIfNotCurrent
 
 private fun favoriteSortResource(name: String): Int {
     return when (name) {
@@ -114,34 +117,34 @@ object FavoritePage : Screen {
                     }
                 }
             } else {
-                Column(
+                Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 20.dp, vertical = 24.dp)
+                        .padding(horizontal = 20.dp, vertical = 24.dp),
+                    verticalAlignment = Alignment.Top
                 ) {
-                    Text(
-                        text = stringResource(id = R.string.favorites),
-                        style = MaterialTheme.typography.headlineLarge.copy(
-                            fontWeight = FontWeight.Bold
-                        )
-                    )
-                    Text(
-                        text = stringResource(id = R.string.favorites_description),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(top = 4.dp)
-                    )
-                    Row(
+                    Column(
                         modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(top = 12.dp),
-                        horizontalArrangement = Arrangement.End
+                            .weight(1f)
+                            .padding(end = 12.dp)
                     ) {
-                        FavoriteSortSelector(
-                            sort = sort,
-                            onChange = ::onSortChanged
+                        Text(
+                            text = stringResource(id = R.string.favorites),
+                            style = MaterialTheme.typography.headlineLarge.copy(
+                                fontWeight = FontWeight.Bold
+                            )
+                        )
+                        Text(
+                            text = stringResource(id = R.string.favorites_description),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(top = 4.dp)
                         )
                     }
+                    FavoriteSortSelector(
+                        sort = sort,
+                        onChange = ::onSortChanged
+                    )
                 }
             }
 
@@ -173,7 +176,10 @@ object FavoritePage : Screen {
                             .weight(1f)
                             .fillMaxWidth()
                     ) {
-                        items(items.distinct()) { favoriteNovel ->
+                        items(
+                            items = items.distinctBy { it.url.ifBlank { it.name } },
+                            key = { item -> item.url.ifBlank { item.name } }
+                        ) { favoriteNovel ->
                             var detailedNovel: DetailedNovel? by remember {
                                 mutableStateOf(cache[favoriteNovel.url])
                             }
@@ -187,18 +193,20 @@ object FavoritePage : Screen {
                                     CircularProgressIndicator(modifier = Modifier.padding(16.dp))
                                 }
 
-                                LaunchedEffect(currentCompositeKeyHash) {
-                                    scope.launch(Dispatchers.IO) {
-                                        try {
-                                            val fetched = EsjzoneClient.getNovelDetail(
+                                LaunchedEffect(favoriteNovel.url) {
+                                    try {
+                                        val fetched = withContext(Dispatchers.IO) {
+                                            EsjzoneClient.getNovelDetail(
                                                 authorization,
                                                 favoriteNovel
                                             )
-                                            detailedNovel = fetched
-                                            cache[favoriteNovel.url] = fetched
-                                        } catch (e: Exception) {
-                                            com.breakyuna.esjzone.util.AppLogger.e("FavoritePage", "Failed to load novel detail for ${favoriteNovel.name}", e)
                                         }
+                                        detailedNovel = fetched
+                                        cache[favoriteNovel.url] = fetched
+                                    } catch (e: CancellationException) {
+                                        throw e
+                                    } catch (e: Exception) {
+                                        com.breakyuna.esjzone.util.AppLogger.e("FavoritePage", "Failed to load novel detail for ${favoriteNovel.name}", e)
                                     }
                                 }
                             } else {
@@ -213,7 +221,7 @@ object FavoritePage : Screen {
 
                                     if (rememberedFavorite && novel.isFavorite) {
                                         Novel(covered = novel) {
-                                            navigator?.push(
+                                            navigator?.pushIfNotCurrent(
                                                 NovelPage(
                                                     favoriteNovel,
                                                     favorite = favorite
@@ -235,15 +243,25 @@ object FavoritePage : Screen {
                                 ) {
                                     CircularProgressIndicator()
                                 }
-                                LaunchedEffect(currentCompositeKeyHash) {
-                                    scope.launch(Dispatchers.IO) {
-                                        val newlyLoaded = requester.more(current)
+                                LaunchedEffect(current) {
+                                    try {
+                                        val newlyLoaded = withContext(Dispatchers.IO) {
+                                            requester.more(current)
+                                        }
                                         for (item in newlyLoaded) {
                                             if (items.contains(item))
                                                 continue
                                             items.add(item)
                                         }
                                         current += 1
+                                    } catch (e: CancellationException) {
+                                        throw e
+                                    } catch (e: Exception) {
+                                        com.breakyuna.esjzone.util.AppLogger.e(
+                                            "FavoritePage",
+                                            "Failed to load favorite page $current",
+                                            e
+                                        )
                                     }
                                 }
                             }
@@ -268,7 +286,7 @@ object FavoritePage : Screen {
 
         }
 
-        LaunchedEffect(currentCompositeKeyHash) {
+        LaunchedEffect(Unit) {
             favoritePageModel.getRequester()
         }
     }
@@ -301,6 +319,8 @@ class FavoritePageModel(
     private val sort: MutableState<String>
 ) : StateScreenModel<FavoritePageModel.State>(State.Loading) {
 
+    private var requestJob: Job? = null
+
     sealed class State {
         data object Loading : State()
         data class Result(
@@ -310,14 +330,18 @@ class FavoritePageModel(
     }
 
     fun getRequester() {
-        scope.launch(Dispatchers.IO) {
+        requestJob?.cancel()
+        requestJob = scope.launch(Dispatchers.IO) {
             mutableState.value = State.Loading
             try {
                 val (requester, novels) = EsjzoneClient.getFavorites(
                     authorization,
                     sort.value
                 )
+                ensureActive()
                 mutableState.value = State.Result(requester, novels)
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 com.breakyuna.esjzone.util.AppLogger.e("FavoritePageModel", "Failed to load favorites", e)
             }

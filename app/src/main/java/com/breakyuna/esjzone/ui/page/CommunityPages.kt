@@ -1,5 +1,6 @@
 package com.breakyuna.esjzone.ui.page
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -12,9 +13,12 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -22,6 +26,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.Forum
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material3.Button
 import androidx.compose.material3.CardDefaults
@@ -39,7 +44,6 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.currentCompositeKeyHash
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -49,19 +53,28 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import cafe.adriel.voyager.core.model.StateScreenModel
 import cafe.adriel.voyager.core.model.rememberScreenModel
 import cafe.adriel.voyager.core.screen.Screen
+import cafe.adriel.voyager.core.screen.ScreenKey
+import coil.compose.SubcomposeAsyncImage
+import coil.request.ImageRequest
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 import com.breakyuna.esjzone.R
+import com.breakyuna.esjzone.MainActivity
 import com.breakyuna.esjzone.network.Authorization
 import com.breakyuna.esjzone.network.EsjzoneClient
+import com.breakyuna.esjzone.network.EsjzoneUrls
 import com.breakyuna.esjzone.network.LocalAuthorization
 import com.breakyuna.esjzone.network.features.getChapterComments
 import com.breakyuna.esjzone.network.features.getForumCategories
@@ -72,8 +85,10 @@ import com.breakyuna.esjzone.network.features.submitForumComment
 import com.breakyuna.esjzone.novellibrary.community.ForumCategory
 import com.breakyuna.esjzone.novellibrary.community.ForumThread
 import com.breakyuna.esjzone.novellibrary.novel.Comment
+import com.breakyuna.esjzone.novellibrary.novel.CategoryNovel
 import com.breakyuna.esjzone.ui.component.AppBar
 import com.breakyuna.esjzone.ui.navigation.LocalBaseNavigator
+import com.breakyuna.esjzone.ui.navigation.pushIfNotCurrent
 import com.breakyuna.esjzone.util.AppLogger
 
 object ForumPage : Screen {
@@ -118,7 +133,7 @@ object ForumPage : Screen {
                         }
                         items(groupCategories, key = { "forum-category-${it.id}" }) { category ->
                             ForumCategoryCard(category) {
-                                navigator?.push(ForumCategoryPage(category))
+                                navigator?.pushIfNotCurrent(ForumCategoryPage(category))
                             }
                         }
                     }
@@ -127,11 +142,14 @@ object ForumPage : Screen {
             }
         }
 
-        LaunchedEffect(currentCompositeKeyHash) { model.load() }
+        LaunchedEffect(Unit) { model.load() }
     }
 }
 
 class ForumCategoryPage(private val category: ForumCategory) : Screen {
+    override val key: ScreenKey =
+        "ForumCategoryPage:" + category.id.ifBlank { category.url.trim() }
+
     @Composable
     override fun Content() {
         val navigator = LocalBaseNavigator.current
@@ -147,15 +165,30 @@ class ForumCategoryPage(private val category: ForumCategory) : Screen {
                 emptyText = stringResource(id = R.string.forum_threads_empty)
             ) { threads ->
                 LazyColumn(modifier = Modifier.fillMaxSize()) {
-                    items(threads, key = { "forum-thread-${it.categoryId}-${it.id}" }) { thread ->
-                        ForumThreadCard(thread)
-                    }
+                        items(threads, key = { "forum-thread-${it.categoryId}-${it.id}" }) { thread ->
+                            ForumThreadCard(thread) {
+                                // The category page links to a novel forum board
+                                // (/forum/{categoryId}/{novelId}/), not a post body.
+                                // Open the canonical novel detail page instead of
+                                // sending the board URL to the chapter parser.
+                                navigator?.pushIfNotCurrent(
+                                    NovelPage(
+                                        CategoryNovel(
+                                            name = thread.title,
+                                            url = EsjzoneUrls.novelDetailUrlFromForumBoard(thread.url)
+                                                ?: "/detail/${thread.id}.html",
+                                            forumUrl = thread.url
+                                        )
+                                    )
+                                )
+                            }
+                        }
                     item { Spacer(modifier = Modifier.height(24.dp)) }
                 }
             }
         }
 
-        LaunchedEffect(currentCompositeKeyHash) { model.load() }
+        LaunchedEffect(Unit) { model.load() }
     }
 }
 
@@ -179,6 +212,10 @@ class ChapterCommentsPage(
     private val chapterName: String,
     private val chapterUrl: String
 ) : Screen {
+    override val key: ScreenKey =
+        "ChapterCommentsPage:" + EsjzoneUrls.canonicalPageKey(chapterUrl)
+            .ifBlank { chapterName.trim() }
+
     @Composable
     override fun Content() {
         val authorization = LocalAuthorization.current
@@ -245,7 +282,7 @@ private fun CommentListPage(
         }
     }
 
-    LaunchedEffect(currentCompositeKeyHash) { model.load() }
+    LaunchedEffect(Unit) { model.load() }
     LaunchedEffect(submittedVersion) {
         if (submittedVersion > 0) {
             draft = ""
@@ -443,8 +480,35 @@ private fun CommentPager(
     }
 }
 
+internal fun LazyListScope.novelCommentItems(comments: List<Comment>) {
+    item(key = "novel-comments-header") {
+        Text(
+            text = stringResource(id = R.string.comments),
+            style = MaterialTheme.typography.titleLarge,
+            fontWeight = FontWeight.Bold,
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+        )
+    }
+    if (comments.isEmpty()) {
+        item(key = "novel-comments-empty") {
+            Text(
+                text = stringResource(id = R.string.comments_empty),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+            )
+        }
+    } else {
+        items(
+            items = comments,
+            key = { comment -> "novel-comment-${comment.parentPostId}-${comment.id}" }
+        ) { comment ->
+            CommentCard(comment = comment, onReply = null)
+        }
+    }
+}
+
 @Composable
-private fun CommentCard(comment: Comment, onReply: (() -> Unit)?) {
+internal fun CommentCard(comment: Comment, onReply: (() -> Unit)?) {
     ElevatedCard(
         modifier = Modifier
             .fillMaxWidth()
@@ -454,47 +518,98 @@ private fun CommentCard(comment: Comment, onReply: (() -> Unit)?) {
             containerColor = MaterialTheme.colorScheme.surface
         )
     ) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = comment.authorName ?: stringResource(id = R.string.anonymous_user),
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier.weight(1f)
-                )
-                comment.floor?.let {
+        Row(
+            modifier = Modifier.padding(16.dp),
+            verticalAlignment = Alignment.Top
+        ) {
+            CommentAvatar(comment)
+            Spacer(modifier = Modifier.width(12.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = comment.authorName ?: stringResource(id = R.string.anonymous_user),
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.weight(1f)
+                    )
+                    comment.floor?.let {
+                        Text(
+                            text = it,
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                }
+                comment.createdAt?.let {
                     Text(
                         text = it,
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.primary
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 2.dp)
                     )
                 }
-            }
-            comment.createdAt?.let {
                 Text(
-                    text = it,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(top = 2.dp)
+                    text = comment.contentText,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.padding(top = 12.dp)
                 )
-            }
-            Text(
-                text = comment.contentText,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurface,
-                modifier = Modifier.padding(top = 12.dp)
-            )
-            if (onReply != null) {
-                TextButton(
-                    onClick = onReply,
-                    modifier = Modifier.align(Alignment.End)
-                ) {
-                    Text(text = stringResource(id = R.string.comment_reply))
+                if (onReply != null) {
+                    TextButton(
+                        onClick = onReply,
+                        modifier = Modifier.align(Alignment.End)
+                    ) {
+                        Text(text = stringResource(id = R.string.comment_reply))
+                    }
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun CommentAvatar(comment: Comment) {
+    Box(
+        modifier = Modifier
+            .size(44.dp)
+            .clip(CircleShape)
+            .background(MaterialTheme.colorScheme.secondaryContainer),
+        contentAlignment = Alignment.Center
+    ) {
+        val avatarUrl = comment.authorAvatarUrl
+        if (avatarUrl.isNullOrBlank()) {
+            Icon(
+                imageVector = Icons.Filled.Person,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSecondaryContainer
+            )
+        } else {
+            SubcomposeAsyncImage(
+                model = ImageRequest.Builder(LocalContext.current)
+                    .data(avatarUrl)
+                    .crossfade(true)
+                    .build(),
+                contentDescription = comment.authorName,
+                imageLoader = MainActivity.imageLoader,
+                loading = {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(18.dp),
+                        strokeWidth = 2.dp
+                    )
+                },
+                error = {
+                    Icon(
+                        imageVector = Icons.Filled.Person,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSecondaryContainer
+                    )
+                },
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize()
+            )
         }
     }
 }
@@ -545,11 +660,12 @@ private fun ForumCategoryCard(category: ForumCategory, onClick: () -> Unit) {
 }
 
 @Composable
-private fun ForumThreadCard(thread: ForumThread) {
+private fun ForumThreadCard(thread: ForumThread, onClick: () -> Unit) {
     ElevatedCard(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 7.dp),
+            .padding(horizontal = 16.dp, vertical = 7.dp)
+            .clickable(onClick = onClick),
         shape = RoundedCornerShape(18.dp)
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
@@ -683,25 +799,29 @@ private class CommentPageModel(
     private val scope: CoroutineScope,
     private val chapterUrl: String?
 ) : StateScreenModel<CommunityState<List<Comment>>>(CommunityState.Loading) {
+    private var loadJob: Job? = null
+
     val isSubmitting = mutableStateOf(false)
     val submitError = mutableStateOf<CommentSubmitError?>(null)
     val submittedVersion = mutableIntStateOf(0)
     val lastCreatedCommentId = mutableStateOf<String?>(null)
 
     fun load() {
-        scope.launch(Dispatchers.IO) {
-            mutableState.value = try {
+        loadJob?.cancel()
+        loadJob = scope.launch(Dispatchers.IO) {
+            try {
                 val comments = if (chapterUrl == null) {
                     EsjzoneClient.getGuestbookComments(authorization)
                 } else {
                     EsjzoneClient.getChapterComments(authorization, chapterUrl)
                 }
-                CommunityState.Result(comments)
+                ensureActive()
+                mutableState.value = comments.toCommunityState()
             } catch (error: CancellationException) {
                 throw error
             } catch (error: Exception) {
                 AppLogger.e("CommentPageModel", "Failed to load comments", error)
-                CommunityState.Error
+                mutableState.value = CommunityState.Error
             }
         }
     }
@@ -718,9 +838,9 @@ private class CommentPageModel(
         }
         if (isSubmitting.value) return
 
+        isSubmitting.value = true
+        submitError.value = null
         scope.launch(Dispatchers.IO) {
-            isSubmitting.value = true
-            submitError.value = null
             try {
                 val submission = EsjzoneClient.submitForumComment(
                     authorization = authorization,
@@ -728,6 +848,7 @@ private class CommentPageModel(
                     content = content,
                     replyToken = replyToken
                 )
+                ensureActive()
                 mutableState.value = CommunityState.Result(submission.comments)
                 lastCreatedCommentId.value = submission.createdComment.id
                 submittedVersion.intValue += 1

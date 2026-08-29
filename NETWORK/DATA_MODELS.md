@@ -109,6 +109,7 @@
 | author_id | string/null | 用户链接 query uid |
 | author_name | string/null | header 文本 |
 | author_url | string/null | 支持 .html 与无扩展名 |
+| author_avatar_url | string/null | comment-header/comment-title 内头像，支持懒加载属性 |
 | floor | string/null | comment-floor |
 | created_at | datetime/null | comment-meta |
 | content_html | string | comment-text HTML |
@@ -228,4 +229,3 @@
 - UserProfile 1 -> N ViewRecord
 - ForumCategory 1 -> N ForumThreadCard
 - Novel 可通过 forum_url 连接到 ForumCategory 与单本论坛页面
-

@@ -13,20 +13,22 @@ import com.breakyuna.esjzone.novellibrary.novel.analyseChapterList
 import com.breakyuna.esjzone.novellibrary.novel.analyseDescription
 import com.breakyuna.esjzone.util.AppLogger
 import org.jsoup.Jsoup
-import org.jsoup.nodes.Document
-import org.jsoup.nodes.Element
 
 
-fun EsjzoneClient.getNovelDetail(authorization: Authorization, novel: Novel): DetailedNovel {
+fun EsjzoneClient.getNovelDetail(
+    authorization: Authorization,
+    novel: Novel,
+    includeComments: Boolean = false
+): DetailedNovel {
     val targetUrl = EsjzoneUrls.resolve(novel.url)
 
     AppLogger.i("GetNovelDetail", "Fetching novel detail: ${novel.name} at $targetUrl")
     val responseBody = getPage(authorization, targetUrl, PageCacheTtl.DETAIL)
 
-    val document = Jsoup.parse(responseBody)
+    val document = Jsoup.parse(responseBody, targetUrl)
 
     val coverUrl = document.selectFirst(".product-gallery img")
-        ?.let { image -> image.attr("src").ifBlank { image.attr("data-src") } }
+        ?.let(::resolveImageUrl)
         ?.takeIf { it.isNotBlank() }
         ?: EsjzoneXPaths.Detail.Cover.evaluate(document).get()
         ?: EsjzoneUrls.EmptyCover
@@ -56,7 +58,9 @@ fun EsjzoneClient.getNovelDetail(authorization: Authorization, novel: Novel): De
         ?: EsjzoneXPaths.Detail.Author.evaluate(document).get()
         ?: ""
 
-    val forumUrl = document.selectFirst("a.btn-forum")?.attr("href")
+    val forumUrl = document.selectFirst("a.btn-forum")?.let { link ->
+        link.absUrl("href").ifBlank { link.attr("href") }
+    }
         ?.takeIf { it.isNotBlank() }
         ?: EsjzoneXPaths.Detail.ForumUrl.evaluate(document).get()
         ?: ""
@@ -79,6 +83,11 @@ fun EsjzoneClient.getNovelDetail(authorization: Authorization, novel: Novel): De
     val chapterList = chapterListElements.firstOrNull()
         ?.let(::analyseChapterList)
         ?: NovelChapterList(emptyList())
+    val comments = if (includeComments) {
+        parseComments(document, forumUrl.ifBlank { targetUrl })
+    } else {
+        emptyList()
+    }
 
     return DetailedNovel(
         novel.name,
@@ -94,20 +103,20 @@ fun EsjzoneClient.getNovelDetail(authorization: Authorization, novel: Novel): De
         tags.contains("R18"),
         favorite == "已收藏",
         description,
-        chapterList
+        chapterList,
+        comments
     )
 }
 
-private fun analyseComments(document: Document) {
-    val commentElements = mutableListOf<Element>()
-
-    for (pages in EsjzoneXPaths.Detail.Comment.Pages.evaluate(document).elements) {
-        for (element in pages.children()) {
-            if (element.nameIs("div") && element.hasAttr("class") && element.attr("class") == "comment") {
-                commentElements.add(element)
-            }
+private fun resolveImageUrl(image: org.jsoup.nodes.Element): String? {
+    // Lazy-loaded images keep the real URL in data-* while src may be a
+    // non-empty placeholder, so data-* attributes must be checked first.
+    return sequenceOf("data-src", "data-original", "data-lazy-src", "src")
+        .mapNotNull { attribute ->
+            image.absUrl(attribute)
+                .ifBlank { image.attr(attribute) }
+                .trim()
+                .takeIf { it.isNotBlank() }
         }
-    }
-
-
+        .firstOrNull()
 }

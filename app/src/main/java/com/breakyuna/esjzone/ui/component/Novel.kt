@@ -47,6 +47,7 @@ import com.breakyuna.esjzone.R
 import com.breakyuna.esjzone.novellibrary.novel.CoveredNovel
 import com.breakyuna.esjzone.novellibrary.novel.CoveredNovelImpl
 import com.breakyuna.esjzone.ui.navigation.LocalBaseNavigator
+import com.breakyuna.esjzone.ui.navigation.pushIfNotCurrent
 import com.breakyuna.esjzone.ui.page.NovelPage
 
 @Composable
@@ -65,7 +66,7 @@ fun Novel(
                 if (onClick != null) {
                     onClick()
                 } else {
-                    navigator?.push(NovelPage(covered))
+                    navigator?.pushIfNotCurrent(NovelPage(covered))
                 }
             },
         shape = RoundedCornerShape(16.dp),

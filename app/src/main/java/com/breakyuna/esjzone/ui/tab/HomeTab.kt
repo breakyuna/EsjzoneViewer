@@ -46,7 +46,6 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.currentCompositeKeyHash
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -72,8 +71,10 @@ import cafe.adriel.voyager.navigator.tab.Tab
 import cafe.adriel.voyager.navigator.tab.TabOptions
 import coil.compose.SubcomposeAsyncImage
 import coil.request.ImageRequest
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 import com.breakyuna.esjzone.GlobalSettings
 import com.breakyuna.esjzone.MainActivity
@@ -85,6 +86,7 @@ import com.breakyuna.esjzone.network.features.getHomeData
 import com.breakyuna.esjzone.novellibrary.data.HomeData
 import com.breakyuna.esjzone.novellibrary.novel.CoveredNovel
 import com.breakyuna.esjzone.ui.navigation.LocalBaseNavigator
+import com.breakyuna.esjzone.ui.navigation.pushIfNotCurrent
 import com.breakyuna.esjzone.ui.page.NovelListPage
 import com.breakyuna.esjzone.ui.page.NovelPage
 import com.breakyuna.esjzone.ui.page.ForumPage
@@ -147,7 +149,7 @@ object HomeTab : Tab {
                         .size(52.dp)
                         .clip(CircleShape)
                         .clickable {
-                            navigator?.push(SearchTab)
+                            navigator?.pushIfNotCurrent(SearchTab)
                         },
                     shape = CircleShape,
                     color = MaterialTheme.colorScheme.primaryContainer,
@@ -175,14 +177,14 @@ object HomeTab : Tab {
                     title = stringResource(id = R.string.forum),
                     subtitle = stringResource(id = R.string.forum_description),
                     modifier = Modifier.weight(1f),
-                    onClick = { navigator?.push(ForumPage) }
+                    onClick = { navigator?.pushIfNotCurrent(ForumPage) }
                 )
                 CommunityShortcut(
                     icon = Icons.Filled.ChatBubbleOutline,
                     title = stringResource(id = R.string.guestbook),
                     subtitle = stringResource(id = R.string.guestbook_description),
                     modifier = Modifier.weight(1f),
-                    onClick = { navigator?.push(GuestbookPage) }
+                    onClick = { navigator?.pushIfNotCurrent(GuestbookPage) }
                 )
             }
 
@@ -207,7 +209,7 @@ object HomeTab : Tab {
                 icon = Icons.Filled.Translate,
                 title = stringResource(id = R.string.tab_home_recentlyupdate_tranlated),
                 onMoreClick = {
-                    navigator?.push(NovelListPage(1, 1, false))
+                    navigator?.pushIfNotCurrent(NovelListPage(1, 1, false))
                 }
             )
             if (state !is HomeTabModel.State.Result) {
@@ -223,7 +225,7 @@ object HomeTab : Tab {
                 icon = Icons.Filled.AutoStories,
                 title = stringResource(id = R.string.tab_home_recentlyupdate_original),
                 onMoreClick = {
-                    navigator?.push(NovelListPage(2, 1, false))
+                    navigator?.pushIfNotCurrent(NovelListPage(2, 1, false))
                 }
             )
             if (state !is HomeTabModel.State.Result) {
@@ -240,7 +242,7 @@ object HomeTab : Tab {
                     icon = Icons.Filled.LocalFireDepartment,
                     title = stringResource(id = R.string.tab_home_recentlyupdate_tranlated_r18),
                     onMoreClick = {
-                        navigator?.push(NovelListPage(1, 1, true))
+                        navigator?.pushIfNotCurrent(NovelListPage(1, 1, true))
                     }
                 )
                 if (state !is HomeTabModel.State.Result) {
@@ -256,7 +258,7 @@ object HomeTab : Tab {
                     icon = Icons.Filled.LocalFireDepartment,
                     title = stringResource(id = R.string.tab_home_recentlyupdate_original_r18),
                     onMoreClick = {
-                        navigator?.push(NovelListPage(2, 1, true))
+                        navigator?.pushIfNotCurrent(NovelListPage(2, 1, true))
                     }
                 )
                 if (state !is HomeTabModel.State.Result) {
@@ -269,7 +271,7 @@ object HomeTab : Tab {
             Spacer(modifier = Modifier.height(32.dp))
         }
 
-        LaunchedEffect(currentCompositeKeyHash) {
+        LaunchedEffect(Unit) {
             homeTabModel.getHomeData()
         }
     }
@@ -403,7 +405,10 @@ class HomeTabModel(
             mutableState.value = State.Loading
             try {
                 val data = EsjzoneClient.getHomeData(authorization)
+                ensureActive()
                 mutableState.value = State.Result(data)
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 com.breakyuna.esjzone.util.AppLogger.e("HomeTabModel", "Failed to load home data", e)
             }
@@ -421,18 +426,21 @@ fun NovelSets(novels: List<CoveredNovel>) {
 
     val finalNovels = novels.filter {
         !(it.isAdult && !adult)
-    }
+    }.distinctBy { it.url.ifBlank { it.name } }
 
     LazyRow(
         contentPadding = PaddingValues(horizontal = 16.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        items(finalNovels) { novel ->
+        items(
+            finalNovels,
+            key = { item -> item.url.ifBlank { item.name } }
+        ) { novel ->
             Card(
                 modifier = Modifier
                     .width(148.dp)
                     .clickable {
-                        navigator?.push(NovelPage(novel))
+                        navigator?.pushIfNotCurrent(NovelPage(novel))
                     },
                 shape = RoundedCornerShape(20.dp),
                 colors = CardDefaults.cardColors(

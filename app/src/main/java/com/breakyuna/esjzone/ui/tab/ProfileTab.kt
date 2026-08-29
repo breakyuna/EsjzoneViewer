@@ -32,11 +32,9 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.currentCompositeKeyHash
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -55,8 +53,8 @@ import cafe.adriel.voyager.navigator.tab.Tab
 import cafe.adriel.voyager.navigator.tab.TabOptions
 import coil.compose.SubcomposeAsyncImage
 import coil.request.ImageRequest
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.withContext
 import com.breakyuna.esjzone.MainActivity
 import com.breakyuna.esjzone.R
 import com.breakyuna.esjzone.network.EsjzoneClient
@@ -65,6 +63,7 @@ import com.breakyuna.esjzone.network.LocalAuthorization
 import com.breakyuna.esjzone.network.features.getUserProfile
 import com.breakyuna.esjzone.novellibrary.user.UserProfile
 import com.breakyuna.esjzone.ui.navigation.LocalBaseNavigator
+import com.breakyuna.esjzone.ui.navigation.pushIfNotCurrent
 import com.breakyuna.esjzone.ui.page.AboutPage
 import com.breakyuna.esjzone.ui.page.SettingsPage
 
@@ -84,7 +83,6 @@ object ProfileTab : Tab {
     override fun Content() {
         val navigator = LocalBaseNavigator.current
         val authorization = LocalAuthorization.current
-        val scope = rememberCoroutineScope()
         var data: UserProfile? by remember { mutableStateOf(null) }
 
         BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
@@ -153,17 +151,19 @@ object ProfileTab : Tab {
             }
         }
 
-        LaunchedEffect(currentCompositeKeyHash) {
-            scope.launch(Dispatchers.IO) {
-                try {
-                    data = EsjzoneClient.getUserProfile(authorization)
-                } catch (e: Exception) {
-                    com.breakyuna.esjzone.util.AppLogger.e(
-                        "ProfileTab",
-                        "Failed to fetch user profile",
-                        e
-                    )
+        LaunchedEffect(Unit) {
+            try {
+                data = withContext(kotlinx.coroutines.Dispatchers.IO) {
+                    EsjzoneClient.getUserProfile(authorization)
                 }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                com.breakyuna.esjzone.util.AppLogger.e(
+                    "ProfileTab",
+                    "Failed to fetch user profile",
+                    e
+                )
             }
         }
     }
@@ -300,7 +300,7 @@ private fun ProfileMenu(
             iconBg = MaterialTheme.colorScheme.tertiaryContainer,
             title = stringResource(R.string.settings),
             subtitle = stringResource(R.string.profile_settings_description),
-            onClick = { navigator?.push(SettingsPage) }
+            onClick = { navigator?.pushIfNotCurrent(SettingsPage) }
         )
         ProfileMenuItem(
             icon = Icons.Filled.Info,
@@ -308,7 +308,7 @@ private fun ProfileMenu(
             iconBg = MaterialTheme.colorScheme.surfaceVariant,
             title = stringResource(R.string.about),
             subtitle = stringResource(R.string.profile_about_description),
-            onClick = { navigator?.push(AboutPage) }
+            onClick = { navigator?.pushIfNotCurrent(AboutPage) }
         )
     }
 }

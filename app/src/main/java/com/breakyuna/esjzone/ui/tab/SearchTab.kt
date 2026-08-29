@@ -38,7 +38,6 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.currentCompositeKeyHash
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
@@ -57,13 +56,16 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import cafe.adriel.voyager.navigator.tab.Tab
 import cafe.adriel.voyager.navigator.tab.TabOptions
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import com.breakyuna.esjzone.MainActivity
 import com.breakyuna.esjzone.R
 import com.breakyuna.esjzone.database.entity.SearchHistory
 import com.breakyuna.esjzone.ui.component.AppBar
 import com.breakyuna.esjzone.ui.navigation.LocalBaseNavigator
+import com.breakyuna.esjzone.ui.navigation.pushIfNotCurrent
 import com.breakyuna.esjzone.ui.page.SearchPage
 import com.breakyuna.esjzone.util.currentDateString
 import com.breakyuna.esjzone.util.formattedDate
@@ -101,23 +103,35 @@ object SearchTab : Tab {
         fun performSearch(query: String) {
             val trimmed = query.trim()
             if (trimmed.isNotEmpty()) {
-                navigator?.push(SearchPage(trimmed))
+                navigator?.pushIfNotCurrent(SearchPage(trimmed))
                 scope.launch(Dispatchers.IO) {
-                    val dao = MainActivity.database.searchHistoryDao()
-                    val history = if (dao.exists(trimmed)) {
-                        dao.findByKeyword(trimmed)
-                    } else {
-                        SearchHistory(
-                            keyword = trimmed,
-                            time = currentDateString()
+                    try {
+                        val dao = MainActivity.database.searchHistoryDao()
+                        val history = if (dao.exists(trimmed)) {
+                            dao.findByKeyword(trimmed)
+                        } else {
+                            SearchHistory(
+                                keyword = trimmed,
+                                time = currentDateString()
+                            )
+                        }
+                        history.time = currentDateString()
+                        dao.insertAll(history)
+
+                        val updated = dao.getAll()
+                        withContext(kotlinx.coroutines.Dispatchers.Main.immediate) {
+                            histories.clear()
+                            histories.addAll(updated)
+                        }
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        com.breakyuna.esjzone.util.AppLogger.e(
+                            "SearchTab",
+                            "Failed to persist search history",
+                            e
                         )
                     }
-                    history.time = currentDateString()
-                    dao.insertAll(history)
-
-                    val updated = dao.getAll()
-                    histories.clear()
-                    histories.addAll(updated)
                 }
             }
         }
@@ -224,8 +238,18 @@ object SearchTab : Tab {
                             val items = histories.toList()
                             histories.clear()
                             scope.launch(Dispatchers.IO) {
-                                for (item in items) {
-                                    MainActivity.database.searchHistoryDao().delete(item)
+                                try {
+                                    for (item in items) {
+                                        MainActivity.database.searchHistoryDao().delete(item)
+                                    }
+                                } catch (e: CancellationException) {
+                                    throw e
+                                } catch (e: Exception) {
+                                    com.breakyuna.esjzone.util.AppLogger.e(
+                                        "SearchTab",
+                                        "Failed to clear search history",
+                                        e
+                                    )
                                 }
                             }
                         }
@@ -314,7 +338,17 @@ object SearchTab : Tab {
                                     onClick = {
                                         histories.remove(history)
                                         scope.launch(Dispatchers.IO) {
-                                            MainActivity.database.searchHistoryDao().delete(history)
+                                            try {
+                                                MainActivity.database.searchHistoryDao().delete(history)
+                                            } catch (e: CancellationException) {
+                                                throw e
+                                            } catch (e: Exception) {
+                                                com.breakyuna.esjzone.util.AppLogger.e(
+                                                    "SearchTab",
+                                                    "Failed to delete search history entry",
+                                                    e
+                                                )
+                                            }
                                         }
                                     },
                                     modifier = Modifier.size(22.dp)
@@ -335,11 +369,22 @@ object SearchTab : Tab {
             Spacer(modifier = Modifier.height(40.dp))
         }
 
-        LaunchedEffect(currentCompositeKeyHash) {
-            scope.launch(Dispatchers.IO) {
-                val dbHistories = MainActivity.database.searchHistoryDao().getAll()
+        LaunchedEffect(Unit) {
+            try {
+                val dbHistories = withContext(Dispatchers.IO) {
+                    MainActivity.database.searchHistoryDao().getAll()
+                }
                 histories.clear()
                 histories.addAll(dbHistories)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                com.breakyuna.esjzone.util.AppLogger.e(
+                    "SearchTab",
+                    "Failed to load search history",
+                    e
+                )
+            } finally {
                 loadingHistory = false
             }
         }

@@ -1,8 +1,11 @@
 package com.breakyuna.esjzone.network
 
+import android.net.Uri
 import com.breakyuna.esjzone.GlobalSettings
 
 object EsjzoneUrls {
+
+    private val FORUM_BOARD_PATH = Regex("^/forum/[0-9]+/([0-9]+)$")
 
     /** Resolves a page link without rewriting a valid cross-host URL from the site. */
     fun resolve(rawUrl: String): String {
@@ -14,6 +17,33 @@ object EsjzoneUrls {
             else -> "$Base/$url"
         }
     }
+
+    /**
+     * Returns a stable page identity for navigation and state keys.
+     * Host aliases and fragments do not identify a different ESJ page.
+     */
+    fun canonicalPageKey(rawUrl: String): String {
+        if (rawUrl.isBlank()) return ""
+        val resolved = resolve(rawUrl).substringBefore('#')
+        return runCatching {
+            val uri = Uri.parse(resolved)
+            val path = uri.encodedPath
+                ?.trimEnd('/')
+                ?.ifBlank { "/" }
+                ?: "/"
+            path
+        }.getOrElse {
+            resolved.substringBefore('#').substringBefore('?').trimEnd('/').ifBlank { "/" }
+        }
+    }
+
+    /** Converts a single-novel forum board URL to the corresponding detail URL. */
+    fun novelDetailUrlFromForumBoard(rawUrl: String): String? =
+        FORUM_BOARD_PATH.matchEntire(canonicalPageKey(rawUrl))
+            ?.groupValues
+            ?.getOrNull(1)
+            ?.takeIf { it.isNotBlank() }
+            ?.let { "/detail/$it.html" }
 
     val BaseWithoutProtocol: String
         get() = GlobalSettings.domain.value

@@ -3,6 +3,7 @@ package com.breakyuna.esjzone.network.features
 import com.breakyuna.esjzone.network.Authorization
 import com.breakyuna.esjzone.network.EsjzoneClient
 import com.breakyuna.esjzone.network.EsjzoneUrls
+import com.breakyuna.esjzone.network.EsjzoneXPaths
 import com.breakyuna.esjzone.network.PageCacheTtl
 import com.breakyuna.esjzone.novellibrary.community.ForumCategory
 import com.breakyuna.esjzone.novellibrary.community.ForumThread
@@ -221,7 +222,14 @@ fun EsjzoneClient.getForumThreads(
 
 internal fun parseComments(document: Document, parentPostId: String): List<Comment> {
     val comments = mutableListOf<Comment>()
-    val sections = document.select(".comments-section")
+    val sections = document.select(".comments-section").ifEmpty {
+        // A few templates omit the shared marker but keep the pager class.
+        document.select("[class*=comments-page-]")
+    }.ifEmpty {
+        // The novel detail template has also been observed with a generic
+        // section element but without either shared class.
+        EsjzoneXPaths.Detail.Comment.Pages.evaluate(document).elements
+    }
     for ((sectionIndex, section) in sections.withIndex()) {
         val pageGroup = COMMENT_PAGE.find(section.className())
             ?.groupValues
@@ -233,8 +241,14 @@ internal fun parseComments(document: Document, parentPostId: String): List<Comme
             val content = element.selectFirst(".comment-text")
             val author = element.selectFirst(
                 ".comment-header a[href*='/my/profile'], .comment-title a[href*='/my/profile']"
+            ) ?: element.selectFirst(".comment-header a, .comment-title a")
+            val authorUrl = author?.let { link ->
+                link.absUrl("href").ifBlank { link.attr("href") }
+            }?.trim()?.takeIf { it.isNotBlank() }
+            val avatar = element.selectFirst(
+                ".comment-header img, .comment-title img, .comment-author img, img.avatar"
             )
-            val authorUrl = author?.attr("href")?.trim()?.takeIf { it.isNotBlank() }
+            val authorAvatarUrl = avatar?.let(::resolveImageUrl)
             val replyToken = element.selectFirst(".forum_reply[data-comment]")
                 ?.attr("data-comment")
                 ?.trim()
@@ -250,6 +264,7 @@ internal fun parseComments(document: Document, parentPostId: String): List<Comme
                 authorId = authorUrl?.let { PROFILE_UID.find(it)?.groupValues?.getOrNull(1) },
                 authorName = author?.text()?.trim()?.takeIf { it.isNotBlank() },
                 authorUrl = authorUrl,
+                authorAvatarUrl = authorAvatarUrl,
                 floor = element.selectFirst(".comment-floor")?.text()?.trim()
                     ?.takeIf { it.isNotBlank() },
                 createdAt = element.selectFirst(".comment-meta")?.text()?.trim()
@@ -262,6 +277,19 @@ internal fun parseComments(document: Document, parentPostId: String): List<Comme
         }
     }
     return comments.distinctBy { it.id }
+}
+
+private fun resolveImageUrl(image: Element): String? {
+    // Lazy-loaded avatars commonly leave a placeholder in src and put the real
+    // URL in one of the data-* attributes, so inspect those first.
+    return sequenceOf("data-src", "data-original", "data-lazy-src", "src")
+        .mapNotNull { attribute ->
+            image.absUrl(attribute)
+                .ifBlank { image.attr(attribute) }
+                .trim()
+                .takeIf { it.isNotBlank() }
+        }
+        .firstOrNull()
 }
 
 private fun forumGroupName(table: Element): String? {

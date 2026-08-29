@@ -3,7 +3,6 @@ package com.breakyuna.esjzone.ui.page
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
-import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
@@ -34,8 +33,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.currentCompositeKeyHash
-import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
@@ -46,16 +43,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import cafe.adriel.voyager.core.model.StateScreenModel
@@ -63,9 +55,13 @@ import cafe.adriel.voyager.core.model.rememberScreenModel
 import cafe.adriel.voyager.core.screen.Screen
 import coil.compose.SubcomposeAsyncImage
 import coil.request.ImageRequest
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import com.breakyuna.esjzone.GlobalSettings
 import com.breakyuna.esjzone.MainActivity
 import com.breakyuna.esjzone.R
@@ -81,6 +77,7 @@ import com.breakyuna.esjzone.novellibrary.novel.HistoryNovel
 import com.breakyuna.esjzone.ui.component.AppBar
 import com.breakyuna.esjzone.ui.component.Loading
 import com.breakyuna.esjzone.ui.navigation.LocalBaseNavigator
+import com.breakyuna.esjzone.ui.navigation.pushIfNotCurrent
 
 object HistoryPage : Screen {
 
@@ -98,9 +95,6 @@ object HistoryPage : Screen {
         val navigator = LocalBaseNavigator.current
 
         val authorization = LocalAuthorization.current
-        val configuration = LocalConfiguration.current
-        val density = LocalDensity.current
-
         val scope = rememberCoroutineScope()
 
         val historyPageModel = rememberScreenModel { HistoryPageModel(authorization, scope) }
@@ -140,7 +134,7 @@ object HistoryPage : Screen {
                 is HistoryPageModel.State.Result -> {
                     val result = state as HistoryPageModel.State.Result
 
-                    val novels = result.historyNovels
+                    val novels = result.historyNovels.distinctBy { it.url.ifBlank { it.name } }
 
                     val cache = remember {
                         mutableStateMapOf<String, DetailedNovel>()
@@ -155,7 +149,10 @@ object HistoryPage : Screen {
                             .weight(1f)
                             .fillMaxWidth()
                     ) {
-                        items(novels) { historyNovel ->
+                        items(
+                            novels,
+                            key = { item -> item.url.ifBlank { item.name } }
+                        ) { historyNovel ->
                             var detailedNovel: DetailedNovel? by remember {
                                 mutableStateOf(cache[historyNovel.url])
                             }
@@ -177,18 +174,20 @@ object HistoryPage : Screen {
                                     CircularProgressIndicator(modifier = Modifier.padding(16.dp))
                                 }
 
-                                LaunchedEffect(currentCompositeKeyHash) {
-                                    scope.launch(Dispatchers.IO) {
-                                        try {
-                                            val fetched = EsjzoneClient.getNovelDetail(
+                                LaunchedEffect(historyNovel.url) {
+                                    try {
+                                        val fetched = withContext(Dispatchers.IO) {
+                                            EsjzoneClient.getNovelDetail(
                                                 authorization,
                                                 historyNovel
                                             )
-                                            detailedNovel = fetched
-                                            cache[historyNovel.url] = fetched
-                                        } catch (e: Exception) {
-                                            com.breakyuna.esjzone.util.AppLogger.e("HistoryPage", "Failed to load novel detail for ${historyNovel.name}", e)
                                         }
+                                        detailedNovel = fetched
+                                        cache[historyNovel.url] = fetched
+                                    } catch (e: CancellationException) {
+                                        throw e
+                                    } catch (e: Exception) {
+                                        com.breakyuna.esjzone.util.AppLogger.e("HistoryPage", "Failed to load novel detail for ${historyNovel.name}", e)
                                     }
                                 }
                             } else {
@@ -197,7 +196,6 @@ object HistoryPage : Screen {
                                         mutableStateOf(false)
                                     }
                                     var expanded by remember { mutableStateOf(false) }
-                                    var touchPoint: Offset by remember { mutableStateOf(Offset.Zero) }
 
                                     if (!deleted) {
                                         Card(
@@ -209,26 +207,34 @@ object HistoryPage : Screen {
                                                 containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
                                             )
                                         ) {
-                                            val (xDp, yDp) = with(density) {
-                                                (touchPoint.x.toDp()) to (touchPoint.y.toDp())
-                                            }
                                             DropdownMenu(
                                                 expanded = expanded,
-                                                offset = DpOffset(xDp, yDp),
                                                 onDismissRequest = {
                                                     expanded = false
                                                 }
                                             ) {
                                                 DropdownMenuItem(
                                                     onClick = {
-                                                        scope.launch(Dispatchers.IO) {
-                                                            EsjzoneClient.removeHistory(
-                                                                authorization,
-                                                                historyNovel.vid
-                                                            )
+                                                        scope.launch {
+                                                            try {
+                                                                withContext(Dispatchers.IO) {
+                                                                    EsjzoneClient.removeHistory(
+                                                                        authorization,
+                                                                        historyNovel.vid
+                                                                    )
+                                                                }
+                                                                deleted = true
+                                                            } catch (e: CancellationException) {
+                                                                throw e
+                                                            } catch (e: Exception) {
+                                                                com.breakyuna.esjzone.util.AppLogger.e(
+                                                                    "HistoryPage",
+                                                                    "Failed to remove history for ${historyNovel.name}",
+                                                                    e
+                                                                )
+                                                            }
                                                         }
                                                         expanded = false
-                                                        deleted = true
                                                     },
                                                     text = {
                                                         Text(text = stringResource(id = R.string.delete_history))
@@ -244,19 +250,9 @@ object HistoryPage : Screen {
                                                 Row(
                                                     modifier = Modifier
                                                         .weight(1f)
-                                                        .pointerInput(Unit) {
-                                                            detectTapGestures(
-                                                                onPress = {
-                                                                    touchPoint = it
-                                                                },
-                                                                onLongPress = {
-                                                                    touchPoint = it
-                                                                }
-                                                            )
-                                                        }
                                                         .combinedClickable(
                                                             onClick = {
-                                                                navigator?.push(
+                                                                navigator?.pushIfNotCurrent(
                                                                     NovelPage(
                                                                         historyNovel,
                                                                         historyChapter
@@ -319,7 +315,7 @@ object HistoryPage : Screen {
                                                 FilledTonalIconButton(
                                                     onClick = {
                                                         rememberedHistory?.let { currChapter ->
-                                                            navigator?.push(
+                                                            navigator?.pushIfNotCurrent(
                                                                 ChapterPage(
                                                                     novel.id(),
                                                                     currChapter,
@@ -359,7 +355,7 @@ object HistoryPage : Screen {
             }
         }
 
-        LaunchedEffect(currentCompositeKeyHash) {
+        LaunchedEffect(Unit) {
             historyPageModel.getNovels()
         }
     }
@@ -371,17 +367,23 @@ class HistoryPageModel(
     private val scope: CoroutineScope
 ) : StateScreenModel<HistoryPageModel.State>(State.Loading) {
 
+    private var loadJob: Job? = null
+
     sealed class State {
         data object Loading : State()
         data class Result(val historyNovels: List<HistoryNovel>) : State()
     }
 
     fun getNovels() {
-        scope.launch(Dispatchers.IO) {
+        loadJob?.cancel()
+        loadJob = scope.launch(Dispatchers.IO) {
             mutableState.value = State.Loading
             try {
                 val histories = EsjzoneClient.getHistories(authorization)
+                ensureActive()
                 mutableState.value = State.Result(histories)
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 com.breakyuna.esjzone.util.AppLogger.e("HistoryPageModel", "Failed to load histories", e)
             }

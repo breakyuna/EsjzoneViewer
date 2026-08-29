@@ -14,6 +14,7 @@ class CommunityParserTest {
             <div class="comments-section comments-page-2">
               <div class="comment" id="comment-42">
                 <div class="comment-header">
+                  <img class="avatar" src="/assets/avatar-placeholder.gif" data-src="/assets/alice.png">
                   <a href="/my/profile.html?uid=7">Alice</a>
                   <span class="comment-floor">#16</span>
                   <span class="comment-meta">2026-08-28</span>
@@ -32,6 +33,7 @@ class CommunityParserTest {
         assertEquals("9001", comments.single().parentPostId)
         assertEquals("7", comments.single().authorId)
         assertEquals("Alice", comments.single().authorName)
+        assertEquals("/assets/alice.png", comments.single().authorAvatarUrl)
         assertEquals("#16", comments.single().floor)
         assertEquals("Hello ESJ", comments.single().contentText)
         assertEquals(2, comments.single().pageGroup)

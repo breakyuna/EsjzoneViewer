@@ -13,5 +13,6 @@ data class Comment(
     val contentHtml: String,
     val contentText: String,
     val pageGroup: Int,
-    val replyToken: String?
+    val replyToken: String?,
+    val authorAvatarUrl: String? = null
 ) : Serializable

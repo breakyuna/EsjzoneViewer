@@ -14,7 +14,6 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.currentCompositeKeyHash
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
@@ -28,9 +27,14 @@ import androidx.compose.ui.unit.dp
 import cafe.adriel.voyager.core.model.StateScreenModel
 import cafe.adriel.voyager.core.model.rememberScreenModel
 import cafe.adriel.voyager.core.screen.Screen
+import cafe.adriel.voyager.core.screen.ScreenKey
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import com.breakyuna.esjzone.GlobalSettings
 import com.breakyuna.esjzone.R
 import com.breakyuna.esjzone.network.Authorization
@@ -47,6 +51,9 @@ import com.breakyuna.esjzone.ui.component.Novel
 import com.breakyuna.esjzone.ui.navigation.LocalBaseNavigator
 
 class CategoryPage(private val category: Category) : Screen {
+
+    override val key: ScreenKey =
+        "CategoryPage:" + category.url.trim().ifBlank { category.name.trim() }
 
     @Composable
     override fun Content() {
@@ -77,7 +84,7 @@ class CategoryPage(private val category: Category) : Screen {
                 is CategoryPageModel.State.Result -> {
                     val result = state as CategoryPageModel.State.Result
 
-                    val novels = result.categoryNovels
+                    val novels = result.categoryNovels.distinctBy { it.url.ifBlank { it.name } }
 
                     val cache = remember {
                         mutableStateMapOf<String, DetailedNovel>()
@@ -90,7 +97,10 @@ class CategoryPage(private val category: Category) : Screen {
                     LazyColumn(
                         modifier = Modifier.fillMaxSize()
                     ) {
-                        items(novels) { categoryNovel ->
+                        items(
+                            novels,
+                            key = { item -> item.url.ifBlank { item.name } }
+                        ) { categoryNovel ->
                             var detailedNovel: DetailedNovel? by remember {
                                 mutableStateOf(cache[categoryNovel.url])
                             }
@@ -104,18 +114,20 @@ class CategoryPage(private val category: Category) : Screen {
                                     CircularProgressIndicator(modifier = Modifier.padding(16.dp))
                                 }
 
-                                LaunchedEffect(currentCompositeKeyHash) {
-                                    scope.launch(Dispatchers.IO) {
-                                        try {
-                                            val fetched = EsjzoneClient.getNovelDetail(
+                                LaunchedEffect(categoryNovel.url) {
+                                    try {
+                                        val fetched = withContext(Dispatchers.IO) {
+                                            EsjzoneClient.getNovelDetail(
                                                 authorization,
                                                 categoryNovel
                                             )
-                                            detailedNovel = fetched
-                                            cache[categoryNovel.url] = fetched
-                                        } catch (e: Exception) {
-                                            com.breakyuna.esjzone.util.AppLogger.e("CategoryPage", "Failed to load novel detail for ${categoryNovel.name}", e)
                                         }
+                                        detailedNovel = fetched
+                                        cache[categoryNovel.url] = fetched
+                                    } catch (e: CancellationException) {
+                                        throw e
+                                    } catch (e: Exception) {
+                                        com.breakyuna.esjzone.util.AppLogger.e("CategoryPage", "Failed to load novel detail for ${categoryNovel.name}", e)
                                     }
                                 }
                             } else {
@@ -145,7 +157,7 @@ class CategoryPage(private val category: Category) : Screen {
             }
         }
 
-        LaunchedEffect(currentCompositeKeyHash) {
+        LaunchedEffect(Unit) {
             categoryPageModel.getNovels()
         }
     }
@@ -158,17 +170,23 @@ class CategoryPageModel(
     private val category: Category
 ) : StateScreenModel<CategoryPageModel.State>(State.Loading) {
 
+    private var loadJob: Job? = null
+
     sealed class State {
         data object Loading : State()
         data class Result(val categoryNovels: List<CategoryNovel>) : State()
     }
 
     fun getNovels() {
-        scope.launch(Dispatchers.IO) {
+        loadJob?.cancel()
+        loadJob = scope.launch(Dispatchers.IO) {
             mutableState.value = State.Loading
             try {
                 val novels = EsjzoneClient.listNovels(authorization, category)
+                ensureActive()
                 mutableState.value = State.Result(novels)
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 com.breakyuna.esjzone.util.AppLogger.e("CategoryPageModel", "Failed to list novels for category: ${category.name}", e)
             }

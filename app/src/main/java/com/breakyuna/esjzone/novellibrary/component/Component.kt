@@ -52,7 +52,8 @@ internal fun analyseParagraph(paragraph: Element): List<Component> {
             components.add(TextComponent(child.text()))
         } else if (child is Element) {
             if (child.tagName() == "img") {
-                return listOf(ImageComponent(child.attr("src")))
+                val imageUrl = resolveImageUrl(child)
+                return listOf(ImageComponent(imageUrl))
             } else {
                 components.addAll(analyseText(child, listOf()))
             }
@@ -60,6 +61,19 @@ internal fun analyseParagraph(paragraph: Element): List<Component> {
     }
 
     return components.toSingle()
+}
+
+private fun resolveImageUrl(image: Element): String {
+    // A non-empty placeholder src must not hide the real lazy-loaded URL.
+    return sequenceOf("data-src", "data-original", "data-lazy-src", "src")
+        .mapNotNull { attribute ->
+            image.absUrl(attribute)
+                .ifBlank { image.attr(attribute) }
+                .trim()
+                .takeIf { it.isNotBlank() }
+        }
+        .firstOrNull()
+        .orEmpty()
 }
 
 private val STYLE_BACKGROUND_COLOR_REGEX =

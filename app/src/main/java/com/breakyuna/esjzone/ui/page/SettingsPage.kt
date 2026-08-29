@@ -61,6 +61,7 @@ import com.breakyuna.esjzone.ui.component.SettingsSwitch
 import com.breakyuna.esjzone.ui.component.SettingsText
 import com.breakyuna.esjzone.ui.navigation.LocalAppNavigator
 import com.breakyuna.esjzone.ui.navigation.LocalBaseNavigator
+import com.breakyuna.esjzone.ui.navigation.pushIfNotCurrent
 import com.breakyuna.esjzone.ui.screen.LoginScreen
 import com.breakyuna.esjzone.ui.theme.catppuccin.CatppuccinThemeType
 
@@ -377,13 +378,13 @@ object SettingsPage : Screen {
                     imageVector = Icons.Filled.BugReport,
                     text = stringResource(id = R.string.system_logs)
                 ) {
-                    navigator?.push(LogsPage)
+                    navigator?.pushIfNotCurrent(LogsPage)
                 }
                 SettingsButton(
                     imageVector = Icons.Filled.Info,
                     text = stringResource(id = R.string.about)
                 ) {
-                    navigator?.push(AboutPage)
+                    navigator?.pushIfNotCurrent(AboutPage)
                 }
                 SettingsButton(
                     imageVector = Icons.AutoMirrored.Filled.Logout,

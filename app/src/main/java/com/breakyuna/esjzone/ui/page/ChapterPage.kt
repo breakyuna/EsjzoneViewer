@@ -1,12 +1,14 @@
 package com.breakyuna.esjzone.ui.page
 
 import android.annotation.SuppressLint
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -16,6 +18,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -26,23 +29,28 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.Forum
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.FilledTonalIconButton
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
-import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.currentCompositeKeyHash
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -69,12 +77,14 @@ import androidx.compose.ui.unit.sp
 import cafe.adriel.voyager.core.model.StateScreenModel
 import cafe.adriel.voyager.core.model.rememberScreenModel
 import cafe.adriel.voyager.core.screen.Screen
+import cafe.adriel.voyager.core.screen.ScreenKey
 import coil.compose.SubcomposeAsyncImage
 import coil.request.ImageRequest
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
@@ -93,6 +103,11 @@ import com.breakyuna.esjzone.novellibrary.novel.DetailedChapter
 import com.breakyuna.esjzone.novellibrary.novel.FavoriteNovel
 import com.breakyuna.esjzone.ui.component.AppBar
 import com.breakyuna.esjzone.ui.navigation.LocalBaseNavigator
+import com.breakyuna.esjzone.ui.navigation.pushIfNotCurrent
+import com.breakyuna.esjzone.ui.reader.ReaderBackground
+import com.breakyuna.esjzone.ui.reader.ReaderFont
+import com.breakyuna.esjzone.ui.reader.ReaderSettings
+import com.breakyuna.esjzone.ui.reader.ReaderSettingsStore
 import com.breakyuna.esjzone.util.AppLogger
 
 class ChapterPage(
@@ -102,6 +117,12 @@ class ChapterPage(
     private val chapterOrder: List<Chapter> = emptyList()
 ) : Screen {
 
+    override val key: ScreenKey =
+        "ChapterPage:" +
+            novelId.trim().ifBlank { chapter.novelId() } +
+            ":" +
+            chapterIdentity(chapter)
+
     @SuppressLint("UnusedMaterial3ScaffoldPaddingParameter")
     @Composable
     override fun Content() {
@@ -109,9 +130,36 @@ class ChapterPage(
         val authorization = LocalAuthorization.current
 
         val textMeasurer = rememberTextMeasurer()
-        val textStyle = LocalTextStyle.current
         val density = LocalDensity.current
         val scope = rememberCoroutineScope()
+        val context = LocalContext.current
+
+        var readerSettings by remember(context) {
+            mutableStateOf(ReaderSettingsStore.load(context))
+        }
+        var showReaderSettings by rememberSaveable {
+            mutableStateOf(false)
+        }
+
+        val readerTextStyle = MaterialTheme.typography.bodyLarge.copy(
+            fontFamily = readerSettings.font.family,
+            fontSize = readerSettings.fontSizeSp.sp,
+            lineHeight = readerSettings.lineHeightSp.sp,
+            letterSpacing = readerSettings.letterSpacingSp.sp
+        )
+        val readerContentColor = readerSettings.background.contentColor()
+
+        fun updateReaderSettings(settings: ReaderSettings) {
+            readerSettings = settings
+        }
+
+        // Coalesce rapid slider updates into one preference write after the
+        // user pauses dragging, rather than calling SharedPreferences.apply()
+        // for every pointer event.
+        LaunchedEffect(readerSettings) {
+            delay(250)
+            ReaderSettingsStore.save(context, readerSettings)
+        }
 
         val requestedChapter = rememberSaveable {
             mutableStateOf(chapter)
@@ -128,6 +176,10 @@ class ChapterPage(
                 )
             }
         val state by chapterPageModel.state.collectAsState()
+
+        BackHandler(enabled = navigator != null && !showReaderSettings) {
+            navigator?.pop()
+        }
 
         var showToolbar by remember {
             mutableStateOf(false)
@@ -226,6 +278,22 @@ class ChapterPage(
                                 .fillMaxWidth()
                                 .padding(16.dp)
                         ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.End
+                            ) {
+                                FilledTonalIconButton(
+                                    onClick = { showReaderSettings = true }
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Filled.Settings,
+                                        contentDescription = stringResource(
+                                            id = R.string.reader_settings
+                                        )
+                                    )
+                                }
+                            }
+
                             if (state is ChapterPageModel.State.Result) {
                                 var rememberedHistory by rememberSaveable {
                                     history
@@ -333,7 +401,7 @@ class ChapterPage(
                                     ?: requestedChapter.value
                                 FilledTonalButton(
                                     onClick = {
-                                        navigator?.push(
+                                        navigator?.pushIfNotCurrent(
                                             ChapterCommentsPage(
                                                 chapterName = commentChapter.name,
                                                 chapterUrl = commentChapter.url
@@ -365,19 +433,19 @@ class ChapterPage(
                         interactionSource = interactionSource,
                         indication = null
                     ) { showToolbar = !showToolbar },
-                color = MaterialTheme.colorScheme.background
+                color = readerSettings.background.containerColor()
             ) {
                 Column(
                     modifier = Modifier
                         .fillMaxSize()
-                        .padding(horizontal = 20.dp)
+                        .padding(horizontal = readerSettings.horizontalPaddingDp.dp)
                         .verticalScroll(scrollState)
                 ) {
                     Spacer(modifier = Modifier.height(32.dp))
 
                     when (state) {
                         is ChapterPageModel.State.Loading -> Column {
-                            ChapterHeading(currentChapterName)
+                            ChapterHeading(currentChapterName, readerSettings)
                             Box(
                                 modifier = Modifier
                                     .fillMaxWidth()
@@ -389,7 +457,7 @@ class ChapterPage(
                         }
 
                         is ChapterPageModel.State.Error -> Column {
-                            ChapterHeading(currentChapterName)
+                            ChapterHeading(currentChapterName, readerSettings)
                             Box(
                                 modifier = Modifier
                                     .fillMaxWidth()
@@ -410,8 +478,10 @@ class ChapterPage(
                                     entry = entry,
                                     index = index,
                                     textMeasurer = textMeasurer,
-                                    textStyle = textStyle,
+                                    textStyle = readerTextStyle,
                                     density = density,
+                                    settings = readerSettings,
+                                    contentColor = readerContentColor,
                                     onSizeChanged = { height ->
                                         chapterHeights[entry.chapter.url] = height
                                     }
@@ -436,7 +506,7 @@ class ChapterPage(
             }
         }
 
-        LaunchedEffect(currentCompositeKeyHash) {
+        LaunchedEffect(Unit) {
             chapterPageModel.getDetail()
         }
 
@@ -455,6 +525,14 @@ class ChapterPage(
                     history.value = current
                 }
             }
+        }
+
+        if (showReaderSettings) {
+            ReaderSettingsSheet(
+                settings = readerSettings,
+                onSettingsChange = { updated -> updateReaderSettings(updated) },
+                onDismiss = { showReaderSettings = false }
+            )
         }
     }
 
@@ -490,15 +568,18 @@ private fun chapterProgressFor(
 }
 
 @Composable
-private fun ChapterHeading(name: String) {
+private fun ChapterHeading(name: String, settings: ReaderSettings) {
     Text(
         text = name,
         style = MaterialTheme.typography.headlineSmall.copy(
             fontWeight = FontWeight.Bold,
-            lineHeight = 34.sp
+            fontFamily = settings.font.family,
+            fontSize = (settings.fontSizeSp + 6f).sp,
+            lineHeight = (settings.lineHeightSp + 6f).sp,
+            letterSpacing = settings.letterSpacingSp.sp
         ),
-        color = MaterialTheme.colorScheme.onBackground,
-        modifier = Modifier.padding(bottom = 24.dp)
+        color = settings.background.contentColor(),
+        modifier = Modifier.padding(bottom = (settings.paragraphSpacingDp + 8f).dp)
     )
 }
 
@@ -509,6 +590,8 @@ private fun ReaderChapterBlock(
     textMeasurer: androidx.compose.ui.text.TextMeasurer,
     textStyle: androidx.compose.ui.text.TextStyle,
     density: Density,
+    settings: ReaderSettings,
+    contentColor: androidx.compose.ui.graphics.Color,
     onSizeChanged: (height: Int) -> Unit
 ) {
     Column(
@@ -517,14 +600,16 @@ private fun ReaderChapterBlock(
             .onSizeChanged { size -> onSizeChanged(size.height) }
     ) {
         if (index > 0) {
-            Spacer(modifier = Modifier.height(32.dp))
+            Spacer(modifier = Modifier.height(settings.pageSpacingDp.dp))
         }
-        ChapterHeading(entry.chapter.name)
+        ChapterHeading(entry.chapter.name, settings)
         ChapterContent(
             detail = entry.detail,
             textMeasurer = textMeasurer,
             textStyle = textStyle,
-            density = density
+            density = density,
+            settings = settings,
+            contentColor = contentColor
         )
     }
 }
@@ -534,7 +619,9 @@ private fun ChapterContent(
     detail: DetailedChapter,
     textMeasurer: androidx.compose.ui.text.TextMeasurer,
     textStyle: androidx.compose.ui.text.TextStyle,
-    density: Density
+    density: Density,
+    settings: ReaderSettings,
+    contentColor: androidx.compose.ui.graphics.Color
 ) {
     for (component in detail.content) {
         if (component is TextComponent) {
@@ -546,11 +633,9 @@ private fun ChapterContent(
             Text(
                 text = str,
                 inlineContent = inlines,
-                style = MaterialTheme.typography.bodyLarge.copy(
-                    lineHeight = 28.sp,
-                    letterSpacing = 0.3.sp
-                ),
-                color = MaterialTheme.colorScheme.onBackground
+                style = textStyle,
+                color = contentColor,
+                modifier = Modifier.padding(bottom = settings.paragraphSpacingDp.dp)
             )
         } else if (component is ImageComponent) {
             SubcomposeAsyncImage(
@@ -573,10 +658,206 @@ private fun ChapterContent(
                 contentScale = ContentScale.FillWidth,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(vertical = 12.dp)
+                    .padding(vertical = settings.paragraphSpacingDp.dp)
                     .clip(RoundedCornerShape(8.dp))
             )
         }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ReaderSettingsSheet(
+    settings: ReaderSettings,
+    onSettingsChange: (ReaderSettings) -> Unit,
+    onDismiss: () -> Unit
+) {
+    val sheetState = rememberModalBottomSheetState()
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
+                .navigationBarsPadding()
+                .padding(horizontal = 20.dp, vertical = 8.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = stringResource(id = R.string.reader_settings),
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.weight(1f)
+                )
+                TextButton(
+                    onClick = { onSettingsChange(ReaderSettings()) }
+                ) {
+                    Text(text = stringResource(id = R.string.reader_reset))
+                }
+            }
+
+            Text(
+                text = stringResource(id = R.string.reader_background),
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.padding(top = 16.dp, bottom = 8.dp)
+            )
+            ReaderSettingChoices(
+                selected = settings.background,
+                options = listOf(
+                    ReaderBackground.SYSTEM to stringResource(id = R.string.reader_background_system),
+                    ReaderBackground.PAPER to stringResource(id = R.string.reader_background_paper),
+                    ReaderBackground.SEPIA to stringResource(id = R.string.reader_background_sepia),
+                    ReaderBackground.DARK to stringResource(id = R.string.reader_background_dark)
+                ),
+                onSelected = { background ->
+                    onSettingsChange(settings.copy(background = background))
+                }
+            )
+
+            Text(
+                text = stringResource(id = R.string.reader_font),
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.padding(top = 16.dp, bottom = 8.dp)
+            )
+            ReaderSettingChoices(
+                selected = settings.font,
+                options = listOf(
+                    ReaderFont.SYSTEM to stringResource(id = R.string.reader_font_system),
+                    ReaderFont.SERIF to stringResource(id = R.string.reader_font_serif),
+                    ReaderFont.MONOSPACE to stringResource(id = R.string.reader_font_monospace)
+                ),
+                onSelected = { font ->
+                    onSettingsChange(settings.copy(font = font))
+                }
+            )
+
+            ReaderSettingSlider(
+                label = stringResource(id = R.string.reader_font_size),
+                value = settings.fontSizeSp,
+                valueLabel = "${settings.fontSizeSp.roundToInt()}sp",
+                valueRange = 14f..30f,
+                steps = 15,
+                onValueChange = { value ->
+                    onSettingsChange(settings.copy(fontSizeSp = value))
+                }
+            )
+            ReaderSettingSlider(
+                label = stringResource(id = R.string.reader_letter_spacing),
+                value = settings.letterSpacingSp,
+                valueLabel = "${(settings.letterSpacingSp * 10f).roundToInt() / 10f}sp",
+                valueRange = 0f..2f,
+                steps = 19,
+                onValueChange = { value ->
+                    onSettingsChange(settings.copy(letterSpacingSp = value))
+                }
+            )
+            ReaderSettingSlider(
+                label = stringResource(id = R.string.reader_line_spacing),
+                value = settings.lineSpacingSp,
+                valueLabel = "${settings.lineSpacingSp.roundToInt()}sp",
+                valueRange = 4f..24f,
+                steps = 19,
+                onValueChange = { value ->
+                    onSettingsChange(settings.copy(lineSpacingSp = value))
+                }
+            )
+            ReaderSettingSlider(
+                label = stringResource(id = R.string.reader_paragraph_spacing),
+                value = settings.paragraphSpacingDp,
+                valueLabel = "${settings.paragraphSpacingDp.roundToInt()}dp",
+                valueRange = 0f..32f,
+                steps = 15,
+                onValueChange = { value ->
+                    onSettingsChange(settings.copy(paragraphSpacingDp = value))
+                }
+            )
+            ReaderSettingSlider(
+                label = stringResource(id = R.string.reader_page_spacing),
+                value = settings.pageSpacingDp,
+                valueLabel = "${settings.pageSpacingDp.roundToInt()}dp",
+                valueRange = 16f..80f,
+                steps = 15,
+                onValueChange = { value ->
+                    onSettingsChange(settings.copy(pageSpacingDp = value))
+                }
+            )
+            ReaderSettingSlider(
+                label = stringResource(id = R.string.reader_horizontal_padding),
+                value = settings.horizontalPaddingDp,
+                valueLabel = "${settings.horizontalPaddingDp.roundToInt()}dp",
+                valueRange = 12f..48f,
+                steps = 8,
+                onValueChange = { value ->
+                    onSettingsChange(settings.copy(horizontalPaddingDp = value))
+                }
+            )
+            Spacer(modifier = Modifier.height(16.dp))
+        }
+    }
+}
+
+@Composable
+private fun <T> ReaderSettingChoices(
+    selected: T,
+    options: List<Pair<T, String>>,
+    onSelected: (T) -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .horizontalScroll(rememberScrollState()),
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        options.forEach { (value, label) ->
+            FilterChip(
+                selected = selected == value,
+                onClick = { onSelected(value) },
+                label = { Text(text = label) }
+            )
+        }
+    }
+}
+
+@Composable
+private fun ReaderSettingSlider(
+    label: String,
+    value: Float,
+    valueLabel: String,
+    valueRange: ClosedFloatingPointRange<Float>,
+    steps: Int,
+    onValueChange: (Float) -> Unit
+) {
+    Column(modifier = Modifier.padding(top = 14.dp)) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = label,
+                style = MaterialTheme.typography.bodyMedium,
+                modifier = Modifier.weight(1f)
+            )
+            Text(
+                text = valueLabel,
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.primary
+            )
+        }
+        Slider(
+            value = value,
+            onValueChange = onValueChange,
+            valueRange = valueRange,
+            steps = steps,
+            modifier = Modifier.fillMaxWidth()
+        )
     }
 }
 
@@ -618,26 +899,42 @@ class ChapterPageModel(
     private var loadingNext = false
     private var orderLoading = false
     private var pendingNextRequest = false
+    private var initialLoadStarted = false
 
     fun getDetail() {
+        synchronized(lock) {
+            if (initialLoadStarted) return
+            initialLoadStarted = true
+        }
         openChapter(requestedChapter.value)
     }
 
     fun openChapter(chapter: Chapter) {
         requestedChapter.value = chapter
         var currentSession = 0L
+        var jobsToCancel = emptyList<Job>()
         synchronized(lock) {
             sessionId += 1
             currentSession = sessionId
-            initialJob?.cancel()
-            appendJob?.cancel()
-            orderJob?.cancel()
+            jobsToCancel = buildList {
+                initialJob?.let(::add)
+                appendJob?.let(::add)
+                orderJob?.let(::add)
+                addAll(prefetchJobs.values)
+            }.distinct()
+            initialJob = null
+            appendJob = null
+            orderJob = null
             orderRequestId += 1
             loadedChapters.clear()
+            prefetchedDetails.clear()
             loadingNext = false
             orderLoading = false
             pendingNextRequest = false
         }
+        // Cancel outside the model lock: cancellation handlers may publish or
+        // remove their own entries while unwinding.
+        jobsToCancel.forEach(Job::cancel)
         mutableState.value = State.Loading
 
         initialJob = scope.launch(Dispatchers.IO) {
@@ -908,11 +1205,7 @@ class ChapterPageModel(
     private fun sameChapter(first: Chapter, second: Chapter): Boolean =
         chapterKey(first) == chapterKey(second)
 
-    private fun chapterKey(chapter: Chapter): String =
-        chapter.url.trim()
-            .replaceFirst(Regex("^https?://[^/]+", RegexOption.IGNORE_CASE), "")
-            .replaceFirst(Regex("^//[^/]+"), "")
-            .substringBefore('#')
+    private fun chapterKey(chapter: Chapter): String = chapterIdentity(chapter)
 
     private fun normalizeChapterOrder(chapters: List<Chapter>): List<Chapter> =
         chapters.asSequence()
@@ -920,3 +1213,7 @@ class ChapterPageModel(
             .distinctBy { chapterKey(it) }
             .toList()
 }
+
+private fun chapterIdentity(chapter: Chapter): String =
+    EsjzoneUrls.canonicalPageKey(chapter.url).takeIf { it.isNotBlank() && it != "/" }
+        ?: chapter.name.trim()

@@ -35,7 +35,6 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.currentCompositeKeyHash
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -54,8 +53,10 @@ import cafe.adriel.voyager.core.model.StateScreenModel
 import cafe.adriel.voyager.core.model.rememberScreenModel
 import cafe.adriel.voyager.navigator.tab.Tab
 import cafe.adriel.voyager.navigator.tab.TabOptions
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 import com.breakyuna.esjzone.GlobalSettings
 import com.breakyuna.esjzone.R
@@ -65,6 +66,7 @@ import com.breakyuna.esjzone.network.LocalAuthorization
 import com.breakyuna.esjzone.network.features.getCategories
 import com.breakyuna.esjzone.novellibrary.novel.Category
 import com.breakyuna.esjzone.ui.navigation.LocalBaseNavigator
+import com.breakyuna.esjzone.ui.navigation.pushIfNotCurrent
 import com.breakyuna.esjzone.ui.page.CategoryPage
 
 @Composable
@@ -197,14 +199,14 @@ object CategoryTab : Tab {
                         CategoryCard(
                             category = category,
                             index = index,
-                            onClick = { navigator?.push(CategoryPage(category)) }
+                            onClick = { navigator?.pushIfNotCurrent(CategoryPage(category)) }
                         )
                     }
                 }
             }
         }
 
-        LaunchedEffect(currentCompositeKeyHash) {
+        LaunchedEffect(Unit) {
             categoryModel.getCategories()
         }
     }
@@ -304,7 +306,11 @@ class CategoryModel(
         scope.launch(Dispatchers.IO) {
             mutableState.value = State.Loading
             try {
-                mutableState.value = State.Result(EsjzoneClient.getCategories(authorization))
+                val categories = EsjzoneClient.getCategories(authorization)
+                ensureActive()
+                mutableState.value = State.Result(categories)
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 com.breakyuna.esjzone.util.AppLogger.e(
                     "CategoryModel",

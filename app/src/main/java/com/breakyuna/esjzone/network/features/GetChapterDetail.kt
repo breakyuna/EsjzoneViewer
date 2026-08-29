@@ -21,7 +21,7 @@ fun EsjzoneClient.getChapterDetail(
     AppLogger.i("GetChapterDetail", "Fetching chapter: ${chapter.name} at $targetUrl")
     val responseBody = getPage(authorization, targetUrl, PageCacheTtl.CHAPTER)
 
-    val document = Jsoup.parse(responseBody)
+    val document = Jsoup.parse(responseBody, targetUrl)
 
     val contentElement = document.selectFirst(".forum-content.mt-3")
         ?: document.selectFirst(".forum-content")

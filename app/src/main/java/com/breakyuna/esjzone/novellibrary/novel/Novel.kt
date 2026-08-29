@@ -73,7 +73,8 @@ data class DetailedNovel(
     override val isAdult: Boolean,
     val isFavorite: Boolean,
     val description: NovelDescription,
-    val chapterList: NovelChapterList
+    val chapterList: NovelChapterList,
+    val comments: List<Comment> = emptyList()
 ) : CoveredNovel {
 
     fun id(): String {

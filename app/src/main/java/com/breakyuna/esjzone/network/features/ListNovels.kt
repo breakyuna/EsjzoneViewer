@@ -9,8 +9,6 @@ import com.breakyuna.esjzone.novellibrary.novel.Category
 import com.breakyuna.esjzone.novellibrary.novel.CategoryNovel
 import org.jsoup.Jsoup
 
-private val FORUM_URL_REGEX = "/forum/[0-9]+/([0-9]+)/".toRegex()
-
 fun EsjzoneClient.listNovels(
     authorization: Authorization,
     category: Category
@@ -24,8 +22,7 @@ fun EsjzoneClient.listNovels(
 
     for (element in EsjzoneXPaths.Forum.Novel.evaluate(document).elements) {
         val forumUrl = element.attr("href")
-        val detailMatch = FORUM_URL_REGEX.find(forumUrl)?.groupValues?.getOrNull(1)
-        val detailUrl = if (detailMatch != null) "/detail/$detailMatch.html" else forumUrl
+        val detailUrl = EsjzoneUrls.novelDetailUrlFromForumBoard(forumUrl) ?: forumUrl
         novels.add(
             CategoryNovel(
                 element.text(),

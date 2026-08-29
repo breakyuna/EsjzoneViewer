@@ -12,14 +12,11 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.MenuBook
-import androidx.compose.material.icons.filled.Bookmark
-import androidx.compose.material.icons.filled.BookmarkBorder
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.Person
@@ -35,13 +32,11 @@ import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.currentCompositeKeyHash
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.rememberCoroutineScope
@@ -52,7 +47,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -62,15 +56,20 @@ import androidx.compose.ui.unit.sp
 import cafe.adriel.voyager.core.model.StateScreenModel
 import cafe.adriel.voyager.core.model.rememberScreenModel
 import cafe.adriel.voyager.core.screen.Screen
+import cafe.adriel.voyager.core.screen.ScreenKey
 import coil.compose.SubcomposeAsyncImage
 import coil.request.ImageRequest
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import com.breakyuna.esjzone.MainActivity
 import com.breakyuna.esjzone.R
 import com.breakyuna.esjzone.network.Authorization
 import com.breakyuna.esjzone.network.EsjzoneClient
+import com.breakyuna.esjzone.network.EsjzoneUrls
 import com.breakyuna.esjzone.network.LocalAuthorization
 import com.breakyuna.esjzone.network.features.changeFavorites
 import com.breakyuna.esjzone.network.features.getNovelDetail
@@ -82,6 +81,7 @@ import com.breakyuna.esjzone.ui.component.ChapterList
 import com.breakyuna.esjzone.ui.component.Description
 import com.breakyuna.esjzone.ui.component.Loading
 import com.breakyuna.esjzone.ui.navigation.LocalBaseNavigator
+import com.breakyuna.esjzone.ui.navigation.pushIfNotCurrent
 
 class NovelPage(
     private val novel: Novel,
@@ -89,11 +89,13 @@ class NovelPage(
     private val favorite: MutableState<Boolean> = mutableStateOf(false)
 ) : Screen {
 
+    override val key: ScreenKey =
+        "NovelPage:" + EsjzoneUrls.canonicalPageKey(novel.url).ifBlank { novel.name.trim() }
+
     @Composable
     override fun Content() {
         val navigator = LocalBaseNavigator.current
         val authorization = LocalAuthorization.current
-        val configuration = LocalConfiguration.current
         val scope = rememberCoroutineScope()
 
         val screenModel = rememberScreenModel { NovelPageModel(authorization, scope, novel) }
@@ -110,11 +112,7 @@ class NovelPage(
             when (state) {
                 is NovelPageModel.State.Loading -> Loading()
 
-                is NovelPageModel.State.Result -> Column(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .verticalScroll(rememberScrollState())
-                ) {
+                is NovelPageModel.State.Result -> {
                     val result = state as NovelPageModel.State.Result
                     val chapterList = result.detailed.chapterList
 
@@ -129,24 +127,34 @@ class NovelPage(
 
                     val rememberedHistory by rememberSaveable { historyState }
                     val rememberedHasHistory by rememberSaveable { hasHistory }
-                    var rememberedFavorite by rememberSaveable { favorite }
-                    rememberedFavorite = result.detailed.isFavorite
+                    var rememberedFavorite by rememberSaveable(novel.url) {
+                        mutableStateOf(favorite.value)
+                    }
 
-                    // Top Novel Hero Card
-                    Card(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(16.dp),
-                        shape = RoundedCornerShape(20.dp),
-                        colors = CardDefaults.cardColors(
-                            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)
-                        )
-                    ) {
-                        Column(modifier = Modifier.padding(16.dp)) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                verticalAlignment = Alignment.Top
+                    LaunchedEffect(result.detailed.isFavorite) {
+                        if (favorite.value == rememberedFavorite) {
+                            favorite.value = result.detailed.isFavorite
+                            rememberedFavorite = result.detailed.isFavorite
+                        }
+                    }
+
+                    LazyColumn(modifier = Modifier.fillMaxSize()) {
+                        item(key = "novel-hero") {
+                            // Top Novel Hero Card
+                            Card(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(16.dp),
+                                shape = RoundedCornerShape(20.dp),
+                                colors = CardDefaults.cardColors(
+                                    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)
+                                )
                             ) {
+                                Column(modifier = Modifier.padding(16.dp)) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        verticalAlignment = Alignment.Top
+                                    ) {
                                 SubcomposeAsyncImage(
                                     model = ImageRequest.Builder(LocalContext.current)
                                         .data(result.detailed.coverUrl)
@@ -216,10 +224,27 @@ class NovelPage(
 
                                 FilledTonalIconButton(
                                     onClick = {
-                                        scope.launch(Dispatchers.IO) {
-                                            EsjzoneClient.changeFavorites(authorization, novel)
+                                        val previousFavorite = rememberedFavorite
+                                        val nextFavorite = !previousFavorite
+                                        favorite.value = nextFavorite
+                                        rememberedFavorite = nextFavorite
+                                        scope.launch {
+                                            try {
+                                                withContext(Dispatchers.IO) {
+                                                    EsjzoneClient.changeFavorites(authorization, novel)
+                                                }
+                                            } catch (error: CancellationException) {
+                                                throw error
+                                            } catch (error: Exception) {
+                                                favorite.value = previousFavorite
+                                                rememberedFavorite = previousFavorite
+                                                com.breakyuna.esjzone.util.AppLogger.e(
+                                                    "NovelPage",
+                                                    "Failed to change favorite for ${novel.name}",
+                                                    error
+                                                )
+                                            }
                                         }
-                                        rememberedFavorite = !rememberedFavorite
                                     },
                                     colors = IconButtonDefaults.filledTonalIconButtonColors(
                                         containerColor = if (rememberedFavorite) MaterialTheme.colorScheme.errorContainer else MaterialTheme.colorScheme.surface,
@@ -241,7 +266,7 @@ class NovelPage(
                                 enabled = rememberedHistory != null,
                                 onClick = {
                                     rememberedHistory?.let { currChapter ->
-                                        navigator?.push(
+                                        navigator?.pushIfNotCurrent(
                                             ChapterPage(
                                                 result.detailed.id(),
                                                 currChapter,
@@ -272,29 +297,39 @@ class NovelPage(
                                         fontWeight = FontWeight.Bold
                                     )
                                 )
+                                    }
+                                }
                             }
                         }
+
+                        item(key = "novel-description") {
+                            Description(
+                                description = result.detailed.description,
+                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
+                            )
+                        }
+
+                        item(key = "novel-chapter-list") {
+                            ChapterList(
+                                chapterList = chapterList,
+                                novelId = result.detailed.id(),
+                                history = historyState,
+                                hasHistory = hasHistory,
+                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+                            )
+                        }
+
+                        novelCommentItems(result.detailed.comments)
+
+                        item(key = "novel-detail-bottom-spacer") {
+                            Spacer(modifier = Modifier.height(24.dp))
+                        }
                     }
-
-                    Description(
-                        description = result.detailed.description,
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
-                    )
-
-                    ChapterList(
-                        chapterList = chapterList,
-                        novelId = result.detailed.id(),
-                        history = historyState,
-                        hasHistory = hasHistory,
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
-                    )
-
-                    Spacer(modifier = Modifier.height(24.dp))
                 }
             }
         }
 
-        LaunchedEffect(currentCompositeKeyHash) {
+        LaunchedEffect(Unit) {
             screenModel.getDetail()
         }
     }
@@ -332,17 +367,31 @@ class NovelPageModel(
     private val novel: Novel
 ) : StateScreenModel<NovelPageModel.State>(State.Loading) {
 
+    private val detailLoadLock = Any()
+    private var detailLoadStarted = false
+
     sealed class State {
         data object Loading : State()
         data class Result(val detailed: DetailedNovel) : State()
     }
 
     fun getDetail() {
+        synchronized(detailLoadLock) {
+            if (detailLoadStarted) return
+            detailLoadStarted = true
+        }
         scope.launch(Dispatchers.IO) {
             mutableState.value = State.Loading
             try {
-                val detail = EsjzoneClient.getNovelDetail(authorization, novel)
+                val detail = EsjzoneClient.getNovelDetail(
+                    authorization = authorization,
+                    novel = novel,
+                    includeComments = true
+                )
+                ensureActive()
                 mutableState.value = State.Result(detail)
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 com.breakyuna.esjzone.util.AppLogger.e("NovelPageModel", "Failed to load novel detail for ${novel.name}", e)
             }

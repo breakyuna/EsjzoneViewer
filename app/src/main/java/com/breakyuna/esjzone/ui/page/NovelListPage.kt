@@ -17,7 +17,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.MutableIntState
 import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.currentCompositeKeyHash
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateMapOf
@@ -33,9 +32,14 @@ import androidx.compose.ui.unit.dp
 import cafe.adriel.voyager.core.model.StateScreenModel
 import cafe.adriel.voyager.core.model.rememberScreenModel
 import cafe.adriel.voyager.core.screen.Screen
+import cafe.adriel.voyager.core.screen.ScreenKey
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import com.breakyuna.esjzone.GlobalSettings
 import com.breakyuna.esjzone.R
 import com.breakyuna.esjzone.network.Authorization
@@ -81,6 +85,12 @@ class NovelListPage(
     private val initializedSortType: Int,
     private val initializedAdultOnly: Boolean
 ) : Screen {
+
+    override val key: ScreenKey =
+        "NovelListPage:" +
+            initializedNovelType + ":" +
+            initializedSortType + ":" +
+            initializedAdultOnly
 
     @Composable
     override fun Content() {
@@ -223,15 +233,25 @@ class NovelListPage(
                                 ) {
                                     CircularProgressIndicator()
                                 }
-                                LaunchedEffect(currentCompositeKeyHash) {
-                                    scope.launch(Dispatchers.IO) {
-                                        val newlyLoaded = requester.more(current)
+                                LaunchedEffect(current) {
+                                    try {
+                                        val newlyLoaded = withContext(Dispatchers.IO) {
+                                            requester.more(current)
+                                        }
                                         for (item in newlyLoaded) {
                                             if (items.contains(item))
                                                 continue
                                             items.add(item)
                                         }
                                         current += 1
+                                    } catch (e: CancellationException) {
+                                        throw e
+                                    } catch (e: Exception) {
+                                        com.breakyuna.esjzone.util.AppLogger.e(
+                                            "NovelListPage",
+                                            "Failed to load novel page $current",
+                                            e
+                                        )
                                     }
                                 }
                             }
@@ -255,7 +275,7 @@ class NovelListPage(
             }
         }
 
-        LaunchedEffect(currentCompositeKeyHash) {
+        LaunchedEffect(Unit) {
             novelListModel.getRequester()
         }
     }
@@ -268,6 +288,8 @@ class NovelListPageModel(
     private val novelType: MutableIntState,
     private val sortType: MutableIntState,
 ) : StateScreenModel<NovelListPageModel.State>(State.Loading) {
+
+    private var requestJob: Job? = null
 
     val summaries = mutableStateMapOf<String, String>()
     private val summaryLock = Any()
@@ -326,7 +348,8 @@ class NovelListPageModel(
     }
 
     fun getRequester() {
-        scope.launch(Dispatchers.IO) {
+        requestJob?.cancel()
+        requestJob = scope.launch(Dispatchers.IO) {
             mutableState.value = State.Loading
             try {
                 val (requester, novels) = EsjzoneClient.novels(
@@ -334,7 +357,10 @@ class NovelListPageModel(
                     novelType.intValue,
                     sortType.intValue
                 )
+                ensureActive()
                 mutableState.value = State.Result(requester, novels)
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 com.breakyuna.esjzone.util.AppLogger.e("NovelListPageModel", "Failed to load novel list for type=${novelType.intValue}, sort=${sortType.intValue}", e)
             }

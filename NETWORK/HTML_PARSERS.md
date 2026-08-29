@@ -167,6 +167,7 @@ URL：/forum/{novelId}/{postId}.html
 .comment
 .comment-header
 .comment-title
+.comment-header img / .comment-title img
 .comment-floor
 .comment-meta
 .comment-text
@@ -180,6 +181,7 @@ URL：/forum/{novelId}/{postId}.html
 - 评论 ID：.comment 的 id，样本形如 comment-{commentId}。
 - 用户名：.comment-header 内用户链接文本。
 - 用户 URL：通常 /my/profile?uid={uid} 或 /my/profile.html?uid={uid}。
+- 用户头像：优先读取 .comment-header 或 .comment-title 内 img 的 src、data-src、data-original、data-lazy-src。
 - 楼层：.comment-floor。
 - 日期：.comment-meta。
 - 内容：.comment-text 的 HTML 或纯文本。
@@ -259,4 +261,3 @@ table.table
 - 外部脚本、广告、统计和 Cloudflare beacon 不属于业务正文。
 - 公共页有多处 createBook 模态表单，解析当前页面功能时应按表单 ID/业务容器过滤。
 - 详情页控制台观察到一条 .comments-page-1 #https://www.esjzone.cc/detail/1716174812.html 选择器语法错误，属于站点前端已知问题线索，解析器不应依赖其滚动逻辑。
-
