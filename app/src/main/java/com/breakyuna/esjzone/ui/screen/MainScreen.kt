@@ -30,7 +30,6 @@ import cafe.adriel.voyager.transitions.SlideTransition
 import com.breakyuna.esjzone.network.Authorization
 import com.breakyuna.esjzone.network.LocalAuthorization
 import com.breakyuna.esjzone.ui.navigation.LocalBaseNavigator
-import com.breakyuna.esjzone.ui.tab.CategoryTab
 import com.breakyuna.esjzone.ui.tab.FavoriteTab
 import com.breakyuna.esjzone.ui.tab.HistoryTab
 import com.breakyuna.esjzone.ui.tab.HomeTab
@@ -69,7 +68,6 @@ private object TabScreen : Screen {
                         containerColor = MaterialTheme.colorScheme.surface
                     ) {
                         TabNavigationItem(tab = HomeTab)
-                        TabNavigationItem(tab = CategoryTab)
                         TabNavigationItem(
                             tab = HistoryTab,
                             onDoubleClick = HistoryTab::requestOpenLastReading

@@ -123,7 +123,8 @@ interface Item {
         novelId: String,
         history: MutableState<Chapter?>,
         hasHistory: MutableState<Boolean>,
-        chapterOrder: List<Chapter>
+        chapterOrder: List<Chapter>,
+        novelName: String = ""
     )
 
 }
@@ -135,7 +136,8 @@ class TextItem(private val component: TextComponent) : Item {
         novelId: String,
         history: MutableState<Chapter?>,
         hasHistory: MutableState<Boolean>,
-        chapterOrder: List<Chapter>
+        chapterOrder: List<Chapter>,
+        novelName: String
     ) {
         val textMeasurer = rememberTextMeasurer()
         val textStyle = LocalTextStyle.current
@@ -166,7 +168,8 @@ class ChapterItem(val chapter: Chapter) : Item {
         novelId: String,
         history: MutableState<Chapter?>,
         hasHistory: MutableState<Boolean>,
-        chapterOrder: List<Chapter>
+        chapterOrder: List<Chapter>,
+        novelName: String
     ) {
         val navigator = LocalBaseNavigator.current
 
@@ -186,7 +189,13 @@ class ChapterItem(val chapter: Chapter) : Item {
                     historied = true
                     rememberedHistory = this.chapter
                     navigator?.pushIfNotCurrent(
-                        ChapterPage(novelId, chapter, ChapterStateHolder(history), chapterOrder)
+                        ChapterPage(
+                            novelId = novelId,
+                            chapter = chapter,
+                            history = ChapterStateHolder(history),
+                            chapterOrder = chapterOrder,
+                            novelName = novelName
+                        )
                     )
                 }
             },
@@ -246,7 +255,8 @@ class ChapterListItem(private val name: TextComponent, val chapters: List<Chapte
         novelId: String,
         history: MutableState<Chapter?>,
         hasHistory: MutableState<Boolean>,
-        chapterOrder: List<Chapter>
+        chapterOrder: List<Chapter>,
+        novelName: String
     ) {
         val navigator = LocalBaseNavigator.current
 
@@ -333,10 +343,11 @@ class ChapterListItem(private val name: TextComponent, val chapters: List<Chapte
                                         rememberedHistory = chapter
                                         navigator?.pushIfNotCurrent(
                                             ChapterPage(
-                                                novelId,
-                                                chapter,
-                                                ChapterStateHolder(history),
-                                                chapterOrder
+                                                novelId = novelId,
+                                                chapter = chapter,
+                                                history = ChapterStateHolder(history),
+                                                chapterOrder = chapterOrder,
+                                                novelName = novelName
                                             )
                                         )
                                     }

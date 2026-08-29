@@ -77,7 +77,8 @@ object HistoryTab : Tab {
                             novelId = novel.id().ifBlank { latest.chapter.novelId() },
                             chapter = latest.chapter,
                             history = ChapterStateHolder(latest.chapter),
-                            chapterOrder = novel.chapterList.orderedChapters
+                            chapterOrder = novel.chapterList.orderedChapters,
+                            novelName = novel.name
                         )
                     )
                 }

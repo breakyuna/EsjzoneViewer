@@ -39,6 +39,7 @@ fun ChapterList(
     chapterList: NovelChapterList,
     modifier: Modifier = Modifier,
     novelId: String = "",
+    novelName: String = "",
     history: MutableState<Chapter?> = mutableStateOf(null),
     hasHistory: MutableState<Boolean> = mutableStateOf(false)
 ) {
@@ -82,7 +83,8 @@ fun ChapterList(
                     novelId = novelId,
                     history = history,
                     hasHistory = hasHistory,
-                    chapterOrder = chapterOrder
+                    chapterOrder = chapterOrder,
+                    novelName = novelName
                 )
             }
         }

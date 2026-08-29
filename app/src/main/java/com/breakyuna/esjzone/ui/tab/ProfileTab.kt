@@ -23,6 +23,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowForwardIos
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.CircularProgressIndicator
@@ -34,7 +35,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -65,6 +66,7 @@ import com.breakyuna.esjzone.novellibrary.user.UserProfile
 import com.breakyuna.esjzone.ui.navigation.LocalBaseNavigator
 import com.breakyuna.esjzone.ui.navigation.pushIfNotCurrent
 import com.breakyuna.esjzone.ui.page.AboutPage
+import com.breakyuna.esjzone.ui.page.BookmarksPage
 import com.breakyuna.esjzone.ui.page.SettingsPage
 
 object ProfileTab : Tab {
@@ -83,7 +85,12 @@ object ProfileTab : Tab {
     override fun Content() {
         val navigator = LocalBaseNavigator.current
         val authorization = LocalAuthorization.current
-        var data: UserProfile? by remember { mutableStateOf(null) }
+        // Keep the small profile snapshot in the saved-state registry so a
+        // background process restart does not flash an empty profile while the
+        // network request is being repeated.
+        var profileName by rememberSaveable { mutableStateOf<String?>(null) }
+        var profileAvatarUrl by rememberSaveable { mutableStateOf("") }
+        val data = profileName?.let { UserProfile(it, profileAvatarUrl) }
 
         BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
             val isWide = maxWidth >= 700.dp
@@ -152,10 +159,13 @@ object ProfileTab : Tab {
         }
 
         LaunchedEffect(Unit) {
+            if (profileName != null) return@LaunchedEffect
             try {
-                data = withContext(kotlinx.coroutines.Dispatchers.IO) {
+                val profile = withContext(kotlinx.coroutines.Dispatchers.IO) {
                     EsjzoneClient.getUserProfile(authorization)
                 }
+                profileName = profile.name
+                profileAvatarUrl = profile.avatarUrl
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -294,6 +304,14 @@ private fun ProfileMenu(
         modifier = modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
+        ProfileMenuItem(
+            icon = Icons.Filled.Bookmark,
+            iconTint = MaterialTheme.colorScheme.primary,
+            iconBg = MaterialTheme.colorScheme.primaryContainer,
+            title = stringResource(R.string.bookmarks),
+            subtitle = stringResource(R.string.bookmarks_description),
+            onClick = { navigator?.pushIfNotCurrent(BookmarksPage) }
+        )
         ProfileMenuItem(
             icon = Icons.Filled.Settings,
             iconTint = MaterialTheme.colorScheme.tertiary,

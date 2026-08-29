@@ -27,6 +27,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowForwardIos
 import androidx.compose.material.icons.filled.AutoStories
+import androidx.compose.material.icons.filled.Category
 import androidx.compose.material.icons.filled.ChatBubbleOutline
 import androidx.compose.material.icons.filled.Forum
 import androidx.compose.material.icons.filled.Home
@@ -48,7 +49,6 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -72,7 +72,6 @@ import cafe.adriel.voyager.navigator.tab.TabOptions
 import coil.compose.SubcomposeAsyncImage
 import coil.request.ImageRequest
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
@@ -81,6 +80,7 @@ import com.breakyuna.esjzone.MainActivity
 import com.breakyuna.esjzone.R
 import com.breakyuna.esjzone.network.Authorization
 import com.breakyuna.esjzone.network.EsjzoneClient
+import com.breakyuna.esjzone.network.EsjzoneUrls
 import com.breakyuna.esjzone.network.LocalAuthorization
 import com.breakyuna.esjzone.network.features.getHomeData
 import com.breakyuna.esjzone.novellibrary.data.HomeData
@@ -108,9 +108,7 @@ object HomeTab : Tab {
     override fun Content() {
         val navigator = LocalBaseNavigator.current
         val authorization = LocalAuthorization.current
-        val scope = rememberCoroutineScope()
-
-        val homeTabModel = rememberScreenModel { HomeTabModel(authorization, scope) }
+        val homeTabModel = rememberScreenModel { HomeTabModel(authorization) }
         val state by homeTabModel.state.collectAsState()
 
         val adult by remember {
@@ -166,26 +164,40 @@ object HomeTab : Tab {
                 }
             }
 
-            Row(
+            LazyRow(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp, vertical = 4.dp),
+                contentPadding = PaddingValues(horizontal = 0.dp),
                 horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                CommunityShortcut(
-                    icon = Icons.Filled.Forum,
-                    title = stringResource(id = R.string.forum),
-                    subtitle = stringResource(id = R.string.forum_description),
-                    modifier = Modifier.weight(1f),
-                    onClick = { navigator?.pushIfNotCurrent(ForumPage) }
-                )
-                CommunityShortcut(
-                    icon = Icons.Filled.ChatBubbleOutline,
-                    title = stringResource(id = R.string.guestbook),
-                    subtitle = stringResource(id = R.string.guestbook_description),
-                    modifier = Modifier.weight(1f),
-                    onClick = { navigator?.pushIfNotCurrent(GuestbookPage) }
-                )
+                item {
+                    CommunityShortcut(
+                        icon = Icons.Filled.Category,
+                        title = stringResource(id = R.string.categories),
+                        subtitle = stringResource(id = R.string.categories_description),
+                        modifier = Modifier.width(160.dp),
+                        onClick = { navigator?.pushIfNotCurrent(CategoryBrowserPage()) }
+                    )
+                }
+                item {
+                    CommunityShortcut(
+                        icon = Icons.Filled.Forum,
+                        title = stringResource(id = R.string.forum),
+                        subtitle = stringResource(id = R.string.forum_description),
+                        modifier = Modifier.width(160.dp),
+                        onClick = { navigator?.pushIfNotCurrent(ForumPage) }
+                    )
+                }
+                item {
+                    CommunityShortcut(
+                        icon = Icons.Filled.ChatBubbleOutline,
+                        title = stringResource(id = R.string.guestbook),
+                        subtitle = stringResource(id = R.string.guestbook_description),
+                        modifier = Modifier.width(160.dp),
+                        onClick = { navigator?.pushIfNotCurrent(GuestbookPage) }
+                    )
+                }
             }
 
             Spacer(modifier = Modifier.height(12.dp))
@@ -391,9 +403,10 @@ private fun LoadingPlaceholder() {
 }
 
 class HomeTabModel(
-    private val authorization: Authorization,
-    private val scope: CoroutineScope
+    private val authorization: Authorization
 ) : StateScreenModel<HomeTabModel.State>(State.Loading) {
+
+    private var loadStarted = false
 
     sealed class State {
         data object Loading : State()
@@ -401,7 +414,9 @@ class HomeTabModel(
     }
 
     fun getHomeData() {
-        scope.launch(Dispatchers.IO) {
+        if (loadStarted) return
+        loadStarted = true
+        screenModelScope.launch(Dispatchers.IO) {
             mutableState.value = State.Loading
             try {
                 val data = EsjzoneClient.getHomeData(authorization)
@@ -463,7 +478,11 @@ fun NovelSets(novels: List<CoveredNovel>) {
                     ) {
                         SubcomposeAsyncImage(
                             model = ImageRequest.Builder(LocalContext.current)
-                                .data(novel.coverUrl)
+                                .data(
+                                    EsjzoneUrls.coverOrEmpty(novel.coverUrl)
+                                        .takeIf { it.isNotBlank() }
+                                        ?: R.drawable.missing_cover
+                                )
                                 .crossfade(true)
                                 .build(),
                             contentDescription = novel.name,
@@ -481,7 +500,7 @@ fun NovelSets(novels: List<CoveredNovel>) {
                             },
                             error = {
                                 Image(
-                                    painter = painterResource(id = R.drawable.empty_cover),
+                                    painter = painterResource(id = R.drawable.missing_cover),
                                     contentDescription = "",
                                     contentScale = ContentScale.Crop,
                                     modifier = Modifier.fillMaxSize()

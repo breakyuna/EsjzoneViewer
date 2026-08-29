@@ -63,7 +63,6 @@ import cafe.adriel.voyager.core.screen.ScreenKey
 import coil.compose.SubcomposeAsyncImage
 import coil.request.ImageRequest
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
@@ -103,9 +102,9 @@ class NovelPage(
         val scope = rememberCoroutineScope()
         val context = LocalContext.current
 
-        val screenModel = rememberScreenModel { NovelPageModel(authorization, scope, novel) }
+        val screenModel = rememberScreenModel { NovelPageModel(authorization, novel) }
         val commentModel = rememberScreenModel {
-            CommentPageModel(authorization, scope, novel.url)
+            CommentPageModel(authorization, novel.url)
         }
         val state by screenModel.state.collectAsState()
 
@@ -164,7 +163,11 @@ class NovelPage(
                                     ) {
                                         SubcomposeAsyncImage(
                                             model = ImageRequest.Builder(LocalContext.current)
-                                                .data(result.detailed.coverUrl)
+                                                .data(
+                                                    EsjzoneUrls.coverOrEmpty(result.detailed.coverUrl)
+                                                        .takeIf { it.isNotBlank() }
+                                                        ?: R.drawable.missing_cover
+                                                )
                                                 .crossfade(true)
                                                 .build(),
                                             contentDescription = result.detailed.name,
@@ -179,6 +182,16 @@ class NovelPage(
                                                         modifier = Modifier.size(24.dp)
                                                     )
                                                 }
+                                            },
+                                            error = {
+                                                androidx.compose.foundation.Image(
+                                                    painter = androidx.compose.ui.res.painterResource(
+                                                        id = R.drawable.missing_cover
+                                                    ),
+                                                    contentDescription = result.detailed.name,
+                                                    contentScale = ContentScale.Crop,
+                                                    modifier = Modifier.fillMaxSize()
+                                                )
                                             },
                                             contentScale = ContentScale.Crop,
                                             modifier = Modifier
@@ -332,7 +345,8 @@ class NovelPage(
                                                         result.detailed.id(),
                                                         currChapter,
                                                         history,
-                                                        chapterList.orderedChapters
+                                                        chapterList.orderedChapters,
+                                                        novelName = result.detailed.name
                                                     )
                                                 )
                                             }
@@ -387,6 +401,7 @@ class NovelPage(
                             ChapterList(
                                 chapterList = chapterList,
                                 novelId = result.detailed.id(),
+                                novelName = result.detailed.name,
                                 history = historyState,
                                 hasHistory = hasHistory,
                                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
@@ -550,7 +565,6 @@ private fun openExternal(context: Context, rawUrl: String) {
 
 class NovelPageModel(
     private val authorization: Authorization,
-    private val scope: CoroutineScope,
     private val novel: Novel
 ) : StateScreenModel<NovelPageModel.State>(State.Loading) {
 
@@ -567,7 +581,7 @@ class NovelPageModel(
             if (detailLoadStarted) return
             detailLoadStarted = true
         }
-        scope.launch(Dispatchers.IO) {
+        screenModelScope.launch(Dispatchers.IO) {
             mutableState.value = State.Loading
             try {
                 val detail = EsjzoneClient.getNovelDetail(

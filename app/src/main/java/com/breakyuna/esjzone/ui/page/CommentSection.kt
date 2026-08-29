@@ -71,7 +71,6 @@ import com.breakyuna.esjzone.novellibrary.novel.Comment
 import com.breakyuna.esjzone.ui.navigation.LocalBaseNavigator
 import com.breakyuna.esjzone.util.AppLogger
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.ensureActive
@@ -200,7 +199,7 @@ internal fun CommentSectionHost(
             },
             onRefresh = {
                 model.clearSubmitError()
-                model.load()
+                model.load(forceRefresh = true)
             },
             onSubmit = { model.submit(draft, replyToken) }
         )
@@ -229,7 +228,7 @@ internal fun CommentSectionHost(
             },
             onRefresh = {
                 model.clearSubmitError()
-                model.load()
+                model.load(forceRefresh = true)
             },
             onSubmit = { model.submit(draft, replyToken) }
         )
@@ -587,19 +586,21 @@ private fun CommentAvatar(comment: Comment) {
 
 internal class CommentPageModel(
     private val authorization: Authorization,
-    private val scope: CoroutineScope,
     internal val pageUrl: String
 ) : StateScreenModel<CommunityState<List<Comment>>>(CommunityState.Loading) {
     private var loadJob: Job? = null
+    private var loadStarted = false
 
     val isSubmitting = mutableStateOf(false)
     val submitError = mutableStateOf<CommentSubmitError?>(null)
     val submittedVersion = mutableIntStateOf(0)
     val lastCreatedCommentId = mutableStateOf<String?>(null)
 
-    fun load() {
+    fun load(forceRefresh: Boolean = false) {
+        if (!forceRefresh && loadStarted) return
+        loadStarted = true
         loadJob?.cancel()
-        loadJob = scope.launch(Dispatchers.IO) {
+        loadJob = screenModelScope.launch(Dispatchers.IO) {
             try {
                 val comments = EsjzoneClient.getPageComments(authorization, pageUrl)
                 ensureActive()
@@ -627,7 +628,7 @@ internal class CommentPageModel(
 
         isSubmitting.value = true
         submitError.value = null
-        scope.launch(Dispatchers.IO) {
+        screenModelScope.launch(Dispatchers.IO) {
             try {
                 val submission = EsjzoneClient.submitForumComment(
                     authorization = authorization,

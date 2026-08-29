@@ -24,7 +24,6 @@ import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -36,7 +35,6 @@ import cafe.adriel.voyager.core.model.StateScreenModel
 import cafe.adriel.voyager.core.model.rememberScreenModel
 import cafe.adriel.voyager.core.screen.Screen
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.ensureActive
@@ -83,14 +81,12 @@ object FavoritePage : Screen {
 
         val authorization = LocalAuthorization.current
 
-        val scope = rememberCoroutineScope()
-
-        val sort = remember {
+        val sort = rememberSaveable {
             mutableStateOf("new")
         }
 
         val favoritePageModel =
-            rememberScreenModel { FavoritePageModel(authorization, scope, sort) }
+            rememberScreenModel { FavoritePageModel(authorization, sort) }
         val state by favoritePageModel.state.collectAsState()
 
         val adult by remember {
@@ -99,7 +95,7 @@ object FavoritePage : Screen {
 
         fun onSortChanged(value: String) {
             sort.value = value
-            favoritePageModel.getRequester()
+            favoritePageModel.getRequester(forceRefresh = true)
         }
 
         Column(modifier = Modifier.fillMaxSize()) {
@@ -316,11 +312,11 @@ private fun FavoriteSortSelector(
 
 class FavoritePageModel(
     private val authorization: Authorization,
-    private val scope: CoroutineScope,
     private val sort: MutableState<String>
 ) : StateScreenModel<FavoritePageModel.State>(State.Loading) {
 
     private var requestJob: Job? = null
+    private var initialRequestStarted = false
 
     sealed class State {
         data object Loading : State()
@@ -330,9 +326,11 @@ class FavoritePageModel(
         ) : State()
     }
 
-    fun getRequester() {
+    fun getRequester(forceRefresh: Boolean = false) {
+        if (!forceRefresh && initialRequestStarted) return
+        initialRequestStarted = true
         requestJob?.cancel()
-        requestJob = scope.launch(Dispatchers.IO) {
+        requestJob = screenModelScope.launch(Dispatchers.IO) {
             mutableState.value = State.Loading
             try {
                 val (requester, novels) = EsjzoneClient.getFavorites(

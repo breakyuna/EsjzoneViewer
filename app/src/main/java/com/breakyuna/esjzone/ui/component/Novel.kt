@@ -44,6 +44,7 @@ import coil.compose.SubcomposeAsyncImage
 import coil.request.ImageRequest
 import com.breakyuna.esjzone.MainActivity
 import com.breakyuna.esjzone.R
+import com.breakyuna.esjzone.network.EsjzoneUrls
 import com.breakyuna.esjzone.novellibrary.novel.CoveredNovel
 import com.breakyuna.esjzone.novellibrary.novel.CoveredNovelImpl
 import com.breakyuna.esjzone.ui.navigation.LocalBaseNavigator
@@ -93,7 +94,11 @@ fun Novel(
             ) {
                 SubcomposeAsyncImage(
                     model = ImageRequest.Builder(LocalContext.current)
-                        .data(covered.coverUrl)
+                        .data(
+                            EsjzoneUrls.coverOrEmpty(covered.coverUrl)
+                                .takeIf { it.isNotBlank() }
+                                ?: R.drawable.missing_cover
+                        )
                         .crossfade(true)
                         .build(),
                     contentDescription = covered.name,
@@ -111,7 +116,7 @@ fun Novel(
                     },
                     error = {
                         Image(
-                            painter = painterResource(id = R.drawable.empty_cover),
+                            painter = painterResource(id = R.drawable.missing_cover),
                             contentDescription = "",
                             contentScale = ContentScale.Crop,
                             modifier = Modifier.fillMaxSize()

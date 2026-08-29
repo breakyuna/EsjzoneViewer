@@ -21,6 +21,7 @@ import androidx.compose.material.icons.filled.ColorLens
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Language
 import androidx.compose.material.icons.filled.NoAdultContent
+import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardColors
 import androidx.compose.material3.CardDefaults
@@ -374,6 +375,16 @@ object SettingsPage : Screen {
                 }
 
                 SettingsText(text = stringResource(id = R.string.settings_category_app))
+                SettingsCustom(
+                    imageVector = Icons.Filled.Storage,
+                    text = stringResource(id = R.string.local_cache)
+                ) {
+                    Text(
+                        text = stringResource(id = R.string.local_cache_description),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(end = 16.dp)
+                    )
+                }
                 SettingsButton(
                     imageVector = Icons.Filled.BugReport,
                     text = stringResource(id = R.string.system_logs)

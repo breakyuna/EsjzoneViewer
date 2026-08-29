@@ -18,6 +18,7 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.itemsIndexed
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -37,7 +38,6 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -51,10 +51,11 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import cafe.adriel.voyager.core.model.StateScreenModel
 import cafe.adriel.voyager.core.model.rememberScreenModel
+import cafe.adriel.voyager.core.screen.Screen
+import cafe.adriel.voyager.core.screen.ScreenKey
 import cafe.adriel.voyager.navigator.tab.Tab
 import cafe.adriel.voyager.navigator.tab.TabOptions
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
@@ -64,10 +65,32 @@ import com.breakyuna.esjzone.network.Authorization
 import com.breakyuna.esjzone.network.EsjzoneClient
 import com.breakyuna.esjzone.network.LocalAuthorization
 import com.breakyuna.esjzone.network.features.getCategories
-import com.breakyuna.esjzone.novellibrary.novel.Category
+import com.breakyuna.esjzone.novellibrary.novel.Category as NovelCategory
 import com.breakyuna.esjzone.ui.navigation.LocalBaseNavigator
 import com.breakyuna.esjzone.ui.navigation.pushIfNotCurrent
+import com.breakyuna.esjzone.ui.component.AppBar
 import com.breakyuna.esjzone.ui.page.CategoryPage
+
+class CategoryBrowserPage : Screen {
+
+    override val key: ScreenKey = "CategoryBrowserPage"
+
+    @Composable
+    override fun Content() {
+        val navigator = LocalBaseNavigator.current
+        Column(modifier = Modifier.fillMaxSize()) {
+            AppBar(
+                title = stringResource(id = R.string.categories),
+                onBack = { navigator?.pop() }
+            )
+            CategoryBrowserContent(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
+            )
+        }
+    }
+}
 
 @Composable
 private fun CategoryIcon(index: Int, modifier: Modifier = Modifier, tint: Color) {
@@ -135,16 +158,21 @@ object CategoryTab : Tab {
 
     @Composable
     override fun Content() {
+        CategoryBrowserContent(modifier = Modifier.fillMaxSize())
+    }
+}
+
+@Composable
+private fun CategoryBrowserContent(modifier: Modifier) {
         val navigator = LocalBaseNavigator.current
         val authorization = LocalAuthorization.current
-        val scope = rememberCoroutineScope()
-        val categoryModel = rememberScreenModel { CategoryModel(authorization, scope) }
+        val categoryModel = rememberScreenModel { CategoryModel(authorization) }
         val state by categoryModel.state.collectAsState()
         val adult by remember { GlobalSettings.adult }
 
         when (state) {
             is CategoryModel.State.Loading -> Box(
-                modifier = Modifier.fillMaxSize(),
+                modifier = modifier,
                 contentAlignment = Alignment.Center
             ) {
                 CircularProgressIndicator(strokeWidth = 2.5.dp)
@@ -153,13 +181,15 @@ object CategoryTab : Tab {
             is CategoryModel.State.Result -> {
                 val categories = (state as CategoryModel.State.Result).categories
                     .filter { !(it.isAdult && !adult) }
+                val gridState = rememberLazyGridState()
 
                 LazyVerticalGrid(
+                    state = gridState,
                     columns = GridCells.Adaptive(minSize = 156.dp),
                     contentPadding = PaddingValues(horizontal = 20.dp, vertical = 20.dp),
                     horizontalArrangement = Arrangement.spacedBy(14.dp),
                     verticalArrangement = Arrangement.spacedBy(14.dp),
-                    modifier = Modifier.fillMaxSize()
+                    modifier = modifier
                 ) {
                     item(span = { GridItemSpan(maxLineSpan) }) {
                         Column(
@@ -209,12 +239,11 @@ object CategoryTab : Tab {
         LaunchedEffect(Unit) {
             categoryModel.getCategories()
         }
-    }
 }
 
 @Composable
 private fun CategoryCard(
-    category: Category,
+    category: NovelCategory,
     index: Int,
     onClick: () -> Unit
 ) {
@@ -293,17 +322,20 @@ private fun CategoryCard(
 }
 
 class CategoryModel(
-    private val authorization: Authorization,
-    private val scope: CoroutineScope
+    private val authorization: Authorization
 ) : StateScreenModel<CategoryModel.State>(State.Loading) {
+
+    private var loadStarted = false
 
     sealed class State {
         data object Loading : State()
-        data class Result(val categories: List<Category>) : State()
+        data class Result(val categories: List<NovelCategory>) : State()
     }
 
     fun getCategories() {
-        scope.launch(Dispatchers.IO) {
+        if (loadStarted) return
+        loadStarted = true
+        screenModelScope.launch(Dispatchers.IO) {
             mutableState.value = State.Loading
             try {
                 val categories = EsjzoneClient.getCategories(authorization)

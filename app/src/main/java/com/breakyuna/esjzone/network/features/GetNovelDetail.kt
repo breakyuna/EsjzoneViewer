@@ -27,11 +27,13 @@ fun EsjzoneClient.getNovelDetail(
 
     val document = Jsoup.parse(responseBody, targetUrl)
 
-    val coverUrl = document.selectFirst(".product-gallery img")
-        ?.let(::resolveImageUrl)
-        ?.takeIf { it.isNotBlank() }
-        ?: EsjzoneXPaths.Detail.Cover.evaluate(document).get()
-        ?: EsjzoneUrls.EmptyCover
+    val coverUrl = EsjzoneUrls.coverOrEmpty(
+        document.selectFirst(".product-gallery img")
+            ?.let(::resolveImageUrl)
+            ?.takeIf { it.isNotBlank() }
+            ?: EsjzoneXPaths.Detail.Cover.evaluate(document).get()
+            ?: EsjzoneUrls.EmptyCover
+    )
 
     val viewsStr = document.selectFirst("#vtimes")?.text()
         ?: EsjzoneXPaths.Detail.Views.evaluate(document).get()

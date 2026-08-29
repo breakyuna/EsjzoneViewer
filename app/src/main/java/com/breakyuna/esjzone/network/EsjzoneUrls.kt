@@ -52,7 +52,48 @@ object EsjzoneUrls {
         get() = "https://$BaseWithoutProtocol"
 
     val EmptyCover: String
-        get() = "$Base/assets/img/empty.jpg"
+        // UI layers render the bundled placeholder for missing covers.  Keeping
+        // this value blank prevents a slow or unavailable mirror image from
+        // replacing the user's fixed local placeholder.
+        get() = ""
+
+    /** Returns an empty value for the site's stock no-cover image. */
+    fun coverOrEmpty(rawUrl: String?): String {
+        val value = rawUrl?.trim().orEmpty()
+        val fileName = value
+            .substringBefore('?')
+            .substringBefore('#')
+            .substringAfterLast('/')
+            .lowercase()
+        return if (value.isBlank() || fileName in MISSING_COVER_NAMES) {
+            EmptyCover
+        } else {
+            value
+        }
+    }
+
+    private val MISSING_COVER_NAMES = setOf(
+        "empty.jpg",
+        "empty.jpeg",
+        "empty.png",
+        "empty.webp",
+        "no-cover.jpg",
+        "no-cover.png",
+        "no-cover.webp",
+        "no_cover.jpg",
+        "no_cover.png",
+        "no_cover.webp",
+        "empty-cover.jpg",
+        "empty-cover.png",
+        "empty-cover.webp",
+        "empty_cover.jpg",
+        "empty_cover.png",
+        "empty_cover.webp",
+        "nocover.jpg",
+        "nocover.png",
+        "nocover.webp"
+    )
+
     val Home: String
         get() = Base
     val Forum: String

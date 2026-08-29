@@ -19,7 +19,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -30,7 +30,6 @@ import cafe.adriel.voyager.core.model.rememberScreenModel
 import cafe.adriel.voyager.core.screen.Screen
 import cafe.adriel.voyager.core.screen.ScreenKey
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.ensureActive
@@ -60,9 +59,7 @@ class SearchPage(private val keyword: String) : Screen {
 
         val authorization = LocalAuthorization.current
 
-        val scope = rememberCoroutineScope()
-
-        val searchModel = rememberScreenModel { SearchPageModel(authorization, scope, keyword) }
+        val searchModel = rememberScreenModel { SearchPageModel(authorization, keyword) }
         val state by searchModel.state.collectAsState()
 
         Column {
@@ -80,7 +77,7 @@ class SearchPage(private val keyword: String) : Screen {
                     val result = (state as SearchPageModel.State.Result)
                     val requester = result.requester
 
-                    var current by remember(result) {
+                    var current by rememberSaveable(result) {
                         mutableIntStateOf(2)
                     }
 
@@ -172,11 +169,11 @@ class SearchPage(private val keyword: String) : Screen {
 
 class SearchPageModel(
     private val authorization: Authorization,
-    private val scope: CoroutineScope,
     private val keyword: String
 ) : StateScreenModel<SearchPageModel.State>(State.Loading) {
 
     private var requestJob: Job? = null
+    private var initialRequestStarted = false
 
     sealed class State {
         data object Loading : State()
@@ -187,8 +184,10 @@ class SearchPageModel(
     }
 
     fun getRequester() {
+        if (initialRequestStarted) return
+        initialRequestStarted = true
         requestJob?.cancel()
-        requestJob = scope.launch(Dispatchers.IO) {
+        requestJob = screenModelScope.launch(Dispatchers.IO) {
             mutableState.value = State.Loading
             try {
                 val (requester, novels) = EsjzoneClient.search(authorization, keyword)

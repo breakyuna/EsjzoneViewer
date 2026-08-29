@@ -56,7 +56,6 @@ import cafe.adriel.voyager.core.screen.Screen
 import coil.compose.SubcomposeAsyncImage
 import coil.request.ImageRequest
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.ensureActive
@@ -67,6 +66,7 @@ import com.breakyuna.esjzone.MainActivity
 import com.breakyuna.esjzone.R
 import com.breakyuna.esjzone.network.Authorization
 import com.breakyuna.esjzone.network.EsjzoneClient
+import com.breakyuna.esjzone.network.EsjzoneUrls
 import com.breakyuna.esjzone.network.LocalAuthorization
 import com.breakyuna.esjzone.network.features.getHistories
 import com.breakyuna.esjzone.network.features.getNovelDetail
@@ -98,7 +98,7 @@ object HistoryPage : Screen {
         val authorization = LocalAuthorization.current
         val scope = rememberCoroutineScope()
 
-        val historyPageModel = rememberScreenModel { HistoryPageModel(authorization, scope) }
+        val historyPageModel = rememberScreenModel { HistoryPageModel(authorization) }
         val state by historyPageModel.state.collectAsState()
 
         Column(modifier = Modifier.fillMaxSize()) {
@@ -275,13 +275,27 @@ object HistoryPage : Screen {
                                                     ) {
                                                         SubcomposeAsyncImage(
                                                             model = ImageRequest.Builder(LocalContext.current)
-                                                                .data(novel.coverUrl)
+                                                                .data(
+                                                                    EsjzoneUrls.coverOrEmpty(novel.coverUrl)
+                                                                        .takeIf { it.isNotBlank() }
+                                                                        ?: R.drawable.missing_cover
+                                                                )
                                                                 .crossfade(true)
                                                                 .build(),
                                                             contentDescription = historyNovel.name,
                                                             imageLoader = MainActivity.imageLoader,
                                                             loading = {
                                                                 CircularProgressIndicator(strokeWidth = 2.dp)
+                                                            },
+                                                            error = {
+                                                                androidx.compose.foundation.Image(
+                                                                    painter = androidx.compose.ui.res.painterResource(
+                                                                        id = R.drawable.missing_cover
+                                                                    ),
+                                                                    contentDescription = historyNovel.name,
+                                                                    contentScale = ContentScale.Crop,
+                                                                    modifier = Modifier.fillMaxSize()
+                                                                )
                                                             },
                                                             contentScale = ContentScale.Crop,
                                                             modifier = Modifier.fillMaxSize()
@@ -321,7 +335,8 @@ object HistoryPage : Screen {
                                                                     novel.id(),
                                                                     currChapter,
                                                                     ChapterStateHolder(historyChapter),
-                                                                    novel.chapterList.orderedChapters
+                                                                    novel.chapterList.orderedChapters,
+                                                                    novelName = novel.name
                                                                 )
                                                             )
                                                         }
@@ -364,11 +379,11 @@ object HistoryPage : Screen {
 }
 
 class HistoryPageModel(
-    private val authorization: Authorization,
-    private val scope: CoroutineScope
+    private val authorization: Authorization
 ) : StateScreenModel<HistoryPageModel.State>(State.Loading) {
 
     private var loadJob: Job? = null
+    private var loadStarted = false
 
     sealed class State {
         data object Loading : State()
@@ -376,8 +391,10 @@ class HistoryPageModel(
     }
 
     fun getNovels() {
+        if (loadStarted) return
+        loadStarted = true
         loadJob?.cancel()
-        loadJob = scope.launch(Dispatchers.IO) {
+        loadJob = screenModelScope.launch(Dispatchers.IO) {
             mutableState.value = State.Loading
             try {
                 val histories = EsjzoneClient.getHistories(authorization)

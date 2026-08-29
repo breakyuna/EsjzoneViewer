@@ -148,6 +148,16 @@
     <string name="reader_contents_empty">暂无章节</string>
     <string name="reader_toggle_script">切换文字版本</string>
     <string name="reader_loading_previous">正在加载上一章</string>
+    <string name="reader_progress_chapter_count">%1$d / %2$d</string>
+    <string name="reader_return_progress">返回原阅读进度</string>
+    <string name="reader_add_bookmark">添加本地书签</string>
+    <string name="reader_remove_bookmark">移除本地书签</string>
+    <string name="bookmarks">本地书签</string>
+    <string name="bookmarks_description">将章节保存在本机，方便快速访问</string>
+    <string name="bookmarks_empty">暂时还没有本地书签</string>
+    <string name="bookmark_remove">移除书签</string>
+    <string name="local_cache">本地缓存</string>
+    <string name="local_cache_description">已打开的小说页面会保存在本机，便于再次阅读</string>
     <string name="close">关闭</string>
     <string name="anonymous_user">匿名用户</string>
     <string name="page_indicator">第 %1$d / %2$d 页</string>

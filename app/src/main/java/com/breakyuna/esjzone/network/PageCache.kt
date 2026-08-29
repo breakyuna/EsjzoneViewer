@@ -25,17 +25,27 @@ internal object PageCacheTtl {
  */
 internal object PageCache {
 
-    private const val FILE_PREFIX = "esj-page-v1"
-    private const val MAX_CACHE_BYTES = 64L * 1024L * 1024L
+    private const val FILE_PREFIX = "esj-page-v2"
+    private const val MAX_CACHE_BYTES = 256L * 1024L * 1024L
 
     @Volatile
     private var directory: File? = null
 
     fun initialize(context: Context) {
-        val cacheDirectory = File(context.cacheDir, "page_cache")
+        // Novel chapters are useful after an app restart and while offline, so
+        // keep their HTML in the app's persistent files area rather than the
+        // OS-evictable cache directory.
+        val cacheDirectory = File(context.filesDir, "novel_page_cache")
         if (cacheDirectory.isDirectory || cacheDirectory.mkdirs()) {
             directory = cacheDirectory
         }
+
+        // The cache used to live under cacheDir.  Remove those old snapshots so
+        // an account's authenticated HTML cannot survive logout in the legacy
+        // location after the persistent cache is initialized.
+        File(context.cacheDir, "page_cache").listFiles()
+            ?.filter { it.isFile && it.name.startsWith("esj-page-") }
+            ?.forEach { runCatching { it.delete() } }
     }
 
     fun read(key: String, maxAgeMillis: Long, nowMillis: Long = System.currentTimeMillis()): String? {

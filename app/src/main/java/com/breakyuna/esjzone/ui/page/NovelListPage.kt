@@ -23,7 +23,7 @@ import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -34,7 +34,6 @@ import cafe.adriel.voyager.core.model.rememberScreenModel
 import cafe.adriel.voyager.core.screen.Screen
 import cafe.adriel.voyager.core.screen.ScreenKey
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.ensureActive
@@ -98,22 +97,20 @@ class NovelListPage(
 
         val authorization = LocalAuthorization.current
 
-        val scope = rememberCoroutineScope()
-
-        val novelType = remember {
+        val novelType = rememberSaveable {
             mutableIntStateOf(initializedNovelType)
         }
 
-        val sortType = remember {
+        val sortType = rememberSaveable {
             mutableIntStateOf(initializedSortType)
         }
 
-        var adultOnly by remember {
+        var adultOnly by rememberSaveable {
             mutableStateOf(initializedAdultOnly)
         }
 
         val novelListModel =
-            rememberScreenModel { NovelListPageModel(authorization, scope, novelType, sortType) }
+            rememberScreenModel { NovelListPageModel(authorization, novelType, sortType) }
         val state by novelListModel.state.collectAsState()
 
         val adult by remember {
@@ -136,7 +133,7 @@ class NovelListPage(
                         current = novelType.intValue,
                         onChange = {
                             novelType.intValue = it
-                            novelListModel.getRequester()
+                            novelListModel.getRequester(forceRefresh = true)
                         },
                         exposed = typeExposed,
                         onExposeChanged = {
@@ -164,7 +161,7 @@ class NovelListPage(
                         current = sortType.intValue,
                         onChange = {
                             sortType.intValue = it
-                            novelListModel.getRequester()
+                            novelListModel.getRequester(forceRefresh = true)
                         },
                         exposed = sortExposed,
                         onExposeChanged = {
@@ -284,12 +281,12 @@ class NovelListPage(
 
 class NovelListPageModel(
     private val authorization: Authorization,
-    private val scope: CoroutineScope,
     private val novelType: MutableIntState,
     private val sortType: MutableIntState,
 ) : StateScreenModel<NovelListPageModel.State>(State.Loading) {
 
     private var requestJob: Job? = null
+    private var initialRequestStarted = false
 
     val summaries = mutableStateMapOf<String, String>()
     private val summaryLock = Any()
@@ -317,7 +314,7 @@ class NovelListPageModel(
             }
         }
 
-        scope.launch(Dispatchers.IO) {
+        screenModelScope.launch(Dispatchers.IO) {
             try {
                 val detail = EsjzoneClient.getNovelDetail(authorization, novel)
                 val preview = detail.description.preview()
@@ -347,9 +344,11 @@ class NovelListPageModel(
         }
     }
 
-    fun getRequester() {
+    fun getRequester(forceRefresh: Boolean = false) {
+        if (!forceRefresh && initialRequestStarted) return
+        initialRequestStarted = true
         requestJob?.cancel()
-        requestJob = scope.launch(Dispatchers.IO) {
+        requestJob = screenModelScope.launch(Dispatchers.IO) {
             mutableState.value = State.Loading
             try {
                 val (requester, novels) = EsjzoneClient.novels(

@@ -18,7 +18,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -29,7 +28,6 @@ import cafe.adriel.voyager.core.model.rememberScreenModel
 import cafe.adriel.voyager.core.screen.Screen
 import cafe.adriel.voyager.core.screen.ScreenKey
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.ensureActive
@@ -61,10 +59,8 @@ class CategoryPage(private val category: Category) : Screen {
 
         val authorization = LocalAuthorization.current
 
-        val scope = rememberCoroutineScope()
-
         val categoryPageModel =
-            rememberScreenModel { CategoryPageModel(authorization, scope, category) }
+            rememberScreenModel { CategoryPageModel(authorization, category) }
         val state by categoryPageModel.state.collectAsState()
 
         Column {
@@ -166,11 +162,11 @@ class CategoryPage(private val category: Category) : Screen {
 
 class CategoryPageModel(
     private val authorization: Authorization,
-    private val scope: CoroutineScope,
     private val category: Category
 ) : StateScreenModel<CategoryPageModel.State>(State.Loading) {
 
     private var loadJob: Job? = null
+    private var loadStarted = false
 
     sealed class State {
         data object Loading : State()
@@ -178,8 +174,10 @@ class CategoryPageModel(
     }
 
     fun getNovels() {
+        if (loadStarted) return
+        loadStarted = true
         loadJob?.cancel()
-        loadJob = scope.launch(Dispatchers.IO) {
+        loadJob = screenModelScope.launch(Dispatchers.IO) {
             mutableState.value = State.Loading
             try {
                 val novels = EsjzoneClient.listNovels(authorization, category)

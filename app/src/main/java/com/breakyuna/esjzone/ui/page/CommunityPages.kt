@@ -25,7 +25,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
@@ -50,7 +49,6 @@ import com.breakyuna.esjzone.ui.navigation.LocalBaseNavigator
 import com.breakyuna.esjzone.ui.navigation.pushIfNotCurrent
 import com.breakyuna.esjzone.util.AppLogger
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 
@@ -61,8 +59,7 @@ object ForumPage : Screen {
     override fun Content() {
         val navigator = LocalBaseNavigator.current
         val authorization = LocalAuthorization.current
-        val scope = rememberCoroutineScope()
-        val model = rememberScreenModel { ForumPageModel(authorization, scope) }
+        val model = rememberScreenModel { ForumPageModel(authorization) }
         val state by model.state.collectAsState()
 
         Column(modifier = Modifier.fillMaxSize()) {
@@ -117,8 +114,7 @@ class ForumCategoryPage(private val category: ForumCategory) : Screen {
     override fun Content() {
         val navigator = LocalBaseNavigator.current
         val authorization = LocalAuthorization.current
-        val scope = rememberCoroutineScope()
-        val model = rememberScreenModel { ForumCategoryPageModel(authorization, scope, category) }
+        val model = rememberScreenModel { ForumCategoryPageModel(authorization, category) }
         val state by model.state.collectAsState()
 
         Column(modifier = Modifier.fillMaxSize()) {
@@ -159,9 +155,8 @@ object GuestbookPage : Screen {
     @Composable
     override fun Content() {
         val authorization = LocalAuthorization.current
-        val scope = rememberCoroutineScope()
         val model = rememberScreenModel {
-            CommentPageModel(authorization, scope, EsjzoneUrls.Guestbook)
+            CommentPageModel(authorization, EsjzoneUrls.Guestbook)
         }
         CommentListPage(
             title = stringResource(id = R.string.guestbook),
@@ -181,9 +176,8 @@ class ChapterCommentsPage(
     @Composable
     override fun Content() {
         val authorization = LocalAuthorization.current
-        val scope = rememberCoroutineScope()
         val model = rememberScreenModel {
-            CommentPageModel(authorization, scope, chapterUrl)
+            CommentPageModel(authorization, chapterUrl)
         }
         CommentListPage(title = chapterName, model = model)
     }
@@ -289,11 +283,14 @@ private fun ForumThreadCard(thread: ForumThread, onClick: () -> Unit) {
 }
 
 private class ForumPageModel(
-    private val authorization: Authorization,
-    private val scope: CoroutineScope
+    private val authorization: Authorization
 ) : StateScreenModel<CommunityState<List<ForumCategory>>>(CommunityState.Loading) {
+    private var loadStarted = false
+
     fun load() {
-        scope.launch(Dispatchers.IO) {
+        if (loadStarted) return
+        loadStarted = true
+        screenModelScope.launch(Dispatchers.IO) {
             mutableState.value = try {
                 EsjzoneClient.getForumCategories(authorization).toCommunityState()
             } catch (error: CancellationException) {
@@ -308,11 +305,14 @@ private class ForumPageModel(
 
 private class ForumCategoryPageModel(
     private val authorization: Authorization,
-    private val scope: CoroutineScope,
     private val category: ForumCategory
 ) : StateScreenModel<CommunityState<List<ForumThread>>>(CommunityState.Loading) {
+    private var loadStarted = false
+
     fun load() {
-        scope.launch(Dispatchers.IO) {
+        if (loadStarted) return
+        loadStarted = true
+        screenModelScope.launch(Dispatchers.IO) {
             mutableState.value = try {
                 EsjzoneClient.getForumThreads(authorization, category).toCommunityState()
             } catch (error: CancellationException) {

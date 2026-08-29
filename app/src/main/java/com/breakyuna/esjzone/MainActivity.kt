@@ -53,8 +53,10 @@ class MainActivity : ComponentActivity() {
             }
             .diskCache {
                 DiskCache.Builder()
-                    .directory(this.cacheDir.resolve("image_cache"))
-                    .maxSizePercent(0.02)
+                    // Keep covers available after the process is recreated in
+                    // the background; cacheDir can be purged at any time.
+                    .directory(this.filesDir.resolve("image_cache"))
+                    .maxSizePercent(0.05)
                     .build()
             }
             .respectCacheHeaders(false)
@@ -68,7 +70,7 @@ class MainActivity : ComponentActivity() {
                 database = Room.databaseBuilder(
                     this@MainActivity,
                     GeneralDatabase::class.java, "general"
-                ).build()
+                ).addMigrations(GeneralDatabase.MIGRATION_1_2).build()
 
                 val dao = database.cacheDao()
 

@@ -38,7 +38,7 @@ fun EsjzoneClient.novels(
 
         novels.add(
             CoveredNovelImpl(
-                EsjzoneXPaths.Tags.Novel.Cover.evaluate(novelData).get() ?: EsjzoneUrls.EmptyCover,
+                EsjzoneUrls.coverOrEmpty(EsjzoneXPaths.Tags.Novel.Cover.evaluate(novelData).get()),
                 EsjzoneXPaths.Tags.Novel.Name.evaluate(novelData).get() ?: "",
                 EsjzoneXPaths.Tags.Novel.Url.evaluate(novelData).get() ?: "",
                 parseCount(EsjzoneXPaths.Tags.Novel.Views.evaluate(novelData).get()),
@@ -96,7 +96,7 @@ private class ListNovelRequester(
 
             novels.add(
                 CoveredNovelImpl(
-                    EsjzoneXPaths.Tags.Novel.Cover.evaluate(novelData).get() ?: EsjzoneUrls.EmptyCover,
+                    EsjzoneUrls.coverOrEmpty(EsjzoneXPaths.Tags.Novel.Cover.evaluate(novelData).get()),
                     EsjzoneXPaths.Tags.Novel.Name.evaluate(novelData).get() ?: "",
                     EsjzoneXPaths.Tags.Novel.Url.evaluate(novelData).get() ?: "",
                     parseCount(EsjzoneXPaths.Tags.Novel.Views.evaluate(novelData).get()),

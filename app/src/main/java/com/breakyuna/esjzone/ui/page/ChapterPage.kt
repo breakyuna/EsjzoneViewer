@@ -7,7 +7,9 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
@@ -22,29 +24,26 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.weight
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.Forum
 import androidx.compose.material.icons.filled.List
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Translate
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.ElevatedCard
-import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
-import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -52,30 +51,38 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.material.icons.filled.Bookmark
+import androidx.compose.material.icons.filled.BookmarkBorder
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -86,13 +93,14 @@ import cafe.adriel.voyager.core.screen.ScreenKey
 import coil.compose.SubcomposeAsyncImage
 import coil.request.ImageRequest
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import kotlin.math.max
 import kotlin.math.roundToInt
 import com.breakyuna.esjzone.MainActivity
 import com.breakyuna.esjzone.R
@@ -123,7 +131,8 @@ class ChapterPage(
     private val novelId: String,
     private val chapter: Chapter,
     private val history: ChapterStateHolder,
-    private val chapterOrder: List<Chapter> = emptyList()
+    private val chapterOrder: List<Chapter> = emptyList(),
+    private val novelName: String = ""
 ) : Screen {
 
     override val key: ScreenKey =
@@ -153,6 +162,7 @@ class ChapterPage(
         var showReaderContents by rememberSaveable {
             mutableStateOf(false)
         }
+        var isBookmarked by rememberSaveable { mutableStateOf(false) }
 
         val readerTextStyle = MaterialTheme.typography.bodyLarge.copy(
             fontFamily = readerSettings.font.family,
@@ -182,7 +192,6 @@ class ChapterPage(
             rememberScreenModel {
                 ChapterPageModel(
                     authorization = authorization,
-                    scope = scope,
                     requestedChapter = requestedChapter,
                     novelId = novelId,
                     chapterOrder = chapterOrder
@@ -190,19 +199,26 @@ class ChapterPage(
             }
         val state by chapterPageModel.state.collectAsState()
 
-        BackHandler(enabled = navigator != null && !showReaderSettings && !showReaderContents) {
-            navigator?.pop()
-        }
-
-        var showToolbar by remember {
+        var showToolbar by rememberSaveable {
             mutableStateOf(false)
         }
 
         val scrollState = rememberScrollState()
 
-        var sliderPosition by remember { mutableFloatStateOf(0f) }
-        var isSliderDragging by remember { mutableStateOf(false) }
+        var progressPreview by remember { mutableStateOf<ReaderBookLocation?>(null) }
+        var progressReturnLocation by remember { mutableStateOf<ReaderBookLocation?>(null) }
+        var pendingSeekLocation by remember { mutableStateOf<ReaderBookLocation?>(null) }
+        var isBookProgressDragging by remember { mutableStateOf(false) }
         val chapterHeights = remember { mutableStateMapOf<String, Int>() }
+
+        BackHandler(enabled = navigator != null && !showReaderSettings && !showReaderContents) {
+            if (progressPreview != null) {
+                progressPreview = null
+                progressReturnLocation = null
+            } else {
+                navigator?.pop()
+            }
+        }
 
         val continuousLoadThreshold = with(LocalDensity.current) { 720.dp.toPx().toInt() }
         val previousLoadThreshold = with(LocalDensity.current) { 240.dp.toPx().toInt() }
@@ -236,9 +252,77 @@ class ChapterPage(
             }
         }
         val activeChapter = result?.chapters?.getOrNull(activeChapterIndex)
+        val bookmarkChapter = activeChapter?.chapter ?: requestedChapter.value
+        val bookmarkChapterUrl = remember(bookmarkChapter.url) {
+            EsjzoneUrls.canonicalPageKey(bookmarkChapter.url)
+                .ifBlank { bookmarkChapter.url.trim() }
+        }
+        LaunchedEffect(bookmarkChapterUrl) {
+            isBookmarked = withContext(Dispatchers.IO) {
+                runCatching {
+                    MainActivity.database.bookmarkDao().findByChapterUrl(bookmarkChapterUrl) != null
+                }.getOrElse { error ->
+                    AppLogger.w("ChapterPage", "Failed to load local bookmark state", error)
+                    false
+                }
+            }
+        }
+
+        fun toggleBookmark() {
+            val target = bookmarkChapter
+            if (bookmarkChapterUrl.isBlank()) return
+            val wasBookmarked = isBookmarked
+            isBookmarked = !wasBookmarked
+            scope.launch(Dispatchers.IO) {
+                try {
+                    val dao = MainActivity.database.bookmarkDao()
+                    if (wasBookmarked) {
+                        dao.deleteByChapterUrl(bookmarkChapterUrl)
+                    } else {
+                        dao.insert(
+                            com.breakyuna.esjzone.database.entity.Bookmark(
+                                chapterUrl = bookmarkChapterUrl,
+                                novelId = novelId.ifBlank { target.novelId() },
+                                novelName = novelName
+                                    .ifBlank { novelId }
+                                    .ifBlank { target.novelId() }
+                                    .ifBlank { target.name },
+                                chapterName = target.name
+                            )
+                        )
+                    }
+                } catch (error: CancellationException) {
+                    throw error
+                } catch (error: Exception) {
+                    withContext(Dispatchers.Main) {
+                        isBookmarked = wasBookmarked
+                    }
+                    AppLogger.e("ChapterPage", "Failed to update local bookmark", error)
+                }
+            }
+        }
+
         val activeLayout = activeChapter?.let { chapterLayouts[it.chapter.url] }
         val chapterProgress = chapterProgressFor(scrollState.value, activeLayout)
-        val displayedProgress = if (isSliderDragging) sliderPosition else chapterProgress
+        val bookChapterOrder = result?.chapterOrder.orEmpty()
+            .ifEmpty { chapterOrder }
+            .ifEmpty {
+                if (novelId.isBlank()) {
+                    result?.chapters?.map { it.chapter }.orEmpty()
+                } else {
+                    emptyList()
+                }
+            }
+        val currentBookLocation = readerBookLocationFor(
+            activeChapter = activeChapter?.chapter ?: requestedChapter.value,
+            chapterProgress = chapterProgress,
+            chapterOrder = bookChapterOrder
+        )
+        val displayedBookProgress = if (isBookProgressDragging) {
+            progressPreview?.bookProgress ?: currentBookLocation?.bookProgress ?: 0f
+        } else {
+            currentBookLocation?.bookProgress ?: 0f
+        }
         val currentChapterName = activeChapter?.chapter?.name ?: requestedChapter.value.name
         val firstChapterKey = result?.chapters?.firstOrNull()?.chapter?.url
         // This guard belongs to the current model/composition session. Saving
@@ -246,9 +330,20 @@ class ChapterPage(
         // a new ChapterPageModel has been restored with the same URL.
         var previousBootstrapFor by remember { mutableStateOf<String?>(null) }
 
+        var previousRequestedChapterUrl by remember { mutableStateOf<String?>(null) }
         LaunchedEffect(requestedChapter.value.url) {
+            val currentRequestedChapterUrl = requestedChapter.value.url
+            val oldRequestedChapterUrl = previousRequestedChapterUrl
+            previousRequestedChapterUrl = currentRequestedChapterUrl
+            // The first run may be restoring a saved ScrollState after a
+            // background process recreation; keep that position intact.
+            if (
+                oldRequestedChapterUrl == null ||
+                oldRequestedChapterUrl == currentRequestedChapterUrl
+            ) {
+                return@LaunchedEffect
+            }
             chapterHeights.clear()
-            sliderPosition = 0f
             scrollState.scrollTo(0)
         }
 
@@ -291,10 +386,28 @@ class ChapterPage(
             previousFirstChapterKey = newFirstChapterKey
         }
 
-        LaunchedEffect(scrollState, activeChapterIndex, activeLayout, isSliderDragging) {
-            if (isSliderDragging) return@LaunchedEffect
-            snapshotFlow { scrollState.value }.collect { scrollValue ->
-                sliderPosition = chapterProgressFor(scrollValue, activeLayout)
+        val pendingSeekHeight = pendingSeekLocation?.let {
+            chapterHeights[it.chapter.url] ?: 0
+        } ?: 0
+        LaunchedEffect(pendingSeekLocation, result, pendingSeekHeight) {
+            val target = pendingSeekLocation ?: return@LaunchedEffect
+            val targetEntry = result?.chapters?.firstOrNull {
+                sameReaderChapter(it.chapter, target.chapter)
+            } ?: return@LaunchedEffect
+            val layout = chapterLayouts[targetEntry.chapter.url]
+            if (layout == null || layout.height <= 0) return@LaunchedEffect
+            val scrollTo = (layout.top + layout.height * target.chapterProgress)
+                .roundToInt()
+                .coerceIn(0, scrollState.maxValue)
+            scrollState.scrollTo(scrollTo)
+            pendingSeekLocation = null
+        }
+
+        fun seekTo(location: ReaderBookLocation) {
+            pendingSeekLocation = location
+            val current = activeChapter?.chapter ?: requestedChapter.value
+            if (!sameReaderChapter(current, location.chapter)) {
+                chapterPageModel.openChapter(location.chapter)
             }
         }
 
@@ -324,187 +437,190 @@ class ChapterPage(
                     enter = slideInVertically(initialOffsetY = { it }) + fadeIn(),
                     exit = slideOutVertically(targetOffsetY = { it }) + fadeOut()
                 ) {
-                    ElevatedCard(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 12.dp, vertical = 12.dp),
-                        shape = RoundedCornerShape(20.dp),
-                        colors = CardDefaults.elevatedCardColors(
-                            containerColor = MaterialTheme.colorScheme.surface
-                        ),
-                        elevation = CardDefaults.elevatedCardElevation(defaultElevation = 8.dp)
+                    Column(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalAlignment = Alignment.CenterHorizontally
                     ) {
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(16.dp)
+                        progressPreview?.let { preview ->
+                            ReaderProgressPreview(
+                                location = preview,
+                                canReturn = progressReturnLocation != null,
+                                onReturn = {
+                                    progressReturnLocation?.let { location ->
+                                        seekTo(location)
+                                        // Keep the preview visible until the
+                                        // reader taps the blank area again.
+                                        progressReturnLocation = null
+                                    }
+                                }
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                        }
+
+                        Surface(
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp),
+                            color = MaterialTheme.colorScheme.surface,
+                            shadowElevation = 8.dp
                         ) {
-                            if (state is ChapterPageModel.State.Result) {
-                                var rememberedHistory by rememberSaveable { historyState }
-                                val readerResult = state as ChapterPageModel.State.Result
-
-                                val activePrevious = if (activeChapterIndex > 0) {
-                                    readerResult.chapters.getOrNull(activeChapterIndex - 1)?.chapter
-                                } else {
-                                    readerResult.previous
-                                }
-                                val activeNext = readerResult.chapters
-                                    .getOrNull(activeChapterIndex + 1)?.chapter
-                                    ?: readerResult.next
-
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.SpaceBetween
-                                ) {
-                                    FilledTonalButton(
-                                        enabled = activePrevious != null,
-                                        onClick = {
-                                            activePrevious?.let { previous ->
-                                                if (novelId == previous.novelId()) {
-                                                    rememberedHistory = previous
-                                                }
-                                                chapterPageModel.openChapter(previous)
-                                                scope.launch(Dispatchers.Main) {
-                                                    scrollState.scrollTo(0)
-                                                }
-                                            }
-                                        },
-                                        shape = RoundedCornerShape(12.dp)
-                                    ) {
-                                        Icon(
-                                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                                            contentDescription = null,
-                                            modifier = Modifier.size(16.dp)
-                                        )
-                                        Spacer(modifier = Modifier.width(4.dp))
-                                        Text(text = stringResource(id = R.string.previous_chapter))
-                                    }
-
-                                    Text(
-                                        text = "${(displayedProgress * 100).toInt()}%",
-                                        style = MaterialTheme.typography.labelMedium,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-
-                                    FilledTonalButton(
-                                        enabled = activeNext != null,
-                                        onClick = {
-                                            activeNext?.let { next ->
-                                                if (novelId == next.novelId()) {
-                                                    rememberedHistory = next
-                                                }
-                                                chapterPageModel.openChapter(next)
-                                                scope.launch(Dispatchers.Main) {
-                                                    scrollState.scrollTo(0)
-                                                }
-                                            }
-                                        },
-                                        shape = RoundedCornerShape(12.dp)
-                                    ) {
-                                        Text(text = stringResource(id = R.string.next_chapter))
-                                        Spacer(modifier = Modifier.width(4.dp))
-                                        Icon(
-                                            imageVector = Icons.AutoMirrored.Filled.ArrowForward,
-                                            contentDescription = null,
-                                            modifier = Modifier.size(16.dp)
-                                        )
-                                    }
-                                }
-
-                                Spacer(modifier = Modifier.height(8.dp))
-
-                                Slider(
-                                    value = displayedProgress,
-                                    onValueChange = {
-                                        isSliderDragging = true
-                                        sliderPosition = it
-                                        activeLayout?.let { layout ->
-                                            val scrollTo = (layout.top + layout.height * it)
-                                                .roundToInt()
-                                                .coerceIn(0, scrollState.maxValue)
-                                            scope.launch(Dispatchers.Main) {
-                                                scrollState.animateScrollTo(scrollTo)
-                                            }
-                                        }
-                                    },
-                                    onValueChangeFinished = {
-                                        isSliderDragging = false
-                                    },
-                                    colors = SliderDefaults.colors(
-                                        thumbColor = MaterialTheme.colorScheme.primary,
-                                        activeTrackColor = MaterialTheme.colorScheme.primary
-                                    ),
-                                    modifier = Modifier.fillMaxWidth()
-                                )
-
-                                Spacer(modifier = Modifier.height(6.dp))
-                            }
-
-                            val commentChapter = activeChapter?.chapter ?: requestedChapter.value
-                            val nextScript = when (readerSettings.script) {
-                                ReaderScript.ORIGINAL -> ReaderScript.SIMPLIFIED
-                                ReaderScript.SIMPLIFIED -> ReaderScript.TRADITIONAL
-                                ReaderScript.TRADITIONAL -> ReaderScript.ORIGINAL
-                            }
-                            Row(
+                            Column(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .navigationBarsPadding(),
-                                horizontalArrangement = Arrangement.SpaceEvenly,
-                                verticalAlignment = Alignment.CenterVertically
+                                    .padding(start = 16.dp, top = 14.dp, end = 16.dp)
                             ) {
-                                FilledTonalIconButton(
-                                    onClick = { showReaderContents = true }
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Filled.List,
-                                        contentDescription = stringResource(
-                                            id = R.string.reader_contents
-                                        )
-                                    )
-                                }
-                                FilledTonalIconButton(
-                                    onClick = {
-                                        updateReaderSettings(
-                                            readerSettings.copy(script = nextScript)
-                                        )
+                                if (state is ChapterPageModel.State.Result) {
+                                    val readerResult = state as ChapterPageModel.State.Result
+                                    val activePrevious = if (activeChapterIndex > 0) {
+                                        readerResult.chapters
+                                            .getOrNull(activeChapterIndex - 1)?.chapter
+                                    } else {
+                                        readerResult.previous
                                     }
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Filled.Translate,
-                                        contentDescription = stringResource(
-                                            id = R.string.reader_toggle_script
-                                        )
+                                    val activeNext = readerResult.chapters
+                                        .getOrNull(activeChapterIndex + 1)?.chapter
+                                        ?: readerResult.next
+
+                                    ReaderBookProgressBar(
+                                        progress = displayedBookProgress,
+                                        enabled = bookChapterOrder.isNotEmpty(),
+                                        previousEnabled = activePrevious != null,
+                                        nextEnabled = activeNext != null,
+                                        onPrevious = {
+                                            activePrevious?.let { previous ->
+                                                if (novelId == previous.novelId()) {
+                                                    historyState.value = previous
+                                                }
+                                                progressPreview = null
+                                                progressReturnLocation = null
+                                                pendingSeekLocation = null
+                                                chapterPageModel.openChapter(previous)
+                                            }
+                                        },
+                                        onNext = {
+                                            activeNext?.let { next ->
+                                                if (novelId == next.novelId()) {
+                                                    historyState.value = next
+                                                }
+                                                progressPreview = null
+                                                progressReturnLocation = null
+                                                pendingSeekLocation = null
+                                                chapterPageModel.openChapter(next)
+                                            }
+                                        },
+                                        onDragStart = { progress ->
+                                            progressReturnLocation = currentBookLocation
+                                            isBookProgressDragging = true
+                                            progressPreview = readerBookLocationFor(
+                                                bookProgress = progress,
+                                                chapterOrder = bookChapterOrder
+                                            )
+                                        },
+                                        onDrag = { progress ->
+                                            progressPreview = readerBookLocationFor(
+                                                bookProgress = progress,
+                                                chapterOrder = bookChapterOrder
+                                            )
+                                        },
+                                        onDragFinished = {
+                                            isBookProgressDragging = false
+                                            progressPreview?.let(::seekTo)
+                                        },
+                                        onDragCancelled = {
+                                            isBookProgressDragging = false
+                                            progressPreview = null
+                                            progressReturnLocation = null
+                                        }
                                     )
+
+                                    Spacer(modifier = Modifier.height(8.dp))
                                 }
-                                FilledTonalIconButton(
-                                    onClick = { showReaderSettings = true }
+
+                                val commentChapter =
+                                    activeChapter?.chapter ?: requestedChapter.value
+                                val nextScript = when (readerSettings.script) {
+                                    ReaderScript.ORIGINAL -> ReaderScript.SIMPLIFIED
+                                    ReaderScript.SIMPLIFIED -> ReaderScript.TRADITIONAL
+                                    ReaderScript.TRADITIONAL -> ReaderScript.ORIGINAL
+                                }
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .navigationBarsPadding()
+                                        .padding(bottom = 10.dp),
+                                    horizontalArrangement = Arrangement.SpaceEvenly,
+                                    verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    Icon(
-                                        imageVector = Icons.Filled.Settings,
-                                        contentDescription = stringResource(
-                                            id = R.string.reader_settings
-                                        )
-                                    )
-                                }
-                                FilledTonalIconButton(
-                                    enabled = state is ChapterPageModel.State.Result,
-                                    onClick = {
-                                        navigator?.pushIfNotCurrent(
-                                            ChapterCommentsPage(
-                                                chapterName = commentChapter.name,
-                                                chapterUrl = commentChapter.url
+                                    FilledTonalIconButton(
+                                        onClick = { showReaderContents = true }
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Filled.List,
+                                            contentDescription = stringResource(
+                                                id = R.string.reader_contents
                                             )
                                         )
                                     }
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Filled.Forum,
-                                        contentDescription = stringResource(
-                                            id = R.string.comments
+                                    FilledTonalIconButton(
+                                        onClick = {
+                                            updateReaderSettings(
+                                                readerSettings.copy(script = nextScript)
+                                            )
+                                        }
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Filled.Translate,
+                                            contentDescription = stringResource(
+                                                id = R.string.reader_toggle_script
+                                            )
                                         )
-                                    )
+                                    }
+                                    FilledTonalIconButton(
+                                        onClick = { showReaderSettings = true }
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Filled.Settings,
+                                            contentDescription = stringResource(
+                                                id = R.string.reader_settings
+                                            )
+                                        )
+                                    }
+                                    FilledTonalIconButton(
+                                        enabled = state is ChapterPageModel.State.Result,
+                                        onClick = { toggleBookmark() }
+                                    ) {
+                                        Icon(
+                                            imageVector = if (isBookmarked) {
+                                                Icons.Filled.Bookmark
+                                            } else {
+                                                Icons.Filled.BookmarkBorder
+                                            },
+                                            contentDescription = stringResource(
+                                                id = if (isBookmarked) {
+                                                    R.string.reader_remove_bookmark
+                                                } else {
+                                                    R.string.reader_add_bookmark
+                                                }
+                                            )
+                                        )
+                                    }
+                                    FilledTonalIconButton(
+                                        enabled = state is ChapterPageModel.State.Result,
+                                        onClick = {
+                                            navigator?.pushIfNotCurrent(
+                                                ChapterCommentsPage(
+                                                    chapterName = commentChapter.name,
+                                                    chapterUrl = commentChapter.url
+                                                )
+                                            )
+                                        }
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Filled.Forum,
+                                            contentDescription = stringResource(
+                                                id = R.string.comments
+                                            )
+                                        )
+                                    }
                                 }
                             }
                         }
@@ -520,7 +636,14 @@ class ChapterPage(
                         .clickable(
                             interactionSource = interactionSource,
                             indication = null
-                        ) { showToolbar = !showToolbar },
+                        ) {
+                            if (progressPreview != null) {
+                                progressPreview = null
+                                progressReturnLocation = null
+                            } else {
+                                showToolbar = !showToolbar
+                            }
+                        },
                     color = readerSettings.background.containerColor()
                 ) {
                     Column(
@@ -676,6 +799,9 @@ class ChapterPage(
                 currentChapter = activeChapter?.chapter ?: requestedChapter.value,
                 onChapterSelected = { selectedChapter ->
                     showReaderContents = false
+                    progressPreview = null
+                    progressReturnLocation = null
+                    pendingSeekLocation = null
                     chapterPageModel.openChapter(selectedChapter)
                     scope.launch(Dispatchers.Main) {
                         scrollState.scrollTo(0)
@@ -686,6 +812,214 @@ class ChapterPage(
         }
     }
 
+}
+
+private data class ReaderBookLocation(
+    val chapter: Chapter,
+    val chapterIndex: Int,
+    val chapterProgress: Float,
+    val totalChapters: Int
+) {
+    val bookProgress: Float
+        get() = if (totalChapters <= 0) {
+            0f
+        } else {
+            ((chapterIndex + chapterProgress.coerceIn(0f, 1f)) / totalChapters.toFloat())
+                .coerceIn(0f, 1f)
+        }
+}
+
+private fun readerBookLocationFor(
+    activeChapter: Chapter,
+    chapterProgress: Float,
+    chapterOrder: List<Chapter>
+): ReaderBookLocation? {
+    val index = chapterOrder.indexOfFirst { sameReaderChapter(it, activeChapter) }
+    if (index < 0) return null
+    return ReaderBookLocation(
+        chapter = chapterOrder[index],
+        chapterIndex = index,
+        chapterProgress = chapterProgress.coerceIn(0f, 1f),
+        totalChapters = chapterOrder.size
+    )
+}
+
+private fun readerBookLocationFor(
+    bookProgress: Float,
+    chapterOrder: List<Chapter>
+): ReaderBookLocation? {
+    if (chapterOrder.isEmpty()) return null
+    val clampedProgress = bookProgress.coerceIn(0f, 1f)
+    val scaledProgress = clampedProgress * chapterOrder.size
+    val index = if (clampedProgress >= 1f) {
+        chapterOrder.lastIndex
+    } else {
+        scaledProgress.toInt().coerceIn(0, chapterOrder.lastIndex)
+    }
+    val chapterProgress = if (clampedProgress >= 1f) {
+        1f
+    } else {
+        scaledProgress - index
+    }
+    return ReaderBookLocation(
+        chapter = chapterOrder[index],
+        chapterIndex = index,
+        chapterProgress = chapterProgress,
+        totalChapters = chapterOrder.size
+    )
+}
+
+@Composable
+private fun ReaderProgressPreview(
+    location: ReaderBookLocation,
+    canReturn: Boolean,
+    onReturn: () -> Unit
+) {
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 44.dp),
+        shape = RoundedCornerShape(16.dp),
+        color = MaterialTheme.colorScheme.inverseSurface,
+        contentColor = MaterialTheme.colorScheme.inverseOnSurface,
+        shadowElevation = 10.dp
+    ) {
+        Row(
+            modifier = Modifier.padding(start = 18.dp, top = 12.dp, bottom = 12.dp, end = 8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = location.chapter.name,
+                    style = MaterialTheme.typography.titleMedium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    text = stringResource(
+                        id = R.string.reader_progress_chapter_count,
+                        location.chapterIndex + 1,
+                        location.totalChapters
+                    ),
+                    style = MaterialTheme.typography.bodyMedium
+                )
+            }
+            IconButton(
+                enabled = canReturn,
+                onClick = onReturn
+            ) {
+                Icon(
+                    imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                    contentDescription = stringResource(id = R.string.reader_return_progress)
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ReaderBookProgressBar(
+    progress: Float,
+    enabled: Boolean,
+    previousEnabled: Boolean,
+    nextEnabled: Boolean,
+    onPrevious: () -> Unit,
+    onNext: () -> Unit,
+    onDragStart: (Float) -> Unit,
+    onDrag: (Float) -> Unit,
+    onDragFinished: () -> Unit,
+    onDragCancelled: () -> Unit
+) {
+    val activeColor = MaterialTheme.colorScheme.primary
+    val inactiveColor = MaterialTheme.colorScheme.surfaceVariant
+    val disabledColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.18f)
+    val currentOnDragStart by rememberUpdatedState(onDragStart)
+    val currentOnDrag by rememberUpdatedState(onDrag)
+    val currentOnDragFinished by rememberUpdatedState(onDragFinished)
+    val currentOnDragCancelled by rememberUpdatedState(onDragCancelled)
+    val trackInset = with(LocalDensity.current) { 10.dp.toPx() }
+    val previousDescription = stringResource(id = R.string.previous_chapter)
+    val nextDescription = stringResource(id = R.string.next_chapter)
+
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        IconButton(
+            modifier = Modifier.semantics { contentDescription = previousDescription },
+            enabled = previousEnabled,
+            onClick = onPrevious
+        ) {
+            Text(
+                text = "<",
+                style = MaterialTheme.typography.headlineSmall,
+                fontWeight = FontWeight.Medium
+            )
+        }
+
+        Canvas(
+            modifier = Modifier
+                .weight(1f)
+                .height(48.dp)
+                .pointerInput(enabled, trackInset) {
+                    if (!enabled) return@pointerInput
+
+                    fun progressAt(x: Float): Float {
+                        val usableWidth = max(size.width.toFloat() - trackInset * 2f, 1f)
+                        return ((x - trackInset) / usableWidth).coerceIn(0f, 1f)
+                    }
+
+                    detectDragGesturesAfterLongPress(
+                        onDragStart = { offset -> currentOnDragStart(progressAt(offset.x)) },
+                        onDrag = { change, _ ->
+                            change.consume()
+                            currentOnDrag(progressAt(change.position.x))
+                        },
+                        onDragEnd = currentOnDragFinished,
+                        onDragCancel = currentOnDragCancelled
+                    )
+                }
+        ) {
+            val centerY = size.height / 2f
+            val startX = trackInset
+            val endX = max(size.width - trackInset, startX)
+            val thumbX = startX + (endX - startX) * progress.coerceIn(0f, 1f)
+            val trackColor = if (enabled) inactiveColor else disabledColor
+            val progressColor = if (enabled) activeColor else disabledColor
+
+            drawLine(
+                color = trackColor,
+                start = Offset(startX, centerY),
+                end = Offset(endX, centerY),
+                strokeWidth = 6.dp.toPx(),
+                cap = StrokeCap.Round
+            )
+            drawLine(
+                color = progressColor,
+                start = Offset(startX, centerY),
+                end = Offset(thumbX, centerY),
+                strokeWidth = 6.dp.toPx(),
+                cap = StrokeCap.Round
+            )
+            drawCircle(
+                color = progressColor,
+                radius = 9.dp.toPx(),
+                center = Offset(thumbX, centerY)
+            )
+        }
+
+        IconButton(
+            modifier = Modifier.semantics { contentDescription = nextDescription },
+            enabled = nextEnabled,
+            onClick = onNext
+        ) {
+            Text(
+                text = ">",
+                style = MaterialTheme.typography.headlineSmall,
+                fontWeight = FontWeight.Medium
+            )
+        }
+    }
 }
 
 private data class ReaderChapterLayout(
@@ -1122,7 +1456,6 @@ data class ReaderChapter(
 
 class ChapterPageModel(
     private val authorization: Authorization,
-    private val scope: CoroutineScope,
     private val requestedChapter: MutableState<Chapter>,
     private val novelId: String,
     chapterOrder: List<Chapter>
@@ -1200,7 +1533,7 @@ class ChapterPageModel(
         jobsToCancel.forEach(Job::cancel)
         mutableState.value = State.Loading
 
-        initialJob = scope.launch(Dispatchers.IO) {
+        initialJob = screenModelScope.launch(Dispatchers.IO) {
             val detail = loadDetail(chapter)
             if (!isCurrentSession(currentSession)) return@launch
             if (detail == null) {
@@ -1252,7 +1585,7 @@ class ChapterPageModel(
         val session = currentSession ?: return
         publish(session)
 
-        appendJob = scope.launch(Dispatchers.IO) {
+        appendJob = screenModelScope.launch(Dispatchers.IO) {
             try {
                 val detail = loadDetail(chapterToLoad)
                 if (detail != null && isCurrentSession(session)) {
@@ -1313,7 +1646,7 @@ class ChapterPageModel(
         val session = currentSession ?: return
         publish(session)
 
-        prependJob = scope.launch(Dispatchers.IO) {
+        prependJob = screenModelScope.launch(Dispatchers.IO) {
             try {
                 val detail = loadDetail(chapterToLoad)
                 if (detail != null && isCurrentSession(session)) {
@@ -1357,7 +1690,7 @@ class ChapterPageModel(
             orderLoading = true
             orderRequestId += 1
             requestId = orderRequestId
-            orderJob = scope.launch(Dispatchers.IO) {
+            orderJob = screenModelScope.launch(Dispatchers.IO) {
                 try {
                     ensureChapterOrder()
                     if (!isCurrentSession(currentSession)) return@launch
@@ -1436,7 +1769,7 @@ class ChapterPageModel(
             ) {
                 return
             }
-            prefetchJobs[key] = scope.launch(Dispatchers.IO) {
+            prefetchJobs[key] = screenModelScope.launch(Dispatchers.IO) {
                 val detail = try {
                     EsjzoneClient.getChapterDetail(authorization, chapter)
                 } catch (e: CancellationException) {
