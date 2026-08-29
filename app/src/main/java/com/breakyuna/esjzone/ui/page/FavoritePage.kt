@@ -57,6 +57,7 @@ import com.breakyuna.esjzone.ui.component.DropdownSelection
 import com.breakyuna.esjzone.ui.component.Loading
 import com.breakyuna.esjzone.ui.component.Novel
 import com.breakyuna.esjzone.ui.navigation.LocalBaseNavigator
+import com.breakyuna.esjzone.ui.navigation.BooleanStateHolder
 import com.breakyuna.esjzone.ui.navigation.pushIfNotCurrent
 
 private fun favoriteSortResource(name: String): Int {
@@ -224,7 +225,7 @@ object FavoritePage : Screen {
                                             navigator?.pushIfNotCurrent(
                                                 NovelPage(
                                                     favoriteNovel,
-                                                    favorite = favorite
+                                                    favorite = BooleanStateHolder(favorite)
                                                 )
                                             )
                                         }

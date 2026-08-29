@@ -4,7 +4,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.History
 import androidx.compose.ui.graphics.vector.rememberVectorPainter
@@ -20,6 +19,7 @@ import com.breakyuna.esjzone.network.LocalAuthorization
 import com.breakyuna.esjzone.network.features.getHistories
 import com.breakyuna.esjzone.network.features.getNovelDetail
 import com.breakyuna.esjzone.ui.navigation.LocalBaseNavigator
+import com.breakyuna.esjzone.ui.navigation.ChapterStateHolder
 import com.breakyuna.esjzone.ui.navigation.pushIfNotCurrent
 import com.breakyuna.esjzone.ui.page.ChapterPage
 import com.breakyuna.esjzone.ui.page.HistoryPage
@@ -76,7 +76,7 @@ object HistoryTab : Tab {
                         ChapterPage(
                             novelId = novel.id().ifBlank { latest.chapter.novelId() },
                             chapter = latest.chapter,
-                            history = mutableStateOf(latest.chapter),
+                            history = ChapterStateHolder(latest.chapter),
                             chapterOrder = novel.chapterList.orderedChapters
                         )
                     )

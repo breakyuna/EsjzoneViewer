@@ -77,6 +77,7 @@ import com.breakyuna.esjzone.novellibrary.novel.HistoryNovel
 import com.breakyuna.esjzone.ui.component.AppBar
 import com.breakyuna.esjzone.ui.component.Loading
 import com.breakyuna.esjzone.ui.navigation.LocalBaseNavigator
+import com.breakyuna.esjzone.ui.navigation.ChapterStateHolder
 import com.breakyuna.esjzone.ui.navigation.pushIfNotCurrent
 
 object HistoryPage : Screen {
@@ -255,7 +256,7 @@ object HistoryPage : Screen {
                                                                 navigator?.pushIfNotCurrent(
                                                                     NovelPage(
                                                                         historyNovel,
-                                                                        historyChapter
+                                                                        history = ChapterStateHolder(historyChapter)
                                                                     )
                                                                 )
                                                             },
@@ -319,7 +320,7 @@ object HistoryPage : Screen {
                                                                 ChapterPage(
                                                                     novel.id(),
                                                                     currChapter,
-                                                                    historyChapter,
+                                                                    ChapterStateHolder(historyChapter),
                                                                     novel.chapterList.orderedChapters
                                                                 )
                                                             )

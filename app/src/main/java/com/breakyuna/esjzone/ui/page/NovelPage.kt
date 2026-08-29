@@ -40,7 +40,6 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -77,7 +76,6 @@ import com.breakyuna.esjzone.network.EsjzoneUrls
 import com.breakyuna.esjzone.network.LocalAuthorization
 import com.breakyuna.esjzone.network.features.changeFavorites
 import com.breakyuna.esjzone.network.features.getNovelDetail
-import com.breakyuna.esjzone.novellibrary.novel.Chapter
 import com.breakyuna.esjzone.novellibrary.novel.DetailedNovel
 import com.breakyuna.esjzone.novellibrary.novel.Novel
 import com.breakyuna.esjzone.ui.component.AppBar
@@ -85,12 +83,14 @@ import com.breakyuna.esjzone.ui.component.ChapterList
 import com.breakyuna.esjzone.ui.component.Description
 import com.breakyuna.esjzone.ui.component.Loading
 import com.breakyuna.esjzone.ui.navigation.LocalBaseNavigator
+import com.breakyuna.esjzone.ui.navigation.BooleanStateHolder
+import com.breakyuna.esjzone.ui.navigation.ChapterStateHolder
 import com.breakyuna.esjzone.ui.navigation.pushIfNotCurrent
 
 class NovelPage(
     private val novel: Novel,
-    private val history: MutableState<Chapter?> = mutableStateOf(null),
-    private val favorite: MutableState<Boolean> = mutableStateOf(false)
+    private val history: ChapterStateHolder = ChapterStateHolder(),
+    private val favorite: BooleanStateHolder = BooleanStateHolder()
 ) : Screen {
 
     override val key: ScreenKey =
@@ -124,24 +124,23 @@ class NovelPage(
                     val result = state as NovelPageModel.State.Result
                     val chapterList = result.detailed.chapterList
 
-                    val historyState = rememberSaveable {
-                        this@NovelPage.history
-                    }
+                    val historyState = history.state()
                     historyState.value = chapterList.toRead
 
                     val hasHistory = rememberSaveable {
                         mutableStateOf(chapterList.hasHistory)
                     }
 
-                    val rememberedHistory by rememberSaveable { historyState }
+                    val rememberedHistory by historyState
                     val rememberedHasHistory by rememberSaveable { hasHistory }
+                    val favoriteState = favorite.state()
                     var rememberedFavorite by rememberSaveable(novel.url) {
-                        mutableStateOf(favorite.value)
+                        mutableStateOf(favoriteState.value)
                     }
 
                     LaunchedEffect(result.detailed.isFavorite) {
-                        if (favorite.value == rememberedFavorite) {
-                            favorite.value = result.detailed.isFavorite
+                        if (favoriteState.value == rememberedFavorite) {
+                            favoriteState.value = result.detailed.isFavorite
                             rememberedFavorite = result.detailed.isFavorite
                         }
                     }
@@ -253,7 +252,7 @@ class NovelPage(
                                                 onClick = {
                                                     val previousFavorite = rememberedFavorite
                                                     val nextFavorite = !previousFavorite
-                                                    favorite.value = nextFavorite
+                                                    favoriteState.value = nextFavorite
                                                     rememberedFavorite = nextFavorite
                                                     scope.launch {
                                                         try {
@@ -266,7 +265,7 @@ class NovelPage(
                                                         } catch (error: CancellationException) {
                                                             throw error
                                                         } catch (error: Exception) {
-                                                            favorite.value = previousFavorite
+                                                            favoriteState.value = previousFavorite
                                                             rememberedFavorite = previousFavorite
                                                             com.breakyuna.esjzone.util.AppLogger.e(
                                                                 "NovelPage",
@@ -332,7 +331,7 @@ class NovelPage(
                                                     ChapterPage(
                                                         result.detailed.id(),
                                                         currChapter,
-                                                        historyState,
+                                                        history,
                                                         chapterList.orderedChapters
                                                     )
                                                 )

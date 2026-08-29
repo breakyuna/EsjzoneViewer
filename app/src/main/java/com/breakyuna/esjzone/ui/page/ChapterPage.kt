@@ -54,7 +54,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
@@ -109,6 +108,7 @@ import com.breakyuna.esjzone.novellibrary.novel.DetailedChapter
 import com.breakyuna.esjzone.novellibrary.novel.FavoriteNovel
 import com.breakyuna.esjzone.ui.component.AppBar
 import com.breakyuna.esjzone.ui.navigation.LocalBaseNavigator
+import com.breakyuna.esjzone.ui.navigation.ChapterStateHolder
 import com.breakyuna.esjzone.ui.navigation.pushIfNotCurrent
 import com.breakyuna.esjzone.ui.reader.ReaderBackground
 import com.breakyuna.esjzone.ui.reader.ReaderFont
@@ -121,7 +121,7 @@ import com.breakyuna.esjzone.util.AppLogger
 class ChapterPage(
     private val novelId: String,
     private val chapter: Chapter,
-    private val history: MutableState<Chapter?>,
+    private val history: ChapterStateHolder,
     private val chapterOrder: List<Chapter> = emptyList()
 ) : Screen {
 
@@ -141,6 +141,7 @@ class ChapterPage(
         val density = LocalDensity.current
         val scope = rememberCoroutineScope()
         val context = LocalContext.current
+        val historyState = history.state()
 
         var readerSettings by remember(context) {
             mutableStateOf(ReaderSettingsStore.load(context))
@@ -338,9 +339,7 @@ class ChapterPage(
                                 .padding(16.dp)
                         ) {
                             if (state is ChapterPageModel.State.Result) {
-                                var rememberedHistory by rememberSaveable {
-                                    history
-                                }
+                                var rememberedHistory by rememberSaveable { historyState }
                                 val readerResult = state as ChapterPageModel.State.Result
 
                                 val activePrevious = if (activeChapterIndex > 0) {
@@ -654,7 +653,7 @@ class ChapterPage(
         LaunchedEffect(activeChapter?.chapter?.url) {
             activeChapter?.chapter?.let { current ->
                 if (novelId == current.novelId()) {
-                    history.value = current
+                    historyState.value = current
                 }
             }
         }

@@ -49,6 +49,7 @@ import androidx.compose.ui.unit.sp
 import com.breakyuna.esjzone.network.EsjzoneXPaths
 import com.breakyuna.esjzone.novellibrary.novel.Chapter
 import com.breakyuna.esjzone.ui.navigation.LocalBaseNavigator
+import com.breakyuna.esjzone.ui.navigation.ChapterStateHolder
 import com.breakyuna.esjzone.ui.navigation.pushIfNotCurrent
 import com.breakyuna.esjzone.ui.page.ChapterPage
 import org.jsoup.nodes.Element
@@ -184,7 +185,9 @@ class ChapterItem(val chapter: Chapter) : Item {
                 if (chapter.url.contains("esjzone") || chapter.url.contains("forum")) {
                     historied = true
                     rememberedHistory = this.chapter
-                    navigator?.pushIfNotCurrent(ChapterPage(novelId, chapter, history, chapterOrder))
+                    navigator?.pushIfNotCurrent(
+                        ChapterPage(novelId, chapter, ChapterStateHolder(history), chapterOrder)
+                    )
                 }
             },
             shape = RoundedCornerShape(12.dp),
@@ -332,7 +335,7 @@ class ChapterListItem(private val name: TextComponent, val chapters: List<Chapte
                                             ChapterPage(
                                                 novelId,
                                                 chapter,
-                                                history,
+                                                ChapterStateHolder(history),
                                                 chapterOrder
                                             )
                                         )
