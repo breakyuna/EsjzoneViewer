@@ -220,7 +220,9 @@ open class TextComponent(val text: String) : Component {
         return this.styles.toList()
     }
 
-    fun toAnnotatedString(): AnnotatedString {
+    fun toAnnotatedString(
+        textTransform: (String) -> String = { it }
+    ): AnnotatedString {
         return buildAnnotatedString {
             var basicSpanStyle = SpanStyle()
             this@TextComponent.getStyles().forEach {
@@ -229,11 +231,11 @@ open class TextComponent(val text: String) : Component {
 
 
             withStyle(basicSpanStyle) {
-                append(this@TextComponent.text)
+                append(textTransform(this@TextComponent.text))
             }
 
             for (extra in this@TextComponent.getExtras()) {
-                append(extra.toAnnotatedString())
+                append(extra.toAnnotatedString(textTransform))
             }
         }
     }
@@ -241,7 +243,8 @@ open class TextComponent(val text: String) : Component {
     fun toInlineAnnotatedString(
         textMeasurer: TextMeasurer,
         localTextStyle: androidx.compose.ui.text.TextStyle,
-        localDensity: Density
+        localDensity: Density,
+        textTransform: (String) -> String = { it }
     ): Pair<AnnotatedString, Map<String, InlineTextContent>> {
         val inlineContent = mutableMapOf<String, InlineTextContent>()
         // val width = (text.length.toDouble() + ((text.length - 1) * 0.05) + 2).em
@@ -254,16 +257,18 @@ open class TextComponent(val text: String) : Component {
             }
 
             val inlineStyle = inline
+            val displayedText = textTransform(this@TextComponent.text)
             if (inlineStyle != null) {
                 withStyle(basicSpanStyle) {
                     appendInlineContent(
                         this@TextComponent.text,
-                        this@TextComponent.text
+                        displayedText
                     )
                 }
 
-                val size =
-                    textMeasurer.measure(text, localTextStyle.copy().merge(basicSpanStyle)).size
+                val size = textMeasurer
+                    .measure(displayedText, localTextStyle.copy().merge(basicSpanStyle))
+                    .size
                 val width = with(localDensity) { size.width.toDp().toSp() }
                 val height = with(localDensity) { size.height.toDp().toSp() }
 
@@ -271,12 +276,13 @@ open class TextComponent(val text: String) : Component {
                     width,
                     height,
                     basicSpanStyle,
-                    this@TextComponent.text,
-                    localDensity
+                    displayedText,
+                    localDensity,
+                    textTransform
                 )
             } else {
                 withStyle(basicSpanStyle) {
-                    append(this@TextComponent.text)
+                    append(displayedText)
                 }
             }
 
@@ -284,7 +290,8 @@ open class TextComponent(val text: String) : Component {
                 val (str, inlines) = extra.toInlineAnnotatedString(
                     textMeasurer,
                     localTextStyle,
-                    localDensity
+                    localDensity,
+                    textTransform
                 )
                 append(str)
                 inlineContent.putAll(inlines)
@@ -425,7 +432,8 @@ class FuriganaTextStyle(text: TextComponent) : TextStyle {
         height: TextUnit,
         style: SpanStyle,
         bottom: String,
-        localDensity: Density
+        localDensity: Density,
+        textTransform: (String) -> String = { it }
     ): InlineTextContent {
         return InlineTextContent(
             placeholder = Placeholder(
@@ -451,13 +459,13 @@ class FuriganaTextStyle(text: TextComponent) : TextStyle {
                             modifier = Modifier
                                 .wrapContentWidth(unbounded = true)
                                 .padding(top = 3.dp),
-                            text = text.toAnnotatedString(),
+                            text = text.toAnnotatedString(textTransform),
                             style = androidx.compose.ui.text.TextStyle.Default.copy(fontSize = readingFontSize)
                         )
                     }
                     Text(text = buildAnnotatedString {
                         withStyle(style) {
-                            append(bottom)
+                            append(textTransform(bottom))
                         }
                     })
                 }

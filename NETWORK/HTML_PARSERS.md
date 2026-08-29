@@ -167,7 +167,8 @@ URL：/forum/{novelId}/{postId}.html
 .comment
 .comment-header
 .comment-title
-.comment-header img / .comment-title img
+.comment-author-ava .lazyload-author-ava
+.comment-header img / .comment-title img / [data-avatar]
 .comment-floor
 .comment-meta
 .comment-text
@@ -181,13 +182,13 @@ URL：/forum/{novelId}/{postId}.html
 - 评论 ID：.comment 的 id，样本形如 comment-{commentId}。
 - 用户名：.comment-header 内用户链接文本。
 - 用户 URL：通常 /my/profile?uid={uid} 或 /my/profile.html?uid={uid}。
-- 用户头像：优先读取 .comment-header 或 .comment-title 内 img 的 src、data-src、data-original、data-lazy-src。
+- 用户头像：优先读取 .comment-author-ava .lazyload-author-ava 的 data-src、data-original 等懒加载属性；懒加载完成后再读取 style 中的 background-image，兼容旧模板的 img/[data-avatar]。
 - 楼层：.comment-floor。
-- 日期：.comment-meta。
+- 日期：排除 .comment-floor 后的 .comment-meta，或 time[datetime]/[data-time]；不能把 #楼层当作日期。
 - 内容：.comment-text 的 HTML 或纯文本。
 - 操作：.forum_report、.forum_reply。
 
-章节页评论按 .comments-page-1 等静态 section 预渲染，留言板观察到 8 组。分页链接通常是 javascript:void(0);，不要把它当作服务端 URL。
+评论区统一由客户端按解析后的评论顺序每页 15 条分页，忽略站点不一致的 .comments-page-N DOM 分组；分页链接通常是 javascript:void(0);，不要把它当作服务端 URL。
 
 ## 8. 会员页面解析
 
@@ -209,7 +210,7 @@ table.table a[href^="/detail/"]
 table.table a[href*="/forum/"]
 ~~~
 
-每行一个 td，通常包含详情链接、最新章节链接、最後觀看 和 更新日期。默认页每页 20 行；排序 udate 的 URL 为 /my/favorite/udate/。
+每行一个 td，通常包含详情链接、最新章节链接、最後觀看 和 更新日期。默认页每页 20 行；排序选择会先进入 /my/favorite/new/ 或 /my/favorite/udate/，后续分页分别跟随页面生成的裸数字或 /udate/ 数字链接。由于裸数字页依赖首个路由建立站点会话排序，客户端进入排序时会强制刷新首个路由，同时保留旧缓存作为网络失败回退。
 
 ### 8.3 观看记录
 

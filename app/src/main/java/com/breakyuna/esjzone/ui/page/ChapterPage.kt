@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -29,7 +30,9 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.Forum
+import androidx.compose.material.icons.filled.List
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Translate
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ElevatedCard
@@ -47,6 +50,8 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.MutableState
@@ -86,6 +91,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 import com.breakyuna.esjzone.MainActivity
@@ -106,6 +112,8 @@ import com.breakyuna.esjzone.ui.navigation.LocalBaseNavigator
 import com.breakyuna.esjzone.ui.navigation.pushIfNotCurrent
 import com.breakyuna.esjzone.ui.reader.ReaderBackground
 import com.breakyuna.esjzone.ui.reader.ReaderFont
+import com.breakyuna.esjzone.ui.reader.ReaderScript
+import com.breakyuna.esjzone.ui.reader.ReaderScriptConverter
 import com.breakyuna.esjzone.ui.reader.ReaderSettings
 import com.breakyuna.esjzone.ui.reader.ReaderSettingsStore
 import com.breakyuna.esjzone.util.AppLogger
@@ -138,6 +146,9 @@ class ChapterPage(
             mutableStateOf(ReaderSettingsStore.load(context))
         }
         var showReaderSettings by rememberSaveable {
+            mutableStateOf(false)
+        }
+        var showReaderContents by rememberSaveable {
             mutableStateOf(false)
         }
 
@@ -177,7 +188,7 @@ class ChapterPage(
             }
         val state by chapterPageModel.state.collectAsState()
 
-        BackHandler(enabled = navigator != null && !showReaderSettings) {
+        BackHandler(enabled = navigator != null && !showReaderSettings && !showReaderContents) {
             navigator?.pop()
         }
 
@@ -192,9 +203,13 @@ class ChapterPage(
         val chapterHeights = remember { mutableStateMapOf<String, Int>() }
 
         val continuousLoadThreshold = with(LocalDensity.current) { 720.dp.toPx().toInt() }
+        val previousLoadThreshold = with(LocalDensity.current) { 240.dp.toPx().toInt() }
         val chapterActivationOffset = with(density) { 56.dp.toPx() }
         val firstChapterTop = with(density) { 32.dp.toPx().roundToInt() }
         val result = state as? ChapterPageModel.State.Result
+        val readerTextTransform: (String) -> String = remember(readerSettings.script) {
+            { text -> ReaderScriptConverter.convert(text, readerSettings.script) }
+        }
         val chapterLayouts by remember(result, chapterHeights, firstChapterTop) {
             derivedStateOf {
                 buildReaderChapterLayouts(
@@ -223,11 +238,55 @@ class ChapterPage(
         val chapterProgress = chapterProgressFor(scrollState.value, activeLayout)
         val displayedProgress = if (isSliderDragging) sliderPosition else chapterProgress
         val currentChapterName = activeChapter?.chapter?.name ?: requestedChapter.value.name
+        val firstChapterKey = result?.chapters?.firstOrNull()?.chapter?.url
+        // This guard belongs to the current model/composition session. Saving
+        // it across process recreation can suppress the bootstrap request when
+        // a new ChapterPageModel has been restored with the same URL.
+        var previousBootstrapFor by remember { mutableStateOf<String?>(null) }
 
         LaunchedEffect(requestedChapter.value.url) {
             chapterHeights.clear()
             sliderPosition = 0f
             scrollState.scrollTo(0)
+        }
+
+        // A restored chapter may be shorter than the viewport, in which case
+        // ScrollState never produces a positive maxValue and the usual top
+        // threshold callback cannot fire.  Prime the previous-chapter path once
+        // for each requested chapter; the model's loading guard prevents a
+        // simultaneous scroll callback from issuing a duplicate request.
+        LaunchedEffect(state is ChapterPageModel.State.Result, requestedChapter.value.url) {
+            if (state is ChapterPageModel.State.Result &&
+                previousBootstrapFor != requestedChapter.value.url
+            ) {
+                previousBootstrapFor = requestedChapter.value.url
+                chapterPageModel.loadPreviousChapter()
+            }
+        }
+
+        var previousFirstChapterKey by remember { mutableStateOf<String?>(null) }
+        LaunchedEffect(firstChapterKey) {
+            val oldFirstChapterKey = previousFirstChapterKey
+            val newFirstChapterKey = firstChapterKey
+            if (oldFirstChapterKey != null && newFirstChapterKey != null &&
+                oldFirstChapterKey != newFirstChapterKey
+            ) {
+                snapshotFlow { chapterHeights[newFirstChapterKey] ?: 0 }
+                    .first { it > 0 }
+                val layouts = buildReaderChapterLayouts(
+                    chapters = result?.chapters.orEmpty(),
+                    heights = chapterHeights,
+                    firstTop = firstChapterTop
+                )
+                val oldFirstTop = layouts[oldFirstChapterKey]?.top ?: firstChapterTop
+                val scrollDelta = oldFirstTop - firstChapterTop
+                if (scrollDelta > 0) {
+                    scrollState.scrollTo(
+                        (scrollState.value + scrollDelta).coerceIn(0, scrollState.maxValue)
+                    )
+                }
+            }
+            previousFirstChapterKey = newFirstChapterKey
         }
 
         LaunchedEffect(scrollState, activeChapterIndex, activeLayout, isSliderDragging) {
@@ -278,22 +337,6 @@ class ChapterPage(
                                 .fillMaxWidth()
                                 .padding(16.dp)
                         ) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.End
-                            ) {
-                                FilledTonalIconButton(
-                                    onClick = { showReaderSettings = true }
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Filled.Settings,
-                                        contentDescription = stringResource(
-                                            id = R.string.reader_settings
-                                        )
-                                    )
-                                }
-                            }
-
                             if (state is ChapterPageModel.State.Result) {
                                 var rememberedHistory by rememberSaveable {
                                     history
@@ -396,10 +439,57 @@ class ChapterPage(
                                 )
 
                                 Spacer(modifier = Modifier.height(6.dp))
+                            }
 
-                                val commentChapter = activeChapter?.chapter
-                                    ?: requestedChapter.value
-                                FilledTonalButton(
+                            val commentChapter = activeChapter?.chapter ?: requestedChapter.value
+                            val nextScript = when (readerSettings.script) {
+                                ReaderScript.ORIGINAL -> ReaderScript.SIMPLIFIED
+                                ReaderScript.SIMPLIFIED -> ReaderScript.TRADITIONAL
+                                ReaderScript.TRADITIONAL -> ReaderScript.ORIGINAL
+                            }
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .navigationBarsPadding(),
+                                horizontalArrangement = Arrangement.SpaceEvenly,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                FilledTonalIconButton(
+                                    onClick = { showReaderContents = true }
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Filled.List,
+                                        contentDescription = stringResource(
+                                            id = R.string.reader_contents
+                                        )
+                                    )
+                                }
+                                FilledTonalIconButton(
+                                    onClick = {
+                                        updateReaderSettings(
+                                            readerSettings.copy(script = nextScript)
+                                        )
+                                    }
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Filled.Translate,
+                                        contentDescription = stringResource(
+                                            id = R.string.reader_toggle_script
+                                        )
+                                    )
+                                }
+                                FilledTonalIconButton(
+                                    onClick = { showReaderSettings = true }
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Filled.Settings,
+                                        contentDescription = stringResource(
+                                            id = R.string.reader_settings
+                                        )
+                                    )
+                                }
+                                FilledTonalIconButton(
+                                    enabled = state is ChapterPageModel.State.Result,
                                     onClick = {
                                         navigator?.pushIfNotCurrent(
                                             ChapterCommentsPage(
@@ -407,17 +497,14 @@ class ChapterPage(
                                                 chapterUrl = commentChapter.url
                                             )
                                         )
-                                    },
-                                    modifier = Modifier.fillMaxWidth(),
-                                    shape = RoundedCornerShape(12.dp)
+                                    }
                                 ) {
                                     Icon(
                                         imageVector = Icons.Filled.Forum,
-                                        contentDescription = null,
-                                        modifier = Modifier.size(18.dp)
+                                        contentDescription = stringResource(
+                                            id = R.string.comments
+                                        )
                                     )
-                                    Spacer(modifier = Modifier.width(8.dp))
-                                    Text(text = stringResource(id = R.string.comments))
                                 }
                             }
                         }
@@ -426,26 +513,31 @@ class ChapterPage(
             }
         ) {
             val interactionSource = remember { MutableInteractionSource() }
-            Surface(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .clickable(
-                        interactionSource = interactionSource,
-                        indication = null
-                    ) { showToolbar = !showToolbar },
-                color = readerSettings.background.containerColor()
-            ) {
-                Column(
+            Box(modifier = Modifier.fillMaxSize()) {
+                Surface(
                     modifier = Modifier
                         .fillMaxSize()
-                        .padding(horizontal = readerSettings.horizontalPaddingDp.dp)
-                        .verticalScroll(scrollState)
+                        .clickable(
+                            interactionSource = interactionSource,
+                            indication = null
+                        ) { showToolbar = !showToolbar },
+                    color = readerSettings.background.containerColor()
                 ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(horizontal = readerSettings.horizontalPaddingDp.dp)
+                            .verticalScroll(scrollState)
+                    ) {
                     Spacer(modifier = Modifier.height(32.dp))
 
                     when (state) {
                         is ChapterPageModel.State.Loading -> Column {
-                            ChapterHeading(currentChapterName, readerSettings)
+                            ChapterHeading(
+                                currentChapterName,
+                                readerSettings,
+                                readerTextTransform
+                            )
                             Box(
                                 modifier = Modifier
                                     .fillMaxWidth()
@@ -457,7 +549,11 @@ class ChapterPage(
                         }
 
                         is ChapterPageModel.State.Error -> Column {
-                            ChapterHeading(currentChapterName, readerSettings)
+                            ChapterHeading(
+                                currentChapterName,
+                                readerSettings,
+                                readerTextTransform
+                            )
                             Box(
                                 modifier = Modifier
                                     .fillMaxWidth()
@@ -482,6 +578,7 @@ class ChapterPage(
                                     density = density,
                                     settings = readerSettings,
                                     contentColor = readerContentColor,
+                                    textTransform = readerTextTransform,
                                     onSizeChanged = { height ->
                                         chapterHeights[entry.chapter.url] = height
                                     }
@@ -502,6 +599,33 @@ class ChapterPage(
                     }
 
                     Spacer(modifier = Modifier.height(80.dp))
+                    }
+                }
+
+                if ((state as? ChapterPageModel.State.Result)?.isLoadingPrevious == true) {
+                    Surface(
+                        modifier = Modifier
+                            .align(Alignment.TopCenter)
+                            .padding(top = 12.dp),
+                        shape = RoundedCornerShape(20.dp),
+                        tonalElevation = 4.dp,
+                        shadowElevation = 4.dp
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(16.dp),
+                                strokeWidth = 2.dp
+                            )
+                            Text(
+                                text = stringResource(id = R.string.reader_loading_previous),
+                                style = MaterialTheme.typography.labelMedium
+                            )
+                        }
+                    }
                 }
             }
         }
@@ -510,9 +634,17 @@ class ChapterPage(
             chapterPageModel.getDetail()
         }
 
-        LaunchedEffect(scrollState, chapterPageModel, continuousLoadThreshold) {
+        LaunchedEffect(
+            scrollState,
+            chapterPageModel,
+            continuousLoadThreshold,
+            previousLoadThreshold
+        ) {
             snapshotFlow { scrollState.value to scrollState.maxValue }
                 .collect { (value, maxValue) ->
+                    if (value <= previousLoadThreshold) {
+                        chapterPageModel.loadPreviousChapter()
+                    }
                     if (maxValue > 0 && value > 0 && maxValue - value <= continuousLoadThreshold) {
                         chapterPageModel.loadNextChapter()
                     }
@@ -532,6 +664,24 @@ class ChapterPage(
                 settings = readerSettings,
                 onSettingsChange = { updated -> updateReaderSettings(updated) },
                 onDismiss = { showReaderSettings = false }
+            )
+        }
+
+        if (showReaderContents) {
+            val readerChapters = result?.chapterOrder.orEmpty()
+                .ifEmpty { chapterOrder }
+                .ifEmpty { result?.chapters?.map { it.chapter }.orEmpty() }
+            ReaderContentsSheet(
+                chapters = readerChapters,
+                currentChapter = activeChapter?.chapter ?: requestedChapter.value,
+                onChapterSelected = { selectedChapter ->
+                    showReaderContents = false
+                    chapterPageModel.openChapter(selectedChapter)
+                    scope.launch(Dispatchers.Main) {
+                        scrollState.scrollTo(0)
+                    }
+                },
+                onDismiss = { showReaderContents = false }
             )
         }
     }
@@ -568,9 +718,13 @@ private fun chapterProgressFor(
 }
 
 @Composable
-private fun ChapterHeading(name: String, settings: ReaderSettings) {
+private fun ChapterHeading(
+    name: String,
+    settings: ReaderSettings,
+    textTransform: (String) -> String = { it }
+) {
     Text(
-        text = name,
+        text = textTransform(name),
         style = MaterialTheme.typography.headlineSmall.copy(
             fontWeight = FontWeight.Bold,
             fontFamily = settings.font.family,
@@ -592,6 +746,7 @@ private fun ReaderChapterBlock(
     density: Density,
     settings: ReaderSettings,
     contentColor: androidx.compose.ui.graphics.Color,
+    textTransform: (String) -> String = { it },
     onSizeChanged: (height: Int) -> Unit
 ) {
     Column(
@@ -602,14 +757,15 @@ private fun ReaderChapterBlock(
         if (index > 0) {
             Spacer(modifier = Modifier.height(settings.pageSpacingDp.dp))
         }
-        ChapterHeading(entry.chapter.name, settings)
+        ChapterHeading(entry.chapter.name, settings, textTransform)
         ChapterContent(
             detail = entry.detail,
             textMeasurer = textMeasurer,
             textStyle = textStyle,
             density = density,
             settings = settings,
-            contentColor = contentColor
+            contentColor = contentColor,
+            textTransform = textTransform
         )
     }
 }
@@ -621,14 +777,16 @@ private fun ChapterContent(
     textStyle: androidx.compose.ui.text.TextStyle,
     density: Density,
     settings: ReaderSettings,
-    contentColor: androidx.compose.ui.graphics.Color
+    contentColor: androidx.compose.ui.graphics.Color,
+    textTransform: (String) -> String = { it }
 ) {
     for (component in detail.content) {
         if (component is TextComponent) {
             val (str, inlines) = component.toInlineAnnotatedString(
                 textMeasurer,
                 textStyle,
-                density
+                density,
+                textTransform
             )
             Text(
                 text = str,
@@ -664,6 +822,84 @@ private fun ChapterContent(
         }
     }
 }
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ReaderContentsSheet(
+    chapters: List<Chapter>,
+    currentChapter: Chapter,
+    onChapterSelected: (Chapter) -> Unit,
+    onDismiss: () -> Unit
+) {
+    val sheetState = rememberModalBottomSheetState()
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .navigationBarsPadding()
+                .padding(horizontal = 20.dp, vertical = 8.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = stringResource(id = R.string.reader_contents),
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.weight(1f)
+                )
+                TextButton(onClick = onDismiss) {
+                    Text(text = stringResource(id = R.string.close))
+                }
+            }
+
+            if (chapters.isEmpty()) {
+                Text(
+                    text = stringResource(id = R.string.reader_contents_empty),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(vertical = 24.dp)
+                )
+            } else {
+                LazyColumn(modifier = Modifier.heightIn(max = 560.dp)) {
+                    items(
+                        items = chapters,
+                        key = { chapter -> chapterIdentity(chapter) }
+                    ) { item ->
+                        val selected = sameReaderChapter(item, currentChapter)
+                        TextButton(
+                            onClick = { onChapterSelected(item) },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(
+                                text = item.name,
+                                modifier = Modifier.fillMaxWidth(),
+                                color = if (selected) {
+                                    MaterialTheme.colorScheme.primary
+                                } else {
+                                    MaterialTheme.colorScheme.onSurface
+                                },
+                                fontWeight = if (selected) {
+                                    FontWeight.Bold
+                                } else {
+                                    FontWeight.Normal
+                                },
+                                maxLines = 2
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+private fun sameReaderChapter(first: Chapter, second: Chapter): Boolean =
+    chapterIdentity(first) == chapterIdentity(second)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -736,6 +972,24 @@ private fun ReaderSettingsSheet(
                 ),
                 onSelected = { font ->
                     onSettingsChange(settings.copy(font = font))
+                }
+            )
+
+            Text(
+                text = stringResource(id = R.string.reader_script),
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.padding(top = 16.dp, bottom = 8.dp)
+            )
+            ReaderSettingChoices(
+                selected = settings.script,
+                options = listOf(
+                    ReaderScript.ORIGINAL to stringResource(id = R.string.reader_script_original),
+                    ReaderScript.SIMPLIFIED to stringResource(id = R.string.reader_script_simplified),
+                    ReaderScript.TRADITIONAL to stringResource(id = R.string.reader_script_traditional)
+                ),
+                onSelected = { script ->
+                    onSettingsChange(settings.copy(script = script))
                 }
             )
 
@@ -881,7 +1135,9 @@ class ChapterPageModel(
             val chapters: List<ReaderChapter>,
             val previous: Chapter?,
             val next: Chapter?,
-            val isLoadingNext: Boolean
+            val isLoadingNext: Boolean,
+            val isLoadingPrevious: Boolean = false,
+            val chapterOrder: List<Chapter> = emptyList()
         ) : State()
     }
 
@@ -894,11 +1150,14 @@ class ChapterPageModel(
     private var sessionId = 0L
     private var initialJob: Job? = null
     private var appendJob: Job? = null
+    private var prependJob: Job? = null
     private var orderJob: Job? = null
     private var orderRequestId = 0L
     private var loadingNext = false
+    private var loadingPrevious = false
     private var orderLoading = false
     private var pendingNextRequest = false
+    private var pendingPreviousRequest = false
     private var initialLoadStarted = false
 
     fun getDetail() {
@@ -919,18 +1178,22 @@ class ChapterPageModel(
             jobsToCancel = buildList {
                 initialJob?.let(::add)
                 appendJob?.let(::add)
+                prependJob?.let(::add)
                 orderJob?.let(::add)
                 addAll(prefetchJobs.values)
             }.distinct()
             initialJob = null
             appendJob = null
+            prependJob = null
             orderJob = null
             orderRequestId += 1
             loadedChapters.clear()
             prefetchedDetails.clear()
             loadingNext = false
+            loadingPrevious = false
             orderLoading = false
             pendingNextRequest = false
+            pendingPreviousRequest = false
         }
         // Cancel outside the model lock: cancellation handlers may publish or
         // remove their own entries while unwinding.
@@ -1022,6 +1285,67 @@ class ChapterPageModel(
         }
     }
 
+    /** Loads the previous canonical TOC chapter when the reader reaches the top buffer. */
+    fun loadPreviousChapter() {
+        val shouldWaitForOrder = synchronized(lock) {
+            !orderResolved && novelId.isNotBlank()
+        }
+        if (shouldWaitForOrder) {
+            synchronized(lock) {
+                pendingPreviousRequest = true
+            }
+            requestChapterOrder(sessionId, null, null)
+            return
+        }
+
+        var currentSession: Long? = null
+        var previousChapter: Chapter? = null
+        synchronized(lock) {
+            if (loadingPrevious || loadedChapters.isEmpty()) return
+            val first = loadedChapters.first()
+            val candidate = adjacentChapter(first.chapter, -1, first.detail) ?: return
+            if (loadedChapters.any { sameChapter(it.chapter, candidate) }) return
+            previousChapter = candidate
+            loadingPrevious = true
+            currentSession = sessionId
+        }
+        val chapterToLoad = previousChapter ?: return
+        val session = currentSession ?: return
+        publish(session)
+
+        prependJob = scope.launch(Dispatchers.IO) {
+            try {
+                val detail = loadDetail(chapterToLoad)
+                if (detail != null && isCurrentSession(session)) {
+                    synchronized(lock) {
+                        if (isCurrentSessionLocked(session) &&
+                            loadedChapters.none { sameChapter(it.chapter, chapterToLoad) }
+                        ) {
+                            loadedChapters.add(0, ReaderChapter(chapterToLoad, detail))
+                        }
+                    }
+                    publish(session)
+                    prefetchPrevious(chapterToLoad, detail)
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                AppLogger.e(
+                    "ChapterPageModel",
+                    "Failed to prepend chapter ${chapterToLoad.name}",
+                    e
+                )
+            } finally {
+                synchronized(lock) {
+                    if (isCurrentSessionLocked(session)) {
+                        loadingPrevious = false
+                    }
+                }
+                publish(session)
+            }
+        }
+    }
+
     private fun requestChapterOrder(
         currentSession: Long,
         chapter: Chapter?,
@@ -1041,12 +1365,15 @@ class ChapterPageModel(
                     if (chapter != null && detail != null) {
                         prefetchNext(chapter, detail)
                     }
-                    val shouldLoadNext = synchronized(lock) {
+                    val pendingLoads = synchronized(lock) {
                         val requested = pendingNextRequest
+                        val requestedPrevious = pendingPreviousRequest
                         pendingNextRequest = false
-                        requested
+                        pendingPreviousRequest = false
+                        requestedPrevious to requested
                     }
-                    if (shouldLoadNext) loadNextChapter()
+                    if (pendingLoads.first) loadPreviousChapter()
+                    if (pendingLoads.second) loadNextChapter()
                 } finally {
                     synchronized(lock) {
                         if (orderRequestId == requestId) {
@@ -1094,6 +1421,10 @@ class ChapterPageModel(
 
     private fun prefetchNext(chapter: Chapter, detail: DetailedChapter) {
         adjacentChapter(chapter, 1, detail)?.let(::prefetch)
+    }
+
+    private fun prefetchPrevious(chapter: Chapter, detail: DetailedChapter) {
+        adjacentChapter(chapter, -1, detail)?.let(::prefetch)
     }
 
     private fun prefetch(chapter: Chapter) {
@@ -1170,11 +1501,18 @@ class ChapterPageModel(
         offset: Int,
         fallback: DetailedChapter?
     ): Chapter? {
-        val adjacent = synchronized(lock) {
+        val (adjacent, currentInCanonicalOrder) = synchronized(lock) {
             val index = orderedChapters.indexOfFirst { sameChapter(it, chapter) }
-            if (index >= 0) orderedChapters.getOrNull(index + offset) else null
+            (if (index >= 0) orderedChapters.getOrNull(index + offset) else null) to
+                (index >= 0)
         }
         if (adjacent != null) return adjacent
+        // A history record can point to a valid chapter that the refreshed TOC
+        // no longer contains.  In that case the live chapter's previous/next
+        // link is the only usable continuation.  If the chapter is present in
+        // the canonical TOC, keep its boundary authoritative and do not follow
+        // unrelated site navigation links.
+        if (currentInCanonicalOrder) return null
         return if (offset > 0) fallback?.next else fallback?.previous
     }
 
@@ -1183,6 +1521,8 @@ class ChapterPageModel(
         val previous: Chapter?
         val next: Chapter?
         val loading: Boolean
+        val loadingPreviousSnapshot: Boolean
+        val chapterOrderSnapshot: List<Chapter>
         synchronized(lock) {
             if (currentSession != null && !isCurrentSessionLocked(currentSession)) return
             snapshot = loadedChapters.toList()
@@ -1191,9 +1531,18 @@ class ChapterPageModel(
             previous = first?.let { adjacentChapter(it.chapter, -1, it.detail) }
             next = last?.let { adjacentChapter(it.chapter, 1, it.detail) }
             loading = loadingNext
+            loadingPreviousSnapshot = loadingPrevious
+            chapterOrderSnapshot = orderedChapters.toList()
         }
         if (snapshot.isNotEmpty()) {
-            mutableState.value = State.Result(snapshot, previous, next, loading)
+            mutableState.value = State.Result(
+                chapters = snapshot,
+                previous = previous,
+                next = next,
+                isLoadingNext = loading,
+                isLoadingPrevious = loadingPreviousSnapshot,
+                chapterOrder = chapterOrderSnapshot
+            )
         }
     }
 

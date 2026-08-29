@@ -8,6 +8,7 @@ import com.breakyuna.esjzone.network.PageCacheTtl
 import com.breakyuna.esjzone.novellibrary.community.ForumCategory
 import com.breakyuna.esjzone.novellibrary.community.ForumThread
 import com.breakyuna.esjzone.novellibrary.novel.Comment
+import com.breakyuna.esjzone.novellibrary.novel.COMMENT_PAGE_SIZE
 import com.breakyuna.esjzone.util.AppLogger
 import java.io.IOException
 import okhttp3.FormBody
@@ -19,8 +20,15 @@ import org.jsoup.nodes.Element
 private val CATEGORY_URL = Regex("(?:https?://[^/]+)?/forum/([0-9]+)/?$")
 private val THREAD_URL = Regex("(?:https?://[^/]+)?/forum/([0-9]+)/([0-9]+)/?$")
 private val POST_URL = Regex("(?:https?://[^/]+)?/forum/[0-9]+/([0-9]+)\\.html")
+private val DETAIL_URL = Regex("(?:https?://[^/]+)?/detail/([0-9]+)\\.html")
 private val PROFILE_UID = Regex("[?&]uid=([0-9]+)")
-private val COMMENT_PAGE = Regex("(?:^|\\s)comments-page-([0-9]+)(?:\\s|$)")
+private val COMMENT_TIMESTAMP = Regex(
+    "\\d{4}[-/.]\\d{1,2}[-/.]\\d{1,2}(?:[T ]\\d{1,2}:\\d{2}(?::\\d{2})?)?"
+)
+private val CSS_IMAGE_URL = Regex(
+    """url\(\s*['"]?([^'")]+)['"]?\s*\)""",
+    RegexOption.IGNORE_CASE
+)
 
 data class CommentSubmission(
     val comments: List<Comment>,
@@ -34,15 +42,20 @@ class CommentSubmissionNotVerifiedException(val comments: List<Comment>) : IOExc
 fun EsjzoneClient.getChapterComments(
     authorization: Authorization,
     chapterUrl: String
+): List<Comment> = getPageComments(authorization, chapterUrl)
+
+/** Loads comments from any page that uses the shared ESJ comment markup. */
+fun EsjzoneClient.getPageComments(
+    authorization: Authorization,
+    pageUrl: String
 ): List<Comment> {
-    val targetUrl = EsjzoneUrls.resolve(chapterUrl).substringBefore('#')
-    AppLogger.i("GetCommunity", "Fetching chapter comments at $targetUrl")
+    val targetUrl = EsjzoneUrls.resolve(pageUrl).substringBefore('#')
+    AppLogger.i("GetCommunity", "Fetching comments at $targetUrl")
     val document = Jsoup.parse(
         getPage(authorization, targetUrl, PageCacheTtl.COMMUNITY),
         targetUrl
     )
-    val postId = POST_URL.find(targetUrl)?.groupValues?.getOrNull(1).orEmpty()
-    return parseComments(document, postId)
+    return parseComments(document, commentParentId(targetUrl))
 }
 
 fun EsjzoneClient.submitForumComment(
@@ -59,33 +72,56 @@ fun EsjzoneClient.submitForumComment(
         getPage(authorization, targetUrl, PageCacheTtl.COMMUNITY),
         targetUrl
     )
-    val form = initialDocument.selectFirst("form.commentEditor")
+    val form = initialDocument.selectFirst("form.commentEditor, form.gbEditor")
         ?: throw IOException("Comment form was not found; the session may have expired")
-    val forumId = form.selectFirst("[name=forum_id]")
+    val formForumId = form.selectFirst("[name=forum_id]")
         ?.attr("value")
         ?.trim()
         ?.takeIf { it.isNotBlank() }
         ?: POST_URL.find(targetUrl)?.groupValues?.getOrNull(1)
-        ?: throw IOException("Comment forum_id was not found")
-    val data = form.selectFirst("[name=data]")
+    // The detail page has an empty hidden forum_id but its page script uses
+    // forum_id=0; chapter pages use the chapter post id.  The empty hidden
+    // values must therefore be replaced with the route-specific values.
+    val forumId = formForumId
+        ?: DETAIL_URL.find(targetUrl)?.let { "0" }
+    val formData = form.selectFirst("[name=data]")
         ?.attr("value")
         ?.trim()
         ?.takeIf { it.isNotBlank() }
-        ?: "forum"
+    val data = formData ?: when {
+        form.hasClass("gbEditor") -> null
+        DETAIL_URL.containsMatchIn(targetUrl) -> "books"
+        form.hasClass("commentEditor") -> "forum"
+        else -> null
+    }
     val actionUrl = form.absUrl("action")
         .ifBlank { targetUrl }
         .substringBefore('#')
-    val previousComments = parseComments(initialDocument, forumId)
+    // forum_id is a submission routing field, not the stable identity used to
+    // compare comments before and after the request (detail pages use 0 for it).
+    val parentId = commentParentId(targetUrl)
+    val previousComments = parseComments(initialDocument, parentId)
     val previousIds = previousComments.mapTo(mutableSetOf()) { it.id }
 
-    val body = FormBody.Builder()
+    val bodyBuilder = FormBody.Builder()
         .add("content", submittedContent)
-        .add("data", data)
-        .add("forum_id", forumId)
-        .apply {
-            replyToken?.trim()?.takeIf { it.isNotBlank() }?.let { add("reply", it) }
+    // Preserve hidden form fields (including any future anti-forgery or routing
+    // fields) instead of rebuilding the payload from an assumed fixed schema.
+    form.select("input[type=hidden][name]").forEach { input ->
+        val name = input.attr("name").trim()
+        if (name.isNotBlank() && name != "content" && name != "data" &&
+            name != "forum_id" &&
+            !(name == "reply" && !replyToken.isNullOrBlank())
+        ) {
+            bodyBuilder.add(name, input.attr("value"))
         }
-        .build()
+    }
+    data?.let { bodyBuilder.add("data", it) }
+    forumId?.let { bodyBuilder.add("forum_id", it) }
+    replyToken?.trim()?.takeIf { it.isNotBlank() }?.let {
+        bodyBuilder.add("reply", it)
+    }
+    val body = bodyBuilder.build()
     val request = Request.Builder()
         .url(actionUrl)
         .post(body)
@@ -102,7 +138,7 @@ fun EsjzoneClient.submitForumComment(
         invalidatePage(authorization, targetUrl)
         val recoveredComments = runCatching {
             val refreshed = getPage(authorization, targetUrl, PageCacheTtl.COMMUNITY)
-            parseComments(Jsoup.parse(refreshed, targetUrl), forumId)
+            parseComments(Jsoup.parse(refreshed, targetUrl), parentId)
         }.getOrDefault(previousComments)
         findCreatedComment(recoveredComments, previousIds, submittedContent)?.let { created ->
             return CommentSubmission(recoveredComments, created)
@@ -117,7 +153,7 @@ fun EsjzoneClient.submitForumComment(
         invalidatePage(authorization, targetUrl)
         val recoveredComments = runCatching {
             val refreshed = getPage(authorization, targetUrl, PageCacheTtl.COMMUNITY)
-            parseComments(Jsoup.parse(refreshed, targetUrl), forumId)
+            parseComments(Jsoup.parse(refreshed, targetUrl), parentId)
         }.getOrDefault(previousComments)
         findCreatedComment(recoveredComments, previousIds, submittedContent)?.let { created ->
             return CommentSubmission(recoveredComments, created)
@@ -140,21 +176,15 @@ fun EsjzoneClient.submitForumComment(
     } catch (error: IOException) {
         throw CommentSubmissionNotVerifiedException(previousComments)
     }
-    val comments = parseComments(refreshedDocument, forumId)
+    val comments = parseComments(refreshedDocument, parentId)
     val createdComment = findCreatedComment(comments, previousIds, submittedContent)
         ?: throw CommentSubmissionNotVerifiedException(comments)
 
     return CommentSubmission(comments, createdComment)
 }
 
-fun EsjzoneClient.getGuestbookComments(authorization: Authorization): List<Comment> {
-    AppLogger.i("GetCommunity", "Fetching guestbook")
-    val document = Jsoup.parse(
-        getPage(authorization, EsjzoneUrls.Guestbook, PageCacheTtl.COMMUNITY),
-        EsjzoneUrls.Guestbook
-    )
-    return parseComments(document, "guestbook")
-}
+fun EsjzoneClient.getGuestbookComments(authorization: Authorization): List<Comment> =
+    getPageComments(authorization, EsjzoneUrls.Guestbook)
 
 fun EsjzoneClient.getForumCategories(authorization: Authorization): List<ForumCategory> {
     AppLogger.i("GetCommunity", "Fetching forum categories")
@@ -230,51 +260,50 @@ internal fun parseComments(document: Document, parentPostId: String): List<Comme
         // section element but without either shared class.
         EsjzoneXPaths.Detail.Comment.Pages.evaluate(document).elements
     }
-    for ((sectionIndex, section) in sections.withIndex()) {
-        val pageGroup = COMMENT_PAGE.find(section.className())
-            ?.groupValues
-            ?.getOrNull(1)
-            ?.toIntOrNull()
-            ?: sectionIndex + 1
+    val commentElements = sections
+        .flatMap { it.select(".comment") }
+        .ifEmpty { document.select(".comment") }
+        .distinctBy { it.id().ifBlank { it.outerHtml().hashCode().toString() } }
 
-        for ((commentIndex, element) in section.select(".comment").withIndex()) {
-            val content = element.selectFirst(".comment-text")
-            val author = element.selectFirst(
-                ".comment-header a[href*='/my/profile'], .comment-title a[href*='/my/profile']"
-            ) ?: element.selectFirst(".comment-header a, .comment-title a")
-            val authorUrl = author?.let { link ->
-                link.absUrl("href").ifBlank { link.attr("href") }
-            }?.trim()?.takeIf { it.isNotBlank() }
-            val avatar = element.selectFirst(
-                ".comment-header img, .comment-title img, .comment-author img, img.avatar"
-            )
-            val authorAvatarUrl = avatar?.let(::resolveImageUrl)
-            val replyToken = element.selectFirst(".forum_reply[data-comment]")
-                ?.attr("data-comment")
-                ?.trim()
-                ?.takeIf { it.isNotBlank() }
-            val contentText = content?.text()?.trim().orEmpty()
-            val rawId = element.id().removePrefix("comment-").trim()
-            val stableId = rawId.ifBlank {
-                "$parentPostId-$pageGroup-$commentIndex-${contentText.hashCode()}"
-            }
-            comments += Comment(
-                id = stableId,
-                parentPostId = parentPostId,
-                authorId = authorUrl?.let { PROFILE_UID.find(it)?.groupValues?.getOrNull(1) },
-                authorName = author?.text()?.trim()?.takeIf { it.isNotBlank() },
-                authorUrl = authorUrl,
-                authorAvatarUrl = authorAvatarUrl,
-                floor = element.selectFirst(".comment-floor")?.text()?.trim()
-                    ?.takeIf { it.isNotBlank() },
-                createdAt = element.selectFirst(".comment-meta")?.text()?.trim()
-                    ?.takeIf { it.isNotBlank() },
-                contentHtml = content?.html().orEmpty(),
-                contentText = contentText,
-                pageGroup = pageGroup,
-                replyToken = replyToken
-            )
+    for (element in commentElements) {
+        val content = element.selectFirst(".comment-text, .comment-content")
+        val author = element.selectFirst(
+            ".comment-header a[href*='/my/profile'], .comment-title a[href*='/my/profile']"
+        ) ?: element.selectFirst(".comment-header a, .comment-title a")
+        val authorUrl = author?.let { link ->
+            link.absUrl("href").ifBlank { link.attr("href") }
+        }?.trim()?.takeIf { it.isNotBlank() }
+        val avatar = element.selectFirst(
+            ".comment-author-ava .lazyload-author-ava, " +
+                ".comment-header img, .comment-title img, .comment-author img, " +
+                "img.avatar, [data-avatar], .lazyload-author-ava"
+        )
+        val authorAvatarUrl = avatar?.let(::resolveImageUrl)
+        val replyToken = element.selectFirst(".forum_reply[data-comment]")
+            ?.attr("data-comment")
+            ?.trim()
+            ?.takeIf { it.isNotBlank() }
+        val contentText = content?.text()?.trim().orEmpty()
+        val rawId = element.id().removePrefix("comment-").trim()
+        val pageGroup = comments.size / COMMENT_PAGE_SIZE + 1
+        val stableId = rawId.ifBlank {
+            "$parentPostId-$pageGroup-${comments.size}-${contentText.hashCode()}"
         }
+        comments += Comment(
+            id = stableId,
+            parentPostId = parentPostId,
+            authorId = authorUrl?.let { PROFILE_UID.find(it)?.groupValues?.getOrNull(1) },
+            authorName = author?.text()?.trim()?.takeIf { it.isNotBlank() },
+            authorUrl = authorUrl,
+            authorAvatarUrl = authorAvatarUrl,
+            floor = element.selectFirst(".comment-floor")?.text()?.trim()
+                ?.takeIf { it.isNotBlank() },
+            createdAt = resolveCommentTimestamp(element),
+            contentHtml = content?.html().orEmpty(),
+            contentText = contentText,
+            pageGroup = pageGroup,
+            replyToken = replyToken
+        )
     }
     return comments.distinctBy { it.id }
 }
@@ -282,14 +311,105 @@ internal fun parseComments(document: Document, parentPostId: String): List<Comme
 private fun resolveImageUrl(image: Element): String? {
     // Lazy-loaded avatars commonly leave a placeholder in src and put the real
     // URL in one of the data-* attributes, so inspect those first.
-    return sequenceOf("data-src", "data-original", "data-lazy-src", "src")
+    val attributeUrl = sequenceOf(
+        "data-src",
+        "data-original",
+        "data-lazy-src",
+        "data-original-src",
+        "data-avatar",
+        "data-url",
+        "srcset",
+        "src"
+    )
         .mapNotNull { attribute ->
-            image.absUrl(attribute)
-                .ifBlank { image.attr(attribute) }
+            val raw = image.attr(attribute)
                 .trim()
-                .takeIf { it.isNotBlank() }
+                .substringBefore(',')
+                .trim()
+                .substringBefore(' ')
+                .trim()
+            if (raw.isBlank()) return@mapNotNull null
+            val resolved = if (attribute == "srcset") {
+                resolveRawImageUrl(image, raw)
+            } else {
+                image.absUrl(attribute).ifBlank { raw }
+            }
+                .trim()
+            resolved.takeIf { it.isNotBlank() && isUsableImageUrl(it) }
         }
         .firstOrNull()
+    if (attributeUrl != null) return attributeUrl
+
+    // After the site's lazy-loader runs, avatars are moved from data-src to a
+    // CSS background image on the same div.  Jsoup does not resolve URLs found
+    // inside style attributes, so resolve that one explicitly against the
+    // parsed page base URI.
+    val backgroundUrl = CSS_IMAGE_URL.find(image.attr("style"))
+        ?.groupValues
+        ?.getOrNull(1)
+        ?.trim()
+        ?.takeIf { it.isNotBlank() }
+        ?.let { raw ->
+            val resolved = resolveRawImageUrl(image, raw)
+            resolved.takeIf { isUsableImageUrl(it) }
+        }
+    return backgroundUrl
+}
+
+private fun resolveCommentTimestamp(element: Element): String? {
+    // The first .comment-meta on ESJ is the floor number (#1), not a time.
+    // Prefer explicit time attributes and exclude .comment-floor before using
+    // the visual metadata span.
+    val candidates = element.select(
+        "time[datetime], [datetime], [data-time], .comment-date, " +
+            ".comment-meta:not(.comment-floor)"
+    )
+    var firstNonBlank: String? = null
+    for (candidate in candidates) {
+        for (raw in sequenceOf(
+            candidate.text(),
+            candidate.attr("datetime"),
+            candidate.attr("data-time")
+        ).map(String::trim).filter { it.isNotBlank() }) {
+            if (firstNonBlank == null) firstNonBlank = raw
+            COMMENT_TIMESTAMP.find(raw)?.value?.let { return it }
+        }
+    }
+    return firstNonBlank
+}
+
+private fun resolveRawImageUrl(image: Element, rawUrl: String): String {
+    val raw = rawUrl.trim()
+    if (raw.startsWith("http://") || raw.startsWith("https://")) return raw
+    if (raw.startsWith("//")) return "https:$raw"
+    val baseUri = image.baseUri().trim()
+    if (baseUri.isNotBlank()) {
+        runCatching {
+            java.net.URI(baseUri).resolve(raw).toString()
+        }.getOrNull()?.takeIf { it.isNotBlank() }?.let { return it }
+    }
+    return raw
+}
+
+private fun isUsableImageUrl(url: String): Boolean {
+    val normalized = url.lowercase()
+    return !normalized.startsWith("data:") &&
+        !normalized.startsWith("javascript:") &&
+        !normalized.startsWith("about:") &&
+        normalized != "#" &&
+        !Regex("(?:^|/)(?:blank|spacer|loading|avatar-placeholder)\\.(?:gif|png|jpg|jpeg|webp)$")
+            .containsMatchIn(normalized)
+}
+
+internal fun commentParentId(rawUrl: String): String {
+    val targetUrl = EsjzoneUrls.resolve(rawUrl).substringBefore('#')
+    return POST_URL.find(targetUrl)?.groupValues?.getOrNull(1)
+        ?: DETAIL_URL.find(targetUrl)?.groupValues?.getOrNull(1)?.let { "detail-$it" }
+        ?: if (EsjzoneUrls.canonicalPageKey(targetUrl) == "/guestbook") {
+            "guestbook"
+        } else {
+            EsjzoneUrls.canonicalPageKey(targetUrl)
+        }
 }
 
 private fun forumGroupName(table: Element): String? {

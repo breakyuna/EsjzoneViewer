@@ -1,6 +1,11 @@
 package com.breakyuna.esjzone.ui.page
 
-import androidx.compose.foundation.background
+import android.content.ActivityNotFoundException
+import android.content.Context
+import android.content.Intent
+import android.net.Uri
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -13,12 +18,13 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.MenuBook
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
+import androidx.compose.material.icons.filled.Forum
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.RemoveRedEye
 import androidx.compose.material.icons.filled.ThumbUp
@@ -28,10 +34,9 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -52,7 +57,6 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import cafe.adriel.voyager.core.model.StateScreenModel
 import cafe.adriel.voyager.core.model.rememberScreenModel
 import cafe.adriel.voyager.core.screen.Screen
@@ -99,6 +103,9 @@ class NovelPage(
         val scope = rememberCoroutineScope()
 
         val screenModel = rememberScreenModel { NovelPageModel(authorization, scope, novel) }
+        val commentModel = rememberScreenModel {
+            CommentPageModel(authorization, scope, novel.url)
+        }
         val state by screenModel.state.collectAsState()
 
         Column(modifier = Modifier.fillMaxSize()) {
@@ -140,7 +147,6 @@ class NovelPage(
 
                     LazyColumn(modifier = Modifier.fillMaxSize()) {
                         item(key = "novel-hero") {
-                            // Top Novel Hero Card
                             Card(
                                 modifier = Modifier
                                     .fillMaxWidth()
@@ -153,152 +159,220 @@ class NovelPage(
                                 Column(modifier = Modifier.padding(16.dp)) {
                                     Row(
                                         modifier = Modifier.fillMaxWidth(),
-                                        verticalAlignment = Alignment.Top
+                                        verticalAlignment = Alignment.Top,
+                                        horizontalArrangement = Arrangement.spacedBy(14.dp)
                                     ) {
-                                SubcomposeAsyncImage(
-                                    model = ImageRequest.Builder(LocalContext.current)
-                                        .data(result.detailed.coverUrl)
-                                        .crossfade(true)
-                                        .build(),
-                                    contentDescription = novel.name,
-                                    imageLoader = MainActivity.imageLoader,
-                                    loading = {
-                                        Box(
-                                            modifier = Modifier.fillMaxSize(),
-                                            contentAlignment = Alignment.Center
-                                        ) {
-                                            CircularProgressIndicator(strokeWidth = 2.dp, modifier = Modifier.size(24.dp))
-                                        }
-                                    },
-                                    contentScale = ContentScale.Crop,
-                                    modifier = Modifier
-                                        .width(105.dp)
-                                        .height(145.dp)
-                                        .clip(RoundedCornerShape(12.dp))
-                                )
-
-                                Spacer(modifier = Modifier.width(16.dp))
-
-                                Column(
-                                    modifier = Modifier.weight(1f)
-                                ) {
-                                    Row(
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        Icon(
-                                            imageVector = Icons.Filled.Person,
-                                            contentDescription = null,
-                                            tint = MaterialTheme.colorScheme.primary,
-                                            modifier = Modifier.size(16.dp)
-                                        )
-                                        Spacer(modifier = Modifier.width(4.dp))
-                                        Text(
-                                            text = result.detailed.author,
-                                            style = MaterialTheme.typography.bodyMedium.copy(
-                                                fontWeight = FontWeight.Medium
-                                            ),
-                                            color = MaterialTheme.colorScheme.onSurface,
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis
-                                        )
-                                    }
-
-                                    Spacer(modifier = Modifier.height(10.dp))
-
-                                    // Stats Badges
-                                    NovelStatRow(
-                                        icon = Icons.Filled.RemoveRedEye,
-                                        label = "${result.detailed.views} views"
-                                    )
-                                    Spacer(modifier = Modifier.height(4.dp))
-                                    NovelStatRow(
-                                        icon = Icons.Filled.ThumbUp,
-                                        label = "${result.detailed.likes} likes"
-                                    )
-                                    Spacer(modifier = Modifier.height(4.dp))
-                                    NovelStatRow(
-                                        icon = Icons.Filled.Topic,
-                                        label = "${result.detailed.words} words"
-                                    )
-                                }
-
-                                FilledTonalIconButton(
-                                    onClick = {
-                                        val previousFavorite = rememberedFavorite
-                                        val nextFavorite = !previousFavorite
-                                        favorite.value = nextFavorite
-                                        rememberedFavorite = nextFavorite
-                                        scope.launch {
-                                            try {
-                                                withContext(Dispatchers.IO) {
-                                                    EsjzoneClient.changeFavorites(authorization, novel)
+                                        SubcomposeAsyncImage(
+                                            model = ImageRequest.Builder(LocalContext.current)
+                                                .data(result.detailed.coverUrl)
+                                                .crossfade(true)
+                                                .build(),
+                                            contentDescription = result.detailed.name,
+                                            imageLoader = MainActivity.imageLoader,
+                                            loading = {
+                                                Box(
+                                                    modifier = Modifier.fillMaxSize(),
+                                                    contentAlignment = Alignment.Center
+                                                ) {
+                                                    CircularProgressIndicator(
+                                                        strokeWidth = 2.dp,
+                                                        modifier = Modifier.size(24.dp)
+                                                    )
                                                 }
-                                            } catch (error: CancellationException) {
-                                                throw error
-                                            } catch (error: Exception) {
-                                                favorite.value = previousFavorite
-                                                rememberedFavorite = previousFavorite
-                                                com.breakyuna.esjzone.util.AppLogger.e(
-                                                    "NovelPage",
-                                                    "Failed to change favorite for ${novel.name}",
-                                                    error
+                                            },
+                                            contentScale = ContentScale.Crop,
+                                            modifier = Modifier
+                                                .width(112.dp)
+                                                .height(156.dp)
+                                                .clip(RoundedCornerShape(12.dp))
+                                        )
+
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text(
+                                                text = result.detailed.name,
+                                                style = MaterialTheme.typography.titleLarge,
+                                                fontWeight = FontWeight.Bold,
+                                                maxLines = 3,
+                                                overflow = TextOverflow.Ellipsis
+                                            )
+                                            Spacer(modifier = Modifier.height(8.dp))
+                                            NovelInfoRow(
+                                                label = stringResource(id = R.string.novel_type),
+                                                value = result.detailed.type
+                                            )
+                                            NovelInfoRow(
+                                                label = stringResource(id = R.string.author),
+                                                value = result.detailed.author,
+                                                icon = Icons.Filled.Person
+                                            )
+                                            Row(
+                                                modifier = Modifier.fillMaxWidth(),
+                                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                            ) {
+                                                NovelStatRow(
+                                                    icon = Icons.Filled.RemoveRedEye,
+                                                    label = stringResource(
+                                                        id = R.string.novel_views,
+                                                        result.detailed.views
+                                                    ),
+                                                    modifier = Modifier.weight(1f)
+                                                )
+                                                NovelStatRow(
+                                                    icon = Icons.Filled.ThumbUp,
+                                                    label = stringResource(
+                                                        id = R.string.novel_likes,
+                                                        result.detailed.likes
+                                                    ),
+                                                    modifier = Modifier.weight(1f)
+                                                )
+                                                NovelStatRow(
+                                                    icon = Icons.Filled.Topic,
+                                                    label = stringResource(
+                                                        id = R.string.novel_words,
+                                                        result.detailed.words
+                                                    ),
+                                                    modifier = Modifier.weight(1f)
                                                 )
                                             }
+                                            result.detailed.sourceUrl?.let { sourceUrl ->
+                                                NovelInfoRow(
+                                                    label = stringResource(id = R.string.novel_source),
+                                                    value = sourceUrl,
+                                                    onClick = { openExternal(context, sourceUrl) }
+                                                )
+                                            }
+                                            result.detailed.updatedAt?.let { updatedAt ->
+                                                NovelInfoRow(
+                                                    label = stringResource(id = R.string.novel_updated),
+                                                    value = updatedAt
+                                                )
+                                            }
+                                            Spacer(modifier = Modifier.height(10.dp))
+                                            Button(
+                                                onClick = {
+                                                    val previousFavorite = rememberedFavorite
+                                                    val nextFavorite = !previousFavorite
+                                                    favorite.value = nextFavorite
+                                                    rememberedFavorite = nextFavorite
+                                                    scope.launch {
+                                                        try {
+                                                            withContext(Dispatchers.IO) {
+                                                                EsjzoneClient.changeFavorites(
+                                                                    authorization,
+                                                                    novel
+                                                                )
+                                                            }
+                                                        } catch (error: CancellationException) {
+                                                            throw error
+                                                        } catch (error: Exception) {
+                                                            favorite.value = previousFavorite
+                                                            rememberedFavorite = previousFavorite
+                                                            com.breakyuna.esjzone.util.AppLogger.e(
+                                                                "NovelPage",
+                                                                "Failed to change favorite for ${novel.name}",
+                                                                error
+                                                            )
+                                                        }
+                                                    }
+                                                },
+                                                modifier = Modifier.fillMaxWidth(),
+                                                contentPadding = ButtonDefaults.ContentPadding
+                                            ) {
+                                                Icon(
+                                                    imageVector = if (rememberedFavorite) {
+                                                        Icons.Filled.Favorite
+                                                    } else {
+                                                        Icons.Filled.FavoriteBorder
+                                                    },
+                                                    contentDescription = null,
+                                                    modifier = Modifier.size(18.dp)
+                                                )
+                                                Spacer(modifier = Modifier.width(6.dp))
+                                                Text(
+                                                    text = stringResource(
+                                                        id = if (rememberedFavorite) {
+                                                            R.string.novel_favorited
+                                                        } else {
+                                                            R.string.novel_favorite
+                                                        }
+                                                    )
+                                                )
+                                            }
+                                            if (result.detailed.forumUrl.isNotBlank()) {
+                                                OutlinedButton(
+                                                    onClick = {
+                                                        openExternal(
+                                                            context,
+                                                            EsjzoneUrls.resolve(result.detailed.forumUrl)
+                                                        )
+                                                    },
+                                                    modifier = Modifier.fillMaxWidth(),
+                                                    contentPadding = ButtonDefaults.ContentPadding
+                                                ) {
+                                                    Icon(
+                                                        imageVector = Icons.Filled.Forum,
+                                                        contentDescription = null,
+                                                        modifier = Modifier.size(18.dp)
+                                                    )
+                                                    Spacer(modifier = Modifier.width(6.dp))
+                                                    Text(text = stringResource(id = R.string.novel_open_forum))
+                                                }
+                                            }
                                         }
-                                    },
-                                    colors = IconButtonDefaults.filledTonalIconButtonColors(
-                                        containerColor = if (rememberedFavorite) MaterialTheme.colorScheme.errorContainer else MaterialTheme.colorScheme.surface,
-                                        contentColor = if (rememberedFavorite) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                ) {
-                                    Icon(
-                                        imageVector = if (rememberedFavorite) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder,
-                                        contentDescription = "Bookmark",
-                                        modifier = Modifier.size(22.dp)
-                                    )
-                                }
-                            }
+                                    }
 
-                            Spacer(modifier = Modifier.height(16.dp))
+                                    Spacer(modifier = Modifier.height(14.dp))
 
-                            // Action button
-                            Button(
-                                enabled = rememberedHistory != null,
-                                onClick = {
-                                    rememberedHistory?.let { currChapter ->
-                                        navigator?.pushIfNotCurrent(
-                                            ChapterPage(
-                                                result.detailed.id(),
-                                                currChapter,
-                                                historyState,
-                                                chapterList.orderedChapters
+                                    Button(
+                                        enabled = rememberedHistory != null,
+                                        onClick = {
+                                            rememberedHistory?.let { currChapter ->
+                                                navigator?.pushIfNotCurrent(
+                                                    ChapterPage(
+                                                        result.detailed.id(),
+                                                        currChapter,
+                                                        historyState,
+                                                        chapterList.orderedChapters
+                                                    )
+                                                )
+                                            }
+                                        },
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .height(48.dp),
+                                        shape = RoundedCornerShape(14.dp),
+                                        colors = ButtonDefaults.buttonColors(
+                                            containerColor = MaterialTheme.colorScheme.primary
+                                        )
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.AutoMirrored.Filled.MenuBook,
+                                            contentDescription = null,
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        val labelRes = if (rememberedHasHistory) {
+                                            R.string.continue_reading
+                                        } else {
+                                            R.string.start_reading
+                                        }
+                                        Text(
+                                            text = stringResource(id = labelRes),
+                                            style = MaterialTheme.typography.labelLarge.copy(
+                                                fontWeight = FontWeight.Bold
                                             )
                                         )
                                     }
-                                },
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(48.dp),
-                                shape = RoundedCornerShape(14.dp),
-                                colors = ButtonDefaults.buttonColors(
-                                    containerColor = MaterialTheme.colorScheme.primary
-                                )
-                            ) {
-                                Icon(
-                                    imageVector = Icons.AutoMirrored.Filled.MenuBook,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(18.dp)
-                                )
-                                Spacer(modifier = Modifier.width(8.dp))
-                                val labelRes = if (rememberedHasHistory) R.string.continue_reading else R.string.start_reading
-                                Text(
-                                    text = stringResource(id = labelRes),
-                                    style = MaterialTheme.typography.labelLarge.copy(
-                                        fontWeight = FontWeight.Bold
-                                    )
-                                )
-                                    }
                                 }
+                            }
+                        }
+
+                        if (result.detailed.tags.isNotEmpty()) {
+                            item(key = "novel-tags") {
+                                NovelTags(
+                                    tags = result.detailed.tags,
+                                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
+                                )
                             }
                         }
 
@@ -319,7 +393,13 @@ class NovelPage(
                             )
                         }
 
-                        novelCommentItems(result.detailed.comments)
+                        item(key = "novel-comments") {
+                            CommentSectionHost(
+                                model = commentModel,
+                                showHeader = true,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        }
 
                         item(key = "novel-detail-bottom-spacer") {
                             Spacer(modifier = Modifier.height(24.dp))
@@ -339,9 +419,11 @@ class NovelPage(
 @Composable
 private fun NovelStatRow(
     icon: ImageVector,
-    label: String
+    label: String,
+    modifier: Modifier = Modifier
 ) {
     Row(
+        modifier = modifier,
         verticalAlignment = Alignment.CenterVertically
     ) {
         Icon(
@@ -358,6 +440,111 @@ private fun NovelStatRow(
             maxLines = 1,
             overflow = TextOverflow.Ellipsis
         )
+    }
+}
+
+@Composable
+private fun NovelInfoRow(
+    label: String,
+    value: String,
+    icon: ImageVector? = null,
+    onClick: (() -> Unit)? = null
+) {
+    val displayValue = value.trim().takeIf { it.isNotBlank() } ?: return
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .then(
+                if (onClick != null) {
+                    Modifier.clickable { onClick?.invoke() }
+                } else {
+                    Modifier
+                }
+            )
+            .padding(vertical = 2.dp),
+        verticalAlignment = Alignment.Top
+    ) {
+        if (icon != null) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier
+                    .padding(top = 2.dp)
+                    .size(15.dp)
+            )
+            Spacer(modifier = Modifier.width(4.dp))
+        }
+        Text(
+            text = "$label：",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.width(58.dp)
+        )
+        Text(
+            text = displayValue,
+            style = MaterialTheme.typography.bodySmall,
+            color = if (onClick != null) {
+                MaterialTheme.colorScheme.primary
+            } else {
+                MaterialTheme.colorScheme.onSurface
+            },
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f)
+        )
+    }
+}
+
+@Composable
+private fun NovelTags(
+    tags: List<String>,
+    modifier: Modifier = Modifier
+) {
+    Column(modifier = modifier.fillMaxWidth()) {
+        Text(
+            text = stringResource(id = R.string.novel_tags),
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.Bold,
+            modifier = Modifier.padding(bottom = 6.dp)
+        )
+        Row(
+            modifier = Modifier.horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            tags.forEach { tag ->
+                androidx.compose.material3.Surface(
+                    color = MaterialTheme.colorScheme.secondaryContainer,
+                    contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                    shape = RoundedCornerShape(50),
+                    modifier = Modifier.padding(vertical = 2.dp)
+                ) {
+                    Text(
+                        text = tag,
+                        style = MaterialTheme.typography.labelMedium,
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
+                    )
+                }
+            }
+        }
+    }
+}
+
+private fun openExternal(context: Context, rawUrl: String) {
+    val url = rawUrl.trim()
+    if (url.isBlank()) return
+    runCatching {
+        context.startActivity(
+            Intent(Intent.ACTION_VIEW, Uri.parse(url))
+        )
+    }.onFailure { error ->
+        if (error !is ActivityNotFoundException) {
+            com.breakyuna.esjzone.util.AppLogger.w(
+                "NovelPage",
+                "Unable to open external URL $url",
+                error
+            )
+        }
     }
 }
 
@@ -386,7 +573,7 @@ class NovelPageModel(
                 val detail = EsjzoneClient.getNovelDetail(
                     authorization = authorization,
                     novel = novel,
-                    includeComments = true
+                    includeComments = false
                 )
                 ensureActive()
                 mutableState.value = State.Result(detail)

@@ -67,16 +67,20 @@ object EsjzoneClient {
             .build()
 
     /**
-     * Returns fresh cached HTML when available, otherwise fetches and stores a successful
-     * page. Error pages and redirects to login are never written to the page cache.
+     * Returns fresh cached HTML when available, unless [forceRefresh] is set, otherwise
+     * fetches and stores a successful page. Error pages and redirects to login are never
+     * written to the page cache; a stale page remains a fallback for transient failures.
      */
     fun getPage(
         authorization: Authorization,
         url: String,
-        maxAgeMillis: Long
+        maxAgeMillis: Long,
+        forceRefresh: Boolean = false
     ): String {
         val cacheKey = pageCacheKey(authorization, url)
-        PageCache.read(cacheKey, maxAgeMillis)?.let { return it }
+        if (!forceRefresh) {
+            PageCache.read(cacheKey, maxAgeMillis)?.let { return it }
+        }
         val stalePage = PageCache.readStale(cacheKey)
 
         return try {

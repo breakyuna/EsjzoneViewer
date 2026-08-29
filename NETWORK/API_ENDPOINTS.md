@@ -107,8 +107,9 @@
 | 头像 .user-info | 当前 /my/profile | GET | upfile | 表单属性 Observed；实际上传流程 UNKNOWN |
 | 章节举报 #forumReport | 当前章节 URL | GET | category、rid、data、memo | 表单属性 Observed，未提交 |
 | 留言举报 #forumReport | /guestbook/ | GET | category、rid、memo | 表单属性 Observed，未提交 |
-| 章节评论 .commentEditor | 当前章节 URL | POST | content、data、forum_id | 表单属性 Observed，未提交 |
-| 留言板 .gbEditor | /guestbook/ | POST | content | 表单属性 Observed，未提交 |
+| 章节评论 .commentEditor | 当前章节 URL | POST | content、data=forum、forum_id=章节 post id | 表单与页面脚本 Observed；客户端实现，未提交 |
+| 详情评论 .commentEditor | 当前详情 URL | POST | content、data=books、forum_id=0 | 表单与页面脚本 Observed；客户端实现，未提交 |
+| 留言板 .gbEditor | /guestbook/ | POST | content | 表单属性 Observed；客户端实现，未提交 |
 | 新建小说 #createBook | 当前页面 | POST | 仅看到按钮；其余控件可能由模态内容提供 | 表单属性 Observed，未提交 |
 | 新建工单 #newReport | 当前 /my/ticket | GET | subject、category、content、modal | 表单属性 Observed，未提交 |
 | 回复工单 .form-reply-ticket | 当前 /my/ticket | POST | code、id、modal | 表单属性 Observed，未提交 |
@@ -137,4 +138,3 @@
 2. 对所有写操作设置显式确认开关，默认禁用。
 3. API 错误解析不能假定固定 HTTP 状态码或 JSON 字段，遇到未验证响应应保留原始响应摘要并返回 UNKNOWN。
 4. 不在日志中输出 Cookie、授权值、密码或完整私讯 HTML。
-

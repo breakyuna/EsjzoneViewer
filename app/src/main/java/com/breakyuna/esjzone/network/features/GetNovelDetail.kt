@@ -49,9 +49,10 @@ fun EsjzoneClient.getNovelDetail(
     val words = wordsStr.replace(",", "").replace(Regex("[^0-9]"), "").toIntOrNull() ?: 0
 
     val detailInfo = document.selectFirst(".book-detail")
-    val type = detailInfo?.select("ul li")?.firstOrNull()?.text()?.trim()
+    val type = detailInfo?.select("ul li")?.firstOrNull()?.text()
+        ?.let(::stripDetailLabel)
         ?.takeIf { it.isNotBlank() }
-        ?: EsjzoneXPaths.Detail.Type.evaluate(document).get()
+        ?: EsjzoneXPaths.Detail.Type.evaluate(document).get()?.let(::stripDetailLabel)
         ?: ""
     val author = detailInfo?.select("ul li a[href^='/tags/']")?.firstOrNull()?.text()?.trim()
         ?.takeIf { it.isNotBlank() }
@@ -65,7 +66,22 @@ fun EsjzoneClient.getNovelDetail(
         ?: EsjzoneXPaths.Detail.ForumUrl.evaluate(document).get()
         ?: ""
 
-    val tags = EsjzoneXPaths.Detail.Tags.evaluate(document).list().toList()
+    val sourceLinks = detailInfo?.select("a[href]").orEmpty()
+        .mapNotNull { link ->
+            val href = link.absUrl("href").ifBlank { link.attr("href") }.trim()
+            href.takeIf { it.startsWith("http://") || it.startsWith("https://") }
+        }
+    val sourceUrl = sourceLinks.firstOrNull { href ->
+        !href.contains("esjzone", ignoreCase = true)
+    } ?: sourceLinks.firstOrNull()
+
+    val updatedAt = extractUpdatedAt(detailInfo ?: document)
+
+    val tags = EsjzoneXPaths.Detail.Tags.evaluate(document)
+        .list()
+        .map(String::trim)
+        .filter(String::isNotBlank)
+        .distinct()
 
     val favorite = document.selectFirst("button.btn-favorite")?.text()?.trim()
         ?: EsjzoneXPaths.Detail.FavoriteText.evaluate(document).get()
@@ -84,7 +100,7 @@ fun EsjzoneClient.getNovelDetail(
         ?.let(::analyseChapterList)
         ?: NovelChapterList(emptyList())
     val comments = if (includeComments) {
-        parseComments(document, forumUrl.ifBlank { targetUrl })
+        parseComments(document, commentParentId(targetUrl))
     } else {
         emptyList()
     }
@@ -104,17 +120,52 @@ fun EsjzoneClient.getNovelDetail(
         favorite == "已收藏",
         description,
         chapterList,
-        comments
+        comments,
+        sourceUrl,
+        updatedAt
     )
+}
+
+private val UPDATED_AT_REGEX = Regex(
+    "(?:更新日期|更新日|最后更新|最後更新|更新)\\s*[：:]?\\s*" +
+        "(\\d{4}[-/.]\\d{1,2}[-/.]\\d{1,2}(?:\\s+\\d{1,2}:\\d{2}(?::\\d{2})?)?)"
+)
+
+private val DATE_REGEX = Regex(
+    "\\d{4}[-/.]\\d{1,2}[-/.]\\d{1,2}(?:\\s+\\d{1,2}:\\d{2}(?::\\d{2})?)?"
+)
+
+private fun stripDetailLabel(value: String): String =
+    value.trim().replaceFirst(Regex("^[^：:]+[：:]\\s*"), "").trim()
+
+private fun extractUpdatedAt(detailInfo: org.jsoup.nodes.Element): String? {
+    val text = detailInfo.text().replace(Regex("\\s+"), " ").trim()
+    UPDATED_AT_REGEX.find(text)?.groupValues?.getOrNull(1)?.let { return it }
+
+    detailInfo.selectFirst("time[datetime], [data-updated-at]")?.let { element ->
+        element.attr("datetime").trim().takeIf { it.isNotBlank() }?.let { return it }
+        element.attr("data-updated-at").trim().takeIf { it.isNotBlank() }?.let { return it }
+        element.text().trim().takeIf { it.isNotBlank() }?.let { return it }
+    }
+
+    return DATE_REGEX.find(text)?.value
 }
 
 private fun resolveImageUrl(image: org.jsoup.nodes.Element): String? {
     // Lazy-loaded images keep the real URL in data-* while src may be a
     // non-empty placeholder, so data-* attributes must be checked first.
-    return sequenceOf("data-src", "data-original", "data-lazy-src", "src")
+    return sequenceOf(
+        "data-src",
+        "data-original",
+        "data-lazy-src",
+        "data-original-src",
+        "src"
+    )
         .mapNotNull { attribute ->
+            val raw = image.attr(attribute).trim()
+            if (raw.isBlank()) return@mapNotNull null
             image.absUrl(attribute)
-                .ifBlank { image.attr(attribute) }
+                .ifBlank { raw }
                 .trim()
                 .takeIf { it.isNotBlank() }
         }

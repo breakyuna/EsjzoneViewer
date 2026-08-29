@@ -13,10 +13,18 @@ fun EsjzoneClient.getFavorites(
     authorization: Authorization,
     sort: String
 ): Pair<PageableRequester<FavoriteNovel>, List<FavoriteNovel>> {
-    val firstPageUrl = "${EsjzoneUrls.My.Favorite}/$sort/1"
-    val responseBody = getPage(authorization, firstPageUrl, PageCacheTtl.ACCOUNT_LIST)
+    val firstPageUrl = favoritePageUrl(sort, 1)
+    // The site uses the /new/ or /udate/ landing request to establish the
+    // server-side order used by later bare numeric links.  Do not let a
+    // cached landing page leave that session state set to the other sort.
+    val responseBody = getPage(
+        authorization,
+        firstPageUrl,
+        PageCacheTtl.ACCOUNT_LIST,
+        forceRefresh = true
+    )
 
-    val document = Jsoup.parse(responseBody)
+    val document = Jsoup.parse(responseBody, firstPageUrl)
 
     val pagesRaw = EsjzoneXPaths.Profile.Favorite.Pages.evaluate(document).get()
     val matcher = if (pagesRaw != null) pagesRegex.find(pagesRaw) else null
@@ -58,13 +66,13 @@ private class FavoriteNovelRequester(
         tag = "FavoriteNovelRequester",
         fallback = emptyList()
     ) {
-        val pageUrl = "${EsjzoneUrls.My.Favorite}/$sort/$page"
+        val pageUrl = favoritePageUrl(sort, page)
         val responseBody = EsjzoneClient.getPage(
             authorization,
             pageUrl,
             PageCacheTtl.ACCOUNT_LIST
         )
-        val document = Jsoup.parse(responseBody)
+        val document = Jsoup.parse(responseBody, pageUrl)
 
         val novels = mutableListOf<FavoriteNovel>()
 
@@ -84,4 +92,25 @@ private class FavoriteNovelRequester(
         return current > pages
     }
 
+}
+
+/**
+ * ESJ's sort select navigates to /new/ or /udate/ first.  The new-order pager
+ * then emits bare numeric links, while the update-order pager keeps /udate/;
+ * visiting the landing route establishes the server-side order before those
+ * page links are requested.
+ */
+internal fun favoritePageUrl(sort: String, page: Int): String {
+    val safePage = page.coerceAtLeast(1)
+    val route = if (sort.trim().equals("udate", ignoreCase = true)) "udate" else "new"
+    return when {
+        route == "udate" && safePage == 1 ->
+            "${EsjzoneUrls.My.Favorite}/udate/"
+        route == "udate" ->
+            "${EsjzoneUrls.My.Favorite}/udate/$safePage"
+        safePage == 1 ->
+            "${EsjzoneUrls.My.Favorite}/new/"
+        else ->
+            "${EsjzoneUrls.My.Favorite}/$safePage"
+    }
 }

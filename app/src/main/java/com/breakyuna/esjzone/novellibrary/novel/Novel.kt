@@ -74,7 +74,9 @@ data class DetailedNovel(
     val isFavorite: Boolean,
     val description: NovelDescription,
     val chapterList: NovelChapterList,
-    val comments: List<Comment> = emptyList()
+    val comments: List<Comment> = emptyList(),
+    val sourceUrl: String? = null,
+    val updatedAt: String? = null
 ) : CoveredNovel {
 
     fun id(): String {

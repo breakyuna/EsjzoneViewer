@@ -7,6 +7,12 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
 
+enum class ReaderScript {
+    ORIGINAL,
+    SIMPLIFIED,
+    TRADITIONAL
+}
+
 enum class ReaderBackground {
     SYSTEM,
     PAPER,
@@ -51,7 +57,8 @@ data class ReaderSettings(
     val lineSpacingSp: Float = 10f,
     val paragraphSpacingDp: Float = 10f,
     val pageSpacingDp: Float = 32f,
-    val horizontalPaddingDp: Float = 20f
+    val horizontalPaddingDp: Float = 20f,
+    val script: ReaderScript = ReaderScript.ORIGINAL
 ) {
     val lineHeightSp: Float
         get() = fontSizeSp + lineSpacingSp
@@ -69,6 +76,7 @@ object ReaderSettingsStore {
     private const val PARAGRAPH_SPACING = "paragraph_spacing"
     private const val PAGE_SPACING = "page_spacing"
     private const val HORIZONTAL_PADDING = "horizontal_padding"
+    private const val SCRIPT = "script"
 
     fun load(context: Context): ReaderSettings {
         val defaults = ReaderSettings()
@@ -102,6 +110,10 @@ object ReaderSettingsStore {
                 defaults.horizontalPaddingDp,
                 12f,
                 48f
+            ),
+            script = enumValueOrDefault(
+                preferences.readString(SCRIPT),
+                defaults.script
             )
         )
     }
@@ -118,6 +130,7 @@ object ReaderSettingsStore {
             .putFloat(PARAGRAPH_SPACING, safeSettings.paragraphSpacingDp)
             .putFloat(PAGE_SPACING, safeSettings.pageSpacingDp)
             .putFloat(HORIZONTAL_PADDING, safeSettings.horizontalPaddingDp)
+            .putString(SCRIPT, safeSettings.script.name)
             .apply()
     }
 

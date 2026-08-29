@@ -82,7 +82,7 @@
 ### 4.3 收藏与观看记录
 
 - 详情页 button.btn-favorite 展示当前状态，样本账号状态为“已收藏”。
-- 收藏列表默认 /my/favorite/，分页 /my/favorite/1；按最近更新排序为 /my/favorite/udate/。
+- 收藏排序先进入 /my/favorite/new/ 或 /my/favorite/udate/；最新收藏的后续分页使用裸 /my/favorite/{page}，最近更新的后续分页使用 /my/favorite/udate/{page}。
 - 观看记录每行包含小说详情链接与最后观看章节，删除按钮使用 /inc/mem_view_del.php，见 API_ENDPOINTS.md。
 
 ## 5. 小说分类与排序路由
@@ -132,13 +132,13 @@ list-04 在实际选择排序值 4 后被观察到，分类下拉框在该交互
 
 - 分类列表：/{listPrefix}/{page}.html，内联 bootpag 给出总页数。
 - 标签/搜索：/tags-{sort}/{keyword}/{page}.html。
-- 收藏：/my/favorite/{sort?}/{page}。
+- 收藏：先访问 /my/favorite/new/ 或 /my/favorite/udate/，随后分别跟随站点暴露的裸数字或 /udate/ 数字分页链接。
 
 ### 7.2 客户端本地切换
 
 - 更新页六个日期面板均已在同一 HTML 中，ID 为 tab0 至 tab5，仅切换 .show.active。
-- 章节评论也按 .comments-page-N 静态分组，链接为 javascript:void(0);，没有观察到翻页请求。
-- 留言板内联脚本显示 total: 8，每组实际包含约 50 条评论，最后一组 11 条；脚本中按评论序号每 15 条计算 hash 所属页，存在实现不一致，应以 DOM 分组为准。
+- 章节评论和留言板都由客户端统一按评论顺序每页 15 条，站点 .comments-page-N 分组不作为分页依据。
+- 评论分页链接为 javascript:void(0);，客户端提供首页、上一页、下一页和末页按钮。
 
 ## 8. 未验证项
 
@@ -147,4 +147,3 @@ list-04 在实际选择排序值 4 后被观察到，分类下拉框在该交互
 - list-{category}{sort} 的所有组合是否支持：UNKNOWN / NOT VERIFIED。
 - 单本论坛页面的动态 Loading 数据接口：UNKNOWN / NOT VERIFIED。
 - 登出后的匿名页面与权限差异：未执行登出，UNKNOWN / NOT VERIFIED。
-

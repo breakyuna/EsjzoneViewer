@@ -109,15 +109,15 @@
 | author_id | string/null | 用户链接 query uid |
 | author_name | string/null | header 文本 |
 | author_url | string/null | 支持 .html 与无扩展名 |
-| author_avatar_url | string/null | comment-header/comment-title 内头像，支持懒加载属性 |
+| author_avatar_url | string/null | .comment-author-ava .lazyload-author-ava 的 data-src 或 background-image，也兼容 img |
 | floor | string/null | comment-floor |
 | created_at | datetime/null | comment-meta |
 | content_html | string | comment-text HTML |
 | content_text | string | 纯文本 |
-| page_group | integer/null | .comments-page-N |
+| page_group | integer/null | 客户端固定每 15 条计算的页码 |
 | is_visible_initially | boolean | 首屏显隐状态 |
 
-评论分页是本地 DOM 分组，不代表服务器 page API。留言板观察到 8 组，章节页样本为 3 组。
+评论分页是客户端固定每页 15 条的本地分页，不代表服务器 page API；评论区 UI 统一提供首页、上一页、下一页和末页操作。
 
 ## 7. UserProfile
 
