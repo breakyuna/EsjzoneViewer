@@ -51,6 +51,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import cafe.adriel.voyager.core.model.StateScreenModel
 import cafe.adriel.voyager.core.model.rememberScreenModel
+import cafe.adriel.voyager.core.model.screenModelScope
 import cafe.adriel.voyager.core.screen.Screen
 import cafe.adriel.voyager.core.screen.ScreenKey
 import cafe.adriel.voyager.navigator.tab.Tab
@@ -78,12 +79,15 @@ class CategoryBrowserPage : Screen {
     @Composable
     override fun Content() {
         val navigator = LocalBaseNavigator.current
+        val authorization = LocalAuthorization.current
+        val categoryModel = rememberScreenModel { CategoryModel(authorization) }
         Column(modifier = Modifier.fillMaxSize()) {
             AppBar(
                 title = stringResource(id = R.string.categories),
                 onBack = { navigator?.pop() }
             )
             CategoryBrowserContent(
+                categoryModel = categoryModel,
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxWidth()
@@ -158,15 +162,21 @@ object CategoryTab : Tab {
 
     @Composable
     override fun Content() {
-        CategoryBrowserContent(modifier = Modifier.fillMaxSize())
+        val authorization = LocalAuthorization.current
+        val categoryModel = rememberScreenModel { CategoryModel(authorization) }
+        CategoryBrowserContent(
+            categoryModel = categoryModel,
+            modifier = Modifier.fillMaxSize()
+        )
     }
 }
 
 @Composable
-private fun CategoryBrowserContent(modifier: Modifier) {
+private fun CategoryBrowserContent(
+    categoryModel: CategoryModel,
+    modifier: Modifier
+) {
         val navigator = LocalBaseNavigator.current
-        val authorization = LocalAuthorization.current
-        val categoryModel = rememberScreenModel { CategoryModel(authorization) }
         val state by categoryModel.state.collectAsState()
         val adult by remember { GlobalSettings.adult }
 
