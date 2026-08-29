@@ -185,11 +185,10 @@ class SearchPage(private val keyword: String) : Screen {
  */
 @Composable
 fun InlineSearchResults(
-    authorization: Authorization,
+    searchModel: SearchPageModel,
     keyword: String,
     modifier: Modifier = Modifier
 ) {
-    val searchModel = rememberScreenModel { SearchPageModel(authorization) }
     val state by searchModel.state.collectAsState()
 
     LaunchedEffect(keyword) {

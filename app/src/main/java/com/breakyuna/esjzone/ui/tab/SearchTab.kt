@@ -54,6 +54,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import cafe.adriel.voyager.navigator.tab.Tab
 import cafe.adriel.voyager.navigator.tab.TabOptions
+import cafe.adriel.voyager.core.model.rememberScreenModel
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -65,6 +66,7 @@ import com.breakyuna.esjzone.ui.component.AppBar
 import com.breakyuna.esjzone.ui.navigation.LocalBaseNavigator
 import com.breakyuna.esjzone.network.LocalAuthorization
 import com.breakyuna.esjzone.ui.page.InlineSearchResults
+import com.breakyuna.esjzone.ui.page.SearchPageModel
 import com.breakyuna.esjzone.util.currentDateString
 import com.breakyuna.esjzone.util.formattedDate
 
@@ -86,6 +88,7 @@ object SearchTab : Tab {
         val navigator = LocalBaseNavigator.current
         val authorization = LocalAuthorization.current
         val scope = rememberCoroutineScope()
+        val searchModel = rememberScreenModel { SearchPageModel(authorization) }
 
         var loadingHistory by remember {
             mutableStateOf(true)
@@ -206,7 +209,7 @@ object SearchTab : Tab {
 
             activeSearchKeyword?.let { currentKeyword ->
                 InlineSearchResults(
-                    authorization = authorization,
+                    searchModel = searchModel,
                     keyword = currentKeyword,
                     modifier = Modifier.padding(top = 12.dp)
                 )
