@@ -20,7 +20,7 @@
 | 论坛分类 | /forum/{categoryId}/ | 否 | 已验证 | 无 | P1 | 静态主题矩阵 |
 | 单本论坛 | /forum/{categoryId}/{novelId}/ | 否 | 部分验证 | 无 | P2 | 样本显示 Loading/暂无资料 |
 | 小说详情 | /detail/{novelId}.html | 否 | 已验证 | 无 | P0 | 元数据和 TOC |
-| 章节目录 | #integration details | 否 | 已验证 | 无 | P0 | 782 链接样本 |
+| 章节目录 | #integration #chapterList / #integration details | 否 | 已验证 | 无 | P0 | 扁平目录与旧版分卷目录均兼容 |
 | 正序/倒序 | 详情 TOC 按钮 | 否 | 已验证 | 无 | P1 | data-sort 从 1 切到 2，并反转目录 DOM |
 | 章节正文 | /forum/{novelId}/{postId}.html | 否 | 已验证 | 无 | P0 | HTML 正文 |
 | 正文图片 | .forum-content img | 否 | 已验证 | 无 | P1 | 直接 img URL |

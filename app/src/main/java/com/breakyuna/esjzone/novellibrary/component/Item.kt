@@ -67,6 +67,12 @@ fun analyseItems(element: Element): List<Item> {
             items.add(ChapterItem(analyseChapter(child)))
         } else if (child.nameIs("details")) {
             items.add(analyseChapterList(child))
+        } else if (child.id() == "chapterList") {
+            // Current ESJ detail pages use a flat #chapterList container rather
+            // than wrapping chapters in <details>.  The surrounding div is a
+            // layout node, so direct-child parsing alone would otherwise skip
+            // every chapter and leave the reading entry point disabled.
+            appendFlatChapterItems(items, child)
         }
     }
 
@@ -79,7 +85,49 @@ fun analyseItems(element: Element): List<Item> {
         }
     }
 
+    // Also support a flat chapter list nested below another layout wrapper.
+    // This is intentionally additive and de-duplicates by href so calling
+    // analyseItems(#chapterList) directly remains safe.
+    val flatChapterList = if (element.id() == "chapterList") {
+        element
+    } else {
+        element.selectFirst("#chapterList")
+    }
+    if (flatChapterList != null) {
+        appendFlatChapterItems(items, flatChapterList)
+    }
+
     return items.toList()
+}
+
+private fun appendFlatChapterItems(items: MutableList<Item>, chapterList: Element) {
+    val existingUrls = items
+        .asSequence()
+        .flatMap { item ->
+            when (item) {
+                is ChapterItem -> sequenceOf(item.chapter)
+                is ChapterListItem -> item.chapters.asSequence()
+                else -> emptySequence()
+            }
+        }
+        .map { it.url }
+        .toMutableSet()
+
+    for (chapterElement in chapterList.select("a[href]")) {
+        val href = chapterElement.attr("href")
+        if (href.isBlank()) continue
+        // #chapterList is a chapter-only container on the current template.
+        // Keep the data-title-less fallback for older/malformed entries while
+        // avoiding unrelated links when a wrapper is reused elsewhere.
+        if (!chapterElement.hasAttr("data-title") &&
+            !href.contains("/forum/", ignoreCase = true)
+        ) {
+            continue
+        }
+        if (existingUrls.add(href)) {
+            items.add(ChapterItem(analyseChapter(chapterElement)))
+        }
+    }
 }
 
 private fun analyseChapterList(element: Element): ChapterListItem {

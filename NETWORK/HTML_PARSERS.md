@@ -102,9 +102,11 @@ URL：/detail/{novelId}.html
 
 ### 5.2 章节目录
 
-主选择器：
+兼容选择器：
 
 ~~~css
+#integration #chapterList a[data-title]
+#integration #chapterList a[data-title] p
 #integration details
 #integration details > summary
 #integration details a[data-title]
@@ -113,13 +115,14 @@ URL：/detail/{novelId}.html
 
 字段：
 
-- 卷名：details > summary 文本。
+- 当前扁平模板没有卷节点，章节直接位于 #integration > #chapterList；客户端按 a 的 DOM 顺序读取。
+- 旧版分卷模板的卷名来自 details > summary 文本。
 - 章节标题：a[data-title] 的 data-title，若缺失再取其中 p 文本。
 - 章节 URL：a[href]。
 - 小说 ID/帖子 ID：从 /forum/{novelId}/{postId}.html 解析。
 - 外部顺序：DOM 顺序；正序/倒序按钮可能改变显示顺序。
 
-样本小说总计 10 个 details，前 9 卷有内容，最后一卷 Q&A 为空；目录链接总数 782，其中 780 个数字章节与 2 个漫画链接。客户端不能用“数字章节连续”替代实际 DOM 目录。
+已验证的当前扁平模板包括 1772649515（129 个章节）与 1784452084（52 个章节）；旧样本还包含 10 个 details，前 9 卷有内容，最后一卷 Q&A 为空。目录链接可能包含非数字标题，客户端不能用“数字章节连续”替代实际 DOM 目录。
 
 ## 6. 章节/帖子页
 
