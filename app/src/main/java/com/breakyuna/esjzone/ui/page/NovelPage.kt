@@ -101,6 +101,7 @@ class NovelPage(
         val navigator = LocalBaseNavigator.current
         val authorization = LocalAuthorization.current
         val scope = rememberCoroutineScope()
+        val context = LocalContext.current
 
         val screenModel = rememberScreenModel { NovelPageModel(authorization, scope, novel) }
         val commentModel = rememberScreenModel {
