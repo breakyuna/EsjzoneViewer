@@ -95,7 +95,13 @@ object EsjzoneUrls {
      * often only a gray placeholder when lazy loading is enabled.
      */
     fun coverUrlFromNovelCard(card: Element?): String {
-        return coverUrlFromImage(card?.selectFirst("img"))
+        if (card == null) return EmptyCover
+        return card.select(COVER_SOURCE_SELECTOR)
+            .asSequence()
+            .flatMap(::imageUrlCandidatesFrom)
+            .map(::coverOrEmpty)
+            .firstOrNull { it.isNotBlank() }
+            ?: EmptyCover
     }
 
     /** Extracts a cover from an image element, skipping known placeholders. */
@@ -119,6 +125,9 @@ object EsjzoneUrls {
                 }
             }
     }
+
+    private const val COVER_SOURCE_SELECTOR =
+        "img, [data-src], [data-original], [data-lazy-src], [data-original-src]"
 
     private val IMAGE_URL_ATTRIBUTES = listOf(
         "data-src",
