@@ -88,6 +88,7 @@ import com.breakyuna.esjzone.network.features.getNovelDetail
 import com.breakyuna.esjzone.network.features.removeHistory
 import com.breakyuna.esjzone.novellibrary.novel.Chapter
 import com.breakyuna.esjzone.novellibrary.novel.DetailedNovel
+import com.breakyuna.esjzone.novellibrary.novel.FavoriteNovel
 import com.breakyuna.esjzone.novellibrary.novel.HistoryNovel
 import com.breakyuna.esjzone.ui.component.AppBar
 import com.breakyuna.esjzone.ui.component.Loading
@@ -116,7 +117,7 @@ object HistoryPage : Screen {
 
         val historyPageModel = rememberScreenModel { HistoryPageModel(authorization) }
         val state by historyPageModel.state.collectAsState()
-        val localHistoryPageModel = rememberScreenModel { LocalHistoryPageModel() }
+        val localHistoryPageModel = rememberScreenModel { LocalHistoryPageModel(authorization) }
         val localState by localHistoryPageModel.state.collectAsState()
         var selectedPage by rememberSaveable { mutableIntStateOf(0) }
         val pagerState = rememberPagerState(
@@ -189,7 +190,9 @@ object HistoryPage : Screen {
 
             HorizontalPager(
                 state = pagerState,
-                reverseLayout = true,
+                // Page 0 is local history and page 1 is cloud history. Keep
+                // that visual order so local -> cloud is a right swipe.
+                reverseLayout = false,
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxWidth()
@@ -209,13 +212,16 @@ object HistoryPage : Screen {
                                     chapter = chapter,
                                     history = ChapterStateHolder(chapter),
                                     novelName = activity.novelName,
-                                    novelUrl = activity.novelUrl
+                                    novelUrl = activity.novelUrl,
+                                    novelCoverUrl = activity.novelCoverUrl
                                 )
                             )
                         },
                         onDelete = localHistoryPageModel::delete,
                         onClear = localHistoryPageModel::clear,
-                        onRetry = localHistoryPageModel::retry
+                        onRetry = localHistoryPageModel::retry,
+                        coverUrlFor = localHistoryPageModel::coverUrlFor,
+                        onCoverNeeded = localHistoryPageModel::loadCover
                     )
                 } else {
                     when (state) {
@@ -440,7 +446,8 @@ object HistoryPage : Screen {
                                                                     ChapterStateHolder(historyChapter),
                                                                     novel.chapterList.orderedChapters,
                                                                     novelName = novel.name,
-                                                                    novelUrl = novel.url
+                                                                    novelUrl = novel.url,
+                                                                    novelCoverUrl = novel.coverUrl
                                                                 )
                                                             )
                                                         }
@@ -547,7 +554,9 @@ private fun LocalHistoryContent(
     onOpen: (LocalReadingActivity) -> Unit,
     onDelete: (String) -> Unit,
     onClear: () -> Unit,
-    onRetry: () -> Unit
+    onRetry: () -> Unit,
+    coverUrlFor: (LocalReadingActivity) -> String,
+    onCoverNeeded: (LocalReadingActivity) -> Unit
 ) {
     when (val current = state) {
         LocalHistoryPageModel.State.Loading -> Loading()
@@ -625,8 +634,10 @@ private fun LocalHistoryContent(
                         ) { activity ->
                             LocalHistoryRow(
                                 activity = activity,
+                                coverUrl = coverUrlFor(activity),
                                 onOpen = { onOpen(activity) },
-                                onDelete = { onDelete(activity.activityId) }
+                                onDelete = { onDelete(activity.activityId) },
+                                onCoverNeeded = { onCoverNeeded(activity) }
                             )
                         }
                     }
@@ -639,9 +650,17 @@ private fun LocalHistoryContent(
 @Composable
 private fun LocalHistoryRow(
     activity: LocalReadingActivity,
+    coverUrl: String,
     onOpen: () -> Unit,
-    onDelete: () -> Unit
+    onDelete: () -> Unit,
+    onCoverNeeded: () -> Unit
 ) {
+    if (coverUrl.isBlank()) {
+        LaunchedEffect(activity.activityId) {
+            onCoverNeeded()
+        }
+    }
+
     val progress = (activity.chapterProgress.coerceIn(0f, 1f) * 100f).roundToInt()
     val relativeTime = DateUtils.getRelativeTimeSpanString(
         activity.lastReadAt,
@@ -673,12 +692,41 @@ private fun LocalHistoryRow(
                 .padding(start = 16.dp, top = 14.dp, bottom = 14.dp, end = 8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Icon(
-                imageVector = Icons.Filled.AutoStories,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.size(28.dp)
-            )
+            Box(
+                modifier = Modifier
+                    .width(72.dp)
+                    .height(100.dp)
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(MaterialTheme.colorScheme.surface)
+            ) {
+                SubcomposeAsyncImage(
+                    model = ImageRequest.Builder(LocalContext.current)
+                        .data(
+                            EsjzoneUrls.coverOrEmpty(coverUrl)
+                                .takeIf { it.isNotBlank() }
+                                ?: R.drawable.missing_cover
+                        )
+                        .crossfade(true)
+                        .build(),
+                    contentDescription = activity.novelName,
+                    imageLoader = MainActivity.imageLoader,
+                    loading = {
+                        CircularProgressIndicator(strokeWidth = 2.dp)
+                    },
+                    error = {
+                        androidx.compose.foundation.Image(
+                            painter = androidx.compose.ui.res.painterResource(
+                                id = R.drawable.missing_cover
+                            ),
+                            contentDescription = activity.novelName,
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    },
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize()
+                )
+            }
             Column(
                 modifier = Modifier
                     .weight(1f)
@@ -748,16 +796,92 @@ private fun localDurationText(durationMs: Long): String {
     }
 }
 
-class LocalHistoryPageModel : StateScreenModel<LocalHistoryPageModel.State>(State.Loading) {
+class LocalHistoryPageModel(
+    private val authorization: Authorization
+) : StateScreenModel<LocalHistoryPageModel.State>(State.Loading) {
 
     private var observeJob: Job? = null
     private var observeStarted = false
+    private val coverLock = Any()
+    private val requestedCoverKeys = mutableSetOf<String>()
+    private val resolvedCoverUrls = mutableStateMapOf<String, String>()
 
     sealed class State {
         data object Loading : State()
         data object Error : State()
         data class Result(val activities: List<LocalReadingActivity>) : State()
     }
+
+    fun coverUrlFor(activity: LocalReadingActivity): String {
+        val storedCover = EsjzoneUrls.coverOrEmpty(activity.novelCoverUrl)
+        if (storedCover.isNotBlank()) return storedCover
+        return resolvedCoverUrls[coverKey(coverLookupUrl(activity))].orEmpty()
+    }
+
+    fun loadCover(activity: LocalReadingActivity) {
+        if (EsjzoneUrls.coverOrEmpty(activity.novelCoverUrl).isNotBlank()) return
+
+        val targetUrl = coverLookupUrl(activity)
+        val key = coverKey(targetUrl)
+        if (key.isBlank()) return
+
+        val shouldLoad = synchronized(coverLock) {
+            if (resolvedCoverUrls.containsKey(key) || !requestedCoverKeys.add(key)) {
+                false
+            } else {
+                true
+            }
+        }
+        if (!shouldLoad) return
+
+        screenModelScope.launch(Dispatchers.IO) {
+            try {
+                val cover = EsjzoneUrls.coverOrEmpty(
+                    EsjzoneClient.getNovelDetail(
+                        authorization,
+                        FavoriteNovel(
+                            name = activity.novelName,
+                            url = targetUrl
+                        )
+                    ).coverUrl
+                )
+                if (cover.isNotBlank()) {
+                    resolvedCoverUrls[key] = cover
+                    runCatching {
+                        MainActivity.database.localReadingActivityDao().updateCover(
+                            activity.activityId,
+                            cover
+                        )
+                    }.onFailure { error ->
+                        AppLogger.w(
+                            "LocalHistoryPageModel",
+                            "Failed to persist recovered novel cover",
+                            error
+                        )
+                    }
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                AppLogger.w(
+                    "LocalHistoryPageModel",
+                    "Failed to recover cover for ${activity.novelName}",
+                    e
+                )
+            }
+        }
+    }
+
+    private fun coverLookupUrl(activity: LocalReadingActivity): String =
+        activity.novelUrl.trim().ifBlank {
+            activity.novelId.trim()
+                .takeIf { it.isNotBlank() }
+                ?.let { "/detail/$it.html" }
+                .orEmpty()
+        }
+
+    private fun coverKey(url: String): String =
+        EsjzoneUrls.canonicalPageKey(url).ifBlank { url.trim() }
 
     fun observe() {
         if (observeStarted) return

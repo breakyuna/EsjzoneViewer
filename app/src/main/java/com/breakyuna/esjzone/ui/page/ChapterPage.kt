@@ -137,7 +137,8 @@ class ChapterPage(
     private val history: ChapterStateHolder,
     private val chapterOrder: List<Chapter> = emptyList(),
     private val novelName: String = "",
-    private val novelUrl: String = ""
+    private val novelUrl: String = "",
+    private val novelCoverUrl: String = ""
 ) : Screen {
 
     override val key: ScreenKey =
@@ -357,6 +358,7 @@ class ChapterPage(
                         EsjzoneUrls.resolve("/detail/$id.html")
                     }.orEmpty()
                 },
+                novelCoverUrl = EsjzoneUrls.coverOrEmpty(novelCoverUrl),
                 chapterUrl = (activeChapter?.chapter ?: requestedChapter.value).url,
                 chapterName = (activeChapter?.chapter ?: requestedChapter.value).name,
                 chapterIndex = currentBookLocation?.chapterIndex ?: -1,
@@ -951,6 +953,7 @@ private data class LocalReadingPosition(
     val novelId: String,
     val novelName: String,
     val novelUrl: String,
+    val novelCoverUrl: String,
     val chapterUrl: String,
     val chapterName: String,
     val chapterIndex: Int,
@@ -967,6 +970,7 @@ private fun LocalReadingPosition.toLocalReadingActivity(
     novelId = novelId,
     novelName = novelName,
     novelUrl = novelUrl,
+    novelCoverUrl = novelCoverUrl,
     chapterUrl = chapterUrl,
     chapterName = chapterName,
     chapterIndex = chapterIndex,

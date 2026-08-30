@@ -15,7 +15,7 @@ import com.breakyuna.esjzone.database.entity.SearchHistory
 
 @Database(
     entities = [Cache::class, SearchHistory::class, Bookmark::class, LocalReadingActivity::class],
-    version = 3,
+    version = 4,
     exportSchema = false
 )
 abstract class GeneralDatabase : RoomDatabase() {
@@ -69,6 +69,17 @@ abstract class GeneralDatabase : RoomDatabase() {
                     """
                     CREATE INDEX IF NOT EXISTS index_local_reading_history_last_read_at
                     ON local_reading_history(last_read_at)
+                    """.trimIndent()
+                )
+            }
+        }
+
+        val MIGRATION_3_4: Migration = object : Migration(3, 4) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL(
+                    """
+                    ALTER TABLE local_reading_history
+                    ADD COLUMN novel_cover_url TEXT NOT NULL DEFAULT ''
                     """.trimIndent()
                 )
             }

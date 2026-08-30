@@ -348,7 +348,8 @@ class NovelPage(
                                                         history,
                                                         chapterList.orderedChapters,
                                                         novelName = result.detailed.name,
-                                                        novelUrl = result.detailed.url
+                                                        novelUrl = result.detailed.url,
+                                                        novelCoverUrl = result.detailed.coverUrl
                                                     )
                                                 )
                                             }
@@ -404,6 +405,7 @@ class NovelPage(
                                 chapterList = chapterList,
                                 novelId = result.detailed.id(),
                                 novelName = result.detailed.name,
+                                novelCoverUrl = result.detailed.coverUrl,
                                 history = historyState,
                                 hasHistory = hasHistory,
                                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)

@@ -98,7 +98,8 @@ private fun openLocalActivity(
             chapter = chapter,
             history = ChapterStateHolder(chapter),
             novelName = activity.novelName,
-            novelUrl = activity.novelUrl
+            novelUrl = activity.novelUrl,
+            novelCoverUrl = activity.novelCoverUrl
         )
     )
 }

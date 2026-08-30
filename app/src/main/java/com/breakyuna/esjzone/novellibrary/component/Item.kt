@@ -172,7 +172,8 @@ interface Item {
         history: MutableState<Chapter?>,
         hasHistory: MutableState<Boolean>,
         chapterOrder: List<Chapter>,
-        novelName: String = ""
+        novelName: String = "",
+        novelCoverUrl: String = ""
     )
 
 }
@@ -185,7 +186,8 @@ class TextItem(private val component: TextComponent) : Item {
         history: MutableState<Chapter?>,
         hasHistory: MutableState<Boolean>,
         chapterOrder: List<Chapter>,
-        novelName: String
+        novelName: String,
+        novelCoverUrl: String
     ) {
         val textMeasurer = rememberTextMeasurer()
         val textStyle = LocalTextStyle.current
@@ -217,7 +219,8 @@ class ChapterItem(val chapter: Chapter) : Item {
         history: MutableState<Chapter?>,
         hasHistory: MutableState<Boolean>,
         chapterOrder: List<Chapter>,
-        novelName: String
+        novelName: String,
+        novelCoverUrl: String
     ) {
         val navigator = LocalBaseNavigator.current
 
@@ -242,7 +245,8 @@ class ChapterItem(val chapter: Chapter) : Item {
                             chapter = chapter,
                             history = ChapterStateHolder(history),
                             chapterOrder = chapterOrder,
-                            novelName = novelName
+                            novelName = novelName,
+                            novelCoverUrl = novelCoverUrl
                         )
                     )
                 }
@@ -304,7 +308,8 @@ class ChapterListItem(private val name: TextComponent, val chapters: List<Chapte
         history: MutableState<Chapter?>,
         hasHistory: MutableState<Boolean>,
         chapterOrder: List<Chapter>,
-        novelName: String
+        novelName: String,
+        novelCoverUrl: String
     ) {
         val navigator = LocalBaseNavigator.current
 
@@ -395,7 +400,8 @@ class ChapterListItem(private val name: TextComponent, val chapters: List<Chapte
                                                 chapter = chapter,
                                                 history = ChapterStateHolder(history),
                                                 chapterOrder = chapterOrder,
-                                                novelName = novelName
+                                                novelName = novelName,
+                                                novelCoverUrl = novelCoverUrl
                                             )
                                         )
                                     }

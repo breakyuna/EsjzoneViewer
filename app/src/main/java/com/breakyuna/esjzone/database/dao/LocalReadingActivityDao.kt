@@ -22,6 +22,12 @@ interface LocalReadingActivityDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     fun upsert(activity: LocalReadingActivity)
 
+    @Query(
+        "UPDATE local_reading_history SET novel_cover_url = :coverUrl " +
+            "WHERE activity_id = :activityId"
+    )
+    fun updateCover(activityId: String, coverUrl: String)
+
     @Query("DELETE FROM local_reading_history WHERE activity_id = :activityId")
     fun deleteById(activityId: String)
 

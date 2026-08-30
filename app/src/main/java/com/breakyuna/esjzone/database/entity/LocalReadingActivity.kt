@@ -28,5 +28,6 @@ data class LocalReadingActivity(
     @ColumnInfo(name = "chapter_progress") val chapterProgress: Float,
     @ColumnInfo(name = "started_at") val startedAt: Long,
     @ColumnInfo(name = "last_read_at") val lastReadAt: Long,
-    @ColumnInfo(name = "duration_ms") val durationMs: Long
+    @ColumnInfo(name = "duration_ms") val durationMs: Long,
+    @ColumnInfo(name = "novel_cover_url", defaultValue = "''") val novelCoverUrl: String = ""
 )
