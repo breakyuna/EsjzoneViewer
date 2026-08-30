@@ -22,7 +22,7 @@
 | /detail/{novelId}.html | GET | novelId | HTML，小说详情与 TOC | Observed |
 | /forum/ | GET | 无 | HTML，论坛分类 | Observed |
 | /forum/{categoryId}/ | GET | categoryId | HTML，论坛主题矩阵 | Observed |
-| /forum/{categoryId}/{novelId}/ | GET | categoryId、novelId | HTML；样本有 Loading | Partial |
+| /forum/{categoryId}/{boardId}/ | GET | categoryId、boardId | HTML，Bootstrap Table 壳；主题数据可动态加载 | Observed |
 | /forum/{novelId}/{postId}.html | GET | novelId、postId | HTML，正文与评论 | Observed |
 | /guestbook/ | GET | 无 | HTML，留言板 | Observed |
 | /faq/ | GET | 无 | HTML，FAQ | Observed |
@@ -96,6 +96,19 @@
 | 实际请求方法与参数 | UNKNOWN / NOT VERIFIED |
 | 证据 | table#dataTable[data-url] Observed |
 
+### 3.5 论坛子板块主题 Bootstrap Table
+
+| 项目 | 观察结果 |
+|---|---|
+| 页面 | `/forum/{categoryId}/{boardId}/` |
+| DOM 壳 | `#dataTable[data-url]`、`data-side-pagination="server"`、`data-page-size="20"`、`data-sort-name="last_reply"`、`data-sort-order="desc"` |
+| data-url 样例 | `/inc/forum_list_data.php?totalRows=3`、`/inc/forum_list_data.php?totalRows=142` |
+| 客户端请求 | 使用 data-url 作为端点，并补充 `limit=20&offset=0&sort=last_reply&order=desc`；具体 XHR method 未由网络面板单独确认，当前客户端按 GET 请求 |
+| 返回形态 | JSON；观察到 Bootstrap Table 的 `total` 与 `rows` 字段，主题链接位于 `rows[].subject` HTML 中 |
+| 初始占位 | HTML 首次解析可见 `no-records-found`，但脚本加载后非空板块会填充主题行 |
+| 空板块判定 | 仅当 `totalRows=0` 或动态 JSON 确认总数为 0 时返回空列表 |
+| 证据 | ESJ 作品板与天空大公國讨论板均在云浏览器中观察到；直接把接口 URL 当作顶层页面打开可能被浏览器客户端拦截，不能据此判定正常板页脚本请求失败 |
+
 ## 4. 表单端点
 
 表单的 action 与 method 可以从 DOM 读取，但未提交，因此“页面表单目标”不等于“已确认网络请求”。
@@ -129,7 +142,7 @@
 
 - 收藏新增/取消接口：当前按钮已是“已收藏”，未点击；逻辑位于被云浏览器拦截的 modifyDetail.js?v=204，UNKNOWN / NOT VERIFIED。
 - 评论提交、留言提交、举报提交、资料更新、工单创建、工单回复：只有表单目标被观察，真实服务端响应未验证。
-- 单本论坛 Loading 的数据接口：页面有 bootstrap-table.js 资源但样本未呈现 data-url，UNKNOWN / NOT VERIFIED。
+- 其他会员页面 Bootstrap Table 的实际请求参数和返回字段仍未逐项通过网络面板确认，不应与论坛子板块端点混用。
 - 章节正文、评论、TOC：当前均直接出现在 HTML 中，没有证据表明需要额外 JSON API。
 
 ## 7. 客户端实现约束

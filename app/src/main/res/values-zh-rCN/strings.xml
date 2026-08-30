@@ -135,6 +135,8 @@
     <string name="forum">论坛</string>
     <string name="forum_empty">暂无论坛分类</string>
     <string name="forum_threads_empty">该板块暂无主题</string>
+    <string name="forum_novel_board">作品讨论区</string>
+    <string name="forum_open_novel">打开作品详情</string>
     <string name="forum_topic_count">主题 %1$d</string>
     <string name="forum_reply_count">回复 %1$d</string>
     <string name="forum_view_count">浏览 %1$d</string>

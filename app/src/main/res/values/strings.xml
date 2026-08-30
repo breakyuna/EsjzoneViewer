@@ -135,6 +135,8 @@
     <string name="forum">Forum</string>
     <string name="forum_empty">No forum categories found</string>
     <string name="forum_threads_empty">No topics found in this board</string>
+    <string name="forum_novel_board">Novel discussion board</string>
+    <string name="forum_open_novel">Open novel details</string>
     <string name="forum_topic_count">Topics %1$d</string>
     <string name="forum_reply_count">Replies %1$d</string>
     <string name="forum_view_count">Views %1$d</string>

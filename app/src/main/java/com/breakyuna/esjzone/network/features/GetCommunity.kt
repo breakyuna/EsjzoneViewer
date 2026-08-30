@@ -23,11 +23,16 @@ import org.jsoup.Jsoup
 import org.jsoup.nodes.Document
 import org.jsoup.nodes.Element
 
-private val CATEGORY_URL = Regex("(?:https?://[^/]+)?/forum/([0-9]+)/?$")
-private val THREAD_URL = Regex("(?:https?://[^/]+)?/forum/([0-9]+)/([0-9]+)/?$")
-private val POST_URL = Regex("(?:https?://[^/]+)?/forum/[0-9]+/([0-9]+)\\.html")
-private val TOPIC_URL = Regex("(?:https?://[^/]+)?/forum/([0-9]+)/([0-9]+)\\.html")
-private val DETAIL_URL = Regex("(?:https?://[^/]+)?/detail/([0-9]+)\\.html")
+private val CATEGORY_URL = Regex("(?:https?://[^/]+)?/forum/([0-9]+)/?(?:[?#].*)?$")
+private val THREAD_URL = Regex("(?:https?://[^/]+)?/forum/([0-9]+)/([0-9]+)/?(?:[?#].*)?$")
+private val POST_URL = Regex("(?:https?://[^/]+)?/forum/[0-9]+/([0-9]+)\\.html(?:[?#].*)?$")
+private val TOPIC_URL = Regex(
+    "(?:https?://[^/]+)?/forum/([0-9]+)/([0-9]+)\\.html(?:[?#].*)?$"
+)
+private val DETAIL_URL = Regex(
+    "(?:https?://[^/]+)?/detail/([0-9]+)\\.html(?:[?#].*)?$"
+)
+private val FORUM_TOTAL_ROWS = Regex("(?:^|[?&])totalRows=([0-9]+)(?:[&#]|$)")
 private val PROFILE_UID = Regex("[?&]uid=([0-9]+)")
 private val COMMENT_TIMESTAMP = Regex(
     "\\d{4}[-/.]\\d{1,2}[-/.]\\d{1,2}(?:[T ]\\d{1,2}:\\d{2}(?::\\d{2})?)?"
@@ -235,7 +240,11 @@ fun EsjzoneClient.getForumThreads(
         targetUrl
     )
 
-    return document.select("table.forum-board-detail td").mapNotNull { cell ->
+    return parseForumThreads(document)
+}
+
+internal fun parseForumThreads(document: Document): List<ForumThread> =
+    document.select("table.forum-board-detail td").mapNotNull { cell ->
         val anchor = cell.selectFirst("a[href]") ?: return@mapNotNull null
         val rawUrl = anchor.attr("href").trim()
         val match = THREAD_URL.matchEntire(rawUrl) ?: return@mapNotNull null
@@ -255,17 +264,27 @@ fun EsjzoneClient.getForumThreads(
             url = rawUrl
         )
     }.distinctBy { it.categoryId to it.id }
-}
+
+internal class ForumBoardDataException(message: String) : IOException(message)
 
 sealed class ForumBoardResult {
-    data class Topics(val items: List<ForumTopic>) : ForumBoardResult()
-    data object Novel : ForumBoardResult()
+    data class Topics(
+        val items: List<ForumTopic>,
+        val totalCount: Int? = null
+    ) : ForumBoardResult()
+
+    /** An ESJ novel board may also expose its own forum topics. */
+    data class Novel(
+        val detailUrl: String,
+        val items: List<ForumTopic> = emptyList(),
+        val totalCount: Int? = null
+    ) : ForumBoardResult()
 }
 
 /**
- * Loads either a dynamic forum topic board or a novel board. ESJ uses the same
- * two-level URL shape for both, so the presence of the bootstrap-table data
- * endpoint is the reliable discriminator.
+ * Loads either a dynamic forum topic board or an ESJ novel board. Both use the
+ * same two-level URL shape; a detail link identifies a novel board, while the
+ * bootstrap-table endpoint supplies its topics.
  */
 fun EsjzoneClient.getForumBoard(
     authorization: Authorization,
@@ -277,20 +296,61 @@ fun EsjzoneClient.getForumBoard(
         getPage(authorization, targetUrl, PageCacheTtl.COMMUNITY),
         targetUrl
     )
+    val novelDetailUrl = findForumNovelDetailUrl(document)
     val table = document.selectFirst("#dataTable[data-url]")
-        ?: return ForumBoardResult.Novel
+    if (table == null) {
+        return novelDetailUrl?.let { ForumBoardResult.Novel(detailUrl = it) }
+            ?: throw ForumBoardDataException("Forum board template was not recognized")
+    }
 
     // Some deployments render the first page directly into the HTML. Keep
     // that path working before using the site's AJAX endpoint.
     val inlineTopics = parseForumTopicRows(table, thread.id)
-    if (inlineTopics.isNotEmpty()) return ForumBoardResult.Topics(inlineTopics)
-
     val dataUrl = table.attr("data-url").trim()
-    if (dataUrl.isBlank()) return ForumBoardResult.Topics(emptyList())
+    val declaredTotal = FORUM_TOTAL_ROWS.find(dataUrl)
+        ?.groupValues
+        ?.getOrNull(1)
+        ?.toIntOrNull()
+    if (inlineTopics.isNotEmpty()) {
+        return forumBoardResult(novelDetailUrl, inlineTopics, declaredTotal)
+    }
+    if (declaredTotal == 0) {
+        return forumBoardResult(novelDetailUrl, emptyList(), 0)
+    }
+    if (dataUrl.isBlank()) {
+        throw ForumBoardDataException("Forum topic table has no data endpoint")
+    }
     val endpoint = appendForumTableParams(EsjzoneUrls.resolve(dataUrl))
     val body = getForumTableData(authorization, endpoint, targetUrl)
-    return ForumBoardResult.Topics(parseForumTopics(body, thread.id))
+    val payload = parseForumTopicsPayload(body, thread.id)
+    val totalCount = payload.totalCount ?: declaredTotal
+    if (payload.items.isEmpty() && totalCount != null && totalCount > 0) {
+        throw ForumBoardDataException("Forum topic response contained no readable topics")
+    }
+    return forumBoardResult(novelDetailUrl, payload.items, totalCount)
 }
+
+internal fun findForumNovelDetailUrl(document: Document): String? =
+    document.select("a[href]")
+        .asSequence()
+        .map { it.attr("href").trim() }
+        .firstOrNull { rawUrl -> DETAIL_URL.matches(rawUrl) }
+        ?.substringBefore('#')
+
+private fun forumBoardResult(
+    novelDetailUrl: String?,
+    items: List<ForumTopic>,
+    totalCount: Int?
+): ForumBoardResult = novelDetailUrl?.let {
+    ForumBoardResult.Novel(
+        detailUrl = it,
+        items = items,
+        totalCount = totalCount
+    )
+} ?: ForumBoardResult.Topics(
+    items = items,
+    totalCount = totalCount
+)
 
 fun EsjzoneClient.getForumPost(
     authorization: Authorization,
@@ -306,25 +366,46 @@ fun EsjzoneClient.getForumPost(
 }
 
 internal fun parseForumTopics(body: String, fallbackBoardId: String): List<ForumTopic> {
-    val root = runCatching { JsonParser.parseString(body) }.getOrNull() ?: return emptyList()
+    return parseForumTopicsPayload(body, fallbackBoardId).items
+}
+
+internal data class ForumTopicsPayload(
+    val totalCount: Int?,
+    val items: List<ForumTopic>
+)
+
+internal fun parseForumTopicsPayload(
+    body: String,
+    fallbackBoardId: String
+): ForumTopicsPayload {
+    val root = runCatching { JsonParser.parseString(body) }.getOrNull()
+        ?: throw ForumBoardDataException("Forum topic response was not valid JSON")
+    var totalCount: Int? = null
     val rows = when {
-        root.isJsonArray -> root.asJsonArray.toList()
+        root.isJsonArray -> root.asJsonArray.toList().also { totalCount = it.size }
         root.isJsonObject -> {
             val objectRoot = root.asJsonObject
-            sequenceOf("rows", "data", "items")
+            totalCount = runCatching { objectRoot.get("total")?.asInt }.getOrNull()
+            val array = sequenceOf("rows", "data", "items")
                 .mapNotNull { key -> objectRoot.get(key) }
                 .firstOrNull { it.isJsonArray }
                 ?.asJsonArray
                 ?.toList()
-                .orEmpty()
+                ?: throw ForumBoardDataException("Forum topic response had no rows")
+            if (totalCount == null) totalCount = array.size
+            array
         }
-        else -> emptyList()
+        else -> throw ForumBoardDataException("Forum topic response had an unsupported shape")
     }
-    return rows.mapNotNull { row ->
+    val items = rows.mapNotNull { row ->
         row.takeIf { it.isJsonObject }?.asJsonObject?.let {
             parseForumTopicRow(it, fallbackBoardId)
         }
     }.distinctBy { it.url }
+    if (rows.isNotEmpty() && items.isEmpty()) {
+        throw ForumBoardDataException("Forum topic response rows had no readable links")
+    }
+    return ForumTopicsPayload(totalCount = totalCount, items = items)
 }
 
 internal fun parseForumTopicRows(table: Element, fallbackBoardId: String): List<ForumTopic> =

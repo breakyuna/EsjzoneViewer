@@ -18,7 +18,7 @@
 | 标签结果 | /tags/{tag}/ | 否 | 已验证 | 无 | P0 | 与搜索共用模板 |
 | 论坛首页 | /forum/ | 否 | 已验证 | 无 | P1 | 分类表 |
 | 论坛分类 | /forum/{categoryId}/ | 否 | 已验证 | 无 | P1 | 静态主题矩阵 |
-| 单本论坛 | /forum/{categoryId}/{novelId}/ | 否 | 部分验证 | 无 | P2 | 样本显示 Loading/暂无资料 |
+| 论坛子板块 | /forum/{categoryId}/{boardId}/ | 否 | 已验证 | 无 | P1 | ESJ 作品板与天空大公國讨论板共用入口；主题表由 Bootstrap Table 动态加载 |
 | 小说详情 | /detail/{novelId}.html | 否 | 已验证 | 无 | P0 | 元数据和 TOC |
 | 章节目录 | #integration #chapterList / #integration details | 否 | 已验证 | 无 | P0 | 扁平目录与旧版分卷目录均兼容 |
 | 正序/倒序 | 详情 TOC 按钮 | 否 | 已验证 | 无 | P1 | data-sort 从 1 切到 2，并反转目录 DOM |

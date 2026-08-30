@@ -103,4 +103,14 @@ class EsjzoneUrlsTest {
 
         assertTrue(EsjzoneUrls.coverUrlFromNovelCard(card).isEmpty())
     }
+
+    @Test
+    fun novelDetailUrlFromForumBoard_usesTheBoardIdFromTheSecondPathSegment() {
+        assertEquals(
+            "/detail/1788015863.html",
+            EsjzoneUrls.novelDetailUrlFromForumBoard(
+                "/forum/1584622325/1788015863/"
+            )
+        )
+    }
 }

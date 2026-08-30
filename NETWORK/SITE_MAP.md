@@ -32,7 +32,7 @@
 | 排序标签 | /tags-{sort}/{keyword}/ | 否/可选 | Observed | 例如 tags-04 为最多观看 |
 | 论坛首页 | /forum/ | 否/可选 | Observed | 两组论坛分类表 |
 | 论坛分类 | /forum/{categoryId}/ | 否/可选 | Observed | 静态四列主题卡表 |
-| 单本论坛 | /forum/{categoryId}/{novelId}/ | 否/可选 | Partial | 书籍论坛入口；样本页显示 Loading 与暂无资料 |
+| 论坛子板块 | /forum/{categoryId}/{boardId}/ | 否/可选 | Observed | ESJ 作品板与天空大公國讨论板共用两段 URL；主题表可能由 Bootstrap Table 动态填充 |
 | 章节/帖子 | /forum/{novelId}/{postId}.html | 否/可选 | Observed | 服务器渲染正文、评论与前后导航 |
 | 留言板 | /guestbook/ | 可选 | Observed | 服务器渲染留言与本地分页 |
 | 问与答 | /faq/ | 可选 | Observed | FAQ 锚点目录与图片资源 |
@@ -118,13 +118,22 @@ list-04 在实际选择排序值 4 后被观察到，分类下拉框在该交互
 - ESJ-曉朔國度：1584680829、1584678947、1584622251、1584622325、1584679807
 - 天空大公國：1584622376、1584622613、1584622628
 
-论坛分类 /forum/1584680829/ 使用静态 .table.forum-board-detail，每个单元格含：
+界面层级与 URL 层级不是同一件事：
+
+- ESJ-曉朔國度 → 论坛分类 → 作品论坛板块 → 主题/帖子。分类页例如 `/forum/1584622325/`，作品板块例如 `/forum/1584622325/1788015863/`，其主题链接使用 `/forum/1788015863/{postId}.html`，并可从页面上的 `/detail/1788015863.html` 识别为作品板块。
+- 天空大公國 → 论坛分类 → 讨论板块 → 主题/帖子。分类页例如 `/forum/1584622376/`，讨论板块例如 `/forum/1584622376/1585405336/`，其主题链接使用 `/forum/1585405336/{postId}.html`，页面没有作品详情链接。
+
+因此，用户界面中的 ESJ 路径有两级子项，天空大公國路径有三级子项；两者进入最终主题页前都要完整保留分类 ID 与板块 ID，不能把第二段 ID 统一当作小说 ID。
+
+论坛分类 `/forum/{categoryId}/` 使用静态 `.table.forum-board-detail`，每个单元格含：
 
 - 主题标题链接 /forum/1584680829/{threadId}/
 - 主題：{n}　回覆：{m}
 - 最後發表：{date}
 
-样本分类页面表格有 382 个 tr，内容直接在 HTML 中，不显示 Bootstrap Table 分页配置。
+子板块卡片排列在四列矩阵中，解析器必须遍历所有 `td`，不能只读取每个 `tr` 的第一个链接。样本分类页面表格有 382 个 tr，内容直接在 HTML 中，不显示 Bootstrap Table 分页配置。
+
+子板块 `/forum/{categoryId}/{boardId}/` 使用 `#dataTable[data-url]` 的 Bootstrap Table 壳。页面初始 HTML 可能只有 `no-records-found` 占位行，即使 `data-url` 的 `totalRows` 大于 0；等待站点脚本后可看到主题行。`totalRows=0` 才表示已确认的合法空板块。
 
 ## 7. 分页与本地 tab
 
@@ -145,5 +154,5 @@ list-04 在实际选择排序值 4 后被观察到，分类下拉框在该交互
 - HTTP 状态码、响应头、实际 XHR/fetch 请求、重定向链和网络瀑布：UNKNOWN / NOT VERIFIED。
 - /detail/0.html 与 /forum/1716174812/0.html 的错误页检查因云浏览器超时未完成，不对 404、空页或重定向行为作断言。
 - list-{category}{sort} 的所有组合是否支持：UNKNOWN / NOT VERIFIED。
-- 单本论坛页面的动态 Loading 数据接口：UNKNOWN / NOT VERIFIED。
+- 子板块的 Bootstrap Table 数据接口及其初始占位行为：已在云浏览器观察到，具体参数见 API_ENDPOINTS.md。
 - 登出后的匿名页面与权限差异：未执行登出，UNKNOWN / NOT VERIFIED。

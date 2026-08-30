@@ -167,7 +167,7 @@
 | last_post_title | string/null | 章节文本 |
 | delete_endpoint | string | /inc/mem_view_del.php |
 
-## 10. ForumCategory 与 ForumThreadCard
+## 10. ForumCategory、ForumThread 与 ForumBoard
 
 ### ForumCategory
 
@@ -180,7 +180,7 @@
 | post_count | integer/null |
 | url | string |
 
-### ForumThreadCard
+### ForumThread
 
 | 字段 | 类型 |
 |---|---|
@@ -191,6 +191,32 @@
 | reply_count | integer/null |
 | last_post_date | date/null |
 | url | string |
+
+### ForumTopic
+
+| 字段 | 类型 |
+|---|---|
+| board_id | string |
+| post_id | string |
+| title | string |
+| author | string/null |
+| created_at | date/null |
+| reply_count | integer/null |
+| view_count | integer/null |
+| last_reply_at | date/null |
+| url | string |
+
+### ForumBoardResult
+
+| 类型 | 字段 | 说明 |
+|---|---|---|
+| Topics | items: list[ForumTopic] | 天空大公國等普通讨论板；列表来自 Bootstrap Table 动态 JSON |
+| Topics | total_count: integer/null | `data-url` 或 JSON 的总主题数 |
+| Novel | detail_url: string | ESJ 作品板对应的 `/detail/{novelId}.html`，由页面正向证据识别 |
+| Novel | items: list[ForumTopic] | 作品板自己的主题，可为空；不能因存在作品详情链接而丢弃主题 |
+| Novel | total_count: integer/null | 作品板动态主题总数 |
+
+`ForumTopic.board_id` 必须从最终主题 URL `/forum/{boardId}/{postId}.html` 读取。对 ESJ 作品板，它通常不同于父分类 ID；对天空大公國讨论板，它等于当前讨论板 ID。
 
 ## 11. Pagination 与 PageSnapshot
 
@@ -228,4 +254,4 @@
 - UserProfile 1 -> N FavoriteRecord
 - UserProfile 1 -> N ViewRecord
 - ForumCategory 1 -> N ForumThreadCard
-- Novel 可通过 forum_url 连接到 ForumCategory 与单本论坛页面
+- Novel 可通过 forum_url 连接到 ForumCategory 与论坛子板块页面；ESJ 作品板由 detail 链接识别，天空大公國讨论板按动态主题表识别

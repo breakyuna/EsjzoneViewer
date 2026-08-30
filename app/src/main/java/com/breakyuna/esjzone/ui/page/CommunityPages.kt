@@ -1,6 +1,7 @@
 package com.breakyuna.esjzone.ui.page
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -22,6 +23,7 @@ import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -46,6 +48,7 @@ import com.breakyuna.esjzone.network.features.getForumCategories
 import com.breakyuna.esjzone.network.features.getForumBoard
 import com.breakyuna.esjzone.network.features.getForumPost
 import com.breakyuna.esjzone.network.features.getForumThreads
+import com.breakyuna.esjzone.network.features.ForumBoardResult
 import com.breakyuna.esjzone.novellibrary.community.ForumCategory
 import com.breakyuna.esjzone.novellibrary.community.ForumPost
 import com.breakyuna.esjzone.novellibrary.community.ForumTopic
@@ -168,30 +171,30 @@ class ForumBoardPage(private val thread: ForumThread) : Screen {
                 emptyText = stringResource(id = R.string.forum_threads_empty)
             ) { board ->
                 when (board) {
-                    is com.breakyuna.esjzone.network.features.ForumBoardResult.Novel -> {
-                        LaunchedEffect(board) {
-                            navigator?.replace(
-                                NovelPage(
-                                    CategoryNovel(
-                                        name = thread.title,
-                                        url = EsjzoneUrls.novelDetailUrlFromForumBoard(thread.url)
-                                            ?: "/detail/${thread.id}.html",
-                                        forumUrl = thread.url
+                    is ForumBoardResult.Novel -> {
+                        ForumNovelBoardContent(
+                            board = board,
+                            thread = thread,
+                            onOpenNovel = {
+                                navigator?.pushIfNotCurrent(
+                                    NovelPage(
+                                        CategoryNovel(
+                                            name = thread.title,
+                                            url = board.detailUrl,
+                                            forumUrl = thread.url
+                                        )
                                     )
                                 )
-                            )
-                        }
-                        BoxLoading()
+                            },
+                            onTopicClick = { topic ->
+                                navigator?.pushIfNotCurrent(ForumPostPage(topic))
+                            }
+                        )
                     }
 
-                    is com.breakyuna.esjzone.network.features.ForumBoardResult.Topics -> {
-                        LazyColumn(modifier = Modifier.fillMaxSize()) {
-                            items(board.items, key = { "forum-topic-${it.boardId}-${it.id}" }) { topic ->
-                                ForumTopicCard(topic) {
-                                    navigator?.pushIfNotCurrent(ForumPostPage(topic))
-                                }
-                            }
-                            item { Spacer(modifier = Modifier.height(24.dp)) }
+                    is ForumBoardResult.Topics -> {
+                        ForumTopicsContent(board.items) { topic ->
+                            navigator?.pushIfNotCurrent(ForumPostPage(topic))
                         }
                     }
                 }
@@ -372,6 +375,94 @@ private fun ForumThreadCard(thread: ForumThread, onClick: () -> Unit) {
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun ForumTopicsContent(
+    topics: List<ForumTopic>,
+    onTopicClick: (ForumTopic) -> Unit
+) {
+    if (topics.isEmpty()) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(24.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                text = stringResource(id = R.string.forum_threads_empty),
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    } else {
+        LazyColumn(modifier = Modifier.fillMaxSize()) {
+            items(topics, key = { "forum-topic-${it.boardId}-${it.id}" }) { topic ->
+                ForumTopicCard(topic) { onTopicClick(topic) }
+            }
+            item { Spacer(modifier = Modifier.height(24.dp)) }
+        }
+    }
+}
+
+@Composable
+private fun ForumNovelBoardContent(
+    board: ForumBoardResult.Novel,
+    thread: ForumThread,
+    onOpenNovel: () -> Unit,
+    onTopicClick: (ForumTopic) -> Unit
+) {
+    LazyColumn(modifier = Modifier.fillMaxSize()) {
+        item(key = "forum-novel-info") {
+            ElevatedCard(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 12.dp),
+                shape = RoundedCornerShape(18.dp)
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Text(
+                        text = thread.title,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    Text(
+                        text = stringResource(id = R.string.forum_novel_board),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 4.dp)
+                    )
+                    OutlinedButton(
+                        onClick = onOpenNovel,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 12.dp)
+                    ) {
+                        Text(text = stringResource(id = R.string.forum_open_novel))
+                    }
+                }
+            }
+        }
+        if (board.items.isEmpty()) {
+            item(key = "forum-novel-empty") {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(24.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = stringResource(id = R.string.forum_threads_empty),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+        } else {
+            items(board.items, key = { "forum-topic-${it.boardId}-${it.id}" }) { topic ->
+                ForumTopicCard(topic) { onTopicClick(topic) }
+            }
+        }
+        item { Spacer(modifier = Modifier.height(24.dp)) }
     }
 }
 

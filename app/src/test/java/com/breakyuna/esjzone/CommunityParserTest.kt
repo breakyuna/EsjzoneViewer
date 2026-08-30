@@ -1,11 +1,16 @@
 package com.breakyuna.esjzone
 
+import com.breakyuna.esjzone.network.features.ForumBoardDataException
+import com.breakyuna.esjzone.network.features.findForumNovelDetailUrl
 import com.breakyuna.esjzone.network.features.parseComments
 import com.breakyuna.esjzone.network.features.parseForumPost
+import com.breakyuna.esjzone.network.features.parseForumThreads
+import com.breakyuna.esjzone.network.features.parseForumTopicRows
 import com.breakyuna.esjzone.network.features.parseForumTopics
 import com.breakyuna.esjzone.novellibrary.community.ForumTopic
 import org.jsoup.Jsoup
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Test
 
 class CommunityParserTest {
@@ -141,6 +146,95 @@ class CommunityParserTest {
             ),
             topics.single()
         )
+    }
+
+    @Test
+    fun parseForumThreads_readsEveryChildCellForBothForumLayouts() {
+        val document = Jsoup.parse(
+            """
+            <table class="forum-board-detail">
+              <tbody><tr>
+                <td>
+                  <a href="/forum/1584622325/1788015863/">身份保障妓院</a>
+                  <div class="forum-desc">主題：3　回覆：4　最後發表：2026-08-30</div>
+                </td>
+                <td>unused</td>
+                <td>
+                  <a href="/forum/1584622376/1585405336/">推坑區</a>
+                  <div class="forum-desc">主題：142　回覆：300　最後發表：2026-08-29</div>
+                </td>
+                <td>unused</td>
+              </tr></tbody>
+            </table>
+            """.trimIndent()
+        )
+
+        val threads = parseForumThreads(document)
+
+        assertEquals(2, threads.size)
+        assertEquals("1584622325", threads[0].categoryId)
+        assertEquals("1788015863", threads[0].id)
+        assertEquals("身份保障妓院", threads[0].title)
+        assertEquals("1584622376", threads[1].categoryId)
+        assertEquals("1585405336", threads[1].id)
+        assertEquals("推坑區", threads[1].title)
+    }
+
+    @Test
+    fun parseForumTopicRows_ignoresInitialBootstrapPlaceholder() {
+        val table = Jsoup.parse(
+            """
+            <table id="dataTable" data-url="/inc/forum_list_data.php?totalRows=142">
+              <tbody><tr class="no-records-found"><td colspan="4">没有找到匹配的记录</td></tr></tbody>
+            </table>
+            """.trimIndent()
+        ).selectFirst("#dataTable")!!
+
+        assertEquals(emptyList<ForumTopic>(), parseForumTopicRows(table, "1585405336"))
+    }
+
+    @Test
+    fun parseForumTopicRows_usesActualBoardIdFromNestedTopicLinks() {
+        val table = Jsoup.parse(
+            """
+            <table id="dataTable"><tbody>
+              <tr>
+                <td><a href="/forum/1788015863/574780.html">作者的话</a></td>
+                <td>Alice</td><td>1<div class="forum-desc">2</div></td><td>2026-08-30</td>
+              </tr>
+              <tr>
+                <td><a href="/forum/1585405336/545856.html">主题</a></td>
+                <td>Bob</td><td>3<div class="forum-desc">4</div></td><td>2026-08-29</td>
+              </tr>
+            </tbody></table>
+            """.trimIndent()
+        ).selectFirst("#dataTable")!!
+
+        val topics = parseForumTopicRows(table, "1584622325")
+
+        assertEquals(listOf("1788015863", "1585405336"), topics.map { it.boardId })
+        assertEquals(
+            listOf("/forum/1788015863/574780.html", "/forum/1585405336/545856.html"),
+            topics.map { it.url }
+        )
+    }
+
+    @Test
+    fun findForumNovelDetailUrl_distinguishesNovelAndDiscussionBoards() {
+        val novelBoard = Jsoup.parse(
+            "<a href=\"/detail/1788015863.html\">身份保障妓院</a>"
+        )
+        val discussionBoard = Jsoup.parse(
+            "<a href=\"/forum/1585405336/545856.html\">主题</a>"
+        )
+
+        assertEquals("/detail/1788015863.html", findForumNovelDetailUrl(novelBoard))
+        assertNull(findForumNovelDetailUrl(discussionBoard))
+    }
+
+    @Test(expected = ForumBoardDataException::class)
+    fun parseForumTopics_rejectsMalformedJsonInsteadOfReturningEmpty() {
+        parseForumTopics("not-json", "1585405336")
     }
 
     @Test
