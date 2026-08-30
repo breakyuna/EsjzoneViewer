@@ -14,7 +14,10 @@ class EsjzoneUrlsTest {
             "https://www.esjzone.cc/assets/img/empty_cover.jpg?t=123",
             "https://www.esjzone.cc/assets/img/nophoto.png",
             "/assets/img/no-image",
-            "/assets/img/placeholder.webp"
+            "/assets/img/placeholder.webp",
+            "https://i.pinimg.com/564x/86/1e/51/861e5157abc25f92f6b49af0f1465927.jpg",
+            "https://i.pinimg.com/236x/86/1e/51/861e5157abc25f92f6b49af0f1465927.webp?t=123",
+            "https://images.example.com/covers/861e5157abc25f92f6b49af0f1465927.png"
         )
 
         placeholders.forEach { url ->
@@ -28,6 +31,13 @@ class EsjzoneUrlsTest {
             "https://www.esjzone.cc/uploads/covers/book.jpg",
             EsjzoneUrls.coverOrEmpty("/uploads/covers/book.jpg")
         )
+    }
+
+    @Test
+    fun coverOrEmpty_keepsNormalPinterestCover() {
+        val cover = "https://i.pinimg.com/564x/aa/bb/cc/aabbccddeeff00112233445566778899.jpg"
+
+        assertEquals(cover, EsjzoneUrls.coverOrEmpty(cover))
     }
 
     @Test
@@ -72,6 +82,24 @@ class EsjzoneUrlsTest {
             """.trimIndent(),
             "https://www.esjzone.cc/"
         ).selectFirst("div")
+
+        assertTrue(EsjzoneUrls.coverUrlFromNovelCard(card).isEmpty())
+    }
+
+    @Test
+    fun coverUrlFromNovelCard_returnsEmptyForEsjGrayLazyBackground() {
+        val card = Jsoup.parse(
+            """
+            <div class="card mb-30">
+              <a class="card-img-tiles">
+                <div class="inner"><div class="main-img">
+                  <div class="lazyload" data-src="https://i.pinimg.com/564x/86/1e/51/861e5157abc25f92f6b49af0f1465927.jpg"></div>
+                </div></div>
+              </a>
+            </div>
+            """.trimIndent(),
+            "https://www.esjzone.cc/"
+        ).selectFirst(".card")
 
         assertTrue(EsjzoneUrls.coverUrlFromNovelCard(card).isEmpty())
     }

@@ -73,7 +73,8 @@ object EsjzoneUrls {
         }
         val fileName = path.substringAfterLast('/').lowercase()
         val stem = fileName.substringBeforeLast('.', fileName)
-        val isMissingCover = fileName in MISSING_COVER_NAMES ||
+        val isMissingCover = stem in MISSING_COVER_FINGERPRINTS ||
+            fileName in MISSING_COVER_NAMES ||
             stem in MISSING_COVER_STEMS ||
             MISSING_COVER_STEMS.any { marker ->
                 stem.startsWith("${marker}_") || stem.startsWith("${marker}-")
@@ -157,6 +158,15 @@ object EsjzoneUrls {
         "nocover.jpg",
         "nocover.png",
         "nocover.webp"
+    )
+
+    /**
+     * Content fingerprints used by ESJ for externally hosted no-cover images.
+     * Match only the filename stem so CDN size folders, hosts, extensions and
+     * cache-busting query parameters cannot bypass the local fallback.
+     */
+    private val MISSING_COVER_FINGERPRINTS = setOf(
+        "861e5157abc25f92f6b49af0f1465927"
     )
 
     private val MISSING_COVER_STEMS = setOf(
