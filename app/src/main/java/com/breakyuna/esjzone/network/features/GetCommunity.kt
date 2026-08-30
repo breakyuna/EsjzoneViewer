@@ -342,7 +342,7 @@ internal fun parseForumTopicRows(table: Element, fallbackBoardId: String): List<
             author = cells[1].mainCellText(),
             createdAt = cells[1].selectFirst(".forum-desc")?.text()?.trim()
                 ?.takeIf { it.isNotBlank() },
-            replyCount = cells[2].mainCellText().toIntOrNull(),
+            replyCount = cells[2].mainCellText()?.toIntOrNull(),
             viewCount = cells[2].selectFirst(".forum-desc")?.text()?.trim()?.toIntOrNull(),
             lastReplyAt = cells[3].text().trim().takeIf { it.isNotBlank() },
             url = rawUrl
@@ -432,7 +432,7 @@ private fun String.htmlCellDescription(): String? = Jsoup.parseBodyFragment(this
     ?.takeIf { it.isNotBlank() }
 
 private fun Element.mainCellText(): String? {
-    clone().apply { select(".forum-desc").remove() }
+    return clone().apply { select(".forum-desc").remove() }
         .text()
         .trim()
         .takeIf { it.isNotBlank() }
