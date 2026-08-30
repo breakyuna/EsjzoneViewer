@@ -2,6 +2,7 @@ package com.breakyuna.esjzone.network
 
 import android.net.Uri
 import com.breakyuna.esjzone.GlobalSettings
+import org.jsoup.nodes.Element
 
 object EsjzoneUrls {
 
@@ -60,17 +61,72 @@ object EsjzoneUrls {
     /** Returns an empty value for the site's stock no-cover image. */
     fun coverOrEmpty(rawUrl: String?): String {
         val value = rawUrl?.trim().orEmpty()
-        val fileName = value
-            .substringBefore('?')
-            .substringBefore('#')
-            .substringAfterLast('/')
-            .lowercase()
-        return if (value.isBlank() || fileName in MISSING_COVER_NAMES) {
+        if (value.isBlank()) return EmptyCover
+
+        // The site has used several names for its gray no-cover asset over
+        // time.  Compare the URL path (rather than the complete URL) so query
+        // cache-busters and host aliases do not bypass the fallback.
+        val path = runCatching {
+            Uri.parse(resolve(value)).path.orEmpty()
+        }.getOrElse {
+            value.substringBefore('?').substringBefore('#')
+        }
+        val fileName = path.substringAfterLast('/').lowercase()
+        val stem = fileName.substringBeforeLast('.', fileName)
+        val isMissingCover = fileName in MISSING_COVER_NAMES ||
+            stem in MISSING_COVER_STEMS ||
+            MISSING_COVER_STEMS.any { marker ->
+                stem.startsWith("${marker}_") || stem.startsWith("${marker}-")
+            }
+
+        return if (isMissingCover) {
             EmptyCover
         } else {
-            value
+            // Coil cannot resolve a relative URL without a base URI.  The
+            // parsers accept both absolute and relative image attributes, so
+            // normalize valid relative cover URLs here as well.
+            resolve(value)
         }
     }
+
+    /**
+     * Extracts the actual cover candidate from an ESJ lazy-loaded novel card.
+     * Different page templates use different data-* attributes, and `src` is
+     * often only a gray placeholder when lazy loading is enabled.
+     */
+    fun coverUrlFromNovelCard(card: Element?): String {
+        return coverUrlFromImage(card?.selectFirst("img"))
+    }
+
+    /** Extracts a cover from an image element, skipping known placeholders. */
+    fun coverUrlFromImage(image: Element?): String {
+        return imageUrlCandidatesFrom(image)
+            .map(::coverOrEmpty)
+            .firstOrNull { it.isNotBlank() }
+            ?: EmptyCover
+    }
+
+    private fun imageUrlCandidatesFrom(image: Element?): Sequence<String> {
+        if (image == null) return emptySequence()
+        return IMAGE_URL_ATTRIBUTES.asSequence()
+            .mapNotNull { attribute ->
+                val raw = image.attr(attribute).trim()
+                if (raw.isBlank() || raw.startsWith("data:", ignoreCase = true)) {
+                    null
+                } else {
+                    image.absUrl(attribute).trim().takeIf { it.isNotBlank() }
+                        ?: raw
+                }
+            }
+    }
+
+    private val IMAGE_URL_ATTRIBUTES = listOf(
+        "data-src",
+        "data-original",
+        "data-lazy-src",
+        "data-original-src",
+        "src"
+    )
 
     private val MISSING_COVER_NAMES = setOf(
         "empty.jpg",
@@ -92,6 +148,26 @@ object EsjzoneUrls {
         "nocover.jpg",
         "nocover.png",
         "nocover.webp"
+    )
+
+    private val MISSING_COVER_STEMS = setOf(
+        "empty",
+        "empty_cover",
+        "empty-cover",
+        "no_cover",
+        "no-cover",
+        "nocover",
+        "noimage",
+        "no_image",
+        "no-image",
+        "nophoto",
+        "no_photo",
+        "no-photo",
+        "placeholder",
+        "default_cover",
+        "default-cover",
+        "cover_default",
+        "cover-default"
     )
 
     val Home: String

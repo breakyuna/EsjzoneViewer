@@ -6,11 +6,17 @@ import com.breakyuna.esjzone.network.EsjzoneUrls
 import com.breakyuna.esjzone.network.EsjzoneXPaths
 import com.breakyuna.esjzone.network.PageCacheTtl
 import com.breakyuna.esjzone.novellibrary.community.ForumCategory
+import com.breakyuna.esjzone.novellibrary.community.ForumPost
+import com.breakyuna.esjzone.novellibrary.community.ForumTopic
 import com.breakyuna.esjzone.novellibrary.community.ForumThread
 import com.breakyuna.esjzone.novellibrary.novel.Comment
 import com.breakyuna.esjzone.novellibrary.novel.COMMENT_PAGE_SIZE
 import com.breakyuna.esjzone.util.AppLogger
+import com.google.gson.JsonElement
+import com.google.gson.JsonObject
+import com.google.gson.JsonParser
 import java.io.IOException
+import okhttp3.Headers
 import okhttp3.FormBody
 import okhttp3.Request
 import org.jsoup.Jsoup
@@ -20,6 +26,7 @@ import org.jsoup.nodes.Element
 private val CATEGORY_URL = Regex("(?:https?://[^/]+)?/forum/([0-9]+)/?$")
 private val THREAD_URL = Regex("(?:https?://[^/]+)?/forum/([0-9]+)/([0-9]+)/?$")
 private val POST_URL = Regex("(?:https?://[^/]+)?/forum/[0-9]+/([0-9]+)\\.html")
+private val TOPIC_URL = Regex("(?:https?://[^/]+)?/forum/([0-9]+)/([0-9]+)\\.html")
 private val DETAIL_URL = Regex("(?:https?://[^/]+)?/detail/([0-9]+)\\.html")
 private val PROFILE_UID = Regex("[?&]uid=([0-9]+)")
 private val COMMENT_TIMESTAMP = Regex(
@@ -248,6 +255,217 @@ fun EsjzoneClient.getForumThreads(
             url = rawUrl
         )
     }.distinctBy { it.categoryId to it.id }
+}
+
+sealed class ForumBoardResult {
+    data class Topics(val items: List<ForumTopic>) : ForumBoardResult()
+    data object Novel : ForumBoardResult()
+}
+
+/**
+ * Loads either a dynamic forum topic board or a novel board. ESJ uses the same
+ * two-level URL shape for both, so the presence of the bootstrap-table data
+ * endpoint is the reliable discriminator.
+ */
+fun EsjzoneClient.getForumBoard(
+    authorization: Authorization,
+    thread: ForumThread
+): ForumBoardResult {
+    val targetUrl = EsjzoneUrls.resolve(thread.url)
+    AppLogger.i("GetCommunity", "Fetching forum board ${thread.id} at $targetUrl")
+    val document = Jsoup.parse(
+        getPage(authorization, targetUrl, PageCacheTtl.COMMUNITY),
+        targetUrl
+    )
+    val table = document.selectFirst("#dataTable[data-url]")
+        ?: return ForumBoardResult.Novel
+
+    // Some deployments render the first page directly into the HTML. Keep
+    // that path working before using the site's AJAX endpoint.
+    val inlineTopics = parseForumTopicRows(table, thread.id)
+    if (inlineTopics.isNotEmpty()) return ForumBoardResult.Topics(inlineTopics)
+
+    val dataUrl = table.attr("data-url").trim()
+    if (dataUrl.isBlank()) return ForumBoardResult.Topics(emptyList())
+    val endpoint = appendForumTableParams(EsjzoneUrls.resolve(dataUrl))
+    val body = getForumTableData(authorization, endpoint, targetUrl)
+    return ForumBoardResult.Topics(parseForumTopics(body, thread.id))
+}
+
+fun EsjzoneClient.getForumPost(
+    authorization: Authorization,
+    topic: ForumTopic
+): ForumPost {
+    val targetUrl = EsjzoneUrls.resolve(topic.url).substringBefore('#')
+    AppLogger.i("GetCommunity", "Fetching forum topic ${topic.id} at $targetUrl")
+    val document = Jsoup.parse(
+        getPage(authorization, targetUrl, PageCacheTtl.COMMUNITY),
+        targetUrl
+    )
+    return parseForumPost(document, topic)
+}
+
+internal fun parseForumTopics(body: String, fallbackBoardId: String): List<ForumTopic> {
+    val root = runCatching { JsonParser.parseString(body) }.getOrNull() ?: return emptyList()
+    val rows = when {
+        root.isJsonArray -> root.asJsonArray.toList()
+        root.isJsonObject -> {
+            val objectRoot = root.asJsonObject
+            sequenceOf("rows", "data", "items")
+                .mapNotNull { key -> objectRoot.get(key) }
+                .firstOrNull { it.isJsonArray }
+                ?.asJsonArray
+                ?.toList()
+                .orEmpty()
+        }
+        else -> emptyList()
+    }
+    return rows.mapNotNull { row ->
+        row.takeIf { it.isJsonObject }?.asJsonObject?.let {
+            parseForumTopicRow(it, fallbackBoardId)
+        }
+    }.distinctBy { it.url }
+}
+
+internal fun parseForumTopicRows(table: Element, fallbackBoardId: String): List<ForumTopic> =
+    table.select("tbody tr").mapNotNull { row ->
+        val cells = row.select("td")
+        if (cells.size < 4) return@mapNotNull null
+        val subject = cells[0]
+        val anchor = subject.selectFirst("a[href]") ?: return@mapNotNull null
+        val rawUrl = anchor.attr("href").trim()
+        val match = TOPIC_URL.matchEntire(rawUrl) ?: return@mapNotNull null
+        ForumTopic(
+            boardId = match.groupValues[1].ifBlank { fallbackBoardId },
+            id = match.groupValues[2],
+            title = anchor.text().trim().ifBlank { return@mapNotNull null },
+            author = cells[1].mainCellText(),
+            createdAt = cells[1].selectFirst(".forum-desc")?.text()?.trim()
+                ?.takeIf { it.isNotBlank() },
+            replyCount = cells[2].mainCellText().toIntOrNull(),
+            viewCount = cells[2].selectFirst(".forum-desc")?.text()?.trim()?.toIntOrNull(),
+            lastReplyAt = cells[3].text().trim().takeIf { it.isNotBlank() },
+            url = rawUrl
+        )
+    }.distinctBy { it.url }
+
+internal fun parseForumPost(document: Document, topic: ForumTopic): ForumPost {
+    val content = document.selectFirst(".forum-content")
+    val meta = document.selectFirst(".single-post-meta")
+    val author = meta?.selectFirst("a[href*='/my/profile']")?.text()?.trim()
+        ?.takeIf { it.isNotBlank() }
+    val createdAt = meta?.let { COMMENT_TIMESTAMP.find(it.text())?.value }
+    val title = document.selectFirst("h2")?.text()?.trim()
+        ?.takeIf { it.isNotBlank() } ?: topic.title
+    val contentText = forumContentText(content)
+    return ForumPost(
+        boardId = topic.boardId,
+        id = topic.id,
+        title = title,
+        author = author,
+        createdAt = createdAt,
+        contentHtml = content?.html().orEmpty(),
+        contentText = contentText,
+        comments = parseComments(document, topic.id),
+        url = EsjzoneUrls.resolve(topic.url).substringBefore('#')
+    )
+}
+
+private fun forumContentText(content: Element?): String {
+    if (content == null) return ""
+    val blocks = content.select("p, li")
+        .map { it.text().trim() }
+        .filter { it.isNotBlank() }
+    return if (blocks.isNotEmpty()) {
+        blocks.joinToString("\n")
+    } else {
+        content.wholeText().trim()
+    }
+}
+
+private fun parseForumTopicRow(row: JsonObject, fallbackBoardId: String): ForumTopic? {
+    val subjectValue = row.stringValue("subject", "title") ?: return null
+    val subjectDocument = Jsoup.parseBodyFragment(subjectValue)
+    val anchor = subjectDocument.selectFirst("a[href]")
+    val rawUrl = (anchor?.attr("href")?.trim()
+        ?: row.stringValue("url", "link")?.trim()).orEmpty()
+    val match = TOPIC_URL.matchEntire(rawUrl) ?: return null
+    val subjectText = anchor?.text()?.trim().orEmpty().ifBlank {
+        subjectDocument.body().text().trim()
+    }
+    if (subjectText.isBlank()) return null
+    val authorCell = row.stringValue("cdate", "author")
+    val statsCell = row.stringValue("vtimes", "stats")
+    return ForumTopic(
+        boardId = match.groupValues[1].ifBlank { fallbackBoardId },
+        id = match.groupValues[2],
+        title = subjectText,
+        author = authorCell?.htmlCellMainText(),
+        createdAt = authorCell?.htmlCellDescription(),
+        replyCount = statsCell?.htmlCellMainText()?.toIntOrNull(),
+        viewCount = statsCell?.htmlCellDescription()?.toIntOrNull(),
+        lastReplyAt = row.stringValue("last_reply", "lastReply")
+            ?.htmlCellMainText()
+            ?.takeIf { it.isNotBlank() },
+        url = rawUrl
+    )
+}
+
+private fun JsonObject.stringValue(vararg keys: String): String? = keys.asSequence()
+    .mapNotNull { key -> get(key)?.asSafeString() }
+    .firstOrNull { it.isNotBlank() }
+
+private fun JsonElement.asSafeString(): String? = runCatching {
+    if (isJsonNull || !isJsonPrimitive) null else asString
+}.getOrNull()
+
+private fun String.htmlCellMainText(): String {
+    val body = Jsoup.parseBodyFragment(this).body()
+    body.select(".forum-desc").remove()
+    return body.text().trim().takeIf { it.isNotBlank() }.orEmpty()
+}
+
+private fun String.htmlCellDescription(): String? = Jsoup.parseBodyFragment(this).body()
+    .selectFirst(".forum-desc")
+    ?.text()
+    ?.trim()
+    ?.takeIf { it.isNotBlank() }
+
+private fun Element.mainCellText(): String? {
+    clone().apply { select(".forum-desc").remove() }
+        .text()
+        .trim()
+        .takeIf { it.isNotBlank() }
+}
+
+private fun appendForumTableParams(url: String): String {
+    val separator = if (url.contains('?')) '&' else '?'
+    return "$url${separator}limit=20&offset=0&sort=last_reply&order=desc"
+}
+
+private fun EsjzoneClient.getForumTableData(
+    authorization: Authorization,
+    url: String,
+    referer: String
+): String {
+    val requestHeaders: Headers = headers.newBuilder()
+        .add("Accept", "application/json, text/javascript, */*; q=0.01")
+        .add("Referer", referer)
+        .add("X-Requested-With", "XMLHttpRequest")
+        .build()
+    val response = authenticatedClient(authorization).newCall(
+        Request.Builder()
+            .url(url)
+            .get()
+            .headers(requestHeaders)
+            .build()
+    ).execute()
+    val responseCode = response.code
+    val body = response.use { it.body?.string().orEmpty() }
+    if (responseCode !in 200..299 || body.isBlank()) {
+        throw IOException("Forum topic request failed with HTTP $responseCode")
+    }
+    return body
 }
 
 internal fun parseComments(document: Document, parentPostId: String): List<Comment> {

@@ -137,6 +137,7 @@
     <string name="forum_threads_empty">该板块暂无主题</string>
     <string name="forum_topic_count">主题 %1$d</string>
     <string name="forum_reply_count">回复 %1$d</string>
+    <string name="forum_view_count">浏览 %1$d</string>
     <string name="guestbook">留言板</string>
     <string name="comments">评论</string>
     <string name="comments_empty">还没有评论</string>

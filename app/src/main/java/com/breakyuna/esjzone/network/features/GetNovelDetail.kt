@@ -27,13 +27,11 @@ fun EsjzoneClient.getNovelDetail(
 
     val document = Jsoup.parse(responseBody, targetUrl)
 
-    val coverUrl = EsjzoneUrls.coverOrEmpty(
+    val coverUrl = EsjzoneUrls.coverUrlFromImage(
         document.selectFirst(".product-gallery img")
-            ?.let(::resolveImageUrl)
-            ?.takeIf { it.isNotBlank() }
-            ?: EsjzoneXPaths.Detail.Cover.evaluate(document).get()
-            ?: EsjzoneUrls.EmptyCover
-    )
+    ).ifBlank {
+        EsjzoneUrls.coverOrEmpty(EsjzoneXPaths.Detail.Cover.evaluate(document).get())
+    }
 
     val viewsStr = document.selectFirst("#vtimes")?.text()
         ?: EsjzoneXPaths.Detail.Views.evaluate(document).get()
@@ -151,25 +149,4 @@ private fun extractUpdatedAt(detailInfo: org.jsoup.nodes.Element): String? {
     }
 
     return DATE_REGEX.find(text)?.value
-}
-
-private fun resolveImageUrl(image: org.jsoup.nodes.Element): String? {
-    // Lazy-loaded images keep the real URL in data-* while src may be a
-    // non-empty placeholder, so data-* attributes must be checked first.
-    return sequenceOf(
-        "data-src",
-        "data-original",
-        "data-lazy-src",
-        "data-original-src",
-        "src"
-    )
-        .mapNotNull { attribute ->
-            val raw = image.attr(attribute).trim()
-            if (raw.isBlank()) return@mapNotNull null
-            image.absUrl(attribute)
-                .ifBlank { raw }
-                .trim()
-                .takeIf { it.isNotBlank() }
-        }
-        .firstOrNull()
 }

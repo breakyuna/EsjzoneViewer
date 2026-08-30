@@ -1,6 +1,9 @@
 package com.breakyuna.esjzone
 
 import com.breakyuna.esjzone.network.features.parseComments
+import com.breakyuna.esjzone.network.features.parseForumPost
+import com.breakyuna.esjzone.network.features.parseForumTopics
+import com.breakyuna.esjzone.novellibrary.community.ForumTopic
 import org.jsoup.Jsoup
 import org.junit.Assert.assertEquals
 import org.junit.Test
@@ -107,5 +110,67 @@ class CommunityParserTest {
         assertEquals("2026-08-29 01:02", comments[0].createdAt)
         assertEquals("2026-08-29 01:03", comments[1].createdAt)
         assertEquals("#1", comments[0].floor)
+    }
+
+    @Test
+    fun parseForumTopics_readsBootstrapTableJson() {
+        val topics = parseForumTopics(
+            """
+            {"total":1,"rows":[
+              {"subject":"<a href=\"/forum/1589699634/150985.html\">A topic</a>",
+               "cdate":"Alice<div class=\"forum-desc\">2022-08-21</div>",
+               "vtimes":"3<div class=\"forum-desc\">15</div>",
+               "last_reply":"2026-08-26 03:52"}
+            ]}
+            """.trimIndent(),
+            "1589699634"
+        )
+
+        assertEquals(1, topics.size)
+        assertEquals(
+            ForumTopic(
+                boardId = "1589699634",
+                id = "150985",
+                title = "A topic",
+                author = "Alice",
+                createdAt = "2022-08-21",
+                replyCount = 3,
+                viewCount = 15,
+                lastReplyAt = "2026-08-26 03:52",
+                url = "/forum/1589699634/150985.html"
+            ),
+            topics.single()
+        )
+    }
+
+    @Test
+    fun parseForumPost_readsBodyAndAuthor() {
+        val topic = ForumTopic(
+            boardId = "1585405223",
+            id = "335631",
+            title = "Fallback title",
+            author = null,
+            createdAt = null,
+            replyCount = null,
+            viewCount = null,
+            lastReplyAt = null,
+            url = "/forum/1585405223/335631.html"
+        )
+        val post = parseForumPost(
+            Jsoup.parse(
+                """
+                <div class="single-post-meta"><a href="/my/profile?uid=7">Alice</a> 2026-08-30 12:34</div>
+                <h2>Actual title</h2>
+                <div class="forum-content"><p>Hello</p><p>World</p></div>
+                """.trimIndent(),
+                "https://www.esjzone.cc/forum/1585405223/335631.html"
+            ),
+            topic
+        )
+
+        assertEquals("Actual title", post.title)
+        assertEquals("Alice", post.author)
+        assertEquals("2026-08-30 12:34", post.createdAt)
+        assertEquals("Hello\nWorld", post.contentText)
     }
 }

@@ -20,3 +20,27 @@ data class ForumThread(
     val lastPostDate: String?,
     val url: String
 ) : Serializable
+
+data class ForumTopic(
+    val boardId: String,
+    val id: String,
+    val title: String,
+    val author: String?,
+    val createdAt: String?,
+    val replyCount: Int?,
+    val viewCount: Int?,
+    val lastReplyAt: String?,
+    val url: String
+) : Serializable
+
+data class ForumPost(
+    val boardId: String,
+    val id: String,
+    val title: String,
+    val author: String?,
+    val createdAt: String?,
+    val contentHtml: String,
+    val contentText: String,
+    val comments: List<com.breakyuna.esjzone.novellibrary.novel.Comment>,
+    val url: String
+) : Serializable

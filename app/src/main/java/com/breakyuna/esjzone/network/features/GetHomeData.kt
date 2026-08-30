@@ -34,7 +34,7 @@ fun EsjzoneClient.getHomeData(authorization: Authorization): HomeData {
         for (recentlyUpdateTranslatedData in EsjzoneXPaths.Home.RecentlyUpdateTranslated.All.evaluate(document).elements) {
             recentlyUpdateTranslatedNovels.add(
                 CoveredNovelImpl(
-                    EsjzoneUrls.coverOrEmpty(EsjzoneXPaths.Home.Novel.Cover.evaluate(recentlyUpdateTranslatedData).get()),
+                    EsjzoneUrls.coverUrlFromNovelCard(recentlyUpdateTranslatedData),
                     EsjzoneXPaths.Home.Novel.Name.evaluate(recentlyUpdateTranslatedData).get() ?: "",
                     EsjzoneXPaths.Home.Novel.Url.evaluate(recentlyUpdateTranslatedData).get() ?: "",
                     parseCount(EsjzoneXPaths.Home.Novel.Views.evaluate(recentlyUpdateTranslatedData).get()),
@@ -51,7 +51,7 @@ fun EsjzoneClient.getHomeData(authorization: Authorization): HomeData {
         for (recentlyUpdateOriginalData in EsjzoneXPaths.Home.RecentlyUpdateOriginal.All.evaluate(document).elements) {
             recentlyUpdateOriginalNovels.add(
                 CoveredNovelImpl(
-                    EsjzoneUrls.coverOrEmpty(EsjzoneXPaths.Home.Novel.Cover.evaluate(recentlyUpdateOriginalData).get()),
+                    EsjzoneUrls.coverUrlFromNovelCard(recentlyUpdateOriginalData),
                     EsjzoneXPaths.Home.Novel.Name.evaluate(recentlyUpdateOriginalData).get() ?: "",
                     EsjzoneXPaths.Home.Novel.Url.evaluate(recentlyUpdateOriginalData).get() ?: "",
                     parseCount(EsjzoneXPaths.Home.Novel.Views.evaluate(recentlyUpdateOriginalData).get()),
@@ -68,7 +68,7 @@ fun EsjzoneClient.getHomeData(authorization: Authorization): HomeData {
         for (recentlyUpdateTranslatedR18Data in EsjzoneXPaths.Home.RecentlyUpdateTranslatedR18.All.evaluate(document).elements) {
             recentlyUpdateTranslatedR18Novels.add(
                 CoveredNovelImpl(
-                    EsjzoneUrls.coverOrEmpty(EsjzoneXPaths.Home.Novel.Cover.evaluate(recentlyUpdateTranslatedR18Data).get()),
+                    EsjzoneUrls.coverUrlFromNovelCard(recentlyUpdateTranslatedR18Data),
                     EsjzoneXPaths.Home.Novel.Name.evaluate(recentlyUpdateTranslatedR18Data).get() ?: "",
                     EsjzoneXPaths.Home.Novel.Url.evaluate(recentlyUpdateTranslatedR18Data).get() ?: "",
                     parseCount(EsjzoneXPaths.Home.Novel.Views.evaluate(recentlyUpdateTranslatedR18Data).get()),
@@ -85,7 +85,7 @@ fun EsjzoneClient.getHomeData(authorization: Authorization): HomeData {
         for (recentlyUpdateOriginalR18Data in EsjzoneXPaths.Home.RecentlyUpdateOriginalR18.All.evaluate(document).elements) {
             recentlyUpdateOriginalR18Novels.add(
                 CoveredNovelImpl(
-                    EsjzoneUrls.coverOrEmpty(EsjzoneXPaths.Home.Novel.Cover.evaluate(recentlyUpdateOriginalR18Data).get()),
+                    EsjzoneUrls.coverUrlFromNovelCard(recentlyUpdateOriginalR18Data),
                     EsjzoneXPaths.Home.Novel.Name.evaluate(recentlyUpdateOriginalR18Data).get() ?: "",
                     EsjzoneXPaths.Home.Novel.Url.evaluate(recentlyUpdateOriginalR18Data).get() ?: "",
                     parseCount(EsjzoneXPaths.Home.Novel.Views.evaluate(recentlyUpdateOriginalR18Data).get()),
@@ -105,7 +105,7 @@ fun EsjzoneClient.getHomeData(authorization: Authorization): HomeData {
 
             recommendationNovels.add(
                 CoveredNovelImpl(
-                    EsjzoneUrls.coverOrEmpty(EsjzoneXPaths.Home.Novel.Cover.evaluate(recommendationData).get()),
+                    EsjzoneUrls.coverUrlFromNovelCard(recommendationData),
                     EsjzoneXPaths.Home.Novel.Name.evaluate(recommendationData).get() ?: "",
                     EsjzoneXPaths.Home.Novel.Url.evaluate(recommendationData).get() ?: "",
                     parseCount(EsjzoneXPaths.Home.Novel.Views.evaluate(recommendationData).get()),

@@ -11,6 +11,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -41,8 +43,12 @@ import com.breakyuna.esjzone.network.EsjzoneClient
 import com.breakyuna.esjzone.network.EsjzoneUrls
 import com.breakyuna.esjzone.network.LocalAuthorization
 import com.breakyuna.esjzone.network.features.getForumCategories
+import com.breakyuna.esjzone.network.features.getForumBoard
+import com.breakyuna.esjzone.network.features.getForumPost
 import com.breakyuna.esjzone.network.features.getForumThreads
 import com.breakyuna.esjzone.novellibrary.community.ForumCategory
+import com.breakyuna.esjzone.novellibrary.community.ForumPost
+import com.breakyuna.esjzone.novellibrary.community.ForumTopic
 import com.breakyuna.esjzone.novellibrary.community.ForumThread
 import com.breakyuna.esjzone.novellibrary.novel.CategoryNovel
 import com.breakyuna.esjzone.ui.component.AppBar
@@ -127,9 +133,44 @@ class ForumCategoryPage(private val category: ForumCategory) : Screen {
                 LazyColumn(modifier = Modifier.fillMaxSize()) {
                     items(threads, key = { "forum-thread-${it.categoryId}-${it.id}" }) { thread ->
                         ForumThreadCard(thread) {
-                            // Category entries point to a novel forum board, so
-                            // resolve them to the canonical novel detail page.
+                            // A board can be either a novel forum or a nested
+                            // topic board; ForumBoardPage detects the template.
                             navigator?.pushIfNotCurrent(
+                                ForumBoardPage(thread)
+                            )
+                        }
+                    }
+                    item { Spacer(modifier = Modifier.height(24.dp)) }
+                }
+            }
+        }
+
+        LaunchedEffect(Unit) { model.load() }
+    }
+}
+
+class ForumBoardPage(private val thread: ForumThread) : Screen {
+    override val key: ScreenKey =
+        "ForumBoardPage:" + EsjzoneUrls.canonicalPageKey(thread.url)
+            .ifBlank { thread.id }
+
+    @Composable
+    override fun Content() {
+        val navigator = LocalBaseNavigator.current
+        val authorization = LocalAuthorization.current
+        val model = rememberScreenModel { ForumBoardPageModel(authorization, thread) }
+        val state by model.state.collectAsState()
+
+        Column(modifier = Modifier.fillMaxSize()) {
+            AppBar(title = thread.title, onBack = { navigator?.pop() })
+            CommunityStateContent(
+                state = state,
+                emptyText = stringResource(id = R.string.forum_threads_empty)
+            ) { board ->
+                when (board) {
+                    is com.breakyuna.esjzone.network.features.ForumBoardResult.Novel -> {
+                        LaunchedEffect(board) {
+                            navigator?.replace(
                                 NovelPage(
                                     CategoryNovel(
                                         name = thread.title,
@@ -140,8 +181,59 @@ class ForumCategoryPage(private val category: ForumCategory) : Screen {
                                 )
                             )
                         }
+                        BoxLoading()
                     }
-                    item { Spacer(modifier = Modifier.height(24.dp)) }
+
+                    is com.breakyuna.esjzone.network.features.ForumBoardResult.Topics -> {
+                        LazyColumn(modifier = Modifier.fillMaxSize()) {
+                            items(board.items, key = { "forum-topic-${it.boardId}-${it.id}" }) { topic ->
+                                ForumTopicCard(topic) {
+                                    navigator?.pushIfNotCurrent(ForumPostPage(topic))
+                                }
+                            }
+                            item { Spacer(modifier = Modifier.height(24.dp)) }
+                        }
+                    }
+                }
+            }
+        }
+
+        LaunchedEffect(Unit) { model.load() }
+    }
+}
+
+class ForumPostPage(private val topic: ForumTopic) : Screen {
+    override val key: ScreenKey =
+        "ForumPostPage:" + EsjzoneUrls.canonicalPageKey(topic.url)
+            .ifBlank { "${topic.boardId}-${topic.id}" }
+
+    @Composable
+    override fun Content() {
+        val navigator = LocalBaseNavigator.current
+        val authorization = LocalAuthorization.current
+        val model = rememberScreenModel { ForumPostPageModel(authorization, topic) }
+        val commentsModel = rememberScreenModel {
+            CommentPageModel(authorization, topic.url)
+        }
+        val state by model.state.collectAsState()
+
+        Column(modifier = Modifier.fillMaxSize()) {
+            AppBar(title = topic.title, onBack = { navigator?.pop() })
+            when (val snapshot = state) {
+                is CommunityState.Loading -> BoxLoading()
+                is CommunityState.Error -> BoxError()
+                is CommunityState.Empty -> BoxError()
+                is CommunityState.Result -> Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .verticalScroll(rememberScrollState())
+                ) {
+                    ForumPostCard(snapshot.data)
+                    CommentSectionHost(
+                        model = commentsModel,
+                        showHeader = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
                 }
             }
         }
@@ -283,6 +375,128 @@ private fun ForumThreadCard(thread: ForumThread, onClick: () -> Unit) {
     }
 }
 
+@Composable
+private fun ForumTopicCard(topic: ForumTopic, onClick: () -> Unit) {
+    ElevatedCard(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 7.dp)
+            .clickable(onClick = onClick),
+        shape = RoundedCornerShape(18.dp)
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Text(
+                text = topic.title,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold
+            )
+            val authorAndDate = listOfNotNull(topic.author, topic.createdAt)
+                .joinToString(" · ")
+            if (authorAndDate.isNotBlank()) {
+                Text(
+                    text = authorAndDate,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 8.dp)
+                )
+            }
+            val stats = listOfNotNull(
+                topic.replyCount?.let { stringResource(R.string.forum_reply_count, it) },
+                topic.viewCount?.let { stringResource(R.string.forum_view_count, it) }
+            ).joinToString(" · ")
+            if (stats.isNotBlank() || !topic.lastReplyAt.isNullOrBlank()) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    if (stats.isNotBlank()) {
+                        Text(
+                            text = stats,
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Spacer(modifier = Modifier.weight(1f))
+                    topic.lastReplyAt?.let {
+                        Icon(
+                            imageVector = Icons.Filled.Schedule,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Text(
+                            text = it,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ForumPostCard(post: ForumPost) {
+    ElevatedCard(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        shape = RoundedCornerShape(18.dp)
+    ) {
+        Column(modifier = Modifier.padding(18.dp)) {
+            Text(
+                text = post.title,
+                style = MaterialTheme.typography.headlineSmall,
+                fontWeight = FontWeight.Bold
+            )
+            val authorAndDate = listOfNotNull(post.author, post.createdAt)
+                .joinToString(" · ")
+            if (authorAndDate.isNotBlank()) {
+                Text(
+                    text = authorAndDate,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 8.dp)
+                )
+            }
+            if (post.contentText.isNotBlank()) {
+                Text(
+                    text = post.contentText,
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.padding(top = 18.dp)
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun BoxLoading() {
+    androidx.compose.foundation.layout.Box(
+        modifier = Modifier.fillMaxSize(),
+        contentAlignment = Alignment.Center
+    ) { androidx.compose.material3.CircularProgressIndicator() }
+}
+
+@Composable
+private fun BoxError() {
+    androidx.compose.foundation.layout.Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(24.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            text = stringResource(id = R.string.community_load_failed),
+            color = MaterialTheme.colorScheme.error
+        )
+    }
+}
+
 private class ForumPageModel(
     private val authorization: Authorization
 ) : StateScreenModel<CommunityState<List<ForumCategory>>>(CommunityState.Loading) {
@@ -322,6 +536,60 @@ private class ForumCategoryPageModel(
                 AppLogger.e(
                     "ForumCategoryPageModel",
                     "Failed to load forum category ${category.id}",
+                    error
+                )
+                CommunityState.Error
+            }
+        }
+    }
+}
+
+private class ForumBoardPageModel(
+    private val authorization: Authorization,
+    private val thread: ForumThread
+) : StateScreenModel<CommunityState<com.breakyuna.esjzone.network.features.ForumBoardResult>>(
+    CommunityState.Loading
+) {
+    private var loadStarted = false
+
+    fun load() {
+        if (loadStarted) return
+        loadStarted = true
+        screenModelScope.launch(Dispatchers.IO) {
+            mutableState.value = try {
+                CommunityState.Result(EsjzoneClient.getForumBoard(authorization, thread))
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                AppLogger.e(
+                    "ForumBoardPageModel",
+                    "Failed to load forum board ${thread.id}",
+                    error
+                )
+                CommunityState.Error
+            }
+        }
+    }
+}
+
+private class ForumPostPageModel(
+    private val authorization: Authorization,
+    private val topic: ForumTopic
+) : StateScreenModel<CommunityState<ForumPost>>(CommunityState.Loading) {
+    private var loadStarted = false
+
+    fun load() {
+        if (loadStarted) return
+        loadStarted = true
+        screenModelScope.launch(Dispatchers.IO) {
+            mutableState.value = try {
+                CommunityState.Result(EsjzoneClient.getForumPost(authorization, topic))
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                AppLogger.e(
+                    "ForumPostPageModel",
+                    "Failed to load forum topic ${topic.id}",
                     error
                 )
                 CommunityState.Error

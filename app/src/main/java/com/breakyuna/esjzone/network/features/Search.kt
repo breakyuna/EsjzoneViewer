@@ -39,7 +39,7 @@ fun EsjzoneClient.search(
 
         novels.add(
             CoveredNovelImpl(
-                EsjzoneUrls.coverOrEmpty(EsjzoneXPaths.Tags.Novel.Cover.evaluate(novelData).get()),
+                EsjzoneUrls.coverUrlFromNovelCard(novelData),
                 EsjzoneXPaths.Tags.Novel.Name.evaluate(novelData).get() ?: "",
                 EsjzoneXPaths.Tags.Novel.Url.evaluate(novelData).get() ?: "",
                 parseCount(EsjzoneXPaths.Tags.Novel.Views.evaluate(novelData).get()),
@@ -95,7 +95,7 @@ private class SearchNovelRequester(
 
             novels.add(
                 CoveredNovelImpl(
-                    EsjzoneUrls.coverOrEmpty(EsjzoneXPaths.Tags.Novel.Cover.evaluate(novelData).get()),
+                    EsjzoneUrls.coverUrlFromNovelCard(novelData),
                     EsjzoneXPaths.Tags.Novel.Name.evaluate(novelData).get() ?: "",
                     EsjzoneXPaths.Tags.Novel.Url.evaluate(novelData).get() ?: "",
                     parseCount(EsjzoneXPaths.Tags.Novel.Views.evaluate(novelData).get()),
