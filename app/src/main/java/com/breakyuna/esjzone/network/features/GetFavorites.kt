@@ -11,17 +11,19 @@ import org.jsoup.Jsoup
 
 fun EsjzoneClient.getFavorites(
     authorization: Authorization,
-    sort: String
+    sort: String,
+    forceRefresh: Boolean = false
 ): Pair<PageableRequester<FavoriteNovel>, List<FavoriteNovel>> {
     val firstPageUrl = favoritePageUrl(sort, 1)
     // The site uses the /new/ or /udate/ landing request to establish the
-    // server-side order used by later bare numeric links.  Do not let a
-    // cached landing page leave that session state set to the other sort.
+    // server-side order used by later numeric links.  Normal reads reuse the
+    // persistent page cache; callers can force the landing request after a
+    // sort change or a successful favorite mutation.
     val responseBody = getPage(
         authorization,
         firstPageUrl,
         PageCacheTtl.ACCOUNT_LIST,
-        forceRefresh = true
+        forceRefresh = forceRefresh
     )
 
     val document = Jsoup.parse(responseBody, firstPageUrl)

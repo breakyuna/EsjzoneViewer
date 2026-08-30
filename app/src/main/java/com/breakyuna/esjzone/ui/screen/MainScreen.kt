@@ -42,11 +42,15 @@ class MainScreen(val authorization: Authorization) : Screen {
     @Composable
     override fun Content() {
         CompositionLocalProvider(value = LocalAuthorization provides authorization) {
-            Navigator(screen = TabScreen) { navigator ->
-
-                CoverTransition(navigator = navigator) { screen ->
-                    CompositionLocalProvider(value = LocalBaseNavigator provides navigator) {
-                        screen.Content()
+            // Keep the tab navigator above the page stack.  TabScreen is
+            // replaced while a detail/reader page is open; placing the tab
+            // navigator inside it would recreate it with HomeTab on return.
+            TabNavigator(tab = HomeTab) {
+                Navigator(screen = TabScreen) { navigator ->
+                    CoverTransition(navigator = navigator) { screen ->
+                        CompositionLocalProvider(value = LocalBaseNavigator provides navigator) {
+                            screen.Content()
+                        }
                     }
                 }
             }
@@ -60,31 +64,29 @@ private object TabScreen : Screen {
 
     @Composable
     override fun Content() {
-        TabNavigator(tab = HomeTab) {
-            Scaffold(
-                bottomBar = {
-                    NavigationBar(
-                        tonalElevation = 3.dp,
-                        containerColor = MaterialTheme.colorScheme.surface
-                    ) {
-                        TabNavigationItem(tab = HomeTab)
-                        TabNavigationItem(
-                            tab = HistoryTab,
-                            onDoubleClick = HistoryTab::requestOpenLastReading
-                        )
-                        TabNavigationItem(tab = FavoriteTab)
-                        TabNavigationItem(tab = ProfileTab)
-                    }
-                }
-            ) {
-                Surface(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(it),
-                    color = MaterialTheme.colorScheme.background
+        Scaffold(
+            bottomBar = {
+                NavigationBar(
+                    tonalElevation = 3.dp,
+                    containerColor = MaterialTheme.colorScheme.surface
                 ) {
-                    CurrentTab()
+                    TabNavigationItem(tab = HomeTab)
+                    TabNavigationItem(
+                        tab = HistoryTab,
+                        onDoubleClick = HistoryTab::requestOpenLastReading
+                    )
+                    TabNavigationItem(tab = FavoriteTab)
+                    TabNavigationItem(tab = ProfileTab)
                 }
+            }
+        ) {
+            Surface(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(it),
+                color = MaterialTheme.colorScheme.background
+            ) {
+                CurrentTab()
             }
         }
     }

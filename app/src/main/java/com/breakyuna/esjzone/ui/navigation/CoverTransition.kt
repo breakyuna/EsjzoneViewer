@@ -37,6 +37,13 @@ fun CoverTransition(
         contentKey = { screen -> screen.key },
         label = "cover transition"
     ) { screen ->
-        content(screen)
+        // Custom transitions do not go through Voyager's CurrentScreen(),
+        // which is also responsible for putting each screen inside its
+        // SaveableStateProvider.  Without this wrapper, rememberSaveable
+        // values such as reader scroll position and selected tabs are lost
+        // whenever a page is pushed and later popped.
+        navigator.saveableState("currentScreen", screen) {
+            content(screen)
+        }
     }
 }

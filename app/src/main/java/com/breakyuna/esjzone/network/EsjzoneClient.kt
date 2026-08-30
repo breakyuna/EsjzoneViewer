@@ -115,6 +115,27 @@ object EsjzoneClient {
         PageCache.remove(pageCacheKey(authorization, url))
     }
 
+    /** Invalidates only data affected by a favorite toggle. */
+    internal fun invalidateFavoriteCache(authorization: Authorization, novelUrl: String) {
+        invalidatePage(authorization, EsjzoneUrls.resolve(novelUrl).substringBefore('#'))
+
+        // The site has separate landing URLs for the two favorite orders.
+        // Invalidate both first pages so switching order cannot reveal a stale
+        // list, while leaving history/profile/home/chapter caches untouched.
+        listOf(
+            EsjzoneUrls.My.Favorite,
+            "${EsjzoneUrls.My.Favorite}/",
+            "${EsjzoneUrls.My.Favorite}/new/",
+            "${EsjzoneUrls.My.Favorite}/udate/"
+        ).forEach { url -> invalidatePage(authorization, url) }
+        PageCacheInvalidation.favoritesChanged()
+    }
+
+    /** Invalidates the cloud reading-history page without touching other data. */
+    internal fun invalidateHistoryCache(authorization: Authorization) {
+        invalidatePage(authorization, EsjzoneUrls.My.View)
+    }
+
     /** Returns the persisted session for a host, importing the legacy Room format once. */
     fun restoreAuthorization(host: String, legacy: Authorization? = null): Authorization? {
         val jar = persistentCookieJar ?: return legacy?.takeIf { it.hasCredentials() }

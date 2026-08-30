@@ -46,6 +46,7 @@ import com.breakyuna.esjzone.R
 import com.breakyuna.esjzone.network.Authorization
 import com.breakyuna.esjzone.network.EsjzoneClient
 import com.breakyuna.esjzone.network.LocalAuthorization
+import com.breakyuna.esjzone.network.PageCacheInvalidation
 import com.breakyuna.esjzone.network.PageableRequester
 import com.breakyuna.esjzone.network.features.getFavorites
 import com.breakyuna.esjzone.network.features.getNovelDetail
@@ -89,6 +90,7 @@ object FavoritePage : Screen {
         val favoritePageModel =
             rememberScreenModel { FavoritePageModel(authorization, sort) }
         val state by favoritePageModel.state.collectAsState()
+        val favoriteGeneration by PageCacheInvalidation.favoriteGeneration.collectAsState()
 
         val adult by remember {
             GlobalSettings.adult
@@ -284,8 +286,8 @@ object FavoritePage : Screen {
 
         }
 
-        LaunchedEffect(Unit) {
-            favoritePageModel.getRequester()
+        LaunchedEffect(favoriteGeneration) {
+            favoritePageModel.getRequester(forceRefresh = favoriteGeneration > 0L)
         }
     }
 
@@ -336,7 +338,8 @@ class FavoritePageModel(
             try {
                 val (requester, novels) = EsjzoneClient.getFavorites(
                     authorization,
-                    sort.value
+                    sort.value,
+                    forceRefresh = forceRefresh
                 )
                 ensureActive()
                 mutableState.value = State.Result(requester, novels)

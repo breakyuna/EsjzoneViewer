@@ -20,7 +20,9 @@ fun EsjzoneClient.changeFavorites(authorization: Authorization, novel: Novel) {
                     .header("Authorization", authToken)
                     .build()
             ).execute().use { response ->
-                if (response.isSuccessful) clearPageCache()
+                if (response.isSuccessful) {
+                    invalidateFavoriteCache(authorization, fullUrl)
+                }
             }
         }
     }

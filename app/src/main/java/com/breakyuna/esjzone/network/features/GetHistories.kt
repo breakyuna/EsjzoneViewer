@@ -9,8 +9,16 @@ import com.breakyuna.esjzone.novellibrary.novel.Chapter
 import com.breakyuna.esjzone.novellibrary.novel.HistoryNovel
 import org.jsoup.Jsoup
 
-fun EsjzoneClient.getHistories(authorization: Authorization): List<HistoryNovel> {
-    val responseBody = getPage(authorization, EsjzoneUrls.My.View, PageCacheTtl.ACCOUNT_LIST)
+fun EsjzoneClient.getHistories(
+    authorization: Authorization,
+    forceRefresh: Boolean = false
+): List<HistoryNovel> {
+    val responseBody = getPage(
+        authorization,
+        EsjzoneUrls.My.View,
+        PageCacheTtl.ACCOUNT_LIST,
+        forceRefresh = forceRefresh
+    )
 
     val document = Jsoup.parse(responseBody)
 

@@ -4,6 +4,10 @@ import android.content.Context
 import java.io.File
 import java.nio.charset.StandardCharsets
 import java.security.MessageDigest
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 
 internal object PageCacheTtl {
     const val PROFILE = 24L * 60L * 60L * 1000L
@@ -15,6 +19,20 @@ internal object PageCacheTtl {
     const val SEARCH = 15L * 60L * 1000L
     const val ACCOUNT_LIST = 5L * 60L * 1000L
     const val COMMUNITY = 5L * 60L * 1000L
+}
+
+/**
+ * In-memory generations for mutations that make a specific account page
+ * stale.  A generation is deliberately narrower than clearing every page:
+ * changing a favorite must not invalidate history or the user's profile.
+ */
+internal object PageCacheInvalidation {
+    private val _favoriteGeneration = MutableStateFlow(0L)
+    val favoriteGeneration: StateFlow<Long> = _favoriteGeneration.asStateFlow()
+
+    fun favoritesChanged() {
+        _favoriteGeneration.update { it + 1L }
+    }
 }
 
 /**

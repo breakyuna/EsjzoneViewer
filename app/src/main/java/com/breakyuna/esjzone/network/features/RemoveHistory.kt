@@ -22,7 +22,7 @@ fun EsjzoneClient.removeHistory(authorization: Authorization, vid: String) {
                     .header("Authorization", authToken)
                     .build()
             ).execute().use { response ->
-                if (response.isSuccessful) clearPageCache()
+                if (response.isSuccessful) invalidateHistoryCache(authorization)
             }
         }
     }

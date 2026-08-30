@@ -512,14 +512,17 @@ class HistoryPageModel(
         data class Result(val historyNovels: List<HistoryNovel>) : State()
     }
 
-    fun getNovels() {
+    fun getNovels(forceRefresh: Boolean = false) {
         if (loadStarted) return
         loadStarted = true
         loadJob?.cancel()
         loadJob = screenModelScope.launch(Dispatchers.IO) {
             mutableState.value = State.Loading
             try {
-                val histories = EsjzoneClient.getHistories(authorization)
+                val histories = EsjzoneClient.getHistories(
+                    authorization,
+                    forceRefresh = forceRefresh
+                )
                 ensureActive()
                 mutableState.value = State.Result(histories)
             } catch (e: CancellationException) {
@@ -533,7 +536,7 @@ class HistoryPageModel(
 
     fun reload() {
         loadStarted = false
-        getNovels()
+        getNovels(forceRefresh = true)
     }
 
 }
