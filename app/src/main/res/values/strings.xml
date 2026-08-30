@@ -109,6 +109,7 @@
     <string name="favorites_recently_update">Recently Update</string>
     <string name="delete_history">Delete</string>
     <string name="retry">Retry</string>
+    <string name="load_failed">Unable to load content</string>
     <string name="compile_information">Compille Info</string>
     <string name="build_version">Build Version</string>
     <string name="build_date">Build Date</string>
@@ -178,6 +179,11 @@
     <string name="bookmark_remove">Remove bookmark</string>
     <string name="local_cache">Local cache</string>
     <string name="local_cache_description">Previously opened novel pages are kept on this device</string>
+    <string name="local_cache_pages">Pages: %1$s · %2$d files</string>
+    <string name="local_cache_images">Images: %1$s</string>
+    <string name="local_cache_loading">Calculating cache usage…</string>
+    <string name="local_cache_clear_pages">Clear pages</string>
+    <string name="local_cache_clear_images">Clear images</string>
     <string name="close">Close</string>
     <string name="anonymous_user">Anonymous</string>
     <string name="page_indicator">%1$d / %2$d</string>

@@ -92,6 +92,7 @@ import com.breakyuna.esjzone.novellibrary.novel.FavoriteNovel
 import com.breakyuna.esjzone.novellibrary.novel.HistoryNovel
 import com.breakyuna.esjzone.ui.component.AppBar
 import com.breakyuna.esjzone.ui.component.Loading
+import com.breakyuna.esjzone.ui.component.LoadError
 import com.breakyuna.esjzone.ui.navigation.LocalBaseNavigator
 import com.breakyuna.esjzone.ui.navigation.ChapterStateHolder
 import com.breakyuna.esjzone.ui.navigation.pushIfNotCurrent
@@ -266,6 +267,12 @@ object HistoryPage : Screen {
                             var detailedNovel: DetailedNovel? by remember {
                                 mutableStateOf(cache[historyNovel.url])
                             }
+                            var detailFailed by remember(historyNovel.url) {
+                                mutableStateOf(false)
+                            }
+                            var detailRetry by remember(historyNovel.url) {
+                                mutableIntStateOf(0)
+                            }
 
                             val historyChapter: MutableState<Chapter?> = rememberSaveable {
                                 mutableStateOf(historyNovel.chapter)
@@ -277,14 +284,26 @@ object HistoryPage : Screen {
 
                             val novel = detailedNovel
                             if (novel == null) {
-                                Column(
-                                    modifier = Modifier.fillMaxSize(),
-                                    horizontalAlignment = Alignment.CenterHorizontally
-                                ) {
-                                    CircularProgressIndicator(modifier = Modifier.padding(16.dp))
+                                if (detailFailed) {
+                                    LoadError(
+                                        onRetry = {
+                                            detailFailed = false
+                                            detailRetry += 1
+                                        },
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(vertical = 8.dp)
+                                    )
+                                } else {
+                                    Column(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalAlignment = Alignment.CenterHorizontally
+                                    ) {
+                                        CircularProgressIndicator(modifier = Modifier.padding(16.dp))
+                                    }
                                 }
 
-                                LaunchedEffect(historyNovel.url) {
+                                LaunchedEffect(historyNovel.url, detailRetry) {
                                     try {
                                         val fetched = withContext(Dispatchers.IO) {
                                             EsjzoneClient.getNovelDetail(
@@ -294,9 +313,11 @@ object HistoryPage : Screen {
                                         }
                                         detailedNovel = fetched
                                         cache[historyNovel.url] = fetched
+                                        detailFailed = false
                                     } catch (e: CancellationException) {
                                         throw e
                                     } catch (e: Exception) {
+                                        detailFailed = true
                                         com.breakyuna.esjzone.util.AppLogger.e("HistoryPage", "Failed to load novel detail for ${historyNovel.name}", e)
                                     }
                                 }

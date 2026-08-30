@@ -6,6 +6,7 @@ import com.google.gson.JsonSyntaxException
 import okhttp3.Cookie
 import okhttp3.CookieJar
 import okhttp3.HttpUrl
+import java.util.UUID
 
 /**
  * A small persistent CookieJar for the server-rendered ESJ session.
@@ -66,6 +67,38 @@ internal class PersistentCookieJar(context: Context) : CookieJar {
         }
     }
 
+    /**
+     * Returns an opaque, host-scoped cache identity that survives cookie rotation.
+     * Session cookies are deliberately excluded: ESJ can rotate them after any
+     * response, which previously made every cached page unreachable after restart.
+     */
+    fun cacheScopeFor(host: String): String = synchronized(lock) {
+        val key = cacheScopeKey(host)
+        preferences.getString(key, null)?.takeIf { it.isNotBlank() } ?: UUID.randomUUID()
+            .toString()
+            .also { preferences.edit().putString(key, it).commit() }
+    }
+
+    /** Starts a new cache namespace when an explicit login changes account state. */
+    fun rotateCacheScope(host: String) = synchronized(lock) {
+        preferences.edit()
+            .putString(cacheScopeKey(host), UUID.randomUUID().toString())
+            .commit()
+        Unit
+    }
+
+    fun wasVerifiedRecently(host: String, maxAgeMillis: Long): Boolean = synchronized(lock) {
+        val verifiedAt = preferences.getLong(verificationKey(host), 0L)
+        val age = System.currentTimeMillis() - verifiedAt
+        verifiedAt > 0L && age in 0..maxAgeMillis
+    }
+
+    fun markVerified(host: String) = synchronized(lock) {
+        preferences.edit()
+            .putLong(verificationKey(host), System.currentTimeMillis())
+            .apply()
+    }
+
     /** Imports the two-cookie format written by older app versions. */
     fun importLegacyAuthorization(host: String, authorization: Authorization): Boolean {
         if (!authorization.hasCredentials()) return false
@@ -97,12 +130,24 @@ internal class PersistentCookieJar(context: Context) : CookieJar {
         synchronized(lock) {
             if (host.isNullOrBlank()) {
                 cookies.clear()
+                val editor = preferences.edit()
+                preferences.all.keys
+                    .filter {
+                        it.startsWith(CACHE_SCOPE_PREFIX) ||
+                            it.startsWith(VERIFIED_AT_PREFIX)
+                    }
+                    .forEach(editor::remove)
+                editor.commit()
             } else {
                 val normalizedHost = host.trim().lowercase().removePrefix("www.")
                 cookies.removeAll {
                     domainMatchesHost(it.domain, normalizedHost) ||
                         domainMatchesHost(it.domain, "www.$normalizedHost")
                 }
+                preferences.edit()
+                    .remove(cacheScopeKey(host))
+                    .remove(verificationKey(host))
+                    .commit()
             }
             persistLocked()
         }
@@ -144,6 +189,12 @@ internal class PersistentCookieJar(context: Context) : CookieJar {
 
     private fun normalizedHost(host: String): String =
         host.trim().lowercase().removePrefix("www.")
+
+    private fun cacheScopeKey(host: String): String =
+        CACHE_SCOPE_PREFIX + normalizedHost(host)
+
+    private fun verificationKey(host: String): String =
+        VERIFIED_AT_PREFIX + normalizedHost(host)
 
     private data class StoredCookie(
         val name: String,
@@ -196,5 +247,7 @@ internal class PersistentCookieJar(context: Context) : CookieJar {
         const val PREFERENCES = "esj_session"
         const val COOKIES = "cookies"
         const val LEGACY_MIGRATED_HOSTS = "legacy_migrated_hosts"
+        const val CACHE_SCOPE_PREFIX = "cache_scope_"
+        const val VERIFIED_AT_PREFIX = "verified_at_"
     }
 }

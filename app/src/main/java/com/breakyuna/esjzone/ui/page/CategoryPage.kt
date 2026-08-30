@@ -15,6 +15,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -46,6 +47,7 @@ import com.breakyuna.esjzone.novellibrary.novel.CategoryNovel
 import com.breakyuna.esjzone.novellibrary.novel.DetailedNovel
 import com.breakyuna.esjzone.novellibrary.novel.preview
 import com.breakyuna.esjzone.ui.component.AppBar
+import com.breakyuna.esjzone.ui.component.LoadError
 import com.breakyuna.esjzone.ui.component.Novel
 import com.breakyuna.esjzone.ui.navigation.LocalBaseNavigator
 
@@ -78,6 +80,10 @@ class CategoryPage(private val category: Category) : Screen {
                     contentAlignment = Alignment.Center
                 ) { CircularProgressIndicator() }
 
+                is CategoryPageModel.State.Error -> LoadError(
+                    onRetry = categoryPageModel::retry
+                )
+
                 is CategoryPageModel.State.Result -> {
                     val result = state as CategoryPageModel.State.Result
 
@@ -101,17 +107,35 @@ class CategoryPage(private val category: Category) : Screen {
                             var detailedNovel: DetailedNovel? by remember {
                                 mutableStateOf(cache[categoryNovel.url])
                             }
+                            var detailFailed by remember(categoryNovel.url) {
+                                mutableStateOf(false)
+                            }
+                            var detailRetry by remember(categoryNovel.url) {
+                                mutableIntStateOf(0)
+                            }
 
                             val novel = detailedNovel
                             if (novel == null) {
-                                Column(
-                                    modifier = Modifier.fillMaxSize(),
-                                    horizontalAlignment = Alignment.CenterHorizontally
-                                ) {
-                                    CircularProgressIndicator(modifier = Modifier.padding(16.dp))
+                                if (detailFailed) {
+                                    LoadError(
+                                        onRetry = {
+                                            detailFailed = false
+                                            detailRetry += 1
+                                        },
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(vertical = 8.dp)
+                                    )
+                                } else {
+                                    Column(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalAlignment = Alignment.CenterHorizontally
+                                    ) {
+                                        CircularProgressIndicator(modifier = Modifier.padding(16.dp))
+                                    }
                                 }
 
-                                LaunchedEffect(categoryNovel.url) {
+                                LaunchedEffect(categoryNovel.url, detailRetry) {
                                     try {
                                         val fetched = withContext(Dispatchers.IO) {
                                             EsjzoneClient.getNovelDetail(
@@ -121,9 +145,11 @@ class CategoryPage(private val category: Category) : Screen {
                                         }
                                         detailedNovel = fetched
                                         cache[categoryNovel.url] = fetched
+                                        detailFailed = false
                                     } catch (e: CancellationException) {
                                         throw e
                                     } catch (e: Exception) {
+                                        detailFailed = true
                                         com.breakyuna.esjzone.util.AppLogger.e("CategoryPage", "Failed to load novel detail for ${categoryNovel.name}", e)
                                     }
                                 }
@@ -171,6 +197,7 @@ class CategoryPageModel(
 
     sealed class State {
         data object Loading : State()
+        data object Error : State()
         data class Result(val categoryNovels: List<CategoryNovel>) : State()
     }
 
@@ -187,9 +214,15 @@ class CategoryPageModel(
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
+                mutableState.value = State.Error
                 com.breakyuna.esjzone.util.AppLogger.e("CategoryPageModel", "Failed to list novels for category: ${category.name}", e)
             }
         }
+    }
+
+    fun retry() {
+        loadStarted = false
+        getNovels()
     }
 
 }

@@ -82,6 +82,7 @@ import com.breakyuna.esjzone.ui.component.AppBar
 import com.breakyuna.esjzone.ui.component.ChapterList
 import com.breakyuna.esjzone.ui.component.Description
 import com.breakyuna.esjzone.ui.component.Loading
+import com.breakyuna.esjzone.ui.component.LoadError
 import com.breakyuna.esjzone.ui.navigation.LocalBaseNavigator
 import com.breakyuna.esjzone.ui.navigation.BooleanStateHolder
 import com.breakyuna.esjzone.ui.navigation.ChapterStateHolder
@@ -119,6 +120,10 @@ class NovelPage(
 
             when (state) {
                 is NovelPageModel.State.Loading -> Loading()
+
+                is NovelPageModel.State.Error -> LoadError(
+                    onRetry = screenModel::retry
+                )
 
                 is NovelPageModel.State.Result -> {
                     val result = state as NovelPageModel.State.Result
@@ -577,6 +582,7 @@ class NovelPageModel(
 
     sealed class State {
         data object Loading : State()
+        data object Error : State()
         data class Result(val detailed: DetailedNovel) : State()
     }
 
@@ -598,9 +604,17 @@ class NovelPageModel(
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
+                mutableState.value = State.Error
                 com.breakyuna.esjzone.util.AppLogger.e("NovelPageModel", "Failed to load novel detail for ${novel.name}", e)
             }
         }
+    }
+
+    fun retry() {
+        synchronized(detailLoadLock) {
+            detailLoadStarted = false
+        }
+        getDetail()
     }
 
 }

@@ -31,6 +31,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -44,9 +45,11 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import cafe.adriel.voyager.core.screen.Screen
+import coil.annotation.ExperimentalCoilApi
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import com.breakyuna.esjzone.GlobalSettings
 import com.breakyuna.esjzone.MainActivity
 import com.breakyuna.esjzone.R
@@ -70,6 +73,7 @@ object SettingsPage : Screen {
 
     private fun readResolve(): Any = SettingsPage
 
+    @OptIn(ExperimentalCoilApi::class)
     @Composable
     override fun Content() {
         val appNavigator = LocalAppNavigator.current
@@ -101,6 +105,27 @@ object SettingsPage : Screen {
         }
         var showLogoutConfirmation by remember {
             mutableStateOf(false)
+        }
+        var localCacheStats by remember {
+            mutableStateOf<LocalCacheStats?>(null)
+        }
+
+        fun refreshLocalCacheStats() {
+            scope.launch(Dispatchers.IO) {
+                val pageStats = EsjzoneClient.pageCacheStats()
+                val imageBytes = MainActivity.imageLoader.diskCache?.size ?: 0L
+                withContext(Dispatchers.Main) {
+                    localCacheStats = LocalCacheStats(
+                        pageBytes = pageStats.sizeBytes,
+                        pageEntries = pageStats.entryCount,
+                        imageBytes = imageBytes
+                    )
+                }
+            }
+        }
+
+        LaunchedEffect(Unit) {
+            refreshLocalCacheStats()
         }
 
         Column(
@@ -379,11 +404,65 @@ object SettingsPage : Screen {
                     imageVector = Icons.Filled.Storage,
                     text = stringResource(id = R.string.local_cache)
                 ) {
-                    Text(
-                        text = stringResource(id = R.string.local_cache_description),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(end = 16.dp)
-                    )
+                    Column(modifier = Modifier.padding(end = 16.dp)) {
+                        Text(
+                            text = stringResource(id = R.string.local_cache_description),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        val stats = localCacheStats
+                        if (stats == null) {
+                            Text(
+                                text = stringResource(id = R.string.local_cache_loading),
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                fontSize = 13.sp
+                            )
+                        } else {
+                            Text(
+                                text = stringResource(
+                                    id = R.string.local_cache_pages,
+                                    formatBytes(stats.pageBytes),
+                                    stats.pageEntries
+                                ),
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                fontSize = 13.sp
+                            )
+                            Text(
+                                text = stringResource(
+                                    id = R.string.local_cache_images,
+                                    formatBytes(stats.imageBytes)
+                                ),
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                fontSize = 13.sp
+                            )
+                        }
+                        Row(modifier = Modifier.fillMaxWidth()) {
+                            TextButton(
+                                onClick = {
+                                    scope.launch(Dispatchers.IO) {
+                                        EsjzoneClient.clearPageCache()
+                                        withContext(Dispatchers.Main) {
+                                            refreshLocalCacheStats()
+                                        }
+                                    }
+                                }
+                            ) {
+                                Text(text = stringResource(id = R.string.local_cache_clear_pages))
+                            }
+                            TextButton(
+                                onClick = {
+                                    scope.launch(Dispatchers.IO) {
+                                        MainActivity.imageLoader.memoryCache?.clear()
+                                        MainActivity.imageLoader.diskCache?.clear()
+                                        withContext(Dispatchers.Main) {
+                                            refreshLocalCacheStats()
+                                        }
+                                    }
+                                }
+                            ) {
+                                Text(text = stringResource(id = R.string.local_cache_clear_images))
+                            }
+                        }
+                    }
                 }
                 SettingsButton(
                     imageVector = Icons.Filled.BugReport,
@@ -467,4 +546,21 @@ object SettingsPage : Screen {
         }
     }
 
+}
+
+private data class LocalCacheStats(
+    val pageBytes: Long,
+    val pageEntries: Int,
+    val imageBytes: Long
+)
+
+private fun formatBytes(bytes: Long): String {
+    val safeBytes = bytes.coerceAtLeast(0L)
+    val kib = 1024.0
+    val mib = kib * 1024.0
+    return when {
+        safeBytes >= mib -> String.format("%.1f MiB", safeBytes / mib)
+        safeBytes >= kib -> String.format("%.1f KiB", safeBytes / kib)
+        else -> "$safeBytes B"
+    }
 }

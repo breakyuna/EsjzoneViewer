@@ -16,6 +16,8 @@ enum class AuthorizationCheckResult {
     UNKNOWN
 }
 
+private const val AUTHORIZATION_VERIFICATION_TTL = 30L * 60L * 1000L
+
 /**
  * Checks a cached session without turning temporary network failures into a
  * local logout. UNKNOWN means that the cached credentials should be kept.
@@ -26,17 +28,32 @@ fun EsjzoneClient.checkAuthorization(authorization: Authorization): Authorizatio
         return AuthorizationCheckResult.UNAUTHORIZED
     }
 
+    val sessionHost = authorization.domain.ifBlank { EsjzoneUrls.BaseWithoutProtocol }
+    if (wasAuthorizationVerifiedRecently(sessionHost, AUTHORIZATION_VERIFICATION_TTL)) {
+        AppLogger.i("IsAuthorized", "Using recently verified local session")
+        return AuthorizationCheckResult.AUTHORIZED
+    }
+
     val first = checkAuthorizationOnce(authorization)
-    if (!first.retryableStatus) return first.result
+    if (!first.retryableStatus) {
+        if (first.result == AuthorizationCheckResult.AUTHORIZED) {
+            markAuthorizationVerified(sessionHost)
+        }
+        return first.result
+    }
 
     // A single 401/403 can be produced by a proxy, rate limiter, or a transient
     // server edge. Confirm it before treating the persisted session as expired.
     val second = checkAuthorizationOnce(authorization)
-    return if (second.retryableStatus) {
+    val result = if (second.retryableStatus) {
         AuthorizationCheckResult.UNAUTHORIZED
     } else {
         second.result
     }
+    if (result == AuthorizationCheckResult.AUTHORIZED) {
+        markAuthorizationVerified(sessionHost)
+    }
+    return result
 }
 
 private data class AuthorizationProbe(

@@ -603,7 +603,11 @@ internal class CommentPageModel(
         loadJob?.cancel()
         loadJob = screenModelScope.launch(Dispatchers.IO) {
             try {
-                val comments = EsjzoneClient.getPageComments(authorization, pageUrl)
+                val comments = EsjzoneClient.getPageComments(
+                    authorization,
+                    pageUrl,
+                    forceRefresh = forceRefresh
+                )
                 ensureActive()
                 mutableState.value = comments.toCommunityState()
             } catch (error: CancellationException) {

@@ -1736,6 +1736,11 @@ class ChapterPageModel(
     chapterOrder: List<Chapter>
 ) : StateScreenModel<ChapterPageModel.State>(State.Loading) {
 
+    private companion object {
+        /** Keep a small bidirectional reading window instead of the whole book in RAM. */
+        const val MAX_LOADED_CHAPTERS = 9
+    }
+
     sealed class State {
         data object Loading : State()
         data object Error : State()
@@ -1869,6 +1874,7 @@ class ChapterPageModel(
                             loadedChapters.none { sameChapter(it.chapter, chapterToLoad) }
                         ) {
                             loadedChapters += ReaderChapter(chapterToLoad, detail)
+                            trimLoadedChaptersFromStart()
                         }
                     }
                     publish(session)
@@ -1930,6 +1936,7 @@ class ChapterPageModel(
                             loadedChapters.none { sameChapter(it.chapter, chapterToLoad) }
                         ) {
                             loadedChapters.add(0, ReaderChapter(chapterToLoad, detail))
+                            trimLoadedChaptersFromEnd()
                         }
                     }
                     publish(session)
@@ -2169,6 +2176,20 @@ class ChapterPageModel(
             .filter { chapterKey(it).isNotBlank() }
             .distinctBy { chapterKey(it) }
             .toList()
+
+    /** Called only while [lock] is held after reading forward near the list end. */
+    private fun trimLoadedChaptersFromStart() {
+        while (loadedChapters.size > MAX_LOADED_CHAPTERS) {
+            loadedChapters.removeAt(0)
+        }
+    }
+
+    /** Called only while [lock] is held after reading backward near the list start. */
+    private fun trimLoadedChaptersFromEnd() {
+        while (loadedChapters.size > MAX_LOADED_CHAPTERS) {
+            loadedChapters.removeAt(loadedChapters.lastIndex)
+        }
+    }
 }
 
 private fun chapterIdentity(chapter: Chapter): String =

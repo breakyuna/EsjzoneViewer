@@ -3,12 +3,22 @@ package com.breakyuna.esjzone.network
 import android.content.Context
 import java.nio.charset.StandardCharsets
 import java.security.MessageDigest
+import java.util.concurrent.CompletableFuture
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.ExecutionException
+import java.util.concurrent.Semaphore
+import java.util.concurrent.atomic.AtomicLong
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 import okhttp3.Headers
 import okhttp3.Cookie
 import okhttp3.HttpUrl
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 
 object EsjzoneClient {
 
@@ -50,6 +60,11 @@ object EsjzoneClient {
     internal var persistentCookieJar: PersistentCookieJar? = null
         private set
 
+    private val refreshScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val inFlightPages = ConcurrentHashMap<String, CompletableFuture<String>>()
+    private val cacheEpoch = AtomicLong(0L)
+    private val networkPermits = Semaphore(6, true)
+
     /** Initializes the shared connection pool and page cache during app startup. */
     fun initialize(context: Context) {
         persistentCookieJar = PersistentCookieJar(context.applicationContext)
@@ -67,9 +82,10 @@ object EsjzoneClient {
             .build()
 
     /**
-     * Returns fresh cached HTML when available, unless [forceRefresh] is set, otherwise
-     * fetches and stores a successful page. Error pages and redirects to login are never
-     * written to the page cache; a stale page remains a fallback for transient failures.
+     * Returns fresh cached HTML when available. Expired HTML is returned immediately while
+     * one background refresh updates it for the next read. A forced refresh or a true miss
+     * waits for the shared request for this account and URL. Error pages and redirects to
+     * login are never written; stale HTML remains a fallback for transient failures.
      */
     fun getPage(
         authorization: Authorization,
@@ -78,41 +94,109 @@ object EsjzoneClient {
         forceRefresh: Boolean = false
     ): String {
         val cacheKey = pageCacheKey(authorization, url)
+        val requestEpoch = cacheEpoch.get()
         if (!forceRefresh) {
             PageCache.read(cacheKey, maxAgeMillis)?.let { return it }
         }
         val stalePage = PageCache.readStale(cacheKey)
 
+        if (!forceRefresh && stalePage != null) {
+            refreshScope.launch {
+                runCatching {
+                    fetchPageCoalesced(authorization, url, cacheKey, stalePage, requestEpoch)
+                }
+            }
+            return stalePage
+        }
+
+        return fetchPageCoalesced(authorization, url, cacheKey, stalePage, requestEpoch)
+    }
+
+    private fun fetchPageCoalesced(
+        authorization: Authorization,
+        url: String,
+        cacheKey: String,
+        stalePage: String?,
+        requestEpoch: Long
+    ): String {
+        val owner = CompletableFuture<String>()
+        val existing = inFlightPages.putIfAbsent(cacheKey, owner)
+        if (existing != null) {
+            return try {
+                existing.get()
+            } catch (error: ExecutionException) {
+                val cause = error.cause
+                if (cause is Exception) throw cause
+                throw error
+            }
+        }
+
         return try {
-            val response = authenticatedClient(authorization).newCall(
-                Request.Builder()
-                    .url(url)
-                    .get()
-                    .headers(headers)
-                    .build()
-            ).execute()
-            val responseCode = response.code
-            val body = response.use { it.body?.string().orEmpty() }
-            if (responseCode in 200..299 && body.isNotBlank() && !looksLikeLoginPage(body)) {
+            networkPermits.acquire()
+            val responseData = try {
+                val response = authenticatedClient(authorization).newCall(
+                    Request.Builder()
+                        .url(url)
+                        .get()
+                        .headers(headers)
+                        .build()
+                ).execute()
+                response.code to response.use { it.body?.string().orEmpty() }
+            } finally {
+                networkPermits.release()
+            }
+            val responseCode = responseData.first
+            val body = responseData.second
+            if (requestEpoch == cacheEpoch.get() && responseCode in 200..299 &&
+                body.isNotBlank() && !looksLikeLoginPage(body)
+            ) {
+                NovelDetailCache.remove(cacheKey)
                 PageCache.write(cacheKey, body)
             }
-            if (responseCode in 500..599 && stalePage != null) stalePage else body
+            val result = if ((responseCode == 408 || responseCode == 425 || responseCode == 429 ||
+                    responseCode in 500..599) && stalePage != null
+            ) {
+                stalePage
+            } else {
+                body
+            }
+            owner.complete(result)
+            result
         } catch (error: CancellationException) {
+            owner.completeExceptionally(error)
             throw error
         } catch (error: Exception) {
             // A previously fetched page is preferable to a blank screen during a transient
             // timeout or offline period. The page remains scoped to this account and URL.
-            stalePage ?: throw error
+            val result = stalePage
+            if (result != null) {
+                owner.complete(result)
+                result
+            } else {
+                owner.completeExceptionally(error)
+                throw error
+            }
+        } finally {
+            inFlightPages.remove(cacheKey, owner)
         }
     }
 
     fun clearPageCache() {
+        cacheEpoch.incrementAndGet()
+        inFlightPages.clear()
+        NovelDetailCache.clear()
         PageCache.clear()
     }
 
+    fun pageCacheStats(): PageCacheStats = PageCache.stats()
+
     /** Invalidates one account-scoped page after a successful remote write. */
     internal fun invalidatePage(authorization: Authorization, url: String) {
-        PageCache.remove(pageCacheKey(authorization, url))
+        val cacheKey = pageCacheKey(authorization, url)
+        cacheEpoch.incrementAndGet()
+        inFlightPages.remove(cacheKey)
+        NovelDetailCache.remove(cacheKey)
+        PageCache.remove(cacheKey)
     }
 
     /** Invalidates only data affected by a favorite toggle. */
@@ -151,13 +235,28 @@ object EsjzoneClient {
         persistentCookieJar?.saveFromResponse(url, cookies)
     }
 
+    internal fun rotatePageCacheScope(host: String) {
+        persistentCookieJar?.rotateCacheScope(host)
+    }
+
+    internal fun wasAuthorizationVerifiedRecently(host: String, maxAgeMillis: Long): Boolean =
+        persistentCookieJar?.wasVerifiedRecently(host, maxAgeMillis) == true
+
+    internal fun markAuthorizationVerified(host: String) {
+        persistentCookieJar?.markVerified(host)
+    }
+
+    internal fun novelDetailCacheKey(authorization: Authorization, url: String): String =
+        pageCacheKey(authorization, url)
+
     /** Clears only the selected site's session; a null host clears every persisted session. */
     fun clearSession(host: String? = null) {
         persistentCookieJar?.clear(host)
     }
 
     private fun pageCacheKey(authorization: Authorization, url: String): String {
-        val scope = if (authorization.hasCredentials()) {
+        val host = url.toHttpUrlOrNull()?.host ?: authorization.domain
+        val scope = persistentCookieJar?.cacheScopeFor(host) ?: if (authorization.hasCredentials()) {
             // Use a one-way digest so credentials never appear in cache file names.
             MessageDigest.getInstance("SHA-256")
                 .digest(

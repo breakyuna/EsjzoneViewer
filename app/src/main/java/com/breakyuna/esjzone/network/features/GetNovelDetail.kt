@@ -5,6 +5,7 @@ import com.breakyuna.esjzone.network.EsjzoneClient
 import com.breakyuna.esjzone.network.EsjzoneUrls
 import com.breakyuna.esjzone.network.EsjzoneXPaths
 import com.breakyuna.esjzone.network.PageCacheTtl
+import com.breakyuna.esjzone.network.NovelDetailCache
 import com.breakyuna.esjzone.novellibrary.novel.DetailedNovel
 import com.breakyuna.esjzone.novellibrary.novel.Novel
 import com.breakyuna.esjzone.novellibrary.novel.NovelChapterList
@@ -21,6 +22,10 @@ fun EsjzoneClient.getNovelDetail(
     includeComments: Boolean = false
 ): DetailedNovel {
     val targetUrl = EsjzoneUrls.resolve(novel.url)
+    val detailCacheKey = novelDetailCacheKey(authorization, targetUrl)
+    if (!includeComments) {
+        NovelDetailCache.read(detailCacheKey)?.let { return it }
+    }
 
     AppLogger.i("GetNovelDetail", "Fetching novel detail: ${novel.name} at $targetUrl")
     val responseBody = getPage(authorization, targetUrl, PageCacheTtl.DETAIL)
@@ -105,7 +110,7 @@ fun EsjzoneClient.getNovelDetail(
         emptyList()
     }
 
-    return DetailedNovel(
+    val detailedNovel = DetailedNovel(
         novel.name,
         novel.url,
         coverUrl,
@@ -124,6 +129,10 @@ fun EsjzoneClient.getNovelDetail(
         sourceUrl,
         updatedAt
     )
+    if (!includeComments) {
+        NovelDetailCache.write(detailCacheKey, detailedNovel)
+    }
+    return detailedNovel
 }
 
 private val UPDATED_AT_REGEX = Regex(

@@ -13,10 +13,16 @@ import org.jsoup.Jsoup
 fun EsjzoneClient.novels(
     authorization: Authorization,
     novelType: Int,
-    sortType: Int
+    sortType: Int,
+    forceRefresh: Boolean = false
 ): Pair<PageableRequester<CoveredNovel>, List<CoveredNovel>> {
     val firstPageUrl = "${EsjzoneUrls.Base}/list-$novelType$sortType"
-    val responseBody = getPage(authorization, firstPageUrl, PageCacheTtl.LIST)
+    val responseBody = getPage(
+        authorization,
+        firstPageUrl,
+        PageCacheTtl.LIST,
+        forceRefresh = forceRefresh
+    )
 
     val document = Jsoup.parse(responseBody)
 

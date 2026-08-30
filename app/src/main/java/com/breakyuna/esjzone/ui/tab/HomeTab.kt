@@ -86,6 +86,7 @@ import com.breakyuna.esjzone.network.features.getHomeData
 import com.breakyuna.esjzone.novellibrary.data.HomeData
 import com.breakyuna.esjzone.novellibrary.novel.CoveredNovel
 import com.breakyuna.esjzone.ui.navigation.LocalBaseNavigator
+import com.breakyuna.esjzone.ui.component.LoadError
 import com.breakyuna.esjzone.ui.navigation.pushIfNotCurrent
 import com.breakyuna.esjzone.ui.page.NovelListPage
 import com.breakyuna.esjzone.ui.page.NovelPage
@@ -187,81 +188,72 @@ object HomeTab : Tab {
 
             Spacer(modifier = Modifier.height(12.dp))
 
-            // Recommendation Section
-            SectionHeader(
-                icon = Icons.Filled.Recommend,
-                title = stringResource(id = R.string.tab_home_recommendation),
-                onMoreClick = null
-            )
-            if (state !is HomeTabModel.State.Result) {
-                LoadingPlaceholder()
-            } else {
-                NovelSets(novels = (state as HomeTabModel.State.Result).homeData.recommendation)
-            }
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            // Translated Section
-            SectionHeader(
-                icon = Icons.Filled.Translate,
-                title = stringResource(id = R.string.tab_home_recentlyupdate_tranlated),
-                onMoreClick = {
-                    navigator?.pushIfNotCurrent(NovelListPage(1, 1, false))
-                }
-            )
-            if (state !is HomeTabModel.State.Result) {
-                LoadingPlaceholder()
-            } else {
-                NovelSets(novels = (state as HomeTabModel.State.Result).homeData.recentlyUpdateTranslated)
-            }
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            // Original Section
-            SectionHeader(
-                icon = Icons.Filled.AutoStories,
-                title = stringResource(id = R.string.tab_home_recentlyupdate_original),
-                onMoreClick = {
-                    navigator?.pushIfNotCurrent(NovelListPage(2, 1, false))
-                }
-            )
-            if (state !is HomeTabModel.State.Result) {
-                LoadingPlaceholder()
-            } else {
-                NovelSets(novels = (state as HomeTabModel.State.Result).homeData.recentlyUpdateOriginal)
-            }
-
-            if (adult) {
-                Spacer(modifier = Modifier.height(16.dp))
-
-                // Translated R18 Section
-                SectionHeader(
-                    icon = Icons.Filled.LocalFireDepartment,
-                    title = stringResource(id = R.string.tab_home_recentlyupdate_tranlated_r18),
-                    onMoreClick = {
-                        navigator?.pushIfNotCurrent(NovelListPage(1, 1, true))
-                    }
+            when (val snapshot = state) {
+                HomeTabModel.State.Loading -> LoadingPlaceholder()
+                HomeTabModel.State.Error -> LoadError(
+                    onRetry = homeTabModel::retry,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(180.dp)
                 )
-                if (state !is HomeTabModel.State.Result) {
-                    LoadingPlaceholder()
-                } else {
-                    NovelSets(novels = (state as HomeTabModel.State.Result).homeData.recentlyUpdateTranslatedR18)
-                }
+                is HomeTabModel.State.Result -> {
+                    // Recommendation Section
+                    SectionHeader(
+                        icon = Icons.Filled.Recommend,
+                        title = stringResource(id = R.string.tab_home_recommendation),
+                        onMoreClick = null
+                    )
+                    NovelSets(novels = snapshot.homeData.recommendation)
 
-                Spacer(modifier = Modifier.height(16.dp))
+                    Spacer(modifier = Modifier.height(16.dp))
 
-                // Original R18 Section
-                SectionHeader(
-                    icon = Icons.Filled.LocalFireDepartment,
-                    title = stringResource(id = R.string.tab_home_recentlyupdate_original_r18),
-                    onMoreClick = {
-                        navigator?.pushIfNotCurrent(NovelListPage(2, 1, true))
+                    // Translated Section
+                    SectionHeader(
+                        icon = Icons.Filled.Translate,
+                        title = stringResource(id = R.string.tab_home_recentlyupdate_tranlated),
+                        onMoreClick = {
+                            navigator?.pushIfNotCurrent(NovelListPage(1, 1, false))
+                        }
+                    )
+                    NovelSets(novels = snapshot.homeData.recentlyUpdateTranslated)
+
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    // Original Section
+                    SectionHeader(
+                        icon = Icons.Filled.AutoStories,
+                        title = stringResource(id = R.string.tab_home_recentlyupdate_original),
+                        onMoreClick = {
+                            navigator?.pushIfNotCurrent(NovelListPage(2, 1, false))
+                        }
+                    )
+                    NovelSets(novels = snapshot.homeData.recentlyUpdateOriginal)
+
+                    if (adult) {
+                        Spacer(modifier = Modifier.height(16.dp))
+
+                        // Translated R18 Section
+                        SectionHeader(
+                            icon = Icons.Filled.LocalFireDepartment,
+                            title = stringResource(id = R.string.tab_home_recentlyupdate_tranlated_r18),
+                            onMoreClick = {
+                                navigator?.pushIfNotCurrent(NovelListPage(1, 1, true))
+                            }
+                        )
+                        NovelSets(novels = snapshot.homeData.recentlyUpdateTranslatedR18)
+
+                        Spacer(modifier = Modifier.height(16.dp))
+
+                        // Original R18 Section
+                        SectionHeader(
+                            icon = Icons.Filled.LocalFireDepartment,
+                            title = stringResource(id = R.string.tab_home_recentlyupdate_original_r18),
+                            onMoreClick = {
+                                navigator?.pushIfNotCurrent(NovelListPage(2, 1, true))
+                            }
+                        )
+                        NovelSets(novels = snapshot.homeData.recentlyUpdateOriginalR18)
                     }
-                )
-                if (state !is HomeTabModel.State.Result) {
-                    LoadingPlaceholder()
-                } else {
-                    NovelSets(novels = (state as HomeTabModel.State.Result).homeData.recentlyUpdateOriginalR18)
                 }
             }
 
@@ -391,6 +383,7 @@ class HomeTabModel(
 
     sealed class State {
         data object Loading : State()
+        data object Error : State()
         data class Result(val homeData: HomeData) : State()
     }
 
@@ -406,9 +399,15 @@ class HomeTabModel(
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
+                mutableState.value = State.Error
                 com.breakyuna.esjzone.util.AppLogger.e("HomeTabModel", "Failed to load home data", e)
             }
         }
+    }
+
+    fun retry() {
+        loadStarted = false
+        getHomeData()
     }
 
 }

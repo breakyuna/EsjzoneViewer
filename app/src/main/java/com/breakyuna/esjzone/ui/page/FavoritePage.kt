@@ -55,6 +55,7 @@ import com.breakyuna.esjzone.novellibrary.novel.FavoriteNovel
 import com.breakyuna.esjzone.ui.component.AppBar
 import com.breakyuna.esjzone.ui.component.DropdownSelection
 import com.breakyuna.esjzone.ui.component.Loading
+import com.breakyuna.esjzone.ui.component.LoadError
 import com.breakyuna.esjzone.ui.component.Novel
 import com.breakyuna.esjzone.ui.navigation.LocalBaseNavigator
 import com.breakyuna.esjzone.ui.navigation.BooleanStateHolder
@@ -151,12 +152,22 @@ object FavoritePage : Screen {
             when (state) {
                 is FavoritePageModel.State.Loading -> Loading()
 
+                is FavoritePageModel.State.Error -> LoadError(
+                    onRetry = favoritePageModel::retry
+                )
+
                 is FavoritePageModel.State.Result -> {
                     val result = (state as FavoritePageModel.State.Result)
                     val requester = result.requester
 
                     var current by remember(result) {
                         mutableIntStateOf(2)
+                    }
+                    var pageFailed by remember(result) {
+                        mutableStateOf(false)
+                    }
+                    var pageRetry by remember(result) {
+                        mutableIntStateOf(0)
                     }
 
                     val max = requester.pages()
@@ -183,17 +194,35 @@ object FavoritePage : Screen {
                             var detailedNovel: DetailedNovel? by remember {
                                 mutableStateOf(cache[favoriteNovel.url])
                             }
+                            var detailFailed by remember(favoriteNovel.url) {
+                                mutableStateOf(false)
+                            }
+                            var detailRetry by remember(favoriteNovel.url) {
+                                mutableIntStateOf(0)
+                            }
 
                             val novel = detailedNovel
                             if (novel == null) {
-                                Column(
-                                    modifier = Modifier.fillMaxSize(),
-                                    horizontalAlignment = Alignment.CenterHorizontally
-                                ) {
-                                    CircularProgressIndicator(modifier = Modifier.padding(16.dp))
+                                if (detailFailed) {
+                                    LoadError(
+                                        onRetry = {
+                                            detailFailed = false
+                                            detailRetry += 1
+                                        },
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(vertical = 8.dp)
+                                    )
+                                } else {
+                                    Column(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalAlignment = Alignment.CenterHorizontally
+                                    ) {
+                                        CircularProgressIndicator(modifier = Modifier.padding(16.dp))
+                                    }
                                 }
 
-                                LaunchedEffect(favoriteNovel.url) {
+                                LaunchedEffect(favoriteNovel.url, detailRetry) {
                                     try {
                                         val fetched = withContext(Dispatchers.IO) {
                                             EsjzoneClient.getNovelDetail(
@@ -203,9 +232,11 @@ object FavoritePage : Screen {
                                         }
                                         detailedNovel = fetched
                                         cache[favoriteNovel.url] = fetched
+                                        detailFailed = false
                                     } catch (e: CancellationException) {
                                         throw e
                                     } catch (e: Exception) {
+                                        detailFailed = true
                                         com.breakyuna.esjzone.util.AppLogger.e("FavoritePage", "Failed to load novel detail for ${favoriteNovel.name}", e)
                                     }
                                 }
@@ -235,15 +266,27 @@ object FavoritePage : Screen {
 
                         item {
                             if (current <= max && max > 1) {
-                                Box(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(8.dp),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    CircularProgressIndicator()
+                                if (pageFailed) {
+                                    LoadError(
+                                        onRetry = {
+                                            pageFailed = false
+                                            pageRetry += 1
+                                        },
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(vertical = 8.dp)
+                                    )
+                                } else {
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(8.dp),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        CircularProgressIndicator()
+                                    }
                                 }
-                                LaunchedEffect(current) {
+                                LaunchedEffect(current, pageRetry) {
                                     try {
                                         val newlyLoaded = withContext(Dispatchers.IO) {
                                             requester.more(current)
@@ -253,10 +296,12 @@ object FavoritePage : Screen {
                                                 continue
                                             items.add(item)
                                         }
+                                        pageFailed = false
                                         current += 1
                                     } catch (e: CancellationException) {
                                         throw e
                                     } catch (e: Exception) {
+                                        pageFailed = true
                                         com.breakyuna.esjzone.util.AppLogger.e(
                                             "FavoritePage",
                                             "Failed to load favorite page $current",
@@ -323,6 +368,7 @@ class FavoritePageModel(
 
     sealed class State {
         data object Loading : State()
+        data object Error : State()
         data class Result(
             val requester: PageableRequester<FavoriteNovel>,
             val firstPage: List<FavoriteNovel>
@@ -346,9 +392,14 @@ class FavoritePageModel(
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
+                mutableState.value = State.Error
                 com.breakyuna.esjzone.util.AppLogger.e("FavoritePageModel", "Failed to load favorites", e)
             }
         }
+    }
+
+    fun retry() {
+        getRequester(forceRefresh = true)
     }
 
 }

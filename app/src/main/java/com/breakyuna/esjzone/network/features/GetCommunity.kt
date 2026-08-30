@@ -53,18 +53,25 @@ class CommentSubmissionNotVerifiedException(val comments: List<Comment>) : IOExc
 
 fun EsjzoneClient.getChapterComments(
     authorization: Authorization,
-    chapterUrl: String
-): List<Comment> = getPageComments(authorization, chapterUrl)
+    chapterUrl: String,
+    forceRefresh: Boolean = false
+): List<Comment> = getPageComments(authorization, chapterUrl, forceRefresh)
 
 /** Loads comments from any page that uses the shared ESJ comment markup. */
 fun EsjzoneClient.getPageComments(
     authorization: Authorization,
-    pageUrl: String
+    pageUrl: String,
+    forceRefresh: Boolean = false
 ): List<Comment> {
     val targetUrl = EsjzoneUrls.resolve(pageUrl).substringBefore('#')
     AppLogger.i("GetCommunity", "Fetching comments at $targetUrl")
     val document = Jsoup.parse(
-        getPage(authorization, targetUrl, PageCacheTtl.COMMUNITY),
+        getPage(
+            authorization,
+            targetUrl,
+            PageCacheTtl.COMMUNITY,
+            forceRefresh = forceRefresh
+        ),
         targetUrl
     )
     return parseComments(document, commentParentId(targetUrl))

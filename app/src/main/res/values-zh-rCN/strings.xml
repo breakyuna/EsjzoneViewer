@@ -109,6 +109,7 @@
     <string name="favorites_recently_update">最新更新</string>
     <string name="delete_history">删除</string>
     <string name="retry">重试</string>
+    <string name="load_failed">内容加载失败</string>
     <string name="compile_information">编译信息</string>
     <string name="build_version">构建版本</string>
     <string name="build_date">构建日期</string>
@@ -178,6 +179,11 @@
     <string name="bookmark_remove">移除书签</string>
     <string name="local_cache">本地缓存</string>
     <string name="local_cache_description">已打开的小说页面会保存在本机，便于再次阅读</string>
+    <string name="local_cache_pages">页面：%1$s · %2$d 个文件</string>
+    <string name="local_cache_images">图片：%1$s</string>
+    <string name="local_cache_loading">正在计算缓存占用…</string>
+    <string name="local_cache_clear_pages">清理页面</string>
+    <string name="local_cache_clear_images">清理图片</string>
     <string name="close">关闭</string>
     <string name="anonymous_user">匿名用户</string>
     <string name="page_indicator">第 %1$d / %2$d 页</string>

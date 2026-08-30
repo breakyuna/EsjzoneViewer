@@ -13,10 +13,11 @@ fun EsjzoneClient.logout(authorization: Authorization) {
                 .get()
                 .headers(this.headers)
                 .build()
-        ).execute().use { response ->
-            if (response.isSuccessful) {
-                clearPageCache()
-            }
+        ).execute().use {
+            Unit
         }
     }
+    // Local account data must be removed even when the remote endpoint is slow
+    // or unavailable. The caller clears the persisted cookies separately.
+    clearPageCache()
 }

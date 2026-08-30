@@ -53,6 +53,7 @@ import com.breakyuna.esjzone.novellibrary.novel.preview
 import com.breakyuna.esjzone.ui.component.AppBar
 import com.breakyuna.esjzone.ui.component.DropdownSelection
 import com.breakyuna.esjzone.ui.component.Loading
+import com.breakyuna.esjzone.ui.component.LoadError
 import com.breakyuna.esjzone.ui.component.Novel
 import com.breakyuna.esjzone.ui.navigation.LocalBaseNavigator
 
@@ -177,12 +178,22 @@ class NovelListPage(
             when (state) {
                 is NovelListPageModel.State.Loading -> Loading()
 
+                is NovelListPageModel.State.Error -> LoadError(
+                    onRetry = novelListModel::retry
+                )
+
                 is NovelListPageModel.State.Result -> {
                     val result = (state as NovelListPageModel.State.Result)
                     val requester = result.requester
 
                     var current by remember(result) {
                         mutableIntStateOf(2)
+                    }
+                    var pageFailed by remember(result) {
+                        mutableStateOf(false)
+                    }
+                    var pageRetry by remember(result) {
+                        mutableIntStateOf(0)
                     }
 
                     val max = requester.pages()
@@ -223,15 +234,27 @@ class NovelListPage(
 
                         item {
                             if (current <= max && max > 1) {
-                                Box(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(8.dp),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    CircularProgressIndicator()
+                                if (pageFailed) {
+                                    LoadError(
+                                        onRetry = {
+                                            pageFailed = false
+                                            pageRetry += 1
+                                        },
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(vertical = 8.dp)
+                                    )
+                                } else {
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(8.dp),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        CircularProgressIndicator()
+                                    }
                                 }
-                                LaunchedEffect(current) {
+                                LaunchedEffect(current, pageRetry) {
                                     try {
                                         val newlyLoaded = withContext(Dispatchers.IO) {
                                             requester.more(current)
@@ -241,10 +264,12 @@ class NovelListPage(
                                                 continue
                                             items.add(item)
                                         }
+                                        pageFailed = false
                                         current += 1
                                     } catch (e: CancellationException) {
                                         throw e
                                     } catch (e: Exception) {
+                                        pageFailed = true
                                         com.breakyuna.esjzone.util.AppLogger.e(
                                             "NovelListPage",
                                             "Failed to load novel page $current",
@@ -296,6 +321,7 @@ class NovelListPageModel(
 
     sealed class State {
         data object Loading : State()
+        data object Error : State()
         data class Result(
             val requester: PageableRequester<CoveredNovel>,
             val firstPage: List<CoveredNovel>
@@ -355,16 +381,22 @@ class NovelListPageModel(
                 val (requester, novels) = EsjzoneClient.novels(
                     authorization,
                     novelType.intValue,
-                    sortType.intValue
+                    sortType.intValue,
+                    forceRefresh = forceRefresh
                 )
                 ensureActive()
                 mutableState.value = State.Result(requester, novels)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
+                mutableState.value = State.Error
                 com.breakyuna.esjzone.util.AppLogger.e("NovelListPageModel", "Failed to load novel list for type=${novelType.intValue}, sort=${sortType.intValue}", e)
             }
         }
+    }
+
+    fun retry() {
+        getRequester(forceRefresh = true)
     }
 
 }

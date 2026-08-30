@@ -3,6 +3,8 @@ package com.breakyuna.esjzone.network
 import android.content.Context
 import java.io.File
 import java.nio.charset.StandardCharsets
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
 import java.security.MessageDigest
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -43,11 +45,20 @@ internal object PageCacheInvalidation {
  */
 internal object PageCache {
 
-    private const val FILE_PREFIX = "esj-page-v2"
+    private const val FILE_PREFIX = "esj-page-v3"
     private const val MAX_CACHE_BYTES = 256L * 1024L * 1024L
+    private const val ACCESS_TOUCH_INTERVAL_MILLIS = 5L * 60L * 1000L
 
     @Volatile
     private var directory: File? = null
+
+    private val ioLock = Any()
+
+    @Volatile
+    private var cachedSizeBytes = 0L
+
+    @Volatile
+    private var cachedEntryCount = 0
 
     fun initialize(context: Context) {
         // Novel chapters are useful after an app restart and while offline, so
@@ -56,6 +67,15 @@ internal object PageCache {
         val cacheDirectory = File(context.filesDir, "novel_page_cache")
         if (cacheDirectory.isDirectory || cacheDirectory.mkdirs()) {
             directory = cacheDirectory
+            // v3 replaces cookie-derived cache keys with a stable session namespace.
+            // Remove older snapshots once so they cannot remain as unreachable files.
+            cacheDirectory.listFiles()
+                ?.filter {
+                    it.isFile && it.name.startsWith("esj-page-") &&
+                        !it.name.startsWith(FILE_PREFIX)
+                }
+                ?.forEach { runCatching { it.delete() } }
+            refreshStats(cacheDirectory)
         }
 
         // The cache used to live under cacheDir.  Remove those old snapshots so
@@ -76,6 +96,9 @@ internal object PageCache {
             if (separator <= 0) return null
             val fetchedAt = encoded.substring(0, separator).toLongOrNull() ?: return null
             if (fetchedAt > nowMillis || nowMillis - fetchedAt > maxAgeMillis) return null
+            if (nowMillis - file.lastModified() >= ACCESS_TOUCH_INTERVAL_MILLIS) {
+                file.setLastModified(nowMillis)
+            }
             encoded.substring(separator + 1)
         } catch (_: Exception) {
             null
@@ -87,25 +110,61 @@ internal object PageCache {
     fun write(key: String, body: String, nowMillis: Long = System.currentTimeMillis()) {
         val file = fileFor(key) ?: return
         runCatching {
-            val temporary = File(file.parentFile, "${file.name}.tmp")
-            temporary.writeText("$nowMillis\n$body", StandardCharsets.UTF_8)
-            if (!temporary.renameTo(file)) {
-                file.writeText("$nowMillis\n$body", StandardCharsets.UTF_8)
-                temporary.delete()
+            synchronized(ioLock) {
+                val existed = file.isFile
+                val previousSize = if (existed) file.length() else 0L
+                val temporary = File(file.parentFile, "${file.name}.tmp")
+                temporary.writeText("$nowMillis\n$body", StandardCharsets.UTF_8)
+                try {
+                    Files.move(
+                        temporary.toPath(),
+                        file.toPath(),
+                        StandardCopyOption.ATOMIC_MOVE,
+                        StandardCopyOption.REPLACE_EXISTING
+                    )
+                } catch (_: Exception) {
+                    Files.move(
+                        temporary.toPath(),
+                        file.toPath(),
+                        StandardCopyOption.REPLACE_EXISTING
+                    )
+                }
+                cachedSizeBytes += file.length() - previousSize
+                if (!existed) cachedEntryCount += 1
+                if (cachedSizeBytes > MAX_CACHE_BYTES) trimToSize()
             }
-            trimToSize()
         }
     }
 
     fun remove(key: String) {
         val file = fileFor(key) ?: return
-        runCatching { file.delete() }
+        runCatching {
+            synchronized(ioLock) {
+                val length = file.length()
+                if (file.delete()) {
+                    cachedSizeBytes = (cachedSizeBytes - length).coerceAtLeast(0L)
+                    cachedEntryCount = (cachedEntryCount - 1).coerceAtLeast(0)
+                }
+            }
+        }
     }
 
     fun clear() {
-        directory?.listFiles()?.forEach { file ->
-            if (file.name.startsWith(FILE_PREFIX)) file.delete()
+        synchronized(ioLock) {
+            val cacheDirectory = directory ?: return
+            cacheDirectory.listFiles()?.forEach { file ->
+                if (file.name.startsWith(FILE_PREFIX)) file.delete()
+            }
+            val remaining = cacheDirectory.listFiles()
+                ?.filter { it.isFile && it.name.startsWith(FILE_PREFIX) }
+                .orEmpty()
+            cachedSizeBytes = remaining.sumOf { it.length() }
+            cachedEntryCount = remaining.size
         }
+    }
+
+    fun stats(): PageCacheStats = synchronized(ioLock) {
+        PageCacheStats(cachedEntryCount, cachedSizeBytes, MAX_CACHE_BYTES)
     }
 
     private fun fileFor(key: String): File? {
@@ -121,11 +180,34 @@ internal object PageCache {
             ?.filter { it.isFile && it.name.startsWith(FILE_PREFIX) }
             ?.sortedBy { it.lastModified() }
             ?: return
-        var total = files.sumOf { it.length() }
+        var total = cachedSizeBytes
+        var count = cachedEntryCount
         for (file in files) {
             if (total <= MAX_CACHE_BYTES) break
             val length = file.length()
-            if (file.delete()) total -= length
+            if (file.delete()) {
+                total -= length
+                count -= 1
+            }
+        }
+        cachedSizeBytes = total.coerceAtLeast(0L)
+        cachedEntryCount = count.coerceAtLeast(0)
+    }
+
+    private fun refreshStats(cacheDirectory: File) {
+        synchronized(ioLock) {
+            val files = cacheDirectory.listFiles()
+                ?.filter { it.isFile && it.name.startsWith(FILE_PREFIX) }
+                .orEmpty()
+            cachedSizeBytes = files.sumOf { it.length() }
+            cachedEntryCount = files.size
+            if (cachedSizeBytes > MAX_CACHE_BYTES) trimToSize()
         }
     }
 }
+
+data class PageCacheStats(
+    val entryCount: Int,
+    val sizeBytes: Long,
+    val maxSizeBytes: Long
+)
