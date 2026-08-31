@@ -1,6 +1,6 @@
 package com.breakyuna.esjzone.network
 
-import android.net.Uri
+import java.net.URI
 import com.breakyuna.esjzone.GlobalSettings
 import org.jsoup.nodes.Element
 
@@ -27,14 +27,20 @@ object EsjzoneUrls {
         if (rawUrl.isBlank()) return ""
         val resolved = resolve(rawUrl).substringBefore('#')
         return runCatching {
-            val uri = Uri.parse(resolved)
-            val path = uri.encodedPath
+            val uri = URI(resolved)
+            val path = uri.path
                 ?.trimEnd('/')
                 ?.ifBlank { "/" }
                 ?: "/"
             path
         }.getOrElse {
-            resolved.substringBefore('#').substringBefore('?').trimEnd('/').ifBlank { "/" }
+            val withoutQuery = resolved.substringBefore('?').substringBefore('#')
+            val pathPart = if (withoutQuery.contains("://")) {
+                "/" + withoutQuery.substringAfter("://").substringAfter('/', "")
+            } else {
+                withoutQuery
+            }
+            pathPart.trimEnd('/').ifBlank { "/" }
         }
     }
 
@@ -67,7 +73,7 @@ object EsjzoneUrls {
         // time.  Compare the URL path (rather than the complete URL) so query
         // cache-busters and host aliases do not bypass the fallback.
         val path = runCatching {
-            Uri.parse(resolve(value)).path.orEmpty()
+            URI(resolve(value)).path.orEmpty()
         }.getOrElse {
             value.substringBefore('?').substringBefore('#')
         }

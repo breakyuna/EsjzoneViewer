@@ -7,6 +7,7 @@ import com.breakyuna.esjzone.network.features.parseForumPost
 import com.breakyuna.esjzone.network.features.parseForumThreads
 import com.breakyuna.esjzone.network.features.parseForumTopicRows
 import com.breakyuna.esjzone.network.features.parseForumTopics
+import com.breakyuna.esjzone.network.features.validateForumTableResponse
 import com.breakyuna.esjzone.novellibrary.community.ForumTopic
 import org.jsoup.Jsoup
 import org.junit.Assert.assertEquals
