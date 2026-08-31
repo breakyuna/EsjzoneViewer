@@ -140,8 +140,10 @@ class NovelDownloadWorker(
             )
             NovelDownloadStore.download(authorization, detail) { next ->
                 setProgressAsync(next.toWorkData())
-                applicationContext.getSystemService(NotificationManager::class.java)
-                    .notify(notificationId(), createNotification(name, next))
+                if (androidx.core.app.ActivityCompat.checkSelfPermission(applicationContext, android.Manifest.permission.POST_NOTIFICATIONS) == android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                    applicationContext.getSystemService(NotificationManager::class.java)
+                        .notify(notificationId(), createNotification(name, next))
+                }
             }
             Result.success()
         } catch (error: CancellationException) {
