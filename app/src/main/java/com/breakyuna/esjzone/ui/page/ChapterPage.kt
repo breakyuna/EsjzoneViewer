@@ -646,6 +646,7 @@ class ChapterPage(
                         onReturn = {
                             progressReturnLocation?.let { location ->
                                 seekTo(location)
+                                progressPreview = location
                                 // Keep the preview until a later screen tap.
                                 progressReturnLocation = null
                             }
@@ -736,7 +737,7 @@ class ChapterPage(
                                     },
                                     onDragCancelled = {
                                         isBookProgressDragging = false
-                                        dismissProgressPreview()
+                                        progressPreview?.let(::seekTo)
                                     }
                                 )
 
