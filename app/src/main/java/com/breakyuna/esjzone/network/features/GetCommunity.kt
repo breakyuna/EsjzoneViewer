@@ -329,6 +329,7 @@ fun EsjzoneClient.getForumBoard(
     }
     val endpoint = appendForumTableParams(EsjzoneUrls.resolve(dataUrl))
     val body = getForumTableData(authorization, endpoint, targetUrl)
+    validateForumTableResponse(body)
     val payload = parseForumTopicsPayload(body, thread.id)
     val totalCount = payload.totalCount ?: declaredTotal
     if (payload.items.isEmpty() && totalCount != null && totalCount > 0) {
@@ -337,8 +338,26 @@ fun EsjzoneClient.getForumBoard(
     return forumBoardResult(novelDetailUrl, payload.items, totalCount)
 }
 
+/**
+ * The ESJ endpoint returns a JSON object even when it cannot serve the board.
+ * In that case it uses a non-zero application status and an empty rows array.
+ * Treating that response as a valid empty board hides the real loading failure
+ * and produces the misleading "暂无主题" screen.
+ */
+internal fun validateForumTableResponse(body: String) {
+    val status = forumApplicationStatus(body)
+    if (status != null && status != 0 && status !in 200..299) {
+        throw ForumBoardDataException("Forum topic request returned application status $status")
+    }
+}
+
+private fun forumApplicationStatus(body: String): Int? = runCatching {
+    val root = JsonParser.parseString(body)
+    root.asJsonObject.get("status")?.asInt
+}.getOrNull()
+
 internal fun findForumNovelDetailUrl(document: Document): String? =
-    document.select("a[href]")
+    document.select(".forum-detail a[href], h2 a[href]")
         .asSequence()
         .map { it.attr("href").trim() }
         .firstOrNull { rawUrl -> DETAIL_URL.matches(rawUrl) }
@@ -541,19 +560,55 @@ private fun EsjzoneClient.getForumTableData(
         .add("Referer", referer)
         .add("X-Requested-With", "XMLHttpRequest")
         .build()
-    val response = authenticatedClient(authorization).newCall(
+    val client = authenticatedClient(authorization)
+
+    fun execute(request: Request): Pair<Int, String> {
+        val response = client.newCall(request).execute()
+        return response.code to response.use { it.body?.string().orEmpty() }
+    }
+
+    val getResult = execute(
         Request.Builder()
             .url(url)
             .get()
             .headers(requestHeaders)
             .build()
-    ).execute()
-    val responseCode = response.code
-    val body = response.use { it.body?.string().orEmpty() }
-    if (responseCode !in 200..299 || body.isBlank()) {
-        throw IOException("Forum topic request failed with HTTP $responseCode")
+    )
+    if (getResult.first in 200..299 && getResult.second.isNotBlank() &&
+        !hasForumApplicationError(getResult.second)
+    ) {
+        return getResult.second
     }
-    return body
+
+    // Bootstrap Table normally uses GET, but older ESJ deployments have been
+    // observed to accept the same server-side parameters only as a form POST.
+    // Retry that protocol before surfacing the response as a board error.
+    val postResult = execute(
+        Request.Builder()
+            .url(url)
+            .post(
+                FormBody.Builder()
+                    .add("limit", "20")
+                    .add("offset", "0")
+                    .add("search", "")
+                    .add("sort", "last_reply")
+                    .add("order", "desc")
+                    .build()
+            )
+            .headers(requestHeaders)
+            .build()
+    )
+    if (postResult.first in 200..299 && postResult.second.isNotBlank()) {
+        return postResult.second
+    }
+
+    val responseCode = postResult.first.takeIf { it !in 200..299 } ?: getResult.first
+    throw IOException("Forum topic request failed with HTTP $responseCode")
+}
+
+private fun hasForumApplicationError(body: String): Boolean {
+    val status = forumApplicationStatus(body)
+    return status != null && status != 0 && status !in 200..299
 }
 
 internal fun parseComments(document: Document, parentPostId: String): List<Comment> {

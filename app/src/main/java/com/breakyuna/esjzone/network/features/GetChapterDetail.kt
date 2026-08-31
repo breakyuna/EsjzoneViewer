@@ -5,6 +5,7 @@ import com.breakyuna.esjzone.network.EsjzoneClient
 import com.breakyuna.esjzone.network.EsjzoneUrls
 import com.breakyuna.esjzone.network.EsjzoneXPaths
 import com.breakyuna.esjzone.network.PageCacheTtl
+import com.breakyuna.esjzone.offline.NovelDownloadStore
 import com.breakyuna.esjzone.novellibrary.component.analyseComponents
 import com.breakyuna.esjzone.novellibrary.novel.Chapter
 import com.breakyuna.esjzone.novellibrary.novel.DetailedChapter
@@ -14,12 +15,33 @@ import org.jsoup.Jsoup
 
 fun EsjzoneClient.getChapterDetail(
     authorization: Authorization,
-    chapter: Chapter
+    chapter: Chapter,
+    preferDownloaded: Boolean = true,
+    forceRefresh: Boolean = false
 ): DetailedChapter {
     val targetUrl = EsjzoneUrls.resolve(chapter.url)
 
+    if (preferDownloaded) {
+        NovelDownloadStore.readChapter(targetUrl)?.let { downloaded ->
+            AppLogger.i("GetChapterDetail", "Using downloaded chapter: $targetUrl")
+            return downloaded
+        }
+    }
+
     AppLogger.i("GetChapterDetail", "Fetching chapter: ${chapter.name} at $targetUrl")
-    val responseBody = getPage(authorization, targetUrl, PageCacheTtl.CHAPTER)
+    val responseBody = try {
+        getPage(authorization, targetUrl, PageCacheTtl.CHAPTER, forceRefresh)
+    } catch (error: Exception) {
+        NovelDownloadStore.readChapter(targetUrl)?.let { downloaded ->
+            AppLogger.w(
+                "GetChapterDetail",
+                "Network unavailable; falling back to downloaded chapter: $targetUrl",
+                error
+            )
+            return downloaded
+        }
+        throw error
+    }
 
     val document = Jsoup.parse(responseBody, targetUrl)
 
@@ -58,6 +80,8 @@ fun EsjzoneClient.getChapterDetail(
         chapter.name,
         components,
         previous,
-        next
+        next,
+        contentElement?.html(),
+        targetUrl
     )
 }

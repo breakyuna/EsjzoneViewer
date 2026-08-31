@@ -35,5 +35,7 @@ data class DetailedChapter(
     val name: String,
     val content: List<Component>,
     val previous: Chapter?,
-    val next: Chapter?
+    val next: Chapter?,
+    val contentHtml: String? = null,
+    val sourceUrl: String? = null
 ) : Serializable

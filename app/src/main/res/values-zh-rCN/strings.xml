@@ -64,6 +64,16 @@
     <string name="novel_favorite">收藏</string>
     <string name="novel_favorited">已收藏</string>
     <string name="novel_open_forum">前往论坛</string>
+    <string name="novel_download">下载到本地</string>
+    <string name="novel_download_update">检查新章节</string>
+    <string name="novel_downloading">正在下载 %1$d/%2$d · %3$s</string>
+    <string name="novel_downloading_count">正在下载 %1$d/%2$d</string>
+    <string name="novel_download_success">小说已下载到本地</string>
+    <string name="novel_download_failed">下载失败，已完成的章节会保留</string>
+    <string name="novel_export_txt">导出 TXT</string>
+    <string name="novel_export_epub">导出 EPUB</string>
+    <string name="novel_export_success">导出完成</string>
+    <string name="novel_export_failed">小说导出失败</string>
     <string name="history">历史记录</string>
     <string name="history_description">单击查看全部记录，双击继续上次阅读</string>
     <string name="history_local">本地历史</string>

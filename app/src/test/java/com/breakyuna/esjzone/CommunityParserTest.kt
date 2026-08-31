@@ -11,6 +11,7 @@ import com.breakyuna.esjzone.novellibrary.community.ForumTopic
 import org.jsoup.Jsoup
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertThrows
 import org.junit.Test
 
 class CommunityParserTest {
@@ -222,7 +223,7 @@ class CommunityParserTest {
     @Test
     fun findForumNovelDetailUrl_distinguishesNovelAndDiscussionBoards() {
         val novelBoard = Jsoup.parse(
-            "<a href=\"/detail/1788015863.html\">身份保障妓院</a>"
+            "<div class=\"forum-detail\"><a href=\"/detail/1788015863.html\">身份保障妓院</a></div>"
         )
         val discussionBoard = Jsoup.parse(
             "<a href=\"/forum/1585405336/545856.html\">主题</a>"
@@ -230,6 +231,32 @@ class CommunityParserTest {
 
         assertEquals("/detail/1788015863.html", findForumNovelDetailUrl(novelBoard))
         assertNull(findForumNovelDetailUrl(discussionBoard))
+    }
+
+    @Test
+    fun findForumNovelDetailUrl_ignoresDetailLinksOutsideNovelHeader() {
+        val boardWithTopicLink = Jsoup.parse(
+            """
+            <a href="/detail/999.html">来自主题正文的作品链接</a>
+            <div class="forum-detail">
+                <h2><a href="/detail/1788015863.html">作品标题</a></h2>
+            </div>
+            """.trimIndent()
+        )
+
+        assertEquals("/detail/1788015863.html", findForumNovelDetailUrl(boardWithTopicLink))
+    }
+
+    @Test
+    fun validateForumTableResponse_rejectsNonSuccessApplicationStatus() {
+        assertFailsWith<ForumBoardDataException> {
+            validateForumTableResponse("{\"status\":301,\"total\":0,\"rows\":[]}")
+        }
+    }
+
+    @Test
+    fun validateForumTableResponse_acceptsSuccessfulEmptyBoard() {
+        validateForumTableResponse("{\"status\":0,\"total\":0,\"rows\":[]}")
     }
 
     @Test(expected = ForumBoardDataException::class)

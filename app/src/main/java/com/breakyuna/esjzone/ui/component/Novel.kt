@@ -61,7 +61,7 @@ fun Novel(
 
     Card(
         modifier = Modifier
-            .padding(horizontal = 12.dp, vertical = 6.dp)
+            .padding(horizontal = 12.dp, vertical = 4.dp)
             .fillMaxWidth()
             .clickable {
                 if (onClick != null) {
@@ -72,11 +72,14 @@ fun Novel(
             },
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+            // The image and text already provide the visual hierarchy. A
+            // transparent container keeps search and favorites from rendering
+            // the heavy dark panel/border seen in the previous design.
+            containerColor = androidx.compose.ui.graphics.Color.Transparent
         ),
         elevation = CardDefaults.cardElevation(
-            defaultElevation = 1.dp,
-            pressedElevation = 3.dp
+            defaultElevation = 0.dp,
+            pressedElevation = 0.dp
         )
     ) {
         Row(

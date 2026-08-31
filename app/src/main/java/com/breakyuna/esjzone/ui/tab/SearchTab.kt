@@ -207,17 +207,6 @@ object SearchTab : Tab {
                 )
             }
 
-            activeSearchKeyword?.let { currentKeyword ->
-                InlineSearchResults(
-                    searchModel = searchModel,
-                    keyword = currentKeyword,
-                    modifier = Modifier.padding(top = 12.dp)
-                )
-                Spacer(modifier = Modifier.height(12.dp))
-            }
-
-            Spacer(modifier = Modifier.height(12.dp))
-
             // History Section Header
             Row(
                 modifier = Modifier
@@ -373,6 +362,18 @@ object SearchTab : Tab {
                         }
                     }
                 }
+            }
+
+            // Search results belong below the search history. Keeping this block
+            // after the history section prevents the history chips from being
+            // appended to the bottom of a long result list.
+            activeSearchKeyword?.let { currentKeyword ->
+                InlineSearchResults(
+                    searchModel = searchModel,
+                    keyword = currentKeyword,
+                    modifier = Modifier.padding(top = 20.dp)
+                )
+                Spacer(modifier = Modifier.height(12.dp))
             }
 
             Spacer(modifier = Modifier.height(40.dp))

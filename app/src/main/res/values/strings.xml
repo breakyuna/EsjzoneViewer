@@ -64,6 +64,16 @@
     <string name="novel_favorite">Favorite</string>
     <string name="novel_favorited">Favorited</string>
     <string name="novel_open_forum">Open forum</string>
+    <string name="novel_download">Download for offline reading</string>
+    <string name="novel_download_update">Check for new chapters</string>
+    <string name="novel_downloading">Downloading %1$d/%2$d · %3$s</string>
+    <string name="novel_downloading_count">Downloading %1$d/%2$d</string>
+    <string name="novel_download_success">Novel downloaded</string>
+    <string name="novel_download_failed">Download failed; completed chapters were kept</string>
+    <string name="novel_export_txt">Export TXT</string>
+    <string name="novel_export_epub">Export EPUB</string>
+    <string name="novel_export_success">Export complete</string>
+    <string name="novel_export_failed">Unable to export novel</string>
     <string name="history">History</string>
     <string name="history_description">Tap once to browse; double-tap to continue reading</string>
     <string name="history_local">Local history</string>

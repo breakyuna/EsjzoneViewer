@@ -4,6 +4,9 @@ import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -24,9 +27,12 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.MenuBook
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
+import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.DownloadDone
 import androidx.compose.material.icons.filled.Forum
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.RemoveRedEye
+import androidx.compose.material.icons.filled.TextSnippet
 import androidx.compose.material.icons.filled.ThumbUp
 import androidx.compose.material.icons.filled.Topic
 import androidx.compose.material3.Button
@@ -34,7 +40,9 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
@@ -43,6 +51,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -76,6 +85,10 @@ import com.breakyuna.esjzone.network.EsjzoneUrls
 import com.breakyuna.esjzone.network.LocalAuthorization
 import com.breakyuna.esjzone.network.features.changeFavorites
 import com.breakyuna.esjzone.network.features.getNovelDetail
+import com.breakyuna.esjzone.offline.DownloadProgress
+import com.breakyuna.esjzone.offline.DownloadedNovelManifest
+import com.breakyuna.esjzone.offline.NovelDownloadStore
+import com.breakyuna.esjzone.offline.NovelExporter
 import com.breakyuna.esjzone.novellibrary.novel.DetailedNovel
 import com.breakyuna.esjzone.novellibrary.novel.Novel
 import com.breakyuna.esjzone.ui.component.AppBar
@@ -385,6 +398,13 @@ class NovelPage(
                                             )
                                         )
                                     }
+
+                                    Spacer(modifier = Modifier.height(10.dp))
+                                    NovelDownloadActions(
+                                        novel = result.detailed,
+                                        authorization = authorization,
+                                        onDetailUpdated = screenModel::replaceDetail
+                                    )
                                 }
                             }
                         }
@@ -554,6 +574,233 @@ private fun NovelTags(
     }
 }
 
+private enum class NovelExportFormat {
+    TXT,
+    EPUB
+}
+
+@Composable
+private fun NovelDownloadActions(
+    novel: DetailedNovel,
+    authorization: Authorization,
+    onDetailUpdated: (DetailedNovel) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var downloaded by remember(novel.url) {
+        mutableStateOf<DownloadedNovelManifest?>(NovelDownloadStore.manifest(novel.url))
+    }
+    var downloading by remember(novel.url) { mutableStateOf(false) }
+    var progress by remember(novel.url) { mutableStateOf<DownloadProgress?>(null) }
+
+    fun export(uri: Uri, format: NovelExportFormat) {
+        scope.launch {
+            val succeeded = runCatching {
+                withContext(Dispatchers.IO) {
+                    val manifest = NovelDownloadStore.manifest(novel.url)
+                        ?.takeIf { it.complete }
+                        ?: error("Novel download is incomplete")
+                    val output = context.contentResolver.openOutputStream(uri, "w")
+                        ?: error("Unable to open the selected file")
+                    output.use { stream ->
+                        val loader = { record: com.breakyuna.esjzone.offline.DownloadedChapterRecord ->
+                            NovelDownloadStore.chapterContent(novel.url, record)
+                        }
+                        when (format) {
+                            NovelExportFormat.TXT -> NovelExporter.exportTxt(manifest, loader, stream)
+                            NovelExportFormat.EPUB -> NovelExporter.exportEpub(
+                                manifest = manifest,
+                                chapterLoader = loader,
+                                output = stream,
+                                imageLoader = { component ->
+                                    NovelDownloadStore.imageFile(novel.url, component)
+                                }
+                            )
+                        }
+                    }
+                }
+            }.onFailure { error ->
+                com.breakyuna.esjzone.util.AppLogger.e(
+                    "NovelPage",
+                    "Failed to export ${novel.name} as ${format.name}",
+                    error
+                )
+            }.isSuccess
+            Toast.makeText(
+                context,
+                if (succeeded) R.string.novel_export_success else R.string.novel_export_failed,
+                Toast.LENGTH_SHORT
+            ).show()
+        }
+    }
+
+    val txtLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("text/plain")
+    ) { uri ->
+        uri?.let { export(it, NovelExportFormat.TXT) }
+    }
+    val epubLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/epub+zip")
+    ) { uri ->
+        uri?.let { export(it, NovelExportFormat.EPUB) }
+    }
+
+    Column(modifier = modifier.fillMaxWidth()) {
+        FilledTonalButton(
+            enabled = !downloading && novel.chapterList.orderedChapters.isNotEmpty(),
+            onClick = {
+                scope.launch {
+                    downloading = true
+                    progress = DownloadProgress(
+                        completed = downloaded?.chapters?.count { it.downloaded } ?: 0,
+                        total = novel.chapterList.orderedChapters.size,
+                        chapterName = ""
+                    )
+                    try {
+                        val updateExisting = downloaded?.complete == true
+                        val (latestNovel, completedDownload) = withContext(Dispatchers.IO) {
+                            val downloadSource = if (updateExisting) {
+                                EsjzoneClient.getNovelDetail(
+                                    authorization = authorization,
+                                    novel = novel,
+                                    includeComments = false,
+                                    forceRefresh = true
+                                )
+                            } else {
+                                novel
+                            }
+                            val manifest = NovelDownloadStore.download(
+                                authorization,
+                                downloadSource
+                            ) { nextProgress ->
+                                scope.launch { progress = nextProgress }
+                            }
+                            downloadSource to manifest
+                        }
+                        downloaded = completedDownload
+                        if (latestNovel != novel) onDetailUpdated(latestNovel)
+                        Toast.makeText(
+                            context,
+                            R.string.novel_download_success,
+                            Toast.LENGTH_SHORT
+                        ).show()
+                    } catch (error: CancellationException) {
+                        throw error
+                    } catch (error: Exception) {
+                        com.breakyuna.esjzone.util.AppLogger.e(
+                            "NovelPage",
+                            "Failed to download ${novel.name}",
+                            error
+                        )
+                        Toast.makeText(
+                            context,
+                            R.string.novel_download_failed,
+                            Toast.LENGTH_SHORT
+                        ).show()
+                    } finally {
+                        downloading = false
+                    }
+                }
+            },
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Icon(
+                imageVector = if (downloaded?.complete == true) {
+                    Icons.Filled.DownloadDone
+                } else {
+                    Icons.Filled.Download
+                },
+                contentDescription = null,
+                modifier = Modifier.size(18.dp)
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(
+                text = stringResource(
+                    id = if (downloaded?.complete == true) {
+                        R.string.novel_download_update
+                    } else {
+                        R.string.novel_download
+                    }
+                )
+            )
+        }
+
+        if (downloading) {
+            val currentProgress = progress
+            Spacer(modifier = Modifier.height(8.dp))
+            LinearProgressIndicator(
+                progress = if (currentProgress == null || currentProgress.total <= 0) {
+                    0f
+                } else {
+                    currentProgress.completed.toFloat() / currentProgress.total.toFloat()
+                },
+                modifier = Modifier.fillMaxWidth()
+            )
+            if (currentProgress != null) {
+                Text(
+                    text = if (currentProgress.chapterName.isBlank()) {
+                        stringResource(
+                            id = R.string.novel_downloading_count,
+                            currentProgress.completed,
+                            currentProgress.total
+                        )
+                    } else {
+                        stringResource(
+                            id = R.string.novel_downloading,
+                            currentProgress.completed,
+                            currentProgress.total,
+                            currentProgress.chapterName
+                        )
+                    },
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(top = 4.dp)
+                )
+            }
+        }
+
+        if (downloaded?.complete == true && !downloading) {
+            Spacer(modifier = Modifier.height(8.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                FilledTonalButton(
+                    onClick = {
+                        txtLauncher.launch(NovelExporter.suggestedFileName(novel.name, "txt"))
+                    },
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.TextSnippet,
+                        contentDescription = null,
+                        modifier = Modifier.size(17.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(text = stringResource(id = R.string.novel_export_txt))
+                }
+                FilledTonalButton(
+                    onClick = {
+                        epubLauncher.launch(NovelExporter.suggestedFileName(novel.name, "epub"))
+                    },
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.MenuBook,
+                        contentDescription = null,
+                        modifier = Modifier.size(17.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(text = stringResource(id = R.string.novel_export_epub))
+                }
+            }
+        }
+    }
+}
+
 private fun openExternal(context: Context, rawUrl: String) {
     val url = rawUrl.trim()
     if (url.isBlank()) return
@@ -594,18 +841,37 @@ class NovelPageModel(
         screenModelScope.launch(Dispatchers.IO) {
             mutableState.value = State.Loading
             try {
-                val detail = EsjzoneClient.getNovelDetail(
+                val fetchedDetail = EsjzoneClient.getNovelDetail(
                     authorization = authorization,
                     novel = novel,
                     includeComments = false
                 )
+                val detail = if (fetchedDetail.chapterList.orderedChapters.isEmpty()) {
+                    NovelDownloadStore.readDetailedNovel(novel.url) ?: fetchedDetail
+                } else {
+                    fetchedDetail
+                }
                 ensureActive()
                 mutableState.value = State.Result(detail)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                mutableState.value = State.Error
-                com.breakyuna.esjzone.util.AppLogger.e("NovelPageModel", "Failed to load novel detail for ${novel.name}", e)
+                val downloaded = NovelDownloadStore.readDetailedNovel(novel.url)
+                if (downloaded != null) {
+                    mutableState.value = State.Result(downloaded)
+                    com.breakyuna.esjzone.util.AppLogger.w(
+                        "NovelPageModel",
+                        "Using downloaded novel detail for ${novel.name}",
+                        e
+                    )
+                } else {
+                    mutableState.value = State.Error
+                    com.breakyuna.esjzone.util.AppLogger.e(
+                        "NovelPageModel",
+                        "Failed to load novel detail for ${novel.name}",
+                        e
+                    )
+                }
             }
         }
     }
@@ -615,6 +881,10 @@ class NovelPageModel(
             detailLoadStarted = false
         }
         getDetail()
+    }
+
+    fun replaceDetail(detail: DetailedNovel) {
+        mutableState.value = State.Result(detail)
     }
 
 }

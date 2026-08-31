@@ -16,6 +16,7 @@ import kotlinx.coroutines.launch
 import com.breakyuna.esjzone.database.GeneralDatabase
 import com.breakyuna.esjzone.database.dao.put
 import com.breakyuna.esjzone.network.EsjzoneClient
+import com.breakyuna.esjzone.offline.NovelDownloadStore
 import com.breakyuna.esjzone.ui.app.App
 import com.breakyuna.esjzone.ui.theme.catppuccin.CatppuccinDynamicTheme
 import com.breakyuna.esjzone.ui.theme.catppuccin.CatppuccinThemeType
@@ -41,6 +42,7 @@ class MainActivity : ComponentActivity() {
         AppLogger.i("MainActivity", "Activity onCreate started")
 
         EsjzoneClient.initialize(applicationContext)
+        NovelDownloadStore.initialize(applicationContext)
 
         imageLoader = ImageLoader.Builder(this)
             .components {

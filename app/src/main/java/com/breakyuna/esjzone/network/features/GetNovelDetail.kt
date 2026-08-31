@@ -19,16 +19,22 @@ import org.jsoup.Jsoup
 fun EsjzoneClient.getNovelDetail(
     authorization: Authorization,
     novel: Novel,
-    includeComments: Boolean = false
+    includeComments: Boolean = false,
+    forceRefresh: Boolean = false
 ): DetailedNovel {
     val targetUrl = EsjzoneUrls.resolve(novel.url)
     val detailCacheKey = novelDetailCacheKey(authorization, targetUrl)
-    if (!includeComments) {
+    if (!includeComments && !forceRefresh) {
         NovelDetailCache.read(detailCacheKey)?.let { return it }
     }
 
     AppLogger.i("GetNovelDetail", "Fetching novel detail: ${novel.name} at $targetUrl")
-    val responseBody = getPage(authorization, targetUrl, PageCacheTtl.DETAIL)
+    val responseBody = getPage(
+        authorization = authorization,
+        url = targetUrl,
+        maxAgeMillis = PageCacheTtl.DETAIL,
+        forceRefresh = forceRefresh
+    )
 
     val document = Jsoup.parse(responseBody, targetUrl)
 
