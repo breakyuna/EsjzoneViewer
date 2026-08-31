@@ -70,6 +70,9 @@
     <string name="novel_downloading_count">Downloading %1$d/%2$d</string>
     <string name="novel_download_success">Novel downloaded</string>
     <string name="novel_download_failed">Download failed; completed chapters were kept</string>
+    <string name="novel_download_channel">Novel downloads</string>
+    <string name="novel_download_notification_title">Downloading %1$s</string>
+    <string name="novel_download_notification_waiting">Preparing download…</string>
     <string name="novel_export_txt">Export TXT</string>
     <string name="novel_export_epub">Export EPUB</string>
     <string name="novel_export_success">Export complete</string>
@@ -181,6 +184,7 @@
     <string name="reader_loading_previous">Loading previous chapter</string>
     <string name="reader_progress_chapter_count">%1$d / %2$d</string>
     <string name="reader_return_progress">Return to the previous reading position</string>
+    <string name="reader_open_novel_detail">Open novel details</string>
     <string name="reader_add_bookmark">Add local bookmark</string>
     <string name="reader_remove_bookmark">Remove local bookmark</string>
     <string name="bookmarks">Bookmarks</string>

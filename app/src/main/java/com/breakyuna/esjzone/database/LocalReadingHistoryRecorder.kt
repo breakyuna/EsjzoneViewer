@@ -23,7 +23,7 @@ object LocalReadingHistoryRecorder {
     fun upsert(activity: LocalReadingActivity): Job = scope.launch {
         writeMutex.withLock {
             try {
-                MainActivity.database.localReadingActivityDao().upsert(activity)
+                MainActivity.database.localReadingActivityDao().upsertLatest(activity)
             } catch (e: Exception) {
                 AppLogger.e(
                     "LocalReadingHistory",

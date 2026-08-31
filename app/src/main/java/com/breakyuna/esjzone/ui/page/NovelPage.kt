@@ -74,7 +74,9 @@ import coil.compose.SubcomposeAsyncImage
 import coil.request.ImageRequest
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import com.breakyuna.esjzone.MainActivity
@@ -87,6 +89,7 @@ import com.breakyuna.esjzone.network.features.changeFavorites
 import com.breakyuna.esjzone.network.features.getNovelDetail
 import com.breakyuna.esjzone.offline.DownloadProgress
 import com.breakyuna.esjzone.offline.DownloadedNovelManifest
+import com.breakyuna.esjzone.offline.NovelDownloadManager
 import com.breakyuna.esjzone.offline.NovelDownloadStore
 import com.breakyuna.esjzone.offline.NovelExporter
 import com.breakyuna.esjzone.novellibrary.novel.DetailedNovel
@@ -402,8 +405,7 @@ class NovelPage(
                                     Spacer(modifier = Modifier.height(10.dp))
                                     NovelDownloadActions(
                                         novel = result.detailed,
-                                        authorization = authorization,
-                                        onDetailUpdated = screenModel::replaceDetail
+                                        authorization = authorization
                                     )
                                 }
                             }
@@ -583,7 +585,6 @@ private enum class NovelExportFormat {
 private fun NovelDownloadActions(
     novel: DetailedNovel,
     authorization: Authorization,
-    onDetailUpdated: (DetailedNovel) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -593,6 +594,43 @@ private fun NovelDownloadActions(
     }
     var downloading by remember(novel.url) { mutableStateOf(false) }
     var progress by remember(novel.url) { mutableStateOf<DownloadProgress?>(null) }
+    var downloadStatusVersion by remember(novel.url) { mutableStateOf(0) }
+    var requestedWorkId by rememberSaveable(novel.url) { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(novel.url, downloadStatusVersion) {
+        var startupPolls = 0
+        do {
+            val status = runCatching {
+                withContext(Dispatchers.IO) {
+                    NovelDownloadManager.status(context, novel.url)
+                }
+            }.getOrNull()
+            startupPolls += 1
+            val waitingForEnqueue = requestedWorkId != null &&
+                status?.id != requestedWorkId &&
+                startupPolls <= 8
+            downloading = status?.running == true || waitingForEnqueue
+            status?.progress?.let { progress = it }
+            if (status?.finished == true) {
+                downloaded = withContext(Dispatchers.IO) {
+                    NovelDownloadStore.manifest(novel.url)
+                }
+                if (requestedWorkId == status.id) {
+                    Toast.makeText(
+                        context,
+                        if (status.succeeded) {
+                            R.string.novel_download_success
+                        } else {
+                            R.string.novel_download_failed
+                        },
+                        Toast.LENGTH_SHORT
+                    ).show()
+                    requestedWorkId = null
+                }
+            }
+            if (downloading) delay(750)
+        } while (isActive && downloading)
+    }
 
     fun export(uri: Uri, format: NovelExportFormat) {
         scope.launch {
@@ -650,57 +688,33 @@ private fun NovelDownloadActions(
         FilledTonalButton(
             enabled = !downloading && novel.chapterList.orderedChapters.isNotEmpty(),
             onClick = {
-                scope.launch {
-                    downloading = true
-                    progress = DownloadProgress(
-                        completed = downloaded?.chapters?.count { it.downloaded } ?: 0,
-                        total = novel.chapterList.orderedChapters.size,
-                        chapterName = ""
+                progress = DownloadProgress(
+                    completed = downloaded?.chapters?.count { it.downloaded } ?: 0,
+                    total = novel.chapterList.orderedChapters.size,
+                    chapterName = ""
+                )
+                downloading = true
+                runCatching {
+                    NovelDownloadManager.enqueue(
+                        context = context,
+                        authorization = authorization,
+                        novel = novel
                     )
-                    try {
-                        val updateExisting = downloaded?.complete == true
-                        val (latestNovel, completedDownload) = withContext(Dispatchers.IO) {
-                            val downloadSource = if (updateExisting) {
-                                EsjzoneClient.getNovelDetail(
-                                    authorization = authorization,
-                                    novel = novel,
-                                    includeComments = false,
-                                    forceRefresh = true
-                                )
-                            } else {
-                                novel
-                            }
-                            val manifest = NovelDownloadStore.download(
-                                authorization,
-                                downloadSource
-                            ) { nextProgress ->
-                                scope.launch { progress = nextProgress }
-                            }
-                            downloadSource to manifest
-                        }
-                        downloaded = completedDownload
-                        if (latestNovel != novel) onDetailUpdated(latestNovel)
-                        Toast.makeText(
-                            context,
-                            R.string.novel_download_success,
-                            Toast.LENGTH_SHORT
-                        ).show()
-                    } catch (error: CancellationException) {
-                        throw error
-                    } catch (error: Exception) {
-                        com.breakyuna.esjzone.util.AppLogger.e(
-                            "NovelPage",
-                            "Failed to download ${novel.name}",
-                            error
-                        )
-                        Toast.makeText(
-                            context,
-                            R.string.novel_download_failed,
-                            Toast.LENGTH_SHORT
-                        ).show()
-                    } finally {
-                        downloading = false
-                    }
+                }.onSuccess { requestId ->
+                    requestedWorkId = requestId.toString()
+                    downloadStatusVersion += 1
+                }.onFailure { error ->
+                    downloading = false
+                    com.breakyuna.esjzone.util.AppLogger.e(
+                        "NovelPage",
+                        "Unable to schedule background novel download",
+                        error
+                    )
+                    Toast.makeText(
+                        context,
+                        R.string.novel_download_failed,
+                        Toast.LENGTH_SHORT
+                    ).show()
                 }
             },
             modifier = Modifier.fillMaxWidth()
@@ -881,10 +895,6 @@ class NovelPageModel(
             detailLoadStarted = false
         }
         getDetail()
-    }
-
-    fun replaceDetail(detail: DetailedNovel) {
-        mutableState.value = State.Result(detail)
     }
 
 }

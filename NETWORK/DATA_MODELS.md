@@ -114,6 +114,7 @@
 | created_at | datetime/null | comment-meta |
 | content_html | string | comment-text HTML |
 | content_text | string | 纯文本 |
+| quoted_content_text | string/null | 回复正文前 blockquote 的引用文本 |
 | page_group | integer/null | 客户端固定每 15 条计算的页码 |
 | is_visible_initially | boolean | 首屏显隐状态 |
 

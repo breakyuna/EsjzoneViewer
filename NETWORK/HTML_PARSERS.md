@@ -174,6 +174,7 @@ URL：/forum/{novelId}/{postId}.html
 .comment-header img / .comment-title img / [data-avatar]
 .comment-floor
 .comment-meta
+.comment-body > blockquote
 .comment-text
 .comment-footer
 .forum_report
@@ -189,6 +190,7 @@ URL：/forum/{novelId}/{postId}.html
 - 楼层：.comment-floor。
 - 日期：排除 .comment-floor 后的 .comment-meta，或 time[datetime]/[data-time]；不能把 #楼层当作日期。
 - 内容：.comment-text 的 HTML 或纯文本。
+- 回复引用：评论正文前的 `.comment-body > blockquote`；引用与当前回复正文分开保存和显示。
 - 操作：.forum_report、.forum_reply。
 
 评论区统一由客户端按解析后的评论顺序每页 15 条分页，忽略站点不一致的 .comments-page-N DOM 分组；分页链接通常是 javascript:void(0);，不要把它当作服务端 URL。

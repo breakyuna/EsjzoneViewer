@@ -15,6 +15,8 @@ data class Comment(
     val createdAt: String?,
     val contentHtml: String,
     val contentText: String,
+    /** Text quoted by a reply, rendered separately from the reply body. */
+    val quotedContentText: String? = null,
     val pageGroup: Int,
     val replyToken: String?,
     val authorAvatarUrl: String? = null

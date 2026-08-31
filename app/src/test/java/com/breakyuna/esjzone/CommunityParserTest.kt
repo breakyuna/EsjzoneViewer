@@ -22,14 +22,17 @@ class CommunityParserTest {
             """
             <div class="comments-section comments-page-2">
               <div class="comment" id="comment-42">
-                <div class="comment-header">
-                  <img class="avatar" src="/assets/avatar-placeholder.gif" data-src="/assets/alice.png">
-                  <a href="/my/profile.html?uid=7">Alice</a>
-                  <span class="comment-floor">#16</span>
-                  <span class="comment-meta">2026-08-28</span>
+                <div class="comment-body">
+                  <div class="comment-header">
+                    <img class="avatar" src="/assets/avatar-placeholder.gif" data-src="/assets/alice.png">
+                    <a href="/my/profile.html?uid=7">Alice</a>
+                    <span class="comment-floor">#16</span>
+                    <span class="comment-meta">2026-08-28</span>
+                  </div>
+                  <blockquote><p>The original message</p></blockquote>
+                  <div class="comment-text"><p>Hello <strong>ESJ</strong></p></div>
+                  <button class="forum_reply" data-comment="42-7">Reply</button>
                 </div>
-                <div class="comment-text"><p>Hello <strong>ESJ</strong></p></div>
-                <button class="forum_reply" data-comment="42-7">Reply</button>
               </div>
             </div>
             """.trimIndent()
@@ -45,6 +48,7 @@ class CommunityParserTest {
         assertEquals("/assets/alice.png", comments.single().authorAvatarUrl)
         assertEquals("#16", comments.single().floor)
         assertEquals("Hello ESJ", comments.single().contentText)
+        assertEquals("The original message", comments.single().quotedContentText)
         assertEquals(1, comments.single().pageGroup)
         assertEquals("42-7", comments.single().replyToken)
     }
@@ -249,7 +253,7 @@ class CommunityParserTest {
 
     @Test
     fun validateForumTableResponse_rejectsNonSuccessApplicationStatus() {
-        assertFailsWith<ForumBoardDataException> {
+        assertThrows(ForumBoardDataException::class.java) {
             validateForumTableResponse("{\"status\":301,\"total\":0,\"rows\":[]}")
         }
     }

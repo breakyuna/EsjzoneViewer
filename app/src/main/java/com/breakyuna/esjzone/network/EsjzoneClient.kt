@@ -65,14 +65,20 @@ object EsjzoneClient {
     private val cacheEpoch = AtomicLong(0L)
     private val networkPermits = Semaphore(6, true)
 
+    @Volatile
+    private var initialized = false
+
     /** Initializes the shared connection pool and page cache during app startup. */
+    @Synchronized
     fun initialize(context: Context) {
+        if (initialized) return
         persistentCookieJar = PersistentCookieJar(context.applicationContext)
         PageCache.initialize(context.applicationContext)
         // PageCache owns response persistence. The shared client is intentionally kept
         // without OkHttp's URL-only HTTP cache so one account can never receive another
         // account's authenticated HTML response.
         sharedHttpClient = OkHttpClient.Builder().build()
+        initialized = true
     }
 
     /** Builds a cookie-scoped client while retaining the shared connection pool and cache. */

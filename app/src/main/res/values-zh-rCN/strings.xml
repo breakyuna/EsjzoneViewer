@@ -70,6 +70,9 @@
     <string name="novel_downloading_count">正在下载 %1$d/%2$d</string>
     <string name="novel_download_success">小说已下载到本地</string>
     <string name="novel_download_failed">下载失败，已完成的章节会保留</string>
+    <string name="novel_download_channel">小说下载</string>
+    <string name="novel_download_notification_title">正在下载《%1$s》</string>
+    <string name="novel_download_notification_waiting">正在准备下载…</string>
     <string name="novel_export_txt">导出 TXT</string>
     <string name="novel_export_epub">导出 EPUB</string>
     <string name="novel_export_success">导出完成</string>
@@ -181,6 +184,7 @@
     <string name="reader_loading_previous">正在加载上一章</string>
     <string name="reader_progress_chapter_count">%1$d / %2$d</string>
     <string name="reader_return_progress">返回原阅读进度</string>
+    <string name="reader_open_novel_detail">返回书籍详情</string>
     <string name="reader_add_bookmark">添加本地书签</string>
     <string name="reader_remove_bookmark">移除本地书签</string>
     <string name="bookmarks">本地书签</string>

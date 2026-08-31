@@ -15,7 +15,7 @@ import com.breakyuna.esjzone.database.entity.SearchHistory
 
 @Database(
     entities = [Cache::class, SearchHistory::class, Bookmark::class, LocalReadingActivity::class],
-    version = 4,
+    version = 5,
     exportSchema = false
 )
 abstract class GeneralDatabase : RoomDatabase() {
@@ -80,6 +80,40 @@ abstract class GeneralDatabase : RoomDatabase() {
                     """
                     ALTER TABLE local_reading_history
                     ADD COLUMN novel_cover_url TEXT NOT NULL DEFAULT ''
+                    """.trimIndent()
+                )
+            }
+        }
+
+        /** Removes older per-session duplicates while preserving the latest position. */
+        val MIGRATION_4_5: Migration = object : Migration(4, 5) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL(
+                    """
+                    DELETE FROM local_reading_history
+                    WHERE EXISTS (
+                        SELECT 1
+                        FROM local_reading_history AS newer
+                        WHERE (
+                            (local_reading_history.novel_id != '' AND
+                                newer.novel_id = local_reading_history.novel_id)
+                            OR
+                            (local_reading_history.novel_url != '' AND
+                                newer.novel_url = local_reading_history.novel_url)
+                        )
+                        AND (
+                            newer.last_read_at > local_reading_history.last_read_at
+                            OR (
+                                newer.last_read_at = local_reading_history.last_read_at
+                                AND newer.started_at > local_reading_history.started_at
+                            )
+                            OR (
+                                newer.last_read_at = local_reading_history.last_read_at
+                                AND newer.started_at = local_reading_history.started_at
+                                AND newer.rowid > local_reading_history.rowid
+                            )
+                        )
+                    )
                     """.trimIndent()
                 )
             }

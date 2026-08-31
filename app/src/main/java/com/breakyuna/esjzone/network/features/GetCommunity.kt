@@ -300,7 +300,15 @@ fun EsjzoneClient.getForumBoard(
     val targetUrl = EsjzoneUrls.resolve(thread.url)
     AppLogger.i("GetCommunity", "Fetching forum board ${thread.id} at $targetUrl")
     val document = Jsoup.parse(
-        getPage(authorization, targetUrl, PageCacheTtl.COMMUNITY),
+        // The site's AJAX table is bound to server-side state established by
+        // this page request. A cached HTML shell does not establish that state
+        // and makes forum_list_data.php answer with application status 301.
+        getPage(
+            authorization,
+            targetUrl,
+            PageCacheTtl.COMMUNITY,
+            forceRefresh = true
+        ),
         targetUrl
     )
     val novelDetailUrl = findForumNovelDetailUrl(document)
@@ -328,7 +336,18 @@ fun EsjzoneClient.getForumBoard(
         throw ForumBoardDataException("Forum topic table has no data endpoint")
     }
     val endpoint = appendForumTableParams(EsjzoneUrls.resolve(dataUrl))
-    val body = getForumTableData(authorization, endpoint, targetUrl)
+    var body = getForumTableData(authorization, endpoint, targetUrl)
+    if (forumApplicationStatus(body) == 301) {
+        // Sessions can still rotate between the board request and its AJAX
+        // request. Re-prime the exact board once, then retry without looping.
+        getPage(
+            authorization,
+            targetUrl,
+            PageCacheTtl.COMMUNITY,
+            forceRefresh = true
+        )
+        body = getForumTableData(authorization, endpoint, targetUrl)
+    }
     validateForumTableResponse(body)
     val payload = parseForumTopicsPayload(body, thread.id)
     val totalCount = payload.totalCount ?: declaredTotal
@@ -645,6 +664,10 @@ internal fun parseComments(document: Document, parentPostId: String): List<Comme
             ?.trim()
             ?.takeIf { it.isNotBlank() }
         val contentText = content?.text()?.trim().orEmpty()
+        val quotedContentText = element.selectFirst(".comment-body > blockquote")
+            ?.wholeText()
+            ?.trim()
+            ?.takeIf { it.isNotBlank() }
         val rawId = element.id().removePrefix("comment-").trim()
         val pageGroup = comments.size / COMMENT_PAGE_SIZE + 1
         val stableId = rawId.ifBlank {
@@ -662,6 +685,7 @@ internal fun parseComments(document: Document, parentPostId: String): List<Comme
             createdAt = resolveCommentTimestamp(element),
             contentHtml = content?.html().orEmpty(),
             contentText = contentText,
+            quotedContentText = quotedContentText,
             pageGroup = pageGroup,
             replyToken = replyToken
         )

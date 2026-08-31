@@ -75,7 +75,8 @@ class MainActivity : ComponentActivity() {
                 ).addMigrations(
                     GeneralDatabase.MIGRATION_1_2,
                     GeneralDatabase.MIGRATION_2_3,
-                    GeneralDatabase.MIGRATION_3_4
+                    GeneralDatabase.MIGRATION_3_4,
+                    GeneralDatabase.MIGRATION_4_5
                 ).build()
 
                 val dao = database.cacheDao()

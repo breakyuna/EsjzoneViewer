@@ -6,7 +6,7 @@ import androidx.room.Index
 import androidx.room.PrimaryKey
 
 /**
- * A single reader session stored only on this device.
+ * The latest reading position for one novel, stored only on this device.
  *
  * This table intentionally has no network counterpart: local reading
  * activity must never be uploaded to the ESJ account history.

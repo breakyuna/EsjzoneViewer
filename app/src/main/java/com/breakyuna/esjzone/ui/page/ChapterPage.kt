@@ -34,6 +34,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Forum
 import androidx.compose.material.icons.filled.List
+import androidx.compose.material.icons.automirrored.filled.MenuBook
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilledTonalIconButton
@@ -102,7 +103,6 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import java.util.UUID
 import kotlin.math.max
 import kotlin.math.roundToInt
 import com.breakyuna.esjzone.MainActivity
@@ -339,7 +339,13 @@ class ChapterPage(
             chapterProgress = chapterProgress,
             chapterOrder = bookChapterOrder
         )
-        val localHistoryActivityId = remember { UUID.randomUUID().toString() }
+        val localHistoryActivityId = remember(novelId, novelUrl, chapter.url) {
+            localReadingHistoryKey(
+                novelId = novelId.ifBlank { chapter.novelId() },
+                novelUrl = novelUrl,
+                chapterUrl = chapter.url
+            )
+        }
         val localHistoryStartedAt = remember { System.currentTimeMillis() }
         val localHistoryPosition = rememberUpdatedState(
             LocalReadingPosition(
@@ -624,6 +630,31 @@ class ChapterPage(
             }
 
             AnimatedVisibility(
+                visible = progressPreview != null,
+                enter = fadeIn(),
+                exit = fadeOut(),
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .navigationBarsPadding()
+                    .padding(bottom = 150.dp)
+                    .zIndex(3f)
+            ) {
+                progressPreview?.let { preview ->
+                    ReaderProgressPreview(
+                        location = preview,
+                        canReturn = progressReturnLocation != null,
+                        onReturn = {
+                            progressReturnLocation?.let { location ->
+                                seekTo(location)
+                                // Keep the preview until a later screen tap.
+                                progressReturnLocation = null
+                            }
+                        }
+                    )
+                }
+            }
+
+            AnimatedVisibility(
                 visible = showToolbar,
                 enter = slideInVertically(initialOffsetY = { it }) + fadeIn(),
                 exit = slideOutVertically(targetOffsetY = { it }) + fadeOut(),
@@ -633,22 +664,6 @@ class ChapterPage(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    progressPreview?.let { preview ->
-                        ReaderProgressPreview(
-                            location = preview,
-                            canReturn = progressReturnLocation != null,
-                            onReturn = {
-                                progressReturnLocation?.let { location ->
-                                    seekTo(location)
-                                    // Keep the preview visible until the
-                                    // reader taps the blank area again.
-                                    progressReturnLocation = null
-                                }
-                            }
-                        )
-                        Spacer(modifier = Modifier.height(8.dp))
-                    }
-
                     Surface(
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp),
@@ -804,6 +819,36 @@ class ChapterPage(
                                         imageVector = Icons.Filled.Forum,
                                         contentDescription = stringResource(
                                             id = R.string.comments
+                                        )
+                                    )
+                                }
+                                val detailUrl = novelUrl.ifBlank {
+                                    novelId.ifBlank { commentChapter.novelId() }
+                                        .takeIf { it.isNotBlank() }
+                                        ?.let { id -> EsjzoneUrls.resolve("/detail/$id.html") }
+                                        .orEmpty()
+                                }
+                                FilledTonalIconButton(
+                                    enabled = detailUrl.isNotBlank(),
+                                    onClick = {
+                                        dismissProgressPreview()
+                                        navigator?.pushIfNotCurrent(
+                                            NovelPage(
+                                                novel = FavoriteNovel(
+                                                    name = novelName.ifBlank {
+                                                        novelId.ifBlank { commentChapter.name }
+                                                    },
+                                                    url = detailUrl
+                                                ),
+                                                history = history
+                                            )
+                                        )
+                                    }
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.AutoMirrored.Filled.MenuBook,
+                                        contentDescription = stringResource(
+                                            id = R.string.reader_open_novel_detail
                                         )
                                     )
                                 }
@@ -1111,6 +1156,20 @@ private fun ReaderProgressPreview(
             }
         }
     }
+}
+
+private fun localReadingHistoryKey(
+    novelId: String,
+    novelUrl: String,
+    chapterUrl: String
+): String {
+    val stableNovel = novelId.trim().ifBlank {
+        EsjzoneUrls.canonicalPageKey(novelUrl).ifBlank {
+            val chapterNovelId = Chapter("", chapterUrl, false).novelId()
+            chapterNovelId.ifBlank { EsjzoneUrls.canonicalPageKey(chapterUrl) }
+        }
+    }
+    return "novel:$stableNovel"
 }
 
 @Composable
