@@ -45,7 +45,6 @@ import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -797,7 +796,7 @@ class LocalHistoryPageModel(
     private var observeStarted = false
     private val coverLock = Any()
     private val requestedCoverKeys = mutableSetOf<String>()
-    private val resolvedCoverUrls = mutableStateMapOf<String, String>()
+    private val resolvedCoverUrls = mutableStateOf<Map<String, String>>(emptyMap())
 
     sealed class State {
         data object Loading : State()
@@ -808,7 +807,7 @@ class LocalHistoryPageModel(
     fun coverUrlFor(activity: LocalReadingActivity): String {
         val storedCover = EsjzoneUrls.coverOrEmpty(activity.novelCoverUrl)
         if (storedCover.isNotBlank()) return storedCover
-        return resolvedCoverUrls[coverKey(coverLookupUrl(activity))].orEmpty()
+        return resolvedCoverUrls.value[coverKey(coverLookupUrl(activity))] ?: ""
     }
 
     fun loadCover(activity: LocalReadingActivity) {
@@ -819,7 +818,7 @@ class LocalHistoryPageModel(
         if (key.isBlank()) return
 
         val shouldLoad = synchronized(coverLock) {
-            if (resolvedCoverUrls.containsKey(key) || !requestedCoverKeys.add(key)) {
+            if (resolvedCoverUrls.value.containsKey(key) || !requestedCoverKeys.add(key)) {
                 false
             } else {
                 true
@@ -839,7 +838,9 @@ class LocalHistoryPageModel(
                     ).coverUrl
                 )
                 if (cover.isNotBlank()) {
-                    resolvedCoverUrls[key] = cover
+                    synchronized(coverLock) {
+                        resolvedCoverUrls.value = resolvedCoverUrls.value + (key to cover)
+                    }
                     runCatching {
                         MainActivity.database.localReadingActivityDao().updateCover(
                             activity.activityId,
