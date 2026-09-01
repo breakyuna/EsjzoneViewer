@@ -90,8 +90,8 @@ internal object PageResponsePolicy {
             PageKind.HOME -> lowerRequestedUrl.isHomeRoute() &&
                 (lower.contains("<section") || lower.contains("<main") || lower.contains("<div"))
             PageKind.FORUM -> (lowerRequestedUrl.contains("/forum") || lower.contains("/forum/")) &&
-                (lower.contains("<table") || lower.contains("<section") ||
-                    lower.contains("<article") || lower.contains("<div"))
+                (lower.contains("<table") || lower.contains("<article") ||
+                    lower.contains("thread") || lower.contains("topic"))
             PageKind.COMMUNITY ->
                 (lowerRequestedUrl.contains("/guestbook") || lower.contains("/forum/") ||
                     lower.contains("/detail/") || lower.contains("comment")) &&

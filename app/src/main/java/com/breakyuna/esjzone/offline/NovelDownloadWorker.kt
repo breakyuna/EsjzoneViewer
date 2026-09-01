@@ -1,11 +1,14 @@
 package com.breakyuna.esjzone.offline
 
+import android.Manifest
+import android.os.Build
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.content.Context
 import android.content.pm.ServiceInfo
 import android.net.Uri
 import androidx.core.app.NotificationCompat
+import androidx.core.content.ContextCompat
 import androidx.work.Constraints
 import androidx.work.CoroutineWorker
 import androidx.work.Data
@@ -144,8 +147,15 @@ class NovelDownloadWorker(
             )
             NovelDownloadStore.download(authorization, detail, actualBaseUrl) { next ->
                 setProgressAsync(next.toWorkData())
-                applicationContext.getSystemService(NotificationManager::class.java)
-                    .notify(notificationId(), createNotification(name, next))
+                if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
+                    ContextCompat.checkSelfPermission(
+                        applicationContext,
+                        Manifest.permission.POST_NOTIFICATIONS
+                    ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+                ) {
+                    applicationContext.getSystemService(NotificationManager::class.java)
+                        .notify(notificationId(), createNotification(name, next))
+                }
             }
             Result.success()
         } catch (error: CancellationException) {
