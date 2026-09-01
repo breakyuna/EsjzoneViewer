@@ -85,8 +85,8 @@ import com.breakyuna.esjzone.network.Authorization
 import com.breakyuna.esjzone.network.EsjzoneClient
 import com.breakyuna.esjzone.network.EsjzoneUrls
 import com.breakyuna.esjzone.network.LocalAuthorization
-import com.breakyuna.esjzone.network.features.changeFavorites
 import com.breakyuna.esjzone.network.features.getNovelDetail
+import com.breakyuna.esjzone.database.BookshelfRepository
 import com.breakyuna.esjzone.offline.DownloadProgress
 import com.breakyuna.esjzone.offline.DownloadedNovelManifest
 import com.breakyuna.esjzone.offline.NovelDownloadManager
@@ -125,6 +125,8 @@ class NovelPage(
             CommentPageModel(authorization, novel.url)
         }
         val state by screenModel.state.collectAsState()
+        val localShelfEntry by BookshelfRepository.observeEntry(authorization, novel.url)
+            .collectAsState(initial = null)
 
         Column(modifier = Modifier.fillMaxSize()) {
             AppBar(
@@ -159,10 +161,37 @@ class NovelPage(
                         mutableStateOf(favoriteState.value)
                     }
 
-                    LaunchedEffect(result.detailed.isFavorite) {
-                        if (favoriteState.value == rememberedFavorite) {
+                    LaunchedEffect(result.detailed.isFavorite, localShelfEntry?.operationVersion) {
+                        // A local pending intent always wins over a possibly
+                        // stale detail-page favorite flag. Existing local rows
+                        // may still need author/cover/adult metadata, so only
+                        // the repository's supplement path is used for them.
+                        if (localShelfEntry != null) {
+                            BookshelfRepository.seedRemoteFavorite(
+                                authorization,
+                                novel,
+                                author = result.detailed.author,
+                                coverUrl = result.detailed.coverUrl,
+                                isAdult = result.detailed.isAdult
+                            )
+                        } else if (result.detailed.isFavorite) {
+                            BookshelfRepository.seedRemoteFavorite(
+                                authorization,
+                                novel,
+                                author = result.detailed.author,
+                                coverUrl = result.detailed.coverUrl,
+                                isAdult = result.detailed.isAdult
+                            )
+                        } else if (localShelfEntry == null && favoriteState.value == rememberedFavorite) {
                             favoriteState.value = result.detailed.isFavorite
                             rememberedFavorite = result.detailed.isFavorite
+                        }
+                    }
+
+                    LaunchedEffect(localShelfEntry?.operationVersion, localShelfEntry?.visible) {
+                        localShelfEntry?.let {
+                            favoriteState.value = it.visible
+                            rememberedFavorite = it.visible
                         }
                     }
 
@@ -285,26 +314,26 @@ class NovelPage(
                                             Spacer(modifier = Modifier.height(10.dp))
                                             Button(
                                                 onClick = {
-                                                    val previousFavorite = rememberedFavorite
-                                                    val nextFavorite = !previousFavorite
+                                                    val nextFavorite = !rememberedFavorite
                                                     favoriteState.value = nextFavorite
                                                     rememberedFavorite = nextFavorite
                                                     scope.launch {
                                                         try {
                                                             withContext(Dispatchers.IO) {
-                                                                EsjzoneClient.changeFavorites(
+                                                                BookshelfRepository.setFavorite(
                                                                     authorization,
-                                                                    novel
+                                                                    novel,
+                                                                    desired = nextFavorite
                                                                 )
                                                             }
                                                         } catch (error: CancellationException) {
                                                             throw error
                                                         } catch (error: Exception) {
-                                                            favoriteState.value = previousFavorite
-                                                            rememberedFavorite = previousFavorite
+                                                            // Keep the optimistic local intent. The repository persists it
+                                                            // as PENDING_ADD/PENDING_REMOVE for a later retry.
                                                             com.breakyuna.esjzone.util.AppLogger.e(
                                                                 "NovelPage",
-                                                                "Failed to change favorite for ${novel.name}",
+                                                                "Failed to persist favorite intent for ${novel.name}",
                                                                 error
                                                             )
                                                         }

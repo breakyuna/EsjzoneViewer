@@ -14,6 +14,7 @@ import coil.memory.MemoryCache
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import com.breakyuna.esjzone.database.GeneralDatabase
+import com.breakyuna.esjzone.database.BookshelfRepository
 import com.breakyuna.esjzone.database.dao.put
 import com.breakyuna.esjzone.network.EsjzoneClient
 import com.breakyuna.esjzone.offline.NovelDownloadStore
@@ -76,8 +77,11 @@ class MainActivity : ComponentActivity() {
                     GeneralDatabase.MIGRATION_1_2,
                     GeneralDatabase.MIGRATION_2_3,
                     GeneralDatabase.MIGRATION_3_4,
-                    GeneralDatabase.MIGRATION_4_5
+                    GeneralDatabase.MIGRATION_4_5,
+                    GeneralDatabase.MIGRATION_5_6
                 ).build()
+
+                BookshelfRepository.initialize(database)
 
                 val dao = database.cacheDao()
 

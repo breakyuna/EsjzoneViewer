@@ -5,17 +5,19 @@ import androidx.room.RoomDatabase
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 import com.breakyuna.esjzone.database.dao.BookmarkDao
+import com.breakyuna.esjzone.database.dao.BookshelfDao
 import com.breakyuna.esjzone.database.dao.CacheDao
 import com.breakyuna.esjzone.database.dao.LocalReadingActivityDao
 import com.breakyuna.esjzone.database.dao.SearchHistoryDao
 import com.breakyuna.esjzone.database.entity.Bookmark
+import com.breakyuna.esjzone.database.entity.BookshelfEntry
 import com.breakyuna.esjzone.database.entity.Cache
 import com.breakyuna.esjzone.database.entity.LocalReadingActivity
 import com.breakyuna.esjzone.database.entity.SearchHistory
 
 @Database(
-    entities = [Cache::class, SearchHistory::class, Bookmark::class, LocalReadingActivity::class],
-    version = 5,
+    entities = [Cache::class, SearchHistory::class, Bookmark::class, LocalReadingActivity::class, BookshelfEntry::class],
+    version = 6,
     exportSchema = false
 )
 abstract class GeneralDatabase : RoomDatabase() {
@@ -25,6 +27,8 @@ abstract class GeneralDatabase : RoomDatabase() {
     abstract fun searchHistoryDao(): SearchHistoryDao
 
     abstract fun bookmarkDao(): BookmarkDao
+
+    abstract fun bookshelfDao(): BookshelfDao
 
     abstract fun localReadingActivityDao(): LocalReadingActivityDao
 
@@ -115,6 +119,36 @@ abstract class GeneralDatabase : RoomDatabase() {
                         )
                     )
                     """.trimIndent()
+                )
+            }
+        }
+
+        val MIGRATION_5_6: Migration = object : Migration(5, 6) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS bookshelf (
+                        scope TEXT NOT NULL,
+                        book_key TEXT NOT NULL,
+                        novel_id TEXT NOT NULL,
+                        url TEXT NOT NULL,
+                        title TEXT NOT NULL,
+                        author TEXT NOT NULL,
+                        cover_url TEXT NOT NULL,
+                        is_adult INTEGER NOT NULL DEFAULT 0,
+                        added_at INTEGER NOT NULL,
+                        sync_state TEXT NOT NULL,
+                        visible INTEGER NOT NULL,
+                        retry_count INTEGER NOT NULL,
+                        last_error TEXT,
+                        operation_version INTEGER NOT NULL,
+                        PRIMARY KEY(scope, book_key)
+                    )
+                    """.trimIndent()
+                )
+                database.execSQL(
+                    "CREATE INDEX IF NOT EXISTS index_bookshelf_scope_visible_added_at " +
+                        "ON bookshelf(scope, visible, added_at)"
                 )
             }
         }

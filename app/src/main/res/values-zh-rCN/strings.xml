@@ -53,6 +53,15 @@
     <string name="settings_showadultcontent">显示成人内容</string>
     <string name="favorites">收藏</string>
     <string name="favorites_description">收藏喜欢的作品，随时继续阅读</string>
+    <string name="bookshelf">书架</string>
+    <string name="bookshelf_description">本地优先的阅读书架</string>
+    <string name="bookshelf_empty">书架还是空的</string>
+    <string name="bookshelf_empty_hint">收藏小说后，即使离线也能在这里阅读</string>
+    <string name="sync_bookshelf">同步书架</string>
+    <string name="delete_bookshelf">从书架移除</string>
+    <string name="bookshelf_sync_done">已同步书架</string>
+    <string name="bookshelf_sync_added">新增 %1$d 本收藏</string>
+    <string name="bookshelf_sync_failed">同步失败，当前显示本地书架</string>
     <string name="description">作品简介</string>
     <string name="novel_type">类型</string>
     <string name="novel_source">Web 生肉</string>

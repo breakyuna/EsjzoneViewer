@@ -17,6 +17,7 @@ import kotlinx.coroutines.withContext
 import com.breakyuna.esjzone.GlobalSettings
 import com.breakyuna.esjzone.MainActivity
 import com.breakyuna.esjzone.database.dao.put
+import com.breakyuna.esjzone.database.BookshelfRepository
 import com.breakyuna.esjzone.network.Authorization
 import com.breakyuna.esjzone.network.EsjzoneClient
 import com.breakyuna.esjzone.network.hasCredentials
@@ -103,6 +104,10 @@ class LoadingScreen : Screen {
             }
 
             if (authorization != null) {
+                // Start the shelf retry/import in the process-scoped worker.
+                // MainScreen and the shelf itself remain local-first and do
+                // not wait for this network operation.
+                BookshelfRepository.scheduleSync(authorization)
                 navigator.replace(MainScreen(authorization = authorization))
             } else {
                 navigator.replace(LoginScreen)

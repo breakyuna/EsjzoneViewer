@@ -53,6 +53,15 @@
     <string name="settings_showadultcontent">Show Adult Content</string>
     <string name="favorites">Favorites</string>
     <string name="favorites_description">Keep your favorite stories close at hand</string>
+    <string name="bookshelf">Bookshelf</string>
+    <string name="bookshelf_description">Your local-first reading shelf</string>
+    <string name="bookshelf_empty">Your bookshelf is empty</string>
+    <string name="bookshelf_empty_hint">Favorite a novel to keep it here, even offline</string>
+    <string name="sync_bookshelf">Sync bookshelf</string>
+    <string name="delete_bookshelf">Remove from bookshelf</string>
+    <string name="bookshelf_sync_done">Bookshelf synced</string>
+    <string name="bookshelf_sync_added">Added %1$d favorite(s)</string>
+    <string name="bookshelf_sync_failed">Sync failed; showing local bookshelf</string>
     <string name="description">Description</string>
     <string name="novel_type">Type</string>
     <string name="novel_source">Web source</string>

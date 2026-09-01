@@ -61,6 +61,7 @@ import com.breakyuna.esjzone.GlobalSettings
 import com.breakyuna.esjzone.MainActivity
 import com.breakyuna.esjzone.R
 import com.breakyuna.esjzone.database.dao.put
+import com.breakyuna.esjzone.database.BookshelfRepository
 import com.breakyuna.esjzone.network.EsjzoneClient
 import com.breakyuna.esjzone.network.features.login
 import com.breakyuna.esjzone.util.AppLogger
@@ -297,6 +298,7 @@ object LoginScreen : Screen {
                             if (authorization != null) {
                                 Toast.makeText(context, R.string.login_success, Toast.LENGTH_SHORT)
                                     .show()
+                                BookshelfRepository.scheduleSync(authorization)
                                 navigator.replace(MainScreen(authorization = authorization))
                             } else {
                                 Toast.makeText(context, R.string.login_fail, Toast.LENGTH_SHORT)

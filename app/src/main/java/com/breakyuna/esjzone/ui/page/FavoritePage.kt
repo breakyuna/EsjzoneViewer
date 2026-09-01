@@ -1,33 +1,39 @@
 package com.breakyuna.esjzone.ui.page
 
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.mutableStateListOf
-import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -37,371 +43,229 @@ import cafe.adriel.voyager.core.model.screenModelScope
 import cafe.adriel.voyager.core.screen.Screen
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import com.breakyuna.esjzone.GlobalSettings
 import com.breakyuna.esjzone.R
+import com.breakyuna.esjzone.database.BookshelfRepository
+import com.breakyuna.esjzone.database.BookshelfSyncResult
+import com.breakyuna.esjzone.database.entity.BookshelfEntry
 import com.breakyuna.esjzone.network.Authorization
-import com.breakyuna.esjzone.network.EsjzoneClient
 import com.breakyuna.esjzone.network.LocalAuthorization
-import com.breakyuna.esjzone.network.PageCacheInvalidation
-import com.breakyuna.esjzone.network.PageableRequester
-import com.breakyuna.esjzone.network.features.getFavorites
-import com.breakyuna.esjzone.network.features.getNovelDetail
-import com.breakyuna.esjzone.novellibrary.novel.DetailedNovel
+import com.breakyuna.esjzone.novellibrary.novel.CoveredNovelImpl
 import com.breakyuna.esjzone.novellibrary.novel.FavoriteNovel
 import com.breakyuna.esjzone.ui.component.AppBar
-import com.breakyuna.esjzone.ui.component.DropdownSelection
-import com.breakyuna.esjzone.ui.component.Loading
-import com.breakyuna.esjzone.ui.component.LoadError
 import com.breakyuna.esjzone.ui.component.Novel
-import com.breakyuna.esjzone.ui.navigation.LocalBaseNavigator
 import com.breakyuna.esjzone.ui.navigation.BooleanStateHolder
+import com.breakyuna.esjzone.ui.navigation.LocalBaseNavigator
 import com.breakyuna.esjzone.ui.navigation.pushIfNotCurrent
 
-private fun favoriteSortResource(name: String): Int {
-    return when (name) {
-        "new" -> R.string.favorites_recently_added
-        "udate" -> R.string.favorites_recently_update
-        else -> R.string.favorites_recently_added
-    }
-}
-
+/** The shelf is rendered entirely from the local Room flow. */
 object FavoritePage : Screen {
-
     private fun readResolve(): Any = FavoritePage
 
     @Composable
-    override fun Content() {
-        Content(showBack = true)
-    }
+    override fun Content() = Content(showBack = true)
 
     @Composable
     fun Content(showBack: Boolean) {
         val navigator = LocalBaseNavigator.current
-
         val authorization = LocalAuthorization.current
+        val model = rememberScreenModel { FavoritePageModel(authorization) }
+        val entries by model.entries.collectAsState(initial = emptyList())
+        val syncState by model.state.collectAsState()
+        val snackbar = remember { SnackbarHostState() }
+        val scope = rememberCoroutineScope()
+        val listState = rememberLazyListState()
+        var refreshing by rememberSaveable { mutableStateOf(false) }
+        val adult by remember { GlobalSettings.adult }
+        val syncDoneText = stringResource(R.string.bookshelf_sync_done)
+        val syncAddedPattern = stringResource(R.string.bookshelf_sync_added)
+        val syncFailedText = stringResource(R.string.bookshelf_sync_failed)
 
-        val sort = rememberSaveable {
-            mutableStateOf("new")
+        fun refresh() {
+            if (!refreshing) {
+                refreshing = true
+                model.sync()
+            }
         }
 
-        val favoritePageModel =
-            rememberScreenModel { FavoritePageModel(authorization, sort) }
-        val state by favoritePageModel.state.collectAsState()
-        val favoriteGeneration by PageCacheInvalidation.favoriteGeneration.collectAsState()
-
-        val adult by remember {
-            GlobalSettings.adult
-        }
-
-        fun onSortChanged(value: String) {
-            sort.value = value
-            favoritePageModel.getRequester(forceRefresh = true)
-        }
-
-        Column(modifier = Modifier.fillMaxSize()) {
-            if (showBack) {
-                AppBar(
-                    title = stringResource(id = R.string.favorites),
-                    onBack = {
-                        navigator?.pop()
-                    }
-                ) {
-                    Row {
-                        FavoriteSortSelector(
-                            sort = sort,
-                            onChange = ::onSortChanged
-                        )
-                    }
-                }
-            } else {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 20.dp, vertical = 24.dp),
-                    verticalAlignment = Alignment.Top
-                ) {
-                    Column(
-                        modifier = Modifier
-                            .weight(1f)
-                            .padding(end = 12.dp)
-                    ) {
-                        Text(
-                            text = stringResource(id = R.string.favorites),
-                            style = MaterialTheme.typography.headlineLarge.copy(
-                                fontWeight = FontWeight.Bold
-                            )
-                        )
-                        Text(
-                            text = stringResource(id = R.string.favorites_description),
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(top = 4.dp)
-                        )
-                    }
-                    FavoriteSortSelector(
-                        sort = sort,
-                        onChange = ::onSortChanged
+        LaunchedEffect(syncState) {
+            when (val result = syncState) {
+                is FavoritePageModel.State.Completed -> {
+                    refreshing = false
+                    snackbar.showSnackbar(
+                        if (result.result.added > 0) {
+                            syncAddedPattern.replace("%1$d", result.result.added.toString())
+                        } else {
+                            syncDoneText
+                        }
                     )
                 }
+                FavoritePageModel.State.Failed -> {
+                    refreshing = false
+                    snackbar.showSnackbar(syncFailedText)
+                }
+                else -> Unit
             }
+        }
 
-            when (state) {
-                is FavoritePageModel.State.Loading -> Loading()
-
-                is FavoritePageModel.State.Error -> LoadError(
-                    onRetry = favoritePageModel::retry
-                )
-
-                is FavoritePageModel.State.Result -> {
-                    val result = (state as FavoritePageModel.State.Result)
-                    val requester = result.requester
-
-                    var current by remember(result) {
-                        mutableIntStateOf(2)
-                    }
-                    var pageFailed by remember(result) {
-                        mutableStateOf(false)
-                    }
-                    var pageRetry by remember(result) {
-                        mutableIntStateOf(0)
-                    }
-
-                    val max = requester.pages()
-
-                    val items = remember(result) {
-                        mutableStateListOf<FavoriteNovel>().apply {
-                            addAll(result.firstPage)
-                        }
-                    }
-
-                    val cache = remember {
-                        mutableStateMapOf<String, DetailedNovel>()
-                    }
-
-                    LazyColumn(
-                        modifier = Modifier
-                            .weight(1f)
-                            .fillMaxWidth()
+        Scaffold(
+            snackbarHost = { SnackbarHost(snackbar) },
+            topBar = {
+                if (showBack) {
+                    AppBar(title = stringResource(R.string.bookshelf), onBack = { navigator?.pop() })
+                } else {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 24.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
                     ) {
-                        items(
-                            items = items.distinctBy { it.url.ifBlank { it.name } },
-                            key = { item -> item.url.ifBlank { item.name } }
-                        ) { favoriteNovel ->
-                            var detailedNovel: DetailedNovel? by remember {
-                                mutableStateOf(cache[favoriteNovel.url])
-                            }
-                            var detailFailed by remember(favoriteNovel.url) {
-                                mutableStateOf(false)
-                            }
-                            var detailRetry by remember(favoriteNovel.url) {
-                                mutableIntStateOf(0)
-                            }
-
-                            val novel = detailedNovel
-                            if (novel == null) {
-                                if (detailFailed) {
-                                    LoadError(
-                                        onRetry = {
-                                            detailFailed = false
-                                            detailRetry += 1
-                                        },
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .padding(vertical = 8.dp)
-                                    )
-                                } else {
-                                    Column(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        horizontalAlignment = Alignment.CenterHorizontally
-                                    ) {
-                                        CircularProgressIndicator(modifier = Modifier.padding(16.dp))
-                                    }
-                                }
-
-                                LaunchedEffect(favoriteNovel.url, detailRetry) {
-                                    try {
-                                        val fetched = withContext(Dispatchers.IO) {
-                                            EsjzoneClient.getNovelDetail(
-                                                authorization,
-                                                favoriteNovel
-                                            )
-                                        }
-                                        detailedNovel = fetched
-                                        cache[favoriteNovel.url] = fetched
-                                        detailFailed = false
-                                    } catch (e: CancellationException) {
-                                        throw e
-                                    } catch (e: Exception) {
-                                        detailFailed = true
-                                        com.breakyuna.esjzone.util.AppLogger.e("FavoritePage", "Failed to load novel detail for ${favoriteNovel.name}", e)
-                                    }
-                                }
-                            } else {
-                                if (adult || !novel.isAdult) {
-                                    val favorite = rememberSaveable {
-                                        mutableStateOf(true)
-                                    }
-
-                                    val rememberedFavorite by rememberSaveable {
-                                        favorite
-                                    }
-
-                                    if (rememberedFavorite && novel.isFavorite) {
-                                        Novel(covered = novel) {
-                                            navigator?.pushIfNotCurrent(
-                                                NovelPage(
-                                                    favoriteNovel,
-                                                    favorite = BooleanStateHolder(favorite)
-                                                )
-                                            )
-                                        }
-                                    }
-                                }
-                            }
+                        Column {
+                            Text(
+                                text = stringResource(R.string.bookshelf),
+                                style = MaterialTheme.typography.headlineLarge.copy(fontWeight = FontWeight.Bold)
+                            )
+                            Text(
+                                text = stringResource(R.string.bookshelf_description),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
                         }
-
-                        item {
-                            if (current <= max && max > 1) {
-                                if (pageFailed) {
-                                    LoadError(
-                                        onRetry = {
-                                            pageFailed = false
-                                            pageRetry += 1
-                                        },
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .padding(vertical = 8.dp)
-                                    )
-                                } else {
-                                    Box(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .padding(8.dp),
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        CircularProgressIndicator()
-                                    }
-                                }
-                                LaunchedEffect(current, pageRetry) {
-                                    try {
-                                        val newlyLoaded = withContext(Dispatchers.IO) {
-                                            requester.more(current)
-                                        }
-                                        for (item in newlyLoaded) {
-                                            if (items.contains(item))
-                                                continue
-                                            items.add(item)
-                                        }
-                                        pageFailed = false
-                                        current += 1
-                                    } catch (e: CancellationException) {
-                                        throw e
-                                    } catch (e: Exception) {
-                                        pageFailed = true
-                                        com.breakyuna.esjzone.util.AppLogger.e(
-                                            "FavoritePage",
-                                            "Failed to load favorite page $current",
-                                            e
-                                        )
-                                    }
-                                }
-                            }
-                            Spacer(modifier = Modifier.height(8.dp))
-                        }
-
-                        item {
-                            Row(
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                Spacer(modifier = Modifier.weight(1f))
-                                Text(
-                                    text = stringResource(id = R.string.the_end),
-                                    modifier = Modifier.padding(16.dp)
-                                )
-                                Spacer(modifier = Modifier.weight(1f))
-                            }
+                        IconButton(onClick = ::refresh) {
+                            Icon(Icons.Filled.Refresh, contentDescription = stringResource(R.string.sync_bookshelf))
                         }
                     }
                 }
             }
-
-        }
-
-        LaunchedEffect(favoriteGeneration) {
-            favoritePageModel.getRequester(forceRefresh = favoriteGeneration > 0L)
-        }
-    }
-
-}
-
-@Composable
-private fun FavoriteSortSelector(
-    sort: MutableState<String>,
-    onChange: (String) -> Unit
-) {
-    var exposed by remember { mutableStateOf(false) }
-    DropdownSelection(
-        label = stringResource(id = R.string.novel_list_sort),
-        items = listOf("new", "udate"),
-        current = sort.value,
-        onChange = onChange,
-        exposed = exposed,
-        onExposeChanged = { exposed = it },
-        modifier = Modifier.width(140.dp),
-        nameProvider = {
-            stringResource(id = favoriteSortResource(this))
-        }
-    )
-}
-
-class FavoritePageModel(
-    private val authorization: Authorization,
-    private val sort: MutableState<String>
-) : StateScreenModel<FavoritePageModel.State>(State.Loading) {
-
-    private var requestJob: Job? = null
-    private var initialRequestStarted = false
-
-    sealed class State {
-        data object Loading : State()
-        data object Error : State()
-        data class Result(
-            val requester: PageableRequester<FavoriteNovel>,
-            val firstPage: List<FavoriteNovel>
-        ) : State()
-    }
-
-    fun getRequester(forceRefresh: Boolean = false) {
-        if (!forceRefresh && initialRequestStarted) return
-        initialRequestStarted = true
-        requestJob?.cancel()
-        requestJob = screenModelScope.launch(Dispatchers.IO) {
-            mutableState.value = State.Loading
-            try {
-                val (requester, novels) = EsjzoneClient.getFavorites(
-                    authorization,
-                    sort.value,
-                    forceRefresh = forceRefresh
-                )
-                ensureActive()
-                mutableState.value = State.Result(requester, novels)
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                mutableState.value = State.Error
-                // Allow a later lifecycle/network recovery request to try again.
-                initialRequestStarted = false
-                com.breakyuna.esjzone.util.AppLogger.e("FavoritePageModel", "Failed to load favorites", e)
+        ) { padding ->
+            Box(modifier = Modifier.fillMaxSize().padding(padding)) {
+                LazyColumn(
+                    state = listState,
+                    modifier = Modifier.fillMaxSize().bookshelfPullToRefresh(
+                        listState = listState,
+                        enabled = !refreshing,
+                        onRefresh = ::refresh
+                    )
+                ) {
+                    if (entries.isEmpty()) {
+                        item {
+                            Column(
+                                modifier = Modifier.fillMaxWidth().padding(48.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally
+                            ) {
+                                Text(stringResource(R.string.bookshelf_empty))
+                                Text(
+                                    stringResource(R.string.bookshelf_empty_hint),
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.padding(top = 8.dp)
+                                )
+                            }
+                        }
+                    }
+                    items(entries, key = { it.bookKey }) { entry ->
+                        if (adult || !entry.isAdultHint()) {
+                            Box(modifier = Modifier.fillMaxWidth()) {
+                                Novel(
+                                    covered = entry.asCoveredNovel(),
+                                    onClick = {
+                                        navigator?.pushIfNotCurrent(
+                                            NovelPage(
+                                                FavoriteNovel(entry.title, entry.url),
+                                                favorite = BooleanStateHolder(true)
+                                            )
+                                        )
+                                    }
+                                )
+                                IconButton(
+                                    onClick = {
+                                        scope.launch(Dispatchers.IO) {
+                                            BookshelfRepository.setFavorite(
+                                                authorization,
+                                                FavoriteNovel(entry.title, entry.url),
+                                                false
+                                            )
+                                        }
+                                    },
+                                    modifier = Modifier.align(Alignment.TopEnd).padding(end = 12.dp, top = 8.dp)
+                                ) {
+                                    Icon(Icons.Filled.Delete, contentDescription = stringResource(R.string.delete_bookshelf))
+                                }
+                            }
+                        }
+                    }
+                }
+                if (refreshing) {
+                    CircularProgressIndicator(modifier = Modifier.align(Alignment.TopCenter).padding(8.dp))
+                }
             }
         }
     }
+}
 
-    fun retry() {
-        getRequester(forceRefresh = true)
+private fun BookshelfEntry.asCoveredNovel() = CoveredNovelImpl(
+    coverUrl = coverUrl,
+    name = title,
+    url = url,
+    views = 0,
+    likes = 0,
+    isAdult = isAdultHint()
+)
+
+/** Remote favorite rows do not expose adult metadata; only explicit local hints are hidden. */
+private fun BookshelfEntry.isAdultHint(): Boolean = isAdult
+
+private fun Modifier.bookshelfPullToRefresh(
+    listState: androidx.compose.foundation.lazy.LazyListState,
+    enabled: Boolean,
+    onRefresh: () -> Unit
+): Modifier = pointerInput(enabled) {
+    awaitPointerEventScope {
+        var distance = 0f
+        while (true) {
+            val event = awaitPointerEvent()
+            val change = event.changes.firstOrNull() ?: continue
+            if (listState.firstVisibleItemIndex != 0 || listState.firstVisibleItemScrollOffset != 0) {
+                // A pull must start at the absolute top; never carry distance
+                // from a gesture that began inside the first item.
+                distance = 0f
+            }
+            if (!change.pressed) {
+                if (
+                    enabled &&
+                    listState.firstVisibleItemIndex == 0 &&
+                    listState.firstVisibleItemScrollOffset == 0 &&
+                    distance > 72f
+                ) onRefresh()
+                distance = 0f
+            } else if (listState.firstVisibleItemIndex == 0 && change.positionChange().y > 0f) {
+                distance += change.positionChange().y
+            }
+        }
+    }
+}
+
+class FavoritePageModel(private val authorization: Authorization) :
+    StateScreenModel<FavoritePageModel.State>(State.Idle) {
+    val entries = BookshelfRepository.observe(authorization)
+
+    sealed class State {
+        data object Idle : State()
+        data object Syncing : State()
+        data class Completed(val result: BookshelfSyncResult) : State()
+        data object Failed : State()
     }
 
+    fun sync() {
+        screenModelScope.launch(Dispatchers.IO) {
+            mutableState.value = State.Syncing
+            try {
+                val result = BookshelfRepository.sync(authorization)
+                mutableState.value = if (result.success) State.Completed(result) else State.Failed
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                mutableState.value = State.Failed
+            }
+        }
+    }
 }

@@ -34,19 +34,78 @@ fun EsjzoneClient.getFavorites(
     val matcher = if (pagesRaw != null) pagesRegex.find(pagesRaw) else null
     val pages = matcher?.groupValues?.getOrNull(1)?.toIntOrNull() ?: 1
 
-    val novels = mutableListOf<FavoriteNovel>()
-
-    for (novelData in EsjzoneXPaths.Profile.Favorite.Novel.evaluate(document).elements) {
-        novels.add(
-            FavoriteNovel(
-                novelData.text(),
-                novelData.attr("href")
-            )
-        )
-    }
+    val novels = parseFavoriteNovels(document)
 
     return FavoriteNovelRequester(authorization, sort, pages) to novels.toList()
 }
+
+/**
+ * Fetches and parses every page of the remote shelf. Any network or parser
+ * failure is allowed to escape so callers can preserve their local shelf.
+ */
+fun EsjzoneClient.getAllFavorites(
+    authorization: Authorization,
+    sort: String = "new",
+    forceRefresh: Boolean = true
+): List<FavoriteNovel> {
+    val firstPageUrl = favoritePageUrl(sort, 1)
+    val firstBody = getPage(
+        authorization,
+        firstPageUrl,
+        PageCacheTtl.ACCOUNT_LIST,
+        forceRefresh = forceRefresh,
+        pageKind = PageKind.ACCOUNT,
+        allowStaleOnError = false
+    )
+    val firstDocument = Jsoup.parse(firstBody, firstPageUrl)
+    val pagesRaw = EsjzoneXPaths.Profile.Favorite.Pages.evaluate(firstDocument).get()
+    val pages = (pagesRegex.find(pagesRaw.orEmpty())?.groupValues?.getOrNull(1)?.toIntOrNull() ?: 1)
+        .coerceIn(1, 200)
+    val all = LinkedHashMap<String, FavoriteNovel>()
+    fun addPage(document: org.jsoup.nodes.Document) {
+        parseFavoriteNovels(document).forEach { novel ->
+            val key = EsjzoneUrls.canonicalPageKey(novel.url).ifBlank { novel.url.trim() }
+            if (key.isNotBlank()) all.putIfAbsent(key, novel)
+        }
+    }
+    fun requireFavoritePage(document: org.jsoup.nodes.Document, body: String) {
+        // An empty but valid account page is allowed, while an unrelated
+        // blank/template response must abort the snapshot before it reaches
+        // the local merge state machine.
+        val hasFavoriteMarker = body.contains("/my/favorite", ignoreCase = true) ||
+            body.contains("my/favorite", ignoreCase = true)
+        val hasFavoriteTable = document.select("table").isNotEmpty()
+        if (parseFavoriteNovels(document).isEmpty() &&
+            (!hasFavoriteMarker || !hasFavoriteTable)
+        ) {
+            throw IllegalStateException("favorite page marker missing")
+        }
+    }
+    requireFavoritePage(firstDocument, firstBody)
+    addPage(firstDocument)
+    for (page in 2..pages) {
+        val pageUrl = favoritePageUrl(sort, page)
+        val body = getPage(
+            authorization,
+            pageUrl,
+            PageCacheTtl.ACCOUNT_LIST,
+            forceRefresh = forceRefresh,
+            pageKind = PageKind.ACCOUNT,
+            allowStaleOnError = false
+        )
+        val document = Jsoup.parse(body, pageUrl)
+        requireFavoritePage(document, body)
+        addPage(document)
+    }
+    return all.values.toList()
+}
+
+private fun parseFavoriteNovels(document: org.jsoup.nodes.Document): List<FavoriteNovel> =
+    EsjzoneXPaths.Profile.Favorite.Novel.evaluate(document).elements.mapNotNull { element ->
+        val url = element.attr("href").trim()
+        val title = element.text().trim()
+        if (url.isBlank() || title.isBlank()) null else FavoriteNovel(title, url)
+    }
 
 
 private class FavoriteNovelRequester(
@@ -79,18 +138,7 @@ private class FavoriteNovelRequester(
         )
         val document = Jsoup.parse(responseBody, pageUrl)
 
-        val novels = mutableListOf<FavoriteNovel>()
-
-        for (novelData in EsjzoneXPaths.Profile.Favorite.Novel.evaluate(document).elements) {
-            novels.add(
-                FavoriteNovel(
-                    novelData.text(),
-                    novelData.attr("href")
-                )
-            )
-        }
-
-        novels.toList()
+        parseFavoriteNovels(document)
     }
 
     override fun end(): Boolean {

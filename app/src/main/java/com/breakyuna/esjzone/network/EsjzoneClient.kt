@@ -98,7 +98,8 @@ object EsjzoneClient {
         url: String,
         maxAgeMillis: Long,
         forceRefresh: Boolean = false,
-        pageKind: PageKind = PageKind.GENERIC
+        pageKind: PageKind = PageKind.GENERIC,
+        allowStaleOnError: Boolean = true
     ): String {
         val cacheKey = pageCacheKey(authorization, url)
         val requestEpoch = cacheEpoch.get()
@@ -131,7 +132,8 @@ object EsjzoneClient {
                         cacheKey,
                         stalePage,
                         requestEpoch,
-                        pageKind
+                        pageKind,
+                        allowStaleOnError
                     )
                 }
             }
@@ -144,7 +146,8 @@ object EsjzoneClient {
             cacheKey,
             stalePage,
             requestEpoch,
-            pageKind
+            pageKind,
+            allowStaleOnError
         )
     }
 
@@ -154,7 +157,8 @@ object EsjzoneClient {
         cacheKey: String,
         stalePage: String?,
         requestEpoch: Long,
-        pageKind: PageKind
+        pageKind: PageKind,
+        allowStaleOnError: Boolean
     ): String {
         val owner = CompletableFuture<String>()
         val existing = inFlightPages.putIfAbsent(cacheKey, owner)
@@ -203,11 +207,15 @@ object EsjzoneClient {
                 PageCache.write(cacheKey, responseData.body)
             }
             if (!validation.trusted) {
-                val fallback = PageResponsePolicy.selectTrustedBody(
-                    validation,
-                    responseData.body,
-                    stalePage
-                )
+                val fallback = if (allowStaleOnError) {
+                    PageResponsePolicy.selectTrustedBody(
+                        validation,
+                        responseData.body,
+                        stalePage
+                    )
+                } else {
+                    null
+                }
                 if (fallback != null) {
                     owner.complete(fallback)
                     return fallback
@@ -225,7 +233,7 @@ object EsjzoneClient {
         } catch (error: Exception) {
             // A previously fetched page is preferable to a blank screen during a transient
             // timeout or offline period. The page remains scoped to this account and URL.
-            val result = stalePage
+            val result = stalePage.takeIf { allowStaleOnError }
             if (result != null) {
                 owner.complete(result)
                 result
