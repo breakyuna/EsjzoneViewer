@@ -1,5 +1,6 @@
 package com.breakyuna.esjzone.offline
 
+import android.annotation.SuppressLint
 import android.Manifest
 import android.os.Build
 import android.app.NotificationChannel
@@ -115,6 +116,7 @@ class NovelDownloadWorker(
     params: WorkerParameters
 ) : CoroutineWorker(appContext, params) {
 
+    @SuppressLint("MissingPermission")
     override suspend fun doWork(): Result {
         val name = inputData.getString(KEY_NAME)?.trim().orEmpty()
         val rawUrl = inputData.getString(KEY_URL)?.trim().orEmpty()
