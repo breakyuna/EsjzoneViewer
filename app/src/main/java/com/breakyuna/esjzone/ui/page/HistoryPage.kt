@@ -45,7 +45,6 @@ import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -87,7 +86,6 @@ import com.breakyuna.esjzone.network.features.getHistories
 import com.breakyuna.esjzone.network.features.getNovelDetail
 import com.breakyuna.esjzone.network.features.removeHistory
 import com.breakyuna.esjzone.novellibrary.novel.Chapter
-import com.breakyuna.esjzone.novellibrary.novel.DetailedNovel
 import com.breakyuna.esjzone.novellibrary.novel.FavoriteNovel
 import com.breakyuna.esjzone.novellibrary.novel.HistoryNovel
 import com.breakyuna.esjzone.ui.component.AppBar
@@ -233,9 +231,7 @@ object HistoryPage : Screen {
 
                     val novels = result.historyNovels.distinctBy { it.url.ifBlank { it.name } }
 
-                    val cache = remember {
-                        mutableStateMapOf<String, DetailedNovel>()
-                    }
+                    val detailLoader = rememberScreenModel { NovelDetailLoader(authorization) }
 
                     val adult by remember {
                         GlobalSettings.adult
@@ -262,17 +258,9 @@ object HistoryPage : Screen {
                         ) {
                         items(
                             novels,
-                            key = { item -> item.url.ifBlank { item.name } }
+                            key = { item -> detailLoader.key(item) }
                         ) { historyNovel ->
-                            var detailedNovel: DetailedNovel? by remember {
-                                mutableStateOf(cache[historyNovel.url])
-                            }
-                            var detailFailed by remember(historyNovel.url) {
-                                mutableStateOf(false)
-                            }
-                            var detailRetry by remember(historyNovel.url) {
-                                mutableIntStateOf(0)
-                            }
+                            val detailKey = detailLoader.key(historyNovel)
 
                             val historyChapter: MutableState<Chapter?> = rememberSaveable {
                                 mutableStateOf(historyNovel.chapter)
@@ -282,13 +270,12 @@ object HistoryPage : Screen {
                                 historyChapter
                             }
 
-                            val novel = detailedNovel
+                            val novel = detailLoader.details[detailKey]
                             if (novel == null) {
-                                if (detailFailed) {
+                                if (detailLoader.failures[detailKey] == true) {
                                     LoadError(
                                         onRetry = {
-                                            detailFailed = false
-                                            detailRetry += 1
+                                            detailLoader.retry(historyNovel)
                                         },
                                         modifier = Modifier
                                             .fillMaxWidth()
@@ -303,24 +290,7 @@ object HistoryPage : Screen {
                                     }
                                 }
 
-                                LaunchedEffect(historyNovel.url, detailRetry) {
-                                    try {
-                                        val fetched = withContext(Dispatchers.IO) {
-                                            EsjzoneClient.getNovelDetail(
-                                                authorization,
-                                                historyNovel
-                                            )
-                                        }
-                                        detailedNovel = fetched
-                                        cache[historyNovel.url] = fetched
-                                        detailFailed = false
-                                    } catch (e: CancellationException) {
-                                        throw e
-                                    } catch (e: Exception) {
-                                        detailFailed = true
-                                        com.breakyuna.esjzone.util.AppLogger.e("HistoryPage", "Failed to load novel detail for ${historyNovel.name}", e)
-                                    }
-                                }
+                                LaunchedEffect(detailKey) { detailLoader.load(historyNovel) }
                             } else {
                                 if (adult || !novel.isAdult) {
                                     var deleted by remember {

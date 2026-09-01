@@ -1,6 +1,9 @@
 package com.breakyuna.esjzone
 
 import com.breakyuna.esjzone.novellibrary.component.ChapterListItem
+import com.breakyuna.esjzone.novellibrary.component.VisibleChapterGroup
+import com.breakyuna.esjzone.novellibrary.component.VisibleChapterItem
+import com.breakyuna.esjzone.novellibrary.component.visibleChapterRows
 import com.breakyuna.esjzone.novellibrary.novel.analyseChapterList
 import org.jsoup.Jsoup
 import org.junit.Assert.assertEquals
@@ -111,5 +114,25 @@ class ChapterListParserTest {
             assertEquals("第三章", list.toRead?.name)
             assertTrue(list.hasHistory)
         }
+    }
+
+    @Test
+    fun flattensOnlyExpandedGroupsWithStablePathKeys() {
+        val list = analyseChapterList(Jsoup.parse(
+            """<div id="integration"><a href="/forum/1/1.html" data-title="外部">外部</a>
+                <details><summary>卷一</summary><a href="/forum/1/2.html" data-title="章节">章节</a></details>
+            </div>""").selectFirst("#integration")!!)
+
+        val collapsed = visibleChapterRows(list.items)
+        assertEquals(2, collapsed.size)
+        assertTrue(collapsed[1] is VisibleChapterGroup)
+        assertEquals("chapter-group:1", collapsed[1].key)
+
+        val expanded = visibleChapterRows(list.items, setOf("chapter-group:1"))
+        assertEquals(3, expanded.size)
+        assertTrue(expanded[2] is VisibleChapterItem)
+        assertEquals("/forum/1/2.html", (expanded[2] as VisibleChapterItem).item.let {
+            (it as com.breakyuna.esjzone.novellibrary.component.ChapterItem).chapter.url
+        })
     }
 }

@@ -12,7 +12,7 @@
 - 最低 Android 版本：API 29；编译和目标 SDK：34。
 - Java/Kotlin 编译目标：17。
 
-应用通过 OkHttp 访问可选的 Esjzone 站点，使用 Jsoup 和 Xsoup 解析 HTML 页面，使用 Room 保存本地状态，使用 Coil 加载和缓存图片。页面导航由 Voyager 管理。
+应用通过 OkHttp 访问可选的 Esjzone 站点，使用 Jsoup 和 Xsoup 解析 HTML 页面，使用 Room 保存本地状态，使用 Coil 加载和缓存图片。页面导航由 Voyager 管理，导航状态集中在 `ui/navigation/`。
 
 ## 强制约束
 
@@ -27,7 +27,7 @@
 app/src/main/java/com/breakyuna/esjzone/
 ├── MainActivity.kt              # 初始化图片加载器、Room 和 Compose 根入口
 ├── GlobalSettings.kt            # 当前站点、主题和成人内容显示状态
-├── database/                    # Room 数据库、DAO、Cache 和 SearchHistory
+├── database/                    # Room 数据库、DAO、缓存、书签、阅读历史和本地优先书架
 ├── network/                     # OkHttp 客户端、认证、Cookie、URL、XPath 和请求功能
 ├── novellibrary/                # 小说、章节、用户、分类和正文组件模型
 ├── ui/
@@ -45,18 +45,16 @@ app/src/main/java/com/breakyuna/esjzone/
 
 ### 启动与认证
 
-`MainActivity` 初始化 `GeneralDatabase` 和 `ImageLoader`，随后进入 `LoadingScreen`。加载页从 Room 恢复 `ews_key`、`ews_token`、站点、主题和成人内容设置，并通过 `EsjzoneClient.isAuthorized` 判断是否进入 `MainScreen` 或 `LoginScreen`。
+`MainActivity` 先显示启动状态，再由进程级协程与互斥锁初始化使用 applicationContext 的 `GeneralDatabase`、`ImageLoader` 和下载存储；失败提供重试，Activity 重建复用已初始化资源。启动阶段恢复站点与主题。`LoadingScreen` 恢复会话及成人内容设置，并通过 `checkAuthorization` 的三态结果决定导航：明确失效才清除会话，网络状态未知时保留本地会话；进入主界面前后台调度书架同步，UI 不等待同步完成。
 
 ### 主界面
 
-`MainScreen` 提供五个 Tab：
+`MainScreen` 提供四个底部 Tab；分类和搜索从主页/页面入口打开：
 
-- `HomeTab`：主页数据、推荐和最新更新。
-- `CategoryTab`：分类和分类小说列表。
+- `HomeTab`：主页数据、推荐和最新更新，也提供分类入口及右上角关键词搜索和搜索历史入口。
 - `HistoryTab`：观看记录；单击浏览历史，双击直接继续最近一次阅读。
-- `FavoriteTab`：收藏列表和收藏作品入口。
+- `FavoriteTab`：本地优先书架，支持云端补充、按最近阅读排序、编辑与批量删除。
 - `ProfileTab`：用户信息、设置和关于页面入口。
-- `SearchTab`：由主页右上角搜索按钮打开的关键词搜索和搜索历史页面。
 
 具体作品通过 `NovelPage` 展示详情，章节通过 `ChapterPage` 获取并解析后阅读。
 
@@ -68,14 +66,11 @@ app/src/main/java/com/breakyuna/esjzone/
 - 页面字段变化时，优先同步检查 `EsjzoneXPaths.kt`、`network/features/` 和 `novellibrary/` 中对应模型。
 - 站点可能将 HTML 片段嵌入 JSON 或页面字段，修改解析逻辑时要保留空字段、异常 HTML 和相对 URL 的处理。
 
-### 本地数据
+### 本地数据与任务边界
 
-`GeneralDatabase` 当前包含两类实体：
+`GeneralDatabase` 当前包含五类实体：`Cache`（会话 Cookie、站点、主题和成人内容显示选项）、`SearchHistory`（搜索关键词）、`Bookmark`（章节书签）、`LocalReadingActivity`（设备本地阅读位置）和 `BookshelfEntry`（本地优先书架及同步意图）。本地阅读历史不上传；书架以本地状态和删除意图为准，远端同步失败时保留本地数据与待处理状态。
 
-- `Cache`：会话 Cookie、站点、主题和成人内容显示选项。
-- `SearchHistory`：搜索关键词及最近使用时间。
-
-数据库访问应使用 IO 调度器。新增缓存键时要同时考虑首次安装、旧数据缺失和非法值恢复。
+数据库访问应使用 IO 调度器。新增缓存键时要同时考虑首次安装、旧数据缺失和非法值恢复。离线下载任务必须使用入队时保存的站点域名和自己的请求基址，不得改写 `GlobalSettings.domain` 或其他前台全局站点状态；下载文件、导出和数据库书架数据的生命周期分别管理。
 
 ## 修改规范
 

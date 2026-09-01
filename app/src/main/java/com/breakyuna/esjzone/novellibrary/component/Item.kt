@@ -44,60 +44,6 @@ import com.breakyuna.esjzone.ui.navigation.LocalBaseNavigator
 import com.breakyuna.esjzone.ui.navigation.ChapterStateHolder
 import com.breakyuna.esjzone.ui.navigation.pushIfNotCurrent
 import com.breakyuna.esjzone.ui.page.ChapterPage
-import org.jsoup.nodes.Element
-
-/** Walk each DOM node once so groups and loose chapters retain their original order. */
-fun analyseItems(element: Element): List<Item> = parseChapterItems(element)
-
-private fun parseChapterItems(element: Element): List<Item> = buildList {
-    for (child in element.children()) {
-        when {
-            child.nameIs("details") -> {
-                val title = child.children().firstOrNull { it.nameIs("summary") }?.text().orEmpty()
-                val children = parseChapterItems(child)
-                val chapters = children.flatMap {
-                    when (it) {
-                        is ChapterItem -> listOf(it.chapter)
-                        is ChapterListItem -> it.chapters
-                        else -> emptyList()
-                    }
-                }
-                add(ChapterListItem(TextComponent(title), chapters, children, child.hasAttr("open")))
-            }
-            child.nameIs("a") -> {
-                val href = child.attr("href")
-                if (href.isNotBlank() &&
-                    (child.hasAttr("data-title") || href.contains("/forum/", ignoreCase = true))
-                ) {
-                    add(ChapterItem(analyseChapter(child)))
-                }
-            }
-            child.nameIs("summary") || child.nameIs("button") ||
-                child.nameIs("script") || child.nameIs("style") -> Unit
-            child.nameIs("p") && child.selectFirst("a[href], details") == null -> {
-                if (child.text().isNotBlank()) {
-                    val component = analyseParagraph(child).filterIsInstance<TextComponent>().firstOrNull()
-                        ?: TextComponent(child.text())
-                    add(TextItem(component))
-                }
-            }
-            else -> addAll(parseChapterItems(child))
-        }
-    }
-}
-
-private fun analyseChapter(element: Element): Chapter {
-    val isHistory = element.hasClass("active") || element.selectFirst(".active") != null
-    val title = element.attr("data-title").trim()
-        .ifBlank { element.selectFirst("p")?.text()?.trim().orEmpty() }
-        .ifBlank { element.text().trim() }
-
-    return Chapter(
-        title,
-        element.attr("href"),
-        isHistory
-    )
-}
 
 interface Item {
 
@@ -236,10 +182,10 @@ class ChapterItem(val chapter: Chapter) : Item {
 }
 
 class ChapterListItem(
-    private val name: TextComponent,
+    val name: TextComponent,
     val chapters: List<Chapter>,
-    private val children: List<Item> = chapters.map { ChapterItem(it) },
-    private val initiallyExpanded: Boolean = false
+    val children: List<Item> = chapters.map { ChapterItem(it) },
+    val initiallyExpanded: Boolean = false
 ) : Item {
 
     @Composable
@@ -327,4 +273,61 @@ class ChapterListItem(
         }
     }
 
+}
+
+/** A row in the detail page's flattened, lazily composed table of contents. */
+sealed interface VisibleChapterRow {
+    val key: String
+    val depth: Int
+}
+
+data class VisibleChapterItem(
+    val item: Item,
+    override val key: String,
+    override val depth: Int
+) : VisibleChapterRow
+
+data class VisibleChapterGroup(
+    val group: ChapterListItem,
+    override val key: String,
+    override val depth: Int,
+    val expanded: Boolean
+) : VisibleChapterRow
+
+/**
+ * Returns only rows currently visible in the table of contents.  Keeping this
+ * as a pure transformation lets the outer LazyColumn own virtualization while
+ * preserving DOM order and nested groups.
+ */
+fun visibleChapterRows(
+    items: List<Item>,
+    expandedKeys: Set<String> = emptySet(),
+    depth: Int = 0,
+    path: String = ""
+): List<VisibleChapterRow> = buildList {
+    items.forEachIndexed { index, item ->
+        val itemPath = if (path.isEmpty()) index.toString() else "$path.$index"
+        when (item) {
+            is ChapterListItem -> {
+                val key = "chapter-group:$itemPath"
+                // The Compose table starts collapsed; expansion is explicit
+                // and retained by the screen's saveable state.
+                val expanded = expandedKeys.contains(key)
+                add(VisibleChapterGroup(item, key, depth, expanded))
+                if (expanded) addAll(visibleChapterRows(item.children, expandedKeys, depth + 1, itemPath))
+            }
+            else -> add(VisibleChapterItem(item, "chapter-row:$itemPath", depth))
+        }
+    }
+}
+
+/** Initial expansion follows the source document; ordinary groups stay collapsed. */
+fun initiallyExpandedChapterKeys(items: List<Item>, path: String = ""): Set<String> = buildSet {
+    items.forEachIndexed { index, item ->
+        val itemPath = if (path.isEmpty()) index.toString() else "$path.$index"
+        if (item is ChapterListItem) {
+            if (item.initiallyExpanded) add("chapter-group:$itemPath")
+            addAll(initiallyExpandedChapterKeys(item.children, itemPath))
+        }
+    }
 }

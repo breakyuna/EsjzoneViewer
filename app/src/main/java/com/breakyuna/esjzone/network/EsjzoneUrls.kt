@@ -3,6 +3,7 @@ package com.breakyuna.esjzone.network
 import java.net.URI
 import com.breakyuna.esjzone.GlobalSettings
 import org.jsoup.nodes.Element
+import okhttp3.HttpUrl.Companion.toHttpUrl
 
 object EsjzoneUrls {
 
@@ -10,13 +11,27 @@ object EsjzoneUrls {
 
     /** Resolves a page link without rewriting a valid cross-host URL from the site. */
     fun resolve(rawUrl: String): String {
+        return resolve(rawUrl, Base)
+    }
+
+    fun resolve(rawUrl: String, baseUrl: String): String {
         val url = rawUrl.trim()
+        val base = baseUrl.trim()
         return when {
             url.startsWith("http://") || url.startsWith("https://") -> url
-            url.startsWith("//") -> "https:$url"
-            url.startsWith("/") -> "$Base$url"
-            else -> "$Base/$url"
+            else -> base.toHttpUrl().resolve(url)?.toString()
+                ?: "$base${url.removePrefix("/")}"
         }
+    }
+
+    fun baseForDomain(domain: String): String = "https://${domain.trim().removePrefix("https://").removePrefix("http://").trimEnd('/')}"
+
+    fun tagsUrl(keyword: String, sort: Int? = null, page: Int? = null): String {
+        val builder = Base.toHttpUrl().newBuilder()
+        builder.addPathSegment(if (sort == null) "tags" else "tags-${sort.toString().padStart(2, '0')}")
+        builder.addPathSegment(keyword)
+        if (page != null) builder.addPathSegment("$page.html")
+        return builder.build().toString()
     }
 
     /**

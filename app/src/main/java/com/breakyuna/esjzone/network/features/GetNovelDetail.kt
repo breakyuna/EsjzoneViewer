@@ -21,9 +21,11 @@ fun EsjzoneClient.getNovelDetail(
     authorization: Authorization,
     novel: Novel,
     includeComments: Boolean = false,
-    forceRefresh: Boolean = false
+    forceRefresh: Boolean = false,
+    baseUrl: String? = null
 ): DetailedNovel {
-    val targetUrl = EsjzoneUrls.resolve(novel.url)
+    val targetUrl = baseUrl?.let { EsjzoneUrls.resolve(novel.url, it) }
+        ?: EsjzoneUrls.resolve(novel.url)
     val detailCacheKey = novelDetailCacheKey(authorization, targetUrl)
     if (!includeComments && !forceRefresh) {
         NovelDetailCache.read(detailCacheKey)?.let { return it }

@@ -6,6 +6,10 @@ on:
     branches:
       - master
 
+  pull_request:
+    branches:
+      - master
+
   # GitHub Actions 页面允许手动运行
   workflow_dispatch:
 
@@ -16,8 +20,68 @@ env:
   COMMIT_ID: ${{ github.sha }}
 
 jobs:
+  unit-tests:
+    name: JVM unit tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android 34 platform
+        run: sdkmanager "platforms;android-34"
+
+      - name: Grant Gradle permission
+        run: chmod +x ./gradlew
+
+      - name: Run JVM unit tests
+        run: ./gradlew testDebugUnitTest
+
+  lint:
+    name: Android lint
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android 34 platform
+        run: sdkmanager "platforms;android-34"
+
+      - name: Grant Gradle permission
+        run: chmod +x ./gradlew
+
+      - name: Run Android lint
+        run: ./gradlew lintDebug
+
   build:
     name: Build signed APK
+    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/master')
+    needs: [unit-tests, lint]
     runs-on: ubuntu-latest
 
     steps:

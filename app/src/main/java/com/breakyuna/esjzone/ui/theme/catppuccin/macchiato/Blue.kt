@@ -1,10 +1,7 @@
 package com.breakyuna.esjzone.ui.theme.catppuccin.macchiato
 
-import androidx.compose.foundation.isSystemInDarkTheme
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
-import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 
 val catppuccin_macchiato_blue_light_primary = Color(0xFF305DA8)
@@ -132,21 +129,3 @@ val CatppuccinMacchiatoBlueDarkColors = darkColorScheme(
     outlineVariant = catppuccin_macchiato_blue_dark_outlineVariant,
     scrim = catppuccin_macchiato_blue_dark_scrim,
 )
-
-@Composable
-fun CatppuccinMacchiatoBlueTheme(
-    useDarkTheme: Boolean = isSystemInDarkTheme(),
-    content: @Composable() () -> Unit
-) {
-    val colors = if (!useDarkTheme) {
-        CatppuccinMacchiatoBlueLightColors
-    } else {
-        CatppuccinMacchiatoBlueDarkColors
-    }
-
-    MaterialTheme(
-        colorScheme = colors,
-        content = content
-    )
-}
-

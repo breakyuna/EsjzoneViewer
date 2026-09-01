@@ -117,6 +117,7 @@ object NovelDownloadStore {
     suspend fun download(
         authorization: Authorization,
         novel: DetailedNovel,
+        baseUrl: String? = null,
         onProgress: (DownloadProgress) -> Unit = {}
     ): DownloadedNovelManifest {
         val orderedChapters = novel.chapterList.orderedChapters
@@ -163,7 +164,8 @@ object NovelDownloadStore {
                 authorization = authorization,
                 chapter = Chapter(record.name, record.url, false),
                 preferDownloaded = false,
-                forceRefresh = false
+                forceRefresh = false,
+                baseUrl = baseUrl
             )
             val storedChapter = DownloadedChapterContent(
                 name = detail.name.ifBlank { record.name },
@@ -179,14 +181,14 @@ object NovelDownloadStore {
                             type = IMAGE_COMPONENT,
                             value = component.url
                         ).withDownloadedImage(
-                            downloadImage(authorization, directory, component.url)
+                            downloadImage(authorization, directory, component.url, detail.sourceUrl ?: baseUrl)
                         )
 
                         else -> null
                     }
                 },
                 contentHtml = detail.contentHtml,
-                baseUrl = detail.sourceUrl ?: EsjzoneUrls.resolve(record.url)
+                baseUrl = detail.sourceUrl ?: EsjzoneUrls.resolve(record.url, baseUrl ?: EsjzoneUrls.Base)
             )
             synchronized(ioLock) {
                 writeJson(File(directory, record.fileName), storedChapter)
@@ -399,11 +401,12 @@ object NovelDownloadStore {
     private fun downloadImage(
         authorization: Authorization,
         novelDirectory: File,
-        rawUrl: String
+        rawUrl: String,
+        baseUrl: String?
     ): DownloadedImage? {
         if (rawUrl.isBlank()) return null
         return runCatching {
-            val url = EsjzoneUrls.resolve(rawUrl)
+            val url = EsjzoneUrls.resolve(rawUrl, baseUrl ?: EsjzoneUrls.Base)
             val imagePrefix = "image-${digest(url)}."
             val imagesDirectory = File(novelDirectory, "images")
             imagesDirectory.listFiles()

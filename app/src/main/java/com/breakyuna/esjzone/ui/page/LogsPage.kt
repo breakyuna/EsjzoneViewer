@@ -49,6 +49,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -83,12 +84,15 @@ object LogsPage : Screen {
         val context = LocalContext.current
 
         val logs by AppLogger.logsFlow.collectAsState()
+        val lastCrashReport = AppLogger.crashReportFlow.collectAsState().value
         var selectedFilter by remember { mutableStateOf<LogLevel?>(null) }
         var searchQuery by remember { mutableStateOf("") }
         var showClearDialog by remember { mutableStateOf(false) }
         var showCrashReportDialog by remember { mutableStateOf(false) }
 
-        val lastCrashReport = remember(logs) { AppLogger.getLastCrashReport() }
+        LaunchedEffect(Unit) {
+            AppLogger.refreshCrashReport()
+        }
 
         val filteredLogs = remember(logs, selectedFilter, searchQuery) {
             logs.filter { entry ->

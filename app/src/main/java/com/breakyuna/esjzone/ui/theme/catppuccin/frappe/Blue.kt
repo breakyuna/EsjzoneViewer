@@ -1,10 +1,7 @@
 package com.breakyuna.esjzone.ui.theme.catppuccin.frappe
 
-import androidx.compose.foundation.isSystemInDarkTheme
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
-import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 
 val catppuccin_frappe_blue_light_primary = Color(0xFF345CA8)
@@ -132,21 +129,3 @@ val CatppuccinFrappeBlueDarkColors = darkColorScheme(
     outlineVariant = catppuccin_frappe_blue_dark_outlineVariant,
     scrim = catppuccin_frappe_blue_dark_scrim,
 )
-
-@Composable
-fun CatppuccinFrappeBlueTheme(
-    useDarkTheme: Boolean = isSystemInDarkTheme(),
-    content: @Composable() () -> Unit
-) {
-    val colors = if (!useDarkTheme) {
-        CatppuccinFrappeBlueLightColors
-    } else {
-        CatppuccinFrappeBlueDarkColors
-    }
-
-    MaterialTheme(
-        colorScheme = colors,
-        content = content
-    )
-}
-

@@ -18,9 +18,11 @@ fun EsjzoneClient.getChapterDetail(
     authorization: Authorization,
     chapter: Chapter,
     preferDownloaded: Boolean = true,
-    forceRefresh: Boolean = false
+    forceRefresh: Boolean = false,
+    baseUrl: String? = null
 ): DetailedChapter {
-    val targetUrl = EsjzoneUrls.resolve(chapter.url)
+    val targetUrl = baseUrl?.let { EsjzoneUrls.resolve(chapter.url, it) }
+        ?: EsjzoneUrls.resolve(chapter.url)
 
     if (preferDownloaded) {
         NovelDownloadStore.readChapter(targetUrl)?.let { downloaded ->

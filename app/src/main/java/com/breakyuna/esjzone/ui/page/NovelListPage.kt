@@ -22,6 +22,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -204,17 +205,17 @@ class NovelListPage(
                         }
                     }
 
+                    val visibleItems by remember(items, adult, adultOnly) {
+                        derivedStateOf {
+                            items.asSequence()
+                                .filter { adult && (!adultOnly || it.isAdult) || !adult && !it.isAdult }
+                                .distinctBy { it.url.ifBlank { it.name } }
+                                .toList()
+                        }
+                    }
+
                     LazyColumn {
-                        items(items.toList().filter {
-                            if (adult) {
-                                if (adultOnly)
-                                    return@filter it.isAdult
-                                else
-                                    return@filter true
-                            } else {
-                                return@filter !it.isAdult
-                            }
-                        }.distinct(), key = { novel ->
+                        items(visibleItems, key = { novel ->
                             novel.url.ifBlank { novel.name }
                         }) { novel ->
                             val summaryKey = novel.url.ifBlank { novel.name }

@@ -90,8 +90,7 @@ fun EsjzoneClient.getAllFavorites(
             pageUrl,
             PageCacheTtl.ACCOUNT_LIST,
             forceRefresh = forceRefresh,
-            pageKind = PageKind.ACCOUNT,
-            allowStaleOnError = false
+            pageKind = PageKind.ACCOUNT
         )
         val document = Jsoup.parse(body, pageUrl)
         requireFavoritePage(document, body)
@@ -120,15 +119,12 @@ private class FavoriteNovelRequester(
     }
 
     override fun more(): List<FavoriteNovel> {
-        val more = this.more(this.current)
+        val more = more(this.current)
         current += 1
         return more
     }
 
-    override fun more(page: Int): List<FavoriteNovel> = runNetworkSafely(
-        tag = "FavoriteNovelRequester",
-        fallback = emptyList()
-    ) {
+    override fun more(page: Int): List<FavoriteNovel> {
         val pageUrl = favoritePageUrl(sort, page)
         val responseBody = EsjzoneClient.getPage(
             authorization,
@@ -138,7 +134,7 @@ private class FavoriteNovelRequester(
         )
         val document = Jsoup.parse(responseBody, pageUrl)
 
-        parseFavoriteNovels(document)
+        return parseFavoriteNovels(document)
     }
 
     override fun end(): Boolean {

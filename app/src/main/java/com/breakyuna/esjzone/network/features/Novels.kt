@@ -8,7 +8,6 @@ import com.breakyuna.esjzone.network.PageCacheTtl
 import com.breakyuna.esjzone.network.PageKind
 import com.breakyuna.esjzone.network.PageableRequester
 import com.breakyuna.esjzone.novellibrary.novel.CoveredNovel
-import com.breakyuna.esjzone.novellibrary.novel.CoveredNovelImpl
 import org.jsoup.Jsoup
 
 fun EsjzoneClient.novels(
@@ -33,11 +32,6 @@ fun EsjzoneClient.novels(
         pagesRegex.find(pagesRaw)?.groupValues?.getOrNull(1)?.toIntOrNull() ?: 1
     } else 1
 
-    fun parseCount(raw: String?): Int {
-        if (raw.isNullOrBlank()) return 0
-        return raw.replace(Regex("[^0-9]"), "").toIntOrNull() ?: 0
-    }
-
     val novels = mutableListOf<CoveredNovel>()
 
     for (novelData in EsjzoneXPaths.Tags.Novel.All.evaluate(document).elements) {
@@ -45,14 +39,7 @@ fun EsjzoneClient.novels(
         val isR18 = r18Elements.firstOrNull()?.attr("class")?.contains("badge") == true
 
         novels.add(
-            CoveredNovelImpl(
-                EsjzoneUrls.coverUrlFromNovelCard(novelData),
-                EsjzoneXPaths.Tags.Novel.Name.evaluate(novelData).get() ?: "",
-                EsjzoneXPaths.Tags.Novel.Url.evaluate(novelData).get() ?: "",
-                parseCount(EsjzoneXPaths.Tags.Novel.Views.evaluate(novelData).get()),
-                parseCount(EsjzoneXPaths.Tags.Novel.Likes.evaluate(novelData).get()),
-                isR18
-            )
+            parseNovelCard(novelData, isR18, NovelCardLayout.LIST)
         )
     }
 
@@ -73,15 +60,12 @@ private class ListNovelRequester(
     }
 
     override fun more(): List<CoveredNovel> {
-        val more = this.more(this.current)
+        val more = more(this.current)
         current += 1
         return more
     }
 
-    override fun more(page: Int): List<CoveredNovel> = runNetworkSafely(
-        tag = "ListNovelRequester",
-        fallback = emptyList()
-    ) {
+    override fun more(page: Int): List<CoveredNovel> {
         val pageUrl = "${EsjzoneUrls.Base}/list-$novelType$sortType/$page.html"
         val responseBody = EsjzoneClient.getPage(
             authorization,
@@ -92,11 +76,6 @@ private class ListNovelRequester(
 
         val document = Jsoup.parse(responseBody)
 
-        fun parseCount(raw: String?): Int {
-            if (raw.isNullOrBlank()) return 0
-            return raw.replace(Regex("[^0-9]"), "").toIntOrNull() ?: 0
-        }
-
         val novels = mutableListOf<CoveredNovel>()
 
         for (novelData in EsjzoneXPaths.Tags.Novel.All.evaluate(document).elements) {
@@ -104,18 +83,11 @@ private class ListNovelRequester(
             val isR18 = r18Elements.firstOrNull()?.attr("class")?.contains("badge") == true
 
             novels.add(
-                CoveredNovelImpl(
-                    EsjzoneUrls.coverUrlFromNovelCard(novelData),
-                    EsjzoneXPaths.Tags.Novel.Name.evaluate(novelData).get() ?: "",
-                    EsjzoneXPaths.Tags.Novel.Url.evaluate(novelData).get() ?: "",
-                    parseCount(EsjzoneXPaths.Tags.Novel.Views.evaluate(novelData).get()),
-                    parseCount(EsjzoneXPaths.Tags.Novel.Likes.evaluate(novelData).get()),
-                    isR18
-                )
+                parseNovelCard(novelData, isR18, NovelCardLayout.LIST)
             )
         }
 
-        novels.toList()
+        return novels.toList()
     }
 
     override fun end(): Boolean {

@@ -5,28 +5,18 @@ import android.os.Build
 import android.util.Log
 import com.breakyuna.esjzone.BuildConfig
 import com.breakyuna.esjzone.GlobalSettings
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.launch
 import java.io.File
-import java.io.FileWriter
 import java.io.PrintWriter
 import java.io.StringWriter
+import java.nio.charset.StandardCharsets
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
-import java.util.concurrent.CopyOnWriteArrayList
+import java.util.concurrent.Executors
 
-enum class LogLevel {
-    DEBUG,
-    INFO,
-    WARN,
-    ERROR,
-    CRASH
-}
+enum class LogLevel { DEBUG, INFO, WARN, ERROR, CRASH }
 
 data class LogEntry(
     val id: Long = System.nanoTime(),
@@ -37,249 +27,174 @@ data class LogEntry(
     val stackTrace: String? = null,
     val threadName: String = Thread.currentThread().name
 ) {
-    fun formattedTime(): String {
-        return SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS", Locale.getDefault()).format(Date(timestamp))
-    }
-
-    fun toFormattedString(): String {
-        val sb = StringBuilder()
-        sb.append("[${formattedTime()}] [${level.name}] [${threadName}] [$tag]: $message")
-        if (!stackTrace.isNullOrBlank()) {
-            sb.append("\n").append(stackTrace)
-        }
-        return sb.toString()
+    fun formattedTime(): String = SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS", Locale.getDefault()).format(Date(timestamp))
+    fun toFormattedString(): String = buildString {
+        append("[${formattedTime()}] [${level.name}] [$threadName] [$tag]: $message")
+        if (!stackTrace.isNullOrBlank()) append('\n').append(stackTrace)
     }
 }
 
 object AppLogger {
-
     private const val MAX_MEMORY_LOGS = 500
-    private const val MAX_LOG_FILE_SIZE = 2 * 1024 * 1024 // 2MB
-
-    private val logList = CopyOnWriteArrayList<LogEntry>()
+    private const val MAX_LOG_FILE_SIZE = 2L * 1024 * 1024
+    private val stateLock = Any()
+    private val fileLock = Any()
+    private val fileExecutor = Executors.newSingleThreadExecutor { r -> Thread(r, "app-log-writer") }
+    private val logList = mutableListOf<LogEntry>()
     private val _logsFlow = MutableStateFlow<List<LogEntry>>(emptyList())
-    val logsFlow: StateFlow<List<LogEntry>> = _logsFlow.asStateFlow()
-
-    private var logDir: File? = null
+    private val _crashReportFlow = MutableStateFlow<String?>(null)
+    val logsFlow = _logsFlow.asStateFlow()
+    val crashReportFlow = _crashReportFlow.asStateFlow()
     private var logFile: File? = null
     private var crashFile: File? = null
+    private var generation = 0L
+    @Volatile private var initialized = false
 
-    private val ioScope = CoroutineScope(Dispatchers.IO)
-    private var isInitialized = false
-
-    fun init(context: Context) {
-        if (isInitialized) return
+    fun init(context: Context) = synchronized(fileLock) {
+        if (initialized) return@synchronized
         try {
-            val baseDir = context.filesDir.resolve("logs")
-            if (!baseDir.exists()) {
-                baseDir.mkdirs()
-            }
-            logDir = baseDir
-            logFile = File(baseDir, "app_logs.log")
-            crashFile = File(baseDir, "last_crash.log")
-
-            // Rotate if file is too large
-            if (logFile?.exists() == true && (logFile?.length() ?: 0) > MAX_LOG_FILE_SIZE) {
-                val backupFile = File(baseDir, "app_logs_old.log")
-                if (backupFile.exists()) backupFile.delete()
-                logFile?.renameTo(backupFile)
-                logFile = File(baseDir, "app_logs.log")
-            }
-
-            isInitialized = true
+            val directory = context.applicationContext.filesDir.resolve("logs").also { it.mkdirs() }
+            logFile = File(directory, "app_logs.log")
+            crashFile = File(directory, "last_crash.log")
+            initialized = true
             i("AppLogger", "Logger initialized. App Version: ${BuildConfig.VERSION_NAME} (${BuildConfig.APP_VERSION})")
-            i("AppLogger", "Device: ${Build.MANUFACTURER} ${Build.MODEL}, Android ${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT})")
-        } catch (e: Exception) {
-            Log.e("AppLogger", "Failed to init logger files", e)
+        } catch (e: Exception) { Log.e("AppLogger", "Failed to init logger files: ${safeThrowable(e)}") }
+    }
+
+    fun d(tag: String, message: String) = log(LogLevel.DEBUG, tag, message, null)
+    fun i(tag: String, message: String) = log(LogLevel.INFO, tag, message, null)
+    fun w(tag: String, message: String, throwable: Throwable? = null) = log(LogLevel.WARN, tag, message, throwable)
+    fun e(tag: String, message: String, throwable: Throwable? = null) = log(LogLevel.ERROR, tag, message, throwable)
+
+    private fun log(level: LogLevel, tag: String, message: String, throwable: Throwable?) {
+        val entry = LogEntry(level = level, tag = tag, message = sanitize(message), stackTrace = throwable?.let(::stackTrace))
+        val output = entry.toFormattedString()
+        when (level) {
+            LogLevel.DEBUG -> Log.d(tag, output)
+            LogLevel.INFO -> Log.i(tag, output)
+            LogLevel.WARN -> Log.w(tag, output)
+            LogLevel.ERROR, LogLevel.CRASH -> Log.e(tag, output)
         }
-    }
-
-    fun d(tag: String, message: String) {
-        log(LogLevel.DEBUG, tag, message, null)
-    }
-
-    fun i(tag: String, message: String) {
-        log(LogLevel.INFO, tag, message, null)
-    }
-
-    fun w(tag: String, message: String, throwable: Throwable? = null) {
-        log(LogLevel.WARN, tag, message, throwable)
-    }
-
-    fun e(tag: String, message: String, throwable: Throwable? = null) {
-        log(LogLevel.ERROR, tag, message, throwable)
+        synchronized(stateLock) {
+            addLogEntryLocked(entry)
+            val commandGeneration = generation
+            fileExecutor.execute { if (commandGeneration == synchronizedGeneration()) append(output) }
+        }
     }
 
     fun crash(thread: Thread, throwable: Throwable) {
-        val stackTrace = getStackTraceString(throwable)
-        val sanitizedMessage = sanitizeSensitiveInfo("Uncaught Exception in thread [${thread.name}]: ${throwable.message ?: throwable.javaClass.simpleName}")
         val entry = LogEntry(
             level = LogLevel.CRASH,
             tag = "CRASH",
-            message = sanitizedMessage,
-            stackTrace = stackTrace,
+            message = sanitize("Uncaught Exception in thread [${thread.name}]: ${throwable.message ?: throwable.javaClass.simpleName}"),
+            stackTrace = stackTrace(throwable),
             threadName = thread.name
         )
-
-        // Android logcat
-        Log.e("CRASH", entry.toFormattedString(), throwable)
-
-        // Add to memory
-        addLogEntry(entry)
-
-        // Synchronously write to files
-        writeCrashReportSync(entry, throwable)
+        Log.e("CRASH", entry.toFormattedString())
+        val recent: List<LogEntry>
+        synchronized(stateLock) {
+            addLogEntryLocked(entry)
+            recent = logList.takeLast(30)
+        }
+        synchronized(fileLock) { writeCrashReport(entry, recent) }
     }
 
-    private fun log(level: LogLevel, tag: String, message: String, throwable: Throwable?) {
-        val sanitizedMsg = sanitizeSensitiveInfo(message)
-        val stackTrace = throwable?.let { getStackTraceString(it) }
-
-        // Android logcat
-        when (level) {
-            LogLevel.DEBUG -> Log.d(tag, sanitizedMsg)
-            LogLevel.INFO -> Log.i(tag, sanitizedMsg)
-            LogLevel.WARN -> Log.w(tag, sanitizedMsg, throwable)
-            LogLevel.ERROR -> Log.e(tag, sanitizedMsg, throwable)
-            LogLevel.CRASH -> Log.e(tag, sanitizedMsg, throwable)
-        }
-
-        val entry = LogEntry(
-            level = level,
-            tag = tag,
-            message = sanitizedMsg,
-            stackTrace = stackTrace,
-            threadName = Thread.currentThread().name
-        )
-
-        addLogEntry(entry)
-
-        // Write to file asynchronously
-        ioScope.launch {
-            writeToFile(entry)
+    fun clearLogs() {
+        synchronized(stateLock) {
+            generation += 1
+            logList.clear()
+            _logsFlow.value = emptyList()
+            _crashReportFlow.value = null
+            val clearGeneration = generation
+            fileExecutor.execute { if (clearGeneration == synchronizedGeneration()) clearFiles() }
         }
     }
 
-    private fun addLogEntry(entry: LogEntry) {
+    fun getLastCrashReport(): String? = synchronized(fileLock) {
+        runCatching { crashFile?.takeIf { it.isFile && it.length() > 0 }?.readText() }.getOrNull()
+    }
+    fun refreshCrashReport() = synchronized(stateLock) {
+        val requestGeneration = generation
+        fileExecutor.execute {
+            val report = getLastCrashReport()
+            synchronized(stateLock) {
+                if (requestGeneration == generation) _crashReportFlow.value = report
+            }
+        }
+    }
+
+    fun exportLogsText(): String = synchronized(stateLock) {
+        buildString {
+            appendLine("=== Esjzone System Logs Export ===")
+            appendLine("Export Time: ${Date()}")
+            appendLine("App Version: ${BuildConfig.VERSION_NAME}-${BuildConfig.APP_VERSION}")
+            appendLine("Device: ${Build.MANUFACTURER} ${Build.MODEL}, Android ${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT})")
+            appendLine("Domain: ${runCatching { GlobalSettings.domain.value }.getOrDefault("unknown")}")
+            appendLine("Adult Content Enabled: ${runCatching { GlobalSettings.adult.value }.getOrDefault("unknown")}")
+            appendLine("Total Entries: ${logList.size}")
+            logList.forEach { appendLine(it.toFormattedString()) }
+        }
+    }
+
+    private fun synchronizedGeneration(): Long = synchronized(stateLock) { generation }
+    private fun addLogEntryLocked(entry: LogEntry) {
         logList.add(entry)
-        while (logList.size > MAX_MEMORY_LOGS) {
-            logList.removeAt(0)
-        }
+        while (logList.size > MAX_MEMORY_LOGS) logList.removeAt(0)
         _logsFlow.value = logList.toList()
     }
-
-    private fun writeToFile(entry: LogEntry) {
-        val file = logFile ?: return
+    private fun append(text: String) = synchronized(fileLock) {
         try {
-            FileWriter(file, true).use { writer ->
-                writer.appendLine(entry.toFormattedString())
-            }
-        } catch (e: Exception) {
-            Log.e("AppLogger", "Failed to write log to file", e)
-        }
+            val file = logFile ?: return@synchronized
+            val safeText = boundedUtf8LogRecord(text, MAX_LOG_FILE_SIZE.toInt() - 1)
+            rotateIfNeeded(file, safeText.toByteArray(StandardCharsets.UTF_8).size.toLong() + 1)
+            file.appendText(safeText + "\n")
+        } catch (e: Exception) { Log.e("AppLogger", "Failed to write log: ${sanitize(e.message.orEmpty())}") }
     }
-
-    private fun writeCrashReportSync(entry: LogEntry, throwable: Throwable) {
+    private fun clearFiles() = synchronized(fileLock) {
+        try {
+            logFile?.writeText("")
+            logFile?.parentFile?.resolve("app_logs_old.log")?.delete()
+            crashFile?.delete()
+        }
+        catch (e: Exception) { Log.e("AppLogger", "Failed to clear logs: ${sanitize(e.message.orEmpty())}") }
+    }
+    private fun rotateIfNeeded(file: File, incomingBytes: Long) {
+        if (file.length() + incomingBytes <= MAX_LOG_FILE_SIZE) return
+        val old = File(file.parentFile, "app_logs_old.log")
+        old.delete(); file.renameTo(old); file.createNewFile()
+    }
+    private fun writeCrashReport(entry: LogEntry, recent: List<LogEntry>) = try {
         val report = buildString {
             appendLine("==================== CRASH REPORT ====================")
             appendLine("Timestamp: ${entry.formattedTime()}")
             appendLine("App Version: ${BuildConfig.VERSION_NAME} (${BuildConfig.APP_VERSION})")
             appendLine("Device: ${Build.MANUFACTURER} ${Build.MODEL} (${Build.DEVICE})")
             appendLine("Android OS: ${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT})")
-            appendLine("Current Domain: ${try { GlobalSettings.domain.value } catch (_: Exception) { "unknown" }}")
-            appendLine("Current Theme: ${try { GlobalSettings.theme.value.name } catch (_: Exception) { "unknown" }}")
-            appendLine("Adult Content Enabled: ${try { GlobalSettings.adult.value } catch (_: Exception) { "unknown" }}")
+            appendLine("Current Domain: ${runCatching { GlobalSettings.domain.value }.getOrDefault("unknown")}")
+            appendLine("Current Theme: ${runCatching { GlobalSettings.theme.value.name }.getOrDefault("unknown")}")
+            appendLine("Adult Content Enabled: ${runCatching { GlobalSettings.adult.value }.getOrDefault("unknown")}")
             val runtime = Runtime.getRuntime()
-            val usedMem = (runtime.totalMemory() - runtime.freeMemory()) / 1024 / 1024
-            val maxMem = runtime.maxMemory() / 1024 / 1024
-            appendLine("Memory Usage: ${usedMem}MB / ${maxMem}MB")
+            appendLine("Memory Usage: ${(runtime.totalMemory() - runtime.freeMemory()) / 1024 / 1024}MB / ${runtime.maxMemory() / 1024 / 1024}MB")
             appendLine("Thread: ${entry.threadName}")
-            appendLine("Exception: ${throwable.javaClass.name}: ${throwable.message}")
+            appendLine("Exception: ${entry.message}")
             appendLine("----------------- STACK TRACE -----------------")
             appendLine(entry.stackTrace ?: "No stack trace available")
             appendLine("---------------- RECENT ACTIVITY ----------------")
-            val recentLogs = logList.takeLast(30)
-            for (recent in recentLogs) {
-                appendLine(recent.toFormattedString())
-            }
+            recent.forEach { appendLine(it.toFormattedString()) }
             appendLine("======================================================")
         }
+        val safeReport = boundedUtf8LogRecord(report, MAX_LOG_FILE_SIZE.toInt() - 1)
+        crashFile?.writeText(safeReport)
+        logFile?.let { rotateIfNeeded(it, safeReport.toByteArray(StandardCharsets.UTF_8).size.toLong() + 1); it.appendText(safeReport + "\n") }
+        _crashReportFlow.value = safeReport
+    } catch (e: Exception) { Log.e("AppLogger", "Failed to write crash report: ${sanitize(e.message.orEmpty())}") }
 
-        try {
-            // Write to crash file
-            crashFile?.let { file ->
-                FileWriter(file, false).use { writer ->
-                    writer.write(report)
-                }
-            }
-            // Append to general log file
-            logFile?.let { file ->
-                FileWriter(file, true).use { writer ->
-                    writer.appendLine(report)
-                }
-            }
-        } catch (e: Exception) {
-            Log.e("AppLogger", "Failed to write sync crash report", e)
-        }
+    private fun stackTrace(throwable: Throwable): String {
+        val writer = StringWriter(); throwable.printStackTrace(PrintWriter(writer)); return sanitize(writer.toString())
     }
-
-    fun clearLogs() {
-        logList.clear()
-        _logsFlow.value = emptyList()
-        ioScope.launch {
-            try {
-                logFile?.delete()
-                logFile?.createNewFile()
-                crashFile?.delete()
-            } catch (e: Exception) {
-                Log.e("AppLogger", "Failed to clear log files", e)
-            }
-        }
-    }
-
-    fun getLastCrashReport(): String? {
-        return try {
-            if (crashFile?.exists() == true && (crashFile?.length() ?: 0) > 0) {
-                crashFile?.readText()
-            } else null
-        } catch (e: Exception) {
-            null
-        }
-    }
-
-    fun exportLogsText(): String {
-        return buildString {
-            appendLine("=== Esjzone System Logs Export ===")
-            appendLine("Export Time: ${SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date())}")
-            appendLine("App Version: ${BuildConfig.VERSION_NAME}-${BuildConfig.APP_VERSION}")
-            appendLine("Device: ${Build.MANUFACTURER} ${Build.MODEL}, Android ${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT})")
-            appendLine("Domain: ${try { GlobalSettings.domain.value } catch (_: Exception) { "unknown" }}")
-            appendLine("Total Entries: ${logList.size}")
-            appendLine("--------------------------------------------------")
-            for (entry in logList) {
-                appendLine(entry.toFormattedString())
-            }
-            appendLine("==================================================")
-        }
-    }
-
-    private fun getStackTraceString(throwable: Throwable): String {
-        val sw = StringWriter()
-        val pw = PrintWriter(sw)
-        throwable.printStackTrace(pw)
-        pw.flush()
-        return sanitizeSensitiveInfo(sw.toString())
-    }
-
-    /**
-     * Sanitizes credentials according to security constraints (Rule 4: Never log real passwords, ews_key, ews_token).
-     */
-    private fun sanitizeSensitiveInfo(input: String): String {
-        var result = input
-        result = result.replace(Regex("ews_key=([^&;\\s,]+)", RegexOption.IGNORE_CASE), "ews_key=***")
-        result = result.replace(Regex("ews_token=([^&;\\s,]+)", RegexOption.IGNORE_CASE), "ews_token=***")
-        result = result.replace(Regex("pwd=([^&;\\s,]+)", RegexOption.IGNORE_CASE), "pwd=***")
-        result = result.replace(Regex("password=([^&;\\s,]+)", RegexOption.IGNORE_CASE), "password=***")
-        return result
-    }
+    private fun safeThrowable(throwable: Throwable): String = stackTrace(throwable)
+    private fun sanitize(input: String): String = input.replace(
+        Regex("(?i)(ews_key|ews_token|password|pwd)([=:])([^&;\\s,]+)"), "$1$2***"
+    )
+    fun sanitizeForDisplay(input: String): String = sanitize(input)
 }

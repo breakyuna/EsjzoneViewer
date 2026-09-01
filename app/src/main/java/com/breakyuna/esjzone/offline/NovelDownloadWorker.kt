@@ -122,23 +122,27 @@ class NovelDownloadWorker(
         return try {
             AppLogger.init(applicationContext)
             setForeground(createForegroundInfo(name, null))
-            if (domain in GlobalSettings.DOMAINS) {
-                GlobalSettings.domain.value = domain
-            }
+            val taskBaseUrl = if (domain.isBlank()) EsjzoneUrls.Base
+            else EsjzoneUrls.baseForDomain(domain)
             EsjzoneClient.initialize(applicationContext)
             NovelDownloadStore.initialize(applicationContext)
 
-            val resolvedUrl = EsjzoneUrls.resolve(rawUrl)
-            val host = Uri.parse(resolvedUrl).host.orEmpty().ifBlank { domain }
+            val resolvedUrl = EsjzoneUrls.resolve(rawUrl, taskBaseUrl)
+            val parsedUrl = Uri.parse(resolvedUrl)
+            val host = parsedUrl.host.orEmpty().ifBlank { domain }
+            val actualBaseUrl = if (!parsedUrl.scheme.isNullOrBlank() && host.isNotBlank()) {
+                "${parsedUrl.scheme}://$host/"
+            } else taskBaseUrl
             val authorization = EsjzoneClient.restoreAuthorization(host)
                 ?: Authorization("", "", host)
             val detail = EsjzoneClient.getNovelDetail(
                 authorization = authorization,
                 novel = CategoryNovel(name = name, url = rawUrl, forumUrl = forumUrl),
                 includeComments = false,
-                forceRefresh = true
+                forceRefresh = true,
+                baseUrl = actualBaseUrl
             )
-            NovelDownloadStore.download(authorization, detail) { next ->
+            NovelDownloadStore.download(authorization, detail, actualBaseUrl) { next ->
                 setProgressAsync(next.toWorkData())
                 applicationContext.getSystemService(NotificationManager::class.java)
                     .notify(notificationId(), createNotification(name, next))

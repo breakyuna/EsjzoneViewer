@@ -141,6 +141,8 @@
     <string name="favorites_recently_update">Recently Update</string>
     <string name="delete_history">Delete</string>
     <string name="retry">Retry</string>
+    <string name="startup_loading">Starting Esjzone Viewer…</string>
+    <string name="startup_failed">Unable to start. Your local data was kept.</string>
     <string name="load_failed">Unable to load content</string>
     <string name="compile_information">Compille Info</string>
     <string name="build_version">Build Version</string>

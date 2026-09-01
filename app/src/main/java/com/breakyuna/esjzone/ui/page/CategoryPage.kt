@@ -15,9 +15,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.mutableStateMapOf
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -34,17 +31,14 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import com.breakyuna.esjzone.GlobalSettings
 import com.breakyuna.esjzone.R
 import com.breakyuna.esjzone.network.Authorization
 import com.breakyuna.esjzone.network.EsjzoneClient
 import com.breakyuna.esjzone.network.LocalAuthorization
-import com.breakyuna.esjzone.network.features.getNovelDetail
 import com.breakyuna.esjzone.network.features.listNovels
 import com.breakyuna.esjzone.novellibrary.novel.Category
 import com.breakyuna.esjzone.novellibrary.novel.CategoryNovel
-import com.breakyuna.esjzone.novellibrary.novel.DetailedNovel
 import com.breakyuna.esjzone.novellibrary.novel.preview
 import com.breakyuna.esjzone.ui.component.AppBar
 import com.breakyuna.esjzone.ui.component.LoadError
@@ -89,9 +83,7 @@ class CategoryPage(private val category: Category) : Screen {
 
                     val novels = result.categoryNovels.distinctBy { it.url.ifBlank { it.name } }
 
-                    val cache = remember {
-                        mutableStateMapOf<String, DetailedNovel>()
-                    }
+                    val detailLoader = rememberScreenModel { NovelDetailLoader(authorization) }
 
                     val adult by remember {
                         GlobalSettings.adult
@@ -102,25 +94,15 @@ class CategoryPage(private val category: Category) : Screen {
                     ) {
                         items(
                             novels,
-                            key = { item -> item.url.ifBlank { item.name } }
+                            key = { item -> detailLoader.key(item) }
                         ) { categoryNovel ->
-                            var detailedNovel: DetailedNovel? by remember {
-                                mutableStateOf(cache[categoryNovel.url])
-                            }
-                            var detailFailed by remember(categoryNovel.url) {
-                                mutableStateOf(false)
-                            }
-                            var detailRetry by remember(categoryNovel.url) {
-                                mutableIntStateOf(0)
-                            }
-
-                            val novel = detailedNovel
+                            val key = detailLoader.key(categoryNovel)
+                            val novel = detailLoader.details[key]
                             if (novel == null) {
-                                if (detailFailed) {
+                                if (detailLoader.failures[key] == true) {
                                     LoadError(
                                         onRetry = {
-                                            detailFailed = false
-                                            detailRetry += 1
+                                            detailLoader.retry(categoryNovel)
                                         },
                                         modifier = Modifier
                                             .fillMaxWidth()
@@ -135,24 +117,7 @@ class CategoryPage(private val category: Category) : Screen {
                                     }
                                 }
 
-                                LaunchedEffect(categoryNovel.url, detailRetry) {
-                                    try {
-                                        val fetched = withContext(Dispatchers.IO) {
-                                            EsjzoneClient.getNovelDetail(
-                                                authorization,
-                                                categoryNovel
-                                            )
-                                        }
-                                        detailedNovel = fetched
-                                        cache[categoryNovel.url] = fetched
-                                        detailFailed = false
-                                    } catch (e: CancellationException) {
-                                        throw e
-                                    } catch (e: Exception) {
-                                        detailFailed = true
-                                        com.breakyuna.esjzone.util.AppLogger.e("CategoryPage", "Failed to load novel detail for ${categoryNovel.name}", e)
-                                    }
-                                }
+                                LaunchedEffect(key) { detailLoader.load(categoryNovel) }
                             } else {
                                 if (adult || !novel.isAdult) {
                                     Novel(

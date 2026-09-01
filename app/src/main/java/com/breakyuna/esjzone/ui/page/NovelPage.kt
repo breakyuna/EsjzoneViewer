@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -94,8 +95,11 @@ import com.breakyuna.esjzone.offline.NovelDownloadStore
 import com.breakyuna.esjzone.offline.NovelExporter
 import com.breakyuna.esjzone.novellibrary.novel.DetailedNovel
 import com.breakyuna.esjzone.novellibrary.novel.Novel
+import com.breakyuna.esjzone.novellibrary.component.initiallyExpandedChapterKeys
+import com.breakyuna.esjzone.novellibrary.component.visibleChapterRows
 import com.breakyuna.esjzone.ui.component.AppBar
-import com.breakyuna.esjzone.ui.component.ChapterList
+import com.breakyuna.esjzone.ui.component.ChapterListHeader
+import com.breakyuna.esjzone.ui.component.ChapterListRow
 import com.breakyuna.esjzone.ui.component.Description
 import com.breakyuna.esjzone.ui.component.Loading
 import com.breakyuna.esjzone.ui.component.LoadError
@@ -146,6 +150,12 @@ class NovelPage(
                 is NovelPageModel.State.Result -> {
                     val result = state as NovelPageModel.State.Result
                     val chapterList = result.detailed.chapterList
+                    val expandedChapterGroups = rememberSaveable(novel.url) {
+                        mutableStateOf(initiallyExpandedChapterKeys(chapterList.items))
+                    }
+                    val visibleRows = remember(chapterList, expandedChapterGroups.value) {
+                        visibleChapterRows(chapterList.items, expandedChapterGroups.value)
+                    }
 
                     val historyState = history.state()
                     historyState.value = chapterList.toRead
@@ -456,15 +466,23 @@ class NovelPage(
                             )
                         }
 
-                        item(key = "novel-chapter-list") {
-                            ChapterList(
-                                chapterList = chapterList,
+                        item(key = "novel-chapter-list-header") {
+                            ChapterListHeader(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
+                        }
+                        items(visibleRows, key = { it.key }) { row ->
+                            ChapterListRow(
+                                row = row,
                                 novelId = result.detailed.id(),
                                 novelName = result.detailed.name,
                                 novelCoverUrl = result.detailed.coverUrl,
                                 history = historyState,
                                 hasHistory = hasHistory,
-                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+                                chapterOrder = chapterList.orderedChapters,
+                                onGroupToggle = { key ->
+                                    expandedChapterGroups.value = expandedChapterGroups.value.toMutableSet().also {
+                                        if (!it.add(key)) it.remove(key)
+                                    }
+                                }
                             )
                         }
 

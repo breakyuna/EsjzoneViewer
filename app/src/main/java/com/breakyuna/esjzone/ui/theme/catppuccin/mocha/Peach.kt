@@ -1,10 +1,7 @@
 package com.breakyuna.esjzone.ui.theme.catppuccin.mocha
 
-import androidx.compose.foundation.isSystemInDarkTheme
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
-import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 
 val catppuccin_mocha_peach_light_primary = Color(0xFF964909)
@@ -132,21 +129,3 @@ val CatppuccinMochaPeachDarkColors = darkColorScheme(
     outlineVariant = catppuccin_mocha_peach_dark_outlineVariant,
     scrim = catppuccin_mocha_peach_dark_scrim,
 )
-
-@Composable
-fun CatppuccinMochaPeachTheme(
-    useDarkTheme: Boolean = isSystemInDarkTheme(),
-    content: @Composable() () -> Unit
-) {
-    val colors = if (!useDarkTheme) {
-        CatppuccinMochaPeachLightColors
-    } else {
-        CatppuccinMochaPeachDarkColors
-    }
-
-    MaterialTheme(
-        colorScheme = colors,
-        content = content
-    )
-}
-

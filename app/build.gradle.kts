@@ -90,7 +90,6 @@ dependencies {
     implementation(libs.coil.gif)
     implementation(libs.voyager.navigator)
     implementation(libs.voyager.screenmodel)
-    implementation(libs.voyager.bottomSheetNavigator)
     implementation(libs.voyager.tabNavigator)
     implementation(libs.voyager.transitions)
     implementation(libs.gson)
@@ -108,10 +107,8 @@ dependencies {
     implementation(libs.androidx.material.iconsExtended)
     implementation(libs.androidx.room.runtime)
     implementation(libs.androidx.room.ktx)
-    implementation(libs.androidx.navigation)
     implementation(libs.androidx.work.runtime.ktx)
 
-    annotationProcessor(libs.androidx.room.compiler)
     ksp(libs.androidx.room.compiler)
 
     testImplementation(libs.junit)

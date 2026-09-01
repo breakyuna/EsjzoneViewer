@@ -113,4 +113,20 @@ class EsjzoneUrlsTest {
             )
         )
     }
+
+    @Test
+    fun resolve_encodesSearchKeywordAsOnePathSegment() {
+        assertEquals(
+            "https://www.esjzone.cc/tags/A%23B%3F%2FC%20D",
+            EsjzoneUrls.tagsUrl("A#B?/C D")
+        )
+    }
+
+    @Test
+    fun resolve_usesDocumentBaseForRelativeChapterAssets() {
+        val base = "https://www.esjzone.one/forum/123/456.html"
+        assertEquals("https://www.esjzone.one/forum/123/image.jpg", EsjzoneUrls.resolve("image.jpg", base))
+        assertEquals("https://www.esjzone.one/forum/image.jpg", EsjzoneUrls.resolve("../image.jpg", base))
+        assertEquals("https://cdn.example/image.jpg", EsjzoneUrls.resolve("https://cdn.example/image.jpg", base))
+    }
 }

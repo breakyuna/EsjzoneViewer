@@ -67,6 +67,8 @@
 
 ### 4.2 搜索链路
 
+客户端使用 URL builder 的 path segment API 编码关键词，并在首屏和分页保持相同的编码规则。
+
 首页的搜索按钮为 div.search。点击后 .site-search 获得 search-visible，隐藏输入框 input[name="site_search"] 变为可用；输入后按 Enter 进入：
 
 /tags/{keyword}/
