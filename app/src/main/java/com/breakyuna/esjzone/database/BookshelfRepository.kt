@@ -7,9 +7,12 @@ import com.breakyuna.esjzone.network.Authorization
 import com.breakyuna.esjzone.network.EsjzoneClient
 import com.breakyuna.esjzone.network.EsjzoneUrls
 import com.breakyuna.esjzone.network.features.getAllFavorites
+import com.breakyuna.esjzone.network.features.getNovelDetail
 import com.breakyuna.esjzone.network.features.toggleFavorite
 import com.breakyuna.esjzone.network.hasCredentials
 import com.breakyuna.esjzone.novellibrary.novel.Novel
+import com.breakyuna.esjzone.novellibrary.novel.CoveredNovel
+import com.breakyuna.esjzone.novellibrary.novel.FavoriteNovel
 import com.breakyuna.esjzone.util.AppLogger
 import java.util.concurrent.ConcurrentHashMap
 import kotlinx.coroutines.CoroutineScope
@@ -18,7 +21,11 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.sync.withLock
 
 /** Result of a best-effort remote synchronization. Local rows are never removed by import. */
@@ -43,6 +50,11 @@ object BookshelfRepository {
     private val workerScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val scheduledScopes = ConcurrentHashMap.newKeySet<String>()
     private val rescheduleScopes = ConcurrentHashMap.newKeySet<String>()
+    private val metadataAttempts = ConcurrentHashMap<String, Long>()
+    private val metadataSemaphore = Semaphore(2)
+
+    /** Avoid repeatedly refetching rows that are known to have no cover. */
+    private const val METADATA_RETRY_INTERVAL_MILLIS = 30 * 60 * 1000L
 
     fun initialize(database: GeneralDatabase) {
         dao = database.bookshelfDao()
@@ -83,6 +95,10 @@ object BookshelfRepository {
             val key = keyFor(novel.url)
             val current = dao.find(scope, key)
             val nextVersion = (current?.operationVersion ?: 0L) + 1L
+            val suppliedCover = (novel as? CoveredNovel)?.coverUrl
+                ?.let { EsjzoneUrls.coverOrEmpty(it) }
+                .orEmpty()
+            val retainedCover = current?.coverUrl?.takeIf { it.isNotBlank() } ?: suppliedCover
             val next = if (desired) {
                 BookshelfEntry(
                     scope = scope,
@@ -91,7 +107,7 @@ object BookshelfRepository {
                     url = EsjzoneUrls.resolve(novel.url).substringBefore('#'),
                     title = novel.name,
                     author = current?.author.orEmpty(),
-                    coverUrl = current?.coverUrl.orEmpty(),
+                    coverUrl = retainedCover,
                     isAdult = current?.isAdult ?: false,
                     addedAt = if (current?.syncState == BookshelfSyncState.PENDING_REMOVE) {
                         System.currentTimeMillis()
@@ -116,7 +132,7 @@ object BookshelfRepository {
                     url = EsjzoneUrls.resolve(novel.url).substringBefore('#'),
                     title = novel.name,
                     author = current?.author.orEmpty(),
-                    coverUrl = current?.coverUrl.orEmpty(),
+                    coverUrl = retainedCover,
                     isAdult = current?.isAdult ?: false,
                     addedAt = current?.addedAt ?: System.currentTimeMillis(),
                     syncState = BookshelfSyncState.PENDING_REMOVE,
@@ -178,6 +194,69 @@ object BookshelfRepository {
                     scheduledScopes.remove(scope)
                     if (rescheduleScopes.remove(scope)) scheduleSync(authorization)
                 }
+            }
+        }
+    }
+
+    /**
+     * Completes metadata missing from cloud favorite rows in the background.
+     * This is intentionally best effort: a failed/empty detail response does
+     * not alter the stored URL and is retried only after a short in-process
+     * cooldown. At most two detail pages are fetched concurrently.
+     */
+    fun scheduleMetadataSupplement(authorization: Authorization) {
+        if (!authorization.hasCredentials()) return
+        workerScope.launch {
+            val dao = requireDao()
+            val scope = scopeFor(authorization)
+            val now = System.currentTimeMillis()
+            val candidates = dao.getAll(scope)
+                .asSequence()
+                .filter { it.visible && it.coverUrl.isBlank() && it.url.isNotBlank() }
+                .filter { row ->
+                    val attemptKey = "$scope:${row.bookKey}"
+                    val previous = metadataAttempts.putIfAbsent(attemptKey, now)
+                    previous == null ||
+                        (now - previous >= METADATA_RETRY_INTERVAL_MILLIS &&
+                            metadataAttempts.replace(attemptKey, previous, now))
+                }
+                .toList()
+
+            coroutineScope {
+                candidates.map { row ->
+                    launch {
+                        metadataSemaphore.withPermit {
+                            try {
+                                val detail = EsjzoneClient.getNovelDetail(
+                                    authorization,
+                                    FavoriteNovel(
+                                        row.title,
+                                        row.url
+                                    )
+                                )
+                                // supplementMetadata only fills blank fields,
+                                // so a late response cannot replace a newer
+                                // local/detail-page value.
+                                dao.supplementMetadata(
+                                    scope = scope,
+                                    bookKey = row.bookKey,
+                                    title = detail.name,
+                                    author = detail.author,
+                                    coverUrl = EsjzoneUrls.coverOrEmpty(detail.coverUrl),
+                                    isAdult = detail.isAdult
+                                )
+                            } catch (error: CancellationException) {
+                                throw error
+                            } catch (error: Exception) {
+                                AppLogger.w(
+                                    "BookshelfRepository",
+                                    "Metadata supplement unavailable for ${row.bookKey}",
+                                    error
+                                )
+                            }
+                        }
+                    }
+                }.joinAll()
             }
         }
     }
@@ -280,6 +359,7 @@ object BookshelfRepository {
                 }
             }
         }
+        scheduleMetadataSupplement(authorization)
         BookshelfSyncResult(success = !operationFailed, added = added)
     }
 }

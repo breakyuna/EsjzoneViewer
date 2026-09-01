@@ -1,19 +1,29 @@
 package com.breakyuna.esjzone.ui.page
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
+import androidx.compose.foundation.lazy.grid.LazyGridState
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -32,15 +42,25 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChange
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import cafe.adriel.voyager.core.model.StateScreenModel
 import cafe.adriel.voyager.core.model.rememberScreenModel
 import cafe.adriel.voyager.core.model.screenModelScope
 import cafe.adriel.voyager.core.screen.Screen
+import coil.compose.AsyncImage
+import coil.request.ImageRequest
+import com.breakyuna.esjzone.MainActivity
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -50,11 +70,10 @@ import com.breakyuna.esjzone.database.BookshelfRepository
 import com.breakyuna.esjzone.database.BookshelfSyncResult
 import com.breakyuna.esjzone.database.entity.BookshelfEntry
 import com.breakyuna.esjzone.network.Authorization
+import com.breakyuna.esjzone.network.EsjzoneUrls
 import com.breakyuna.esjzone.network.LocalAuthorization
 import com.breakyuna.esjzone.novellibrary.novel.CoveredNovelImpl
-import com.breakyuna.esjzone.novellibrary.novel.FavoriteNovel
 import com.breakyuna.esjzone.ui.component.AppBar
-import com.breakyuna.esjzone.ui.component.Novel
 import com.breakyuna.esjzone.ui.navigation.BooleanStateHolder
 import com.breakyuna.esjzone.ui.navigation.LocalBaseNavigator
 import com.breakyuna.esjzone.ui.navigation.pushIfNotCurrent
@@ -75,7 +94,7 @@ object FavoritePage : Screen {
         val syncState by model.state.collectAsState()
         val snackbar = remember { SnackbarHostState() }
         val scope = rememberCoroutineScope()
-        val listState = rememberLazyListState()
+        val gridState = rememberLazyGridState()
         var refreshing by rememberSaveable { mutableStateOf(false) }
         val adult by remember { GlobalSettings.adult }
         val syncDoneText = stringResource(R.string.bookshelf_sync_done)
@@ -109,6 +128,16 @@ object FavoritePage : Screen {
             }
         }
 
+        // Enrichment is detached from rendering: Room remains the only UI
+        // source and newly discovered covers update the grid through its flow.
+        LaunchedEffect(Unit) {
+            model.scheduleMetadataSupplement()
+        }
+
+        val visibleEntries = remember(entries, adult) {
+            entries.filter { adult || !it.isAdultHint() }
+        }
+
         Scaffold(
             snackbarHost = { SnackbarHost(snackbar) },
             topBar = {
@@ -139,66 +168,144 @@ object FavoritePage : Screen {
             }
         ) { padding ->
             Box(modifier = Modifier.fillMaxSize().padding(padding)) {
-                LazyColumn(
-                    state = listState,
-                    modifier = Modifier.fillMaxSize().bookshelfPullToRefresh(
-                        listState = listState,
-                        enabled = !refreshing,
-                        onRefresh = ::refresh
-                    )
-                ) {
-                    if (entries.isEmpty()) {
-                        item {
-                            Column(
-                                modifier = Modifier.fillMaxWidth().padding(48.dp),
-                                horizontalAlignment = Alignment.CenterHorizontally
-                            ) {
-                                Text(stringResource(R.string.bookshelf_empty))
-                                Text(
-                                    stringResource(R.string.bookshelf_empty_hint),
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.padding(top = 8.dp)
-                                )
-                            }
-                        }
+                BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+                    val minCardWidth = 148.dp
+                    val gridSpacing = 12.dp
+                    val horizontalPadding = 24.dp
+                    // Compute from usable width so narrow phones still get
+                    // two columns; wider tablets naturally receive more.
+                    val columnCount = remember(maxWidth) {
+                        (
+                            (maxWidth - horizontalPadding + gridSpacing) /
+                                (minCardWidth + gridSpacing)
+                            ).toInt().coerceAtLeast(2)
                     }
-                    items(entries, key = { it.bookKey }) { entry ->
-                        if (adult || !entry.isAdultHint()) {
-                            Box(modifier = Modifier.fillMaxWidth()) {
-                                Novel(
-                                    covered = entry.asCoveredNovel(),
-                                    onClick = {
-                                        navigator?.pushIfNotCurrent(
-                                            NovelPage(
-                                                FavoriteNovel(entry.title, entry.url),
-                                                favorite = BooleanStateHolder(true)
-                                            )
-                                        )
-                                    }
-                                )
-                                IconButton(
-                                    onClick = {
-                                        scope.launch(Dispatchers.IO) {
-                                            BookshelfRepository.setFavorite(
-                                                authorization,
-                                                FavoriteNovel(entry.title, entry.url),
-                                                false
-                                            )
-                                        }
-                                    },
-                                    modifier = Modifier.align(Alignment.TopEnd).padding(end = 12.dp, top = 8.dp)
+                    LazyVerticalGrid(
+                        columns = GridCells.Fixed(columnCount),
+                        state = gridState,
+                        modifier = Modifier.fillMaxSize().bookshelfPullToRefresh(
+                            gridState = gridState,
+                            enabled = !refreshing,
+                            onRefresh = ::refresh
+                        ),
+                        contentPadding = PaddingValues(
+                            start = horizontalPadding / 2,
+                            end = horizontalPadding / 2,
+                            top = 12.dp,
+                            bottom = 24.dp
+                        ),
+                        horizontalArrangement = Arrangement.spacedBy(gridSpacing),
+                        verticalArrangement = Arrangement.spacedBy(14.dp)
+                    ) {
+                        if (visibleEntries.isEmpty()) {
+                            item(span = { GridItemSpan(maxLineSpan) }) {
+                                Column(
+                                    modifier = Modifier.fillMaxWidth().padding(48.dp),
+                                    horizontalAlignment = Alignment.CenterHorizontally
                                 ) {
-                                    Icon(Icons.Filled.Delete, contentDescription = stringResource(R.string.delete_bookshelf))
+                                    Text(stringResource(R.string.bookshelf_empty))
+                                    Text(
+                                        stringResource(R.string.bookshelf_empty_hint),
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.padding(top = 8.dp)
+                                    )
                                 }
                             }
                         }
+                        items(visibleEntries, key = { it.bookKey }) { entry ->
+                            BookshelfGridItem(
+                                entry = entry,
+                                onClick = {
+                                    navigator?.pushIfNotCurrent(
+                                        NovelPage(entry.asCoveredNovel(), favorite = BooleanStateHolder(true))
+                                    )
+                                },
+                                onDelete = {
+                                    scope.launch(Dispatchers.IO) {
+                                        BookshelfRepository.setFavorite(
+                                            authorization,
+                                            entry.asCoveredNovel(),
+                                            desired = false
+                                        )
+                                    }
+                                }
+                            )
+                        }
                     }
-                }
-                if (refreshing) {
-                    CircularProgressIndicator(modifier = Modifier.align(Alignment.TopCenter).padding(8.dp))
                 }
             }
         }
+    }
+}
+
+/** Lightweight, fixed-size shelf card kept separate from the list-style Novel component. */
+@Composable
+private fun BookshelfGridItem(
+    entry: BookshelfEntry,
+    onClick: () -> Unit,
+    onDelete: () -> Unit
+) {
+    val context = LocalContext.current
+    val coverUrl = remember(entry.coverUrl) {
+        EsjzoneUrls.coverOrEmpty(entry.coverUrl).trim().substringBefore('#')
+    }
+    val coverRequest = remember(coverUrl) {
+        val data = coverUrl.takeIf { it.isNotBlank() } ?: R.drawable.missing_cover
+        ImageRequest.Builder(context)
+            .data(data)
+            .memoryCacheKey("bookshelf-cover:$coverUrl")
+            .diskCacheKey("bookshelf-cover:$coverUrl")
+            // Avoid animation/recomposition work while flinging the grid.
+            .crossfade(false)
+            .build()
+    }
+
+    Card(
+        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick),
+        shape = RoundedCornerShape(14.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+    ) {
+        Box(modifier = Modifier.fillMaxWidth()) {
+            AsyncImage(
+                model = coverRequest,
+                imageLoader = MainActivity.imageLoader,
+                contentDescription = entry.title,
+                contentScale = ContentScale.Crop,
+                placeholder = painterResource(R.drawable.missing_cover),
+                error = painterResource(R.drawable.missing_cover),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .aspectRatio(0.68f)
+                    .clip(RoundedCornerShape(topStart = 14.dp, topEnd = 14.dp))
+            )
+            IconButton(
+                onClick = onDelete,
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(4.dp)
+                    .background(Color.Black.copy(alpha = 0.45f), RoundedCornerShape(8.dp))
+                    .clip(RoundedCornerShape(8.dp))
+            ) {
+                Icon(
+                    imageVector = Icons.Filled.Delete,
+                    contentDescription = stringResource(R.string.delete_bookshelf),
+                    tint = Color.White
+                )
+            }
+        }
+        Text(
+            text = entry.title,
+            style = MaterialTheme.typography.titleSmall.copy(
+                fontWeight = FontWeight.SemiBold,
+                lineHeight = 18.sp
+            ),
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 10.dp)
+        )
     }
 }
 
@@ -215,7 +322,7 @@ private fun BookshelfEntry.asCoveredNovel() = CoveredNovelImpl(
 private fun BookshelfEntry.isAdultHint(): Boolean = isAdult
 
 private fun Modifier.bookshelfPullToRefresh(
-    listState: androidx.compose.foundation.lazy.LazyListState,
+    gridState: LazyGridState,
     enabled: Boolean,
     onRefresh: () -> Unit
 ): Modifier = pointerInput(enabled) {
@@ -224,7 +331,7 @@ private fun Modifier.bookshelfPullToRefresh(
         while (true) {
             val event = awaitPointerEvent()
             val change = event.changes.firstOrNull() ?: continue
-            if (listState.firstVisibleItemIndex != 0 || listState.firstVisibleItemScrollOffset != 0) {
+            if (gridState.firstVisibleItemIndex != 0 || gridState.firstVisibleItemScrollOffset != 0) {
                 // A pull must start at the absolute top; never carry distance
                 // from a gesture that began inside the first item.
                 distance = 0f
@@ -232,12 +339,12 @@ private fun Modifier.bookshelfPullToRefresh(
             if (!change.pressed) {
                 if (
                     enabled &&
-                    listState.firstVisibleItemIndex == 0 &&
-                    listState.firstVisibleItemScrollOffset == 0 &&
+                    gridState.firstVisibleItemIndex == 0 &&
+                    gridState.firstVisibleItemScrollOffset == 0 &&
                     distance > 72f
                 ) onRefresh()
                 distance = 0f
-            } else if (listState.firstVisibleItemIndex == 0 && change.positionChange().y > 0f) {
+            } else if (gridState.firstVisibleItemIndex == 0 && change.positionChange().y > 0f) {
                 distance += change.positionChange().y
             }
         }
@@ -267,5 +374,9 @@ class FavoritePageModel(private val authorization: Authorization) :
                 mutableState.value = State.Failed
             }
         }
+    }
+
+    fun scheduleMetadataSupplement() {
+        BookshelfRepository.scheduleMetadataSupplement(authorization)
     }
 }
