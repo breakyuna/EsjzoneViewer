@@ -1,7 +1,13 @@
 package com.breakyuna.esjzone.network
 
 /** The broad shape expected from each server-rendered ESJ page family. */
-internal enum class PageKind {
+/**
+ * Page family used by the public [EsjzoneClient.getPage] API to validate responses.
+ *
+ * This type must be public because it appears in that public function's signature;
+ * keeping it internal makes Kotlin reject the API as exposing an internal type.
+ */
+enum class PageKind {
     GENERIC,
     HOME,
     FORUM,

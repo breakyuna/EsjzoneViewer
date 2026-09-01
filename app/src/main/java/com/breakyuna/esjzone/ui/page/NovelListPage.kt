@@ -390,7 +390,8 @@ class NovelListPageModel(
                 throw e
             } catch (e: Exception) {
                 mutableState.value = State.Error
-                loadStarted = false
+                // Allow a later lifecycle/network recovery request to try again.
+                initialRequestStarted = false
                 com.breakyuna.esjzone.util.AppLogger.e("NovelListPageModel", "Failed to load novel list for type=${novelType.intValue}, sort=${sortType.intValue}", e)
             }
         }

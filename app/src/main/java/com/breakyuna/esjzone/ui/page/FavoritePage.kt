@@ -393,7 +393,8 @@ class FavoritePageModel(
                 throw e
             } catch (e: Exception) {
                 mutableState.value = State.Error
-                loadStarted = false
+                // Allow a later lifecycle/network recovery request to try again.
+                initialRequestStarted = false
                 com.breakyuna.esjzone.util.AppLogger.e("FavoritePageModel", "Failed to load favorites", e)
             }
         }
