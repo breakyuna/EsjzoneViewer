@@ -59,6 +59,16 @@
     <string name="bookshelf_empty_hint">收藏小说后，即使离线也能在这里阅读</string>
     <string name="sync_bookshelf">同步书架</string>
     <string name="delete_bookshelf">从书架移除</string>
+    <string name="bookshelf_edit">编辑书架</string>
+    <string name="bookshelf_edit_done">完成编辑</string>
+    <string name="bookshelf_select_all">全选书籍</string>
+    <string name="bookshelf_delete_selected">移除选中书籍</string>
+    <string name="bookshelf_selected">已选择 %1$d 本</string>
+    <string name="bookshelf_delete_title">确认移除书籍？</string>
+    <string name="bookshelf_delete_confirm">确定要从书架移除 %1$d 本书吗？应用会尝试取消云端收藏，但不会删除下载内容和阅读历史。</string>
+    <string name="bookshelf_delete_confirm_action">移除</string>
+    <string name="bookshelf_delete_done">已从书架移除 %1$d 本书</string>
+    <string name="bookshelf_delete_failed">书架更新失败，未移除任何书籍</string>
     <string name="bookshelf_sync_done">已同步书架</string>
     <string name="bookshelf_sync_added">新增 %1$d 本收藏</string>
     <string name="bookshelf_sync_failed">同步失败，当前显示本地书架</string>

@@ -12,6 +12,15 @@ object BookshelfSyncRules {
     fun shouldImport(remoteKey: String, localKeys: Set<String>, tombstoneKeys: Set<String>): Boolean =
         remoteKey !in localKeys && remoteKey !in tombstoneKeys
 
+    /**
+     * A removal processed during a sync must stay excluded for that same
+     * remote snapshot, even after its tombstone is physically deleted.
+     */
+    fun excludedImportKeys(
+        initialTombstoneKeys: Set<String>,
+        processedRemovalKeys: Set<String>
+    ): Set<String> = initialTombstoneKeys + processedRemovalKeys
+
     /** A network response may mutate a row only if it belongs to the current intent. */
     fun shouldApplyResponse(currentVersion: Long, responseVersion: Long): Boolean =
         currentVersion == responseVersion

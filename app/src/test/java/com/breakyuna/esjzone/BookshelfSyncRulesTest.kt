@@ -28,6 +28,15 @@ class BookshelfSyncRulesTest {
     }
 
     @Test
+    fun processedRemovalRemainsExcludedAfterTombstoneCleanup() {
+        val exclusions = BookshelfSyncRules.excludedImportKeys(
+            initialTombstoneKeys = setOf("removed"),
+            processedRemovalKeys = setOf("removed")
+        )
+        assertFalse(BookshelfSyncRules.shouldImport("removed", emptySet(), exclusions))
+    }
+
+    @Test
     fun emptyCloudNeverClearsLocal() {
         assertEquals(setOf("one", "two"), BookshelfSyncRules.mergedVisibleKeys(
             setOf("one", "two"), emptySet(), emptySet()

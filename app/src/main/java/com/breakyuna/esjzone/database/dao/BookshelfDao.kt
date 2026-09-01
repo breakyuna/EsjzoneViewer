@@ -4,6 +4,7 @@ import androidx.room.Dao
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
+import androidx.room.Transaction
 import com.breakyuna.esjzone.database.entity.BookshelfEntry
 import kotlinx.coroutines.flow.Flow
 
@@ -30,6 +31,12 @@ interface BookshelfDao {
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertAll(entries: List<BookshelfEntry>)
+
+    /** Persists a batch of removal intents atomically before one sync pass. */
+    @Transaction
+    suspend fun upsertRemovalIntents(entries: List<BookshelfEntry>) {
+        upsertAll(entries)
+    }
 
     /** Imports must never replace a concurrent local intent. */
     @Insert(onConflict = OnConflictStrategy.IGNORE)

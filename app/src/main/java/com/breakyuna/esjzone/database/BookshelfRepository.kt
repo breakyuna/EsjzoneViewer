@@ -1,6 +1,7 @@
 package com.breakyuna.esjzone.database
 
 import com.breakyuna.esjzone.database.dao.BookshelfDao
+import com.breakyuna.esjzone.database.dao.LocalReadingActivityDao
 import com.breakyuna.esjzone.database.entity.BookshelfEntry
 import com.breakyuna.esjzone.database.entity.BookshelfSyncState
 import com.breakyuna.esjzone.network.Authorization
@@ -20,6 +21,9 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.joinAll
@@ -45,6 +49,7 @@ data class BookshelfSyncResult(
  */
 object BookshelfRepository {
     private lateinit var dao: BookshelfDao
+    private lateinit var localReadingDao: LocalReadingActivityDao
     private val syncMutex = Mutex()
     private val intentMutex = Mutex()
     private val workerScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -58,6 +63,7 @@ object BookshelfRepository {
 
     fun initialize(database: GeneralDatabase) {
         dao = database.bookshelfDao()
+        localReadingDao = database.localReadingActivityDao()
     }
 
     private fun requireDao(): BookshelfDao {
@@ -81,8 +87,14 @@ object BookshelfRepository {
             ?.getOrNull(1)
             .orEmpty()
 
-    fun observe(authorization: Authorization): Flow<List<BookshelfEntry>> =
-        requireDao().observeVisible(scopeFor(authorization))
+    fun observe(authorization: Authorization): Flow<List<BookshelfEntry>> = combine(
+        requireDao().observeVisible(scopeFor(authorization)),
+        localReadingDao.observeAll()
+    ) { entries, activities ->
+        withContext(Dispatchers.Default) {
+            BookshelfSort.sort(entries, activities) { url -> keyFor(url) }
+        }
+    }.distinctUntilChanged()
 
     fun observeEntry(authorization: Authorization, url: String): Flow<BookshelfEntry?> =
         requireDao().observe(scopeFor(authorization), keyFor(url))
@@ -145,6 +157,36 @@ object BookshelfRepository {
             dao.upsert(next)
         }
         scheduleSync(authorization)
+    }
+
+    /** Applies multiple local removal intents in one transaction and schedules one retry pass. */
+    suspend fun removeBatch(
+        authorization: Authorization,
+        entries: List<BookshelfEntry>
+    ): Int {
+        val removed = intentMutex.withLock {
+            val dao = requireDao()
+            val scope = scopeFor(authorization)
+            val intents = entries.mapNotNull { snapshot ->
+                val current = dao.find(scope, snapshot.bookKey) ?: return@mapNotNull null
+                if (!current.visible || current.syncState == BookshelfSyncState.PENDING_REMOVE) {
+                    return@mapNotNull null
+                }
+                current.copy(
+                    syncState = BookshelfSyncState.PENDING_REMOVE,
+                    visible = false,
+                    retryCount = 0,
+                    lastError = null,
+                    operationVersion = current.operationVersion + 1L
+                )
+            }
+            if (intents.isNotEmpty()) {
+                dao.upsertRemovalIntents(intents)
+            }
+            intents.size
+        }
+        if (removed > 0) scheduleSync(authorization)
+        return removed
     }
 
     /** Seeds a remote favorite or supplements missing metadata without changing intent state. */
@@ -281,11 +323,17 @@ object BookshelfRepository {
         var added = 0
         var operationFailed = false
 
-        // Resolve pending intents against the snapshot before importing it.
-        dao.getAll(scope).filter {
+        val pendingRows = dao.getAll(scope).filter {
             it.syncState == BookshelfSyncState.PENDING_ADD ||
                 it.syncState == BookshelfSyncState.PENDING_REMOVE
-        }.forEach { local ->
+        }
+        val initialRemovalKeys = pendingRows
+            .filter { it.syncState == BookshelfSyncState.PENDING_REMOVE }
+            .mapTo(mutableSetOf()) { it.bookKey }
+        val processedRemovalKeys = mutableSetOf<String>()
+
+        // Resolve pending intents against the snapshot before importing it.
+        pendingRows.forEach { local ->
             val remoteHas = remoteByKey.containsKey(local.bookKey)
             if (local.syncState == BookshelfSyncState.PENDING_ADD) {
                 if (remoteHas) {
@@ -310,25 +358,28 @@ object BookshelfRepository {
                     operationFailed = true
                     dao.markRetry(scope, local.bookKey, local.operationVersion, "favorite request failed")
                 }
-            } else if (!remoteHas) {
-                val current = dao.find(scope, local.bookKey)
-                if (current != null && BookshelfSyncRules.shouldApplyResponse(
-                        current.operationVersion, local.operationVersion
-                    )
-                ) {
-                    dao.deleteIfVersion(scope, local.bookKey, local.operationVersion)
-                }
-            } else if (EsjzoneClient.toggleFavorite(authorization, local)) {
-                val current = dao.find(scope, local.bookKey)
-                if (current != null && BookshelfSyncRules.shouldApplyResponse(
-                        current.operationVersion, local.operationVersion
-                    )
-                ) {
-                    dao.deleteIfVersion(scope, local.bookKey, local.operationVersion)
-                }
             } else {
-                operationFailed = true
-                dao.markRetry(scope, local.bookKey, local.operationVersion, "unfavorite request failed")
+                processedRemovalKeys += local.bookKey
+                if (!remoteHas) {
+                    val current = dao.find(scope, local.bookKey)
+                    if (current != null && BookshelfSyncRules.shouldApplyResponse(
+                            current.operationVersion, local.operationVersion
+                        )
+                    ) {
+                        dao.deleteIfVersion(scope, local.bookKey, local.operationVersion)
+                    }
+                } else if (EsjzoneClient.toggleFavorite(authorization, local)) {
+                    val current = dao.find(scope, local.bookKey)
+                    if (current != null && BookshelfSyncRules.shouldApplyResponse(
+                            current.operationVersion, local.operationVersion
+                        )
+                    ) {
+                        dao.deleteIfVersion(scope, local.bookKey, local.operationVersion)
+                    }
+                } else {
+                    operationFailed = true
+                    dao.markRetry(scope, local.bookKey, local.operationVersion, "unfavorite request failed")
+                }
             }
         }
 
@@ -336,9 +387,16 @@ object BookshelfRepository {
         // rows based on a missing/empty cloud entry.
         val currentRows = dao.getAll(scope)
         val localKeys = currentRows.mapTo(mutableSetOf<String>()) { it.bookKey }
-        val tombstoneKeys = currentRows
-            .filter { it.syncState == BookshelfSyncState.PENDING_REMOVE }
-            .mapTo(mutableSetOf<String>()) { it.bookKey }
+        val tombstoneKeys = BookshelfSyncRules.excludedImportKeys(
+            initialTombstoneKeys = initialRemovalKeys,
+            processedRemovalKeys = processedRemovalKeys
+        ).toMutableSet().apply {
+            addAll(
+                currentRows
+                    .filter { it.syncState == BookshelfSyncState.PENDING_REMOVE }
+                    .map { it.bookKey }
+            )
+        }
         remoteByKey.values.forEach { remoteNovel ->
             val key = keyFor(remoteNovel.url)
             if (BookshelfSyncRules.shouldImport(key, localKeys, tombstoneKeys)) {

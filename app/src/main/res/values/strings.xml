@@ -59,6 +59,16 @@
     <string name="bookshelf_empty_hint">Favorite a novel to keep it here, even offline</string>
     <string name="sync_bookshelf">Sync bookshelf</string>
     <string name="delete_bookshelf">Remove from bookshelf</string>
+    <string name="bookshelf_edit">Edit bookshelf</string>
+    <string name="bookshelf_edit_done">Done editing bookshelf</string>
+    <string name="bookshelf_select_all">Select all books</string>
+    <string name="bookshelf_delete_selected">Remove selected books</string>
+    <string name="bookshelf_selected">%1$d selected</string>
+    <string name="bookshelf_delete_title">Remove books from bookshelf?</string>
+    <string name="bookshelf_delete_confirm">Remove %1$d book(s) from the bookshelf? The app will try to cancel their cloud favorites. Downloads and reading history will not be deleted.</string>
+    <string name="bookshelf_delete_confirm_action">Remove</string>
+    <string name="bookshelf_delete_done">Removed %1$d book(s) from bookshelf</string>
+    <string name="bookshelf_delete_failed">Could not update the bookshelf; no items were removed</string>
     <string name="bookshelf_sync_done">Bookshelf synced</string>
     <string name="bookshelf_sync_added">Added %1$d favorite(s)</string>
     <string name="bookshelf_sync_failed">Sync failed; showing local bookshelf</string>
