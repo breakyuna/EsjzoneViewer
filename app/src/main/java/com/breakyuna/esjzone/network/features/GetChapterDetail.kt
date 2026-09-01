@@ -5,6 +5,7 @@ import com.breakyuna.esjzone.network.EsjzoneClient
 import com.breakyuna.esjzone.network.EsjzoneUrls
 import com.breakyuna.esjzone.network.EsjzoneXPaths
 import com.breakyuna.esjzone.network.PageCacheTtl
+import com.breakyuna.esjzone.network.PageKind
 import com.breakyuna.esjzone.offline.NovelDownloadStore
 import com.breakyuna.esjzone.novellibrary.component.analyseComponents
 import com.breakyuna.esjzone.novellibrary.novel.Chapter
@@ -30,7 +31,13 @@ fun EsjzoneClient.getChapterDetail(
 
     AppLogger.i("GetChapterDetail", "Fetching chapter: ${chapter.name} at $targetUrl")
     val responseBody = try {
-        getPage(authorization, targetUrl, PageCacheTtl.CHAPTER, forceRefresh)
+        getPage(
+            authorization,
+            targetUrl,
+            PageCacheTtl.CHAPTER,
+            forceRefresh,
+            PageKind.CHAPTER
+        )
     } catch (error: Exception) {
         NovelDownloadStore.readChapter(targetUrl)?.let { downloaded ->
             AppLogger.w(

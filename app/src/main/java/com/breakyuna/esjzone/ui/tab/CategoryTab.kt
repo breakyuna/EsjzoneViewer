@@ -33,6 +33,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -188,6 +189,20 @@ private fun CategoryBrowserContent(
                 CircularProgressIndicator(strokeWidth = 2.5.dp)
             }
 
+            is CategoryModel.State.Error -> Column(
+                modifier = modifier.padding(24.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center
+            ) {
+                Text(
+                    text = stringResource(R.string.community_load_failed),
+                    color = MaterialTheme.colorScheme.error
+                )
+                TextButton(onClick = categoryModel::retry) {
+                    Text(stringResource(R.string.retry))
+                }
+            }
+
             is CategoryModel.State.Result -> {
                 val categories = (state as CategoryModel.State.Result).categories
                     .filter { !(it.isAdult && !adult) }
@@ -330,6 +345,7 @@ class CategoryModel(
 
     sealed class State {
         data object Loading : State()
+        data object Error : State()
         data class Result(val categories: List<NovelCategory>) : State()
     }
 
@@ -345,6 +361,8 @@ class CategoryModel(
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
+                loadStarted = false
+                mutableState.value = State.Error
                 com.breakyuna.esjzone.util.AppLogger.e(
                     "CategoryModel",
                     "Failed to load categories",
@@ -352,5 +370,10 @@ class CategoryModel(
                 )
             }
         }
+    }
+
+    fun retry() {
+        loadStarted = false
+        getCategories()
     }
 }

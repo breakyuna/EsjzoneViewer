@@ -345,6 +345,7 @@ class SearchPageModel(
                 throw e
             } catch (e: Exception) {
                 mutableState.value = State.Error
+                loadStarted = false
                 com.breakyuna.esjzone.util.AppLogger.e(
                     "SearchPageModel",
                     "Failed to search for keyword: $normalizedKeyword",

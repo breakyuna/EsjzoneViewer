@@ -4,9 +4,13 @@ import okhttp3.Cookie
 import okhttp3.CookieJar
 import okhttp3.HttpUrl
 
-class AuthorizationCookieJar(private val authorization: Authorization) : CookieJar {
+class AuthorizationCookieJar(
+    private val authorization: Authorization,
+    private val persistResponses: Boolean = true
+) : CookieJar {
 
     override fun loadForRequest(url: HttpUrl): List<Cookie> {
+        if (!persistResponses) return legacyCookies(url)
         val persistentJar = EsjzoneClient.persistentCookieJar
         if (persistentJar != null) {
             // Once the persistent jar is available it is the source of truth.  Falling
@@ -17,7 +21,7 @@ class AuthorizationCookieJar(private val authorization: Authorization) : CookieJ
     }
 
     override fun saveFromResponse(url: HttpUrl, cookies: List<Cookie>) {
-        EsjzoneClient.persistentCookieJar?.saveFromResponse(url, cookies)
+        if (persistResponses) EsjzoneClient.persistentCookieJar?.saveFromResponse(url, cookies)
     }
 
     private fun legacyCookies(url: HttpUrl): List<Cookie> {

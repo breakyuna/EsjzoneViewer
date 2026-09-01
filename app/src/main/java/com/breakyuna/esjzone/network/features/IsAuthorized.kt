@@ -4,6 +4,7 @@ import com.breakyuna.esjzone.network.Authorization
 import com.breakyuna.esjzone.network.EsjzoneClient
 import com.breakyuna.esjzone.network.EsjzoneUrls
 import com.breakyuna.esjzone.network.EsjzoneXPaths
+import com.breakyuna.esjzone.network.PageResponsePolicy
 import com.breakyuna.esjzone.network.hasCredentials
 import com.breakyuna.esjzone.util.AppLogger
 import kotlinx.coroutines.CancellationException
@@ -92,8 +93,16 @@ private fun EsjzoneClient.checkAuthorizationOnce(authorization: Authorization): 
         val result = when {
             explicitLoginPage ->
                 AuthorizationProbe(AuthorizationCheckResult.UNAUTHORIZED)
-            responseCode == 401 || responseCode == 403 ->
+            responseCode == 401 ->
+                AuthorizationProbe(AuthorizationCheckResult.UNAUTHORIZED)
+            responseCode == 403 &&
+                !PageResponsePolicy.looksLikeBlockedOrLoginPage(responseBody, finalPath) ->
+                // A plain 403 can be a genuine authorization rejection, but a WAF/IP
+                // response must never erase a usable local session. Keep it unknown and
+                // let the next foreground/retry request decide.
                 AuthorizationProbe(AuthorizationCheckResult.UNKNOWN, retryableStatus = true)
+            responseCode == 403 ->
+                AuthorizationProbe(AuthorizationCheckResult.UNKNOWN)
             !isSuccessful ->
                 AuthorizationProbe(AuthorizationCheckResult.UNKNOWN)
             hasProfileMarker || finalPath.contains("/my/profile") ->

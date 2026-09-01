@@ -603,6 +603,7 @@ private class ForumPageModel(
                 throw error
             } catch (error: Exception) {
                 AppLogger.e("ForumPageModel", "Failed to load forum categories", error)
+                loadStarted = false
                 CommunityState.Error
             }
         }
@@ -629,6 +630,7 @@ private class ForumCategoryPageModel(
                     "Failed to load forum category ${category.id}",
                     error
                 )
+                loadStarted = false
                 CommunityState.Error
             }
         }
@@ -657,6 +659,7 @@ private class ForumBoardPageModel(
                     "Failed to load forum board ${thread.id}",
                     error
                 )
+                loadStarted = false
                 CommunityState.Error
             }
         }
@@ -683,6 +686,7 @@ private class ForumPostPageModel(
                     "Failed to load forum topic ${topic.id}",
                     error
                 )
+                loadStarted = false
                 CommunityState.Error
             }
         }

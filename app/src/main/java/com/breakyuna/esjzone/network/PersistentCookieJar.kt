@@ -36,6 +36,11 @@ internal class PersistentCookieJar(context: Context) : CookieJar {
             for (cookie in responseCookies) {
                 val index = cookies.indexOfFirst { it.sameIdentity(cookie) }
                 if (cookie.expiresAt <= System.currentTimeMillis()) {
+                    // A WAF/interstitial can emit a broad session-cookie deletion even
+                    // though the HTML request itself was never accepted. Do not let an
+                    // arbitrary page response destroy ews_*; explicit clearSession() and
+                    // the login flow remain the authoritative deletion/rotation paths.
+                    if (cookie.name == "ews_key" || cookie.name == "ews_token") continue
                     if (index >= 0) cookies.removeAt(index)
                 } else {
                     val stored = StoredCookie.from(cookie)

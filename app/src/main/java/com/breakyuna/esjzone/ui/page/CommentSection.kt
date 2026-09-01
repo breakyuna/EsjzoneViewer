@@ -631,6 +631,7 @@ internal class CommentPageModel(
             } catch (error: Exception) {
                 AppLogger.e("CommentPageModel", "Failed to load comments", error)
                 mutableState.value = CommunityState.Error
+                loadStarted = false
             }
         }
     }

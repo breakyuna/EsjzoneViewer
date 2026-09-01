@@ -535,8 +535,13 @@ object SettingsPage : Screen {
                                         e
                                     )
                                 }
+                                // Navigate only after the local cookie/database cleanup has
+                                // completed. logout() performs the bounded remote attempt
+                                // before its finally block clears the local session.
+                                withContext(Dispatchers.Main) {
+                                    appNavigator?.replaceAll(LoginScreen)
+                                }
                             }
-                            appNavigator?.replaceAll(LoginScreen)
                         }
                     ) {
                         Text(text = stringResource(id = R.string.logout_confirm))

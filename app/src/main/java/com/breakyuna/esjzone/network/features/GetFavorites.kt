@@ -5,6 +5,7 @@ import com.breakyuna.esjzone.network.EsjzoneClient
 import com.breakyuna.esjzone.network.EsjzoneUrls
 import com.breakyuna.esjzone.network.EsjzoneXPaths
 import com.breakyuna.esjzone.network.PageCacheTtl
+import com.breakyuna.esjzone.network.PageKind
 import com.breakyuna.esjzone.network.PageableRequester
 import com.breakyuna.esjzone.novellibrary.novel.FavoriteNovel
 import org.jsoup.Jsoup
@@ -23,7 +24,8 @@ fun EsjzoneClient.getFavorites(
         authorization,
         firstPageUrl,
         PageCacheTtl.ACCOUNT_LIST,
-        forceRefresh = forceRefresh
+        forceRefresh = forceRefresh,
+        pageKind = PageKind.ACCOUNT
     )
 
     val document = Jsoup.parse(responseBody, firstPageUrl)
@@ -72,7 +74,8 @@ private class FavoriteNovelRequester(
         val responseBody = EsjzoneClient.getPage(
             authorization,
             pageUrl,
-            PageCacheTtl.ACCOUNT_LIST
+            PageCacheTtl.ACCOUNT_LIST,
+            pageKind = PageKind.ACCOUNT
         )
         val document = Jsoup.parse(responseBody, pageUrl)
 

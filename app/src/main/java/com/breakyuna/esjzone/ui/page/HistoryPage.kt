@@ -557,6 +557,7 @@ class HistoryPageModel(
                 throw e
             } catch (e: Exception) {
                 mutableState.value = State.Error
+                loadStarted = false
                 AppLogger.e("HistoryPageModel", "Failed to load cloud histories", e)
             }
         }

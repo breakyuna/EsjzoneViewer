@@ -5,6 +5,7 @@ import com.breakyuna.esjzone.network.EsjzoneClient
 import com.breakyuna.esjzone.network.EsjzoneUrls
 import com.breakyuna.esjzone.network.EsjzoneXPaths
 import com.breakyuna.esjzone.network.PageCacheTtl
+import com.breakyuna.esjzone.network.PageKind
 import com.breakyuna.esjzone.network.PageableRequester
 import com.breakyuna.esjzone.novellibrary.novel.CoveredNovel
 import com.breakyuna.esjzone.novellibrary.novel.CoveredNovelImpl
@@ -17,7 +18,12 @@ fun EsjzoneClient.search(
     keyword: String
 ): Pair<PageableRequester<CoveredNovel>, List<CoveredNovel>> {
     val searchUrl = "${EsjzoneUrls.Tags}/$keyword"
-    val responseBody = getPage(authorization, searchUrl, PageCacheTtl.SEARCH)
+    val responseBody = getPage(
+        authorization,
+        searchUrl,
+        PageCacheTtl.SEARCH,
+        pageKind = PageKind.SEARCH
+    )
 
     val document = Jsoup.parse(responseBody)
 
@@ -77,7 +83,8 @@ private class SearchNovelRequester(
         val responseBody = EsjzoneClient.getPage(
             authorization,
             pageUrl,
-            PageCacheTtl.SEARCH
+            PageCacheTtl.SEARCH,
+            pageKind = PageKind.SEARCH
         )
 
         val document = Jsoup.parse(responseBody)

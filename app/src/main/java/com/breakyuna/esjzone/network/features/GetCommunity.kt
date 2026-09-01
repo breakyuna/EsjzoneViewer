@@ -5,6 +5,7 @@ import com.breakyuna.esjzone.network.EsjzoneClient
 import com.breakyuna.esjzone.network.EsjzoneUrls
 import com.breakyuna.esjzone.network.EsjzoneXPaths
 import com.breakyuna.esjzone.network.PageCacheTtl
+import com.breakyuna.esjzone.network.PageKind
 import com.breakyuna.esjzone.novellibrary.community.ForumCategory
 import com.breakyuna.esjzone.novellibrary.community.ForumPost
 import com.breakyuna.esjzone.novellibrary.community.ForumTopic
@@ -70,7 +71,8 @@ fun EsjzoneClient.getPageComments(
             authorization,
             targetUrl,
             PageCacheTtl.COMMUNITY,
-            forceRefresh = forceRefresh
+            forceRefresh = forceRefresh,
+            pageKind = PageKind.COMMUNITY
         ),
         targetUrl
     )
@@ -88,7 +90,12 @@ fun EsjzoneClient.submitForumComment(
 
     val targetUrl = EsjzoneUrls.resolve(pageUrl).substringBefore('#')
     val initialDocument = Jsoup.parse(
-        getPage(authorization, targetUrl, PageCacheTtl.COMMUNITY),
+        getPage(
+            authorization,
+            targetUrl,
+            PageCacheTtl.COMMUNITY,
+            pageKind = PageKind.COMMUNITY
+        ),
         targetUrl
     )
     val form = initialDocument.selectFirst("form.commentEditor, form.gbEditor")
@@ -156,7 +163,12 @@ fun EsjzoneClient.submitForumComment(
     } catch (error: IOException) {
         invalidatePage(authorization, targetUrl)
         val recoveredComments = runCatching {
-            val refreshed = getPage(authorization, targetUrl, PageCacheTtl.COMMUNITY)
+            val refreshed = getPage(
+                authorization,
+                targetUrl,
+                PageCacheTtl.COMMUNITY,
+                pageKind = PageKind.COMMUNITY
+            )
             parseComments(Jsoup.parse(refreshed, targetUrl), parentId)
         }.getOrDefault(previousComments)
         findCreatedComment(recoveredComments, previousIds, submittedContent)?.let { created ->
@@ -171,7 +183,12 @@ fun EsjzoneClient.submitForumComment(
     } catch (error: IOException) {
         invalidatePage(authorization, targetUrl)
         val recoveredComments = runCatching {
-            val refreshed = getPage(authorization, targetUrl, PageCacheTtl.COMMUNITY)
+            val refreshed = getPage(
+                authorization,
+                targetUrl,
+                PageCacheTtl.COMMUNITY,
+                pageKind = PageKind.COMMUNITY
+            )
             parseComments(Jsoup.parse(refreshed, targetUrl), parentId)
         }.getOrDefault(previousComments)
         findCreatedComment(recoveredComments, previousIds, submittedContent)?.let { created ->
@@ -189,7 +206,12 @@ fun EsjzoneClient.submitForumComment(
     invalidatePage(authorization, targetUrl)
     val refreshedDocument = try {
         Jsoup.parse(
-            getPage(authorization, targetUrl, PageCacheTtl.COMMUNITY),
+            getPage(
+                authorization,
+                targetUrl,
+                PageCacheTtl.COMMUNITY,
+                pageKind = PageKind.COMMUNITY
+            ),
             targetUrl
         )
     } catch (error: IOException) {
@@ -208,7 +230,12 @@ fun EsjzoneClient.getGuestbookComments(authorization: Authorization): List<Comme
 fun EsjzoneClient.getForumCategories(authorization: Authorization): List<ForumCategory> {
     AppLogger.i("GetCommunity", "Fetching forum categories")
     val document = Jsoup.parse(
-        getPage(authorization, "${EsjzoneUrls.Forum}/", PageCacheTtl.COMMUNITY),
+        getPage(
+            authorization,
+            "${EsjzoneUrls.Forum}/",
+            PageCacheTtl.COMMUNITY,
+            pageKind = PageKind.FORUM
+        ),
         "${EsjzoneUrls.Forum}/"
     )
 
@@ -243,7 +270,12 @@ fun EsjzoneClient.getForumThreads(
     val targetUrl = EsjzoneUrls.resolve(category.url)
     AppLogger.i("GetCommunity", "Fetching forum category ${category.id} at $targetUrl")
     val document = Jsoup.parse(
-        getPage(authorization, targetUrl, PageCacheTtl.COMMUNITY),
+        getPage(
+            authorization,
+            targetUrl,
+            PageCacheTtl.COMMUNITY,
+            pageKind = PageKind.COMMUNITY
+        ),
         targetUrl
     )
 
@@ -307,6 +339,7 @@ fun EsjzoneClient.getForumBoard(
             authorization,
             targetUrl,
             PageCacheTtl.COMMUNITY,
+            pageKind = PageKind.COMMUNITY,
             forceRefresh = true
         ),
         targetUrl
@@ -344,6 +377,7 @@ fun EsjzoneClient.getForumBoard(
             authorization,
             targetUrl,
             PageCacheTtl.COMMUNITY,
+            pageKind = PageKind.COMMUNITY,
             forceRefresh = true
         )
         body = getForumTableData(authorization, endpoint, targetUrl)
@@ -404,7 +438,12 @@ fun EsjzoneClient.getForumPost(
     val targetUrl = EsjzoneUrls.resolve(topic.url).substringBefore('#')
     AppLogger.i("GetCommunity", "Fetching forum topic ${topic.id} at $targetUrl")
     val document = Jsoup.parse(
-        getPage(authorization, targetUrl, PageCacheTtl.COMMUNITY),
+        getPage(
+            authorization,
+            targetUrl,
+            PageCacheTtl.COMMUNITY,
+            pageKind = PageKind.COMMUNITY
+        ),
         targetUrl
     )
     return parseForumPost(document, topic)

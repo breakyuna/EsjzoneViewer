@@ -5,6 +5,7 @@ import com.breakyuna.esjzone.network.EsjzoneClient
 import com.breakyuna.esjzone.network.EsjzoneUrls
 import com.breakyuna.esjzone.network.EsjzoneXPaths
 import com.breakyuna.esjzone.network.PageCacheTtl
+import com.breakyuna.esjzone.network.PageKind
 import com.breakyuna.esjzone.network.PageableRequester
 import com.breakyuna.esjzone.novellibrary.novel.CoveredNovel
 import com.breakyuna.esjzone.novellibrary.novel.CoveredNovelImpl
@@ -21,7 +22,8 @@ fun EsjzoneClient.novels(
         authorization,
         firstPageUrl,
         PageCacheTtl.LIST,
-        forceRefresh = forceRefresh
+        forceRefresh = forceRefresh,
+        pageKind = PageKind.LIST
     )
 
     val document = Jsoup.parse(responseBody)
@@ -84,7 +86,8 @@ private class ListNovelRequester(
         val responseBody = EsjzoneClient.getPage(
             authorization,
             pageUrl,
-            PageCacheTtl.LIST
+            PageCacheTtl.LIST,
+            pageKind = PageKind.LIST
         )
 
         val document = Jsoup.parse(responseBody)

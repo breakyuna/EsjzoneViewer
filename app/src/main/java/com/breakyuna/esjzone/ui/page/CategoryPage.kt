@@ -215,6 +215,7 @@ class CategoryPageModel(
                 throw e
             } catch (e: Exception) {
                 mutableState.value = State.Error
+                loadStarted = false
                 com.breakyuna.esjzone.util.AppLogger.e("CategoryPageModel", "Failed to list novels for category: ${category.name}", e)
             }
         }

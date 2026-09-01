@@ -5,6 +5,7 @@ import com.breakyuna.esjzone.network.EsjzoneClient
 import com.breakyuna.esjzone.network.EsjzoneUrls
 import com.breakyuna.esjzone.network.EsjzoneXPaths
 import com.breakyuna.esjzone.network.PageCacheTtl
+import com.breakyuna.esjzone.network.PageKind
 import com.breakyuna.esjzone.novellibrary.novel.Chapter
 import com.breakyuna.esjzone.novellibrary.novel.HistoryNovel
 import org.jsoup.Jsoup
@@ -17,7 +18,8 @@ fun EsjzoneClient.getHistories(
         authorization,
         EsjzoneUrls.My.View,
         PageCacheTtl.ACCOUNT_LIST,
-        forceRefresh = forceRefresh
+        forceRefresh = forceRefresh,
+        pageKind = PageKind.ACCOUNT
     )
 
     val document = Jsoup.parse(responseBody)

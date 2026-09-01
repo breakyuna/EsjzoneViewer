@@ -79,7 +79,6 @@ class LoadingScreen : Screen {
                                     "LoadingScreen",
                                     "Stored session was rejected by the server"
                                 )
-                                EsjzoneClient.clearPageCache()
                                 EsjzoneClient.clearSession(selectedDomain)
                                 dao.deleteByKey("ews_key")
                                 dao.deleteByKey("ews_token")

@@ -5,6 +5,7 @@ import com.breakyuna.esjzone.network.EsjzoneClient
 import com.breakyuna.esjzone.network.EsjzoneUrls
 import com.breakyuna.esjzone.network.EsjzoneXPaths
 import com.breakyuna.esjzone.network.PageCacheTtl
+import com.breakyuna.esjzone.network.PageKind
 import com.breakyuna.esjzone.network.NovelDetailCache
 import com.breakyuna.esjzone.novellibrary.novel.DetailedNovel
 import com.breakyuna.esjzone.novellibrary.novel.Novel
@@ -33,7 +34,8 @@ fun EsjzoneClient.getNovelDetail(
         authorization = authorization,
         url = targetUrl,
         maxAgeMillis = PageCacheTtl.DETAIL,
-        forceRefresh = forceRefresh
+        forceRefresh = forceRefresh,
+        pageKind = PageKind.DETAIL
     )
 
     val document = Jsoup.parse(responseBody, targetUrl)

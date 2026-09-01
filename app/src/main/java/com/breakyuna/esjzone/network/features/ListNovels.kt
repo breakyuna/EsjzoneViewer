@@ -5,6 +5,7 @@ import com.breakyuna.esjzone.network.EsjzoneClient
 import com.breakyuna.esjzone.network.EsjzoneUrls
 import com.breakyuna.esjzone.network.EsjzoneXPaths
 import com.breakyuna.esjzone.network.PageCacheTtl
+import com.breakyuna.esjzone.network.PageKind
 import com.breakyuna.esjzone.novellibrary.novel.Category
 import com.breakyuna.esjzone.novellibrary.novel.CategoryNovel
 import org.jsoup.Jsoup
@@ -14,7 +15,12 @@ fun EsjzoneClient.listNovels(
     category: Category
 ): List<CategoryNovel> {
     val targetUrl = EsjzoneUrls.resolve(category.url)
-    val responseBody = getPage(authorization, targetUrl, PageCacheTtl.LIST)
+    val responseBody = getPage(
+        authorization,
+        targetUrl,
+        PageCacheTtl.LIST,
+        pageKind = PageKind.LIST
+    )
 
     val document = Jsoup.parse(responseBody)
 

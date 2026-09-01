@@ -97,25 +97,55 @@ object EsjzoneClient {
         authorization: Authorization,
         url: String,
         maxAgeMillis: Long,
-        forceRefresh: Boolean = false
+        forceRefresh: Boolean = false,
+        pageKind: PageKind = PageKind.GENERIC
     ): String {
         val cacheKey = pageCacheKey(authorization, url)
         val requestEpoch = cacheEpoch.get()
         if (!forceRefresh) {
-            PageCache.read(cacheKey, maxAgeMillis)?.let { return it }
+            PageCache.read(cacheKey, maxAgeMillis)?.let { cached ->
+                if (PageResponsePolicy.validate(200, cached, url, kind = pageKind).trusted) {
+                    return cached
+                }
+                // A previous app version could have cached an HTML block/challenge page.
+                // Do not keep returning it after the network becomes healthy.
+                PageCache.remove(cacheKey)
+            }
         }
-        val stalePage = PageCache.readStale(cacheKey)
+        val staleCandidate = PageCache.readStale(cacheKey)
+        val stalePage = staleCandidate?.let { candidate ->
+            if (PageResponsePolicy.validate(200, candidate, url, kind = pageKind).trusted) {
+                candidate
+            } else {
+                PageCache.remove(cacheKey)
+                null
+            }
+        }
 
         if (!forceRefresh && stalePage != null) {
             refreshScope.launch {
                 runCatching {
-                    fetchPageCoalesced(authorization, url, cacheKey, stalePage, requestEpoch)
+                    fetchPageCoalesced(
+                        authorization,
+                        url,
+                        cacheKey,
+                        stalePage,
+                        requestEpoch,
+                        pageKind
+                    )
                 }
             }
             return stalePage
         }
 
-        return fetchPageCoalesced(authorization, url, cacheKey, stalePage, requestEpoch)
+        return fetchPageCoalesced(
+            authorization,
+            url,
+            cacheKey,
+            stalePage,
+            requestEpoch,
+            pageKind
+        )
     }
 
     private fun fetchPageCoalesced(
@@ -123,7 +153,8 @@ object EsjzoneClient {
         url: String,
         cacheKey: String,
         stalePage: String?,
-        requestEpoch: Long
+        requestEpoch: Long,
+        pageKind: PageKind
     ): String {
         val owner = CompletableFuture<String>()
         val existing = inFlightPages.putIfAbsent(cacheKey, owner)
@@ -147,25 +178,45 @@ object EsjzoneClient {
                         .headers(headers)
                         .build()
                 ).execute()
-                response.code to response.use { it.body?.string().orEmpty() }
+                response.use {
+                    val body = it.body?.string().orEmpty()
+                    PageResponseData(
+                        statusCode = it.code,
+                        body = body,
+                        finalUrl = it.request.url.toString(),
+                        contentType = it.header("Content-Type")
+                    )
+                }
             } finally {
                 networkPermits.release()
             }
-            val responseCode = responseData.first
-            val body = responseData.second
-            if (requestEpoch == cacheEpoch.get() && responseCode in 200..299 &&
-                body.isNotBlank() && !looksLikeLoginPage(body)
-            ) {
+            val validation = PageResponsePolicy.validate(
+                statusCode = responseData.statusCode,
+                body = responseData.body,
+                requestedUrl = url,
+                finalUrl = responseData.finalUrl,
+                contentType = responseData.contentType,
+                kind = pageKind
+            )
+            if (requestEpoch == cacheEpoch.get() && validation.trusted) {
                 NovelDetailCache.remove(cacheKey)
-                PageCache.write(cacheKey, body)
+                PageCache.write(cacheKey, responseData.body)
             }
-            val result = if ((responseCode == 408 || responseCode == 425 || responseCode == 429 ||
-                    responseCode in 500..599) && stalePage != null
-            ) {
-                stalePage
-            } else {
-                body
+            if (!validation.trusted) {
+                val fallback = PageResponsePolicy.selectTrustedBody(
+                    validation,
+                    responseData.body,
+                    stalePage
+                )
+                if (fallback != null) {
+                    owner.complete(fallback)
+                    return fallback
+                }
+                val error = UntrustedPageException(url, validation)
+                owner.completeExceptionally(error)
+                throw error
             }
+            val result = responseData.body
             owner.complete(result)
             result
         } catch (error: CancellationException) {
@@ -257,8 +308,20 @@ object EsjzoneClient {
 
     /** Clears only the selected site's session; a null host clears every persisted session. */
     fun clearSession(host: String? = null) {
+        // Prevent an old in-flight response from repopulating a cache namespace after
+        // logout. The account-scoped files themselves remain safely inaccessible and can
+        // still be reclaimed by the normal cache size policy.
+        cacheEpoch.incrementAndGet()
+        inFlightPages.clear()
         persistentCookieJar?.clear(host)
     }
+
+    /** Builds a client for remote logout that cannot persist response cookies. */
+    internal fun logoutClient(authorization: Authorization): OkHttpClient =
+        sharedHttpClient.newBuilder()
+            .cookieJar(AuthorizationCookieJar(authorization, persistResponses = false))
+            .callTimeout(5, java.util.concurrent.TimeUnit.SECONDS)
+            .build()
 
     private fun pageCacheKey(authorization: Authorization, url: String): String {
         val host = url.toHttpUrlOrNull()?.host ?: authorization.domain
@@ -276,11 +339,10 @@ object EsjzoneClient {
         return "$scope|$url"
     }
 
-    private fun looksLikeLoginPage(body: String): Boolean {
-        val document = body.lowercase()
-        val hasPasswordField = Regex("name\\s*=\\s*['\"]pwd['\"]").containsMatchIn(document)
-        return hasPasswordField &&
-            (document.contains("login-box") || document.contains("/my/login"))
-    }
-
+    private data class PageResponseData(
+        val statusCode: Int,
+        val body: String,
+        val finalUrl: String,
+        val contentType: String?
+    )
 }

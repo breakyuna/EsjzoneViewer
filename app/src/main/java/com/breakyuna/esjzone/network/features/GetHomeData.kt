@@ -5,16 +5,23 @@ import com.breakyuna.esjzone.network.EsjzoneClient
 import com.breakyuna.esjzone.network.EsjzoneUrls
 import com.breakyuna.esjzone.network.EsjzoneXPaths
 import com.breakyuna.esjzone.network.PageCacheTtl
+import com.breakyuna.esjzone.network.PageKind
 import com.breakyuna.esjzone.novellibrary.data.HomeData
 import com.breakyuna.esjzone.novellibrary.novel.CoveredNovel
 import com.breakyuna.esjzone.novellibrary.novel.CoveredNovelImpl
 import com.breakyuna.esjzone.util.AppLogger
+import java.io.IOException
 import org.jsoup.Jsoup
 
 fun EsjzoneClient.getHomeData(authorization: Authorization): HomeData {
     AppLogger.i("GetHomeData", "Fetching home data from ${EsjzoneUrls.Home}")
 
-    val responseBody = getPage(authorization, EsjzoneUrls.Home, PageCacheTtl.HOME)
+    val responseBody = getPage(
+        authorization,
+        EsjzoneUrls.Home,
+        PageCacheTtl.HOME,
+        pageKind = PageKind.HOME
+    )
 
     val document = Jsoup.parse(responseBody)
 
@@ -116,6 +123,17 @@ fun EsjzoneClient.getHomeData(authorization: Authorization): HomeData {
         }
     } catch (e: Exception) {
         AppLogger.w("GetHomeData", "Error parsing recommendationNovels", e)
+    }
+
+    if (recentlyUpdateTranslatedNovels.isEmpty() &&
+        recentlyUpdateOriginalNovels.isEmpty() &&
+        recentlyUpdateTranslatedR18Novels.isEmpty() &&
+        recentlyUpdateOriginalR18Novels.isEmpty() &&
+        recommendationNovels.isEmpty()
+    ) {
+        // A valid home page may have an empty individual section, but an entirely
+        // empty result means the HTML template was not actually the ESJ home page.
+        throw IOException("ESJ home page contained no recognizable novel cards")
     }
 
     AppLogger.i("GetHomeData", "Home data parsed successfully: rec=${recommendationNovels.size}, trans=${recentlyUpdateTranslatedNovels.size}, orig=${recentlyUpdateOriginalNovels.size}")

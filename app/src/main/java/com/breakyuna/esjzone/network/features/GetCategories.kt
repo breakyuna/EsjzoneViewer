@@ -5,11 +5,18 @@ import com.breakyuna.esjzone.network.EsjzoneClient
 import com.breakyuna.esjzone.network.EsjzoneUrls
 import com.breakyuna.esjzone.network.EsjzoneXPaths
 import com.breakyuna.esjzone.network.PageCacheTtl
+import com.breakyuna.esjzone.network.PageKind
 import com.breakyuna.esjzone.novellibrary.novel.Category
+import java.io.IOException
 import org.jsoup.Jsoup
 
 fun EsjzoneClient.getCategories(authorization: Authorization): List<Category> {
-    val responseBody = getPage(authorization, EsjzoneUrls.Forum, PageCacheTtl.CATEGORIES)
+    val responseBody = getPage(
+        authorization,
+        EsjzoneUrls.Forum,
+        PageCacheTtl.CATEGORIES,
+        pageKind = PageKind.FORUM
+    )
 
     val document = Jsoup.parse(responseBody)
 
@@ -24,6 +31,10 @@ fun EsjzoneClient.getCategories(authorization: Authorization): List<Category> {
                 name.contains("r18", ignoreCase = true)
             )
         )
+    }
+
+    if (categories.isEmpty()) {
+        throw IOException("ESJ forum page contained no recognizable categories")
     }
 
     println("Categories: $categories")
