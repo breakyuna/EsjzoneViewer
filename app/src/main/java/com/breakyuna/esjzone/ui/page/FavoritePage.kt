@@ -95,7 +95,7 @@ object FavoritePage : Screen {
                     refreshing = false
                     snackbar.showSnackbar(
                         if (result.result.added > 0) {
-                            syncAddedPattern.replace("%1$d", result.result.added.toString())
+                            syncAddedPattern.format(result.result.added)
                         } else {
                             syncDoneText
                         }

@@ -7,6 +7,7 @@ import com.breakyuna.esjzone.network.Authorization
 import com.breakyuna.esjzone.network.EsjzoneClient
 import com.breakyuna.esjzone.network.EsjzoneUrls
 import com.breakyuna.esjzone.network.features.getAllFavorites
+import com.breakyuna.esjzone.network.features.toggleFavorite
 import com.breakyuna.esjzone.network.hasCredentials
 import com.breakyuna.esjzone.novellibrary.novel.Novel
 import com.breakyuna.esjzone.util.AppLogger
