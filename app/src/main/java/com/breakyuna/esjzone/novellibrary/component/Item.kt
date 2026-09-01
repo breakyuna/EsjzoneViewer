@@ -1,10 +1,7 @@
 package com.breakyuna.esjzone.novellibrary.component
 
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -12,10 +9,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.MenuBook
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.ExpandLess
@@ -23,30 +18,27 @@ import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.res.stringResource
+import com.breakyuna.esjzone.R
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-import com.breakyuna.esjzone.network.EsjzoneXPaths
 import com.breakyuna.esjzone.novellibrary.novel.Chapter
 import com.breakyuna.esjzone.ui.navigation.LocalBaseNavigator
 import com.breakyuna.esjzone.ui.navigation.ChapterStateHolder
@@ -54,101 +46,44 @@ import com.breakyuna.esjzone.ui.navigation.pushIfNotCurrent
 import com.breakyuna.esjzone.ui.page.ChapterPage
 import org.jsoup.nodes.Element
 
-fun analyseItems(element: Element): List<Item> {
-    val items = mutableListOf<Item>()
+/** Walk each DOM node once so groups and loose chapters retain their original order. */
+fun analyseItems(element: Element): List<Item> = parseChapterItems(element)
 
+private fun parseChapterItems(element: Element): List<Item> = buildList {
     for (child in element.children()) {
-        if (child.nameIs("p")) {
-            val paragraphs = analyseParagraph(child)
-            val textComp = paragraphs.filterIsInstance<TextComponent>().firstOrNull()
-                ?: TextComponent(child.text())
-            items.add(TextItem(textComp))
-        } else if (child.nameIs("a")) {
-            items.add(ChapterItem(analyseChapter(child)))
-        } else if (child.nameIs("details")) {
-            items.add(analyseChapterList(child))
-        } else if (child.id() == "chapterList") {
-            // Current ESJ detail pages use a flat #chapterList container rather
-            // than wrapping chapters in <details>.  The surrounding div is a
-            // layout node, so direct-child parsing alone would otherwise skip
-            // every chapter and leave the reading entry point disabled.
-            appendFlatChapterItems(items, child)
-        }
-    }
-
-    // Some pages wrap the <details> nodes in an extra layout div. Keep the direct-child
-    // path above for normal pages, then fall back to descendant details without duplicating
-    // a chapter group that was already parsed.
-    if (items.none { it is ChapterListItem }) {
-        for (details in element.select("details")) {
-            items.add(analyseChapterList(details))
-        }
-    }
-
-    // Also support a flat chapter list nested below another layout wrapper.
-    // This is intentionally additive and de-duplicates by href so calling
-    // analyseItems(#chapterList) directly remains safe.
-    val flatChapterList = if (element.id() == "chapterList") {
-        element
-    } else {
-        element.selectFirst("#chapterList")
-    }
-    if (flatChapterList != null) {
-        appendFlatChapterItems(items, flatChapterList)
-    }
-
-    return items.toList()
-}
-
-private fun appendFlatChapterItems(items: MutableList<Item>, chapterList: Element) {
-    val existingUrls = items
-        .asSequence()
-        .flatMap { item ->
-            when (item) {
-                is ChapterItem -> sequenceOf(item.chapter)
-                is ChapterListItem -> item.chapters.asSequence()
-                else -> emptySequence()
+        when {
+            child.nameIs("details") -> {
+                val title = child.children().firstOrNull { it.nameIs("summary") }?.text().orEmpty()
+                val children = parseChapterItems(child)
+                val chapters = children.flatMap {
+                    when (it) {
+                        is ChapterItem -> listOf(it.chapter)
+                        is ChapterListItem -> it.chapters
+                        else -> emptyList()
+                    }
+                }
+                add(ChapterListItem(TextComponent(title), chapters, children, child.hasAttr("open")))
             }
-        }
-        .map { it.url }
-        .toMutableSet()
-
-    for (chapterElement in chapterList.select("a[href]")) {
-        val href = chapterElement.attr("href")
-        if (href.isBlank()) continue
-        // #chapterList is a chapter-only container on the current template.
-        // Keep the data-title-less fallback for older/malformed entries while
-        // avoiding unrelated links when a wrapper is reused elsewhere.
-        if (!chapterElement.hasAttr("data-title") &&
-            !href.contains("/forum/", ignoreCase = true)
-        ) {
-            continue
-        }
-        if (existingUrls.add(href)) {
-            items.add(ChapterItem(analyseChapter(chapterElement)))
-        }
-    }
-}
-
-private fun analyseChapterList(element: Element): ChapterListItem {
-    val titleElement = element.children().firstOrNull { it.nameIs("summary") }
-        ?: EsjzoneXPaths.Detail.ChapterListDetails.Title.evaluate(element).elements.firstOrNull()
-    val title = if (titleElement != null) {
-        val paragraphs = analyseParagraph(titleElement)
-        paragraphs.filterIsInstance<TextComponent>().firstOrNull()
-            ?: TextComponent(titleElement.text())
-    } else {
-        TextComponent("")
-    }
-
-    val chapters = mutableListOf<Chapter>()
-    for (chapterElement in element.select("a[data-title], a[href*='/forum/']")) {
-        if (chapterElement.attr("href").isNotBlank()) {
-            chapters.add(analyseChapter(chapterElement))
+            child.nameIs("a") -> {
+                val href = child.attr("href")
+                if (href.isNotBlank() &&
+                    (child.hasAttr("data-title") || href.contains("/forum/", ignoreCase = true))
+                ) {
+                    add(ChapterItem(analyseChapter(child)))
+                }
+            }
+            child.nameIs("summary") || child.nameIs("button") ||
+                child.nameIs("script") || child.nameIs("style") -> Unit
+            child.nameIs("p") && child.selectFirst("a[href], details") == null -> {
+                if (child.text().isNotBlank()) {
+                    val component = analyseParagraph(child).filterIsInstance<TextComponent>().firstOrNull()
+                        ?: TextComponent(child.text())
+                    add(TextItem(component))
+                }
+            }
+            else -> addAll(parseChapterItems(child))
         }
     }
-
-    return ChapterListItem(title, chapters.toList())
 }
 
 private fun analyseChapter(element: Element): Chapter {
@@ -300,7 +235,12 @@ class ChapterItem(val chapter: Chapter) : Item {
 
 }
 
-class ChapterListItem(private val name: TextComponent, val chapters: List<Chapter>) : Item {
+class ChapterListItem(
+    private val name: TextComponent,
+    val chapters: List<Chapter>,
+    private val children: List<Item> = chapters.map { ChapterItem(it) },
+    private val initiallyExpanded: Boolean = false
+) : Item {
 
     @Composable
     override fun Render(
@@ -311,19 +251,9 @@ class ChapterListItem(private val name: TextComponent, val chapters: List<Chapte
         novelName: String,
         novelCoverUrl: String
     ) {
-        val navigator = LocalBaseNavigator.current
-
         val textMeasurer = rememberTextMeasurer()
         val textStyle = LocalTextStyle.current
         val density = LocalDensity.current
-
-        var historied by rememberSaveable {
-            hasHistory
-        }
-
-        var rememberedHistory by rememberSaveable {
-            history
-        }
 
         Card(
             modifier = Modifier
@@ -334,8 +264,8 @@ class ChapterListItem(private val name: TextComponent, val chapters: List<Chapte
                 containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
             )
         ) {
-            var expanded by remember {
-                mutableStateOf(false)
+            var expanded by rememberSaveable(novelId, name.text, chapters.firstOrNull()?.url) {
+                mutableStateOf(initiallyExpanded)
             }
             Column(
                 modifier = Modifier.fillMaxWidth()
@@ -377,80 +307,19 @@ class ChapterListItem(private val name: TextComponent, val chapters: List<Chapte
                         Icons.Filled.ExpandMore
                     Icon(
                         imageVector = vector,
-                        contentDescription = if (expanded) "Collapse" else "Expand",
+                        contentDescription = stringResource(if (expanded) R.string.chapter_group_collapse else R.string.chapter_group_expand),
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.size(20.dp)
                     )
                 }
 
-                AnimatedVisibility(expanded) {
+                // Avoid animating the height of potentially hundreds of chapter rows.
+                if (expanded) {
                     Column(
                         modifier = Modifier.padding(start = 12.dp, end = 12.dp, bottom = 10.dp)
                     ) {
-                        for (chapter in chapters) {
-                            val isCurrent = (historied && chapter == rememberedHistory) || chapter.isHistory
-                            Surface(
-                                onClick = {
-                                    if (chapter.url.contains("esjzone") || chapter.url.contains("forum")) {
-                                        historied = true
-                                        rememberedHistory = chapter
-                                        navigator?.pushIfNotCurrent(
-                                            ChapterPage(
-                                                novelId = novelId,
-                                                chapter = chapter,
-                                                history = ChapterStateHolder(history),
-                                                chapterOrder = chapterOrder,
-                                                novelName = novelName,
-                                                novelCoverUrl = novelCoverUrl
-                                            )
-                                        )
-                                    }
-                                },
-                                shape = RoundedCornerShape(10.dp),
-                                color = if (isCurrent) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface.copy(alpha = 0.6f),
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(vertical = 2.dp)
-                            ) {
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(horizontal = 12.dp, vertical = 10.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.SpaceBetween
-                                ) {
-                                    Row(
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        modifier = Modifier.weight(1f)
-                                    ) {
-                                        if (isCurrent) {
-                                            Icon(
-                                                imageVector = Icons.Filled.Bookmark,
-                                                contentDescription = null,
-                                                tint = MaterialTheme.colorScheme.primary,
-                                                modifier = Modifier.size(14.dp)
-                                            )
-                                            Spacer(modifier = Modifier.width(6.dp))
-                                        }
-                                        Text(
-                                            text = chapter.name,
-                                            style = MaterialTheme.typography.bodySmall.copy(
-                                                fontWeight = if (isCurrent) FontWeight.Bold else FontWeight.Normal
-                                            ),
-                                            color = if (isCurrent) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface,
-                                            maxLines = 2,
-                                            overflow = TextOverflow.Ellipsis
-                                        )
-                                    }
-
-                                    Icon(
-                                        imageVector = Icons.Default.ChevronRight,
-                                        contentDescription = null,
-                                        tint = if (isCurrent) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
-                                        modifier = Modifier.size(16.dp)
-                                    )
-                                }
-                            }
+                        for (item in children) {
+                            item.Render(novelId, history, hasHistory, chapterOrder, novelName, novelCoverUrl)
                         }
                     }
                 }

@@ -236,4 +236,6 @@
     <string name="comment_submit_failed">发表失败，请检查网络或登录状态后重试</string>
     <string name="comment_submit_unverified">请求已完成，但未能确认新评论，请刷新检查后再决定是否重发</string>
     <string name="comment_refresh">刷新评论</string>
+    <string name="chapter_group_expand">展开章节分组</string>
+    <string name="chapter_group_collapse">收起章节分组</string>
 </resources>

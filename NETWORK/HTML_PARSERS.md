@@ -115,8 +115,10 @@ URL：/detail/{novelId}.html
 
 字段：
 
-- 当前扁平模板没有卷节点，章节直接位于 #integration > #chapterList；客户端按 a 的 DOM 顺序读取。
-- 旧版分卷模板的卷名来自 details > summary 文本。
+- `#chapterList` 可以混合组外章节、说明段落与 `details`，不能用后代链接选择器将整个容器平铺。
+- 从 `#integration` 按 DOM 顺序递归遍历包装节点，遇到 `details` 保留分组，标题取直接子节点 `summary`，支持嵌套分组与空分组；章节链接只解析一次。
+- 折叠初始状态来自 `details[open]`；客户端保存当前页面的展开状态。折叠只影响显示，完整章节顺序仍用于阅读导航、历史和下载。
+- 2026-09-01 浏览器验证 `1635692176`：`#chapterList` 内五组分别有 18、99、102、100、62 个链接，均默认收起，组外另有三个章节链接。
 - 章节标题：a[data-title] 的 data-title，若缺失再取其中 p 文本。
 - 章节 URL：a[href]。
 - 小说 ID/帖子 ID：从 /forum/{novelId}/{postId}.html 解析。

@@ -332,9 +332,8 @@ fun EsjzoneClient.getForumBoard(
     val targetUrl = EsjzoneUrls.resolve(thread.url)
     AppLogger.i("GetCommunity", "Fetching forum board ${thread.id} at $targetUrl")
     val document = Jsoup.parse(
-        // The site's AJAX table is bound to server-side state established by
-        // this page request. A cached HTML shell does not establish that state
-        // and makes forum_list_data.php answer with application status 301.
+        // Refresh the board shell so the data-url and current table metadata
+        // are read from the live page before requesting its JSON endpoint.
         getPage(
             authorization,
             targetUrl,
@@ -369,18 +368,13 @@ fun EsjzoneClient.getForumBoard(
         throw ForumBoardDataException("Forum topic table has no data endpoint")
     }
     val endpoint = appendForumTableParams(EsjzoneUrls.resolve(dataUrl))
-    var body = getForumTableData(authorization, endpoint, targetUrl)
+    var authToken = requireForumAuthToken(requestAuthToken(authorization, targetUrl))
+    var body = getForumTableData(authorization, endpoint, targetUrl, authToken)
     if (forumApplicationStatus(body) == 301) {
-        // Sessions can still rotate between the board request and its AJAX
-        // request. Re-prime the exact board once, then retry without looping.
-        getPage(
-            authorization,
-            targetUrl,
-            PageCacheTtl.COMMUNITY,
-            pageKind = PageKind.COMMUNITY,
-            forceRefresh = true
-        )
-        body = getForumTableData(authorization, endpoint, targetUrl)
+        // Refresh the token once when the server reports the
+        // application-level authentication failure (status 301).
+        authToken = requireForumAuthToken(requestAuthToken(authorization, targetUrl))
+        body = getForumTableData(authorization, endpoint, targetUrl, authToken)
     }
     validateForumTableResponse(body)
     val payload = parseForumTopicsPayload(body, thread.id)
@@ -408,6 +402,9 @@ private fun forumApplicationStatus(body: String): Int? = runCatching {
     val root = JsonParser.parseString(body)
     root.asJsonObject.get("status")?.asInt
 }.getOrNull()
+
+internal fun requireForumAuthToken(token: String): String = token.trim().takeIf { it.isNotEmpty() }
+    ?: throw ForumBoardDataException("Forum topic request did not return an authorization token")
 
 internal fun findForumNovelDetailUrl(document: Document): String? =
     document.select(".forum-detail a[href], h2 a[href]")
@@ -611,62 +608,32 @@ private fun appendForumTableParams(url: String): String {
 private fun EsjzoneClient.getForumTableData(
     authorization: Authorization,
     url: String,
-    referer: String
+    referer: String,
+    authToken: String
 ): String {
     val requestHeaders: Headers = headers.newBuilder()
         .add("Accept", "application/json, text/javascript, */*; q=0.01")
         .add("Referer", referer)
         .add("X-Requested-With", "XMLHttpRequest")
+        .add("Authorization", authToken)
         .build()
     val client = authenticatedClient(authorization)
-
-    fun execute(request: Request): Pair<Int, String> {
-        val response = client.newCall(request).execute()
-        return response.code to response.use { it.body?.string().orEmpty() }
-    }
-
-    val getResult = execute(
+    client.newCall(
         Request.Builder()
             .url(url)
             .get()
             .headers(requestHeaders)
             .build()
-    )
-    if (getResult.first in 200..299 && getResult.second.isNotBlank() &&
-        !hasForumApplicationError(getResult.second)
-    ) {
-        return getResult.second
+    ).execute().use { response ->
+        val body = response.body?.string().orEmpty()
+        if (!response.isSuccessful) {
+            throw IOException("Forum topic request failed with HTTP ${response.code}")
+        }
+        if (body.isBlank()) {
+            throw ForumBoardDataException("Forum topic request returned an empty response")
+        }
+        return body
     }
-
-    // Bootstrap Table normally uses GET, but older ESJ deployments have been
-    // observed to accept the same server-side parameters only as a form POST.
-    // Retry that protocol before surfacing the response as a board error.
-    val postResult = execute(
-        Request.Builder()
-            .url(url)
-            .post(
-                FormBody.Builder()
-                    .add("limit", "20")
-                    .add("offset", "0")
-                    .add("search", "")
-                    .add("sort", "last_reply")
-                    .add("order", "desc")
-                    .build()
-            )
-            .headers(requestHeaders)
-            .build()
-    )
-    if (postResult.first in 200..299 && postResult.second.isNotBlank()) {
-        return postResult.second
-    }
-
-    val responseCode = postResult.first.takeIf { it !in 200..299 } ?: getResult.first
-    throw IOException("Forum topic request failed with HTTP $responseCode")
-}
-
-private fun hasForumApplicationError(body: String): Boolean {
-    val status = forumApplicationStatus(body)
-    return status != null && status != 0 && status !in 200..299
 }
 
 internal fun parseComments(document: Document, parentPostId: String): List<Comment> {

@@ -79,4 +79,37 @@ class ChapterListParserTest {
             chapterList.orderedChapters.map { it.name }
         )
     }
+
+    @Test
+    fun preservesMixedGroupsAndLooseChaptersWithoutDuplicatingLinks() {
+        val document = Jsoup.parse(
+            """
+            <div id="integration"><button>正序</button><div id="chapterList">
+                <a href="/forum/123/1.html" data-title="组外开头">开头</a>
+                <p>分割线</p>
+                <details><summary>第一组</summary>
+                    <a href="/forum/123/2.html" data-title="第二章">第二章</a>
+                    <div><details><summary>嵌套组</summary>
+                        <p><a href="/forum/123/3.html"><span class="active">第三章</span></a></p>
+                    </details></div>
+                    <a href="/forum/123/4.html" data-title="第四章">第四章</a>
+                </details>
+                <div><details><summary>空组</summary></details></div>
+                <a href="/forum/123/5.html" data-title="组外结尾">结尾</a>
+            </div></div>
+            """.trimIndent()
+        )
+        val fromIntegration = analyseChapterList(document.selectFirst("#integration")!!)
+        val fromContainer = analyseChapterList(document.selectFirst("#chapterList")!!)
+        for (list in listOf(fromIntegration, fromContainer)) {
+            assertEquals(5, list.items.size)
+            val groups = list.items.filterIsInstance<ChapterListItem>()
+            assertEquals(2, groups.size)
+            assertEquals(listOf("第二章", "第三章", "第四章"), groups[0].chapters.map { it.name })
+            assertTrue(groups[1].chapters.isEmpty())
+            assertEquals((1..5).map { "/forum/123/$it.html" }, list.orderedChapters.map { it.url })
+            assertEquals("第三章", list.toRead?.name)
+            assertTrue(list.hasHistory)
+        }
+    }
 }

@@ -236,4 +236,6 @@
     <string name="comment_submit_failed">Failed to post. Check your connection or login status and try again.</string>
     <string name="comment_submit_unverified">The request completed but the new comment could not be verified. Refresh before posting again.</string>
     <string name="comment_refresh">Refresh</string>
+    <string name="chapter_group_expand">Expand chapter group</string>
+    <string name="chapter_group_collapse">Collapse chapter group</string>
 </resources>

@@ -7,6 +7,7 @@ import com.breakyuna.esjzone.network.features.parseForumPost
 import com.breakyuna.esjzone.network.features.parseForumThreads
 import com.breakyuna.esjzone.network.features.parseForumTopicRows
 import com.breakyuna.esjzone.network.features.parseForumTopics
+import com.breakyuna.esjzone.network.features.requireForumAuthToken
 import com.breakyuna.esjzone.network.features.validateForumTableResponse
 import com.breakyuna.esjzone.novellibrary.community.ForumTopic
 import org.jsoup.Jsoup
@@ -262,6 +263,13 @@ class CommunityParserTest {
     @Test
     fun validateForumTableResponse_acceptsSuccessfulEmptyBoard() {
         validateForumTableResponse("{\"status\":0,\"total\":0,\"rows\":[]}")
+    }
+
+    @Test
+    fun requireForumAuthToken_rejectsEmptyToken() {
+        assertThrows(ForumBoardDataException::class.java) {
+            requireForumAuthToken("  ")
+        }
     }
 
     @Test(expected = ForumBoardDataException::class)

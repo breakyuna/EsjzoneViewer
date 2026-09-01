@@ -103,7 +103,7 @@
 | 页面 | `/forum/{categoryId}/{boardId}/` |
 | DOM 壳 | `#dataTable[data-url]`、`data-side-pagination="server"`、`data-page-size="20"`、`data-sort-name="last_reply"`、`data-sort-order="desc"` |
 | data-url 样例 | `/inc/forum_list_data.php?totalRows=3`、`/inc/forum_list_data.php?totalRows=142` |
-| 客户端请求 | 使用 data-url 作为端点，并补充 `limit=20&offset=0&sort=last_reply&order=desc`；具体 XHR method 未由网络面板单独确认，当前客户端按 GET 请求 |
+| 客户端请求 | 先向当前板块页 POST `plxf=getAuthToken`，再使用 data-url 作为端点并补充 `limit=20&offset=0&sort=last_reply&order=desc`；GET 请求携带响应令牌到 `Authorization` 请求头；业务状态 `301` 时重新获取令牌并最多重试一次 |
 | 返回形态 | JSON；观察到 Bootstrap Table 的 `total` 与 `rows` 字段，主题链接位于 `rows[].subject` HTML 中 |
 | 初始占位 | HTML 首次解析可见 `no-records-found`，但脚本加载后非空板块会填充主题行 |
 | 空板块判定 | 仅当 `totalRows=0` 或动态 JSON 确认总数为 0 时返回空列表 |

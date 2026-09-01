@@ -133,7 +133,7 @@ list-04 在实际选择排序值 4 后被观察到，分类下拉框在该交互
 
 子板块卡片排列在四列矩阵中，解析器必须遍历所有 `td`，不能只读取每个 `tr` 的第一个链接。样本分类页面表格有 382 个 tr，内容直接在 HTML 中，不显示 Bootstrap Table 分页配置。
 
-子板块 `/forum/{categoryId}/{boardId}/` 使用 `#dataTable[data-url]` 的 Bootstrap Table 壳。页面初始 HTML 可能只有 `no-records-found` 占位行，即使 `data-url` 的 `totalRows` 大于 0；等待站点脚本后可看到主题行。`totalRows=0` 才表示已确认的合法空板块。动态接口还依赖板块页请求建立的服务端会话上下文；只读取本地缓存的 HTML 壳会让接口返回业务状态 `301`，客户端必须先强制刷新对应板块页，并只允许一次重新建立上下文后的重试。
+子板块 `/forum/{categoryId}/{boardId}/` 使用 `#dataTable[data-url]` 的 Bootstrap Table 壳。页面初始 HTML 可能只有 `no-records-found` 占位行，即使 `data-url` 的 `totalRows` 大于 0；等待站点脚本后可看到主题行。`totalRows=0` 才表示已确认的合法空板块。主题接口请求前，站点脚本会向当前板块页 POST `plxf=getAuthToken`，再将响应中的令牌放入 `Authorization` 请求头；本次客户端缺少该认证头与接口返回业务状态 `301` 相符。客户端必须使用当前板块 URL 获取令牌，收到该状态时重新获取并最多重试一次。
 
 ## 7. 分页与本地 tab
 
