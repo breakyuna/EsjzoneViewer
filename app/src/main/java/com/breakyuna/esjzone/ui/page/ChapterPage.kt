@@ -232,32 +232,41 @@ class ChapterPage(
         val readerTextTransform: (String) -> String = remember(readerSettings.script) {
             { text -> ReaderScriptConverter.convert(text, readerSettings.script) }
         }
-        val activeChapterIndex by remember(result, scrollState, chapterActivationOffset) {
+        var retainedActiveChapterKey by rememberSaveable {
+            mutableStateOf(chapterIdentity(chapter))
+        }
+        val visibleActiveChapterKey by remember(result, scrollState, chapterActivationOffset) {
             derivedStateOf {
                 val chapters = result?.chapters.orEmpty()
-                if (chapters.isEmpty()) {
-                    0
-                } else {
-                    val visibleChapters = scrollState.layoutInfo.visibleItemsInfo
-                        .mapNotNull { item ->
-                            val itemKey = item.key as? String ?: return@mapNotNull null
-                            val chapterIndex = chapters.indexOfFirst {
-                                chapterIdentity(it.chapter) == itemKey
-                            }
-                            chapterIndex.takeIf { it >= 0 }?.let {
-                                it to item.offset
-                            }
+                val visibleChapters = scrollState.layoutInfo.visibleItemsInfo
+                    .mapNotNull { item ->
+                        val itemKey = item.key as? String ?: return@mapNotNull null
+                        val chapterIndex = chapters.indexOfFirst {
+                            chapterIdentity(it.chapter) == itemKey
                         }
-                    visibleChapters
-                        .lastOrNull { it.second <= chapterActivationOffset }
-                        ?.first
-                        ?: visibleChapters.firstOrNull()?.first
-                        ?: 0
-                }
+                        chapterIndex.takeIf { it >= 0 }?.let { it to item.offset }
+                    }
+                visibleChapters
+                    .lastOrNull { it.second <= chapterActivationOffset }
+                    ?.first
+                    ?.let { chapters.getOrNull(it)?.chapter?.let(::chapterIdentity) }
+                    ?: visibleChapters.firstOrNull()?.first
+                        ?.let { chapters.getOrNull(it)?.chapter?.let(::chapterIdentity) }
             }
         }
-        val activeChapter = result?.chapters?.getOrNull(activeChapterIndex)
-        val activeChapterItem by remember(result, activeChapterIndex, scrollState) {
+        LaunchedEffect(requestedChapter.value.url) {
+            retainedActiveChapterKey = chapterIdentity(requestedChapter.value)
+        }
+        LaunchedEffect(visibleActiveChapterKey, result?.chapters) {
+            val key = visibleActiveChapterKey ?: return@LaunchedEffect
+            if (result?.chapters?.any { chapterIdentity(it.chapter) == key } == true) {
+                retainedActiveChapterKey = key
+            }
+        }
+        val activeChapter = result?.chapters?.firstOrNull {
+            chapterIdentity(it.chapter) == retainedActiveChapterKey
+        }
+        val activeChapterItem by remember(result, activeChapter, scrollState) {
             derivedStateOf {
                 val activeKey = activeChapter?.chapter?.let(::chapterIdentity)
                 scrollState.layoutInfo.visibleItemsInfo.firstOrNull { it.key == activeKey }
@@ -313,7 +322,7 @@ class ChapterPage(
             }
         }
 
-        val chapterProgress = chapterProgressFor(
+        val measuredChapterProgress = chapterProgressFor(
             itemOffset = activeChapterItem?.offset,
             itemSize = activeChapterItem?.size
         )
@@ -326,11 +335,52 @@ class ChapterPage(
                     emptyList()
                 }
             }
-        val currentBookLocation = readerBookLocationFor(
-            activeChapter = activeChapter?.chapter ?: requestedChapter.value,
-            chapterProgress = chapterProgress,
-            chapterOrder = bookChapterOrder
-        )
+        val measuredBookLocation = activeChapter?.chapter
+            ?.takeIf { measuredChapterProgress != null }
+            ?.let {
+                readerBookLocationFor(
+                    activeChapter = it,
+                    chapterProgress = measuredChapterProgress ?: 0f,
+                    chapterOrder = bookChapterOrder
+                )
+            }
+        var retainedBookLocation by remember(requestedChapter.value.url) {
+            mutableStateOf<ReaderBookLocation?>(null)
+        }
+        LaunchedEffect(measuredBookLocation) {
+            measuredBookLocation?.let { retainedBookLocation = it }
+        }
+        val currentBookLocation = measuredBookLocation ?: retainedBookLocation
+        // Keep the last measured chapter as the UI/history anchor while a
+        // list update briefly leaves no matching visible item.
+        val currentReadingChapter = currentBookLocation?.chapter
+            ?: activeChapter?.chapter
+            ?: requestedChapter.value
+        val visibleReaderChapterKeys by remember(result, scrollState) {
+            derivedStateOf {
+                val loadedKeys = result?.chapters
+                    .orEmpty()
+                    .map { chapterIdentity(it.chapter) }
+                    .toSet()
+                scrollState.layoutInfo.visibleItemsInfo
+                    .mapNotNull { it.key as? String }
+                    .filter { it in loadedKeys }
+                    .toSet()
+            }
+        }
+        LaunchedEffect(
+            visibleReaderChapterKeys,
+            activeChapter?.chapter?.url,
+            result?.chapters
+        ) {
+            chapterPageModel.updateWindowAnchor(
+                ReaderWindowAnchor(
+                    visibleChapterKeys = visibleReaderChapterKeys,
+                    activeChapterKey = activeChapter?.chapter?.let(::chapterIdentity),
+                    layoutReady = result != null && visibleReaderChapterKeys.isNotEmpty()
+                )
+            )
+        }
         val localHistoryActivityId = remember(novelId, novelUrl, chapter.url) {
             localReadingHistoryKey(
                 novelId = novelId.ifBlank { chapter.novelId() },
@@ -342,23 +392,23 @@ class ChapterPage(
         val localHistoryPosition = rememberUpdatedState(
             LocalReadingPosition(
                 novelId = novelId.ifBlank {
-                    (activeChapter?.chapter ?: requestedChapter.value).novelId()
+                    currentReadingChapter.novelId()
                 },
                 novelName = novelName.ifBlank {
                     novelId.ifBlank {
-                        (activeChapter?.chapter ?: requestedChapter.value).novelId()
-                    }.ifBlank { (activeChapter?.chapter ?: requestedChapter.value).name }
+                        currentReadingChapter.novelId()
+                    }.ifBlank { currentReadingChapter.name }
                 },
                 novelUrl = novelUrl.ifBlank {
                     novelId.ifBlank {
-                        (activeChapter?.chapter ?: requestedChapter.value).novelId()
+                        currentReadingChapter.novelId()
                     }.takeIf { it.isNotBlank() }?.let { id ->
                         EsjzoneUrls.resolve("/detail/$id.html")
                     }.orEmpty()
                 },
                 novelCoverUrl = EsjzoneUrls.coverOrEmpty(novelCoverUrl),
-                chapterUrl = (activeChapter?.chapter ?: requestedChapter.value).url,
-                chapterName = (activeChapter?.chapter ?: requestedChapter.value).name,
+                chapterUrl = currentReadingChapter.url,
+                chapterName = currentReadingChapter.name,
                 chapterIndex = currentBookLocation?.chapterIndex ?: -1,
                 totalChapters = currentBookLocation?.totalChapters ?: bookChapterOrder.size,
                 chapterProgress = currentBookLocation?.chapterProgress ?: 0f
@@ -392,7 +442,7 @@ class ChapterPage(
         } else {
             currentBookLocation?.bookProgress ?: 0f
         }
-        val currentChapterName = activeChapter?.chapter?.name ?: requestedChapter.value.name
+        val currentChapterName = currentReadingChapter.name
         var previousBootstrapFor by remember { mutableStateOf<String?>(null) }
 
         var previousRequestedChapterUrl by remember { mutableStateOf<String?>(null) }
@@ -463,7 +513,7 @@ class ChapterPage(
 
         fun seekTo(location: ReaderBookLocation) {
             pendingSeekLocation = location
-            val current = activeChapter?.chapter ?: requestedChapter.value
+            val current = currentReadingChapter
             if (!sameReaderChapter(current, location.chapter)) {
                 chapterPageModel.openChapter(location.chapter)
             }
@@ -676,8 +726,7 @@ class ChapterPage(
                         ) {
                             if (state is ChapterPageModel.State.Result) {
                                 val readerResult = state as ChapterPageModel.State.Result
-                                val navigationChapter =
-                                    activeChapter?.chapter ?: requestedChapter.value
+                                val navigationChapter = currentReadingChapter
                                 val navigationIndex = bookChapterOrder.indexOfFirst {
                                     sameReaderChapter(it, navigationChapter)
                                 }
@@ -742,8 +791,7 @@ class ChapterPage(
                                 Spacer(modifier = Modifier.height(8.dp))
                             }
 
-                            val commentChapter =
-                                activeChapter?.chapter ?: requestedChapter.value
+                            val commentChapter = currentReadingChapter
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
@@ -886,63 +934,59 @@ class ChapterPage(
             chapterPageModel.getDetail()
         }
 
+        val loadedReaderChapterKeys = result?.chapters
+            .orEmpty()
+            .map { chapterIdentity(it.chapter) }
         LaunchedEffect(
             scrollState,
             chapterPageModel,
             continuousLoadThreshold,
-            previousLoadThreshold
+            previousLoadThreshold,
+            loadedReaderChapterKeys
         ) {
-            var previousFirstVisibleIndex = scrollState.firstVisibleItemIndex
-            var previousFirstVisibleOffset = scrollState.firstVisibleItemScrollOffset
+            var previousSnapshot: ReaderScrollSnapshot? = null
             snapshotFlow {
+                val loadedKeys = loadedReaderChapterKeys.toSet()
+                val visibleChapterItems = scrollState.layoutInfo.visibleItemsInfo
+                    .filter { (it.key as? String) in loadedKeys }
+                val layoutMatchesLoadedWindow = visibleChapterItems.all { item ->
+                    loadedReaderChapterKeys.getOrNull(item.index) == item.key
+                }
                 ReaderScrollSnapshot(
                     firstVisibleIndex = scrollState.firstVisibleItemIndex,
                     firstVisibleOffset = scrollState.firstVisibleItemScrollOffset,
-                    distanceToEnd = scrollState.layoutInfo.visibleItemsInfo.lastOrNull()?.let { item ->
+                    firstVisibleChapterKey = visibleChapterItems.firstOrNull()
+                        ?.key as? String,
+                    lastVisibleChapterKey = visibleChapterItems.lastOrNull()
+                        ?.key as? String,
+                    distanceToLoadedTail = visibleChapterItems.lastOrNull()?.let { item ->
                         (
                             item.offset + item.size - scrollState.layoutInfo.viewportEndOffset
                         ).coerceAtLeast(0)
                     } ?: Int.MAX_VALUE,
-                    totalItemCount = scrollState.layoutInfo.totalItemsCount,
+                    loadedChapterKeys = loadedReaderChapterKeys,
+                    layoutMatchesLoadedWindow = layoutMatchesLoadedWindow,
                     isScrollInProgress = scrollState.isScrollInProgress,
                     isProgrammaticScroll = isProgrammaticScroll
                 )
             }.collect { snapshot ->
-                val scrollingTowardsStart =
-                    snapshot.firstVisibleIndex < previousFirstVisibleIndex ||
-                        (snapshot.firstVisibleIndex == previousFirstVisibleIndex &&
-                            snapshot.firstVisibleOffset < previousFirstVisibleOffset)
-                val scrollingTowardsEnd =
-                    snapshot.firstVisibleIndex > previousFirstVisibleIndex ||
-                        (snapshot.firstVisibleIndex == previousFirstVisibleIndex &&
-                            snapshot.firstVisibleOffset > previousFirstVisibleOffset)
-
-                // A programmatic jump also lands at item 0. Only a genuine
-                // upward gesture may request a prepend.
-                if (
-                    snapshot.isScrollInProgress &&
-                    !snapshot.isProgrammaticScroll &&
-                    scrollingTowardsStart &&
-                    snapshot.firstVisibleIndex == 0 &&
-                    snapshot.firstVisibleOffset <= previousLoadThreshold
+                if (shouldLoadPreviousChapter(
+                        previous = previousSnapshot,
+                        current = snapshot,
+                        threshold = previousLoadThreshold
+                    )
                 ) {
                     chapterPageModel.loadPreviousChapter()
                 }
-
-                if (
-                    snapshot.isScrollInProgress &&
-                    !snapshot.isProgrammaticScroll &&
-                    scrollingTowardsEnd &&
-                    snapshot.distanceToEnd <= continuousLoadThreshold &&
-                    snapshot.totalItemCount > 0
+                if (shouldLoadNextChapter(
+                        previous = previousSnapshot,
+                        current = snapshot,
+                        threshold = continuousLoadThreshold
+                    )
                 ) {
-                    // Keep next-chapter preloading, driven by the actual
-                    // visible item range instead of a manually measured height.
                     chapterPageModel.loadNextChapter()
                 }
-
-                previousFirstVisibleIndex = snapshot.firstVisibleIndex
-                previousFirstVisibleOffset = snapshot.firstVisibleOffset
+                previousSnapshot = snapshot.takeIf { it.layoutMatchesLoadedWindow }
             }
         }
 
@@ -960,7 +1004,7 @@ class ChapterPage(
         ReaderContentsDrawer(
             visible = showReaderContents,
             chapters = readerChapters,
-            currentChapter = activeChapter?.chapter ?: requestedChapter.value,
+            currentChapter = currentReadingChapter,
             onChapterSelected = { selectedChapter ->
                 showReaderContents = false
                 dismissProgressPreview()
@@ -1275,15 +1319,6 @@ private fun ReaderBookProgressBar(
         }
     }
 }
-
-private data class ReaderScrollSnapshot(
-    val firstVisibleIndex: Int,
-    val firstVisibleOffset: Int,
-    val distanceToEnd: Int,
-    val totalItemCount: Int,
-    val isScrollInProgress: Boolean,
-    val isProgrammaticScroll: Boolean
-)
 
 @Composable
 private fun ChapterHeading(

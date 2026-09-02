@@ -67,6 +67,20 @@ class ChapterPageModel(
     private var pendingNextRequest = false
     private var pendingPreviousRequest = false
     private var initialLoadStarted = false
+    /** Latest completed reader layout anchor; null means no safe trim point. */
+    private var windowAnchor: ReaderWindowAnchor? = null
+
+    /**
+     * Called from the reader after layout has settled. It is intentionally
+     * just an atomic snapshot: an in-flight request reads the newest anchor
+     * when it completes, rather than protecting the item visible at request
+     * start.
+     */
+    internal fun updateWindowAnchor(anchor: ReaderWindowAnchor) {
+        synchronized(lock) {
+            windowAnchor = anchor
+        }
+    }
 
     fun getDetail() {
         synchronized(lock) {
@@ -102,6 +116,7 @@ class ChapterPageModel(
             orderLoading = false
             pendingNextRequest = false
             pendingPreviousRequest = false
+            windowAnchor = null
         }
         // Cancel outside the model lock: cancellation handlers may publish or
         // remove their own entries while unwinding.
@@ -441,31 +456,22 @@ class ChapterPageModel(
     }
 
     private fun publish(currentSession: Long? = null) {
-        val snapshot: List<ReaderChapter>
-        val previous: Chapter?
-        val next: Chapter?
-        val loading: Boolean
-        val loadingPreviousSnapshot: Boolean
-        val chapterOrderSnapshot: List<Chapter>
         synchronized(lock) {
             if (currentSession != null && !isCurrentSessionLocked(currentSession)) return
-            snapshot = loadedChapters.toList()
+            val snapshot = loadedChapters.toList()
+            if (snapshot.isEmpty()) return
             val first = snapshot.firstOrNull()
             val last = snapshot.lastOrNull()
-            previous = first?.let { adjacentChapter(it.chapter, -1, it.detail) }
-            next = last?.let { adjacentChapter(it.chapter, 1, it.detail) }
-            loading = loadingNext
-            loadingPreviousSnapshot = loadingPrevious
-            chapterOrderSnapshot = orderedChapters.toList()
-        }
-        if (snapshot.isNotEmpty()) {
+            // Publish while holding the same lock used for the snapshot. This
+            // prevents a slower completion from overwriting a newer window
+            // after another append/prepend has already published it.
             mutableState.value = State.Result(
                 chapters = snapshot,
-                previous = previous,
-                next = next,
-                isLoadingNext = loading,
-                isLoadingPrevious = loadingPreviousSnapshot,
-                chapterOrder = chapterOrderSnapshot
+                previous = first?.let { adjacentChapter(it.chapter, -1, it.detail) },
+                next = last?.let { adjacentChapter(it.chapter, 1, it.detail) },
+                isLoadingNext = loadingNext,
+                isLoadingPrevious = loadingPrevious,
+                chapterOrder = orderedChapters.toList()
             )
         }
     }
@@ -488,16 +494,26 @@ class ChapterPageModel(
 
     /** Called only while [lock] is held after reading forward near the list end. */
     private fun trimLoadedChaptersFromStart() {
-        while (loadedChapters.size > MAX_LOADED_CHAPTERS) {
-            loadedChapters.removeAt(0)
-        }
+        val protectedKeys = windowAnchor?.protectedChapterKeys.orEmpty()
+        val retainedKeys = trimReaderWindowKeys(
+            keys = loadedChapters.map { chapterKey(it.chapter) },
+            trimFromStart = true,
+            maxSize = MAX_LOADED_CHAPTERS,
+            protectedKeys = protectedKeys
+        ).toSet()
+        loadedChapters.retainAll { chapterKey(it.chapter) in retainedKeys }
     }
 
     /** Called only while [lock] is held after reading backward near the list start. */
     private fun trimLoadedChaptersFromEnd() {
-        while (loadedChapters.size > MAX_LOADED_CHAPTERS) {
-            loadedChapters.removeAt(loadedChapters.lastIndex)
-        }
+        val protectedKeys = windowAnchor?.protectedChapterKeys.orEmpty()
+        val retainedKeys = trimReaderWindowKeys(
+            keys = loadedChapters.map { chapterKey(it.chapter) },
+            trimFromStart = false,
+            maxSize = MAX_LOADED_CHAPTERS,
+            protectedKeys = protectedKeys
+        ).toSet()
+        loadedChapters.retainAll { chapterKey(it.chapter) in retainedKeys }
     }
 }
 
