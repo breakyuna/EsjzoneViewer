@@ -67,17 +67,12 @@ android {
     }
     defaultConfig {
         val env = System.getenv()
-        val version = if (env.containsKey("BUILD_VERSION")) {
-            env["BUILD_VERSION"]!!
-        } else {
-            app_version
-        }
         val commit = if (env.containsKey("COMMIT_ID")) {
             env["COMMIT_ID"]!!
         } else {
             "Unreachable"
         }
-        buildConfigField("String", "APP_VERSION", "\"$version\"")
+        buildConfigField("String", "APP_VERSION", "\"$app_version\"")
         buildConfigField("String", "BUILD_DATE", "\"${SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(Date())}\"")
         buildConfigField("String", "COMMIT_ID", "\"$commit\"")
     }

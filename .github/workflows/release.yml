@@ -1,11 +1,9 @@
-name: Android Build
+name: Draft Release
 
 on:
   push:
-    branches:
-      - main
-  # 保留手动运行入口
-  workflow_dispatch:
+    tags:
+      - 'v*.*.*'
 
 permissions:
   contents: read
@@ -13,9 +11,44 @@ permissions:
 env:
   COMMIT_ID: ${{ github.sha }}
 
+concurrency:
+  group: draft-release-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
+  validate-version:
+    name: Validate release version
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout tagged commit
+        uses: actions/checkout@v4
+
+      - name: Check tag and Android version
+        shell: python
+        run: |
+          import os
+          import re
+          from pathlib import Path
+
+          def property_value(name):
+              matches = re.findall(rf"^{name}\s*=\s*(.*?)\s*$", Path("gradle.properties").read_text(), re.MULTILINE)
+              if len(matches) != 1:
+                  raise SystemExit(f"Expected exactly one {name} in gradle.properties")
+              return matches[0]
+
+          version = property_value("app_version")
+          code = property_value("app_version_index")
+          if not re.fullmatch(r"(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)", version):
+              raise SystemExit("app_version must be a numeric major.minor.patch version without v")
+          if os.environ["GITHUB_REF_NAME"] != f"v{version}":
+              raise SystemExit("Tag must exactly match v + app_version; release stopped")
+          if not re.fullmatch(r"[1-9][0-9]*", code) or int(code) > 2100000000:
+              raise SystemExit("app_version_index must be a positive Android versionCode")
+          print(f"Validated v{version}, versionCode={code}")
+
   unit-tests:
     name: JVM unit tests
+    needs: validate-version
     runs-on: ubuntu-latest
 
     steps:
@@ -74,7 +107,9 @@ jobs:
         run: ./gradlew lintDebug
 
   build:
-    name: Build signed APK
+    name: Build signed APK and create draft
+    permissions:
+      contents: write
     needs: [unit-tests, lint]
     runs-on: ubuntu-latest
 
@@ -156,18 +191,29 @@ jobs:
 
           mkdir -p outputs
 
-          cp "$SIGNED_APK" "outputs/EsjzoneViewer-${GITHUB_SHA::7}.apk"
+          cp "$SIGNED_APK" "outputs/EsjzoneViewer-${GITHUB_REF_NAME}.apk"
 
       - name: Remove temporary signing key
         if: always()
         shell: bash
         run: rm -f "$RUNNER_TEMP/esjzoneviewer.jks"
 
-      # 11. 上传 APK 到 Actions Artifacts
-      - name: Upload signed APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: EsjzoneViewer-${{ github.sha }}
-          path: outputs/*.apk
-          if-no-files-found: error
-          retention-days: 14
+      - name: Generate SHA-256 checksum
+        working-directory: outputs
+        shell: bash
+        run: sha256sum "EsjzoneViewer-${GITHUB_REF_NAME}.apk" > SHA256SUMS.txt
+
+      - name: Create draft release with verified APK
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        shell: bash
+        run: |
+          # --verify-tag prevents accidental tag creation. Existing releases are never overwritten.
+          gh release create "$GITHUB_REF_NAME" \
+            "outputs/EsjzoneViewer-${GITHUB_REF_NAME}.apk" \
+            outputs/SHA256SUMS.txt \
+            --verify-tag \
+            --draft \
+            --title "EsjzoneViewer ${GITHUB_REF_NAME}" \
+            --generate-notes

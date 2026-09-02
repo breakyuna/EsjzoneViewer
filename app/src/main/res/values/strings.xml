@@ -1,5 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="update_available_title">New version available</string>
+    <string name="update_available_message">Current version: %1$s\nNew version: %2$s\n\nOpen GitHub Releases to download the update.</string>
+    <string name="update_download">Go to download</string>
+    <string name="update_later">Later</string>
+    <string name="update_browser_unavailable">No app available to open the release page</string>
     <string name="app_name">Esjzone</string>
     <string name="navigation_home">Home</string>
     <string name="navigation_profile">Profile</string>

@@ -90,7 +90,7 @@ object AboutPage : Screen {
                     ) {
                         InfoRow(
                             label = stringResource(id = R.string.build_version),
-                            value = "${BuildConfig.VERSION_NAME}-${BuildConfig.APP_VERSION}"
+                            value = BuildConfig.VERSION_NAME
                         )
                         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
                         InfoRow(

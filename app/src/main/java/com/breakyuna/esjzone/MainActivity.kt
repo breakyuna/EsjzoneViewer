@@ -44,6 +44,8 @@ import com.breakyuna.esjzone.ui.theme.catppuccin.CatppuccinDynamicTheme
 import com.breakyuna.esjzone.ui.theme.catppuccin.CatppuccinThemeType
 import com.breakyuna.esjzone.util.AppLogger
 import com.breakyuna.esjzone.util.CrashHandler
+import com.breakyuna.esjzone.update.ReleaseUpdateChecker
+import com.breakyuna.esjzone.update.ReleaseUpdateDialog
 
 class MainActivity : ComponentActivity() {
 
@@ -106,12 +108,16 @@ class MainActivity : ComponentActivity() {
         setContent {
             val state by startup.collectAsState()
             if (state is StartupState.Ready) {
-                CatppuccinDynamicTheme { App() }
+                CatppuccinDynamicTheme {
+                    App()
+                    ReleaseUpdateDialog()
+                }
             } else {
                 StartupContent(state) { startupState.value = StartupState.Starting; initScope.launch { initializeOnce(appContext) } }
             }
         }
         initScope.launch { initializeOnce(appContext) }
+        ReleaseUpdateChecker.checkOnce()
     }
 
 }
