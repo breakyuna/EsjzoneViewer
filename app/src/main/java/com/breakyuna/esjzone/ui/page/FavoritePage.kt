@@ -364,8 +364,12 @@ private fun BookshelfTopBar(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(56.dp)
-                    .padding(start = if (showBack) 4.dp else 16.dp, end = 4.dp),
+                    .padding(
+                        start = if (showBack) 4.dp else 16.dp,
+                        end = 4.dp,
+                        top = if (editing || showBack) 0.dp else 6.dp,
+                        bottom = if (editing || showBack) 0.dp else 4.dp
+                    ),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 if (showBack) {
@@ -390,14 +394,32 @@ private fun BookshelfTopBar(
                     IconButton(onClick = onDone, enabled = !deleting) {
                         Icon(Icons.Filled.Done, contentDescription = stringResource(R.string.bookshelf_edit_done))
                     }
-                } else {
+                } else if (showBack) {
                     Text(
                         text = stringResource(R.string.bookshelf),
-                        style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
+                        style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.SemiBold),
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.weight(1f)
                     )
+                    IconButton(onClick = onRefresh, enabled = !refreshing) {
+                        Icon(Icons.Filled.Refresh, contentDescription = stringResource(R.string.sync_bookshelf))
+                    }
+                    IconButton(onClick = onEdit) {
+                        Icon(Icons.Filled.Edit, contentDescription = stringResource(R.string.bookshelf_edit))
+                    }
+                } else {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = stringResource(R.string.bookshelf),
+                            style = MaterialTheme.typography.headlineLarge.copy(fontWeight = FontWeight.Bold)
+                        )
+                        Text(
+                            text = stringResource(R.string.bookshelf_description),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                     IconButton(onClick = onRefresh, enabled = !refreshing) {
                         Icon(Icons.Filled.Refresh, contentDescription = stringResource(R.string.sync_bookshelf))
                     }
