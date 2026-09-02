@@ -1,16 +1,7 @@
 name: Android Build
 
 on:
-  # 推送到 master 时自动构建
-  push:
-    branches:
-      - master
-
-  pull_request:
-    branches:
-      - master
-
-  # GitHub Actions 页面允许手动运行
+  # 仅在 GitHub Actions 页面手动运行
   workflow_dispatch:
 
 permissions:
@@ -80,7 +71,6 @@ jobs:
 
   build:
     name: Build signed APK
-    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/master')
     needs: [unit-tests, lint]
     runs-on: ubuntu-latest
 

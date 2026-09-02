@@ -3,7 +3,7 @@ package com.breakyuna.esjzone
 object Constants {
 
     val MAINTAINERS = listOf(
-        "DeeChael"
+        "breakyuna"
     )
 
     val CONTRIBUTORS = listOf(

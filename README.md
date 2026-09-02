@@ -1,86 +1,82 @@
-# Esjzone
+<p align="center">
+  <img src="docs/images/logo.png" width="160" alt="EsjzoneViewer 标志">
+</p>
 
-Esjzone 是一个面向 Android 的小说浏览与阅读客户端，使用 Jetpack Compose 构建。应用通过网站接口获取小说、章节和账户数据，并提供适合移动设备的浏览、搜索与阅读体验。
+<h1 align="center">EsjzoneViewer</h1>
 
-![界面预览](https://pic.imgdb.cn/item/68a6e6e0f7f3e515a3c7ee7c.png)
+<p align="center">面向 Android 的 ESJ Zone 第三方小说阅读客户端</p>
 
-> 本项目是网站内容的客户端展示工具，不托管或重新分发小说内容。使用前请遵守目标网站的服务条款及所在地法律法规。
+<p align="center">
+  <img src="https://img.shields.io/badge/Android-10%2B-3DDC84?logo=android&amp;logoColor=white" alt="Android 10 及以上">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-GPL--3.0-blue" alt="GPL-3.0"></a>
+  <a href="https://github.com/breakyuna/EsjzoneViewer"><img src="https://img.shields.io/badge/Maintainer-breakyuna-red" alt="维护者 breakyuna"></a>
+</p>
 
-## 主要功能
+<p align="center">
+  <a href="https://github.com/breakyuna/EsjzoneViewer/releases">下载</a> ·
+  <a href="#功能">功能</a> ·
+  <a href="https://github.com/breakyuna/EsjzoneViewer/issues">反馈问题</a> ·
+  <a href="#致谢">致谢</a>
+</p>
 
-- 账户登录、登录状态检查、退出登录。
-- 主页浏览：译作、原创、可选的成人内容分区以及推荐内容。
-- 分类浏览：查看站点分类，并按类型和站点提供的排序方式浏览小说。
-- 关键词搜索，以及本地保存和管理搜索历史。
-- 小说详情：封面、作者、简介、分类、章节列表和收藏状态。
-- 阅读功能：开始阅读或继续阅读，支持上一章、下一章和阅读位置调整。
-- 章节内容解析：尽量保留正文段落、样式、注音和插图等网页内容结构。
-- 收藏和历史记录：直接从底部导航进入收藏列表与阅读记录，并支持删除历史记录。
-- 个人中心：账户信息、设置和关于页面。
-- 设置：切换可用站点、显示或隐藏成人内容，以及选择 Catppuccin 主题配色。
-- 关于页面：查看构建信息和项目使用的开源库。
+> 本项目是 **ESJ Zone 的第三方 Android 应用**，不代表 ESJ Zone 官方。基于原作者 [DeeChael](https://github.com/DeeChael) 的 [Esjzone](https://github.com/DeeChael/Esjzone) 项目继续开发，当前由 [breakyuna](https://github.com/breakyuna) 维护。
 
-## 支持的站点
+## 界面预览
 
-应用内置以下可切换站点：
+<p align="center">
+  <img src="docs/images/preview.jpg" width="1200" alt="EsjzoneViewer 首页、历史记录、书架与个人资料界面展示">
+</p>
 
-- `https://www.esjzone.cc`
-- `https://www.esjzone.one`
+## 功能
 
-站点页面结构、登录状态和网络可用性可能发生变化。若某个站点无法访问，可以在登录页或设置页切换到其他可用站点。
+- **发现与搜索**：浏览推荐、最新更新和分类，按关键词搜索小说，保留本地搜索历史。
+- **本地优先书架**：打开即读取本地书架，后台补充云端收藏；网络失败或云端缺失不会清空本地书籍。支持封面宫格、最近阅读排序和批量移除。
+- **连续阅读**：滚动衔接章节，通过目录或全书进度条跳转，使用进度预览与返回进度功能。
+- **个性化阅读**：调整字体大小、行距、段距、页边距和背景，切换简繁体与 Catppuccin 主题配色。
+- **历史与书签**：保存本机阅读位置和章节书签，本地历史与云端历史分开展示，本地历史不上传。
+- **下载与导出**：后台下载章节，在应用内读取已下载内容，也可导出 TXT 或 EPUB；下载失败时保留已完成章节。
+- **社区互动**：浏览论坛分区、主题和留言板，查看评论、发表评论及回复。
+- **账户与站点**：恢复本地登录会话，在设置中切换站点与内容显示偏好。
 
-## 技术栈
+## 下载与使用
 
-- Kotlin
-- Jetpack Compose、Material 3
-- Voyager：页面与 Tab 导航
-- OkHttp：网络请求
-- Jsoup、Xsoup：HTML 与 XPath 数据解析
-- Coil：封面、头像和章节插图加载及缓存
-- Room：本地缓存、会话信息和搜索历史存储
-- Gson：JSON 数据处理
+需要 **Android 10（API 29）或更高版本**。
 
-项目当前使用 Android SDK 34，最低支持 Android 10（API 29），Java/Kotlin 编译目标为 17。
+前往 [Releases](https://github.com/breakyuna/EsjzoneViewer/releases) 下载已发布的 APK 并安装。
 
-## 项目结构
+应用支持 `www.esjzone.cc` 与 `www.esjzone.one`，可在登录页或设置页切换。登录使用 ESJ Zone 账户，无需额外的 API Key。
 
-```text
-.
-├── app/
-│   └── src/main/java/      # Kotlin 源码
-│       ├── database/       # Room 数据库、DAO 与实体
-│       ├── network/        # HTTP 客户端、认证、站点 URL 与网络功能
-│       ├── novellibrary/   # 小说、章节及网页内容模型与解析器
-│       ├── ui/             # Compose 页面、Tab、导航和主题
-│       └── util/           # 通用工具
-├── NETWORK.md             # 网络接口与网页解析说明
-├── metadata.json          # 项目元数据
-└── gradle/                # Gradle 版本目录与 Wrapper 文件
+下载小说后，无需先导出文件即可在应用内阅读已下载章节；尚未下载的内容、远程插图以及在线社区功能仍可能需要网络。
+
+## 开发
+
+项目采用 **Kotlin + Jetpack Compose + Material 3**，使用 Room 保存本地数据、Voyager 管理导航、OkHttp 请求网络、Jsoup / Xsoup 解析页面、Coil 加载图片。
+
+开发环境：JDK 17、Android SDK 34，以及支持项目 Gradle 配置的 Android Studio。克隆仓库后，用 Android Studio 打开根目录并同步项目。
+
+```bash
+git clone https://github.com/breakyuna/EsjzoneViewer.git
+cd EsjzoneViewer
 ```
 
-应用启动后，`MainActivity` 初始化图片加载器和 Room 数据库；`LoadingScreen` 恢复本地会话并检查登录状态；登录成功后进入包含主页、分类、历史、收藏和个人中心的主界面，搜索从主页右上角进入。网络层统一通过 `GlobalSettings` 与 `EsjzoneUrls` 读取当前站点，网页内容由 `Jsoup` 和 `Xsoup` 解析为领域模型，再交给 Compose 页面展示。
+## 反馈与贡献
 
-## 本地运行
+欢迎通过 [Issues](https://github.com/breakyuna/EsjzoneViewer/issues) 提交问题或建议，也欢迎 Pull Request。
 
-开发环境需要：
+报告问题时，请提供应用版本、Android 版本、复现步骤，以及相关截图或错误日志；页面加载问题请附对应页面地址。请勿在公开反馈中附上密码、Cookie 或其他登录凭据。
 
-1. Android Studio，以及可用的 Android SDK 34。
-2. JDK 17。
-3. 一台 Android 10 或更高版本的设备，或对应的模拟器。
+## 数据说明
 
-将项目克隆到本地后，用 Android Studio 打开仓库根目录，等待项目同步完成，选择 `app` 模块运行即可。项目不需要额外的 API Key；登录功能使用目标站点的账户凭据。
+登录信息会发送到当前选择的 ESJ Zone 站点，应用在本地保存会话、设置、书架、阅读历史、书签及下载内容。云端收藏用于补充本地书架；在书架中主动移除书籍时，应用会尝试取消对应的云端收藏。
 
-## 数据与隐私说明
+本项目是第三方客户端，不代表 ESJ Zone 官方。小说、封面和其他站点内容来自所选站点，相关权利归各自权利人所有。
 
-- 登录时输入的账户信息会发送到当前选中的站点。
-- 应用会在本地数据库保存站点返回的会话凭据，用于恢复登录状态；请妥善保护设备和应用数据。
-- 当前站点、主题、成人内容显示选项和搜索历史也会保存在本地。
-- 应用没有独立的内容服务器，封面、头像、简介和章节正文等数据来自当前选中的站点。
+## 致谢
 
-## 网络解析文档
+本项目基于 [DeeChael/Esjzone](https://github.com/DeeChael/Esjzone) 继续开发，当前由 [breakyuna](https://github.com/breakyuna) 维护。感谢原作者 **DeeChael** 和所有贡献者。
 
-网络请求流程、登录方式、网页字段和 XPath 解析说明见 [NETWORK.md](./NETWORK.md)。如果站点页面结构发生变化，应优先检查 `network/EsjzoneXPaths.kt`、`network/features/` 以及相关领域模型。
+感谢 Jetpack Compose、Material 3、Room、[Voyager](https://github.com/adrielcafe/voyager)、[OkHttp](https://github.com/square/okhttp)、[Coil](https://github.com/coil-kt/coil)、[Gson](https://github.com/google/gson)、[Jsoup](https://github.com/jhy/jsoup)、[Xsoup](https://github.com/code4craft/xsoup) 和 [Catppuccin](https://github.com/catppuccin/catppuccin) 等开源项目。
 
 ## 许可证
 
-本项目使用 [GNU General Public License v3.0](./LICENSE) 发布。项目依赖的第三方开源库及其许可证信息可在应用的“关于”页面查看。
+本项目采用 [GNU General Public License v3.0](LICENSE)。第三方依赖遵循各自的许可证。
