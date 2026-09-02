@@ -14,6 +14,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.breakyuna.esjzone.R
+import com.breakyuna.esjzone.network.LoadFailureKind
 
 @Composable
 fun Loading() {
@@ -28,7 +29,8 @@ fun Loading() {
 @Composable
 fun LoadError(
     onRetry: () -> Unit,
-    modifier: Modifier = Modifier.fillMaxSize()
+    modifier: Modifier = Modifier.fillMaxSize(),
+    failure: LoadFailureKind = LoadFailureKind.CLIENT
 ) {
     Box(
         modifier = modifier,
@@ -39,7 +41,13 @@ fun LoadError(
             modifier = Modifier.padding(24.dp)
         ) {
             Text(
-                text = stringResource(id = R.string.load_failed),
+                text = stringResource(
+                    id = if (failure == LoadFailureKind.NETWORK) {
+                        R.string.load_network_error
+                    } else {
+                        R.string.load_client_error
+                    }
+                ),
                 color = MaterialTheme.colorScheme.error
             )
             TextButton(onClick = onRetry) {

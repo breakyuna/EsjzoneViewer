@@ -11,6 +11,8 @@ import kotlin.coroutines.coroutineContext
 import kotlinx.coroutines.launch
 import com.breakyuna.esjzone.network.Authorization
 import com.breakyuna.esjzone.network.EsjzoneClient
+import com.breakyuna.esjzone.network.LoadFailureKind
+import com.breakyuna.esjzone.network.loadFailureKind
 import com.breakyuna.esjzone.network.features.getNovelDetail
 import com.breakyuna.esjzone.novellibrary.novel.Novel
 import com.breakyuna.esjzone.novellibrary.novel.DetailedNovel
@@ -18,7 +20,7 @@ import com.breakyuna.esjzone.novellibrary.novel.DetailedNovel
 /** Shared, cancellable detail completion for lists that start with covered novels. */
 class NovelDetailLoader(private val authorization: Authorization) : StateScreenModel<Unit>(Unit) {
     val details = mutableStateMapOf<String, DetailedNovel>()
-    val failures = mutableStateMapOf<String, Boolean>()
+    val failures = mutableStateMapOf<String, LoadFailureKind>()
     private val jobs = mutableMapOf<String, Job>()
 
     fun key(novel: Novel): String = novel.url.trim().ifBlank { novel.name.trim() }
@@ -39,7 +41,7 @@ class NovelDetailLoader(private val authorization: Authorization) : StateScreenM
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                failures[key] = true
+                failures[key] = e.loadFailureKind()
                 com.breakyuna.esjzone.util.AppLogger.e("NovelDetailLoader", "Failed to load novel detail: $key", e)
             } finally {
                 if (jobs[key] === thisJob) jobs.remove(key)

@@ -6,6 +6,8 @@ import com.breakyuna.esjzone.network.EsjzoneUrls
 import com.breakyuna.esjzone.network.EsjzoneXPaths
 import com.breakyuna.esjzone.network.PageCacheTtl
 import com.breakyuna.esjzone.network.PageKind
+import com.breakyuna.esjzone.network.NetworkRequestException
+import com.breakyuna.esjzone.network.NetworkHttpException
 import com.breakyuna.esjzone.novellibrary.community.ForumCategory
 import com.breakyuna.esjzone.novellibrary.community.ForumPost
 import com.breakyuna.esjzone.novellibrary.community.ForumTopic
@@ -618,22 +620,30 @@ private fun EsjzoneClient.getForumTableData(
         .add("Authorization", authToken)
         .build()
     val client = authenticatedClient(authorization)
-    client.newCall(
-        Request.Builder()
-            .url(url)
-            .get()
-            .headers(requestHeaders)
-            .build()
-    ).execute().use { response ->
-        val body = response.body?.string().orEmpty()
-        if (!response.isSuccessful) {
-            throw IOException("Forum topic request failed with HTTP ${response.code}")
-        }
-        if (body.isBlank()) {
-            throw ForumBoardDataException("Forum topic request returned an empty response")
-        }
-        return body
+    val response = try {
+        client.newCall(
+            Request.Builder()
+                .url(url)
+                .get()
+                .headers(requestHeaders)
+                .build()
+        ).execute()
+    } catch (error: IOException) {
+        throw NetworkRequestException(url, error)
     }
+    val responseCode = response.code
+    val body = try {
+        response.use { it.body?.string().orEmpty() }
+    } catch (error: IOException) {
+        throw NetworkRequestException(url, error)
+    }
+    if (responseCode !in 200..299) {
+        throw NetworkHttpException(url, responseCode)
+    }
+    if (body.isBlank()) {
+        throw ForumBoardDataException("Forum topic request returned an empty response")
+    }
+    return body
 }
 
 internal fun parseComments(document: Document, parentPostId: String): List<Comment> {

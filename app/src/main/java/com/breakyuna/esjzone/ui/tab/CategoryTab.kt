@@ -66,6 +66,8 @@ import com.breakyuna.esjzone.R
 import com.breakyuna.esjzone.network.Authorization
 import com.breakyuna.esjzone.network.EsjzoneClient
 import com.breakyuna.esjzone.network.LocalAuthorization
+import com.breakyuna.esjzone.network.LoadFailureKind
+import com.breakyuna.esjzone.network.loadFailureKind
 import com.breakyuna.esjzone.network.features.getCategories
 import com.breakyuna.esjzone.novellibrary.novel.Category as NovelCategory
 import com.breakyuna.esjzone.ui.navigation.LocalBaseNavigator
@@ -195,7 +197,13 @@ private fun CategoryBrowserContent(
                 verticalArrangement = Arrangement.Center
             ) {
                 Text(
-                    text = stringResource(R.string.community_load_failed),
+                    text = stringResource(
+                        if ((state as CategoryModel.State.Error).failure == LoadFailureKind.NETWORK) {
+                            R.string.load_network_error
+                        } else {
+                            R.string.load_client_error
+                        }
+                    ),
                     color = MaterialTheme.colorScheme.error
                 )
                 TextButton(onClick = categoryModel::retry) {
@@ -345,7 +353,7 @@ class CategoryModel(
 
     sealed class State {
         data object Loading : State()
-        data object Error : State()
+        data class Error(val failure: LoadFailureKind) : State()
         data class Result(val categories: List<NovelCategory>) : State()
     }
 
@@ -362,7 +370,7 @@ class CategoryModel(
                 throw e
             } catch (e: Exception) {
                 loadStarted = false
-                mutableState.value = State.Error
+                mutableState.value = State.Error(e.loadFailureKind())
                 com.breakyuna.esjzone.util.AppLogger.e(
                     "CategoryModel",
                     "Failed to load categories",

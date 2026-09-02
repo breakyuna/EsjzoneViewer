@@ -45,7 +45,7 @@ app/src/main/java/com/breakyuna/esjzone/
 
 ### 启动与认证
 
-`MainActivity` 先显示启动状态，再由进程级协程与互斥锁初始化使用 applicationContext 的 `GeneralDatabase`、`ImageLoader` 和下载存储；失败提供重试，Activity 重建复用已初始化资源。启动阶段恢复站点与主题。`LoadingScreen` 恢复会话及成人内容设置，并通过 `checkAuthorization` 的三态结果决定导航：明确失效才清除会话，网络状态未知时保留本地会话；进入主界面前后台调度书架同步，UI 不等待同步完成。
+`MainActivity` 先显示启动状态，再由进程级协程与互斥锁初始化使用 applicationContext 的 `GeneralDatabase`、`ImageLoader` 和下载存储；失败提供重试，Activity 重建复用已初始化资源。启动阶段恢复站点与主题。`LoadingScreen` 只恢复本地会话及成人内容设置，然后立即进入 `MainScreen`；主界面显示后由生命周期绑定的后台协程执行有界 `checkAuthorization`。明确失效时显示可选的重新登录提示，但不自动清除会话；网络状态未知时保留本地会话。进入主界面后后台调度书架同步，UI 不等待同步完成，本地书架和阅读历史可离线使用。
 
 ### 主界面
 

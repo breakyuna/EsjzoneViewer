@@ -81,9 +81,10 @@ fun EsjzoneClient.login(email: String, password: String): Authorization? {
         loginResponseUrl?.let { responseUrl ->
             rotatePageCacheScope(responseUrl.host)
             persistCookies(responseUrl, cookies)
-            markAuthorizationVerified(responseUrl.host)
         }
-        Authorization(key, token, EsjzoneUrls.BaseWithoutProtocol)
+        return Authorization(key, token, EsjzoneUrls.BaseWithoutProtocol).also {
+            markAuthorizationVerified(it)
+        }
     } catch (e: CancellationException) {
         throw e
     } catch (e: Exception) {

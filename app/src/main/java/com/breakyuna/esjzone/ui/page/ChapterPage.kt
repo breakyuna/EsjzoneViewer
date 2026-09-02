@@ -546,7 +546,13 @@ class ChapterPage(
                                     contentAlignment = Alignment.Center
                                 ) {
                                     Text(
-                                        text = stringResource(id = R.string.chapter_load_failed),
+                                        text = stringResource(
+                                            if ((state as ChapterPageModel.State.Error).failure == com.breakyuna.esjzone.network.LoadFailureKind.NETWORK) {
+                                                R.string.load_network_error
+                                            } else {
+                                                R.string.load_client_error
+                                            }
+                                        ),
                                         color = MaterialTheme.colorScheme.error
                                     )
                                 }

@@ -21,8 +21,6 @@ import com.breakyuna.esjzone.database.BookshelfRepository
 import com.breakyuna.esjzone.network.Authorization
 import com.breakyuna.esjzone.network.EsjzoneClient
 import com.breakyuna.esjzone.network.hasCredentials
-import com.breakyuna.esjzone.network.features.AuthorizationCheckResult
-import com.breakyuna.esjzone.network.features.checkAuthorization
 import com.breakyuna.esjzone.util.AppLogger
 
 class LoadingScreen : Screen {
@@ -70,31 +68,7 @@ class LoadingScreen : Screen {
                         selectedDomain,
                         legacySession
                     )
-                    if (storedAuthorization == null || !storedAuthorization.hasCredentials()) {
-                        null
-                    } else {
-                        when (EsjzoneClient.checkAuthorization(storedAuthorization)) {
-                            AuthorizationCheckResult.AUTHORIZED -> storedAuthorization
-                            AuthorizationCheckResult.UNAUTHORIZED -> {
-                                AppLogger.w(
-                                    "LoadingScreen",
-                                    "Stored session was rejected by the server"
-                                )
-                                EsjzoneClient.clearSession(selectedDomain)
-                                dao.deleteByKey("ews_key")
-                                dao.deleteByKey("ews_token")
-                                dao.deleteByKey("session_domain")
-                                null
-                            }
-                            AuthorizationCheckResult.UNKNOWN -> {
-                                AppLogger.w(
-                                    "LoadingScreen",
-                                    "Could not verify stored session; keeping local session"
-                                )
-                                storedAuthorization
-                            }
-                        }
-                    }
+                    storedAuthorization?.takeIf { it.hasCredentials() }
                 } catch (e: CancellationException) {
                     throw e
                 } catch (e: Exception) {

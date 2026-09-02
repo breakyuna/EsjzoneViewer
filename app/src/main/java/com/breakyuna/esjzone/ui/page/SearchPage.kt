@@ -1,6 +1,7 @@
 package com.breakyuna.esjzone.ui.page
 
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -35,6 +36,8 @@ import com.breakyuna.esjzone.R
 import com.breakyuna.esjzone.network.Authorization
 import com.breakyuna.esjzone.network.EsjzoneClient
 import com.breakyuna.esjzone.network.LocalAuthorization
+import com.breakyuna.esjzone.network.LoadFailureKind
+import com.breakyuna.esjzone.network.loadFailureKind
 import com.breakyuna.esjzone.network.PageableRequester
 import com.breakyuna.esjzone.network.features.search
 import com.breakyuna.esjzone.novellibrary.novel.CoveredNovel
@@ -93,8 +96,8 @@ fun LazyListScope.searchResultItems(
                 CircularProgressIndicator()
             }
         }
-        SearchPageModel.State.Error -> item(key = "search-error") {
-            LoadError(onRetry = onRetry)
+        is SearchPageModel.State.Error -> item(key = "search-error") {
+            LoadError(onRetry = onRetry, failure = state.failure)
         }
         is SearchPageModel.State.Result -> {
             val visible = model.visibleItems
@@ -112,7 +115,7 @@ fun LazyListScope.searchResultItems(
             }
             if (model.currentPage <= state.requester.pages()) {
                 item(key = "search-more") {
-                    Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                    Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
                         TextButton(
                             enabled = !model.loadingMore,
                             onClick = { model.loadMore(state.requester) }
@@ -122,6 +125,19 @@ fun LazyListScope.searchResultItems(
                             } else {
                                 Text(stringResource(if (model.moreFailed) R.string.retry else R.string.search_load_more))
                             }
+                        }
+                        if (model.moreFailed) {
+                            Text(
+                                text = stringResource(
+                                    if (model.moreFailure == LoadFailureKind.NETWORK) {
+                                        R.string.load_network_error
+                                    } else {
+                                        R.string.load_client_error
+                                    }
+                                ),
+                                color = MaterialTheme.colorScheme.error,
+                                modifier = Modifier.padding(horizontal = 16.dp)
+                            )
                         }
                     }
                 }
@@ -144,6 +160,8 @@ class SearchPageModel(
         private set
     var moreFailed by mutableStateOf(false)
         private set
+    var moreFailure by mutableStateOf<LoadFailureKind?>(null)
+        private set
     private var requestJob: Job? = null
     private var moreJob: Job? = null
     private var generation = 0L
@@ -151,7 +169,7 @@ class SearchPageModel(
 
     sealed class State {
         data object Loading : State()
-        data object Error : State()
+        data class Error(val failure: LoadFailureKind) : State()
         data class Result(val requester: PageableRequester<CoveredNovel>) : State()
     }
 
@@ -172,6 +190,7 @@ class SearchPageModel(
         currentPage = 2
         loadingMore = false
         moreFailed = false
+        moreFailure = null
         mutableState.value = State.Loading
         requestJob = screenModelScope.launch {
             try {
@@ -186,7 +205,7 @@ class SearchPageModel(
                 throw error
             } catch (error: Exception) {
                 ensureActive()
-                if (token == generation) mutableState.value = State.Error
+                if (token == generation) mutableState.value = State.Error(error.loadFailureKind())
                 AppLogger.e("SearchPageModel", "Failed to search for keyword", error)
             }
         }
@@ -200,6 +219,7 @@ class SearchPageModel(
         val token = generation
         loadingMore = true
         moreFailed = false
+        moreFailure = null
         moreJob = screenModelScope.launch {
             try {
                 val loaded = withContext(Dispatchers.IO) { requester.more(page) }
@@ -212,7 +232,10 @@ class SearchPageModel(
                 throw error
             } catch (error: Exception) {
                 ensureActive()
-                if (token == generation) moreFailed = true
+                if (token == generation) {
+                    moreFailed = true
+                    moreFailure = error.loadFailureKind()
+                }
                 AppLogger.e("SearchPageModel", "Failed to load search page $page", error)
             } finally {
                 if (token == generation) loadingMore = false

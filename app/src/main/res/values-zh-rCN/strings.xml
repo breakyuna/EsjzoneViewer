@@ -143,7 +143,13 @@
     <string name="retry">重试</string>
     <string name="startup_loading">正在启动 Esjzone Viewer…</string>
     <string name="startup_failed">启动失败，本地数据未被清除。</string>
+    <string name="session_expired_title">登录已过期</string>
+    <string name="session_expired_message">登录会话已过期。本地书架和阅读历史仍可离线使用。</string>
+    <string name="session_expired_continue">继续离线</string>
+    <string name="session_expired_relogin">重新登录</string>
     <string name="load_failed">内容加载失败</string>
+    <string name="load_network_error">网络错误，请稍候再试</string>
+    <string name="load_client_error">客户端错误，请联系开发者</string>
     <string name="compile_information">编译信息</string>
     <string name="build_version">构建版本</string>
     <string name="build_date">构建日期</string>

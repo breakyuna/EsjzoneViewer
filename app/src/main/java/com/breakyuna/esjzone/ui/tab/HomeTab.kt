@@ -81,6 +81,8 @@ import com.breakyuna.esjzone.R
 import com.breakyuna.esjzone.network.Authorization
 import com.breakyuna.esjzone.network.EsjzoneClient
 import com.breakyuna.esjzone.network.EsjzoneUrls
+import com.breakyuna.esjzone.network.LoadFailureKind
+import com.breakyuna.esjzone.network.loadFailureKind
 import com.breakyuna.esjzone.network.LocalAuthorization
 import com.breakyuna.esjzone.network.features.getHomeData
 import com.breakyuna.esjzone.novellibrary.data.HomeData
@@ -190,11 +192,12 @@ object HomeTab : Tab {
 
             when (val snapshot = state) {
                 HomeTabModel.State.Loading -> LoadingPlaceholder()
-                HomeTabModel.State.Error -> LoadError(
+                is HomeTabModel.State.Error -> LoadError(
                     onRetry = homeTabModel::retry,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(180.dp)
+                        .height(180.dp),
+                    failure = snapshot.failure
                 )
                 is HomeTabModel.State.Result -> {
                     // Recommendation Section
@@ -383,7 +386,7 @@ class HomeTabModel(
 
     sealed class State {
         data object Loading : State()
-        data object Error : State()
+        data class Error(val failure: LoadFailureKind) : State()
         data class Result(val homeData: HomeData) : State()
     }
 
@@ -399,7 +402,7 @@ class HomeTabModel(
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                mutableState.value = State.Error
+                mutableState.value = State.Error(e.loadFailureKind())
                 loadStarted = false
                 com.breakyuna.esjzone.util.AppLogger.e("HomeTabModel", "Failed to load home data", e)
             }

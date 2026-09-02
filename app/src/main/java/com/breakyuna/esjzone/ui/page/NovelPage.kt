@@ -86,6 +86,8 @@ import com.breakyuna.esjzone.network.Authorization
 import com.breakyuna.esjzone.network.EsjzoneClient
 import com.breakyuna.esjzone.network.EsjzoneUrls
 import com.breakyuna.esjzone.network.LocalAuthorization
+import com.breakyuna.esjzone.network.LoadFailureKind
+import com.breakyuna.esjzone.network.loadFailureKind
 import com.breakyuna.esjzone.network.features.getNovelDetail
 import com.breakyuna.esjzone.database.BookshelfRepository
 import com.breakyuna.esjzone.offline.DownloadProgress
@@ -144,7 +146,8 @@ class NovelPage(
                 is NovelPageModel.State.Loading -> Loading()
 
                 is NovelPageModel.State.Error -> LoadError(
-                    onRetry = screenModel::retry
+                    onRetry = screenModel::retry,
+                    failure = (state as NovelPageModel.State.Error).failure
                 )
 
                 is NovelPageModel.State.Result -> {
@@ -205,7 +208,12 @@ class NovelPage(
                         }
                     }
 
-                    LazyColumn(modifier = Modifier.fillMaxSize()) {
+                    Column(modifier = Modifier.fillMaxSize()) {
+                        LazyColumn(
+                            modifier = Modifier
+                                .weight(1f)
+                                .fillMaxWidth()
+                        ) {
                         item(key = "novel-hero") {
                             Card(
                                 modifier = Modifier
@@ -487,7 +495,7 @@ class NovelPage(
                         }
 
                         item(key = "novel-comments") {
-                            CommentSectionHost(
+                            CommentSectionContent(
                                 model = commentModel,
                                 showHeader = true,
                                 modifier = Modifier.fillMaxWidth()
@@ -497,6 +505,8 @@ class NovelPage(
                         item(key = "novel-detail-bottom-spacer") {
                             Spacer(modifier = Modifier.height(24.dp))
                         }
+                        }
+                        CommentComposerHost(model = commentModel)
                     }
                 }
             }
@@ -890,7 +900,7 @@ class NovelPageModel(
 
     sealed class State {
         data object Loading : State()
-        data object Error : State()
+        data class Error(val failure: LoadFailureKind) : State()
         data class Result(val detailed: DetailedNovel) : State()
     }
 
@@ -926,7 +936,7 @@ class NovelPageModel(
                         e
                     )
                 } else {
-                    mutableState.value = State.Error
+                    mutableState.value = State.Error(e.loadFailureKind())
                     com.breakyuna.esjzone.util.AppLogger.e(
                         "NovelPageModel",
                         "Failed to load novel detail for ${novel.name}",

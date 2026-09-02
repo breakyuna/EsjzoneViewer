@@ -10,6 +10,8 @@ import kotlinx.coroutines.launch
 import com.breakyuna.esjzone.network.Authorization
 import com.breakyuna.esjzone.network.EsjzoneClient
 import com.breakyuna.esjzone.network.EsjzoneUrls
+import com.breakyuna.esjzone.network.LoadFailureKind
+import com.breakyuna.esjzone.network.loadFailureKind
 import com.breakyuna.esjzone.network.features.getChapterDetail
 import com.breakyuna.esjzone.network.features.getNovelDetail
 import com.breakyuna.esjzone.novellibrary.novel.Chapter
@@ -36,7 +38,7 @@ class ChapterPageModel(
 
     sealed class State {
         data object Loading : State()
-        data object Error : State()
+        data class Error(val failure: LoadFailureKind) : State()
         data class Result(
             val chapters: List<ReaderChapter>,
             val previous: Chapter?,
@@ -107,10 +109,24 @@ class ChapterPageModel(
         mutableState.value = State.Loading
 
         initialJob = screenModelScope.launch(Dispatchers.IO) {
-            val detail = loadDetail(chapter)
+            val detail = try {
+                loadDetail(chapter)
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                if (isCurrentSession(currentSession)) {
+                    mutableState.value = State.Error(error.loadFailureKind())
+                }
+                AppLogger.e(
+                    "ChapterPageModel",
+                    "Failed to load initial chapter ${chapter.name}",
+                    error
+                )
+                return@launch
+            }
             if (!isCurrentSession(currentSession)) return@launch
             if (detail == null) {
-                mutableState.value = State.Error
+                mutableState.value = State.Error(LoadFailureKind.CLIENT)
                 return@launch
             }
 
@@ -323,7 +339,7 @@ class ChapterPageModel(
                 "Failed to load chapter detail for ${chapter.name}",
                 e
             )
-            null
+            throw e
         }
     }
 

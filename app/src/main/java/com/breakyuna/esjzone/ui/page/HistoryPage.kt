@@ -82,6 +82,8 @@ import com.breakyuna.esjzone.network.Authorization
 import com.breakyuna.esjzone.network.EsjzoneClient
 import com.breakyuna.esjzone.network.EsjzoneUrls
 import com.breakyuna.esjzone.network.LocalAuthorization
+import com.breakyuna.esjzone.network.LoadFailureKind
+import com.breakyuna.esjzone.network.loadFailureKind
 import com.breakyuna.esjzone.network.features.getHistories
 import com.breakyuna.esjzone.network.features.getNovelDetail
 import com.breakyuna.esjzone.network.features.removeHistory
@@ -272,14 +274,16 @@ object HistoryPage : Screen {
 
                             val novel = detailLoader.details[detailKey]
                             if (novel == null) {
-                                if (detailLoader.failures[detailKey] == true) {
+                                if (detailLoader.failures[detailKey] != null) {
                                     LoadError(
                                         onRetry = {
                                             detailLoader.retry(historyNovel)
                                         },
                                         modifier = Modifier
                                             .fillMaxWidth()
-                                            .padding(vertical = 8.dp)
+                                            .padding(vertical = 8.dp),
+                                        failure = detailLoader.failures[detailKey]
+                                            ?: LoadFailureKind.CLIENT
                                     )
                                 } else {
                                     Column(
@@ -472,7 +476,7 @@ object HistoryPage : Screen {
                     }
                 }
 
-                HistoryPageModel.State.Error -> {
+                is HistoryPageModel.State.Error -> {
                     Column(
                         modifier = Modifier
                             .fillMaxSize()
@@ -481,7 +485,13 @@ object HistoryPage : Screen {
                         verticalArrangement = Arrangement.Center
                     ) {
                         Text(
-                            text = stringResource(id = R.string.history_load_failed),
+                            text = stringResource(
+                                if ((state as HistoryPageModel.State.Error).failure == LoadFailureKind.NETWORK) {
+                                    R.string.load_network_error
+                                } else {
+                                    R.string.load_client_error
+                                }
+                            ),
                             color = MaterialTheme.colorScheme.error
                         )
                         TextButton(onClick = { historyPageModel.reload() }) {
@@ -506,7 +516,7 @@ class HistoryPageModel(
 
     sealed class State {
         data object Loading : State()
-        data object Error : State()
+        data class Error(val failure: LoadFailureKind) : State()
         data class Result(val historyNovels: List<HistoryNovel>) : State()
     }
 
@@ -526,7 +536,7 @@ class HistoryPageModel(
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                mutableState.value = State.Error
+                mutableState.value = State.Error(e.loadFailureKind())
                 loadStarted = false
                 AppLogger.e("HistoryPageModel", "Failed to load cloud histories", e)
             }
@@ -553,7 +563,7 @@ private fun LocalHistoryContent(
     when (val current = state) {
         LocalHistoryPageModel.State.Loading -> Loading()
 
-        LocalHistoryPageModel.State.Error -> Column(
+        is LocalHistoryPageModel.State.Error -> Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(24.dp),
@@ -561,7 +571,13 @@ private fun LocalHistoryContent(
                             verticalArrangement = Arrangement.Center
         ) {
             Text(
-                text = stringResource(id = R.string.history_local_load_failed),
+                text = stringResource(
+                    if (current.failure == LoadFailureKind.NETWORK) {
+                        R.string.load_network_error
+                    } else {
+                        R.string.load_client_error
+                    }
+                ),
                 color = MaterialTheme.colorScheme.error
             )
             TextButton(onClick = onRetry) {
@@ -800,7 +816,7 @@ class LocalHistoryPageModel(
 
     sealed class State {
         data object Loading : State()
-        data object Error : State()
+        data class Error(val failure: LoadFailureKind) : State()
         data class Result(val activities: List<LocalReadingActivity>) : State()
     }
 
@@ -889,7 +905,7 @@ class LocalHistoryPageModel(
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                mutableState.value = State.Error
+                mutableState.value = State.Error(e.loadFailureKind())
                 AppLogger.e("LocalHistoryPageModel", "Failed to load local history", e)
             }
         }

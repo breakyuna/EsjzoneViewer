@@ -36,6 +36,8 @@ import com.breakyuna.esjzone.R
 import com.breakyuna.esjzone.network.Authorization
 import com.breakyuna.esjzone.network.EsjzoneClient
 import com.breakyuna.esjzone.network.LocalAuthorization
+import com.breakyuna.esjzone.network.LoadFailureKind
+import com.breakyuna.esjzone.network.loadFailureKind
 import com.breakyuna.esjzone.network.features.listNovels
 import com.breakyuna.esjzone.novellibrary.novel.Category
 import com.breakyuna.esjzone.novellibrary.novel.CategoryNovel
@@ -75,7 +77,8 @@ class CategoryPage(private val category: Category) : Screen {
                 ) { CircularProgressIndicator() }
 
                 is CategoryPageModel.State.Error -> LoadError(
-                    onRetry = categoryPageModel::retry
+                    onRetry = categoryPageModel::retry,
+                    failure = (state as CategoryPageModel.State.Error).failure
                 )
 
                 is CategoryPageModel.State.Result -> {
@@ -99,14 +102,16 @@ class CategoryPage(private val category: Category) : Screen {
                             val key = detailLoader.key(categoryNovel)
                             val novel = detailLoader.details[key]
                             if (novel == null) {
-                                if (detailLoader.failures[key] == true) {
+                                if (detailLoader.failures[key] != null) {
                                     LoadError(
                                         onRetry = {
                                             detailLoader.retry(categoryNovel)
                                         },
                                         modifier = Modifier
                                             .fillMaxWidth()
-                                            .padding(vertical = 8.dp)
+                                            .padding(vertical = 8.dp),
+                                        failure = detailLoader.failures[key]
+                                            ?: LoadFailureKind.CLIENT
                                     )
                                 } else {
                                     Column(
@@ -162,7 +167,7 @@ class CategoryPageModel(
 
     sealed class State {
         data object Loading : State()
-        data object Error : State()
+        data class Error(val failure: LoadFailureKind) : State()
         data class Result(val categoryNovels: List<CategoryNovel>) : State()
     }
 
@@ -179,7 +184,7 @@ class CategoryPageModel(
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                mutableState.value = State.Error
+                mutableState.value = State.Error(e.loadFailureKind())
                 loadStarted = false
                 com.breakyuna.esjzone.util.AppLogger.e("CategoryPageModel", "Failed to list novels for category: ${category.name}", e)
             }

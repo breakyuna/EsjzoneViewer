@@ -127,11 +127,9 @@ private fun StartupContent(state: StartupState, retry: () -> Unit) {
     Column(Modifier.fillMaxSize().padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center) {
         if (state is StartupState.Starting) CircularProgressIndicator()
-        Text(stringResource(if (state is StartupState.Failed) R.string.startup_failed else R.string.startup_loading),
+        Text(stringResource(if (state is StartupState.Failed) R.string.load_client_error else R.string.startup_loading),
             style = MaterialTheme.typography.titleMedium)
         if (state is StartupState.Failed) {
-            Spacer(Modifier.height(8.dp))
-            Text(state.reason, style = MaterialTheme.typography.bodyMedium)
             Spacer(Modifier.height(16.dp))
             Button(onClick = retry) { Text(stringResource(R.string.retry)) }
         }

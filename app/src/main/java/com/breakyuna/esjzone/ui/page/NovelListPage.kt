@@ -47,6 +47,8 @@ import com.breakyuna.esjzone.network.Authorization
 import com.breakyuna.esjzone.network.EsjzoneClient
 import com.breakyuna.esjzone.network.LocalAuthorization
 import com.breakyuna.esjzone.network.PageableRequester
+import com.breakyuna.esjzone.network.LoadFailureKind
+import com.breakyuna.esjzone.network.loadFailureKind
 import com.breakyuna.esjzone.network.features.getNovelDetail
 import com.breakyuna.esjzone.network.features.novels
 import com.breakyuna.esjzone.novellibrary.novel.CoveredNovel
@@ -180,7 +182,8 @@ class NovelListPage(
                 is NovelListPageModel.State.Loading -> Loading()
 
                 is NovelListPageModel.State.Error -> LoadError(
-                    onRetry = novelListModel::retry
+                    onRetry = novelListModel::retry,
+                    failure = (state as NovelListPageModel.State.Error).failure
                 )
 
                 is NovelListPageModel.State.Result -> {
@@ -192,6 +195,9 @@ class NovelListPage(
                     }
                     var pageFailed by remember(result) {
                         mutableStateOf(false)
+                    }
+                    var pageFailure by remember(result) {
+                        mutableStateOf<LoadFailureKind?>(null)
                     }
                     var pageRetry by remember(result) {
                         mutableIntStateOf(0)
@@ -239,11 +245,13 @@ class NovelListPage(
                                     LoadError(
                                         onRetry = {
                                             pageFailed = false
+                                            pageFailure = null
                                             pageRetry += 1
                                         },
                                         modifier = Modifier
                                             .fillMaxWidth()
-                                            .padding(vertical = 8.dp)
+                                            .padding(vertical = 8.dp),
+                                        failure = pageFailure ?: LoadFailureKind.CLIENT
                                     )
                                 } else {
                                     Box(
@@ -266,11 +274,13 @@ class NovelListPage(
                                             items.add(item)
                                         }
                                         pageFailed = false
+                                        pageFailure = null
                                         current += 1
                                     } catch (e: CancellationException) {
                                         throw e
                                     } catch (e: Exception) {
                                         pageFailed = true
+                                        pageFailure = e.loadFailureKind()
                                         com.breakyuna.esjzone.util.AppLogger.e(
                                             "NovelListPage",
                                             "Failed to load novel page $current",
@@ -322,7 +332,7 @@ class NovelListPageModel(
 
     sealed class State {
         data object Loading : State()
-        data object Error : State()
+        data class Error(val failure: LoadFailureKind) : State()
         data class Result(
             val requester: PageableRequester<CoveredNovel>,
             val firstPage: List<CoveredNovel>
@@ -390,7 +400,7 @@ class NovelListPageModel(
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                mutableState.value = State.Error
+                mutableState.value = State.Error(e.loadFailureKind())
                 // Allow a later lifecycle/network recovery request to try again.
                 initialRequestStarted = false
                 com.breakyuna.esjzone.util.AppLogger.e("NovelListPageModel", "Failed to load novel list for type=${novelType.intValue}, sort=${sortType.intValue}", e)

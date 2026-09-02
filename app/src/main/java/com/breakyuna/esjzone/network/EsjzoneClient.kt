@@ -19,6 +19,7 @@ import okhttp3.HttpUrl
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
+import java.util.concurrent.TimeUnit
 
 object EsjzoneClient {
 
@@ -175,21 +176,29 @@ object EsjzoneClient {
         return try {
             networkPermits.acquire()
             val responseData = try {
-                val response = authenticatedClient(authorization).newCall(
-                    Request.Builder()
-                        .url(url)
-                        .get()
-                        .headers(headers)
-                        .build()
-                ).execute()
-                response.use {
-                    val body = it.body?.string().orEmpty()
-                    PageResponseData(
-                        statusCode = it.code,
-                        body = body,
-                        finalUrl = it.request.url.toString(),
-                        contentType = it.header("Content-Type")
-                    )
+                val response = try {
+                    authenticatedClient(authorization).newCall(
+                        Request.Builder()
+                            .url(url)
+                            .get()
+                            .headers(headers)
+                            .build()
+                    ).execute()
+                } catch (error: java.io.IOException) {
+                    throw NetworkRequestException(url, error)
+                }
+                try {
+                    response.use {
+                        val body = it.body?.string().orEmpty()
+                        PageResponseData(
+                            statusCode = it.code,
+                            body = body,
+                            finalUrl = it.request.url.toString(),
+                            contentType = it.header("Content-Type")
+                        )
+                    }
+                } catch (error: java.io.IOException) {
+                    throw NetworkRequestException(url, error)
                 }
             } finally {
                 networkPermits.release()
@@ -304,11 +313,13 @@ object EsjzoneClient {
         persistentCookieJar?.rotateCacheScope(host)
     }
 
-    internal fun wasAuthorizationVerifiedRecently(host: String, maxAgeMillis: Long): Boolean =
-        persistentCookieJar?.wasVerifiedRecently(host, maxAgeMillis) == true
+    internal fun wasAuthorizationVerifiedRecently(
+        authorization: Authorization,
+        maxAgeMillis: Long
+    ): Boolean = persistentCookieJar?.wasVerifiedRecently(authorization, maxAgeMillis) == true
 
-    internal fun markAuthorizationVerified(host: String) {
-        persistentCookieJar?.markVerified(host)
+    internal fun markAuthorizationVerified(authorization: Authorization) {
+        persistentCookieJar?.markVerified(authorization)
     }
 
     internal fun novelDetailCacheKey(authorization: Authorization, url: String): String =
@@ -328,8 +339,19 @@ object EsjzoneClient {
     internal fun logoutClient(authorization: Authorization): OkHttpClient =
         sharedHttpClient.newBuilder()
             .cookieJar(AuthorizationCookieJar(authorization, persistResponses = false))
-            .callTimeout(5, java.util.concurrent.TimeUnit.SECONDS)
+            .callTimeout(5, TimeUnit.SECONDS)
             .build()
+
+    /** Builds a bounded, isolated client for a background session probe. */
+    internal fun authorizationCheckClient(
+        authorization: Authorization,
+        timeoutMillis: Long
+    ): OkHttpClient = sharedHttpClient.newBuilder()
+        // A probe must never persist response cookies: a late result from an old
+        // account must not rotate or replace the session used by the UI.
+        .cookieJar(AuthorizationCookieJar(authorization, persistResponses = false))
+        .callTimeout(timeoutMillis.coerceAtLeast(1L), TimeUnit.MILLISECONDS)
+        .build()
 
     private fun pageCacheKey(authorization: Authorization, url: String): String {
         val host = url.toHttpUrlOrNull()?.host ?: authorization.domain

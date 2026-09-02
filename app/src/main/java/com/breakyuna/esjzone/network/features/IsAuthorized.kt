@@ -18,41 +18,53 @@ enum class AuthorizationCheckResult {
 }
 
 private const val AUTHORIZATION_VERIFICATION_TTL = 30L * 60L * 1000L
+private const val AUTHORIZATION_CHECK_TIMEOUT_MILLIS = 8_000L
 
 /**
  * Checks a cached session without turning temporary network failures into a
  * local logout. UNKNOWN means that the cached credentials should be kept.
  */
-fun EsjzoneClient.checkAuthorization(authorization: Authorization): AuthorizationCheckResult {
+fun EsjzoneClient.checkAuthorization(
+    authorization: Authorization,
+    totalTimeoutMillis: Long = AUTHORIZATION_CHECK_TIMEOUT_MILLIS
+): AuthorizationCheckResult {
     if (!authorization.hasCredentials()) {
         AppLogger.i("IsAuthorized", "No stored authorization credentials found")
         return AuthorizationCheckResult.UNAUTHORIZED
     }
 
-    val sessionHost = authorization.domain.ifBlank { EsjzoneUrls.BaseWithoutProtocol }
-    if (wasAuthorizationVerifiedRecently(sessionHost, AUTHORIZATION_VERIFICATION_TTL)) {
+    if (wasAuthorizationVerifiedRecently(authorization, AUTHORIZATION_VERIFICATION_TTL)) {
         AppLogger.i("IsAuthorized", "Using recently verified local session")
         return AuthorizationCheckResult.AUTHORIZED
     }
 
-    val first = checkAuthorizationOnce(authorization)
+    val deadlineNanos = System.nanoTime() + totalTimeoutMillis.coerceAtLeast(1L) * 1_000_000L
+    val firstTimeout = remainingTimeoutMillis(deadlineNanos)
+    val first = if (firstTimeout > 0L) {
+        checkAuthorizationOnce(authorization, firstTimeout)
+    } else {
+        AuthorizationProbe(AuthorizationCheckResult.UNKNOWN)
+    }
     if (!first.retryableStatus) {
         if (first.result == AuthorizationCheckResult.AUTHORIZED) {
-            markAuthorizationVerified(sessionHost)
+            markAuthorizationVerified(authorization)
         }
         return first.result
     }
 
-    // A single 401/403 can be produced by a proxy, rate limiter, or a transient
+    // A retryable 403 can be produced by a proxy, rate limiter, or a transient
     // server edge. Confirm it before treating the persisted session as expired.
-    val second = checkAuthorizationOnce(authorization)
-    val result = if (second.retryableStatus) {
-        AuthorizationCheckResult.UNAUTHORIZED
+    val secondTimeout = remainingTimeoutMillis(deadlineNanos)
+    val second = if (secondTimeout > 0L) {
+        checkAuthorizationOnce(authorization, secondTimeout)
     } else {
-        second.result
+        AuthorizationProbe(AuthorizationCheckResult.UNKNOWN)
     }
+    // A repeated WAF/proxy response is still not proof that the session expired.
+    // Only an explicit unauthorized result may surface the relogin prompt.
+    val result = if (second.retryableStatus) AuthorizationCheckResult.UNKNOWN else second.result
     if (result == AuthorizationCheckResult.AUTHORIZED) {
-        markAuthorizationVerified(sessionHost)
+        markAuthorizationVerified(authorization)
     }
     return result
 }
@@ -62,12 +74,20 @@ private data class AuthorizationProbe(
     val retryableStatus: Boolean = false
 )
 
-private fun EsjzoneClient.checkAuthorizationOnce(authorization: Authorization): AuthorizationProbe {
+private fun EsjzoneClient.checkAuthorizationOnce(
+    authorization: Authorization,
+    timeoutMillis: Long
+): AuthorizationProbe {
     return try {
-        AppLogger.i("IsAuthorized", "Checking authorization with server at ${EsjzoneUrls.My.Profile}")
-        val response = authenticatedClient(authorization).newCall(
+        val sessionBase = EsjzoneUrls.baseForDomain(
+            authorization.domain.ifBlank { EsjzoneUrls.BaseWithoutProtocol }
+        )
+        val profileUrl = EsjzoneUrls.resolve("/my/profile", sessionBase)
+        AppLogger.i("IsAuthorized", "Checking authorization with server at $profileUrl")
+        val client = authorizationCheckClient(authorization, timeoutMillis)
+        val response = client.newCall(
             Request.Builder()
-                .url(EsjzoneUrls.My.Profile)
+                .url(profileUrl)
                 .get()
                 .headers(this.headers)
                 .build()
@@ -80,8 +100,9 @@ private fun EsjzoneClient.checkAuthorizationOnce(authorization: Authorization): 
 
         val document = Jsoup.parse(responseBody)
         val hasProfileMarker = EsjzoneXPaths.Profile.Username.evaluate(document)
-            .list()
-            .isNotEmpty()
+            .get()
+            ?.trim()
+            ?.isNotEmpty() == true
         val redirectedToLogin = finalPath.contains("/my/login") ||
             LOGIN_REDIRECT_PATTERN.containsMatchIn(responseBody)
         val hasLoginForm = document.select("form.login-box").isNotEmpty() ||
@@ -105,7 +126,10 @@ private fun EsjzoneClient.checkAuthorizationOnce(authorization: Authorization): 
                 AuthorizationProbe(AuthorizationCheckResult.UNKNOWN)
             !isSuccessful ->
                 AuthorizationProbe(AuthorizationCheckResult.UNKNOWN)
-            hasProfileMarker || finalPath.contains("/my/profile") ->
+            responseBody.isBlank() ||
+                PageResponsePolicy.looksLikeBlockedOrLoginPage(responseBody, finalPath) ->
+                AuthorizationProbe(AuthorizationCheckResult.UNKNOWN)
+            hasProfileMarker ->
                 AuthorizationProbe(AuthorizationCheckResult.AUTHORIZED)
             else ->
                 AuthorizationProbe(AuthorizationCheckResult.UNKNOWN)
@@ -119,6 +143,10 @@ private fun EsjzoneClient.checkAuthorizationOnce(authorization: Authorization): 
         AppLogger.e("IsAuthorized", "Failed to check authorization due to network/parsing exception", e)
         AuthorizationProbe(AuthorizationCheckResult.UNKNOWN)
     }
+}
+
+private fun remainingTimeoutMillis(deadlineNanos: Long): Long {
+    return ((deadlineNanos - System.nanoTime()) / 1_000_000L).coerceAtLeast(0L)
 }
 
 /**

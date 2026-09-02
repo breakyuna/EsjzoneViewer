@@ -143,7 +143,13 @@
     <string name="retry">Retry</string>
     <string name="startup_loading">Starting Esjzone Viewer…</string>
     <string name="startup_failed">Unable to start. Your local data was kept.</string>
+    <string name="session_expired_title">Session expired</string>
+    <string name="session_expired_message">Your session has expired. Your local shelf and reading history are still available offline.</string>
+    <string name="session_expired_continue">Continue offline</string>
+    <string name="session_expired_relogin">Log in again</string>
     <string name="load_failed">Unable to load content</string>
+    <string name="load_network_error">Network error. Please try again later.</string>
+    <string name="load_client_error">Client error. Please contact the developer.</string>
     <string name="compile_information">Compille Info</string>
     <string name="build_version">Build Version</string>
     <string name="build_date">Build Date</string>

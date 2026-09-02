@@ -44,6 +44,8 @@ import com.breakyuna.esjzone.network.Authorization
 import com.breakyuna.esjzone.network.EsjzoneClient
 import com.breakyuna.esjzone.network.EsjzoneUrls
 import com.breakyuna.esjzone.network.LocalAuthorization
+import com.breakyuna.esjzone.network.LoadFailureKind
+import com.breakyuna.esjzone.network.loadFailureKind
 import com.breakyuna.esjzone.network.features.getForumCategories
 import com.breakyuna.esjzone.network.features.getForumBoard
 import com.breakyuna.esjzone.network.features.getForumPost
@@ -224,19 +226,23 @@ class ForumPostPage(private val topic: ForumTopic) : Screen {
             AppBar(title = topic.title, onBack = { navigator?.pop() })
             when (val snapshot = state) {
                 is CommunityState.Loading -> BoxLoading()
-                is CommunityState.Error -> BoxError()
+                is CommunityState.Error -> BoxError(snapshot.failure)
                 is CommunityState.Empty -> BoxError()
-                is CommunityState.Result -> Column(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .verticalScroll(rememberScrollState())
-                ) {
-                    ForumPostCard(snapshot.data)
-                    CommentSectionHost(
-                        model = commentsModel,
-                        showHeader = true,
-                        modifier = Modifier.fillMaxWidth()
-                    )
+                is CommunityState.Result -> Column(modifier = Modifier.fillMaxSize()) {
+                    Column(
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxWidth()
+                            .verticalScroll(rememberScrollState())
+                    ) {
+                        ForumPostCard(snapshot.data)
+                        CommentSectionContent(
+                            model = commentsModel,
+                            showHeader = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+                    CommentComposerHost(model = commentsModel)
                 }
             }
         }
@@ -574,7 +580,7 @@ private fun BoxLoading() {
 }
 
 @Composable
-private fun BoxError() {
+private fun BoxError(failure: LoadFailureKind = LoadFailureKind.CLIENT) {
     androidx.compose.foundation.layout.Box(
         modifier = Modifier
             .fillMaxSize()
@@ -582,7 +588,13 @@ private fun BoxError() {
         contentAlignment = Alignment.Center
     ) {
         Text(
-            text = stringResource(id = R.string.community_load_failed),
+            text = stringResource(
+                if (failure == LoadFailureKind.NETWORK) {
+                    R.string.load_network_error
+                } else {
+                    R.string.load_client_error
+                }
+            ),
             color = MaterialTheme.colorScheme.error
         )
     }
@@ -604,7 +616,7 @@ private class ForumPageModel(
             } catch (error: Exception) {
                 AppLogger.e("ForumPageModel", "Failed to load forum categories", error)
                 loadStarted = false
-                CommunityState.Error
+                CommunityState.Error(error.loadFailureKind())
             }
         }
     }
@@ -631,7 +643,7 @@ private class ForumCategoryPageModel(
                     error
                 )
                 loadStarted = false
-                CommunityState.Error
+                CommunityState.Error(error.loadFailureKind())
             }
         }
     }
@@ -660,7 +672,7 @@ private class ForumBoardPageModel(
                     error
                 )
                 loadStarted = false
-                CommunityState.Error
+                CommunityState.Error(error.loadFailureKind())
             }
         }
     }
@@ -687,7 +699,7 @@ private class ForumPostPageModel(
                     error
                 )
                 loadStarted = false
-                CommunityState.Error
+                CommunityState.Error(error.loadFailureKind())
             }
         }
     }

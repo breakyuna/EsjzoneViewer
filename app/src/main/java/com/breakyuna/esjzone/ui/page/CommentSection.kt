@@ -46,6 +46,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -64,12 +65,15 @@ import com.breakyuna.esjzone.R
 import com.breakyuna.esjzone.network.Authorization
 import com.breakyuna.esjzone.network.EsjzoneClient
 import com.breakyuna.esjzone.network.EsjzoneUrls
+import com.breakyuna.esjzone.network.LoadFailureKind
+import com.breakyuna.esjzone.network.loadFailureKind
 import com.breakyuna.esjzone.network.features.CommentSubmissionNotVerifiedException
 import com.breakyuna.esjzone.network.features.getPageComments
 import com.breakyuna.esjzone.network.features.submitForumComment
 import com.breakyuna.esjzone.novellibrary.novel.COMMENT_PAGE_SIZE
 import com.breakyuna.esjzone.novellibrary.novel.Comment
 import com.breakyuna.esjzone.ui.navigation.LocalBaseNavigator
+import com.breakyuna.esjzone.ui.component.LoadError
 import com.breakyuna.esjzone.util.AppLogger
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -80,7 +84,7 @@ import kotlinx.coroutines.launch
 internal sealed class CommunityState<out T> {
     data object Loading : CommunityState<Nothing>()
     data object Empty : CommunityState<Nothing>()
-    data object Error : CommunityState<Nothing>()
+    data class Error(val failure: LoadFailureKind) : CommunityState<Nothing>()
     data class Result<T>(val data: T) : CommunityState<T>()
 }
 
@@ -103,7 +107,13 @@ internal fun <T> CommunityStateContent(
             contentAlignment = Alignment.Center
         ) {
             Text(
-                text = stringResource(id = R.string.community_load_failed),
+                text = stringResource(
+                    if (state.failure == LoadFailureKind.NETWORK) {
+                        R.string.load_network_error
+                    } else {
+                        R.string.load_client_error
+                    }
+                ),
                 color = MaterialTheme.colorScheme.error
             )
         }
@@ -140,7 +150,6 @@ internal fun CommentListPage(
             modifier = Modifier
                 .weight(1f)
                 .fillMaxWidth()
-                .verticalScroll(rememberScrollState())
         )
     }
 }
@@ -151,14 +160,36 @@ internal fun CommentSectionHost(
     modifier: Modifier = Modifier,
     showHeader: Boolean = true
 ) {
+    Column(modifier = modifier) {
+        Box(
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
+        ) {
+            CommentSectionContent(
+                model = model,
+                showHeader = showHeader,
+                modifier = Modifier.fillMaxWidth()
+            )
+        }
+        CommentComposerHost(model = model)
+    }
+}
+
+/**
+ * Renders only the scrollable comments area.  Pages with a larger scroll
+ * container (novel and forum posts) use this together with [CommentComposerHost]
+ * so the composer remains outside that container.
+ */
+@Composable
+internal fun CommentSectionContent(
+    model: CommentPageModel,
+    modifier: Modifier = Modifier,
+    showHeader: Boolean = true
+) {
     val state by model.state.collectAsState()
-    val isSubmitting by model.isSubmitting
-    val submitError by model.submitError
-    val submittedVersion by model.submittedVersion
     val lastCreatedCommentId by model.lastCreatedCommentId
-    var draft by rememberSaveable(model.pageUrl) { mutableStateOf("") }
-    var replyToken by rememberSaveable(model.pageUrl) { mutableStateOf<String?>(null) }
-    var replyAuthor by rememberSaveable(model.pageUrl) { mutableStateOf<String?>(null) }
 
     when (val snapshot = state) {
         is CommunityState.Loading -> Box(
@@ -166,100 +197,104 @@ internal fun CommentSectionHost(
             contentAlignment = Alignment.Center
         ) { CircularProgressIndicator() }
 
-        is CommunityState.Error -> Box(
-            modifier = modifier.padding(24.dp),
-            contentAlignment = Alignment.Center
-        ) {
-            Text(
-                text = stringResource(id = R.string.community_load_failed),
-                color = MaterialTheme.colorScheme.error
-            )
-        }
+        is CommunityState.Error -> LoadError(
+            onRetry = {
+                model.clearSubmitError()
+                model.load(forceRefresh = true)
+            },
+            modifier = modifier,
+            failure = snapshot.failure
+        )
 
         is CommunityState.Empty -> CommentSection(
             comments = emptyList(),
             lastCreatedCommentId = lastCreatedCommentId,
-            draft = draft,
-            replyAuthor = replyAuthor,
-            isSubmitting = isSubmitting,
-            error = submitError,
             showHeader = showHeader,
             modifier = modifier,
-            onDraftChange = {
-                draft = it
-                model.clearSubmitError()
-            },
             onReply = { comment ->
-                replyToken = comment.replyToken
-                replyAuthor = comment.authorName
+                model.replyToken.value = comment.replyToken
+                model.replyAuthor.value = comment.authorName
                 model.clearSubmitError()
             },
-            onCancelReply = {
-                replyToken = null
-                replyAuthor = null
-            },
-            onRefresh = {
-                model.clearSubmitError()
-                model.load(forceRefresh = true)
-            },
-            onSubmit = { model.submit(draft, replyToken) }
         )
 
         is CommunityState.Result -> CommentSection(
             comments = snapshot.data,
             lastCreatedCommentId = lastCreatedCommentId,
-            draft = draft,
-            replyAuthor = replyAuthor,
-            isSubmitting = isSubmitting,
-            error = submitError,
             showHeader = showHeader,
             modifier = modifier,
-            onDraftChange = {
-                draft = it
-                model.clearSubmitError()
-            },
             onReply = { comment ->
-                replyToken = comment.replyToken
-                replyAuthor = comment.authorName
+                model.replyToken.value = comment.replyToken
+                model.replyAuthor.value = comment.authorName
                 model.clearSubmitError()
             },
-            onCancelReply = {
-                replyToken = null
-                replyAuthor = null
-            },
-            onRefresh = {
-                model.clearSubmitError()
-                model.load(forceRefresh = true)
-            },
-            onSubmit = { model.submit(draft, replyToken) }
         )
     }
 
     LaunchedEffect(model) { model.load() }
-    LaunchedEffect(submittedVersion) {
-        if (submittedVersion > 0) {
-            draft = ""
-            replyToken = null
-            replyAuthor = null
+}
+
+/** The persistent composer is deliberately a sibling of the comments scroller. */
+@Composable
+internal fun CommentComposerHost(
+    model: CommentPageModel,
+    modifier: Modifier = Modifier
+) {
+    var savedDraft by rememberSaveable(model.pageUrl) { mutableStateOf("") }
+    var savedReplyToken by rememberSaveable(model.pageUrl) { mutableStateOf<String?>(null) }
+    var savedReplyAuthor by rememberSaveable(model.pageUrl) { mutableStateOf<String?>(null) }
+    LaunchedEffect(model) {
+        // Restore the composer after an activity/process recreation, then keep
+        // the saveable mirror current while the screen model remains the
+        // single source shared by the comments list and this host.
+        if (model.draft.value.isBlank() && savedDraft.isNotBlank()) {
+            model.draft.value = savedDraft
+        }
+        if (model.replyToken.value == null && savedReplyToken != null) {
+            model.replyToken.value = savedReplyToken
+            model.replyAuthor.value = savedReplyAuthor
+        }
+        snapshotFlow {
+            Triple(model.draft.value, model.replyToken.value, model.replyAuthor.value)
+        }.collect { (draft, token, author) ->
+            savedDraft = draft
+            savedReplyToken = token
+            savedReplyAuthor = author
         }
     }
+    val draft by model.draft
+    val replyAuthor by model.replyAuthor
+    val isSubmitting by model.isSubmitting
+    val submitError by model.submitError
+    CommentComposer(
+        draft = draft,
+        replyAuthor = replyAuthor,
+        isSubmitting = isSubmitting,
+        error = submitError,
+        onDraftChange = {
+            model.draft.value = it
+            model.clearSubmitError()
+        },
+        onCancelReply = {
+            model.replyToken.value = null
+            model.replyAuthor.value = null
+        },
+        onRefresh = {
+            model.clearSubmitError()
+            model.load(forceRefresh = true)
+        },
+        onSubmit = { model.submit(draft, model.replyToken.value) },
+        modifier = modifier
+    )
 }
 
 @Composable
 private fun CommentSection(
     comments: List<Comment>,
     lastCreatedCommentId: String?,
-    draft: String,
-    replyAuthor: String?,
-    isSubmitting: Boolean,
-    error: CommentSubmitError?,
     showHeader: Boolean,
     modifier: Modifier,
-    onDraftChange: (String) -> Unit,
-    onReply: (Comment) -> Unit,
-    onCancelReply: () -> Unit,
-    onRefresh: () -> Unit,
-    onSubmit: () -> Unit
+    onReply: (Comment) -> Unit
 ) {
     val pages = remember(comments) { comments.chunked(COMMENT_PAGE_SIZE) }
     var selectedPageIndex by rememberSaveable { mutableIntStateOf(0) }
@@ -320,16 +355,6 @@ private fun CommentSection(
             }
         }
 
-        CommentComposer(
-            draft = draft,
-            replyAuthor = replyAuthor,
-            isSubmitting = isSubmitting,
-            error = error,
-            onDraftChange = onDraftChange,
-            onCancelReply = onCancelReply,
-            onRefresh = onRefresh,
-            onSubmit = onSubmit
-        )
         Spacer(modifier = Modifier.height(12.dp))
     }
 }
@@ -343,10 +368,11 @@ private fun CommentComposer(
     onDraftChange: (String) -> Unit,
     onCancelReply: () -> Unit,
     onRefresh: () -> Unit,
-    onSubmit: () -> Unit
+    onSubmit: () -> Unit,
+    modifier: Modifier = Modifier
 ) {
     Surface(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 8.dp),
         color = MaterialTheme.colorScheme.surface,
@@ -610,8 +636,12 @@ internal class CommentPageModel(
 
     val isSubmitting = mutableStateOf(false)
     val submitError = mutableStateOf<CommentSubmitError?>(null)
-    val submittedVersion = mutableIntStateOf(0)
     val lastCreatedCommentId = mutableStateOf<String?>(null)
+    // Keep composer state in the screen model so it survives lazy item
+    // disposal while the user scrolls through a novel or forum post.
+    val draft = mutableStateOf("")
+    val replyToken = mutableStateOf<String?>(null)
+    val replyAuthor = mutableStateOf<String?>(null)
 
     fun load(forceRefresh: Boolean = false) {
         if (!forceRefresh && loadStarted) return
@@ -630,7 +660,7 @@ internal class CommentPageModel(
                 throw error
             } catch (error: Exception) {
                 AppLogger.e("CommentPageModel", "Failed to load comments", error)
-                mutableState.value = CommunityState.Error
+                mutableState.value = CommunityState.Error(error.loadFailureKind())
                 loadStarted = false
             }
         }
@@ -661,7 +691,9 @@ internal class CommentPageModel(
                 ensureActive()
                 mutableState.value = CommunityState.Result(submission.comments)
                 lastCreatedCommentId.value = submission.createdComment.id
-                submittedVersion.intValue += 1
+                draft.value = ""
+                this@CommentPageModel.replyToken.value = null
+                this@CommentPageModel.replyAuthor.value = null
             } catch (error: CancellationException) {
                 throw error
             } catch (error: CommentSubmissionNotVerifiedException) {

@@ -6,6 +6,8 @@ import com.google.gson.JsonSyntaxException
 import okhttp3.Cookie
 import okhttp3.CookieJar
 import okhttp3.HttpUrl
+import java.nio.charset.StandardCharsets
+import java.security.MessageDigest
 import java.util.UUID
 
 /**
@@ -92,15 +94,15 @@ internal class PersistentCookieJar(context: Context) : CookieJar {
         Unit
     }
 
-    fun wasVerifiedRecently(host: String, maxAgeMillis: Long): Boolean = synchronized(lock) {
-        val verifiedAt = preferences.getLong(verificationKey(host), 0L)
+    fun wasVerifiedRecently(authorization: Authorization, maxAgeMillis: Long): Boolean = synchronized(lock) {
+        val verifiedAt = preferences.getLong(verificationKey(authorization), 0L)
         val age = System.currentTimeMillis() - verifiedAt
         verifiedAt > 0L && age in 0..maxAgeMillis
     }
 
-    fun markVerified(host: String) = synchronized(lock) {
+    fun markVerified(authorization: Authorization) = synchronized(lock) {
         preferences.edit()
-            .putLong(verificationKey(host), System.currentTimeMillis())
+            .putLong(verificationKey(authorization), System.currentTimeMillis())
             .apply()
     }
 
@@ -149,10 +151,15 @@ internal class PersistentCookieJar(context: Context) : CookieJar {
                     domainMatchesHost(it.domain, normalizedHost) ||
                         domainMatchesHost(it.domain, "www.$normalizedHost")
                 }
-                preferences.edit()
+                val editor = preferences.edit()
                     .remove(cacheScopeKey(host))
-                    .remove(verificationKey(host))
-                    .commit()
+                    // Remove both the current session-scoped keys and the
+                    // pre-session-scoped key used by older versions.
+                    .remove(legacyVerificationKey(host))
+                preferences.all.keys
+                    .filter { it.startsWith(verificationPrefix(host)) }
+                    .forEach(editor::remove)
+                editor.commit()
             }
             persistLocked()
         }
@@ -198,8 +205,22 @@ internal class PersistentCookieJar(context: Context) : CookieJar {
     private fun cacheScopeKey(host: String): String =
         CACHE_SCOPE_PREFIX + normalizedHost(host)
 
-    private fun verificationKey(host: String): String =
+    private fun verificationKey(authorization: Authorization): String =
+        verificationPrefix(authorization.domain) + sessionDigest(authorization)
+
+    private fun verificationPrefix(host: String): String =
+        VERIFIED_AT_PREFIX + normalizedHost(host) + "_"
+
+    private fun legacyVerificationKey(host: String): String =
         VERIFIED_AT_PREFIX + normalizedHost(host)
+
+    private fun sessionDigest(authorization: Authorization): String =
+        MessageDigest.getInstance("SHA-256")
+            .digest(
+                "${authorization.ewsKey}:${authorization.ewsToken}"
+                    .toByteArray(StandardCharsets.UTF_8)
+            )
+            .joinToString("") { byte -> "%02x".format(byte.toInt() and 0xff) }
 
     private data class StoredCookie(
         val name: String,

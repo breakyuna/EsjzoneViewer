@@ -84,6 +84,8 @@ import com.breakyuna.esjzone.database.entity.BookshelfEntry
 import com.breakyuna.esjzone.network.Authorization
 import com.breakyuna.esjzone.network.EsjzoneUrls
 import com.breakyuna.esjzone.network.LocalAuthorization
+import com.breakyuna.esjzone.network.LoadFailureKind
+import com.breakyuna.esjzone.network.loadFailureKind
 import com.breakyuna.esjzone.novellibrary.novel.CoveredNovelImpl
 import com.breakyuna.esjzone.ui.navigation.BooleanStateHolder
 import com.breakyuna.esjzone.ui.navigation.LocalBaseNavigator
@@ -110,6 +112,8 @@ object FavoritePage : Screen {
         val syncDoneText = stringResource(R.string.bookshelf_sync_done)
         val syncAddedPattern = stringResource(R.string.bookshelf_sync_added)
         val syncFailedText = stringResource(R.string.bookshelf_sync_failed)
+        val networkFailedText = stringResource(R.string.load_network_error)
+        val clientFailedText = stringResource(R.string.load_client_error)
         val deleteConfirmText = stringResource(R.string.bookshelf_delete_confirm)
         val deleteFailedText = stringResource(R.string.bookshelf_delete_failed)
         val deleteDonePattern = stringResource(R.string.bookshelf_delete_done)
@@ -141,9 +145,15 @@ object FavoritePage : Screen {
                         }
                     )
                 }
-                FavoritePageModel.State.Failed -> {
+                is FavoritePageModel.State.Failed -> {
                     refreshing = false
-                    snackbar.showSnackbar(syncFailedText)
+                    snackbar.showSnackbar(
+                        when (result.failure) {
+                            LoadFailureKind.NETWORK -> networkFailedText
+                            LoadFailureKind.CLIENT -> clientFailedText
+                            null -> syncFailedText
+                        }
+                    )
                 }
                 else -> Unit
             }
@@ -548,7 +558,7 @@ class FavoritePageModel(private val authorization: Authorization) :
         data object Idle : State()
         data object Syncing : State()
         data class Completed(val result: BookshelfSyncResult) : State()
-        data object Failed : State()
+        data class Failed(val failure: LoadFailureKind?) : State()
     }
 
     sealed class DeleteState {
@@ -566,11 +576,11 @@ class FavoritePageModel(private val authorization: Authorization) :
             mutableState.value = State.Syncing
             try {
                 val result = BookshelfRepository.sync(authorization)
-                mutableState.value = if (result.success) State.Completed(result) else State.Failed
+                mutableState.value = if (result.success) State.Completed(result) else State.Failed(result.loadFailure)
             } catch (e: CancellationException) {
                 throw e
-            } catch (_: Exception) {
-                mutableState.value = State.Failed
+            } catch (error: Exception) {
+                mutableState.value = State.Failed(error.loadFailureKind())
             }
         }
     }

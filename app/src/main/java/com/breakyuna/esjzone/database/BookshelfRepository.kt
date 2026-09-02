@@ -7,6 +7,8 @@ import com.breakyuna.esjzone.database.entity.BookshelfSyncState
 import com.breakyuna.esjzone.network.Authorization
 import com.breakyuna.esjzone.network.EsjzoneClient
 import com.breakyuna.esjzone.network.EsjzoneUrls
+import com.breakyuna.esjzone.network.LoadFailureKind
+import com.breakyuna.esjzone.network.loadFailureKind
 import com.breakyuna.esjzone.network.features.getAllFavorites
 import com.breakyuna.esjzone.network.features.getNovelDetail
 import com.breakyuna.esjzone.network.features.toggleFavorite
@@ -35,7 +37,8 @@ import kotlinx.coroutines.sync.withLock
 /** Result of a best-effort remote synchronization. Local rows are never removed by import. */
 data class BookshelfSyncResult(
     val success: Boolean,
-    val added: Int = 0
+    val added: Int = 0,
+    val loadFailure: LoadFailureKind? = null
 )
 
 /**
@@ -314,7 +317,7 @@ object BookshelfRepository {
             throw error
         } catch (error: Exception) {
             AppLogger.w("BookshelfRepository", "Remote shelf snapshot unavailable; keeping local rows", error)
-            return@withLock BookshelfSyncResult(success = false)
+            return@withLock BookshelfSyncResult(success = false, loadFailure = error.loadFailureKind())
         }
         val remoteByKey = remote.associateBy { keyFor(it.url) }.filterKeys { it.isNotBlank() }
             .let { byKey ->
