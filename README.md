@@ -100,6 +100,12 @@
 - **Gson**：JSON 数据处理
 - **Catppuccin**：主题配色
 
+## 🌐 网络接口与页面分析
+
+ESJ Zone 的网络请求、登录认证、页面结构与 HTML 解析相关说明整理在 [`NETWORK/`](NETWORK/) 目录中。
+
+这些文档由 GPT Work 使用云浏览器访问 ESJ Zone 网站，对页面 DOM、表单、内联脚本及可观察的请求行为进行分析后整理而成，属于网站页面与接口的逆向分析记录，并非 ESJ Zone 官方 API 文档。推断或尚未验证的内容已在文档中标注，使用时请注意其验证状态。
+
 ## 🐛 反馈与贡献
 
 欢迎通过 [Issues](https://github.com/breakyuna/EsjzoneViewer/issues) 报告问题或提出建议，也欢迎提交 Pull Request。

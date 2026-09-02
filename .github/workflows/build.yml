@@ -4,6 +4,14 @@ on:
   push:
     branches:
       - master
+    # 只有本次推送的所有改动都属于文档/模板时才跳过构建。
+    paths-ignore:
+      - '*.md'
+      - 'docs/**'
+      - 'NETWORK/**'
+      - 'screenshots/docs/**'
+      - '.github/ISSUE_TEMPLATE/**'
+      - '.github/*.md'
   # 保留手动运行入口
   workflow_dispatch:
 
