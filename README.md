@@ -19,64 +19,102 @@
   <a href="#致谢">致谢</a>
 </p>
 
-> 本项目是 **ESJ Zone 的第三方 Android 应用**，不代表 ESJ Zone 官方。基于原作者 [DeeChael](https://github.com/DeeChael) 的 [Esjzone](https://github.com/DeeChael/Esjzone) 项目继续开发，当前由 [breakyuna](https://github.com/breakyuna) 维护。
+## 📜 项目来源与许可声明
 
-## 界面预览
+**EsjzoneViewer 是 ESJ Zone 的第三方 Android 应用，并非 ESJ Zone 官方客户端。**
+
+本项目基于 [DeeChael/Esjzone](https://github.com/DeeChael/Esjzone) 继续开发，在原有基础上改进阅读体验、本地书架、下载与社区功能，感谢原作者的贡献。
+
+- **原始项目**：[DeeChael/Esjzone](https://github.com/DeeChael/Esjzone)
+- **原作者**：[DeeChael](https://github.com/DeeChael)
+- **当前维护者**：[breakyuna](https://github.com/breakyuna)
+- **开源许可证**：[GNU General Public License v3.0](LICENSE)
+
+---
+
+## 📋 使用与数据说明
+
+### 🌐 数据来源
+
+小说、封面、章节、评论等内容来自当前选择的 ESJ Zone 站点。应用提供适合 Android 设备的浏览与阅读界面，不代表原站发布内容或作出承诺。
+
+### 🔐 账户与本地数据
+
+- 登录信息会发送到当前选择的站点，应用在本机保存登录会话以恢复登录状态。
+- 设置、搜索历史、书架、阅读历史和书签保存在本地；本地阅读历史不上传，云端历史单独展示。
+- 云端收藏仅用于补充本地书架，不会因云端缺失而删除本地书籍；主动从书架移除书籍时，应用会尝试取消对应的云端收藏。
+- 应用会缓存内容，并保存用户下载的小说章节；请妥善保护设备与应用数据。
+
+### ©️ 内容与使用边界
+
+- 小说、插画、封面及其他站点内容的相关权利归各自权利人所有，本项目不声称拥有这些内容。
+- 使用、下载或导出内容时，请遵守原站规则及适用要求，尊重作者与译者的权益。
+- 成人内容显示可在设置中调整，请根据年龄与所在地要求使用相关功能。
+- 站点结构、登录状态或网络环境变化可能影响在线功能，应用不保证所有页面始终可用。
+
+如有内容或权利相关问题，可通过 [GitHub Issues](https://github.com/breakyuna/EsjzoneViewer/issues) 联系维护者。
+
+---
+
+## 📥 下载与使用
+
+**下载渠道：[GitHub Releases](https://github.com/breakyuna/EsjzoneViewer/releases)**
+
+1. 使用 **Android 10（API 29）或更高版本**的设备，下载 Release 中的 APK 并安装。
+2. 在登录页或设置页选择可用站点：`www.esjzone.cc` 或 `www.esjzone.one`。
+3. 使用 ESJ Zone 账户登录后，浏览小说、管理书架或继续阅读。
+
+> 💡 下载完成的章节可以直接在应用内阅读，无需先导出 TXT 或 EPUB；未下载的内容、远程插图和在线社区功能仍可能需要网络。
+
+## 功能
+
+- 🔍 **浏览与搜索**：查看热门推荐、最新更新和分类，按关键词搜索小说，并管理本地搜索历史。
+- 📚 **本地优先书架**：优先显示本地书籍，后台补充云端收藏；支持封面宫格、按最近阅读排序、批量移除与删除确认。
+- 📖 **连续阅读**：滚动衔接章节，通过目录和全书进度条定位，支持进度预览与返回原进度。
+- 🎨 **阅读自定义**：调整字体大小、行距、段距、页边距和背景，支持简繁体切换与 Catppuccin 主题配色。
+- 🕘 **阅读历史**：保存本机阅读位置，同一本书保留最近记录，本地与云端历史分开展示。
+- 🔖 **本地书签**：收藏章节位置，方便再次访问。
+- 📥 **后台下载**：下载任务可在离开详情页后继续，失败时保留已完成的章节。
+- 📄 **文件导出**：将下载内容导出为 TXT 或 EPUB，便于在其他阅读工具中使用。
+- 💬 **社区互动**：浏览论坛分区、主题和留言板，查看评论、发表评论及回复。
+- ⚙️ **账户与偏好**：恢复本地登录会话，切换站点、主题和内容显示选项。
+
+## 📷 界面预览
 
 <p align="center">
   <img src="docs/images/preview.jpg" width="1200" alt="EsjzoneViewer 首页、历史记录、书架与个人资料界面展示">
 </p>
 
-## 功能
+## 🛠️ 技术栈
 
-- **发现与搜索**：浏览推荐、最新更新和分类，按关键词搜索小说，保留本地搜索历史。
-- **本地优先书架**：打开即读取本地书架，后台补充云端收藏；网络失败或云端缺失不会清空本地书籍。支持封面宫格、最近阅读排序和批量移除。
-- **连续阅读**：滚动衔接章节，通过目录或全书进度条跳转，使用进度预览与返回进度功能。
-- **个性化阅读**：调整字体大小、行距、段距、页边距和背景，切换简繁体与 Catppuccin 主题配色。
-- **历史与书签**：保存本机阅读位置和章节书签，本地历史与云端历史分开展示，本地历史不上传。
-- **下载与导出**：后台下载章节，在应用内读取已下载内容，也可导出 TXT 或 EPUB；下载失败时保留已完成章节。
-- **社区互动**：浏览论坛分区、主题和留言板，查看评论、发表评论及回复。
-- **账户与站点**：恢复本地登录会话，在设置中切换站点与内容显示偏好。
+- **Kotlin**：应用开发语言
+- **Jetpack Compose / Material 3**：界面与交互
+- **Voyager**：页面与 Tab 导航
+- **Room**：本地书架、历史、书签和状态存储
+- **OkHttp**：网络请求与会话处理
+- **Jsoup / Xsoup**：HTML 与 XPath 解析
+- **Coil**：封面、头像和插图加载
+- **Gson**：JSON 数据处理
+- **Catppuccin**：主题配色
 
-## 下载与使用
+## 🐛 反馈与贡献
 
-需要 **Android 10（API 29）或更高版本**。
+欢迎通过 [Issues](https://github.com/breakyuna/EsjzoneViewer/issues) 报告问题或提出建议，也欢迎提交 Pull Request。
 
-前往 [Releases](https://github.com/breakyuna/EsjzoneViewer/releases) 下载已发布的 APK 并安装。
+为了方便定位问题，请尽量提供：
 
-应用支持 `www.esjzone.cc` 与 `www.esjzone.one`，可在登录页或设置页切换。登录使用 ESJ Zone 账户，无需额外的 API Key。
+- 应用版本、设备型号和 Android 版本
+- 复现步骤、预期表现与实际表现
+- 相关页面地址、截图或错误日志
 
-下载小说后，无需先导出文件即可在应用内阅读已下载章节；尚未下载的内容、远程插图以及在线社区功能仍可能需要网络。
-
-## 开发
-
-项目采用 **Kotlin + Jetpack Compose + Material 3**，使用 Room 保存本地数据、Voyager 管理导航、OkHttp 请求网络、Jsoup / Xsoup 解析页面、Coil 加载图片。
-
-开发环境：JDK 17、Android SDK 34，以及支持项目 Gradle 配置的 Android Studio。克隆仓库后，用 Android Studio 打开根目录并同步项目。
-
-```bash
-git clone https://github.com/breakyuna/EsjzoneViewer.git
-cd EsjzoneViewer
-```
-
-## 反馈与贡献
-
-欢迎通过 [Issues](https://github.com/breakyuna/EsjzoneViewer/issues) 提交问题或建议，也欢迎 Pull Request。
-
-报告问题时，请提供应用版本、Android 版本、复现步骤，以及相关截图或错误日志；页面加载问题请附对应页面地址。请勿在公开反馈中附上密码、Cookie 或其他登录凭据。
-
-## 数据说明
-
-登录信息会发送到当前选择的 ESJ Zone 站点，应用在本地保存会话、设置、书架、阅读历史、书签及下载内容。云端收藏用于补充本地书架；在书架中主动移除书籍时，应用会尝试取消对应的云端收藏。
-
-本项目是第三方客户端，不代表 ESJ Zone 官方。小说、封面和其他站点内容来自所选站点，相关权利归各自权利人所有。
+> 🔒 提交截图和日志前，请删除密码、Cookie、会话凭据及其他不希望公开的个人信息。
 
 ## 致谢
 
-本项目基于 [DeeChael/Esjzone](https://github.com/DeeChael/Esjzone) 继续开发，当前由 [breakyuna](https://github.com/breakyuna) 维护。感谢原作者 **DeeChael** 和所有贡献者。
+感谢原作者 [DeeChael](https://github.com/DeeChael) 提供项目基础，感谢所有参与开发、测试和反馈的贡献者。
 
-感谢 Jetpack Compose、Material 3、Room、[Voyager](https://github.com/adrielcafe/voyager)、[OkHttp](https://github.com/square/okhttp)、[Coil](https://github.com/coil-kt/coil)、[Gson](https://github.com/google/gson)、[Jsoup](https://github.com/jhy/jsoup)、[Xsoup](https://github.com/code4craft/xsoup) 和 [Catppuccin](https://github.com/catppuccin/catppuccin) 等开源项目。
+同时感谢 Jetpack Compose、Material 3、Room、[Voyager](https://github.com/adrielcafe/voyager)、[OkHttp](https://github.com/square/okhttp)、[Coil](https://github.com/coil-kt/coil)、[Gson](https://github.com/google/gson)、[Jsoup](https://github.com/jhy/jsoup)、[Xsoup](https://github.com/code4craft/xsoup) 和 [Catppuccin](https://github.com/catppuccin/catppuccin) 等开源项目。
 
-## 许可证
+## 📄 许可证
 
-本项目采用 [GNU General Public License v3.0](LICENSE)。第三方依赖遵循各自的许可证。
+本项目采用 **GNU General Public License v3.0**，完整文本见 [LICENSE](LICENSE)。保留原项目的版权与许可证信息，第三方依赖遵循各自的许可证。
