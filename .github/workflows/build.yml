@@ -3,7 +3,7 @@ name: Android Build
 on:
   push:
     branches:
-      - main
+      - master
   # 保留手动运行入口
   workflow_dispatch:
 

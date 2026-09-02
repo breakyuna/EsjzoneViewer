@@ -1,0 +1,73 @@
+name: Bug Report
+description: 报告 EsjzoneViewer 的使用问题
+title: "[Bug] "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        涉及账户、凭据或认证信息的安全问题请先阅读 [安全说明](https://github.com/breakyuna/EsjzoneViewer/blob/master/SECURITY.md)，不要公开提交。
+        提交日志、截图或请求头前，请删除 Cookie、密码、Session、Token 等敏感数据。
+  - type: input
+    id: app_version
+    attributes:
+      label: 应用版本
+      placeholder: 例如 0.1.0；如有提交 SHA，请一并提供
+    validations:
+      required: true
+  - type: input
+    id: android_version
+    attributes:
+      label: Android 版本
+      placeholder: 例如 Android 16
+    validations:
+      required: true
+  - type: input
+    id: device
+    attributes:
+      label: 设备型号
+    validations:
+      required: true
+  - type: input
+    id: site
+    attributes:
+      label: 当前使用的 ESJ Zone 站点
+      placeholder: 例如 www.esjzone.cc 或 www.esjzone.one
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: 复现步骤
+      description: 按操作顺序描述，注明是否每次都会出现。
+      placeholder: |
+        1. 打开……
+        2. 点击……
+        3. 出现……
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: 预期结果
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: 实际结果
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: 截图或 Crash Log
+      description: 请提供已脱敏的截图或日志；无法提供时请说明原因。不要上传完整账户凭据或请求头。
+    validations:
+      required: true
+  - type: checkboxes
+    id: privacy
+    attributes:
+      label: 隐私检查
+      options:
+        - label: 我已检查并移除正文、日志和截图中的 Cookie、密码、Session、Token 等敏感数据。
+          required: true
