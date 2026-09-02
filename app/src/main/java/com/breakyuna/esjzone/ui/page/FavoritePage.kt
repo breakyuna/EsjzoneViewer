@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -253,7 +254,7 @@ object FavoritePage : Screen {
                         contentPadding = PaddingValues(
                             start = horizontalPadding / 2,
                             end = horizontalPadding / 2,
-                            top = 12.dp,
+                            top = 8.dp,
                             bottom = 24.dp
                         ),
                         horizontalArrangement = Arrangement.spacedBy(gridSpacing),
@@ -363,8 +364,8 @@ private fun BookshelfTopBar(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .heightIn(min = 56.dp)
-                    .padding(horizontal = 8.dp, vertical = if (editing || showBack) 0.dp else 16.dp),
+                    .height(56.dp)
+                    .padding(start = if (showBack) 4.dp else 16.dp, end = 4.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 if (showBack) {
@@ -377,6 +378,7 @@ private fun BookshelfTopBar(
                         text = if (selectedCount == 0) editTitle else selectedPattern.format(selectedCount),
                         style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.SemiBold),
                         maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.weight(1f)
                     )
                     IconButton(onClick = onSelectAll, enabled = totalCount > 0 && !deleting) {
@@ -388,31 +390,14 @@ private fun BookshelfTopBar(
                     IconButton(onClick = onDone, enabled = !deleting) {
                         Icon(Icons.Filled.Done, contentDescription = stringResource(R.string.bookshelf_edit_done))
                     }
-                } else if (showBack) {
+                } else {
                     Text(
                         text = stringResource(R.string.bookshelf),
-                        style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.SemiBold),
+                        style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
                         maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.weight(1f)
                     )
-                    IconButton(onClick = onRefresh, enabled = !refreshing) {
-                        Icon(Icons.Filled.Refresh, contentDescription = stringResource(R.string.sync_bookshelf))
-                    }
-                    IconButton(onClick = onEdit) {
-                        Icon(Icons.Filled.Edit, contentDescription = stringResource(R.string.bookshelf_edit))
-                    }
-                } else {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = stringResource(R.string.bookshelf),
-                            style = MaterialTheme.typography.headlineLarge.copy(fontWeight = FontWeight.Bold)
-                        )
-                        Text(
-                            text = stringResource(R.string.bookshelf_description),
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
                     IconButton(onClick = onRefresh, enabled = !refreshing) {
                         Icon(Icons.Filled.Refresh, contentDescription = stringResource(R.string.sync_bookshelf))
                     }
