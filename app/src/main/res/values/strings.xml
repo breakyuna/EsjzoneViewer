@@ -57,7 +57,7 @@
     <string name="remove">Remove</string>
     <string name="button_logout">Logout</string>
     <string name="logout_confirm_message">Are you sure you want to log out?</string>
-    <string name="logout_consequence">The app will try the server logout briefly, then clear this device's session. Downloads, bookmarks, reading history, and bookshelf data will stay.</string>
+    <string name="logout_consequence">The app will try the server logout briefly, then clear the local session on this device. Downloads, bookmarks, reading history, and bookshelf data will stay.</string>
     <string name="logout_cancel">Oops, not now</string>
     <string name="logout_confirm">Confirm</string>
     <string name="field_required">This field is required</string>
