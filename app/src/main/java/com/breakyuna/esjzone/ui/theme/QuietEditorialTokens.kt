@@ -25,11 +25,16 @@ object QuietEditorial {
     val sectionGap: Dp = 32.dp
     val itemGap: Dp = 12.dp
     val hairline: Dp = 0.5.dp
+    /** Bookshelf cards stay at least this wide before the grid adds columns. */
+    val bookshelfMinCardWidth: Dp = 148.dp
 
     val badgeShape = RoundedCornerShape(6.dp)
     val controlShape = RoundedCornerShape(8.dp)
     val coverShape = RoundedCornerShape(12.dp)
     val cardShape = RoundedCornerShape(16.dp)
+    val bookshelfCardShape = RoundedCornerShape(14.dp)
+    val selectionShape = RoundedCornerShape(8.dp)
+    val dialogShape = RoundedCornerShape(28.dp)
     val largeShape = RoundedCornerShape(24.dp)
 
     val serif = FontFamily.Serif

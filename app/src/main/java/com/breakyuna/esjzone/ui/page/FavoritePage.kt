@@ -6,18 +6,21 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyGridState
@@ -27,21 +30,27 @@ import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Done
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.RadioButtonUnchecked
 import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material.icons.filled.SelectAll
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
+import androidx.compose.material.icons.filled.WarningAmber
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -58,41 +67,45 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChange
-import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import cafe.adriel.voyager.core.model.StateScreenModel
 import cafe.adriel.voyager.core.model.rememberScreenModel
 import cafe.adriel.voyager.core.model.screenModelScope
 import cafe.adriel.voyager.core.screen.Screen
-import coil.compose.AsyncImage
-import coil.request.ImageRequest
-import com.breakyuna.esjzone.MainActivity
-import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
 import com.breakyuna.esjzone.GlobalSettings
 import com.breakyuna.esjzone.R
 import com.breakyuna.esjzone.database.BookshelfRepository
 import com.breakyuna.esjzone.database.BookshelfSyncResult
 import com.breakyuna.esjzone.database.entity.BookshelfEntry
+import com.breakyuna.esjzone.database.entity.BookshelfSyncState
 import com.breakyuna.esjzone.network.Authorization
-import com.breakyuna.esjzone.network.EsjzoneUrls
 import com.breakyuna.esjzone.network.LocalAuthorization
 import com.breakyuna.esjzone.network.LoadFailureKind
 import com.breakyuna.esjzone.network.loadFailureKind
 import com.breakyuna.esjzone.novellibrary.novel.CoveredNovelImpl
+import com.breakyuna.esjzone.ui.component.QuietNovelCover
 import com.breakyuna.esjzone.ui.navigation.BooleanStateHolder
 import com.breakyuna.esjzone.ui.navigation.LocalBaseNavigator
 import com.breakyuna.esjzone.ui.navigation.pushIfNotCurrent
+import com.breakyuna.esjzone.ui.theme.QuietEditorial
+import com.breakyuna.esjzone.ui.theme.quietEditorialColors
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 
-/** The shelf is rendered entirely from the local Room flow. */
+/**
+ * Local-first bookshelf presentation.
+ *
+ * The Room flow exposed by [BookshelfRepository] is the only collection source
+ * rendered here. Synchronization and deletion remain in [FavoritePageModel]
+ * and never run from Compose recomposition.
+ */
 object FavoritePage : Screen {
     private fun readResolve(): Any = FavoritePage
 
@@ -106,333 +119,642 @@ object FavoritePage : Screen {
         val model = rememberScreenModel { FavoritePageModel(authorization) }
         val entries by model.entries.collectAsState(initial = emptyList())
         val syncState by model.state.collectAsState()
+        val deleteState by model.deleteState.collectAsState()
         val snackbar = remember { SnackbarHostState() }
         val gridState = rememberLazyGridState()
-        var refreshing by rememberSaveable { mutableStateOf(false) }
         val adult by remember { GlobalSettings.adult }
+        val syncAddedText = stringResource(R.string.bookshelf_sync_added)
         val syncDoneText = stringResource(R.string.bookshelf_sync_done)
-        val syncAddedPattern = stringResource(R.string.bookshelf_sync_added)
         val syncFailedText = stringResource(R.string.bookshelf_sync_failed)
         val networkFailedText = stringResource(R.string.load_network_error)
         val clientFailedText = stringResource(R.string.load_client_error)
-        val deleteConfirmText = stringResource(R.string.bookshelf_delete_confirm)
+        val deleteDoneText = stringResource(R.string.bookshelf_delete_done)
         val deleteFailedText = stringResource(R.string.bookshelf_delete_failed)
-        val deleteDonePattern = stringResource(R.string.bookshelf_delete_done)
-        val editTitle = stringResource(R.string.bookshelf_edit)
-        val selectedPattern = stringResource(R.string.bookshelf_selected)
+
+        var refreshing by rememberSaveable { mutableStateOf(false) }
         var editing by rememberSaveable { mutableStateOf(false) }
         var selectedKeys by remember { mutableStateOf<Set<String>>(emptySet()) }
         var pendingDelete by remember { mutableStateOf<List<BookshelfEntry>>(emptyList()) }
         var showDeleteDialog by remember { mutableStateOf(false) }
-        val deleteState by model.deleteState.collectAsState()
-        val deleting = deleteState is FavoritePageModel.DeleteState.Deleting
-
-        fun refresh() {
-            if (!refreshing) {
-                refreshing = true
-                model.sync()
-            }
-        }
-
-        LaunchedEffect(syncState) {
-            when (val result = syncState) {
-                is FavoritePageModel.State.Completed -> {
-                    refreshing = false
-                    snackbar.showSnackbar(
-                        if (result.result.added > 0) {
-                            syncAddedPattern.format(result.result.added)
-                        } else {
-                            syncDoneText
-                        }
-                    )
-                }
-                is FavoritePageModel.State.Failed -> {
-                    refreshing = false
-                    snackbar.showSnackbar(
-                        when (result.failure) {
-                            LoadFailureKind.NETWORK -> networkFailedText
-                            LoadFailureKind.CLIENT -> clientFailedText
-                            null -> syncFailedText
-                        }
-                    )
-                }
-                else -> Unit
-            }
-        }
-
-        // Enrichment is detached from rendering: Room remains the only UI
-        // source and newly discovered covers update the grid through its flow.
-        LaunchedEffect(Unit) {
-            model.scheduleMetadataSupplement()
-        }
 
         val visibleEntries = remember(entries, adult) {
             entries.filter { adult || !it.isAdultHint() }
         }
         val visibleKeys = remember(visibleEntries) {
-            visibleEntries.mapTo(HashSet<String>()) { it.bookKey }
+            visibleEntries.mapTo(LinkedHashSet<String>()) { it.bookKey }
         }
-        LaunchedEffect(visibleKeys) {
-            selectedKeys = selectedKeys.intersect(visibleKeys)
+        val selectedCount = selectedKeys.size
+        val deleting = deleteState is FavoritePageModel.DeleteState.Deleting
+        val syncing = refreshing || syncState is FavoritePageModel.State.Syncing
+        val adultFiltered = entries.isNotEmpty() && visibleEntries.isEmpty()
+
+        fun refresh() {
+            if (!syncing) {
+                refreshing = true
+                model.sync()
+            }
         }
 
         fun leaveEditMode() {
+            if (deleting) return
             editing = false
             selectedKeys = emptySet()
             pendingDelete = emptyList()
             showDeleteDialog = false
         }
 
-        BackHandler(enabled = editing) {
-            leaveEditMode()
+        // A cloud import or adult-content preference change can alter the
+        // visible set. Never keep an invisible item selected.
+        LaunchedEffect(visibleKeys) {
+            selectedKeys = selectedKeys.intersect(visibleKeys)
         }
 
-        LaunchedEffect(deleteState) {
-            when (val result = deleteState) {
-                is FavoritePageModel.DeleteState.Completed -> {
-                    leaveEditMode()
+        LaunchedEffect(Unit) {
+            model.scheduleMetadataSupplement()
+        }
+
+        LaunchedEffect(syncState) {
+            when (val state = syncState) {
+                is FavoritePageModel.State.Completed -> {
+                    refreshing = false
                     snackbar.showSnackbar(
-                        deleteDonePattern.format(result.count)
+                        if (state.result.added > 0) {
+                            syncAddedText.format(state.result.added)
+                        } else {
+                            syncDoneText
+                        }
                     )
                 }
-                FavoritePageModel.DeleteState.Failed -> snackbar.showSnackbar(deleteFailedText)
+
+                is FavoritePageModel.State.Failed -> {
+                    refreshing = false
+                    snackbar.showSnackbar(
+                        when (state.failure) {
+                            LoadFailureKind.NETWORK -> networkFailedText
+                            LoadFailureKind.CLIENT -> clientFailedText
+                            null -> syncFailedText
+                        }
+                    )
+                }
+
                 else -> Unit
             }
         }
 
+        LaunchedEffect(deleteState) {
+            when (val state = deleteState) {
+                is FavoritePageModel.DeleteState.Completed -> {
+                    editing = false
+                    selectedKeys = emptySet()
+                    pendingDelete = emptyList()
+                    showDeleteDialog = false
+                    snackbar.showSnackbar(
+                        deleteDoneText.format(state.count)
+                    )
+                }
+
+                FavoritePageModel.DeleteState.Failed -> {
+                    showDeleteDialog = false
+                    pendingDelete = emptyList()
+                    snackbar.showSnackbar(deleteFailedText)
+                }
+
+                else -> Unit
+            }
+        }
+
+        BackHandler(enabled = editing && !showDeleteDialog) {
+            leaveEditMode()
+        }
+
         Scaffold(
-            snackbarHost = { SnackbarHost(snackbar) },
+            containerColor = MaterialTheme.colorScheme.background,
             topBar = {
-                BookshelfTopBar(
+                BookshelfHeader(
                     showBack = showBack,
                     editing = editing,
                     deleting = deleting,
-                    selectedCount = selectedKeys.size,
+                    selectedCount = selectedCount,
                     totalCount = visibleEntries.size,
-                    refreshing = refreshing,
-                    onBack = { if (editing) leaveEditMode() else navigator?.pop() },
+                    allSelected = visibleKeys.isNotEmpty() && selectedKeys == visibleKeys,
+                    syncing = syncing,
+                    onBack = {
+                        if (editing) leaveEditMode() else navigator?.pop()
+                    },
                     onRefresh = ::refresh,
-                    onEdit = { editing = true },
+                    onEdit = {
+                        if (!deleting) {
+                            editing = true
+                            selectedKeys = emptySet()
+                        }
+                    },
                     onSelectAll = {
-                        selectedKeys = if (selectedKeys.size == visibleKeys.size) {
-                            emptySet()
-                        } else {
-                            visibleKeys
+                        if (!deleting) {
+                            selectedKeys = if (selectedKeys == visibleKeys) {
+                                emptySet()
+                            } else {
+                                visibleKeys
+                            }
                         }
                     },
                     onDelete = {
-                        pendingDelete = visibleEntries.filter { it.bookKey in selectedKeys }
-                        showDeleteDialog = true
+                        if (!deleting && selectedKeys.isNotEmpty()) {
+                            // Capture the exact visible rows now. A later sync
+                            // cannot change what this confirmation removes.
+                            pendingDelete = visibleEntries.filter {
+                                it.bookKey in selectedKeys
+                            }
+                            showDeleteDialog = pendingDelete.isNotEmpty()
+                        }
                     },
-                    onDone = ::leaveEditMode,
-                    editTitle = editTitle,
-                    selectedPattern = selectedPattern
+                    onDone = ::leaveEditMode
                 )
-            }
+            },
+            bottomBar = {
+                if (editing) {
+                    BookshelfBatchBar(
+                        selectedCount = selectedCount,
+                        deleting = deleting,
+                        onCancel = ::leaveEditMode,
+                        onDelete = {
+                            if (!deleting && selectedKeys.isNotEmpty()) {
+                                pendingDelete = visibleEntries.filter {
+                                    it.bookKey in selectedKeys
+                                }
+                                showDeleteDialog = pendingDelete.isNotEmpty()
+                            }
+                        }
+                    )
+                }
+            },
+            snackbarHost = { SnackbarHost(hostState = snackbar) }
         ) { padding ->
-            Box(modifier = Modifier.fillMaxSize().padding(padding)) {
-                BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
-                    val minCardWidth = 148.dp
-                    val gridSpacing = 12.dp
-                    val horizontalPadding = 24.dp
-                    // Compute from usable width so narrow phones still get
-                    // two columns; wider tablets naturally receive more.
-                    val columnCount = remember(maxWidth) {
-                        (
-                            (maxWidth - horizontalPadding + gridSpacing) /
-                                (minCardWidth + gridSpacing)
-                            ).toInt().coerceAtLeast(2)
+            LazyVerticalGrid(
+                columns = GridCells.Adaptive(minSize = QuietEditorial.bookshelfMinCardWidth),
+                state = gridState,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(padding)
+                    .bookshelfPullToRefresh(
+                        gridState = gridState,
+                        enabled = !syncing && !editing,
+                        onRefresh = ::refresh
+                    ),
+                contentPadding = PaddingValues(
+                    start = QuietEditorial.pagePadding,
+                    end = QuietEditorial.pagePadding,
+                    top = 12.dp,
+                    bottom = if (editing) 12.dp else 28.dp
+                ),
+                horizontalArrangement = Arrangement.spacedBy(QuietEditorial.itemGap),
+                verticalArrangement = Arrangement.spacedBy(QuietEditorial.itemGap)
+            ) {
+                if (editing) {
+                    item(span = { GridItemSpan(maxLineSpan) }) {
+                        BookshelfSelectionHint(deleting = deleting)
                     }
-                    LazyVerticalGrid(
-                        columns = GridCells.Fixed(columnCount),
-                        state = gridState,
-                        modifier = Modifier.fillMaxSize().bookshelfPullToRefresh(
-                            gridState = gridState,
-                            enabled = !refreshing,
+                } else {
+                    item(span = { GridItemSpan(maxLineSpan) }) {
+                        BookshelfSyncBanner(
+                            state = syncState,
+                            syncing = syncing,
                             onRefresh = ::refresh
-                        ),
-                        contentPadding = PaddingValues(
-                            start = horizontalPadding / 2,
-                            end = horizontalPadding / 2,
-                            top = 8.dp,
-                            bottom = 24.dp
-                        ),
-                        horizontalArrangement = Arrangement.spacedBy(gridSpacing),
-                        verticalArrangement = Arrangement.spacedBy(14.dp)
-                    ) {
-                        if (visibleEntries.isEmpty()) {
-                            item(span = { GridItemSpan(maxLineSpan) }) {
-                                Column(
-                                    modifier = Modifier.fillMaxWidth().padding(48.dp),
-                                    horizontalAlignment = Alignment.CenterHorizontally
-                                ) {
-                                    Text(stringResource(R.string.bookshelf_empty))
-                                    Text(
-                                        stringResource(R.string.bookshelf_empty_hint),
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        modifier = Modifier.padding(top = 8.dp)
+                        )
+                    }
+                    item(span = { GridItemSpan(maxLineSpan) }) {
+                        BookshelfCollectionSummary(
+                            visibleCount = visibleEntries.size
+                        )
+                    }
+                }
+
+                if (visibleEntries.isEmpty()) {
+                    item(span = { GridItemSpan(maxLineSpan) }) {
+                        BookshelfEmptyState(adultFiltered = adultFiltered)
+                    }
+                } else {
+                    items(
+                        items = visibleEntries,
+                        key = { entry -> entry.bookKey }
+                    ) { entry ->
+                        BookshelfGridItem(
+                            entry = entry,
+                            editing = editing,
+                            selected = entry.bookKey in selectedKeys,
+                            enabled = !deleting,
+                            onClick = {
+                                if (editing) {
+                                    selectedKeys = if (entry.bookKey in selectedKeys) {
+                                        selectedKeys - entry.bookKey
+                                    } else {
+                                        selectedKeys + entry.bookKey
+                                    }
+                                } else {
+                                    navigator?.pushIfNotCurrent(
+                                        NovelPage(
+                                            entry.asCoveredNovel(),
+                                            favorite = BooleanStateHolder(true)
+                                        )
                                     )
                                 }
                             }
-                        }
-                        items(visibleEntries, key = { it.bookKey }) { entry ->
-                            BookshelfGridItem(
-                                entry = entry,
-                                editing = editing,
-                                selected = entry.bookKey in selectedKeys,
-                                enabled = !deleting,
-                                onClick = {
-                                    if (editing) {
-                                        selectedKeys = if (entry.bookKey in selectedKeys) {
-                                            selectedKeys - entry.bookKey
-                                        } else {
-                                            selectedKeys + entry.bookKey
-                                        }
-                                    } else {
-                                        navigator?.pushIfNotCurrent(
-                                            NovelPage(entry.asCoveredNovel(), favorite = BooleanStateHolder(true))
-                                        )
-                                    }
-                                }
-                            )
-                        }
+                        )
                     }
                 }
             }
         }
 
         if (showDeleteDialog && pendingDelete.isNotEmpty()) {
-            AlertDialog(
-                onDismissRequest = { if (deleteState !is FavoritePageModel.DeleteState.Deleting) {
-                    showDeleteDialog = false
-                    pendingDelete = emptyList()
-                } },
-                title = { Text(stringResource(R.string.bookshelf_delete_title)) },
-                text = { Text(deleteConfirmText.format(pendingDelete.size)) },
-                confirmButton = {
-                    TextButton(
-                        enabled = deleteState !is FavoritePageModel.DeleteState.Deleting,
-                        onClick = {
-                            val snapshot = pendingDelete
-                            showDeleteDialog = false
-                            pendingDelete = emptyList()
-                            model.delete(snapshot)
-                        }
-                    ) {
-                        Text(stringResource(R.string.bookshelf_delete_confirm_action), color = MaterialTheme.colorScheme.error)
+            BookshelfRemovalDialog(
+                entries = pendingDelete,
+                deleting = deleting,
+                onDismiss = {
+                    if (!deleting) {
+                        showDeleteDialog = false
+                        pendingDelete = emptyList()
                     }
                 },
-                dismissButton = {
-                    TextButton(
-                        enabled = deleteState !is FavoritePageModel.DeleteState.Deleting,
-                        onClick = {
-                            showDeleteDialog = false
-                            pendingDelete = emptyList()
-                        }
-                    ) {
-                        Text(stringResource(android.R.string.cancel))
+                onConfirm = {
+                    if (!deleting) {
+                        // The list remains captured while the model persists
+                        // each removal intent and reconciles it remotely.
+                        model.delete(pendingDelete)
                     }
-                },
-                properties = DialogProperties(dismissOnBackPress = deleteState !is FavoritePageModel.DeleteState.Deleting)
+                }
             )
         }
     }
 }
 
 @Composable
-private fun BookshelfTopBar(
+private fun BookshelfHeader(
     showBack: Boolean,
     editing: Boolean,
     deleting: Boolean,
     selectedCount: Int,
     totalCount: Int,
-    refreshing: Boolean,
+    allSelected: Boolean,
+    syncing: Boolean,
     onBack: () -> Unit,
     onRefresh: () -> Unit,
     onEdit: () -> Unit,
     onSelectAll: () -> Unit,
     onDelete: () -> Unit,
-    onDone: () -> Unit,
-    editTitle: String,
-    selectedPattern: String
+    onDone: () -> Unit
 ) {
-    androidx.compose.material3.Surface(
-        color = MaterialTheme.colorScheme.surface,
-        modifier = Modifier.fillMaxWidth()
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        color = MaterialTheme.colorScheme.surface
     ) {
         Column(modifier = Modifier.fillMaxWidth().statusBarsPadding()) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(
-                        start = if (showBack) 4.dp else 16.dp,
-                        end = 4.dp,
-                        top = if (editing || showBack) 0.dp else 6.dp,
-                        bottom = if (editing || showBack) 0.dp else 4.dp
-                    ),
+                    .heightIn(min = 68.dp)
+                    .padding(start = if (showBack) 4.dp else 16.dp, end = 8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 if (showBack) {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.reader_back))
+                    IconButton(
+                        onClick = onBack,
+                        enabled = !deleting,
+                        modifier = Modifier.size(48.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = stringResource(R.string.reader_back)
+                        )
                     }
                 }
+
                 if (editing) {
-                    Text(
-                        text = if (selectedCount == 0) editTitle else selectedPattern.format(selectedCount),
-                        style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.SemiBold),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f)
-                    )
-                    IconButton(onClick = onSelectAll, enabled = totalCount > 0 && !deleting) {
-                        Icon(Icons.Filled.SelectAll, contentDescription = stringResource(R.string.bookshelf_select_all))
+                    Column(modifier = Modifier.weight(1f).padding(horizontal = 8.dp)) {
+                        Row(
+                            verticalAlignment = Alignment.Bottom,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Text(
+                                text = stringResource(R.string.bookshelf_selected_header)
+                                    .format(selectedCount),
+                                style = QuietEditorial.title.copy(fontWeight = FontWeight.SemiBold),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Text(
+                                text = stringResource(R.string.bookshelf_total_header)
+                                    .format(totalCount),
+                                style = QuietEditorial.label,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1
+                            )
+                        }
+                        Text(
+                            text = stringResource(R.string.bookshelf_edit),
+                            style = QuietEditorial.smallLabel,
+                            color = MaterialTheme.colorScheme.tertiary,
+                            modifier = Modifier.padding(top = 2.dp)
+                        )
                     }
-                    IconButton(onClick = onDelete, enabled = selectedCount > 0 && !deleting) {
-                        Icon(Icons.Filled.Delete, contentDescription = stringResource(R.string.bookshelf_delete_selected))
+                    TextButton(
+                        onClick = onSelectAll,
+                        enabled = totalCount > 0 && !deleting,
+                        modifier = Modifier
+                            .heightIn(min = 48.dp)
+                            .widthIn(min = 48.dp, max = 88.dp),
+                        shape = RoundedCornerShape(999.dp),
+                        colors = ButtonDefaults.textButtonColors(
+                            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.65f),
+                            contentColor = MaterialTheme.colorScheme.onSurface
+                        ),
+                        contentPadding = PaddingValues(horizontal = 8.dp)
+                    ) {
+                        Text(
+                            text = stringResource(
+                                if (allSelected) {
+                                    R.string.bookshelf_selection_clear
+                                } else {
+                                    R.string.bookshelf_select_all
+                                }
+                            ),
+                            style = QuietEditorial.label,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
                     }
-                    IconButton(onClick = onDone, enabled = !deleting) {
-                        Icon(Icons.Filled.Done, contentDescription = stringResource(R.string.bookshelf_edit_done))
+                    IconButton(
+                        onClick = onDelete,
+                        enabled = selectedCount > 0 && !deleting,
+                        modifier = Modifier.size(48.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.Delete,
+                            contentDescription = stringResource(R.string.bookshelf_delete_selected),
+                            tint = if (selectedCount > 0) {
+                                MaterialTheme.colorScheme.error
+                            } else {
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                            }
+                        )
                     }
-                } else if (showBack) {
-                    Text(
-                        text = stringResource(R.string.bookshelf),
-                        style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.SemiBold),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f)
-                    )
-                    IconButton(onClick = onRefresh, enabled = !refreshing) {
-                        Icon(Icons.Filled.Refresh, contentDescription = stringResource(R.string.sync_bookshelf))
-                    }
-                    IconButton(onClick = onEdit) {
-                        Icon(Icons.Filled.Edit, contentDescription = stringResource(R.string.bookshelf_edit))
+                    IconButton(
+                        onClick = onDone,
+                        enabled = !deleting,
+                        modifier = Modifier.size(48.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.Done,
+                            contentDescription = stringResource(R.string.bookshelf_edit_done)
+                        )
                     }
                 } else {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = stringResource(R.string.bookshelf),
-                            style = MaterialTheme.typography.headlineLarge.copy(fontWeight = FontWeight.Bold)
-                        )
+                    Column(modifier = Modifier.weight(1f).padding(horizontal = 8.dp)) {
+                        Row(
+                            verticalAlignment = Alignment.Bottom,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Text(
+                                text = stringResource(R.string.bookshelf),
+                                style = QuietEditorial.display,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Text(
+                                text = stringResource(R.string.bookshelf_count)
+                                    .format(totalCount),
+                                style = QuietEditorial.label,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1
+                            )
+                        }
                         Text(
                             text = stringResource(R.string.bookshelf_description),
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            style = QuietEditorial.smallLabel,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.padding(top = 3.dp)
                         )
                     }
-                    IconButton(onClick = onRefresh, enabled = !refreshing) {
-                        Icon(Icons.Filled.Refresh, contentDescription = stringResource(R.string.sync_bookshelf))
+                    ShelfSyncButton(syncing = syncing, onClick = onRefresh)
+                    IconButton(
+                        onClick = onEdit,
+                        enabled = !deleting,
+                        modifier = Modifier.size(48.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.Edit,
+                            contentDescription = stringResource(R.string.bookshelf_edit)
+                        )
                     }
-                    IconButton(onClick = onEdit) {
-                        Icon(Icons.Filled.Edit, contentDescription = stringResource(R.string.bookshelf_edit))
+                }
+            }
+            HorizontalDivider(
+                thickness = QuietEditorial.hairline,
+                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+            )
+        }
+    }
+}
+
+@Composable
+private fun ShelfSyncButton(syncing: Boolean, onClick: () -> Unit) {
+    Surface(
+        modifier = Modifier
+            .heightIn(min = 48.dp)
+            .clickable(enabled = !syncing, onClick = onClick),
+        shape = RoundedCornerShape(999.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.65f)
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            if (syncing) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(17.dp),
+                    strokeWidth = 2.dp,
+                    color = MaterialTheme.colorScheme.primary
+                )
+            } else {
+                Icon(
+                    imageVector = Icons.Filled.Refresh,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(18.dp)
+                )
+            }
+            Text(
+                text = stringResource(
+                    if (syncing) {
+                        R.string.bookshelf_sync_running_short
+                    } else {
+                        R.string.sync_bookshelf
                     }
+                ),
+                style = QuietEditorial.smallLabel,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1
+            )
+        }
+    }
+}
+
+@Composable
+private fun BookshelfSyncBanner(
+    state: FavoritePageModel.State,
+    syncing: Boolean,
+    onRefresh: () -> Unit
+) {
+    val colors = quietEditorialColors()
+    val isFailure = state is FavoritePageModel.State.Failed
+    val headline = when (state) {
+        is FavoritePageModel.State.Completed -> {
+            if (state.result.added > 0) {
+                stringResource(R.string.bookshelf_sync_complete_added)
+                    .format(state.result.added)
+            } else {
+                stringResource(R.string.bookshelf_sync_done)
+            }
+        }
+
+        is FavoritePageModel.State.Failed -> stringResource(R.string.bookshelf_sync_failed)
+        else -> stringResource(R.string.bookshelf_sync_local_first)
+    }
+    val supporting = when {
+        syncing -> stringResource(R.string.bookshelf_sync_running)
+        isFailure -> stringResource(R.string.bookshelf_sync_failure_detail)
+        else -> stringResource(R.string.bookshelf_sync_offline)
+    }
+
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = QuietEditorial.cardShape,
+        color = if (isFailure) {
+            MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.56f)
+        } else {
+            colors.softSurface
+        }
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 11.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            if (syncing) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(18.dp),
+                    strokeWidth = 2.dp,
+                    color = MaterialTheme.colorScheme.primary
+                )
+            } else {
+                Icon(
+                    imageVector = if (isFailure) Icons.Filled.WarningAmber else Icons.Filled.Info,
+                    contentDescription = null,
+                    tint = if (isFailure) {
+                        MaterialTheme.colorScheme.error
+                    } else {
+                        MaterialTheme.colorScheme.primary
+                    },
+                    modifier = Modifier.size(18.dp)
+                )
+            }
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = headline,
+                    style = QuietEditorial.label.copy(fontWeight = FontWeight.SemiBold),
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    text = supporting,
+                    style = QuietEditorial.smallLabel,
+                    color = if (isFailure) {
+                        MaterialTheme.colorScheme.onErrorContainer
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    },
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(top = 2.dp)
+                )
+            }
+            if (isFailure) {
+                TextButton(onClick = onRefresh, enabled = !syncing) {
+                    Text(stringResource(R.string.retry), style = QuietEditorial.label)
                 }
             }
         }
     }
 }
 
-/** Lightweight, fixed-size shelf card kept separate from the list-style Novel component. */
+@Composable
+private fun BookshelfCollectionSummary(visibleCount: Int) {
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 4.dp, bottom = 2.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = stringResource(R.string.bookshelf_collection),
+                style = QuietEditorial.sectionTitle,
+                color = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.weight(1f)
+            )
+            Text(
+                text = stringResource(R.string.bookshelf_order_automatic),
+                style = QuietEditorial.smallLabel,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        if (visibleCount > 0) {
+            Text(
+                text = stringResource(R.string.bookshelf_local_only_note),
+                style = QuietEditorial.smallLabel,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 2.dp, bottom = 4.dp)
+            )
+        }
+    }
+}
+
+@Composable
+private fun BookshelfSelectionHint(deleting: Boolean) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = QuietEditorial.controlShape,
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.48f)
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(9.dp)
+        ) {
+            Icon(
+                imageVector = Icons.Filled.Edit,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(18.dp)
+            )
+            Text(
+                text = stringResource(
+                    if (deleting) {
+                        R.string.bookshelf_removing_selection
+                    } else {
+                        R.string.bookshelf_selection_hint
+                    }
+                ),
+                style = QuietEditorial.body,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.weight(1f)
+            )
+        }
+    }
+}
+
 @Composable
 private fun BookshelfGridItem(
     entry: BookshelfEntry,
@@ -441,76 +763,450 @@ private fun BookshelfGridItem(
     enabled: Boolean,
     onClick: () -> Unit
 ) {
-    val context = LocalContext.current
-    val coverUrl = remember(entry.coverUrl) {
-        EsjzoneUrls.coverOrEmpty(entry.coverUrl).trim().substringBefore('#')
-    }
-    val coverRequest = remember(coverUrl) {
-        val data = coverUrl.takeIf { it.isNotBlank() } ?: R.drawable.missing_cover
-        ImageRequest.Builder(context)
-            .data(data)
-            .memoryCacheKey("bookshelf-cover:$coverUrl")
-            .diskCacheKey("bookshelf-cover:$coverUrl")
-            // Avoid animation/recomposition work while flinging the grid.
-            .crossfade(false)
-            .build()
-    }
-
-    Card(
+    val cardShape = QuietEditorial.bookshelfCardShape
+    val cardColors = quietEditorialColors()
+    Surface(
         modifier = Modifier
             .fillMaxWidth()
             .then(
-                if (selected) Modifier.border(2.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(14.dp))
-                else Modifier
+                if (selected && editing) {
+                    Modifier.border(2.dp, MaterialTheme.colorScheme.primary, cardShape)
+                } else {
+                    Modifier
+                }
             )
+            .clip(cardShape)
             .clickable(enabled = enabled, onClick = onClick),
-        shape = RoundedCornerShape(14.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)
-        ),
-        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+        shape = cardShape,
+        color = if (selected && editing) {
+            MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.22f)
+        } else {
+            cardColors.cardSurface
+        }
     ) {
-        Box(modifier = Modifier.fillMaxWidth()) {
-            AsyncImage(
-                model = coverRequest,
-                imageLoader = MainActivity.imageLoader,
-                contentDescription = entry.title,
-                contentScale = ContentScale.Crop,
-                placeholder = painterResource(R.drawable.missing_cover),
-                error = painterResource(R.drawable.missing_cover),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .aspectRatio(0.68f)
-                    .clip(RoundedCornerShape(topStart = 14.dp, topEnd = 14.dp))
+        Column(modifier = Modifier.padding(8.dp)) {
+            Box(modifier = Modifier.fillMaxWidth()) {
+                QuietNovelCover(
+                    coverUrl = entry.coverUrl,
+                    title = entry.title,
+                    isAdult = entry.isAdultHint(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .aspectRatio(0.73f)
+                )
+                if (editing) {
+                    BookshelfSelectionOverlay(
+                        selected = selected,
+                        modifier = Modifier
+                            .align(Alignment.TopStart)
+                            .padding(7.dp)
+                    )
+                }
+            }
+            Text(
+                text = entry.title,
+                style = QuietEditorial.title.copy(
+                    fontWeight = FontWeight.SemiBold,
+                    lineHeight = 21.sp
+                ),
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.padding(top = 9.dp, start = 2.dp, end = 2.dp)
             )
-            if (editing) {
+            if (entry.author.isNotBlank()) {
+                Text(
+                    text = entry.author,
+                    style = QuietEditorial.smallLabel,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(top = 4.dp, start = 2.dp, end = 2.dp)
+                )
+            }
+            Row(
+                modifier = Modifier.padding(top = 8.dp, start = 2.dp, end = 2.dp, bottom = 2.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
                 Box(
                     modifier = Modifier
-                        .align(Alignment.TopStart)
-                        .padding(8.dp)
-                        .size(28.dp)
+                        .size(7.dp)
+                        .clip(RoundedCornerShape(999.dp))
                         .background(
-                            color = if (selected) MaterialTheme.colorScheme.primary else Color.Black.copy(alpha = 0.55f),
-                            shape = RoundedCornerShape(8.dp)
+                            if (entry.syncState == BookshelfSyncState.PENDING_ADD) {
+                                MaterialTheme.colorScheme.tertiary
+                            } else {
+                                MaterialTheme.colorScheme.primary
+                            }
                         )
-                        .border(1.dp, Color.White.copy(alpha = 0.8f), RoundedCornerShape(8.dp)),
-                    contentAlignment = Alignment.Center
+                )
+                Text(
+                    text = stringResource(
+                        if (entry.syncState == BookshelfSyncState.PENDING_ADD) {
+                            R.string.bookshelf_pending_sync
+                        } else {
+                            R.string.bookshelf_local_entry
+                        }
+                    ),
+                    style = QuietEditorial.smallLabel,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun BookshelfSelectionOverlay(selected: Boolean, modifier: Modifier = Modifier) {
+    Box(
+        modifier = modifier
+            .size(30.dp)
+            .background(
+                color = if (selected) {
+                    MaterialTheme.colorScheme.primary
+                } else {
+                    MaterialTheme.colorScheme.surface.copy(alpha = 0.92f)
+                },
+                shape = QuietEditorial.selectionShape
+            )
+            .border(
+                width = if (selected) 0.dp else 1.dp,
+                color = if (selected) Color.Transparent else MaterialTheme.colorScheme.outline,
+                shape = QuietEditorial.selectionShape
+            ),
+        contentAlignment = Alignment.Center
+    ) {
+        Icon(
+            imageVector = if (selected) {
+                Icons.Filled.Check
+            } else {
+                Icons.Filled.RadioButtonUnchecked
+            },
+            contentDescription = null,
+            tint = if (selected) {
+                MaterialTheme.colorScheme.onPrimary
+            } else {
+                MaterialTheme.colorScheme.onSurfaceVariant
+            },
+            modifier = Modifier.size(19.dp)
+        )
+    }
+}
+
+@Composable
+private fun BookshelfEmptyState(adultFiltered: Boolean) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 28.dp, vertical = 56.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Surface(
+            modifier = Modifier.size(64.dp),
+            shape = RoundedCornerShape(22.dp),
+            color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.55f)
+        ) {
+            Box(contentAlignment = Alignment.Center) {
+                Icon(
+                    imageVector = Icons.Filled.Bookmark,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                    modifier = Modifier.size(30.dp)
+                )
+            }
+        }
+        Text(
+            text = stringResource(
+                if (adultFiltered) {
+                    R.string.bookshelf_empty_filtered
+                } else {
+                    R.string.bookshelf_empty
+                }
+            ),
+            style = QuietEditorial.sectionTitle,
+            color = MaterialTheme.colorScheme.onSurface,
+            modifier = Modifier.padding(top = 18.dp)
+        )
+        Text(
+            text = stringResource(
+                if (adultFiltered) {
+                    R.string.bookshelf_empty_filtered_hint
+                } else {
+                    R.string.bookshelf_empty_hint
+                }
+            ),
+            style = QuietEditorial.body,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(top = 8.dp)
+        )
+    }
+}
+
+@Composable
+private fun BookshelfBatchBar(
+    selectedCount: Int,
+    deleting: Boolean,
+    onCancel: () -> Unit,
+    onDelete: () -> Unit
+) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.72f)
+    ) {
+        Column(
+            modifier = Modifier
+                .navigationBarsPadding()
+                .padding(horizontal = QuietEditorial.pagePadding, vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Row(
+                verticalAlignment = Alignment.Top,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Filled.Info,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.tertiary,
+                    modifier = Modifier.padding(top = 1.dp).size(18.dp)
+                )
+                Text(
+                    text = stringResource(R.string.bookshelf_remove_consequence),
+                    style = QuietEditorial.smallLabel,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.weight(1f)
+                )
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                OutlinedButton(
+                    onClick = onCancel,
+                    enabled = !deleting,
+                    modifier = Modifier.weight(0.38f).heightIn(min = 48.dp),
+                    shape = RoundedCornerShape(999.dp)
                 ) {
-                    if (selected) {
-                        Icon(Icons.Filled.Check, contentDescription = null, tint = Color.White)
+                    Text(stringResource(android.R.string.cancel), style = QuietEditorial.label)
+                }
+                Button(
+                    onClick = onDelete,
+                    enabled = selectedCount > 0 && !deleting,
+                    modifier = Modifier.weight(0.62f).heightIn(min = 48.dp),
+                    shape = RoundedCornerShape(999.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.errorContainer,
+                        contentColor = MaterialTheme.colorScheme.onErrorContainer
+                    )
+                ) {
+                    if (deleting) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(18.dp),
+                            strokeWidth = 2.dp,
+                            color = MaterialTheme.colorScheme.onErrorContainer
+                        )
+                        Spacer(Modifier.size(8.dp))
+                    } else {
+                        Icon(
+                            imageVector = Icons.Filled.Delete,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(Modifier.size(6.dp))
+                    }
+                    Text(
+                        text = stringResource(
+                            if (deleting) {
+                                R.string.bookshelf_removing
+                            } else {
+                                R.string.bookshelf_remove_selected_count
+                            }
+                        ).format(selectedCount),
+                        style = QuietEditorial.label,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun BookshelfRemovalDialog(
+    entries: List<BookshelfEntry>,
+    deleting: Boolean,
+    onDismiss: () -> Unit,
+    onConfirm: () -> Unit
+) {
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(
+            dismissOnBackPress = !deleting,
+            dismissOnClickOutside = !deleting,
+            usePlatformDefaultWidth = false
+        )
+    ) {
+        Surface(
+            modifier = Modifier
+                .fillMaxWidth()
+                .widthIn(max = 560.dp)
+                .padding(horizontal = 16.dp),
+            shape = QuietEditorial.dialogShape,
+            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.72f)
+        ) {
+            Column(
+                modifier = Modifier
+                    .padding(24.dp)
+                    .verticalScroll(rememberScrollState())
+            ) {
+                Surface(
+                    modifier = Modifier.align(Alignment.CenterHorizontally).size(56.dp),
+                    shape = RoundedCornerShape(999.dp),
+                    color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.65f)
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(
+                            imageVector = Icons.Filled.Delete,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onErrorContainer,
+                            modifier = Modifier.size(27.dp)
+                        )
+                    }
+                }
+                Text(
+                    text = stringResource(R.string.bookshelf_delete_title).format(entries.size),
+                    style = QuietEditorial.sectionTitle,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 18.dp),
+                    maxLines = 3,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Surface(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 14.dp),
+                    shape = QuietEditorial.controlShape,
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.62f)
+                ) {
+                    Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
+                        entries.take(4).forEach { entry ->
+                            Row(
+                                modifier = Modifier.padding(vertical = 3.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(9.dp)
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(7.dp)
+                                        .clip(RoundedCornerShape(999.dp))
+                                        .background(MaterialTheme.colorScheme.primary)
+                                )
+                                Text(
+                                    text = entry.title,
+                                    style = QuietEditorial.title,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                        }
+                        if (entries.size > 4) {
+                            Text(
+                                text = stringResource(R.string.bookshelf_more_selected)
+                                    .format(entries.size - 4),
+                                style = QuietEditorial.smallLabel,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(top = 4.dp)
+                            )
+                        }
+                    }
+                }
+                RemovalConsequence(
+                    text = stringResource(R.string.bookshelf_delete_local_notice),
+                    modifier = Modifier.padding(top = 16.dp)
+                )
+                RemovalConsequence(
+                    text = stringResource(R.string.bookshelf_delete_data_notice),
+                    modifier = Modifier.padding(top = 7.dp)
+                )
+                RemovalConsequence(
+                    text = stringResource(R.string.bookshelf_delete_sync_notice),
+                    modifier = Modifier.padding(top = 7.dp)
+                )
+                if (deleting) {
+                    Text(
+                        text = stringResource(R.string.bookshelf_removing_detail),
+                        style = QuietEditorial.smallLabel,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.padding(top = 14.dp)
+                    )
+                }
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 18.dp),
+                    horizontalArrangement = Arrangement.End,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    TextButton(onClick = onDismiss, enabled = !deleting) {
+                        Text(stringResource(android.R.string.cancel), style = QuietEditorial.label)
+                    }
+                    Spacer(Modifier.size(8.dp))
+                    Button(
+                        onClick = onConfirm,
+                        enabled = !deleting,
+                        shape = RoundedCornerShape(999.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.errorContainer,
+                            contentColor = MaterialTheme.colorScheme.onErrorContainer
+                        )
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.Delete,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(Modifier.size(6.dp))
+                        Text(
+                            text = stringResource(
+                                if (deleting) {
+                                    R.string.bookshelf_removing
+                                } else {
+                                    R.string.bookshelf_delete_confirm_action
+                                }
+                            ).format(entries.size),
+                            style = QuietEditorial.label
+                        )
                     }
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun RemovalConsequence(text: String, modifier: Modifier = Modifier) {
+    Row(
+        modifier = modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.Top,
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
         Text(
-            text = entry.title,
-            style = MaterialTheme.typography.titleSmall.copy(
-                fontWeight = FontWeight.SemiBold,
-                lineHeight = 18.sp
-            ),
-            maxLines = 2,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.padding(horizontal = 10.dp, vertical = 10.dp)
+            text = "•",
+            style = QuietEditorial.body,
+            color = MaterialTheme.colorScheme.outline
+        )
+        Text(
+            text = text,
+            style = QuietEditorial.body,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.weight(1f)
         )
     }
 }
@@ -527,6 +1223,11 @@ private fun BookshelfEntry.asCoveredNovel() = CoveredNovelImpl(
 /** Remote favorite rows do not expose adult metadata; only explicit local hints are hidden. */
 private fun BookshelfEntry.isAdultHint(): Boolean = isAdult
 
+/**
+ * Pull-to-sync is deliberately limited to the absolute top. It observes the
+ * grid without changing scroll consumption, so normal fling performance stays
+ * in LazyVerticalGrid and no duplicate sync request can be started.
+ */
 private fun Modifier.bookshelfPullToRefresh(
     gridState: LazyGridState,
     enabled: Boolean,
@@ -538,8 +1239,6 @@ private fun Modifier.bookshelfPullToRefresh(
             val event = awaitPointerEvent()
             val change = event.changes.firstOrNull() ?: continue
             if (gridState.firstVisibleItemIndex != 0 || gridState.firstVisibleItemScrollOffset != 0) {
-                // A pull must start at the absolute top; never carry distance
-                // from a gesture that began inside the first item.
                 distance = 0f
             }
             if (!change.pressed) {
@@ -548,10 +1247,13 @@ private fun Modifier.bookshelfPullToRefresh(
                     gridState.firstVisibleItemIndex == 0 &&
                     gridState.firstVisibleItemScrollOffset == 0 &&
                     distance > 72f
-                ) onRefresh()
+                ) {
+                    onRefresh()
+                }
                 distance = 0f
-            } else if (gridState.firstVisibleItemIndex == 0 && change.positionChange().y > 0f) {
-                distance += change.positionChange().y
+            } else if (enabled && gridState.firstVisibleItemIndex == 0) {
+                val delta = change.positionChange().y
+                if (delta > 0f) distance += delta
             }
         }
     }
@@ -583,7 +1285,11 @@ class FavoritePageModel(private val authorization: Authorization) :
             mutableState.value = State.Syncing
             try {
                 val result = BookshelfRepository.sync(authorization)
-                mutableState.value = if (result.success) State.Completed(result) else State.Failed(result.loadFailure)
+                mutableState.value = if (result.success) {
+                    State.Completed(result)
+                } else {
+                    State.Failed(result.loadFailure)
+                }
             } catch (e: CancellationException) {
                 throw e
             } catch (error: Exception) {
@@ -607,7 +1313,7 @@ class FavoritePageModel(private val authorization: Authorization) :
                 _deleteState.value = DeleteState.Completed(count)
             } catch (e: CancellationException) {
                 throw e
-            } catch (e: Exception) {
+            } catch (_: Exception) {
                 _deleteState.value = DeleteState.Failed
             }
         }
