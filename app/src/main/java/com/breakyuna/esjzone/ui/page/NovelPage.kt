@@ -581,7 +581,7 @@ private fun NovelDetailContent(
                                     depth = 0
                                 ),
                                 currentChapter = historyState.value,
-                                hasHistory = hasHistory,
+                                hasHistory = hasHistory.value,
                                 onChapterOpen = onChapterOpen,
                                 onGroupToggle = {}
                             )
@@ -593,7 +593,7 @@ private fun NovelDetailContent(
                     ChapterListRow(
                         row = row,
                         currentChapter = historyState.value,
-                        hasHistory = hasHistory,
+                        hasHistory = hasHistory.value,
                         onChapterOpen = onChapterOpen,
                         onGroupToggle = onGroupToggle
                     )

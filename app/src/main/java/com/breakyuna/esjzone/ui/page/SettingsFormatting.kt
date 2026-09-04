@@ -1,7 +1,7 @@
 package com.breakyuna.esjzone.ui.page
 
 /** Immutable snapshot used by the settings presentation layer. */
-internal data class LocalCacheStats(
+data class LocalCacheStats(
     val pageBytes: Long,
     val pageEntries: Int,
     val imageBytes: Long

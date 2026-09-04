@@ -6,7 +6,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -37,7 +37,6 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -195,7 +194,10 @@ fun RowScope.QuietBottomNavigationItem(
                         .background(pillBackground, pillShape)
                 } else Modifier
             )
-            .clickable {
+            .selectable(
+                selected = isSelected,
+                role = Role.Tab,
+                onClick = {
                 val now = SystemClock.uptimeMillis()
                 val wasAlreadySelected = tabNavigator.current == tab
                 val isDoubleClick = onDoubleClick != null &&
@@ -208,11 +210,8 @@ fun RowScope.QuietBottomNavigationItem(
                     lastTapAt = now
                     tabNavigator.current = tab
                 }
-            }
-            .semantics(mergeDescendants = true) {
-                role = Role.Tab
-                selected = isSelected
-            }
+                }
+            )
             .padding(horizontal = 4.dp, vertical = 4.dp),
         contentAlignment = Alignment.Center
     ) {

@@ -6,6 +6,7 @@ import com.breakyuna.esjzone.network.Authorization
 import com.breakyuna.esjzone.network.EsjzoneClient
 import com.breakyuna.esjzone.network.LoadFailureKind
 import com.breakyuna.esjzone.network.features.getHistories
+import com.breakyuna.esjzone.network.features.removeHistory
 import com.breakyuna.esjzone.network.loadFailureKind
 import com.breakyuna.esjzone.novellibrary.novel.HistoryNovel
 import com.breakyuna.esjzone.util.AppLogger
