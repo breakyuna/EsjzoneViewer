@@ -1,8 +1,12 @@
 package com.breakyuna.esjzone.ui.component
 
 import android.os.SystemClock
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -11,12 +15,15 @@ import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -56,14 +63,19 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import cafe.adriel.voyager.navigator.tab.LocalTabNavigator
 import cafe.adriel.voyager.navigator.tab.Tab
 import coil.compose.SubcomposeAsyncImage
@@ -874,21 +886,105 @@ fun QuietGroup(
 }
 
 @Composable
-fun QuietBottomNavigation(content: @Composable RowScope.() -> Unit) {
-    Surface(
-        modifier = Modifier.fillMaxWidth(),
-        color = MaterialTheme.colorScheme.surface
+fun QuietBottomNavigation(
+    modifier: Modifier = Modifier,
+    content: @Composable RowScope.() -> Unit
+) {
+    val isDark = MaterialTheme.colorScheme.surface.luminance() < 0.5f
+
+    // Frosted glass background brush with high translucency
+    val glassBgBrush = if (!isDark) {
+        Brush.verticalGradient(
+            colors = listOf(
+                Color.White.copy(alpha = 0.78f),
+                Color.White.copy(alpha = 0.58f),
+                Color(0xFFF2F2F7).copy(alpha = 0.68f)
+            )
+        )
+    } else {
+        Brush.verticalGradient(
+            colors = listOf(
+                MaterialTheme.colorScheme.surface.copy(alpha = 0.82f),
+                MaterialTheme.colorScheme.surface.copy(alpha = 0.68f),
+                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.74f)
+            )
+        )
+    }
+
+    // High-transparency specular refraction border (curved liquid glass edge)
+    val glassBorderBrush = if (!isDark) {
+        Brush.verticalGradient(
+            colors = listOf(
+                Color.White.copy(alpha = 0.95f),
+                Color.White.copy(alpha = 0.28f),
+                Color.White.copy(alpha = 0.70f)
+            )
+        )
+    } else {
+        Brush.verticalGradient(
+            colors = listOf(
+                Color.White.copy(alpha = 0.38f),
+                Color.White.copy(alpha = 0.10f),
+                Color.White.copy(alpha = 0.28f)
+            )
+        )
+    }
+
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(horizontal = 20.dp, vertical = 10.dp),
+        contentAlignment = Alignment.Center
     ) {
-        Column {
-            HorizontalDivider(
-                thickness = QuietEditorial.hairline,
-                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
-            )
-            NavigationBar(
-                containerColor = Color.Transparent,
-                tonalElevation = 0.dp,
-                content = content
-            )
+        Surface(
+            modifier = Modifier
+                .widthIn(max = 460.dp)
+                .fillMaxWidth()
+                .shadow(
+                    elevation = 16.dp,
+                    shape = CircleShape,
+                    ambientColor = Color.Black.copy(alpha = 0.12f),
+                    spotColor = Color.Black.copy(alpha = 0.22f)
+                )
+                .border(
+                    width = 1.2.dp,
+                    brush = glassBorderBrush,
+                    shape = CircleShape
+                ),
+            shape = CircleShape,
+            color = Color.Transparent
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(brush = glassBgBrush)
+            ) {
+                // Top subtle specular reflection sheen
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(28.dp)
+                        .background(
+                            Brush.verticalGradient(
+                                listOf(
+                                    if (!isDark) Color.White.copy(alpha = 0.38f) else Color.White.copy(alpha = 0.10f),
+                                    Color.Transparent
+                                )
+                            )
+                        )
+                )
+
+                // Navigation tab items
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(64.dp)
+                        .padding(horizontal = 8.dp, vertical = 6.dp),
+                    horizontalArrangement = Arrangement.SpaceEvenly,
+                    verticalAlignment = Alignment.CenterVertically,
+                    content = content
+                )
+            }
         }
     }
 }
@@ -902,41 +998,109 @@ fun RowScope.QuietBottomNavigationItem(
     val isSelected = tabNavigator.current == tab
     var lastTapAt by remember { mutableLongStateOf(0L) }
 
-    NavigationBarItem(
-        selected = isSelected,
-        onClick = {
-            val now = SystemClock.uptimeMillis()
-            val wasAlreadySelected = tabNavigator.current == tab
-            val isDoubleClick = onDoubleClick != null &&
-                wasAlreadySelected && now - lastTapAt in 1..420
-            if (isDoubleClick) {
-                lastTapAt = 0L
-                tabNavigator.current = tab
-                onDoubleClick.invoke()
-            } else {
-                lastTapAt = now
-                tabNavigator.current = tab
-            }
-        },
-        icon = {
+    val isDark = MaterialTheme.colorScheme.surface.luminance() < 0.5f
+
+    val activeColor = MaterialTheme.colorScheme.primary
+    val inactiveColor = if (!isDark) {
+        Color(0xFF2C2C2E).copy(alpha = 0.78f)
+    } else {
+        MaterialTheme.colorScheme.onSurface.copy(alpha = 0.72f)
+    }
+
+    val animatedIconColor by animateColorAsState(
+        targetValue = if (isSelected) activeColor else inactiveColor,
+        animationSpec = tween(durationMillis = 200),
+        label = "tab_icon_color"
+    )
+
+    val animatedTextColor by animateColorAsState(
+        targetValue = if (isSelected) activeColor else inactiveColor,
+        animationSpec = tween(durationMillis = 200),
+        label = "tab_text_color"
+    )
+
+    val pillShape = CircleShape
+
+    // Active background pill gradient & border (matching screenshot with soft glowing pill)
+    val pillBackground = when {
+        isSelected && !isDark -> Brush.verticalGradient(
+            listOf(
+                Color.White.copy(alpha = 0.65f),
+                activeColor.copy(alpha = 0.14f)
+            )
+        )
+        isSelected && isDark -> Brush.verticalGradient(
+            listOf(
+                activeColor.copy(alpha = 0.30f),
+                activeColor.copy(alpha = 0.16f)
+            )
+        )
+        else -> null
+    }
+
+    val pillBorder = if (isSelected) {
+        BorderStroke(
+            1.dp,
+            if (!isDark) Color.White.copy(alpha = 0.70f) else Color.White.copy(alpha = 0.22f)
+        )
+    } else null
+
+    Box(
+        modifier = Modifier
+            .weight(1f)
+            .fillMaxHeight()
+            .clip(pillShape)
+            .then(
+                if (pillBorder != null && pillBackground != null) {
+                    Modifier
+                        .border(pillBorder, pillShape)
+                        .background(pillBackground, pillShape)
+                } else Modifier
+            )
+            .clickable(
+                onClick = {
+                    val now = SystemClock.uptimeMillis()
+                    val wasAlreadySelected = tabNavigator.current == tab
+                    val isDoubleClick = onDoubleClick != null &&
+                        wasAlreadySelected && now - lastTapAt in 1..420
+                    if (isDoubleClick) {
+                        lastTapAt = 0L
+                        tabNavigator.current = tab
+                        onDoubleClick.invoke()
+                    } else {
+                        lastTapAt = now
+                        tabNavigator.current = tab
+                    }
+                }
+            )
+            .padding(horizontal = 4.dp, vertical = 4.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
+        ) {
             tab.options.icon?.let { icon ->
-                Icon(painter = icon, contentDescription = tab.options.title)
+                Icon(
+                    painter = icon,
+                    contentDescription = tab.options.title,
+                    tint = animatedIconColor,
+                    modifier = Modifier.size(23.dp)
+                )
             }
-        },
-        label = {
+            Spacer(modifier = Modifier.height(2.dp))
             Text(
                 text = tab.options.title,
-                style = QuietEditorial.smallLabel
+                style = MaterialTheme.typography.labelSmall.copy(
+                    fontSize = 11.sp,
+                    fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Medium
+                ),
+                color = animatedTextColor,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
             )
-        },
-        colors = NavigationBarItemDefaults.colors(
-            selectedIconColor = MaterialTheme.colorScheme.onPrimaryContainer,
-            selectedTextColor = MaterialTheme.colorScheme.primary,
-            indicatorColor = MaterialTheme.colorScheme.primaryContainer,
-            unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.74f),
-            unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.74f)
-        )
-    )
+        }
+    }
 }
 
 private fun formatCount(count: Int): String {

@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.padding
@@ -186,27 +187,26 @@ private object TabScreen : Screen {
 
     @Composable
     override fun Content() {
-        Scaffold(
-            containerColor = MaterialTheme.colorScheme.background,
-            bottomBar = {
-                QuietBottomNavigation {
-                    QuietBottomNavigationItem(tab = HomeTab)
-                    QuietBottomNavigationItem(
-                        tab = HistoryTab,
-                        onDoubleClick = HistoryTab::requestOpenLastReading
-                    )
-                    QuietBottomNavigationItem(tab = FavoriteTab)
-                    QuietBottomNavigationItem(tab = ProfileTab)
-                }
-            }
-        ) {
+        Box(modifier = Modifier.fillMaxSize()) {
             Surface(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(it),
+                modifier = Modifier.fillMaxSize(),
                 color = MaterialTheme.colorScheme.background
             ) {
                 CurrentTab()
+            }
+
+            QuietBottomNavigation(
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .navigationBarsPadding()
+            ) {
+                QuietBottomNavigationItem(tab = HomeTab)
+                QuietBottomNavigationItem(
+                    tab = HistoryTab,
+                    onDoubleClick = HistoryTab::requestOpenLastReading
+                )
+                QuietBottomNavigationItem(tab = FavoriteTab)
+                QuietBottomNavigationItem(tab = ProfileTab)
             }
         }
     }

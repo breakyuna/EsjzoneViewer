@@ -56,7 +56,7 @@ class LoadingScreen : Screen {
                     color = MaterialTheme.colorScheme.primaryContainer
                 ) {
                     androidx.compose.foundation.Image(
-                        painter = painterResource(R.mipmap.esjzone_icon),
+                        painter = painterResource(R.mipmap.esjzone_icon_foreground),
                         contentDescription = stringResource(R.string.app_name),
                         modifier = Modifier.padding(12.dp)
                     )

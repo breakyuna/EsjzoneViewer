@@ -304,7 +304,7 @@ object FavoritePage : Screen {
                     start = QuietEditorial.pagePadding,
                     end = QuietEditorial.pagePadding,
                     top = 12.dp,
-                    bottom = if (editing) 12.dp else 28.dp
+                    bottom = if (editing) 80.dp else 100.dp
                 ),
                 horizontalArrangement = Arrangement.spacedBy(QuietEditorial.itemGap),
                 verticalArrangement = Arrangement.spacedBy(QuietEditorial.itemGap)

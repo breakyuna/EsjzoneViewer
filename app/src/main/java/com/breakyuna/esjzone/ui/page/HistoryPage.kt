@@ -262,7 +262,8 @@ object HistoryPage : Screen {
                                         .weight(1f)
                                         .fillMaxWidth()
                                         .widthIn(max = QuietEditorial.contentMaxWidth)
-                                        .align(Alignment.CenterHorizontally)
+                                        .align(Alignment.CenterHorizontally),
+                                    contentPadding = PaddingValues(bottom = 100.dp)
                                 ) {
                                     items(
                                         novels,
@@ -819,8 +820,10 @@ private fun LocalHistoryContent(
                             .widthIn(max = QuietEditorial.contentMaxWidth)
                             .align(Alignment.CenterHorizontally),
                         contentPadding = PaddingValues(
-                            horizontal = 12.dp,
-                            vertical = 8.dp
+                            start = 12.dp,
+                            end = 12.dp,
+                            top = 8.dp,
+                            bottom = 100.dp
                         ),
                         verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {

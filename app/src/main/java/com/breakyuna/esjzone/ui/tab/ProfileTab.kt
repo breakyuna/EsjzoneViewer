@@ -109,8 +109,10 @@ object ProfileTab : Tab {
             LazyColumn(
                 modifier = Modifier.fillMaxSize(),
                 contentPadding = PaddingValues(
-                    horizontal = horizontalPadding,
-                    vertical = 24.dp
+                    start = horizontalPadding,
+                    end = horizontalPadding,
+                    top = 24.dp,
+                    bottom = 100.dp
                 ),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
