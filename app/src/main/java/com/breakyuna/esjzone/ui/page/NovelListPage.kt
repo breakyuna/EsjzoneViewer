@@ -1,6 +1,7 @@
 package com.breakyuna.esjzone.ui.page
 
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -10,8 +11,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.material3.Checkbox
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -26,6 +28,7 @@ import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
@@ -41,6 +44,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.flow.distinctUntilChanged
 import com.breakyuna.esjzone.GlobalSettings
 import com.breakyuna.esjzone.R
 import com.breakyuna.esjzone.network.Authorization
@@ -55,9 +59,12 @@ import com.breakyuna.esjzone.novellibrary.novel.CoveredNovel
 import com.breakyuna.esjzone.novellibrary.novel.preview
 import com.breakyuna.esjzone.ui.component.AppBar
 import com.breakyuna.esjzone.ui.component.DropdownSelection
-import com.breakyuna.esjzone.ui.component.Loading
 import com.breakyuna.esjzone.ui.component.LoadError
-import com.breakyuna.esjzone.ui.component.Novel
+import com.breakyuna.esjzone.ui.component.QuietEmptyState
+import com.breakyuna.esjzone.ui.component.QuietErrorState
+import com.breakyuna.esjzone.ui.component.QuietLoadingState
+import com.breakyuna.esjzone.ui.component.QuietNovelListItem
+import com.breakyuna.esjzone.ui.component.QuietSectionHeader
 import com.breakyuna.esjzone.ui.navigation.LocalBaseNavigator
 
 private fun typeResource(type: Int): Int {
@@ -122,44 +129,47 @@ class NovelListPage(
             GlobalSettings.adult
         }
 
-        Column {
+        Column(modifier = Modifier.fillMaxSize()) {
             AppBar(
                 title = stringResource(id = R.string.novel_list),
                 onBack = {
                     navigator?.pop()
                 }
             ) {
-                Row {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 6.dp),
+                    verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(6.dp)
+                ) {
                     var typeExposed by remember { mutableStateOf(false) }
                     var sortExposed by remember { mutableStateOf(false) }
-                    DropdownSelection(
-                        label = stringResource(id = R.string.novel_list_type),
-                        items = listOf(0, 2, 1, 3),
-                        current = novelType.intValue,
-                        onChange = {
-                            novelType.intValue = it
-                            novelListModel.getRequester(forceRefresh = true)
-                        },
-                        exposed = typeExposed,
-                        onExposeChanged = {
-                            typeExposed = it
-                        },
-                        modifier = Modifier.width(110.dp),
-                        nameProvider = { stringResource(id = typeResource(this)) }
-                    )
-                    Spacer(modifier = Modifier.weight(2f))
-                    if (adult) {
-                        Text(
-                            text = stringResource(id = R.string.novel_list_adultonly),
-                            modifier = Modifier.padding(top = 16.dp)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        DropdownSelection(
+                            label = stringResource(id = R.string.novel_list_type),
+                            items = listOf(0, 2, 1, 3),
+                            current = novelType.intValue,
+                            onChange = {
+                                novelType.intValue = it
+                                novelListModel.getRequester(forceRefresh = true)
+                            },
+                            exposed = typeExposed,
+                            onExposeChanged = { typeExposed = it },
+                            modifier = Modifier.weight(1f),
+                            nameProvider = { stringResource(id = typeResource(this)) }
                         )
-                        Checkbox(
-                            checked = adultOnly,
-                            onCheckedChange = { adultOnly = it },
-                            modifier = Modifier.padding(top = 4.dp)
-                        )
+                        if (adult) {
+                            FilterChip(
+                                selected = adultOnly,
+                                onClick = { adultOnly = !adultOnly },
+                                label = { Text(stringResource(id = R.string.novel_list_adultonly)) }
+                            )
+                        }
                     }
-                    Spacer(modifier = Modifier.weight(1f))
                     DropdownSelection(
                         label = stringResource(id = R.string.novel_list_sort),
                         items = listOf(1, 2, 3, 4, 5, 6, 7, 8),
@@ -169,21 +179,20 @@ class NovelListPage(
                             novelListModel.getRequester(forceRefresh = true)
                         },
                         exposed = sortExposed,
-                        onExposeChanged = {
-                            sortExposed = it
-                        },
-                        modifier = Modifier.width(140.dp),
+                        onExposeChanged = { sortExposed = it },
+                        modifier = Modifier.fillMaxWidth(),
                         nameProvider = { stringResource(id = sortResource(this)) }
                     )
                 }
             }
 
             when (state) {
-                is NovelListPageModel.State.Loading -> Loading()
+                is NovelListPageModel.State.Loading -> QuietLoadingState(modifier = Modifier.fillMaxSize())
 
-                is NovelListPageModel.State.Error -> LoadError(
+                is NovelListPageModel.State.Error -> QuietErrorState(
                     onRetry = novelListModel::retry,
-                    failure = (state as NovelListPageModel.State.Error).failure
+                    failure = (state as NovelListPageModel.State.Error).failure,
+                    modifier = Modifier.fillMaxSize()
                 )
 
                 is NovelListPageModel.State.Result -> {
@@ -220,16 +229,38 @@ class NovelListPage(
                         }
                     }
 
-                    LazyColumn {
+                    val listState = rememberLazyListState()
+                    var isLoadingPage by remember(result) { mutableStateOf(false) }
+
+                    LazyColumn(
+                        state = listState,
+                        verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(10.dp),
+                        contentPadding = androidx.compose.foundation.layout.PaddingValues(vertical = 16.dp)
+                    ) {
+                        item {
+                            QuietSectionHeader(
+                                title = stringResource(R.string.novel_list),
+                                modifier = Modifier.padding(bottom = 2.dp)
+                            )
+                        }
+                        if (visibleItems.isEmpty()) {
+                            item {
+                                QuietEmptyState(
+                                    title = stringResource(R.string.search_no_results),
+                                    message = stringResource(R.string.home_collection_empty_message)
+                                )
+                            }
+                        }
                         items(visibleItems, key = { novel ->
-                            novel.url.ifBlank { novel.name }
+                            "novel-list-${novel.url.trim().ifBlank { novel.name.trim() }}"
                         }) { novel ->
                             val summaryKey = novel.url.ifBlank { novel.name }
                             val summary = novelListModel.summaries[summaryKey]
 
-                            Novel(
-                                covered = novel,
-                                summary = summary
+                            QuietNovelListItem(
+                                novel = novel,
+                                summary = summary,
+                                modifier = Modifier.padding(horizontal = 16.dp)
                             )
 
                             if (summary == null) {
@@ -263,45 +294,52 @@ class NovelListPage(
                                         CircularProgressIndicator()
                                     }
                                 }
-                                LaunchedEffect(current, pageRetry) {
-                                    try {
-                                        val newlyLoaded = withContext(Dispatchers.IO) {
-                                            requester.more(current)
-                                        }
-                                        for (item in newlyLoaded) {
-                                            if (items.contains(item))
-                                                continue
-                                            items.add(item)
-                                        }
-                                        pageFailed = false
-                                        pageFailure = null
-                                        current += 1
-                                    } catch (e: CancellationException) {
-                                        throw e
-                                    } catch (e: Exception) {
-                                        pageFailed = true
-                                        pageFailure = e.loadFailureKind()
-                                        com.breakyuna.esjzone.util.AppLogger.e(
-                                            "NovelListPage",
-                                            "Failed to load novel page $current",
-                                            e
-                                        )
-                                    }
-                                }
                             }
                             Spacer(modifier = Modifier.height(8.dp))
                         }
 
-                        item {
-                            Row(
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                Spacer(modifier = Modifier.weight(1f))
-                                Text(
-                                    text = stringResource(id = R.string.the_end),
-                                    modifier = Modifier.padding(16.dp)
-                                )
-                                Spacer(modifier = Modifier.weight(1f))
+                        if (current > max || max <= 1) {
+                            item(key = "novel-list-end") {
+                                Row(modifier = Modifier.fillMaxWidth()) {
+                                    Spacer(modifier = Modifier.weight(1f))
+                                    Text(text = stringResource(id = R.string.the_end), modifier = Modifier.padding(16.dp))
+                                    Spacer(modifier = Modifier.weight(1f))
+                                }
+                            }
+                        }
+                    }
+
+                    // The filtered-empty state is a real lazy item. Include it
+                    // when locating the footer so it is not mistaken for the
+                    // load trigger on every recomposition.
+                    val footerIndex = 1 + visibleItems.size +
+                        if (visibleItems.isEmpty()) 1 else 0
+                    LaunchedEffect(listState, footerIndex, current, pageRetry, pageFailed) {
+                        snapshotFlow {
+                            listState.layoutInfo.visibleItemsInfo.any { it.index >= footerIndex }
+                        }.distinctUntilChanged().collect { footerVisible ->
+                            if (footerVisible && !pageFailed && !isLoadingPage && current <= max && max > 1) {
+                                isLoadingPage = true
+                                try {
+                                    val newlyLoaded = withContext(Dispatchers.IO) { requester.more(current) }
+                                    newlyLoaded.forEach { item ->
+                                        val itemKey = item.url.trim().ifBlank { item.name.trim() }
+                                        if (items.none { it.url.trim().ifBlank { it.name.trim() } == itemKey }) {
+                                            items.add(item)
+                                        }
+                                    }
+                                    pageFailed = false
+                                    pageFailure = null
+                                    current += 1
+                                } catch (e: CancellationException) {
+                                    throw e
+                                } catch (e: Exception) {
+                                    pageFailed = true
+                                    pageFailure = e.loadFailureKind()
+                                    com.breakyuna.esjzone.util.AppLogger.e("NovelListPage", "Failed to load novel page $current", e)
+                                } finally {
+                                    isLoadingPage = false
+                                }
                             }
                         }
                     }

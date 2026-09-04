@@ -7,6 +7,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
@@ -16,13 +17,11 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.ArrowForwardIos
 import androidx.compose.material.icons.filled.Category
 import androidx.compose.material.icons.filled.ChatBubbleOutline
 import androidx.compose.material.icons.filled.Clear
@@ -402,7 +401,7 @@ fun QuietSectionHeader(
             ) {
                 Text(actionLabel, style = QuietEditorial.label)
                 Icon(
-                    imageVector = Icons.Filled.ArrowForwardIos,
+                    imageVector = androidx.compose.material.icons.automirrored.filled.ArrowForwardIos,
                     contentDescription = null,
                     modifier = Modifier
                         .padding(start = 3.dp)
@@ -600,7 +599,8 @@ fun QuietNovelListItem(
     novel: CoveredNovel,
     modifier: Modifier = Modifier,
     onClick: (() -> Unit)? = null,
-    compact: Boolean = false
+    compact: Boolean = false,
+    summary: String? = null
 ) {
     val navigator = LocalBaseNavigator.current
     val editorialColors = quietEditorialColors()
@@ -637,9 +637,19 @@ fun QuietNovelListItem(
                     text = novel.name,
                     style = if (compact) QuietEditorial.title else QuietEditorial.cardTitle,
                     color = MaterialTheme.colorScheme.onSurface,
-                    maxLines = if (compact) 3 else 4,
+                    maxLines = if (compact) 3 else if (summary.isNullOrBlank()) 4 else 2,
                     overflow = TextOverflow.Ellipsis
                 )
+                if (!summary.isNullOrBlank()) {
+                    Text(
+                        text = summary,
+                        style = QuietEditorial.body,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.padding(top = 4.dp)
+                    )
+                }
                 Row(
                     horizontalArrangement = Arrangement.spacedBy(14.dp),
                     verticalAlignment = Alignment.CenterVertically
@@ -729,7 +739,7 @@ fun QuietEmptyState(
 @Composable
 fun QuietErrorState(
     failure: LoadFailureKind,
-    onRetry: () -> Unit,
+    onRetry: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     Column(
@@ -751,8 +761,10 @@ fun QuietErrorState(
             color = MaterialTheme.colorScheme.error,
             textAlign = androidx.compose.ui.text.style.TextAlign.Center
         )
-        TextButton(onClick = onRetry) {
-            Text(stringResource(R.string.retry), style = QuietEditorial.label)
+        if (onRetry != null) {
+            TextButton(onClick = onRetry) {
+                Text(stringResource(R.string.retry), style = QuietEditorial.label)
+            }
         }
     }
 }
@@ -784,6 +796,78 @@ fun QuietNotice(
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
+    }
+}
+
+/** Shared editorial row for secondary destinations and settings. */
+@Composable
+fun QuietSettingRow(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    title: String,
+    summary: String? = null,
+    modifier: Modifier = Modifier,
+    checked: Boolean? = null,
+    enabled: Boolean = true,
+    onClick: (() -> Unit)? = null,
+    trailing: (@Composable () -> Unit)? = null
+) {
+    val rowModifier = modifier
+        .fillMaxWidth()
+        .then(if (onClick != null) Modifier.clickable(enabled = enabled, onClick = onClick) else Modifier)
+    Row(
+        modifier = rowModifier.padding(horizontal = 16.dp, vertical = 13.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(13.dp)
+    ) {
+        Surface(
+            modifier = Modifier.size(40.dp),
+            shape = RoundedCornerShape(12.dp),
+            color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.7f)
+        ) {
+            Box(contentAlignment = Alignment.Center) {
+                Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+            }
+        }
+        Column(modifier = Modifier.weight(1f)) {
+            Text(title, style = QuietEditorial.title, color = MaterialTheme.colorScheme.onSurface)
+            if (!summary.isNullOrBlank()) {
+                Text(
+                    summary,
+                    style = QuietEditorial.label,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(top = 2.dp)
+                )
+            }
+        }
+        when {
+            trailing != null -> trailing()
+            checked != null -> Icon(
+                imageVector = if (checked) {
+                    Icons.Filled.Check
+                } else {
+                    androidx.compose.material.icons.automirrored.filled.ArrowForwardIos
+                },
+                contentDescription = null,
+                tint = if (checked) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+}
+
+/** A thin rule-separated surface that keeps settings and lists visually calm. */
+@Composable
+fun QuietGroup(
+    modifier: Modifier = Modifier,
+    content: @Composable ColumnScope.() -> Unit
+) {
+    Surface(
+        modifier = modifier.fillMaxWidth(),
+        shape = QuietEditorial.cardShape,
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.28f)
+    ) {
+        Column(content = content)
     }
 }
 

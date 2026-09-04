@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
@@ -144,9 +145,15 @@ private fun SessionExpiredBanner(
             .fillMaxWidth()
             .statusBarsPadding(),
         color = MaterialTheme.colorScheme.errorContainer,
-        tonalElevation = 0.dp
+        tonalElevation = 1.dp,
+        shape = androidx.compose.foundation.shape.RoundedCornerShape(bottomStart = 20.dp, bottomEnd = 20.dp)
     ) {
-        Column(modifier = Modifier.padding(horizontal = QuietEditorial.pagePadding, vertical = 12.dp)) {
+        Column(
+            modifier = Modifier
+                .widthIn(max = QuietEditorial.contentMaxWidth)
+                .fillMaxWidth()
+                .padding(horizontal = QuietEditorial.pagePadding, vertical = 12.dp)
+        ) {
             Text(
                 text = stringResource(R.string.session_expired_title),
                 style = QuietEditorial.title,

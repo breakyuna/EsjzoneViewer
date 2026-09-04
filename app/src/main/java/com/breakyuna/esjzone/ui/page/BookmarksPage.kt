@@ -14,11 +14,10 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.DeleteOutline
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -44,7 +43,10 @@ import com.breakyuna.esjzone.R
 import com.breakyuna.esjzone.database.entity.Bookmark as LocalBookmark
 import com.breakyuna.esjzone.novellibrary.novel.Chapter
 import com.breakyuna.esjzone.ui.component.AppBar
-import com.breakyuna.esjzone.ui.component.Loading
+import com.breakyuna.esjzone.ui.theme.QuietEditorial
+import com.breakyuna.esjzone.ui.component.QuietEmptyState
+import com.breakyuna.esjzone.ui.component.QuietLoadingState
+import com.breakyuna.esjzone.ui.component.QuietSectionHeader
 import com.breakyuna.esjzone.ui.navigation.ChapterStateHolder
 import com.breakyuna.esjzone.ui.navigation.LocalBaseNavigator
 import com.breakyuna.esjzone.ui.navigation.pushIfNotCurrent
@@ -69,38 +71,27 @@ object BookmarksPage : Screen {
             )
 
             when (val current = state) {
-                BookmarksPageModel.State.Loading -> Loading()
+                BookmarksPageModel.State.Loading -> QuietLoadingState(modifier = Modifier.fillMaxSize())
                 is BookmarksPageModel.State.Result -> {
                     if (current.bookmarks.isEmpty()) {
-                        Column(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .padding(24.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.Center
-                        ) {
-                            Icon(
-                                imageVector = Icons.Filled.Bookmark,
-                                contentDescription = null,
-                                modifier = Modifier.size(42.dp),
-                                tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.65f)
-                            )
-                            Text(
-                                text = stringResource(id = R.string.bookmarks_empty),
-                                style = MaterialTheme.typography.bodyLarge,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.padding(top = 12.dp)
-                            )
-                        }
+                        QuietEmptyState(
+                            title = stringResource(id = R.string.bookmarks_empty),
+                            message = stringResource(id = R.string.bookmarks_description),
+                            icon = Icons.Filled.Bookmark,
+                            modifier = Modifier.fillMaxSize()
+                        )
                     } else {
                         LazyColumn(
                             modifier = Modifier.fillMaxSize(),
-                            verticalArrangement = Arrangement.spacedBy(8.dp),
-                            contentPadding = PaddingValues(
-                                horizontal = 12.dp,
-                                vertical = 12.dp
-                            )
+                            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
+                            verticalArrangement = Arrangement.spacedBy(10.dp)
                         ) {
+                            item {
+                                QuietSectionHeader(
+                                    title = stringResource(R.string.bookmarks),
+                                    modifier = Modifier.padding(bottom = 2.dp)
+                                )
+                            }
                             items(
                                 items = current.bookmarks,
                                 key = { it.chapterUrl }
@@ -143,13 +134,12 @@ private fun BookmarkRow(
     onOpen: () -> Unit,
     onDelete: () -> Unit
 ) {
-    Card(
+    Surface(
         modifier = Modifier
             .fillMaxWidth()
             .clickable(onClick = onOpen),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)
-        )
+        shape = QuietEditorial.cardShape,
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.32f)
     ) {
         Row(
             modifier = Modifier
@@ -199,7 +189,7 @@ private class BookmarksPageModel : StateScreenModel<BookmarksPageModel.State>(St
 
     sealed class State {
         data object Loading : State()
-    data class Result(val bookmarks: List<LocalBookmark>) : State()
+        data class Result(val bookmarks: List<LocalBookmark>) : State()
     }
 
     private var loadStarted = false
@@ -216,6 +206,9 @@ private class BookmarksPageModel : StateScreenModel<BookmarksPageModel.State>(St
                 throw e
             } catch (e: Exception) {
                 AppLogger.e("BookmarksPageModel", "Failed to load local bookmarks", e)
+                loadStarted = false
+                // Room failures are diagnostic-only here. Keep the screen usable
+                // and follow the local-first empty state contract.
                 mutableState.value = State.Result(emptyList())
             }
         }

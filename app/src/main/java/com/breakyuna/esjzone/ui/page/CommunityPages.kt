@@ -1,7 +1,6 @@
 package com.breakyuna.esjzone.ui.page
 
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -10,20 +9,18 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Forum
 import androidx.compose.material.icons.filled.Schedule
-import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -44,7 +41,6 @@ import com.breakyuna.esjzone.network.Authorization
 import com.breakyuna.esjzone.network.EsjzoneClient
 import com.breakyuna.esjzone.network.EsjzoneUrls
 import com.breakyuna.esjzone.network.LocalAuthorization
-import com.breakyuna.esjzone.network.LoadFailureKind
 import com.breakyuna.esjzone.network.loadFailureKind
 import com.breakyuna.esjzone.network.features.getForumCategories
 import com.breakyuna.esjzone.network.features.getForumBoard
@@ -57,6 +53,11 @@ import com.breakyuna.esjzone.novellibrary.community.ForumTopic
 import com.breakyuna.esjzone.novellibrary.community.ForumThread
 import com.breakyuna.esjzone.novellibrary.novel.CategoryNovel
 import com.breakyuna.esjzone.ui.component.AppBar
+import com.breakyuna.esjzone.ui.theme.QuietEditorial
+import com.breakyuna.esjzone.ui.component.QuietEmptyState
+import com.breakyuna.esjzone.ui.component.QuietErrorState
+import com.breakyuna.esjzone.ui.component.QuietLoadingState
+import com.breakyuna.esjzone.ui.component.QuietSectionHeader
 import com.breakyuna.esjzone.ui.navigation.LocalBaseNavigator
 import com.breakyuna.esjzone.ui.navigation.pushIfNotCurrent
 import com.breakyuna.esjzone.util.AppLogger
@@ -82,24 +83,17 @@ object ForumPage : Screen {
 
             CommunityStateContent(
                 state = state,
-                emptyText = stringResource(id = R.string.forum_empty)
+                emptyText = stringResource(id = R.string.forum_empty),
             ) { categories ->
                 val grouped = categories.groupBy { it.groupName.orEmpty() }
                 LazyColumn(modifier = Modifier.fillMaxSize()) {
                     grouped.forEach { (groupName, groupCategories) ->
                         if (groupName.isNotBlank()) {
                             item(key = "group-$groupName") {
-                                Text(
-                                    text = groupName,
-                                    style = MaterialTheme.typography.titleMedium,
-                                    fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.primary,
-                                    modifier = Modifier.padding(
-                                        start = 20.dp,
-                                        end = 20.dp,
-                                        top = 22.dp,
-                                        bottom = 8.dp
-                                    )
+                                QuietSectionHeader(
+                                    title = groupName,
+                                    modifier = Modifier.padding(top = 16.dp),
+                                    accent = MaterialTheme.colorScheme.primary
                                 )
                             }
                         }
@@ -133,7 +127,7 @@ class ForumCategoryPage(private val category: ForumCategory) : Screen {
             AppBar(title = category.name, onBack = { navigator?.pop() })
             CommunityStateContent(
                 state = state,
-                emptyText = stringResource(id = R.string.forum_threads_empty)
+                emptyText = stringResource(id = R.string.forum_threads_empty),
             ) { threads ->
                 LazyColumn(modifier = Modifier.fillMaxSize()) {
                     items(threads, key = { "forum-thread-${it.categoryId}-${it.id}" }) { thread ->
@@ -170,7 +164,7 @@ class ForumBoardPage(private val thread: ForumThread) : Screen {
             AppBar(title = thread.title, onBack = { navigator?.pop() })
             CommunityStateContent(
                 state = state,
-                emptyText = stringResource(id = R.string.forum_threads_empty)
+                emptyText = stringResource(id = R.string.forum_board_empty)
             ) { board ->
                 when (board) {
                     is ForumBoardResult.Novel -> {
@@ -221,25 +215,35 @@ class ForumPostPage(private val topic: ForumTopic) : Screen {
             CommentPageModel(authorization, topic.url)
         }
         val state by model.state.collectAsState()
+        val postScrollState = rememberScrollState()
 
         Column(modifier = Modifier.fillMaxSize()) {
             AppBar(title = topic.title, onBack = { navigator?.pop() })
             when (val snapshot = state) {
-                is CommunityState.Loading -> BoxLoading()
-                is CommunityState.Error -> BoxError(snapshot.failure)
-                is CommunityState.Empty -> BoxError()
+                is CommunityState.Loading -> QuietLoadingState(modifier = Modifier.fillMaxSize())
+                is CommunityState.Error -> QuietErrorState(
+                    failure = snapshot.failure,
+                    modifier = Modifier.fillMaxSize()
+                )
+                is CommunityState.Empty -> QuietEmptyState(
+                    title = stringResource(R.string.forum_threads_empty),
+                    message = stringResource(R.string.community_empty_guidance),
+                    icon = Icons.Filled.Forum,
+                    modifier = Modifier.fillMaxSize()
+                )
                 is CommunityState.Result -> Column(modifier = Modifier.fillMaxSize()) {
                     Column(
                         modifier = Modifier
                             .weight(1f)
                             .fillMaxWidth()
-                            .verticalScroll(rememberScrollState())
+                            .verticalScroll(postScrollState)
                     ) {
                         ForumPostCard(snapshot.data)
                         CommentSectionContent(
                             model = commentsModel,
                             showHeader = true,
-                            modifier = Modifier.fillMaxWidth()
+                            modifier = Modifier.fillMaxWidth(),
+                            scrollState = postScrollState
                         )
                     }
                     CommentComposerHost(model = commentsModel)
@@ -287,12 +291,13 @@ class ChapterCommentsPage(
 
 @Composable
 private fun ForumCategoryCard(category: ForumCategory, onClick: () -> Unit) {
-    ElevatedCard(
+    Surface(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 7.dp)
             .clickable(onClick = onClick),
-        shape = RoundedCornerShape(18.dp)
+        shape = QuietEditorial.cardShape,
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.34f)
     ) {
         Row(
             modifier = Modifier.padding(16.dp),
@@ -332,12 +337,13 @@ private fun ForumCategoryCard(category: ForumCategory, onClick: () -> Unit) {
 
 @Composable
 private fun ForumThreadCard(thread: ForumThread, onClick: () -> Unit) {
-    ElevatedCard(
+    Surface(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 7.dp)
             .clickable(onClick = onClick),
-        shape = RoundedCornerShape(18.dp)
+        shape = QuietEditorial.cardShape,
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.34f)
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
             Text(
@@ -389,18 +395,13 @@ private fun ForumTopicsContent(
     topics: List<ForumTopic>,
     onTopicClick: (ForumTopic) -> Unit
 ) {
-    if (topics.isEmpty()) {
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(24.dp),
-            contentAlignment = Alignment.Center
-        ) {
-            Text(
-                text = stringResource(id = R.string.forum_threads_empty),
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
+        if (topics.isEmpty()) {
+            QuietEmptyState(
+            title = stringResource(id = R.string.forum_board_empty),
+            message = stringResource(R.string.forum_board_empty_guidance),
+            icon = Icons.Filled.Forum,
+            modifier = Modifier.fillMaxSize()
+        )
     } else {
         LazyColumn(modifier = Modifier.fillMaxSize()) {
             items(topics, key = { "forum-topic-${it.boardId}-${it.id}" }) { topic ->
@@ -420,11 +421,12 @@ private fun ForumNovelBoardContent(
 ) {
     LazyColumn(modifier = Modifier.fillMaxSize()) {
         item(key = "forum-novel-info") {
-            ElevatedCard(
+            Surface(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp, vertical = 12.dp),
-                shape = RoundedCornerShape(18.dp)
+                shape = QuietEditorial.largeShape,
+                color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.36f)
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
                     Text(
@@ -451,17 +453,12 @@ private fun ForumNovelBoardContent(
         }
         if (board.items.isEmpty()) {
             item(key = "forum-novel-empty") {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(24.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(
-                        text = stringResource(id = R.string.forum_threads_empty),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
+                QuietEmptyState(
+                    title = stringResource(id = R.string.forum_board_empty),
+                    message = stringResource(R.string.forum_board_empty_guidance),
+                    icon = Icons.Filled.Forum,
+                    modifier = Modifier.fillMaxWidth()
+                )
             }
         } else {
             items(board.items, key = { "forum-topic-${it.boardId}-${it.id}" }) { topic ->
@@ -474,12 +471,13 @@ private fun ForumNovelBoardContent(
 
 @Composable
 private fun ForumTopicCard(topic: ForumTopic, onClick: () -> Unit) {
-    ElevatedCard(
+    Surface(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 7.dp)
             .clickable(onClick = onClick),
-        shape = RoundedCornerShape(18.dp)
+        shape = QuietEditorial.cardShape,
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.34f)
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
             Text(
@@ -537,11 +535,12 @@ private fun ForumTopicCard(topic: ForumTopic, onClick: () -> Unit) {
 
 @Composable
 private fun ForumPostCard(post: ForumPost) {
-    ElevatedCard(
+    Surface(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 12.dp),
-        shape = RoundedCornerShape(18.dp)
+        shape = QuietEditorial.largeShape,
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.34f)
     ) {
         Column(modifier = Modifier.padding(18.dp)) {
             Text(
@@ -571,39 +570,12 @@ private fun ForumPostCard(post: ForumPost) {
     }
 }
 
-@Composable
-private fun BoxLoading() {
-    androidx.compose.foundation.layout.Box(
-        modifier = Modifier.fillMaxSize(),
-        contentAlignment = Alignment.Center
-    ) { androidx.compose.material3.CircularProgressIndicator() }
-}
-
-@Composable
-private fun BoxError(failure: LoadFailureKind = LoadFailureKind.CLIENT) {
-    androidx.compose.foundation.layout.Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(24.dp),
-        contentAlignment = Alignment.Center
-    ) {
-        Text(
-            text = stringResource(
-                if (failure == LoadFailureKind.NETWORK) {
-                    R.string.load_network_error
-                } else {
-                    R.string.load_client_error
-                }
-            ),
-            color = MaterialTheme.colorScheme.error
-        )
-    }
-}
-
 private class ForumPageModel(
     private val authorization: Authorization
 ) : StateScreenModel<CommunityState<List<ForumCategory>>>(CommunityState.Loading) {
     private var loadStarted = false
+
+    fun retry() = load()
 
     fun load() {
         if (loadStarted) return
@@ -627,6 +599,8 @@ private class ForumCategoryPageModel(
     private val category: ForumCategory
 ) : StateScreenModel<CommunityState<List<ForumThread>>>(CommunityState.Loading) {
     private var loadStarted = false
+
+    fun retry() = load()
 
     fun load() {
         if (loadStarted) return
@@ -657,6 +631,8 @@ private class ForumBoardPageModel(
 ) {
     private var loadStarted = false
 
+    fun retry() = load()
+
     fun load() {
         if (loadStarted) return
         loadStarted = true
@@ -683,6 +659,8 @@ private class ForumPostPageModel(
     private val topic: ForumTopic
 ) : StateScreenModel<CommunityState<ForumPost>>(CommunityState.Loading) {
     private var loadStarted = false
+
+    fun retry() = load()
 
     fun load() {
         if (loadStarted) return

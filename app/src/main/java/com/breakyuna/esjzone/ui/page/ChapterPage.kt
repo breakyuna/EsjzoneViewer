@@ -27,6 +27,7 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -121,6 +122,7 @@ import com.breakyuna.esjzone.ui.reader.ReaderScript
 import com.breakyuna.esjzone.ui.reader.ReaderScriptConverter
 import com.breakyuna.esjzone.ui.reader.ReaderSettings
 import com.breakyuna.esjzone.ui.reader.ReaderSettingsStore
+import com.breakyuna.esjzone.ui.theme.QuietEditorial
 import com.breakyuna.esjzone.util.AppLogger
 
 class ChapterPage(
@@ -443,6 +445,39 @@ class ChapterPage(
             currentBookLocation?.bookProgress ?: 0f
         }
         val currentChapterName = currentReadingChapter.name
+
+        fun seekTo(location: ReaderBookLocation) {
+            pendingSeekLocation = location
+            val current = currentReadingChapter
+            if (!sameReaderChapter(current, location.chapter)) {
+                chapterPageModel.openChapter(location.chapter)
+            }
+        }
+
+        // Progress gestures are shared by the compact reading rail and the
+        // expanded controls. Keeping the callbacks here guarantees that both
+        // surfaces capture the same active chapter/fraction snapshot.
+        fun beginBookProgressPreview(progress: Float) {
+            progressReturnLocation = currentBookLocation
+            isBookProgressDragging = true
+            progressPreview = readerBookLocationFor(
+                bookProgress = progress,
+                chapterOrder = bookChapterOrder
+            )
+        }
+
+        fun updateBookProgressPreview(progress: Float) {
+            progressPreview = readerBookLocationFor(
+                bookProgress = progress,
+                chapterOrder = bookChapterOrder
+            )
+        }
+
+        fun finishBookProgressPreview() {
+            isBookProgressDragging = false
+            progressPreview?.let(::seekTo)
+        }
+
         var previousBootstrapFor by remember { mutableStateOf<String?>(null) }
 
         var previousRequestedChapterUrl by remember { mutableStateOf<String?>(null) }
@@ -511,14 +546,6 @@ class ChapterPage(
             pendingSeekLocation = null
         }
 
-        fun seekTo(location: ReaderBookLocation) {
-            pendingSeekLocation = location
-            val current = currentReadingChapter
-            if (!sameReaderChapter(current, location.chapter)) {
-                chapterPageModel.openChapter(location.chapter)
-            }
-        }
-
         fun openTargetChapter(target: Chapter) {
             pendingSeekLocation = null
             chapterPageModel.openChapter(target)
@@ -549,20 +576,23 @@ class ChapterPage(
                     },
                 color = readerSettings.background.containerColor()
             ) {
-                LazyColumn(
-                    state = scrollState,
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(horizontal = readerSettings.horizontalPaddingDp.dp),
-                    verticalArrangement = Arrangement.spacedBy(readerSettings.pageSpacingDp.dp),
-                    contentPadding = androidx.compose.foundation.layout.PaddingValues(
-                        // Reserve a fixed, quiet header area.  The header is
-                        // an overlay and never changes the list geometry when
-                        // the controls are shown or hidden.
-                        top = 52.dp,
-                        bottom = 80.dp
-                    )
-                ) {
+                Box(modifier = Modifier.fillMaxSize()) {
+                    LazyColumn(
+                        state = scrollState,
+                        modifier = Modifier
+                            .fillMaxHeight()
+                            .fillMaxWidth()
+                            .widthIn(max = QuietEditorial.contentMaxWidth)
+                            .align(Alignment.Center)
+                            .padding(horizontal = readerSettings.horizontalPaddingDp.dp),
+                        verticalArrangement = Arrangement.spacedBy(readerSettings.pageSpacingDp.dp),
+                        contentPadding = androidx.compose.foundation.layout.PaddingValues(
+                            // Reserve a fixed, quiet header area. The header
+                            // is an overlay and never changes list geometry.
+                            top = 52.dp,
+                            bottom = 80.dp
+                        )
+                    ) {
                     when (state) {
                         is ChapterPageModel.State.Loading -> item(key = "reader-loading") {
                             Column {
@@ -641,6 +671,7 @@ class ChapterPage(
                         }
                     }
                 }
+                }
             }
 
             ReaderStatusBar(
@@ -677,6 +708,34 @@ class ChapterPage(
                 }
             }
 
+            // A quiet rail remains available in immersive mode. It gives the
+            // reader orientation without turning the transient controls into
+            // part of the scrollable content or changing its anchor.
+            if (
+                !showToolbar &&
+                !showReaderContents &&
+                !showReaderSettings &&
+                progressPreview == null &&
+                state is ChapterPageModel.State.Result &&
+                bookChapterOrder.isNotEmpty()
+            ) {
+                ReaderMiniProgress(
+                    progress = displayedBookProgress,
+                    chapterIndex = currentBookLocation?.chapterIndex ?: -1,
+                    totalChapters = currentBookLocation?.totalChapters ?: bookChapterOrder.size,
+                    enabled = bookChapterOrder.isNotEmpty(),
+                    onDragStart = ::beginBookProgressPreview,
+                    onDrag = ::updateBookProgressPreview,
+                    onDragFinished = ::finishBookProgressPreview,
+                    onDragCancelled = ::finishBookProgressPreview,
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .navigationBarsPadding()
+                        .padding(horizontal = 16.dp, bottom = 14.dp)
+                        .zIndex(2f)
+                )
+            }
+
             AnimatedVisibility(
                 visible = progressPreview != null,
                 enter = fadeIn(),
@@ -690,6 +749,7 @@ class ChapterPage(
                 progressPreview?.let { preview ->
                     ReaderProgressPreview(
                         location = preview,
+                        origin = progressReturnLocation,
                         canReturn = progressReturnLocation != null,
                         onReturn = {
                             progressReturnLocation?.let { location ->
@@ -715,14 +775,14 @@ class ChapterPage(
                 ) {
                     Surface(
                         modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp),
-                        color = MaterialTheme.colorScheme.surface,
-                        shadowElevation = 8.dp
+                        shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
+                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.96f),
+                        shadowElevation = 0.dp
                     ) {
                         Column(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(start = 16.dp, top = 14.dp, end = 16.dp)
+                                .padding(start = 16.dp, top = 12.dp, end = 16.dp)
                         ) {
                             if (state is ChapterPageModel.State.Result) {
                                 val readerResult = state as ChapterPageModel.State.Result
@@ -741,54 +801,45 @@ class ChapterPage(
                                     null
                                 } ?: readerResult.next
 
-                                ReaderBookProgressBar(
-                                    progress = displayedBookProgress,
-                                    enabled = bookChapterOrder.isNotEmpty(),
-                                    previousEnabled = activePrevious != null,
-                                    nextEnabled = activeNext != null,
-                                    onPrevious = {
-                                        activePrevious?.let { previous ->
-                                            if (novelId == previous.novelId()) {
-                                                historyState.value = previous
+                                if (bookChapterOrder.isNotEmpty()) {
+                                    ReaderBookProgressBar(
+                                        progress = displayedBookProgress,
+                                        enabled = true,
+                                        previousEnabled = activePrevious != null,
+                                        nextEnabled = activeNext != null,
+                                        onPrevious = {
+                                            activePrevious?.let { previous ->
+                                                if (novelId == previous.novelId()) {
+                                                    historyState.value = previous
+                                                }
+                                                dismissProgressPreview()
+                                                openTargetChapter(previous)
                                             }
-                                            dismissProgressPreview()
-                                            openTargetChapter(previous)
-                                        }
-                                    },
-                                    onNext = {
-                                        activeNext?.let { next ->
-                                            if (novelId == next.novelId()) {
-                                                historyState.value = next
+                                        },
+                                        onNext = {
+                                            activeNext?.let { next ->
+                                                if (novelId == next.novelId()) {
+                                                    historyState.value = next
+                                                }
+                                                dismissProgressPreview()
+                                                openTargetChapter(next)
                                             }
-                                            dismissProgressPreview()
-                                            openTargetChapter(next)
-                                        }
-                                    },
-                                    onDragStart = { progress ->
-                                        progressReturnLocation = currentBookLocation
-                                        isBookProgressDragging = true
-                                        progressPreview = readerBookLocationFor(
-                                            bookProgress = progress,
-                                            chapterOrder = bookChapterOrder
-                                        )
-                                    },
-                                    onDrag = { progress ->
-                                        progressPreview = readerBookLocationFor(
-                                            bookProgress = progress,
-                                            chapterOrder = bookChapterOrder
-                                        )
-                                    },
-                                    onDragFinished = {
-                                        isBookProgressDragging = false
-                                        progressPreview?.let(::seekTo)
-                                    },
-                                    onDragCancelled = {
-                                        isBookProgressDragging = false
-                                        progressPreview?.let(::seekTo)
-                                    }
-                                )
+                                        },
+                                        onDragStart = ::beginBookProgressPreview,
+                                        onDrag = ::updateBookProgressPreview,
+                                        onDragFinished = ::finishBookProgressPreview,
+                                        onDragCancelled = ::finishBookProgressPreview
+                                    )
+                                } else {
+                                    Text(
+                                        text = stringResource(R.string.reader_progress_unavailable),
+                                        style = MaterialTheme.typography.labelMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.padding(vertical = 12.dp)
+                                    )
+                                }
 
-                                Spacer(modifier = Modifier.height(8.dp))
+                                Spacer(modifier = Modifier.height(4.dp))
                             }
 
                             val commentChapter = currentReadingChapter
@@ -796,61 +847,51 @@ class ChapterPage(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .navigationBarsPadding()
-                                    .padding(bottom = 10.dp),
+                                    .padding(bottom = 8.dp),
                                 horizontalArrangement = Arrangement.SpaceEvenly,
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                FilledTonalIconButton(
+                                ReaderToolButton(
+                                    label = stringResource(R.string.reader_contents_action),
+                                    contentDescription = stringResource(R.string.reader_contents),
+                                    icon = Icons.Filled.List,
                                     onClick = {
                                         dismissProgressPreview()
                                         showReaderSettings = false
                                         showReaderContents = true
                                     }
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Filled.List,
-                                        contentDescription = stringResource(
-                                            id = R.string.reader_contents
-                                        )
-                                    )
-                                }
-                                FilledTonalIconButton(
+                                )
+                                ReaderToolButton(
+                                    label = stringResource(R.string.reader_settings_action),
+                                    contentDescription = stringResource(R.string.reader_settings),
+                                    icon = Icons.Filled.Settings,
                                     onClick = {
                                         dismissProgressPreview()
                                         showReaderContents = false
                                         showReaderSettings = true
                                     }
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Filled.Settings,
-                                        contentDescription = stringResource(
-                                            id = R.string.reader_settings
-                                        )
-                                    )
-                                }
-                                FilledTonalIconButton(
+                                )
+                                ReaderToolButton(
+                                    label = stringResource(R.string.reader_bookmark_action),
+                                    contentDescription = stringResource(
+                                        if (isBookmarked) R.string.reader_remove_bookmark
+                                        else R.string.reader_add_bookmark
+                                    ),
+                                    icon = if (isBookmarked) {
+                                        Icons.Filled.Bookmark
+                                    } else {
+                                        Icons.Filled.BookmarkBorder
+                                    },
                                     enabled = state is ChapterPageModel.State.Result,
                                     onClick = {
                                         dismissProgressPreview()
                                         toggleBookmark()
                                     }
-                                ) {
-                                    Icon(
-                                        imageVector = if (isBookmarked) {
-                                            Icons.Filled.Bookmark
-                                        } else {
-                                            Icons.Filled.BookmarkBorder
-                                        },
-                                        contentDescription = stringResource(
-                                            id = if (isBookmarked) {
-                                                R.string.reader_remove_bookmark
-                                            } else {
-                                                R.string.reader_add_bookmark
-                                            }
-                                        )
-                                    )
-                                }
-                                FilledTonalIconButton(
+                                )
+                                ReaderToolButton(
+                                    label = stringResource(R.string.reader_comments_action),
+                                    contentDescription = stringResource(R.string.comments),
+                                    icon = Icons.Filled.Forum,
                                     enabled = state is ChapterPageModel.State.Result,
                                     onClick = {
                                         dismissProgressPreview()
@@ -861,21 +902,19 @@ class ChapterPage(
                                             )
                                         )
                                     }
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Filled.Forum,
-                                        contentDescription = stringResource(
-                                            id = R.string.comments
-                                        )
-                                    )
-                                }
+                                )
                                 val detailUrl = novelUrl.ifBlank {
                                     novelId.ifBlank { commentChapter.novelId() }
                                         .takeIf { it.isNotBlank() }
                                         ?.let { id -> EsjzoneUrls.resolve("/detail/$id.html") }
                                         .orEmpty()
                                 }
-                                FilledTonalIconButton(
+                                ReaderToolButton(
+                                    label = stringResource(R.string.reader_details_action),
+                                    contentDescription = stringResource(
+                                        R.string.reader_open_novel_detail
+                                    ),
+                                    icon = Icons.AutoMirrored.Filled.MenuBook,
                                     enabled = detailUrl.isNotBlank(),
                                     onClick = {
                                         dismissProgressPreview()
@@ -891,14 +930,7 @@ class ChapterPage(
                                             )
                                         )
                                     }
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.AutoMirrored.Filled.MenuBook,
-                                        contentDescription = stringResource(
-                                            id = R.string.reader_open_novel_detail
-                                        )
-                                    )
-                                }
+                                )
                             }
                         }
                     }
@@ -910,22 +942,54 @@ class ChapterPage(
                 enter = fadeIn(),
                 exit = fadeOut(),
                 modifier = Modifier
-                    .align(Alignment.TopStart)
+                    .align(Alignment.TopCenter)
+                    .fillMaxWidth()
                     .statusBarsPadding()
-                    .padding(start = 12.dp, top = 8.dp)
+                    .padding(top = 4.dp)
                     .zIndex(2f)
             ) {
-                IconButton(
-                    modifier = Modifier.background(
-                        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.78f),
-                        shape = androidx.compose.foundation.shape.CircleShape
-                    ),
-                    onClick = { navigator?.pop() }
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(bottomStart = 20.dp, bottomEnd = 20.dp),
+                    color = MaterialTheme.colorScheme.surface.copy(alpha = 0.96f)
                 ) {
-                    Icon(
-                        imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                        contentDescription = stringResource(id = R.string.reader_back)
-                    )
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 8.dp, vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        IconButton(
+                            onClick = { navigator?.pop() },
+                            modifier = Modifier.size(48.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                                contentDescription = stringResource(id = R.string.reader_back)
+                            )
+                        }
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = novelName.ifBlank { stringResource(R.string.reader_contents) },
+                                style = MaterialTheme.typography.titleMedium,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Text(
+                                text = currentChapterName,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                        Icon(
+                            imageVector = if (isBookmarked) Icons.Filled.Bookmark else Icons.Filled.BookmarkBorder,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.padding(horizontal = 12.dp).size(22.dp)
+                        )
+                    }
                 }
             }
         }
@@ -1015,6 +1079,12 @@ class ChapterPage(
         ReaderSettingsDrawer(
             visible = showReaderSettings,
             settings = readerSettings,
+            previewText = activeChapter?.detail?.content
+                ?.filterIsInstance<TextComponent>()
+                ?.firstOrNull()
+                ?.text
+                ?.let(readerTextTransform)
+                .orEmpty(),
             onSettingsChange = { updated -> updateReaderSettings(updated) },
             onDismiss = { showReaderSettings = false }
         )
@@ -1156,6 +1226,7 @@ private fun ReaderStatusBar(
 @Composable
 private fun ReaderProgressPreview(
     location: ReaderBookLocation,
+    origin: ReaderBookLocation?,
     canReturn: Boolean,
     onReturn: () -> Unit
 ) {
@@ -1166,37 +1237,75 @@ private fun ReaderProgressPreview(
         shape = RoundedCornerShape(16.dp),
         color = MaterialTheme.colorScheme.inverseSurface,
         contentColor = MaterialTheme.colorScheme.inverseOnSurface,
-        shadowElevation = 10.dp
+        shadowElevation = 0.dp,
+        tonalElevation = 1.dp
     ) {
-        Row(
-            modifier = Modifier.padding(start = 18.dp, top = 12.dp, bottom = 12.dp, end = 8.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = location.chapter.name,
-                    style = MaterialTheme.typography.titleMedium,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                Text(
-                    text = stringResource(
-                        id = R.string.reader_progress_chapter_count,
-                        location.chapterIndex + 1,
-                        location.totalChapters
-                    ),
-                    style = MaterialTheme.typography.bodyMedium
-                )
-            }
-            IconButton(
-                enabled = canReturn,
-                onClick = onReturn
+        Column {
+            Row(
+                modifier = Modifier.padding(start = 18.dp, top = 12.dp, end = 8.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Icon(
-                    imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                    contentDescription = stringResource(id = R.string.reader_return_progress)
-                )
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = location.chapter.name,
+                        style = MaterialTheme.typography.titleMedium,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Text(
+                        text = stringResource(
+                            id = R.string.reader_progress_chapter_count,
+                            location.chapterIndex + 1,
+                            location.totalChapters
+                        ),
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                    Text(
+                        text = stringResource(
+                            id = R.string.reader_preview_percent,
+                            (location.chapterProgress * 100f).roundToInt()
+                        ),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    origin?.let { captured ->
+                        Text(
+                            text = stringResource(
+                                R.string.reader_preview_origin,
+                                stringResource(
+                                    R.string.reader_progress_chapter_count,
+                                    captured.chapterIndex + 1,
+                                    captured.totalChapters
+                                )
+                            ),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.inverseOnSurface.copy(alpha = 0.72f),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
+                if (canReturn) {
+                    TextButton(onClick = onReturn) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Text(
+                            text = stringResource(R.string.reader_preview_return),
+                            modifier = Modifier.padding(start = 4.dp),
+                            maxLines = 1
+                        )
+                    }
+                }
             }
+            Text(
+                text = stringResource(R.string.reader_preview_dismiss_hint),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.inverseOnSurface.copy(alpha = 0.68f),
+                modifier = Modifier.padding(start = 18.dp, bottom = 10.dp)
+            )
         }
     }
 }
@@ -1341,6 +1450,170 @@ private fun ChapterHeading(
 }
 
 @Composable
+private fun ReaderMiniProgress(
+    progress: Float,
+    chapterIndex: Int,
+    totalChapters: Int,
+    enabled: Boolean,
+    onDragStart: (Float) -> Unit,
+    onDrag: (Float) -> Unit,
+    onDragFinished: () -> Unit,
+    onDragCancelled: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Surface(
+        modifier = modifier
+            .fillMaxWidth()
+            .widthIn(max = QuietEditorial.contentMaxWidth),
+        shape = RoundedCornerShape(24.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.9f),
+        tonalElevation = 0.dp
+    ) {
+        Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = if (chapterIndex >= 0 && totalChapters > 0) {
+                        stringResource(
+                            R.string.reader_progress_chapter_count,
+                            chapterIndex + 1,
+                            totalChapters
+                        )
+                    } else {
+                        stringResource(R.string.reader_contents)
+                    },
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.weight(1f)
+                )
+                Text(
+                    text = stringResource(
+                        R.string.reader_book_progress_percent,
+                        (progress.coerceIn(0f, 1f) * 100f).roundToInt()
+                    ),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.primary
+                )
+            }
+            ReaderScrubber(
+                progress = progress,
+                enabled = enabled,
+                onDragStart = onDragStart,
+                onDrag = onDrag,
+                onDragFinished = onDragFinished,
+                onDragCancelled = onDragCancelled
+            )
+        }
+    }
+}
+
+@Composable
+private fun ReaderScrubber(
+    progress: Float,
+    enabled: Boolean,
+    onDragStart: (Float) -> Unit,
+    onDrag: (Float) -> Unit,
+    onDragFinished: () -> Unit,
+    onDragCancelled: () -> Unit
+) {
+    val activeColor = MaterialTheme.colorScheme.primary
+    val inactiveColor = MaterialTheme.colorScheme.surfaceVariant
+    val disabledColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.18f)
+    val currentOnDragStart by rememberUpdatedState(onDragStart)
+    val currentOnDrag by rememberUpdatedState(onDrag)
+    val currentOnDragFinished by rememberUpdatedState(onDragFinished)
+    val currentOnDragCancelled by rememberUpdatedState(onDragCancelled)
+    val trackInset = with(LocalDensity.current) { 9.dp.toPx() }
+
+    Canvas(
+        modifier = Modifier
+            .fillMaxWidth()
+            // Keep the long-press target at the minimum touch size while the
+            // visual rail itself remains the specified 6dp/9dp treatment.
+            .height(48.dp)
+            .pointerInput(enabled, trackInset) {
+                if (!enabled) return@pointerInput
+                fun progressAt(x: Float): Float {
+                    val usableWidth = max(size.width.toFloat() - trackInset * 2f, 1f)
+                    return ((x - trackInset) / usableWidth).coerceIn(0f, 1f)
+                }
+                detectDragGesturesAfterLongPress(
+                    onDragStart = { offset -> currentOnDragStart(progressAt(offset.x)) },
+                    onDrag = { change, _ ->
+                        change.consume()
+                        currentOnDrag(progressAt(change.position.x))
+                    },
+                    onDragEnd = currentOnDragFinished,
+                    onDragCancel = currentOnDragCancelled
+                )
+            }
+    ) {
+        val centerY = size.height / 2f
+        val startX = trackInset
+        val endX = max(size.width - trackInset, startX)
+        val thumbX = startX + (endX - startX) * progress.coerceIn(0f, 1f)
+        val trackColor = if (enabled) inactiveColor else disabledColor
+        val progressColor = if (enabled) activeColor else disabledColor
+        drawLine(
+            color = trackColor,
+            start = Offset(startX, centerY),
+            end = Offset(endX, centerY),
+            strokeWidth = 6.dp.toPx(),
+            cap = StrokeCap.Round
+        )
+        drawLine(
+            color = progressColor,
+            start = Offset(startX, centerY),
+            end = Offset(thumbX, centerY),
+            strokeWidth = 6.dp.toPx(),
+            cap = StrokeCap.Round
+        )
+        drawCircle(
+            color = progressColor,
+            radius = 9.dp.toPx(),
+            center = Offset(thumbX, centerY)
+        )
+    }
+}
+
+@Composable
+private fun ReaderToolButton(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    label: String,
+    contentDescription: String,
+    enabled: Boolean = true,
+    onClick: () -> Unit
+) {
+    Column(
+        modifier = Modifier.widthIn(min = 56.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        FilledTonalIconButton(
+            enabled = enabled,
+            onClick = onClick
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = contentDescription
+            )
+        }
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelSmall,
+            color = if (enabled) {
+                MaterialTheme.colorScheme.onSurfaceVariant
+            } else {
+                MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
+            },
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
+    }
+}
+
+@Composable
 private fun ReaderChapterBlock(
     entry: ReaderChapter,
     textMeasurer: androidx.compose.ui.text.TextMeasurer,
@@ -1479,13 +1752,15 @@ private fun ReaderDrawer(
                 .align(alignment)
                 .fillMaxHeight()
                 .fillMaxWidth(2f / 3f)
+                .widthIn(max = 480.dp)
                 .zIndex(1f)
         ) {
             Surface(
                 modifier = Modifier.fillMaxSize(),
                 shape = shape,
                 color = MaterialTheme.colorScheme.surface,
-                shadowElevation = 12.dp
+                shadowElevation = 0.dp,
+                tonalElevation = 1.dp
             ) {
                 content()
             }
@@ -1596,6 +1871,7 @@ private fun sameReaderChapter(first: Chapter, second: Chapter): Boolean =
 private fun ReaderSettingsDrawer(
     visible: Boolean,
     settings: ReaderSettings,
+    previewText: String,
     onSettingsChange: (ReaderSettings) -> Unit,
     onDismiss: () -> Unit
 ) {
@@ -1632,6 +1908,47 @@ private fun ReaderSettingsDrawer(
                         imageVector = Icons.Filled.Close,
                         contentDescription = stringResource(id = R.string.close)
                     )
+                }
+            }
+
+            Surface(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 12.dp),
+                shape = RoundedCornerShape(20.dp),
+                color = settings.background.containerColor().copy(alpha = 0.72f),
+                contentColor = settings.background.contentColor()
+            ) {
+                Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = stringResource(R.string.reader_live_preview),
+                            style = MaterialTheme.typography.labelLarge,
+                            modifier = Modifier.weight(1f)
+                        )
+                        Text(
+                            text = "${settings.fontSizeSp.roundToInt()}sp",
+                            style = MaterialTheme.typography.labelLarge,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                    if (previewText.isNotBlank()) {
+                        Text(
+                            text = previewText,
+                            style = MaterialTheme.typography.bodyLarge.copy(
+                                fontFamily = settings.font.family,
+                                fontSize = settings.fontSizeSp.sp,
+                                lineHeight = settings.lineHeightSp.sp,
+                                letterSpacing = settings.letterSpacingSp.sp
+                            ),
+                            maxLines = 3,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.padding(top = 8.dp)
+                        )
+                    }
                 }
             }
 

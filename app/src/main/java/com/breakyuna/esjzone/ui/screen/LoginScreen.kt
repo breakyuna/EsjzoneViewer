@@ -1,18 +1,21 @@
 package com.breakyuna.esjzone.ui.screen
 
-import android.widget.Toast
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Email
@@ -21,18 +24,14 @@ import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.PlainTooltip
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextField
-import androidx.compose.material3.TooltipBox
-import androidx.compose.material3.TooltipDefaults
-import androidx.compose.material3.TooltipState
-import androidx.compose.material3.rememberTooltipState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -41,305 +40,258 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.focus.onFocusChanged
-import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardActions
+import androidx.compose.ui.text.input.KeyboardOptions
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.em
-import androidx.compose.ui.unit.sp
 import cafe.adriel.voyager.core.screen.Screen
 import cafe.adriel.voyager.navigator.LocalNavigator
 import cafe.adriel.voyager.navigator.currentOrThrow
+import com.breakyuna.esjzone.GlobalSettings
+import com.breakyuna.esjzone.MainActivity
+import com.breakyuna.esjzone.R
+import com.breakyuna.esjzone.database.BookshelfRepository
+import com.breakyuna.esjzone.database.dao.put
+import com.breakyuna.esjzone.network.EsjzoneClient
+import com.breakyuna.esjzone.ui.theme.QuietEditorial
+import com.breakyuna.esjzone.ui.component.QuietGroup
+import com.breakyuna.esjzone.ui.component.QuietSectionHeader
+import com.breakyuna.esjzone.util.AppLogger
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import com.breakyuna.esjzone.GlobalSettings
-import com.breakyuna.esjzone.MainActivity
-import com.breakyuna.esjzone.R
-import com.breakyuna.esjzone.database.dao.put
-import com.breakyuna.esjzone.database.BookshelfRepository
-import com.breakyuna.esjzone.network.EsjzoneClient
-import com.breakyuna.esjzone.network.features.login
-import com.breakyuna.esjzone.util.AppLogger
 
 object LoginScreen : Screen {
-
     private fun readResolve(): Any = LoginScreen
 
-    @OptIn(ExperimentalMaterial3Api::class)
     @Composable
     override fun Content() {
-        val context = LocalContext.current
         val navigator = LocalNavigator.currentOrThrow
         val scope = rememberCoroutineScope()
+        var currentDomain by remember { GlobalSettings.domain }
+        var email by remember { mutableStateOf("") }
+        var password by remember { mutableStateOf("") }
+        var passwordVisible by remember { mutableStateOf(false) }
+        var emailError by remember { mutableStateOf(false) }
+        var passwordError by remember { mutableStateOf(false) }
+        var loggingIn by remember { mutableStateOf(false) }
+        var loginFailed by remember { mutableStateOf(false) }
 
-        Column(
-            modifier = Modifier.fillMaxSize(),
-            verticalArrangement = Arrangement.Center,
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            Text(
-                text = stringResource(id = R.string.app_name),
-                fontSize = 12.em
-            )
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            var currentDomain by remember {
-                GlobalSettings.domain
-            }
-
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 32.dp),
-                horizontalArrangement = Arrangement.Center
-            ) {
-                for (domain in GlobalSettings.DOMAINS) {
-                    val selected = currentDomain == domain
-                    FilterChip(
-                        selected = selected,
-                        onClick = {
-                            currentDomain = domain
-                            GlobalSettings.domain.value = domain
-                            scope.launch(Dispatchers.IO) {
-                                try {
-                                    MainActivity.database.cacheDao().put("domain", domain)
-                                } catch (e: CancellationException) {
-                                    throw e
-                                } catch (e: Exception) {
-                                    AppLogger.e("LoginScreen", "Failed to persist selected domain", e)
-                                }
+        fun submit() {
+            emailError = email.trim().isBlank()
+            passwordError = password.isBlank()
+            if (emailError || passwordError || loggingIn) return
+            loggingIn = true
+            loginFailed = false
+            val selectedDomain = currentDomain
+            scope.launch {
+                try {
+                    val authorization = withContext(Dispatchers.IO) {
+                        val result = EsjzoneClient.login(email.trim(), password)
+                        if (result != null) {
+                            MainActivity.database.runInTransaction {
+                                val dao = MainActivity.database.cacheDao()
+                                dao.put("domain", selectedDomain)
+                                dao.put("session_domain", selectedDomain)
+                                dao.put("ews_key", result.ewsKey)
+                                dao.put("ews_token", result.ewsToken)
                             }
-                        },
-                        label = { Text(domain) },
-                        modifier = Modifier.padding(horizontal = 4.dp),
-                        leadingIcon = if (selected) {
-                            @Composable {
-                                Icon(
-                                    imageVector = Icons.Filled.Check,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(FilterChipDefaults.IconSize)
-                                )
-                            }
-                        } else null
-                    )
+                        }
+                        result
+                    }
+                    if (authorization != null) {
+                        BookshelfRepository.scheduleSync(authorization)
+                        navigator.replace(MainScreen(authorization))
+                    } else {
+                        loginFailed = true
+                    }
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    AppLogger.e("LoginScreen", "Login flow failed", e)
+                    loginFailed = true
+                } finally {
+                    loggingIn = false
                 }
             }
+        }
 
-            Spacer(modifier = Modifier.height(32.dp))
-
-            var email by remember {
-                mutableStateOf("")
-            }
-            var password by remember {
-                mutableStateOf("")
-            }
-            var passwordVisible by remember {
-                mutableStateOf(false)
-            }
-            var buttonEnabled by remember {
-                mutableStateOf(true)
-            }
-            var loggingIn by remember {
-                mutableStateOf(false)
-            }
-
-            var emailError by remember {
-                mutableStateOf(false)
-            }
-            val emailTooltip = rememberTooltipState(isPersistent = true)
-
-            var passwordError by remember {
-                mutableStateOf(false)
-            }
-            val passwordTooltip = rememberTooltipState(isPersistent = true)
-
-            TextField(
-                value = email,
-                onValueChange = { email = it },
-                label = {
-                    Text(text = stringResource(id = R.string.email))
-                },
-                placeholder = {
-                    Text(text = stringResource(id = R.string.email))
-                },
-                readOnly = loggingIn,
-                singleLine = true,
-                leadingIcon = {
-                    TooltipBox(
-                        positionProvider = TooltipDefaults.rememberPlainTooltipPositionProvider(),
-                        tooltip = {
-                            PlainTooltip {
-                                Text(
-                                    text = stringResource(id = R.string.field_required),
-                                    fontSize = 14.sp,
-                                    modifier = Modifier.padding(4.dp)
-                                )
-                            }
-                        },
-                        focusable = false,
-                        state = emailTooltip
-                    ) {
-                        Icon(imageVector = Icons.Filled.Email, contentDescription = "")
-                    }
-                },
+        Box(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(start = 32.dp, end = 32.dp)
-                    .onFocusChanged {
-                        if (it.isFocused) {
-                            emailError = false
-                            emailTooltip.dismiss()
-                        }
-                    },
-                isError = emailError
-            )
-            Spacer(modifier = Modifier.height(10.dp))
-            TextField(
-                value = password,
-                onValueChange = { password = it },
-                label = {
-                    Text(text = stringResource(id = R.string.password))
-                },
-                placeholder = {
-                    Text(text = stringResource(id = R.string.password))
-                },
-                readOnly = loggingIn,
-                singleLine = true,
-                visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
-                leadingIcon = {
-                    TooltipBox(
-                        positionProvider = TooltipDefaults.rememberPlainTooltipPositionProvider(),
-                        tooltip = {
-                            PlainTooltip {
-                                Text(
-                                    text = stringResource(id = R.string.field_required),
-                                    fontSize = 14.sp,
-                                    modifier = Modifier.padding(4.dp)
-                                )
-                            }
-                        },
-                        focusable = false,
-                        state = passwordTooltip
-                    ) {
-                        Icon(imageVector = Icons.Filled.Key, contentDescription = "")
-                    }
-                },
-                trailingIcon = {
-                    val image = if (passwordVisible)
-                        Icons.Filled.Visibility
-                    else
-                        Icons.Filled.VisibilityOff
-
-                    val description =
-                        stringResource(id = if (passwordVisible) R.string.password_hide else R.string.password_show)
-
-                    IconButton(onClick = { passwordVisible = !passwordVisible }) {
-                        Icon(imageVector = image, description)
-                    }
-                },
+                    .fillMaxSize()
+                    .background(MaterialTheme.colorScheme.background)
+                .safeDrawingPadding()
+                .imePadding(),
+            contentAlignment = Alignment.Center
+        ) {
+            Column(
                 modifier = Modifier
+                    .widthIn(max = 560.dp)
                     .fillMaxWidth()
-                    .padding(start = 32.dp, end = 32.dp)
-                    .onFocusChanged {
-                        if (it.isFocused) {
-                            passwordError = false
-                            passwordTooltip.dismiss()
-                        }
-                    },
-                isError = passwordError
-            )
-            Spacer(modifier = Modifier.height(50.dp))
-            Button(
-                onClick = {
-                    var pass = true
-                    val tooltips = mutableListOf<TooltipState>()
-                    if (email.isEmpty()) {
-                        emailError = true
-                        tooltips.add(emailTooltip)
-                        pass = false
-                    }
-                    if (password.isEmpty()) {
-                        passwordError = true
-                        tooltips.add(passwordTooltip)
-                        pass = false
-                    }
-                    scope.launch {
-                        for (tooltip in tooltips)
-                            tooltip.show()
-                    }
-                    if (!pass)
-                        return@Button
-                    buttonEnabled = false
-                    loggingIn = true
-                    val selectedDomain = GlobalSettings.domain.value
-                    scope.launch {
-                        try {
-                            val authorization = withContext(Dispatchers.IO) {
-                                val result = EsjzoneClient.login(email, password)
-                                if (result != null) {
-                                    MainActivity.database.runInTransaction {
-                                        val dao = MainActivity.database.cacheDao()
-                                        dao.put("domain", selectedDomain)
-                                        dao.put("session_domain", selectedDomain)
-                                        dao.put("ews_key", result.ewsKey)
-                                        dao.put("ews_token", result.ewsToken)
-                                    }
-                                }
-                                result
-                            }
-
-                            if (authorization != null) {
-                                Toast.makeText(context, R.string.login_success, Toast.LENGTH_SHORT)
-                                    .show()
-                                BookshelfRepository.scheduleSync(authorization)
-                                navigator.replace(MainScreen(authorization = authorization))
-                            } else {
-                                Toast.makeText(context, R.string.login_fail, Toast.LENGTH_SHORT)
-                                    .show()
-                            }
-                        } catch (e: CancellationException) {
-                            throw e
-                        } catch (e: Exception) {
-                            AppLogger.e("LoginScreen", "Login flow failed", e)
-                            Toast.makeText(context, R.string.login_fail, Toast.LENGTH_SHORT)
-                                .show()
-                        } finally {
-                            loggingIn = false
-                            buttonEnabled = true
-                        }
-                    }
-                },
-                enabled = buttonEnabled,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(start = 64.dp, end = 64.dp)
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = 24.dp, vertical = 32.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(18.dp)
             ) {
-                Box(
-                    contentAlignment = Alignment.Center
+                Surface(
+                    modifier = Modifier.size(72.dp),
+                    shape = CircleShape,
+                    color = MaterialTheme.colorScheme.primaryContainer
                 ) {
-                    Text(
-                        text = stringResource(id = R.string.button_login),
-                        fontSize = 16.sp,
-                        modifier = Modifier.padding(8.dp)
+                    Image(
+                        painter = painterResource(R.mipmap.esjzone_icon),
+                        contentDescription = stringResource(R.string.app_name),
+                        modifier = Modifier.padding(12.dp)
                     )
+                }
+                Text(
+                    text = stringResource(R.string.app_name),
+                    style = QuietEditorial.display,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Text(
+                    text = stringResource(R.string.login_description),
+                    style = QuietEditorial.body,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
 
-                    if (!buttonEnabled) {
-                        CircularProgressIndicator(
-                            modifier = Modifier
-                                .height(32.dp)
-                                .width(32.dp)
+                QuietGroup {
+                    QuietSectionHeader(
+                        title = stringResource(R.string.login_site_title),
+                        modifier = Modifier.padding(top = 8.dp)
+                    )
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 12.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        GlobalSettings.DOMAINS.forEach { domain ->
+                            FilterChip(
+                                selected = currentDomain == domain,
+                                onClick = {
+                                    currentDomain = domain
+                                    GlobalSettings.domain.value = domain
+                                    scope.launch(Dispatchers.IO) {
+                                        runCatching {
+                                            MainActivity.database.cacheDao().put("domain", domain)
+                                        }.onFailure {
+                                            AppLogger.e("LoginScreen", "Failed to persist selected domain", it)
+                                        }
+                                    }
+                                },
+                                enabled = !loggingIn,
+                                label = { Text(domain) },
+                                leadingIcon = if (currentDomain == domain) {
+                                    {
+                                        Icon(
+                                            Icons.Filled.Check,
+                                            contentDescription = null,
+                                            modifier = Modifier.size(FilterChipDefaults.IconSize)
+                                        )
+                                    }
+                                } else null,
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
+                    }
+                }
+
+                QuietGroup {
+                    QuietSectionHeader(
+                        title = stringResource(R.string.login_account_title),
+                        modifier = Modifier.padding(top = 8.dp)
+                    )
+                    OutlinedTextField(
+                        value = email,
+                        onValueChange = { email = it; emailError = false; loginFailed = false },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 6.dp),
+                        enabled = !loggingIn,
+                        singleLine = true,
+                        isError = emailError,
+                        label = { Text(stringResource(R.string.email)) },
+                        supportingText = if (emailError) {
+                            { Text(stringResource(R.string.field_required)) }
+                        } else null,
+                        leadingIcon = { Icon(Icons.Filled.Email, contentDescription = null) },
+                        keyboardOptions = KeyboardOptions(
+                            keyboardType = KeyboardType.Email,
+                            imeAction = ImeAction.Next
                         )
+                    )
+                    OutlinedTextField(
+                        value = password,
+                        onValueChange = { password = it; passwordError = false; loginFailed = false },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 6.dp),
+                        enabled = !loggingIn,
+                        singleLine = true,
+                        isError = passwordError,
+                        label = { Text(stringResource(R.string.password)) },
+                        supportingText = if (passwordError) {
+                            { Text(stringResource(R.string.field_required)) }
+                        } else null,
+                        leadingIcon = { Icon(Icons.Filled.Key, contentDescription = null) },
+                        trailingIcon = {
+                            IconButton(
+                                onClick = { passwordVisible = !passwordVisible },
+                                enabled = !loggingIn
+                            ) {
+                                Icon(
+                                    if (passwordVisible) Icons.Filled.Visibility else Icons.Filled.VisibilityOff,
+                                    contentDescription = stringResource(
+                                        if (passwordVisible) R.string.password_hide else R.string.password_show
+                                    )
+                                )
+                            }
+                        },
+                        visualTransformation = if (passwordVisible) {
+                            VisualTransformation.None
+                        } else {
+                            PasswordVisualTransformation()
+                        },
+                        keyboardOptions = KeyboardOptions(
+                            keyboardType = KeyboardType.Password,
+                            imeAction = ImeAction.Done
+                        ),
+                        keyboardActions = KeyboardActions(onDone = { submit() })
+                    )
+                    if (loginFailed) {
+                        Text(
+                            text = stringResource(R.string.login_fail),
+                            style = QuietEditorial.body,
+                            color = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp)
+                        )
+                    }
+                    Button(
+                        onClick = ::submit,
+                        enabled = !loggingIn,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                        shape = QuietEditorial.controlShape
+                    ) {
+                        if (loggingIn) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(20.dp),
+                                strokeWidth = 2.dp
+                            )
+                        } else {
+                            Text(stringResource(R.string.button_login))
+                        }
                     }
                 }
             }
         }
     }
-
 }

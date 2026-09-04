@@ -16,7 +16,9 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.pager.HorizontalPager
@@ -24,8 +26,12 @@ import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AutoStories
+import androidx.compose.material.icons.filled.CloudSync
 import androidx.compose.material.icons.filled.DeleteOutline
+import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -35,9 +41,9 @@ import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Tab
-import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextField
+import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -90,9 +96,12 @@ import com.breakyuna.esjzone.network.features.removeHistory
 import com.breakyuna.esjzone.novellibrary.novel.Chapter
 import com.breakyuna.esjzone.novellibrary.novel.FavoriteNovel
 import com.breakyuna.esjzone.novellibrary.novel.HistoryNovel
-import com.breakyuna.esjzone.ui.component.AppBar
 import com.breakyuna.esjzone.ui.component.Loading
 import com.breakyuna.esjzone.ui.component.LoadError
+import com.breakyuna.esjzone.ui.component.QuietBackHeader
+import com.breakyuna.esjzone.ui.component.QuietEmptyState
+import com.breakyuna.esjzone.ui.component.QuietNotice
+import com.breakyuna.esjzone.ui.theme.QuietEditorial
 import com.breakyuna.esjzone.ui.navigation.LocalBaseNavigator
 import com.breakyuna.esjzone.ui.navigation.ChapterStateHolder
 import com.breakyuna.esjzone.ui.navigation.pushIfNotCurrent
@@ -121,6 +130,8 @@ object HistoryPage : Screen {
         val localHistoryPageModel = rememberScreenModel { LocalHistoryPageModel(authorization) }
         val localState by localHistoryPageModel.state.collectAsState()
         var selectedPage by rememberSaveable { mutableIntStateOf(0) }
+        var searchVisible by rememberSaveable { mutableStateOf(false) }
+        var searchQuery by rememberSaveable { mutableStateOf("") }
         val pagerState = rememberPagerState(
             initialPage = 0,
             pageCount = { 2 }
@@ -149,43 +160,34 @@ object HistoryPage : Screen {
         }
 
         Column(modifier = Modifier.fillMaxSize()) {
-            if (showBack) {
-                AppBar(
-                    title = stringResource(id = R.string.history),
-                    onBack = {
-                        navigator?.pop()
-                    }
-                )
-            } else {
-                Column(
-                    modifier = Modifier.padding(horizontal = 20.dp, vertical = 24.dp)
-                ) {
-                    Text(
-                        text = stringResource(id = R.string.history),
-                        style = MaterialTheme.typography.headlineLarge.copy(
-                            fontWeight = FontWeight.Bold
-                        ),
-                        color = MaterialTheme.colorScheme.onBackground
+            HistoryHeader(
+                showBack = showBack,
+                searchVisible = searchVisible,
+                searchQuery = searchQuery,
+                onQueryChange = { searchQuery = it },
+                onToggleSearch = {
+                    if (searchVisible) searchQuery = ""
+                    searchVisible = !searchVisible
+                },
+                onBack = { navigator?.pop() },
+                onClearLocal = { localHistoryPageModel.clear() },
+                showClear = selectedPage == 0
+            )
+            HistorySourceSelector(
+                selectedPage = selectedPage,
+                localCount = (localState as? LocalHistoryPageModel.State.Result)
+                    ?.activities
+                    ?.size
+                    ?: 0,
+                onSelect = { selectedPage = it }
+            )
+            if (selectedPage == 0) {
+                QuietNotice(
+                    text = stringResource(R.string.history_local_device_only),
+                    modifier = Modifier.padding(
+                        horizontal = QuietEditorial.pagePadding,
+                        vertical = 8.dp
                     )
-                    Text(
-                        text = stringResource(id = R.string.history_description),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(top = 4.dp)
-                    )
-                }
-            }
-
-            TabRow(selectedTabIndex = selectedPage) {
-                Tab(
-                    selected = selectedPage == 0,
-                    onClick = { selectedPage = 0 },
-                    text = { Text(text = stringResource(id = R.string.history_local)) }
-                )
-                Tab(
-                    selected = selectedPage == 1,
-                    onClick = { selectedPage = 1 },
-                    text = { Text(text = stringResource(id = R.string.history_cloud)) }
                 )
             }
 
@@ -201,6 +203,7 @@ object HistoryPage : Screen {
                 if (page == 0) {
                     LocalHistoryContent(
                         state = localState,
+                        query = searchQuery,
                         onOpen = { activity ->
                             val chapter = Chapter(
                                 activity.chapterName,
@@ -219,7 +222,6 @@ object HistoryPage : Screen {
                             )
                         },
                         onDelete = localHistoryPageModel::delete,
-                        onClear = localHistoryPageModel::clear,
                         onRetry = localHistoryPageModel::retry,
                         coverUrlFor = localHistoryPageModel::coverUrlFor,
                         onCoverNeeded = localHistoryPageModel::loadCover
@@ -229,39 +231,42 @@ object HistoryPage : Screen {
                         is HistoryPageModel.State.Loading -> Loading()
 
                         is HistoryPageModel.State.Result -> {
-                    val result = state as HistoryPageModel.State.Result
+                            val result = state as HistoryPageModel.State.Result
 
-                    val novels = result.historyNovels.distinctBy { it.url.ifBlank { it.name } }
+                            val novels = result.historyNovels
+                                .distinctBy { it.url.ifBlank { it.name } }
+                                .filterByHistoryQuery(searchQuery)
 
-                    val detailLoader = rememberScreenModel { NovelDetailLoader(authorization) }
+                            val detailLoader = rememberScreenModel { NovelDetailLoader(authorization) }
 
-                    val adult by remember {
-                        GlobalSettings.adult
-                    }
+                            val adult by remember {
+                                GlobalSettings.adult
+                            }
 
-                    if (novels.isEmpty()) {
-                        Column(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .padding(24.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.Center
-                        ) {
-                            Text(
-                                text = stringResource(id = R.string.history_cloud_empty),
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    } else {
-                        LazyColumn(
-                            modifier = Modifier
-                                .weight(1f)
-                                .fillMaxWidth()
-                        ) {
-                        items(
-                            novels,
-                            key = { item -> detailLoader.key(item) }
-                        ) { historyNovel ->
+                            if (novels.isEmpty()) {
+                                QuietEmptyState(
+                                    title = stringResource(
+                                        if (searchQuery.isBlank()) {
+                                            R.string.history_cloud_empty
+                                        } else {
+                                            R.string.history_search_empty
+                                        }
+                                    ),
+                                    message = stringResource(R.string.history_cloud_separate),
+                                    modifier = Modifier.fillMaxSize()
+                                )
+                            } else {
+                                LazyColumn(
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .fillMaxWidth()
+                                        .widthIn(max = QuietEditorial.contentMaxWidth)
+                                        .align(Alignment.CenterHorizontally)
+                                ) {
+                                    items(
+                                        novels,
+                                        key = { item -> detailLoader.key(item) }
+                                    ) { historyNovel ->
                             val detailKey = detailLoader.key(historyNovel)
 
                             val historyChapter: MutableState<Chapter?> = rememberSaveable {
@@ -458,53 +463,252 @@ object HistoryPage : Screen {
                                     }
                                 }
                             }
-                        }
+                                    }
 
-                        item {
-                            Row(
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                Spacer(modifier = Modifier.weight(1f))
-                                Text(
-                                    text = stringResource(id = R.string.the_end),
-                                    modifier = Modifier.padding(16.dp)
-                                )
-                                Spacer(modifier = Modifier.weight(1f))
+                                    item {
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth()
+                                        ) {
+                                            Spacer(modifier = Modifier.weight(1f))
+                                            Text(
+                                                text = stringResource(id = R.string.the_end),
+                                                modifier = Modifier.padding(16.dp)
+                                            )
+                                            Spacer(modifier = Modifier.weight(1f))
+                                        }
+                                    }
+                                }
                             }
                         }
-                        }
-                    }
-                }
 
-                is HistoryPageModel.State.Error -> {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .padding(24.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.Center
-                    ) {
-                        Text(
-                            text = stringResource(
-                                if ((state as HistoryPageModel.State.Error).failure == LoadFailureKind.NETWORK) {
-                                    R.string.load_network_error
-                                } else {
-                                    R.string.load_client_error
+                        is HistoryPageModel.State.Error -> {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .padding(24.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.Center
+                            ) {
+                                Text(
+                                    text = stringResource(
+                                        if ((state as HistoryPageModel.State.Error).failure == LoadFailureKind.NETWORK) {
+                                            R.string.load_network_error
+                                        } else {
+                                            R.string.load_client_error
+                                        }
+                                    ),
+                                    color = MaterialTheme.colorScheme.error
+                                )
+                                TextButton(onClick = { historyPageModel.reload() }) {
+                                    Text(text = stringResource(id = R.string.retry))
                                 }
-                            ),
-                            color = MaterialTheme.colorScheme.error
-                        )
-                        TextButton(onClick = { historyPageModel.reload() }) {
-                            Text(text = stringResource(id = R.string.retry))
+                            }
                         }
-                    }
-                }
                     }
                 }
             }
         }
     }
 
+}
+
+@Composable
+private fun HistoryHeader(
+    showBack: Boolean,
+    searchVisible: Boolean,
+    searchQuery: String,
+    onQueryChange: (String) -> Unit,
+    onToggleSearch: () -> Unit,
+    onBack: () -> Unit,
+    onClearLocal: () -> Unit,
+    showClear: Boolean
+) {
+    val actions: @Composable androidx.compose.foundation.layout.RowScope.() -> Unit = {
+        IconButton(onClick = onToggleSearch) {
+            Icon(
+                imageVector = if (searchVisible) Icons.Filled.Close else Icons.Filled.Search,
+                contentDescription = stringResource(
+                    if (searchVisible) R.string.close else R.string.history_search
+                )
+            )
+        }
+        if (showClear) {
+            IconButton(onClick = onClearLocal) {
+                Icon(
+                    imageVector = Icons.Filled.DeleteSweep,
+                    contentDescription = stringResource(R.string.history_local_clear)
+                )
+            }
+        }
+    }
+
+    Column(modifier = Modifier.fillMaxWidth()) {
+        if (showBack) {
+            QuietBackHeader(
+                title = stringResource(R.string.history),
+                onBack = onBack,
+                modifier = Modifier.statusBarsPadding(),
+                actions = actions
+            )
+        } else {
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                color = MaterialTheme.colorScheme.surface
+            ) {
+                Column(
+                    modifier = Modifier
+                        .statusBarsPadding()
+                        .padding(
+                            start = QuietEditorial.pagePadding,
+                            end = QuietEditorial.pagePadding,
+                            top = 16.dp,
+                            bottom = 10.dp
+                        )
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = stringResource(R.string.history),
+                            style = QuietEditorial.display,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            modifier = Modifier.weight(1f)
+                        )
+                        actions()
+                    }
+                    Text(
+                        text = stringResource(R.string.history_description),
+                        style = QuietEditorial.body,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 2.dp)
+                    )
+                }
+            }
+        }
+
+        if (searchVisible) {
+            TextField(
+                value = searchQuery,
+                onValueChange = onQueryChange,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = QuietEditorial.pagePadding, vertical = 4.dp),
+                singleLine = true,
+                placeholder = {
+                    Text(stringResource(R.string.history_search_placeholder))
+                },
+                leadingIcon = {
+                    Icon(imageVector = Icons.Filled.Search, contentDescription = null)
+                },
+                shape = RoundedCornerShape(22.dp),
+                colors = TextFieldDefaults.colors(
+                    focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.48f),
+                    unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.34f),
+                    focusedIndicatorColor = androidx.compose.ui.graphics.Color.Transparent,
+                    unfocusedIndicatorColor = androidx.compose.ui.graphics.Color.Transparent
+                )
+            )
+        }
+    }
+}
+
+@Composable
+private fun HistorySourceSelector(
+    selectedPage: Int,
+    localCount: Int,
+    onSelect: (Int) -> Unit
+) {
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = QuietEditorial.pagePadding, vertical = 4.dp),
+        shape = RoundedCornerShape(28.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.42f)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(4.dp),
+            horizontalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            HistorySourceItem(
+                selected = selectedPage == 0,
+                icon = Icons.Filled.AutoStories,
+                label = if (localCount > 0) {
+                    stringResource(R.string.history_local_count, localCount)
+                } else {
+                    stringResource(R.string.history_local)
+                },
+                onClick = { onSelect(0) },
+                modifier = Modifier.weight(1f)
+            )
+            HistorySourceItem(
+                selected = selectedPage == 1,
+                icon = Icons.Filled.CloudSync,
+                label = stringResource(R.string.history_cloud),
+                onClick = { onSelect(1) },
+                modifier = Modifier.weight(1f)
+            )
+        }
+    }
+}
+
+@Composable
+private fun HistorySourceItem(
+    selected: Boolean,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    label: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Surface(
+        modifier = modifier
+            .height(48.dp)
+            .clickable(onClick = onClick),
+        shape = RoundedCornerShape(24.dp),
+        color = if (selected) {
+            MaterialTheme.colorScheme.surface
+        } else {
+            androidx.compose.ui.graphics.Color.Transparent
+        }
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.Center
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = if (selected) {
+                    MaterialTheme.colorScheme.primary
+                } else {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                },
+                modifier = Modifier.size(20.dp)
+            )
+            Text(
+                text = label,
+                style = QuietEditorial.title,
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.padding(start = 8.dp)
+            )
+        }
+    }
+}
+
+private fun List<HistoryNovel>.filterByHistoryQuery(query: String): List<HistoryNovel> {
+    val normalized = query.trim()
+    if (normalized.isBlank()) return this
+    return filter { item ->
+        item.name.contains(normalized, ignoreCase = true) ||
+            item.chapter.name.contains(normalized, ignoreCase = true)
+    }
 }
 
 class HistoryPageModel(
@@ -553,9 +757,9 @@ class HistoryPageModel(
 @Composable
 private fun LocalHistoryContent(
     state: LocalHistoryPageModel.State,
+    query: String,
     onOpen: (LocalReadingActivity) -> Unit,
     onDelete: (String) -> Unit,
-    onClear: () -> Unit,
     onRetry: () -> Unit,
     coverUrlFor: (LocalReadingActivity) -> String,
     onCoverNeeded: (LocalReadingActivity) -> Unit
@@ -586,50 +790,33 @@ private fun LocalHistoryContent(
         }
 
         is LocalHistoryPageModel.State.Result -> {
-            if (current.activities.isEmpty()) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(24.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.Center
-                ) {
-                    Icon(
-                        imageVector = Icons.Filled.AutoStories,
-                        contentDescription = null,
-                        modifier = Modifier.size(42.dp),
-                        tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.65f)
-                    )
-                    Text(
-                        text = stringResource(id = R.string.history_local_empty),
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(top = 12.dp)
-                    )
-                }
+            val activities = current.activities.filter { activity ->
+                val normalized = query.trim()
+                normalized.isBlank() ||
+                    activity.novelName.contains(normalized, ignoreCase = true) ||
+                    activity.chapterName.contains(normalized, ignoreCase = true)
+            }
+            if (activities.isEmpty()) {
+                QuietEmptyState(
+                    title = stringResource(
+                        if (query.isBlank()) {
+                            R.string.history_local_empty
+                        } else {
+                            R.string.history_search_empty
+                        }
+                    ),
+                    message = stringResource(R.string.history_local_device_only),
+                    icon = Icons.Filled.AutoStories,
+                    modifier = Modifier.fillMaxSize()
+                )
             } else {
                 Column(modifier = Modifier.fillMaxSize()) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(start = 20.dp, end = 12.dp, top = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = stringResource(id = R.string.history_local_device_only),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.weight(1f)
-                        )
-                        TextButton(onClick = onClear) {
-                            Text(text = stringResource(id = R.string.history_local_clear))
-                        }
-                    }
-
                     LazyColumn(
                         modifier = Modifier
                             .weight(1f)
-                            .fillMaxWidth(),
+                            .fillMaxWidth()
+                            .widthIn(max = QuietEditorial.contentMaxWidth)
+                            .align(Alignment.CenterHorizontally),
                         contentPadding = PaddingValues(
                             horizontal = 12.dp,
                             vertical = 8.dp
@@ -637,7 +824,7 @@ private fun LocalHistoryContent(
                         verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         items(
-                            items = current.activities,
+                            items = activities,
                             key = { activity -> activity.activityId }
                         ) { activity ->
                             LocalHistoryRow(
@@ -755,6 +942,14 @@ private fun LocalHistoryRow(
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.padding(top = 3.dp)
+                )
+                androidx.compose.material3.LinearProgressIndicator(
+                    progress = activity.chapterProgress.coerceIn(0f, 1f),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 8.dp)
+                        .height(4.dp),
+                    trackColor = MaterialTheme.colorScheme.surfaceVariant
                 )
                 Text(
                     text = position,

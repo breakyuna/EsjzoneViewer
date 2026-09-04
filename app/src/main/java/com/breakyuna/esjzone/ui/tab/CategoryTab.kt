@@ -22,18 +22,16 @@ import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowForwardIos
 import androidx.compose.material.icons.filled.Category
-import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.LocalFireDepartment
 import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -73,6 +71,10 @@ import com.breakyuna.esjzone.novellibrary.novel.Category as NovelCategory
 import com.breakyuna.esjzone.ui.navigation.LocalBaseNavigator
 import com.breakyuna.esjzone.ui.navigation.pushIfNotCurrent
 import com.breakyuna.esjzone.ui.component.AppBar
+import com.breakyuna.esjzone.ui.component.QuietErrorState
+import com.breakyuna.esjzone.ui.component.QuietEmptyState
+import com.breakyuna.esjzone.ui.component.QuietLoadingState
+import com.breakyuna.esjzone.ui.component.QuietSectionHeader
 import com.breakyuna.esjzone.ui.page.CategoryPage
 
 class CategoryBrowserPage : Screen {
@@ -179,43 +181,36 @@ private fun CategoryBrowserContent(
     categoryModel: CategoryModel,
     modifier: Modifier
 ) {
-        val navigator = LocalBaseNavigator.current
-        val state by categoryModel.state.collectAsState()
-        val adult by remember { GlobalSettings.adult }
+    val navigator = LocalBaseNavigator.current
+    val state by categoryModel.state.collectAsState()
+    val adult by remember { GlobalSettings.adult }
 
-        when (state) {
-            is CategoryModel.State.Loading -> Box(
-                modifier = modifier,
-                contentAlignment = Alignment.Center
-            ) {
-                CircularProgressIndicator(strokeWidth = 2.5.dp)
-            }
+    when (state) {
+        is CategoryModel.State.Loading -> QuietLoadingState(modifier = modifier)
 
-            is CategoryModel.State.Error -> Column(
-                modifier = modifier.padding(24.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.Center
-            ) {
-                Text(
-                    text = stringResource(
-                        if ((state as CategoryModel.State.Error).failure == LoadFailureKind.NETWORK) {
-                            R.string.load_network_error
-                        } else {
-                            R.string.load_client_error
-                        }
-                    ),
-                    color = MaterialTheme.colorScheme.error
+        is CategoryModel.State.Error -> Column(
+            modifier = modifier,
+            verticalArrangement = Arrangement.Center
+        ) {
+            QuietErrorState(
+                failure = (state as CategoryModel.State.Error).failure,
+                onRetry = categoryModel::retry
+            )
+        }
+
+        is CategoryModel.State.Result -> {
+            val categories = (state as CategoryModel.State.Result).categories
+                .filterNot { it.isAdult && !adult }
+            val gridState = rememberLazyGridState()
+
+            if (categories.isEmpty()) {
+                QuietEmptyState(
+                    title = stringResource(R.string.categories_empty),
+                    message = stringResource(R.string.home_adult_hidden),
+                    icon = Icons.Filled.Category,
+                    modifier = modifier
                 )
-                TextButton(onClick = categoryModel::retry) {
-                    Text(stringResource(R.string.retry))
-                }
-            }
-
-            is CategoryModel.State.Result -> {
-                val categories = (state as CategoryModel.State.Result).categories
-                    .filter { !(it.isAdult && !adult) }
-                val gridState = rememberLazyGridState()
-
+            } else {
                 LazyVerticalGrid(
                     state = gridState,
                     columns = GridCells.Adaptive(minSize = 156.dp),
@@ -230,13 +225,7 @@ private fun CategoryBrowserContent(
                                 .fillMaxWidth()
                                 .padding(bottom = 6.dp)
                         ) {
-                            Text(
-                                text = stringResource(R.string.categories),
-                                style = MaterialTheme.typography.headlineLarge.copy(
-                                    fontWeight = FontWeight.Bold
-                                ),
-                                color = MaterialTheme.colorScheme.onBackground
-                            )
+                            QuietSectionHeader(title = stringResource(R.string.categories))
                             Spacer(modifier = Modifier.height(4.dp))
                             Text(
                                 text = stringResource(R.string.categories_description),
@@ -248,7 +237,7 @@ private fun CategoryBrowserContent(
 
                     itemsIndexed(
                         items = categories,
-                        key = { _, item -> item.url.ifBlank { item.name } }
+                        key = { _, item -> "category-${item.url.trim().ifBlank { item.name.trim() }}" }
                     ) { index, category ->
                         CategoryCard(
                             category = category,
@@ -259,10 +248,11 @@ private fun CategoryBrowserContent(
                 }
             }
         }
+    }
 
-        LaunchedEffect(Unit) {
-            categoryModel.getCategories()
-        }
+    LaunchedEffect(Unit) {
+        categoryModel.getCategories()
+    }
 }
 
 @Composable
@@ -324,7 +314,7 @@ private fun CategoryCard(
                         )
                     }
                     Icon(
-                        imageVector = Icons.Filled.ChevronRight,
+                        imageVector = Icons.AutoMirrored.Filled.ArrowForwardIos,
                         contentDescription = null,
                         tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
                         modifier = Modifier.size(20.dp)

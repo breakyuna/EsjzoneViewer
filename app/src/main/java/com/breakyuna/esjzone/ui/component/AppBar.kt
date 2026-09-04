@@ -25,6 +25,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.breakyuna.esjzone.R
 
 @Composable
 fun AppBar(
@@ -56,7 +57,7 @@ fun AppBar(
                     ) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = "Back",
+                            contentDescription = androidx.compose.ui.res.stringResource(R.string.reader_back),
                             tint = MaterialTheme.colorScheme.onSurface
                         )
                     }

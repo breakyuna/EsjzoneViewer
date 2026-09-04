@@ -1,9 +1,7 @@
 package com.breakyuna.esjzone.ui.page
 
 import androidx.compose.foundation.Image
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -34,12 +32,12 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import cafe.adriel.voyager.core.screen.Screen
 import com.breakyuna.esjzone.BuildConfig
 import com.breakyuna.esjzone.Constants
 import com.breakyuna.esjzone.R
 import com.breakyuna.esjzone.ui.component.AppBar
+import com.breakyuna.esjzone.ui.component.QuietSectionHeader
 import com.breakyuna.esjzone.ui.navigation.LocalBaseNavigator
 
 object AboutPage : Screen {
@@ -68,11 +66,9 @@ object AboutPage : Screen {
                     .padding(horizontal = 16.dp, vertical = 12.dp)
             ) {
                 // Compile Information Card
-                Text(
-                    text = stringResource(id = R.string.compile_information),
-                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                    color = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.padding(start = 4.dp, bottom = 8.dp)
+                QuietSectionHeader(
+                    title = stringResource(id = R.string.compile_information),
+                    modifier = Modifier.padding(bottom = 8.dp)
                 )
 
                 Card(
@@ -108,11 +104,9 @@ object AboutPage : Screen {
                 Spacer(modifier = Modifier.height(20.dp))
 
                 // Maintainers
-                Text(
-                    text = stringResource(id = R.string.maintainers),
-                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                    color = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.padding(start = 4.dp, bottom = 8.dp)
+                QuietSectionHeader(
+                    title = stringResource(id = R.string.maintainers),
+                    modifier = Modifier.padding(bottom = 8.dp)
                 )
 
                 Card(
@@ -141,11 +135,9 @@ object AboutPage : Screen {
                 Spacer(modifier = Modifier.height(20.dp))
 
                 // Contributors
-                Text(
-                    text = stringResource(id = R.string.contributors),
-                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                    color = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.padding(start = 4.dp, bottom = 8.dp)
+                QuietSectionHeader(
+                    title = stringResource(id = R.string.contributors),
+                    modifier = Modifier.padding(bottom = 8.dp)
                 )
 
                 Card(
@@ -174,11 +166,9 @@ object AboutPage : Screen {
                 Spacer(modifier = Modifier.height(20.dp))
 
                 // Open Source Libraries
-                Text(
-                    text = stringResource(id = R.string.open_source_libraries),
-                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                    color = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.padding(start = 4.dp, bottom = 8.dp)
+                QuietSectionHeader(
+                    title = stringResource(id = R.string.open_source_libraries),
+                    modifier = Modifier.padding(bottom = 8.dp)
                 )
 
                 Card(
@@ -202,24 +192,23 @@ object AboutPage : Screen {
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     Column(modifier = Modifier.weight(1f)) {
-                                        Row(
-                                            modifier = Modifier.fillMaxWidth(),
-                                            horizontalArrangement = Arrangement.SpaceBetween,
-                                            verticalAlignment = Alignment.CenterVertically
-                                        ) {
                                             Text(
                                                 text = library.name,
                                                 style = MaterialTheme.typography.bodyLarge.copy(
                                                     fontWeight = FontWeight.SemiBold
                                                 ),
-                                                color = MaterialTheme.colorScheme.onSurface
+                                                color = MaterialTheme.colorScheme.onSurface,
+                                                maxLines = 3,
+                                                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
                                             )
                                             Text(
                                                 text = library.owner,
                                                 style = MaterialTheme.typography.labelMedium,
-                                                color = MaterialTheme.colorScheme.primary
+                                                color = MaterialTheme.colorScheme.primary,
+                                                maxLines = 2,
+                                                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                                                modifier = Modifier.padding(top = 2.dp)
                                             )
-                                        }
                                         Spacer(modifier = Modifier.height(4.dp))
                                         Text(
                                             text = library.description,
@@ -248,54 +237,56 @@ object AboutPage : Screen {
 
                 Spacer(modifier = Modifier.height(36.dp))
 
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.Center,
-                    modifier = Modifier.fillMaxWidth()
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalAlignment = Alignment.CenterHorizontally
                 ) {
                     Text(
-                        text = "Powered by ",
+                        text = stringResource(R.string.about_powered_by),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
-                    Image(
-                        painter = painterResource(id = R.drawable.jetpack_compose_high),
-                        contentScale = ContentScale.Inside,
-                        contentDescription = "jetpack compose",
-                        modifier = Modifier.height(18.dp)
-                    )
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text(
-                        text = "Jetpack Compose",
-                        style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Image(
+                            painter = painterResource(id = R.drawable.jetpack_compose_high),
+                            contentScale = ContentScale.Inside,
+                            contentDescription = stringResource(R.string.about_jetpack_compose),
+                            modifier = Modifier.height(18.dp)
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            text = stringResource(R.string.about_jetpack_compose),
+                            style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                    }
                 }
 
                 Spacer(modifier = Modifier.height(6.dp))
 
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.Center,
-                    modifier = Modifier.fillMaxWidth()
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalAlignment = Alignment.CenterHorizontally
                 ) {
                     Text(
-                        text = "Designed with ",
+                        text = stringResource(R.string.about_designed_with),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
-                    Image(
-                        painter = painterResource(id = R.drawable.catppuccin_high),
-                        contentScale = ContentScale.Inside,
-                        contentDescription = "catppuccin",
-                        modifier = Modifier.height(18.dp)
-                    )
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text(
-                        text = "Catppuccin",
-                        style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Image(
+                            painter = painterResource(id = R.drawable.catppuccin_high),
+                            contentScale = ContentScale.Inside,
+                            contentDescription = stringResource(R.string.about_catppuccin),
+                            modifier = Modifier.height(18.dp)
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            text = stringResource(R.string.about_catppuccin),
+                            style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                    }
                 }
 
                 Spacer(modifier = Modifier.height(24.dp))
@@ -307,18 +298,22 @@ object AboutPage : Screen {
     private fun InfoRow(label: String, value: String) {
         Row(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
+            verticalAlignment = Alignment.Top
         ) {
             Text(
                 text = label,
                 style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.weight(0.38f)
             )
             Text(
                 text = value,
                 style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium),
-                color = MaterialTheme.colorScheme.onSurface
+                color = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier
+                    .weight(0.62f)
+                    .padding(start = 12.dp),
+                softWrap = true
             )
         }
     }

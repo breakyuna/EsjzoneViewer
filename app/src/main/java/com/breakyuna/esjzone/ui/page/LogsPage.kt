@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
@@ -37,8 +38,6 @@ import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -69,6 +68,8 @@ import androidx.compose.ui.unit.sp
 import cafe.adriel.voyager.core.screen.Screen
 import com.breakyuna.esjzone.R
 import com.breakyuna.esjzone.ui.component.AppBar
+import com.breakyuna.esjzone.ui.theme.QuietEditorial
+import com.breakyuna.esjzone.ui.component.QuietEmptyState
 import com.breakyuna.esjzone.ui.navigation.LocalBaseNavigator
 import com.breakyuna.esjzone.util.AppLogger
 import com.breakyuna.esjzone.util.LogEntry
@@ -229,7 +230,7 @@ object LogsPage : Screen {
                         onClick = { selectedFilter = if (selectedFilter == LogLevel.CRASH) null else LogLevel.CRASH },
                         label = {
                             val count = logs.count { it.level == LogLevel.CRASH }
-                            Text("CRASH ($count)", color = if (count > 0) MaterialTheme.colorScheme.error else Color.Unspecified)
+                            Text("${stringResource(R.string.logs_filter_crash)} ($count)", color = if (count > 0) MaterialTheme.colorScheme.error else Color.Unspecified)
                         }
                     )
                     FilterChip(
@@ -237,7 +238,7 @@ object LogsPage : Screen {
                         onClick = { selectedFilter = if (selectedFilter == LogLevel.ERROR) null else LogLevel.ERROR },
                         label = {
                             val count = logs.count { it.level == LogLevel.ERROR }
-                            Text("ERROR ($count)")
+                            Text("${stringResource(R.string.logs_filter_error)} ($count)")
                         }
                     )
                     FilterChip(
@@ -245,7 +246,7 @@ object LogsPage : Screen {
                         onClick = { selectedFilter = if (selectedFilter == LogLevel.WARN) null else LogLevel.WARN },
                         label = {
                             val count = logs.count { it.level == LogLevel.WARN }
-                            Text("WARN ($count)")
+                            Text("${stringResource(R.string.logs_filter_warning)} ($count)")
                         }
                     )
                     FilterChip(
@@ -253,7 +254,7 @@ object LogsPage : Screen {
                         onClick = { selectedFilter = if (selectedFilter == LogLevel.INFO) null else LogLevel.INFO },
                         label = {
                             val count = logs.count { it.level == LogLevel.INFO }
-                            Text("INFO ($count)")
+                            Text("${stringResource(R.string.logs_filter_info)} ($count)")
                         }
                     )
                     FilterChip(
@@ -261,7 +262,7 @@ object LogsPage : Screen {
                         onClick = { selectedFilter = if (selectedFilter == LogLevel.DEBUG) null else LogLevel.DEBUG },
                         label = {
                             val count = logs.count { it.level == LogLevel.DEBUG }
-                            Text("DEBUG ($count)")
+                            Text("${stringResource(R.string.logs_filter_debug)} ($count)")
                         }
                     )
                 }
@@ -271,31 +272,21 @@ object LogsPage : Screen {
 
             // Log Items List
             if (filteredLogs.isEmpty()) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(32.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Icon(
-                            imageVector = Icons.Filled.BugReport,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.outline,
-                            modifier = Modifier.size(48.dp)
-                        )
-                        Spacer(modifier = Modifier.height(16.dp))
-                        Text(
-                            text = stringResource(id = R.string.logs_empty),
-                            color = MaterialTheme.colorScheme.outline,
-                            fontSize = 16.sp
-                        )
-                    }
-                }
+                QuietEmptyState(
+                    title = stringResource(
+                        if (logs.isEmpty()) R.string.logs_empty else R.string.logs_no_matches
+                    ),
+                    message = stringResource(
+                        if (logs.isEmpty()) R.string.logs_empty_guidance else R.string.logs_search_empty_guidance
+                    ),
+                    icon = Icons.Filled.BugReport,
+                    modifier = Modifier.fillMaxSize().navigationBarsPadding()
+                )
             } else {
                 LazyColumn(
                     state = listState,
                     modifier = Modifier.fillMaxSize(),
+                    contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 32.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     items(filteredLogs, key = { it.id }) { logEntry ->
@@ -312,6 +303,7 @@ object LogsPage : Screen {
         if (showClearDialog) {
             AlertDialog(
                 onDismissRequest = { showClearDialog = false },
+                shape = QuietEditorial.dialogShape,
                 title = { Text(text = stringResource(id = R.string.logs_clear_title)) },
                 text = { Text(text = stringResource(id = R.string.logs_clear_message)) },
                 confirmButton = {
@@ -337,6 +329,7 @@ object LogsPage : Screen {
         if (showCrashReportDialog && lastCrashReport != null) {
             AlertDialog(
                 onDismissRequest = { showCrashReportDialog = false },
+                shape = QuietEditorial.dialogShape,
                 icon = {
                     Icon(
                         imageVector = Icons.Filled.Warning,
@@ -401,24 +394,16 @@ private fun LogItemCard(entry: LogEntry) {
         LogLevel.DEBUG -> MaterialTheme.colorScheme.surfaceVariant to MaterialTheme.colorScheme.onSurfaceVariant
     }
 
-    val cardBorderColor = when (entry.level) {
-        LogLevel.CRASH -> MaterialTheme.colorScheme.error
-        LogLevel.ERROR -> MaterialTheme.colorScheme.error.copy(alpha = 0.5f)
-        else -> Color.Transparent
-    }
-
-    Card(
+    Surface(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 12.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = if (entry.level == LogLevel.CRASH) {
-                MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.25f)
-            } else {
-                MaterialTheme.colorScheme.surface
-            }
-        ),
-        shape = RoundedCornerShape(10.dp)
+        color = if (entry.level == LogLevel.CRASH) {
+            MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.25f)
+        } else {
+            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.24f)
+        },
+        shape = QuietEditorial.cardShape
     ) {
         Column(
             modifier = Modifier
@@ -437,7 +422,13 @@ private fun LogItemCard(entry: LogEntry) {
                         .padding(horizontal = 6.dp, vertical = 2.dp)
                 ) {
                     Text(
-                        text = entry.level.name,
+                        text = when (entry.level) {
+                            LogLevel.CRASH -> stringResource(R.string.logs_filter_crash)
+                            LogLevel.ERROR -> stringResource(R.string.logs_filter_error)
+                            LogLevel.WARN -> stringResource(R.string.logs_filter_warning)
+                            LogLevel.INFO -> stringResource(R.string.logs_filter_info)
+                            LogLevel.DEBUG -> stringResource(R.string.logs_filter_debug)
+                        },
                         color = badgeTextColor,
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Bold
@@ -475,7 +466,7 @@ private fun LogItemCard(entry: LogEntry) {
 
             // Thread info
             Text(
-                text = "Thread: ${entry.threadName}",
+                text = stringResource(R.string.logs_thread, entry.threadName),
                 fontSize = 10.sp,
                 color = MaterialTheme.colorScheme.outline,
                 modifier = Modifier.padding(top = 4.dp)
@@ -518,7 +509,7 @@ private fun LogItemCard(entry: LogEntry) {
                     ) {
                         Icon(
                             imageVector = Icons.Filled.ContentCopy,
-                            contentDescription = "Copy Stack Trace",
+                            contentDescription = stringResource(R.string.logs_copy_stacktrace),
                             modifier = Modifier.size(16.dp),
                             tint = MaterialTheme.colorScheme.outline
                         )

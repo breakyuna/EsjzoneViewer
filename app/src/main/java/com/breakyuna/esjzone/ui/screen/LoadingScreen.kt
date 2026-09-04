@@ -1,12 +1,23 @@
 package com.breakyuna.esjzone.ui.screen
 
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawingPadding
+import androidx.compose.foundation.layout.size
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.unit.dp
 import cafe.adriel.voyager.core.screen.Screen
 import cafe.adriel.voyager.core.screen.ScreenKey
 import cafe.adriel.voyager.navigator.LocalNavigator
@@ -22,6 +33,8 @@ import com.breakyuna.esjzone.network.Authorization
 import com.breakyuna.esjzone.network.EsjzoneClient
 import com.breakyuna.esjzone.network.hasCredentials
 import com.breakyuna.esjzone.util.AppLogger
+import com.breakyuna.esjzone.R
+import com.breakyuna.esjzone.ui.theme.QuietEditorial
 
 class LoadingScreen : Screen {
 
@@ -31,11 +44,31 @@ class LoadingScreen : Screen {
     override fun Content() {
         val navigator = LocalNavigator.currentOrThrow
 
-        Box(
-            modifier = Modifier.fillMaxSize(),
-            contentAlignment = Alignment.Center
-        ) {
-            CircularProgressIndicator()
+        Box(modifier = Modifier.fillMaxSize().safeDrawingPadding(), contentAlignment = Alignment.Center) {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(16.dp),
+                modifier = Modifier.padding(32.dp)
+            ) {
+                Surface(
+                    modifier = Modifier.size(72.dp),
+                    shape = androidx.compose.foundation.shape.CircleShape,
+                    color = MaterialTheme.colorScheme.primaryContainer
+                ) {
+                    androidx.compose.foundation.Image(
+                        painter = painterResource(R.mipmap.esjzone_icon),
+                        contentDescription = stringResource(R.string.app_name),
+                        modifier = Modifier.padding(12.dp)
+                    )
+                }
+                Text(stringResource(R.string.app_name), style = QuietEditorial.display)
+                CircularProgressIndicator(strokeWidth = 2.5.dp)
+                Text(
+                    stringResource(R.string.startup_loading),
+                    style = QuietEditorial.body,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
         }
 
         LaunchedEffect(Unit) {

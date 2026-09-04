@@ -26,9 +26,7 @@ import androidx.compose.material.icons.filled.FirstPage
 import androidx.compose.material.icons.filled.LastPage
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material3.Button
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -73,7 +71,11 @@ import com.breakyuna.esjzone.network.features.submitForumComment
 import com.breakyuna.esjzone.novellibrary.novel.COMMENT_PAGE_SIZE
 import com.breakyuna.esjzone.novellibrary.novel.Comment
 import com.breakyuna.esjzone.ui.navigation.LocalBaseNavigator
-import com.breakyuna.esjzone.ui.component.LoadError
+import com.breakyuna.esjzone.ui.theme.QuietEditorial
+import com.breakyuna.esjzone.ui.component.QuietEmptyState
+import com.breakyuna.esjzone.ui.component.QuietErrorState
+import com.breakyuna.esjzone.ui.component.QuietLoadingState
+import com.breakyuna.esjzone.ui.component.QuietSectionHeader
 import com.breakyuna.esjzone.util.AppLogger
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -92,40 +94,24 @@ internal sealed class CommunityState<out T> {
 internal fun <T> CommunityStateContent(
     state: CommunityState<T>,
     emptyText: String,
+    onRetry: (() -> Unit)? = null,
     content: @Composable (T) -> Unit
 ) {
     when (state) {
-        is CommunityState.Loading -> Box(
-            modifier = Modifier.fillMaxSize(),
-            contentAlignment = Alignment.Center
-        ) { CircularProgressIndicator() }
+        is CommunityState.Loading -> QuietLoadingState(modifier = Modifier.fillMaxSize())
 
-        is CommunityState.Error -> Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(24.dp),
-            contentAlignment = Alignment.Center
-        ) {
-            Text(
-                text = stringResource(
-                    if (state.failure == LoadFailureKind.NETWORK) {
-                        R.string.load_network_error
-                    } else {
-                        R.string.load_client_error
-                    }
-                ),
-                color = MaterialTheme.colorScheme.error
-            )
-        }
+        is CommunityState.Error -> QuietErrorState(
+            failure = state.failure,
+            onRetry = onRetry,
+            modifier = Modifier.fillMaxSize()
+        )
 
-        is CommunityState.Empty -> Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(24.dp),
-            contentAlignment = Alignment.Center
-        ) {
-            Text(text = emptyText, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
+        is CommunityState.Empty -> QuietEmptyState(
+            title = emptyText,
+            message = stringResource(R.string.community_empty_guidance),
+            icon = androidx.compose.material.icons.Icons.Filled.Forum,
+            modifier = Modifier.fillMaxSize()
+        )
 
         is CommunityState.Result -> content(state.data)
     }
@@ -160,17 +146,19 @@ internal fun CommentSectionHost(
     modifier: Modifier = Modifier,
     showHeader: Boolean = true
 ) {
+    val scrollState = rememberScrollState()
     Column(modifier = modifier) {
         Box(
             modifier = Modifier
                 .weight(1f)
                 .fillMaxWidth()
-                .verticalScroll(rememberScrollState())
+                .verticalScroll(scrollState)
         ) {
             CommentSectionContent(
                 model = model,
                 showHeader = showHeader,
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier.fillMaxWidth(),
+                scrollState = scrollState
             )
         }
         CommentComposerHost(model = model)
@@ -186,24 +174,30 @@ internal fun CommentSectionHost(
 internal fun CommentSectionContent(
     model: CommentPageModel,
     modifier: Modifier = Modifier,
-    showHeader: Boolean = true
+    showHeader: Boolean = true,
+    scrollState: androidx.compose.foundation.ScrollState? = null
 ) {
     val state by model.state.collectAsState()
     val lastCreatedCommentId by model.lastCreatedCommentId
+    val anonymousName = stringResource(R.string.anonymous_user)
+
+    fun selectReply(comment: Comment) {
+        model.replyToken.value = comment.replyToken?.trim()?.takeIf { it.isNotBlank() }
+        model.replyAuthor.value = comment.authorName?.trim()?.takeIf { it.isNotBlank() }
+            ?: anonymousName
+        model.clearSubmitError()
+    }
 
     when (val snapshot = state) {
-        is CommunityState.Loading -> Box(
-            modifier = modifier,
-            contentAlignment = Alignment.Center
-        ) { CircularProgressIndicator() }
+        is CommunityState.Loading -> QuietLoadingState(modifier = modifier)
 
-        is CommunityState.Error -> LoadError(
+        is CommunityState.Error -> QuietErrorState(
+            failure = snapshot.failure,
             onRetry = {
                 model.clearSubmitError()
                 model.load(forceRefresh = true)
             },
-            modifier = modifier,
-            failure = snapshot.failure
+            modifier = modifier
         )
 
         is CommunityState.Empty -> CommentSection(
@@ -211,11 +205,8 @@ internal fun CommentSectionContent(
             lastCreatedCommentId = lastCreatedCommentId,
             showHeader = showHeader,
             modifier = modifier,
-            onReply = { comment ->
-                model.replyToken.value = comment.replyToken
-                model.replyAuthor.value = comment.authorName
-                model.clearSubmitError()
-            },
+            onReply = ::selectReply,
+            scrollState = scrollState,
         )
 
         is CommunityState.Result -> CommentSection(
@@ -223,11 +214,8 @@ internal fun CommentSectionContent(
             lastCreatedCommentId = lastCreatedCommentId,
             showHeader = showHeader,
             modifier = modifier,
-            onReply = { comment ->
-                model.replyToken.value = comment.replyToken
-                model.replyAuthor.value = comment.authorName
-                model.clearSubmitError()
-            },
+            onReply = ::selectReply,
+            scrollState = scrollState,
         )
     }
 
@@ -243,6 +231,7 @@ internal fun CommentComposerHost(
     var savedDraft by rememberSaveable(model.pageUrl) { mutableStateOf("") }
     var savedReplyToken by rememberSaveable(model.pageUrl) { mutableStateOf<String?>(null) }
     var savedReplyAuthor by rememberSaveable(model.pageUrl) { mutableStateOf<String?>(null) }
+    val anonymousLabel = stringResource(id = R.string.anonymous_user)
     LaunchedEffect(model) {
         // Restore the composer after an activity/process recreation, then keep
         // the saveable mirror current while the screen model remains the
@@ -263,7 +252,16 @@ internal fun CommentComposerHost(
         }
     }
     val draft by model.draft
-    val replyAuthor by model.replyAuthor
+    val replyToken by model.replyToken
+    val rawReplyAuthor by model.replyAuthor
+    // A reply token is authoritative context even when the source comment
+    // has no author field. Keep the context row and cancel affordance visible
+    // instead of silently turning an anonymous reply into a new comment.
+    val replyAuthor = if (replyToken != null) {
+        rawReplyAuthor?.trim()?.takeIf { it.isNotEmpty() } ?: anonymousLabel
+    } else {
+        null
+    }
     val isSubmitting by model.isSubmitting
     val submitError by model.submitError
     CommentComposer(
@@ -294,7 +292,8 @@ private fun CommentSection(
     lastCreatedCommentId: String?,
     showHeader: Boolean,
     modifier: Modifier,
-    onReply: (Comment) -> Unit
+    onReply: (Comment) -> Unit,
+    scrollState: androidx.compose.foundation.ScrollState? = null
 ) {
     val pages = remember(comments) { comments.chunked(COMMENT_PAGE_SIZE) }
     var selectedPageIndex by rememberSaveable { mutableIntStateOf(0) }
@@ -312,21 +311,23 @@ private fun CommentSection(
         }
     }
 
+    LaunchedEffect(safePageIndex) {
+        scrollState?.animateScrollTo(0)
+    }
+
     Column(modifier = modifier) {
         if (showHeader) {
-            Text(
-                text = stringResource(id = R.string.comments),
-                style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.Bold,
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+            QuietSectionHeader(
+                title = stringResource(id = R.string.comments),
+                modifier = Modifier.padding(top = 4.dp)
             )
         }
 
         if (pages.isEmpty()) {
-            Text(
-                text = stringResource(id = R.string.comments_empty),
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+            QuietEmptyState(
+                title = stringResource(id = R.string.comments_empty),
+                message = stringResource(id = R.string.community_empty_guidance),
+                icon = Icons.Filled.Person
             )
         } else {
             CommentPager(
@@ -346,7 +347,7 @@ private fun CommentSection(
             pages[safePageIndex].forEach { comment ->
                 CommentCard(
                     comment = comment,
-                    onReply = if (comment.replyToken != null) {
+                    onReply = if (!comment.replyToken.isNullOrBlank()) {
                         { onReply(comment) }
                     } else {
                         null
@@ -376,9 +377,9 @@ private fun CommentComposer(
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 8.dp),
         color = MaterialTheme.colorScheme.surface,
-        tonalElevation = 3.dp,
-        shadowElevation = 3.dp,
-        shape = RoundedCornerShape(16.dp)
+        tonalElevation = 1.dp,
+        shadowElevation = 0.dp,
+        shape = QuietEditorial.largeShape
     ) {
         Column(
             modifier = Modifier
@@ -411,9 +412,15 @@ private fun CommentComposer(
                 onValueChange = onDraftChange,
                 modifier = Modifier.fillMaxWidth(),
                 enabled = !isSubmitting,
-                placeholder = { Text(text = stringResource(id = R.string.comment_hint)) },
+                placeholder = {
+                    Text(
+                        text = stringResource(id = R.string.comment_hint),
+                        style = QuietEditorial.body
+                    )
+                },
                 minLines = 2,
-                maxLines = 5
+                maxLines = 5,
+                shape = QuietEditorial.controlShape
             )
             error?.let {
                 Row(
@@ -503,14 +510,12 @@ private fun CommentPager(
 
 @Composable
 private fun CommentCard(comment: Comment, onReply: (() -> Unit)?) {
-    ElevatedCard(
+    Surface(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 7.dp),
         shape = RoundedCornerShape(18.dp),
-        colors = CardDefaults.elevatedCardColors(
-            containerColor = MaterialTheme.colorScheme.surface
-        )
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.28f)
     ) {
         Row(
             modifier = Modifier.padding(16.dp),

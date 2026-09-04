@@ -635,7 +635,6 @@ private fun NovelDetailContent(
             item(key = "detail-comments") {
                 Column(
                     modifier = Modifier
-                        .padding(horizontal = 16.dp)
                         .widthIn(max = QuietEditorial.contentMaxWidth)
                 ) {
                     NovelDetailSectionHeading(title = stringResource(R.string.comments))

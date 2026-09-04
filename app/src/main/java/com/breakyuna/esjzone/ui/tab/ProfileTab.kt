@@ -49,15 +49,18 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import cafe.adriel.voyager.navigator.tab.Tab
 import cafe.adriel.voyager.navigator.tab.TabOptions
 import coil.compose.SubcomposeAsyncImage
 import coil.request.ImageRequest
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import java.nio.charset.StandardCharsets
+import java.security.MessageDigest
 import com.breakyuna.esjzone.MainActivity
 import com.breakyuna.esjzone.R
+import com.breakyuna.esjzone.database.dao.put
 import com.breakyuna.esjzone.network.EsjzoneClient
 import com.breakyuna.esjzone.network.EsjzoneUrls
 import com.breakyuna.esjzone.network.LocalAuthorization
@@ -85,11 +88,18 @@ object ProfileTab : Tab {
     override fun Content() {
         val navigator = LocalBaseNavigator.current
         val authorization = LocalAuthorization.current
+        val sessionDomain = authorization.domain.ifBlank { com.breakyuna.esjzone.GlobalSettings.domain.value }
         // Keep the small profile snapshot in the saved-state registry so a
-        // background process restart does not flash an empty profile while the
-        // network request is being repeated.
-        var profileName by rememberSaveable { mutableStateOf<String?>(null) }
-        var profileAvatarUrl by rememberSaveable { mutableStateOf("") }
+        // configuration change does not flash an empty profile while the
+        // network request is being repeated. The Room cache extends that
+        // local-first behavior across process restarts without changing the
+        // database schema.
+        var profileName by rememberSaveable(sessionDomain, authorization.ewsKey) {
+            mutableStateOf<String?>(null)
+        }
+        var profileAvatarUrl by rememberSaveable(sessionDomain, authorization.ewsKey) {
+            mutableStateOf("")
+        }
         val data = profileName?.let { UserProfile(it, profileAvatarUrl) }
 
         BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
@@ -131,6 +141,7 @@ object ProfileTab : Tab {
                         ) {
                             ProfileHero(
                                 data = data,
+                                domain = sessionDomain,
                                 modifier = Modifier.weight(1f)
                             )
                             ProfileMenu(
@@ -140,7 +151,7 @@ object ProfileTab : Tab {
                         }
                     } else {
                         Column(modifier = Modifier.fillMaxWidth()) {
-                            ProfileHero(data = data)
+                            ProfileHero(data = data, domain = sessionDomain)
                             Spacer(modifier = Modifier.height(18.dp))
                             ProfileMenu(navigator = navigator)
                         }
@@ -149,14 +160,39 @@ object ProfileTab : Tab {
             }
         }
 
-        LaunchedEffect(Unit) {
-            if (profileName != null) return@LaunchedEffect
+        LaunchedEffect(sessionDomain, authorization.ewsKey, authorization.ewsToken) {
+            val cachePrefix = profileCachePrefix(authorization, sessionDomain)
             try {
-                val profile = withContext(kotlinx.coroutines.Dispatchers.IO) {
+                val cached = withContext(Dispatchers.IO) {
+                    val dao = MainActivity.database.cacheDao()
+                    val name = dao.findByKey("${cachePrefix}name")?.value
+                    val avatar = dao.findByKey("${cachePrefix}avatar")?.value.orEmpty()
+                    name?.takeIf { it.isNotBlank() }?.let { it to avatar }
+                }
+                cached?.let { (name, avatar) ->
+                    profileName = name
+                    profileAvatarUrl = avatar
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                com.breakyuna.esjzone.util.AppLogger.w(
+                    "ProfileTab",
+                    "Failed to read cached user profile",
+                    e
+                )
+            }
+            try {
+                val profile = withContext(Dispatchers.IO) {
                     EsjzoneClient.getUserProfile(authorization)
                 }
                 profileName = profile.name
                 profileAvatarUrl = profile.avatarUrl
+                withContext(Dispatchers.IO) {
+                    val dao = MainActivity.database.cacheDao()
+                    dao.put("${cachePrefix}name", profile.name)
+                    dao.put("${cachePrefix}avatar", profile.avatarUrl)
+                }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -173,6 +209,7 @@ object ProfileTab : Tab {
 @Composable
 private fun ProfileHero(
     data: UserProfile?,
+    domain: String,
     modifier: Modifier = Modifier
 ) {
     Surface(
@@ -200,7 +237,7 @@ private fun ProfileHero(
                     .padding(20.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                ProfileAvatar(data = data)
+                ProfileAvatar(data = data, domain = domain)
                 Spacer(modifier = Modifier.width(16.dp))
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
@@ -225,7 +262,7 @@ private fun ProfileHero(
 }
 
 @Composable
-private fun ProfileAvatar(data: UserProfile?) {
+private fun ProfileAvatar(data: UserProfile?, domain: String) {
     Surface(
         modifier = Modifier.size(86.dp),
         shape = CircleShape,
@@ -239,7 +276,7 @@ private fun ProfileAvatar(data: UserProfile?) {
         } else {
             SubcomposeAsyncImage(
                 model = ImageRequest.Builder(LocalContext.current)
-                    .data(resolveAvatarUrl(data.avatarUrl))
+                    .data(resolveAvatarUrl(data.avatarUrl, domain))
                     .crossfade(true)
                     .build(),
                 contentDescription = data.name,
@@ -264,12 +301,20 @@ private fun ProfileAvatar(data: UserProfile?) {
     }
 }
 
-private fun resolveAvatarUrl(avatarUrl: String): String {
+private fun resolveAvatarUrl(avatarUrl: String, domain: String): String {
+    if (avatarUrl.isBlank()) return ""
     return when {
         avatarUrl.startsWith("http://") || avatarUrl.startsWith("https://") -> avatarUrl
-        avatarUrl.startsWith("/") -> "${EsjzoneUrls.Base}$avatarUrl"
-        else -> "${EsjzoneUrls.Base}/$avatarUrl"
+        else -> EsjzoneUrls.resolve(avatarUrl, EsjzoneUrls.baseForDomain(domain))
     }
+}
+
+/** Keeps profile snapshots isolated per account without persisting credentials in cache keys. */
+private fun profileCachePrefix(authorization: com.breakyuna.esjzone.network.Authorization, domain: String): String {
+    val digest = MessageDigest.getInstance("SHA-256")
+        .digest("${authorization.ewsKey}:${authorization.ewsToken}".toByteArray(StandardCharsets.UTF_8))
+        .joinToString("") { byte -> "%02x".format(byte.toInt() and 0xff) }
+    return "profile:$domain:$digest:"
 }
 
 @Composable

@@ -1,6 +1,5 @@
 package com.breakyuna.esjzone.ui.page
 
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -44,7 +43,11 @@ import com.breakyuna.esjzone.novellibrary.novel.CategoryNovel
 import com.breakyuna.esjzone.novellibrary.novel.preview
 import com.breakyuna.esjzone.ui.component.AppBar
 import com.breakyuna.esjzone.ui.component.LoadError
-import com.breakyuna.esjzone.ui.component.Novel
+import com.breakyuna.esjzone.ui.component.QuietEmptyState
+import com.breakyuna.esjzone.ui.component.QuietErrorState
+import com.breakyuna.esjzone.ui.component.QuietLoadingState
+import com.breakyuna.esjzone.ui.component.QuietNovelListItem
+import com.breakyuna.esjzone.ui.component.QuietSectionHeader
 import com.breakyuna.esjzone.ui.navigation.LocalBaseNavigator
 
 class CategoryPage(private val category: Category) : Screen {
@@ -62,7 +65,7 @@ class CategoryPage(private val category: Category) : Screen {
             rememberScreenModel { CategoryPageModel(authorization, category) }
         val state by categoryPageModel.state.collectAsState()
 
-        Column {
+        Column(modifier = Modifier.fillMaxSize()) {
             AppBar(
                 title = category.name,
                 onBack = {
@@ -71,12 +74,9 @@ class CategoryPage(private val category: Category) : Screen {
             )
 
             when (state) {
-                is CategoryPageModel.State.Loading -> Box(
-                    modifier = Modifier.fillMaxSize(),
-                    contentAlignment = Alignment.Center
-                ) { CircularProgressIndicator() }
+                is CategoryPageModel.State.Loading -> QuietLoadingState(modifier = Modifier.fillMaxSize())
 
-                is CategoryPageModel.State.Error -> LoadError(
+                is CategoryPageModel.State.Error -> QuietErrorState(
                     onRetry = categoryPageModel::retry,
                     failure = (state as CategoryPageModel.State.Error).failure
                 )
@@ -92,12 +92,55 @@ class CategoryPage(private val category: Category) : Screen {
                         GlobalSettings.adult
                     }
 
+                    val unresolvedDetails = novels.count { novel ->
+                        val key = detailLoader.key(novel)
+                        key !in detailLoader.details && key !in detailLoader.failures
+                    }
+                    val visibleNovels = novels.mapNotNull { novel ->
+                        detailLoader.details[detailLoader.key(novel)]
+                    }.filter { adult || !it.isAdult }
+                    val renderNovels = novels.filter { novel ->
+                        val key = detailLoader.key(novel)
+                        val detail = detailLoader.details[key]
+                        detail == null || detailLoader.failures.containsKey(key) || adult || !detail.isAdult
+                    }
+                    val hasDetailFailures = novels.any { novel ->
+                        detailLoader.failures.containsKey(detailLoader.key(novel))
+                    }
+                    val detailsResolved = unresolvedDetails == 0
+
                     LazyColumn(
-                        modifier = Modifier.fillMaxSize()
+                        modifier = Modifier.fillMaxSize(),
+                        verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(10.dp),
+                        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 16.dp, vertical = 16.dp)
                     ) {
+                        item {
+                            QuietSectionHeader(
+                                title = category.name,
+                                modifier = Modifier.padding(bottom = 2.dp)
+                            )
+                        }
+                        if (novels.isEmpty()) {
+                            item {
+                                QuietEmptyState(
+                                    title = stringResource(R.string.search_no_results),
+                                    message = stringResource(R.string.home_collection_empty_message),
+                                    icon = androidx.compose.material.icons.Icons.Filled.Category
+                                )
+                            }
+                        }
+                        if (novels.isNotEmpty() && detailsResolved && visibleNovels.isEmpty() && !hasDetailFailures) {
+                            item(key = "category-filtered-empty") {
+                                QuietEmptyState(
+                                    title = stringResource(R.string.search_no_results),
+                                    message = stringResource(R.string.home_adult_hidden),
+                                    icon = androidx.compose.material.icons.Icons.Filled.Category
+                                )
+                            }
+                        }
                         items(
-                            novels,
-                            key = { item -> detailLoader.key(item) }
+                            renderNovels,
+                            key = { item -> "category-novel-${detailLoader.key(item)}" }
                         ) { categoryNovel ->
                             val key = detailLoader.key(categoryNovel)
                             val novel = detailLoader.details[key]
@@ -125,24 +168,21 @@ class CategoryPage(private val category: Category) : Screen {
                                 LaunchedEffect(key) { detailLoader.load(categoryNovel) }
                             } else {
                                 if (adult || !novel.isAdult) {
-                                    Novel(
-                                        covered = novel,
+                                    QuietNovelListItem(
+                                        novel = novel,
                                         summary = novel.description.preview()
                                     )
                                 }
                             }
                         }
 
-                        item {
-                            Row(
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                Spacer(modifier = Modifier.weight(1f))
-                                Text(
-                                    text = stringResource(id = R.string.the_end),
-                                    modifier = Modifier.padding(16.dp)
-                                )
-                                Spacer(modifier = Modifier.weight(1f))
+                        if (visibleNovels.isNotEmpty() && detailsResolved) {
+                            item(key = "category-novels-end") {
+                                Row(modifier = Modifier.fillMaxWidth()) {
+                                    Spacer(modifier = Modifier.weight(1f))
+                                    Text(text = stringResource(id = R.string.the_end), modifier = Modifier.padding(16.dp))
+                                    Spacer(modifier = Modifier.weight(1f))
+                                }
                             }
                         }
                     }
