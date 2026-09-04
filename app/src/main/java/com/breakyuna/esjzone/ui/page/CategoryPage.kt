@@ -10,6 +10,8 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Category as CategoryIcon
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -125,7 +127,7 @@ class CategoryPage(private val category: Category) : Screen {
                                 QuietEmptyState(
                                     title = stringResource(R.string.search_no_results),
                                     message = stringResource(R.string.home_collection_empty_message),
-                                    icon = androidx.compose.material.icons.Icons.Filled.Category
+                                    icon = Icons.Filled.CategoryIcon
                                 )
                             }
                         }
@@ -134,7 +136,7 @@ class CategoryPage(private val category: Category) : Screen {
                                 QuietEmptyState(
                                     title = stringResource(R.string.search_no_results),
                                     message = stringResource(R.string.home_adult_hidden),
-                                    icon = androidx.compose.material.icons.Icons.Filled.Category
+                                    icon = Icons.Filled.CategoryIcon
                                 )
                             }
                         }

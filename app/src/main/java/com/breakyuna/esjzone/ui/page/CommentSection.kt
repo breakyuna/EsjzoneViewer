@@ -23,6 +23,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.FirstPage
+import androidx.compose.material.icons.filled.Forum
 import androidx.compose.material.icons.filled.LastPage
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material3.Button
@@ -109,7 +110,7 @@ internal fun <T> CommunityStateContent(
         is CommunityState.Empty -> QuietEmptyState(
             title = emptyText,
             message = stringResource(R.string.community_empty_guidance),
-            icon = androidx.compose.material.icons.Icons.Filled.Forum,
+            icon = Icons.Filled.Forum,
             modifier = Modifier.fillMaxSize()
         )
 

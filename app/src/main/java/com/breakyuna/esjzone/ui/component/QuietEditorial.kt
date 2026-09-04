@@ -22,8 +22,10 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.ArrowForwardIos
 import androidx.compose.material.icons.filled.Category
 import androidx.compose.material.icons.filled.ChatBubbleOutline
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Forum
 import androidx.compose.material.icons.filled.History
@@ -401,7 +403,7 @@ fun QuietSectionHeader(
             ) {
                 Text(actionLabel, style = QuietEditorial.label)
                 Icon(
-                    imageVector = androidx.compose.material.icons.automirrored.filled.ArrowForwardIos,
+                    imageVector = Icons.Filled.ArrowForwardIos,
                     contentDescription = null,
                     modifier = Modifier
                         .padding(start = 3.dp)
@@ -847,7 +849,7 @@ fun QuietSettingRow(
                 imageVector = if (checked) {
                     Icons.Filled.Check
                 } else {
-                    androidx.compose.material.icons.automirrored.filled.ArrowForwardIos
+                    Icons.Filled.ArrowForwardIos
                 },
                 contentDescription = null,
                 tint = if (checked) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant

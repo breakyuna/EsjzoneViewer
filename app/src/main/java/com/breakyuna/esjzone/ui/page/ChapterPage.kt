@@ -731,7 +731,7 @@ class ChapterPage(
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
                         .navigationBarsPadding()
-                        .padding(horizontal = 16.dp, bottom = 14.dp)
+                        .padding(start = 16.dp, end = 16.dp, bottom = 14.dp)
                         .zIndex(2f)
                 )
             }
