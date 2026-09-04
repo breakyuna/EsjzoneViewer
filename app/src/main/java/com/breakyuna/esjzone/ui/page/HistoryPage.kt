@@ -16,7 +16,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
@@ -549,7 +548,6 @@ private fun HistoryHeader(
             QuietBackHeader(
                 title = stringResource(R.string.history),
                 onBack = onBack,
-                modifier = Modifier.statusBarsPadding(),
                 actions = actions
             )
         } else {
@@ -559,7 +557,6 @@ private fun HistoryHeader(
             ) {
                 Column(
                     modifier = Modifier
-                        .statusBarsPadding()
                         .padding(
                             start = QuietEditorial.pagePadding,
                             end = QuietEditorial.pagePadding,

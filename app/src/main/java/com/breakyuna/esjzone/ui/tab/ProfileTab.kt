@@ -71,6 +71,7 @@ import com.breakyuna.esjzone.ui.navigation.pushIfNotCurrent
 import com.breakyuna.esjzone.ui.page.AboutPage
 import com.breakyuna.esjzone.ui.page.BookmarksPage
 import com.breakyuna.esjzone.ui.page.SettingsPage
+import com.breakyuna.esjzone.ui.theme.QuietEditorial
 
 object ProfileTab : Tab {
 
@@ -104,14 +105,14 @@ object ProfileTab : Tab {
 
         BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
             val isWide = maxWidth >= 700.dp
-            val horizontalPadding = if (isWide) 32.dp else 20.dp
+            val horizontalPadding = if (isWide) 32.dp else QuietEditorial.pagePadding
 
             LazyColumn(
                 modifier = Modifier.fillMaxSize(),
                 contentPadding = PaddingValues(
                     start = horizontalPadding,
                     end = horizontalPadding,
-                    top = 24.dp,
+                    top = 16.dp,
                     bottom = 100.dp
                 ),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
@@ -120,15 +121,13 @@ object ProfileTab : Tab {
                     Column(modifier = Modifier.fillMaxWidth()) {
                         Text(
                             text = stringResource(R.string.screen_main_tab_profile),
-                            style = MaterialTheme.typography.headlineLarge.copy(
-                                fontWeight = FontWeight.Bold
-                            ),
-                            color = MaterialTheme.colorScheme.onBackground
+                            style = QuietEditorial.display,
+                            color = MaterialTheme.colorScheme.onSurface
                         )
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(
                             text = stringResource(R.string.profile_description),
-                            style = MaterialTheme.typography.bodyMedium,
+                            style = QuietEditorial.body,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }

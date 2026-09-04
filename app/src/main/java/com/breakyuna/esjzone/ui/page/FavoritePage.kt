@@ -17,7 +17,6 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -290,7 +289,7 @@ object FavoritePage : Screen {
             snackbarHost = { SnackbarHost(hostState = snackbar) }
         ) { padding ->
             LazyVerticalGrid(
-                columns = GridCells.Adaptive(minSize = QuietEditorial.bookshelfMinCardWidth),
+                columns = GridCells.Fixed(3),
                 state = gridState,
                 modifier = Modifier
                     .fillMaxSize()
@@ -306,8 +305,8 @@ object FavoritePage : Screen {
                     top = 12.dp,
                     bottom = if (editing) 80.dp else 100.dp
                 ),
-                horizontalArrangement = Arrangement.spacedBy(QuietEditorial.itemGap),
-                verticalArrangement = Arrangement.spacedBy(QuietEditorial.itemGap)
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 if (editing) {
                     item(span = { GridItemSpan(maxLineSpan) }) {
@@ -406,12 +405,16 @@ private fun BookshelfHeader(
         modifier = Modifier.fillMaxWidth(),
         color = MaterialTheme.colorScheme.surface
     ) {
-        Column(modifier = Modifier.fillMaxWidth().statusBarsPadding()) {
+        Column(modifier = Modifier.fillMaxWidth()) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .heightIn(min = 68.dp)
-                    .padding(start = if (showBack) 4.dp else 16.dp, end = 8.dp),
+                    .padding(
+                        start = if (showBack) 4.dp else QuietEditorial.pagePadding,
+                        end = 8.dp,
+                        top = 16.dp,
+                        bottom = 10.dp
+                    ),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 if (showBack) {
@@ -784,7 +787,7 @@ private fun BookshelfGridItem(
             cardColors.cardSurface
         }
     ) {
-        Column(modifier = Modifier.padding(8.dp)) {
+        Column(modifier = Modifier.padding(6.dp)) {
             Box(modifier = Modifier.fillMaxWidth()) {
                 QuietNovelCover(
                     coverUrl = entry.coverUrl,
@@ -799,20 +802,20 @@ private fun BookshelfGridItem(
                         selected = selected,
                         modifier = Modifier
                             .align(Alignment.TopStart)
-                            .padding(7.dp)
+                            .padding(4.dp)
                     )
                 }
             }
             Text(
                 text = entry.title,
-                style = QuietEditorial.title.copy(
+                style = QuietEditorial.body.copy(
                     fontWeight = FontWeight.SemiBold,
-                    lineHeight = 21.sp
+                    lineHeight = 18.sp
                 ),
                 color = MaterialTheme.colorScheme.onSurface,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.padding(top = 9.dp, start = 2.dp, end = 2.dp)
+                modifier = Modifier.padding(top = 6.dp, start = 2.dp, end = 2.dp)
             )
             if (entry.author.isNotBlank()) {
                 Text(
@@ -821,13 +824,13 @@ private fun BookshelfGridItem(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.padding(top = 4.dp, start = 2.dp, end = 2.dp)
+                    modifier = Modifier.padding(top = 3.dp, start = 2.dp, end = 2.dp)
                 )
             }
             Row(
-                modifier = Modifier.padding(top = 8.dp, start = 2.dp, end = 2.dp, bottom = 2.dp),
+                modifier = Modifier.padding(top = 6.dp, start = 2.dp, end = 2.dp, bottom = 2.dp),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
             ) {
                 Box(
                     modifier = Modifier

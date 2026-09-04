@@ -15,7 +15,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -27,10 +26,12 @@ import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.ColorLens
+import androidx.compose.material.icons.filled.Dns
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Language
 import androidx.compose.material.icons.filled.NoAdultContent
 import androidx.compose.material.icons.filled.Storage
+import androidx.compose.material.icons.filled.Translate
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -56,6 +57,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -65,6 +67,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import com.breakyuna.esjzone.AppLanguage
 import com.breakyuna.esjzone.GlobalSettings
 import com.breakyuna.esjzone.MainActivity
 import com.breakyuna.esjzone.R
@@ -79,6 +82,7 @@ import com.breakyuna.esjzone.ui.screen.LoginScreen
 import com.breakyuna.esjzone.ui.theme.QuietEditorial
 import com.breakyuna.esjzone.ui.theme.catppuccin.CatppuccinThemeType
 import com.breakyuna.esjzone.util.AppLogger
+import com.breakyuna.esjzone.util.LocaleHelper
 
 /** Quiet Editorial settings document, preserving the existing preference and session behavior. */
 object SettingsPage : Screen {
@@ -91,9 +95,11 @@ object SettingsPage : Screen {
         val navigator = LocalBaseNavigator.current
         val authorization = LocalAuthorization.current
         val scope = rememberCoroutineScope()
-        var adult by remember { GlobalSettings.adult }
-        var theme by remember { GlobalSettings.theme }
-        var domain by remember { GlobalSettings.domain }
+        val context = LocalContext.current
+        val adult by GlobalSettings.adult
+        val theme by GlobalSettings.theme
+        val domain by GlobalSettings.domain
+        val language by GlobalSettings.language
         var showLogoutConfirmation by remember { mutableStateOf(false) }
         var logoutInProgress by remember { mutableStateOf(false) }
         var cacheOperation by remember { mutableStateOf<String?>(null) }
@@ -149,7 +155,7 @@ object SettingsPage : Screen {
                     .padding(horizontal = QuietEditorial.pagePadding, vertical = 16.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                SettingsSection(Icons.Filled.Language, stringResource(R.string.settings_network_section)) {
+                SettingsSection(Icons.Filled.Dns, stringResource(R.string.settings_network_section)) {
                     SettingsLabel(stringResource(R.string.settings_active_mirror))
                     GlobalSettings.DOMAINS.forEach { candidate ->
                         MirrorRow(
@@ -157,8 +163,7 @@ object SettingsPage : Screen {
                             selected = candidate == domain,
                             backup = candidate != GlobalSettings.DOMAINS.first(),
                             onClick = {
-                                domain = candidate
-                                GlobalSettings.domain.value = candidate
+                                GlobalSettings.setDomain(candidate)
                                 scope.launch(Dispatchers.IO) { EsjzoneClient.clearPageCache() }
                                 persistCache("domain", candidate)
                             }
@@ -179,20 +184,40 @@ object SettingsPage : Screen {
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     ThemeFamily(stringResource(R.string.settings_theme_frappe), CatppuccinThemeType.frappes(), theme) {
-                        theme = it
+                        GlobalSettings.setTheme(it)
                         persistCache("theme", it.name)
                     }
                     ThemeFamily(stringResource(R.string.settings_theme_latte), CatppuccinThemeType.lattes(), theme) {
-                        theme = it
+                        GlobalSettings.setTheme(it)
                         persistCache("theme", it.name)
                     }
                     ThemeFamily(stringResource(R.string.settings_theme_macchiato), CatppuccinThemeType.macchiatos(), theme) {
-                        theme = it
+                        GlobalSettings.setTheme(it)
                         persistCache("theme", it.name)
                     }
                     ThemeFamily(stringResource(R.string.settings_theme_mocha), CatppuccinThemeType.mochas(), theme) {
-                        theme = it
+                        GlobalSettings.setTheme(it)
                         persistCache("theme", it.name)
+                    }
+                }
+
+                SettingsSection(Icons.Filled.Translate, stringResource(R.string.settings_language_section)) {
+                    Text(
+                        stringResource(R.string.settings_language_description),
+                        style = QuietEditorial.body,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    for (candidate in AppLanguage.entries) {
+                        LanguageRow(
+                            title = stringResource(candidate.titleRes),
+                            description = stringResource(candidate.subtitleRes),
+                            selected = candidate == language,
+                            onClick = {
+                                GlobalSettings.setLanguage(candidate)
+                                LocaleHelper.syncSystemLocale(context, candidate)
+                                persistCache("language", candidate.code)
+                            }
+                        )
                     }
                 }
 
@@ -203,7 +228,7 @@ object SettingsPage : Screen {
                         badge = stringResource(R.string.adult_badge),
                         checked = adult,
                         onCheckedChange = {
-                            adult = it
+                            GlobalSettings.setAdult(it)
                             persistCache("show_adult", it.toString())
                         }
                     )
@@ -450,9 +475,12 @@ private fun quietRuleColor(): Color = MaterialTheme.colorScheme.outlineVariant.c
 @Composable
 private fun SettingsHeader(onBack: () -> Unit) {
     Surface(color = MaterialTheme.colorScheme.surface, modifier = Modifier.fillMaxWidth()) {
-        Column(modifier = Modifier.statusBarsPadding()) {
+        Column {
             Row(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 8.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 8.dp)
+                    .padding(top = 16.dp, bottom = 12.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 IconButton(onClick = onBack, modifier = Modifier.size(48.dp)) {
@@ -509,6 +537,42 @@ private fun SettingsSection(
 @Composable
 private fun SettingsLabel(text: String) {
     Text(text, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+}
+
+@Composable
+private fun LanguageRow(
+    title: String,
+    description: String,
+    selected: Boolean,
+    onClick: () -> Unit
+) {
+    Surface(
+        onClick = onClick,
+        shape = QuietEditorial.cardShape,
+        color = if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.08f)
+        else MaterialTheme.colorScheme.surface.copy(alpha = 0.34f),
+        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    title,
+                    style = QuietEditorial.title,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    description,
+                    style = QuietEditorial.body,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            RadioMark(selected)
+        }
+    }
 }
 
 @Composable

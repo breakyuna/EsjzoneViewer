@@ -189,6 +189,7 @@ private fun HomeCollection(
             .asSequence()
             .filter { adult || !it.isAdult }
             .distinctBy { it.url.ifBlank { it.name } }
+            .take(4)
             .toList()
     }
 

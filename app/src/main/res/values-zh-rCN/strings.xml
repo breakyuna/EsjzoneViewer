@@ -247,6 +247,14 @@
     <string name="settings_mirror_note">切换活动镜像站点将自动清理页面缓存，但不会删除已下载的小说、阅读记录、书签或书架数据。</string>
     <string name="settings_appearance_section">外观</string>
     <string name="settings_theme_description">主题家族与强调色，明暗配色跟随 Android 系统。</string>
+    <string name="settings_language_section">界面语言</string>
+    <string name="settings_language_description">选择应用显示语言，可跟随系统或手动指定。</string>
+    <string name="settings_language_system">跟随系统</string>
+    <string name="settings_language_system_description">跟随 Android 系统语言设置</string>
+    <string name="settings_language_zh_cn">简体中文</string>
+    <string name="settings_language_zh_cn_description">中文（简体）</string>
+    <string name="settings_language_en">English</string>
+    <string name="settings_language_en_description">English</string>
     <string name="settings_content_section">内容与过滤偏好</string>
     <string name="settings_adult_description">在首页、分类与小说库中显示限制级译文与原创小说。</string>
     <string name="settings_storage_section">本地存储与缓存管理</string>

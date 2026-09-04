@@ -1,5 +1,6 @@
 package com.breakyuna.esjzone.ui.screen
 
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Arrangement
@@ -7,6 +8,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -15,6 +17,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -50,24 +53,15 @@ class LoadingScreen : Screen {
                 verticalArrangement = Arrangement.spacedBy(16.dp),
                 modifier = Modifier.padding(32.dp)
             ) {
-                Surface(
-                    modifier = Modifier.size(72.dp),
-                    shape = androidx.compose.foundation.shape.CircleShape,
-                    color = MaterialTheme.colorScheme.primaryContainer
-                ) {
-                    androidx.compose.foundation.Image(
-                        painter = painterResource(R.mipmap.esjzone_icon_foreground),
-                        contentDescription = stringResource(R.string.app_name),
-                        modifier = Modifier.padding(12.dp)
-                    )
-                }
+                Image(
+                    painter = painterResource(R.drawable.esjzone_icon_round),
+                    contentDescription = stringResource(R.string.app_name),
+                    modifier = Modifier
+                        .size(72.dp)
+                        .clip(CircleShape)
+                )
                 Text(stringResource(R.string.app_name), style = QuietEditorial.display)
                 CircularProgressIndicator(strokeWidth = 2.5.dp)
-                Text(
-                    stringResource(R.string.startup_loading),
-                    style = QuietEditorial.body,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
             }
         }
 
@@ -88,8 +82,9 @@ class LoadingScreen : Screen {
                     val ewsKey = dao.findByKey("ews_key")?.value ?: "null"
                     val ewsToken = dao.findByKey("ews_token")?.value ?: "null"
                     val sessionDomain = dao.findByKey("session_domain")?.value
-                    GlobalSettings.adult.value =
+                    GlobalSettings.setAdult(
                         dao.findByKey("show_adult")?.value?.toBooleanStrictOrNull() ?: false
+                    )
 
                     val selectedDomain = GlobalSettings.domain.value
                     val legacyAuthorization = Authorization(ewsKey, ewsToken, selectedDomain)

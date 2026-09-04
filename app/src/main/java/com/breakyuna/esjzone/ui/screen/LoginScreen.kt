@@ -42,6 +42,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.ImeAction
@@ -75,7 +76,7 @@ object LoginScreen : Screen {
     override fun Content() {
         val navigator = LocalNavigator.currentOrThrow
         val scope = rememberCoroutineScope()
-        var currentDomain by remember { GlobalSettings.domain }
+        val currentDomain by GlobalSettings.domain
         var email by remember { mutableStateOf("") }
         var password by remember { mutableStateOf("") }
         var passwordVisible by remember { mutableStateOf(false) }
@@ -140,27 +141,23 @@ object LoginScreen : Screen {
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(18.dp)
             ) {
-                Surface(
-                    modifier = Modifier.size(72.dp),
-                    shape = CircleShape,
-                    color = MaterialTheme.colorScheme.primaryContainer
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     Image(
-                        painter = painterResource(R.mipmap.esjzone_icon_foreground),
+                        painter = painterResource(R.drawable.esjzone_icon_round),
                         contentDescription = stringResource(R.string.app_name),
-                        modifier = Modifier.padding(12.dp)
+                        modifier = Modifier
+                            .size(72.dp)
+                            .clip(CircleShape)
+                    )
+                    Text(
+                        text = stringResource(R.string.app_name),
+                        style = QuietEditorial.display,
+                        color = MaterialTheme.colorScheme.onSurface
                     )
                 }
-                Text(
-                    text = stringResource(R.string.app_name),
-                    style = QuietEditorial.display,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-                Text(
-                    text = stringResource(R.string.login_description),
-                    style = QuietEditorial.body,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
 
                 QuietGroup {
                     QuietSectionHeader(
@@ -177,8 +174,7 @@ object LoginScreen : Screen {
                             FilterChip(
                                 selected = currentDomain == domain,
                                 onClick = {
-                                    currentDomain = domain
-                                    GlobalSettings.domain.value = domain
+                                    GlobalSettings.setDomain(domain)
                                     scope.launch(Dispatchers.IO) {
                                         runCatching {
                                             MainActivity.database.cacheDao().put("domain", domain)
