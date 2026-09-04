@@ -122,7 +122,16 @@
     <string name="novel_words">%1$d 字</string>
     <string name="novel_favorite">收藏</string>
     <string name="novel_favorited">已收藏</string>
+    <string name="novel_favorite_pending">收藏同步中…</string>
+    <string name="novel_favorite_failed">收藏同步将重试</string>
+    <string name="novel_open_source">打开来源页面</string>
+    <string name="novel_more_actions">更多作品操作</string>
     <string name="novel_open_forum">前往论坛</string>
+    <string name="novel_chapter_count">%1$d 章</string>
+    <string name="novel_show_all_chapters">查看全部目录</string>
+    <string name="novel_show_fewer_chapters">收起目录</string>
+    <string name="novel_description_expand">展开完整简介</string>
+    <string name="novel_description_collapse">收起简介</string>
     <string name="novel_download">下载到本地</string>
     <string name="novel_download_update">检查新章节</string>
     <string name="novel_downloading">正在下载 %1$d/%2$d · %3$s</string>
@@ -136,6 +145,13 @@
     <string name="novel_export_epub">导出 EPUB</string>
     <string name="novel_export_success">导出完成</string>
     <string name="novel_export_failed">小说导出失败</string>
+    <string name="novel_local_copy_title">离线副本</string>
+    <string name="novel_local_copy_none">还没有本地副本</string>
+    <string name="novel_local_copy_partial">本地已有 %1$d/%2$d 章</string>
+    <string name="novel_local_copy_complete">本地已有 %1$d/%2$d 章</string>
+    <string name="novel_export_title">导出本地副本</string>
+    <string name="novel_download_no_chapters">没有可下载的章节。</string>
+    <string name="novel_download_background_note">下载会在后台继续，任务中断后已完成的章节仍会保留。</string>
     <string name="history">历史记录</string>
     <string name="history_description">单击查看全部记录，双击继续上次阅读</string>
     <string name="history_local">本地历史</string>
@@ -297,4 +313,6 @@
     <string name="comment_refresh">刷新评论</string>
     <string name="chapter_group_expand">展开章节分组</string>
     <string name="chapter_group_collapse">收起章节分组</string>
+    <string name="chapter_current">当前阅读章节</string>
+    <string name="untitled_chapter">未命名章节</string>
 </resources>

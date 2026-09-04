@@ -122,7 +122,16 @@
     <string name="novel_words">%1$d words</string>
     <string name="novel_favorite">Favorite</string>
     <string name="novel_favorited">Favorited</string>
+    <string name="novel_favorite_pending">Syncing favorite…</string>
+    <string name="novel_favorite_failed">Favorite sync will retry</string>
+    <string name="novel_open_source">Open source page</string>
+    <string name="novel_more_actions">More novel actions</string>
     <string name="novel_open_forum">Open forum</string>
+    <string name="novel_chapter_count">%1$d chapters</string>
+    <string name="novel_show_all_chapters">Show all chapters</string>
+    <string name="novel_show_fewer_chapters">Show fewer chapters</string>
+    <string name="novel_description_expand">Read full description</string>
+    <string name="novel_description_collapse">Collapse description</string>
     <string name="novel_download">Download for offline reading</string>
     <string name="novel_download_update">Check for new chapters</string>
     <string name="novel_downloading">Downloading %1$d/%2$d · %3$s</string>
@@ -136,6 +145,13 @@
     <string name="novel_export_epub">Export EPUB</string>
     <string name="novel_export_success">Export complete</string>
     <string name="novel_export_failed">Unable to export novel</string>
+    <string name="novel_local_copy_title">Offline copy</string>
+    <string name="novel_local_copy_none">No local copy yet</string>
+    <string name="novel_local_copy_partial">%1$d/%2$d chapters available locally</string>
+    <string name="novel_local_copy_complete">%1$d/%2$d chapters available locally</string>
+    <string name="novel_export_title">Export local copy</string>
+    <string name="novel_download_no_chapters">No chapters are available to download.</string>
+    <string name="novel_download_background_note">Downloads continue in the background and keep completed chapters after an interruption.</string>
     <string name="history">History</string>
     <string name="history_description">Tap once to browse; double-tap to continue reading</string>
     <string name="history_local">Local history</string>
@@ -297,4 +313,6 @@
     <string name="comment_refresh">Refresh</string>
     <string name="chapter_group_expand">Expand chapter group</string>
     <string name="chapter_group_collapse">Collapse chapter group</string>
+    <string name="chapter_current">Current reading chapter</string>
+    <string name="untitled_chapter">Untitled chapter</string>
 </resources>

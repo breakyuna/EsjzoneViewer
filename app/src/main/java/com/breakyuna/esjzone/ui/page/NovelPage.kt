@@ -7,46 +7,50 @@ import android.net.Uri
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.MenuBook
-import androidx.compose.material.icons.filled.Favorite
-import androidx.compose.material.icons.filled.FavoriteBorder
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.DownloadDone
+import androidx.compose.material.icons.filled.ErrorOutline
+import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.Forum
-import androidx.compose.material.icons.filled.Person
-import androidx.compose.material.icons.filled.RemoveRedEye
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material.icons.filled.TextSnippet
-import androidx.compose.material.icons.filled.ThumbUp
-import androidx.compose.material.icons.filled.Topic
 import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
-import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.SheetState
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -58,12 +62,8 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import cafe.adriel.voyager.core.model.StateScreenModel
@@ -71,8 +71,46 @@ import cafe.adriel.voyager.core.model.rememberScreenModel
 import cafe.adriel.voyager.core.model.screenModelScope
 import cafe.adriel.voyager.core.screen.Screen
 import cafe.adriel.voyager.core.screen.ScreenKey
-import coil.compose.SubcomposeAsyncImage
-import coil.request.ImageRequest
+import com.breakyuna.esjzone.R
+import com.breakyuna.esjzone.database.BookshelfRepository
+import com.breakyuna.esjzone.database.entity.BookshelfSyncState
+import com.breakyuna.esjzone.network.Authorization
+import com.breakyuna.esjzone.network.EsjzoneClient
+import com.breakyuna.esjzone.network.EsjzoneUrls
+import com.breakyuna.esjzone.network.LocalAuthorization
+import com.breakyuna.esjzone.network.LoadFailureKind
+import com.breakyuna.esjzone.network.features.getNovelDetail
+import com.breakyuna.esjzone.network.loadFailureKind
+import com.breakyuna.esjzone.novellibrary.component.ChapterItem
+import com.breakyuna.esjzone.novellibrary.component.VisibleChapterItem
+import com.breakyuna.esjzone.novellibrary.component.initiallyExpandedChapterKeys
+import com.breakyuna.esjzone.novellibrary.component.visibleChapterRows
+import com.breakyuna.esjzone.novellibrary.novel.DetailedNovel
+import com.breakyuna.esjzone.novellibrary.novel.Novel
+import com.breakyuna.esjzone.novellibrary.novel.preview
+import com.breakyuna.esjzone.offline.BackgroundDownloadStatus
+import com.breakyuna.esjzone.offline.DownloadProgress
+import com.breakyuna.esjzone.offline.DownloadedChapterRecord
+import com.breakyuna.esjzone.offline.DownloadedNovelManifest
+import com.breakyuna.esjzone.offline.NovelDownloadManager
+import com.breakyuna.esjzone.offline.NovelDownloadStore
+import com.breakyuna.esjzone.offline.NovelExporter
+import com.breakyuna.esjzone.ui.component.ChapterListRow
+import com.breakyuna.esjzone.ui.component.Description
+import com.breakyuna.esjzone.ui.component.LoadError
+import com.breakyuna.esjzone.ui.component.Loading
+import com.breakyuna.esjzone.ui.component.NovelDetailHero
+import com.breakyuna.esjzone.ui.component.NovelDetailRule
+import com.breakyuna.esjzone.ui.component.NovelDetailSectionHeading
+import com.breakyuna.esjzone.ui.component.NovelDetailStats
+import com.breakyuna.esjzone.ui.component.NovelDetailTags
+import com.breakyuna.esjzone.ui.component.NovelDetailTopBar
+import com.breakyuna.esjzone.ui.component.QuietEditorial
+import com.breakyuna.esjzone.ui.navigation.BooleanStateHolder
+import com.breakyuna.esjzone.ui.navigation.ChapterStateHolder
+import com.breakyuna.esjzone.ui.navigation.LocalBaseNavigator
+import com.breakyuna.esjzone.ui.navigation.pushIfNotCurrent
+import com.breakyuna.esjzone.util.AppLogger
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -80,35 +118,6 @@ import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import com.breakyuna.esjzone.MainActivity
-import com.breakyuna.esjzone.R
-import com.breakyuna.esjzone.network.Authorization
-import com.breakyuna.esjzone.network.EsjzoneClient
-import com.breakyuna.esjzone.network.EsjzoneUrls
-import com.breakyuna.esjzone.network.LocalAuthorization
-import com.breakyuna.esjzone.network.LoadFailureKind
-import com.breakyuna.esjzone.network.loadFailureKind
-import com.breakyuna.esjzone.network.features.getNovelDetail
-import com.breakyuna.esjzone.database.BookshelfRepository
-import com.breakyuna.esjzone.offline.DownloadProgress
-import com.breakyuna.esjzone.offline.DownloadedNovelManifest
-import com.breakyuna.esjzone.offline.NovelDownloadManager
-import com.breakyuna.esjzone.offline.NovelDownloadStore
-import com.breakyuna.esjzone.offline.NovelExporter
-import com.breakyuna.esjzone.novellibrary.novel.DetailedNovel
-import com.breakyuna.esjzone.novellibrary.novel.Novel
-import com.breakyuna.esjzone.novellibrary.component.initiallyExpandedChapterKeys
-import com.breakyuna.esjzone.novellibrary.component.visibleChapterRows
-import com.breakyuna.esjzone.ui.component.AppBar
-import com.breakyuna.esjzone.ui.component.ChapterListHeader
-import com.breakyuna.esjzone.ui.component.ChapterListRow
-import com.breakyuna.esjzone.ui.component.Description
-import com.breakyuna.esjzone.ui.component.Loading
-import com.breakyuna.esjzone.ui.component.LoadError
-import com.breakyuna.esjzone.ui.navigation.LocalBaseNavigator
-import com.breakyuna.esjzone.ui.navigation.BooleanStateHolder
-import com.breakyuna.esjzone.ui.navigation.ChapterStateHolder
-import com.breakyuna.esjzone.ui.navigation.pushIfNotCurrent
 
 class NovelPage(
     private val novel: Novel,
@@ -123,84 +132,98 @@ class NovelPage(
     override fun Content() {
         val navigator = LocalBaseNavigator.current
         val authorization = LocalAuthorization.current
-        val scope = rememberCoroutineScope()
         val context = LocalContext.current
-
+        val scope = rememberCoroutineScope()
         val screenModel = rememberScreenModel { NovelPageModel(authorization, novel) }
-        val commentModel = rememberScreenModel {
-            CommentPageModel(authorization, novel.url)
-        }
+        val commentModel = rememberScreenModel { CommentPageModel(authorization, novel.url) }
         val state by screenModel.state.collectAsState()
         val localShelfEntry by BookshelfRepository.observeEntry(authorization, novel.url)
             .collectAsState(initial = null)
+        var showMoreActions by rememberSaveable(novel.url) { mutableStateOf(false) }
 
-        Column(modifier = Modifier.fillMaxSize()) {
-            AppBar(
-                title = novel.name,
-                onBack = {
-                    navigator?.pop()
-                }
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(MaterialTheme.colorScheme.surface)
+        ) {
+            NovelDetailTopBar(
+                onBack = { navigator?.pop() },
+                onOpenExternal = {
+                    openExternal(
+                        context,
+                        (state as? NovelPageModel.State.Result)?.detailed?.sourceUrl
+                            ?.takeIf(String::isNotBlank)
+                            ?: EsjzoneUrls.resolve(novel.url)
+                    )
+                },
+                onMore = { showMoreActions = true }
             )
 
-            when (state) {
-                is NovelPageModel.State.Loading -> Loading()
+            when (val snapshot = state) {
+                NovelPageModel.State.Loading -> Box(
+                    modifier = Modifier.weight(1f).fillMaxWidth(),
+                    contentAlignment = Alignment.Center
+                ) { Loading() }
 
-                is NovelPageModel.State.Error -> LoadError(
-                    onRetry = screenModel::retry,
-                    failure = (state as NovelPageModel.State.Error).failure
-                )
+                is NovelPageModel.State.Error -> Box(
+                    modifier = Modifier.weight(1f).fillMaxWidth(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    LoadError(
+                        onRetry = screenModel::retry,
+                        failure = snapshot.failure
+                    )
+                }
 
                 is NovelPageModel.State.Result -> {
-                    val result = state as NovelPageModel.State.Result
-                    val chapterList = result.detailed.chapterList
+                    val detailed = snapshot.detailed
+                    val chapterList = detailed.chapterList
+                    val historyState = history.state()
+                    val hasHistory = rememberSaveable(novel.url) {
+                        mutableStateOf(chapterList.hasHistory)
+                    }
+                    val favoriteState = favorite.state()
+                    var rememberedFavorite by rememberSaveable(novel.url) {
+                        mutableStateOf(favoriteState.value)
+                    }
+                    var descriptionExpanded by rememberSaveable(novel.url) {
+                        mutableStateOf(false)
+                    }
+                    var showAllChapters by rememberSaveable(novel.url) {
+                        mutableStateOf(false)
+                    }
                     val expandedChapterGroups = rememberSaveable(novel.url) {
                         mutableStateOf(initiallyExpandedChapterKeys(chapterList.items))
                     }
                     val visibleRows = remember(chapterList, expandedChapterGroups.value) {
                         visibleChapterRows(chapterList.items, expandedChapterGroups.value)
                     }
-
-                    val historyState = history.state()
-                    historyState.value = chapterList.toRead
-
-                    val hasHistory = rememberSaveable {
-                        mutableStateOf(chapterList.hasHistory)
+                    val hasExplicitHistory = remember(chapterList) {
+                        historyState.value != null
                     }
 
-                    val rememberedHistory by historyState
-                    val rememberedHasHistory by rememberSaveable { hasHistory }
-                    val favoriteState = favorite.state()
-                    var rememberedFavorite by rememberSaveable(novel.url) {
-                        mutableStateOf(favoriteState.value)
+                    LaunchedEffect(chapterList) {
+                        if (historyState.value == null) historyState.value = chapterList.toRead
+                        // A first chapter chosen as the default target is not
+                        // a resume marker. Only server history or a chapter
+                        // explicitly supplied by the source task means
+                        // "Continue reading".
+                        hasHistory.value = chapterList.hasHistory || hasExplicitHistory
                     }
 
-                    LaunchedEffect(result.detailed.isFavorite, localShelfEntry?.operationVersion) {
-                        // A local pending intent always wins over a possibly
-                        // stale detail-page favorite flag. Existing local rows
-                        // may still need author/cover/adult metadata, so only
-                        // the repository's supplement path is used for them.
-                        if (localShelfEntry != null) {
+                    LaunchedEffect(detailed.isFavorite, localShelfEntry?.operationVersion) {
+                        // A local row is authoritative for the visual toggle;
+                        // the detail response only supplements missing metadata.
+                        if (localShelfEntry != null || detailed.isFavorite) {
                             BookshelfRepository.seedRemoteFavorite(
-                                authorization,
-                                novel,
-                                author = result.detailed.author,
-                                coverUrl = result.detailed.coverUrl,
-                                isAdult = result.detailed.isAdult
+                                authorization = authorization,
+                                novel = novel,
+                                author = detailed.author,
+                                coverUrl = detailed.coverUrl,
+                                isAdult = detailed.isAdult
                             )
-                        } else if (result.detailed.isFavorite) {
-                            BookshelfRepository.seedRemoteFavorite(
-                                authorization,
-                                novel,
-                                author = result.detailed.author,
-                                coverUrl = result.detailed.coverUrl,
-                                isAdult = result.detailed.isAdult
-                            )
-                        } else if (localShelfEntry == null && favoriteState.value == rememberedFavorite) {
-                            favoriteState.value = result.detailed.isFavorite
-                            rememberedFavorite = result.detailed.isFavorite
                         }
                     }
-
                     LaunchedEffect(localShelfEntry?.operationVersion, localShelfEntry?.visible) {
                         localShelfEntry?.let {
                             favoriteState.value = it.visible
@@ -208,428 +231,424 @@ class NovelPage(
                         }
                     }
 
-                    Column(modifier = Modifier.fillMaxSize()) {
-                        LazyColumn(
-                            modifier = Modifier
-                                .weight(1f)
-                                .fillMaxWidth()
-                        ) {
-                        item(key = "novel-hero") {
-                            Card(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(16.dp),
-                                shape = RoundedCornerShape(20.dp),
-                                colors = CardDefaults.cardColors(
-                                    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)
-                                )
-                            ) {
-                                Column(modifier = Modifier.padding(16.dp)) {
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        verticalAlignment = Alignment.Top,
-                                        horizontalArrangement = Arrangement.spacedBy(14.dp)
-                                    ) {
-                                        SubcomposeAsyncImage(
-                                            model = ImageRequest.Builder(LocalContext.current)
-                                                .data(
-                                                    EsjzoneUrls.coverOrEmpty(result.detailed.coverUrl)
-                                                        .takeIf { it.isNotBlank() }
-                                                        ?: R.drawable.missing_cover
-                                                )
-                                                .crossfade(true)
-                                                .build(),
-                                            contentDescription = result.detailed.name,
-                                            imageLoader = MainActivity.imageLoader,
-                                            loading = {
-                                                Box(
-                                                    modifier = Modifier.fillMaxSize(),
-                                                    contentAlignment = Alignment.Center
-                                                ) {
-                                                    CircularProgressIndicator(
-                                                        strokeWidth = 2.dp,
-                                                        modifier = Modifier.size(24.dp)
-                                                    )
-                                                }
-                                            },
-                                            error = {
-                                                androidx.compose.foundation.Image(
-                                                    painter = androidx.compose.ui.res.painterResource(
-                                                        id = R.drawable.missing_cover
-                                                    ),
-                                                    contentDescription = result.detailed.name,
-                                                    contentScale = ContentScale.Crop,
-                                                    modifier = Modifier.fillMaxSize()
-                                                )
-                                            },
-                                            contentScale = ContentScale.Crop,
-                                            modifier = Modifier
-                                                .width(112.dp)
-                                                .height(156.dp)
-                                                .clip(RoundedCornerShape(12.dp))
-                                        )
-
-                                        Column(modifier = Modifier.weight(1f)) {
-                                            Text(
-                                                text = result.detailed.name,
-                                                style = MaterialTheme.typography.titleLarge,
-                                                fontWeight = FontWeight.Bold,
-                                                maxLines = 3,
-                                                overflow = TextOverflow.Ellipsis
-                                            )
-                                            Spacer(modifier = Modifier.height(8.dp))
-                                            NovelInfoRow(
-                                                label = stringResource(id = R.string.novel_type),
-                                                value = result.detailed.type
-                                            )
-                                            NovelInfoRow(
-                                                label = stringResource(id = R.string.author),
-                                                value = result.detailed.author,
-                                                icon = Icons.Filled.Person
-                                            )
-                                            Row(
-                                                modifier = Modifier.fillMaxWidth(),
-                                                horizontalArrangement = Arrangement.spacedBy(6.dp)
-                                            ) {
-                                                NovelStatRow(
-                                                    icon = Icons.Filled.RemoveRedEye,
-                                                    label = stringResource(
-                                                        id = R.string.novel_views,
-                                                        result.detailed.views
-                                                    ),
-                                                    modifier = Modifier.weight(1f)
-                                                )
-                                                NovelStatRow(
-                                                    icon = Icons.Filled.ThumbUp,
-                                                    label = stringResource(
-                                                        id = R.string.novel_likes,
-                                                        result.detailed.likes
-                                                    ),
-                                                    modifier = Modifier.weight(1f)
-                                                )
-                                                NovelStatRow(
-                                                    icon = Icons.Filled.Topic,
-                                                    label = stringResource(
-                                                        id = R.string.novel_words,
-                                                        result.detailed.words
-                                                    ),
-                                                    modifier = Modifier.weight(1f)
-                                                )
-                                            }
-                                            result.detailed.sourceUrl?.let { sourceUrl ->
-                                                NovelInfoRow(
-                                                    label = stringResource(id = R.string.novel_source),
-                                                    value = sourceUrl,
-                                                    onClick = { openExternal(context, sourceUrl) }
-                                                )
-                                            }
-                                            result.detailed.updatedAt?.let { updatedAt ->
-                                                NovelInfoRow(
-                                                    label = stringResource(id = R.string.novel_updated),
-                                                    value = updatedAt
-                                                )
-                                            }
-                                            Spacer(modifier = Modifier.height(10.dp))
-                                            Button(
-                                                onClick = {
-                                                    val nextFavorite = !rememberedFavorite
-                                                    favoriteState.value = nextFavorite
-                                                    rememberedFavorite = nextFavorite
-                                                    scope.launch {
-                                                        try {
-                                                            withContext(Dispatchers.IO) {
-                                                                BookshelfRepository.setFavorite(
-                                                                    authorization,
-                                                                    novel,
-                                                                    desired = nextFavorite
-                                                                )
-                                                            }
-                                                        } catch (error: CancellationException) {
-                                                            throw error
-                                                        } catch (error: Exception) {
-                                                            // Keep the optimistic local intent. The repository persists it
-                                                            // as PENDING_ADD/PENDING_REMOVE for a later retry.
-                                                            com.breakyuna.esjzone.util.AppLogger.e(
-                                                                "NovelPage",
-                                                                "Failed to persist favorite intent for ${novel.name}",
-                                                                error
-                                                            )
-                                                        }
-                                                    }
-                                                },
-                                                modifier = Modifier.fillMaxWidth(),
-                                                contentPadding = ButtonDefaults.ContentPadding
-                                            ) {
-                                                Icon(
-                                                    imageVector = if (rememberedFavorite) {
-                                                        Icons.Filled.Favorite
-                                                    } else {
-                                                        Icons.Filled.FavoriteBorder
-                                                    },
-                                                    contentDescription = null,
-                                                    modifier = Modifier.size(18.dp)
-                                                )
-                                                Spacer(modifier = Modifier.width(6.dp))
-                                                Text(
-                                                    text = stringResource(
-                                                        id = if (rememberedFavorite) {
-                                                            R.string.novel_favorited
-                                                        } else {
-                                                            R.string.novel_favorite
-                                                        }
-                                                    )
-                                                )
-                                            }
-                                            if (result.detailed.forumUrl.isNotBlank()) {
-                                                OutlinedButton(
-                                                    onClick = {
-                                                        openExternal(
-                                                            context,
-                                                            EsjzoneUrls.resolve(result.detailed.forumUrl)
-                                                        )
-                                                    },
-                                                    modifier = Modifier.fillMaxWidth(),
-                                                    contentPadding = ButtonDefaults.ContentPadding
-                                                ) {
-                                                    Icon(
-                                                        imageVector = Icons.Filled.Forum,
-                                                        contentDescription = null,
-                                                        modifier = Modifier.size(18.dp)
-                                                    )
-                                                    Spacer(modifier = Modifier.width(6.dp))
-                                                    Text(text = stringResource(id = R.string.novel_open_forum))
-                                                }
-                                            }
-                                        }
-                                    }
-
-                                    Spacer(modifier = Modifier.height(14.dp))
-
-                                    Button(
-                                        enabled = rememberedHistory != null,
-                                        onClick = {
-                                            rememberedHistory?.let { currChapter ->
-                                                navigator?.pushIfNotCurrent(
-                                                    ChapterPage(
-                                                        result.detailed.id(),
-                                                        currChapter,
-                                                        history,
-                                                        chapterList.orderedChapters,
-                                                        novelName = result.detailed.name,
-                                                        novelUrl = result.detailed.url,
-                                                        novelCoverUrl = result.detailed.coverUrl
-                                                    )
-                                                )
-                                            }
-                                        },
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .height(48.dp),
-                                        shape = RoundedCornerShape(14.dp),
-                                        colors = ButtonDefaults.buttonColors(
-                                            containerColor = MaterialTheme.colorScheme.primary
-                                        )
-                                    ) {
-                                        Icon(
-                                            imageVector = Icons.AutoMirrored.Filled.MenuBook,
-                                            contentDescription = null,
-                                            modifier = Modifier.size(18.dp)
-                                        )
-                                        Spacer(modifier = Modifier.width(8.dp))
-                                        val labelRes = if (rememberedHasHistory) {
-                                            R.string.continue_reading
-                                        } else {
-                                            R.string.start_reading
-                                        }
-                                        Text(
-                                            text = stringResource(id = labelRes),
-                                            style = MaterialTheme.typography.labelLarge.copy(
-                                                fontWeight = FontWeight.Bold
-                                            )
+                    NovelDetailContent(
+                        detailed = detailed,
+                        authorization = authorization,
+                        history = history,
+                        historyState = historyState,
+                        hasHistory = hasHistory,
+                        favorite = rememberedFavorite,
+                        favoritePending = localShelfEntry?.syncState != null &&
+                            localShelfEntry?.syncState != BookshelfSyncState.SYNCED,
+                        favoriteFailed = !localShelfEntry?.lastError.isNullOrBlank(),
+                        onToggleFavorite = {
+                            val next = !rememberedFavorite
+                            favoriteState.value = next
+                            rememberedFavorite = next
+                            scope.launch {
+                                try {
+                                    withContext(Dispatchers.IO) {
+                                        BookshelfRepository.setFavorite(
+                                            authorization = authorization,
+                                            novel = novel,
+                                            desired = next
                                         )
                                     }
-
-                                    Spacer(modifier = Modifier.height(10.dp))
-                                    NovelDownloadActions(
-                                        novel = result.detailed,
-                                        authorization = authorization
+                                } catch (error: CancellationException) {
+                                    throw error
+                                } catch (error: Exception) {
+                                    AppLogger.e(
+                                        "NovelPage",
+                                        "Failed to persist favorite intent for ${novel.name}",
+                                        error
                                     )
                                 }
                             }
-                        }
-
-                        if (result.detailed.tags.isNotEmpty()) {
-                            item(key = "novel-tags") {
-                                NovelTags(
-                                    tags = result.detailed.tags,
-                                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
-                                )
+                        },
+                        descriptionExpanded = descriptionExpanded,
+                        onDescriptionExpandedChange = { descriptionExpanded = it },
+                        showAllChapters = showAllChapters,
+                        onShowAllChaptersChange = { showAllChapters = it },
+                        onGroupToggle = { key ->
+                            expandedChapterGroups.value = expandedChapterGroups.value.toMutableSet().also {
+                                if (!it.add(key)) it.remove(key)
                             }
-                        }
-
-                        item(key = "novel-description") {
-                            Description(
-                                description = result.detailed.description,
-                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
-                            )
-                        }
-
-                        item(key = "novel-chapter-list-header") {
-                            ChapterListHeader(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
-                        }
-                        items(visibleRows, key = { it.key }) { row ->
-                            ChapterListRow(
-                                row = row,
-                                novelId = result.detailed.id(),
-                                novelName = result.detailed.name,
-                                novelCoverUrl = result.detailed.coverUrl,
-                                history = historyState,
-                                hasHistory = hasHistory,
-                                chapterOrder = chapterList.orderedChapters,
-                                onGroupToggle = { key ->
-                                    expandedChapterGroups.value = expandedChapterGroups.value.toMutableSet().also {
-                                        if (!it.add(key)) it.remove(key)
-                                    }
-                                }
-                            )
-                        }
-
-                        item(key = "novel-comments") {
-                            CommentSectionContent(
-                                model = commentModel,
-                                showHeader = true,
-                                modifier = Modifier.fillMaxWidth()
-                            )
-                        }
-
-                        item(key = "novel-detail-bottom-spacer") {
-                            Spacer(modifier = Modifier.height(24.dp))
-                        }
-                        }
-                        CommentComposerHost(model = commentModel)
-                    }
-                }
-            }
-        }
-
-        LaunchedEffect(Unit) {
-            screenModel.getDetail()
-        }
-    }
-
-}
-
-@Composable
-private fun NovelStatRow(
-    icon: ImageVector,
-    label: String,
-    modifier: Modifier = Modifier
-) {
-    Row(
-        modifier = modifier,
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Icon(
-            imageVector = icon,
-            contentDescription = null,
-            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-            modifier = Modifier.size(14.dp)
-        )
-        Spacer(modifier = Modifier.width(6.dp))
-        Text(
-            text = label,
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.85f),
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis
-        )
-    }
-}
-
-@Composable
-private fun NovelInfoRow(
-    label: String,
-    value: String,
-    icon: ImageVector? = null,
-    onClick: (() -> Unit)? = null
-) {
-    val displayValue = value.trim().takeIf { it.isNotBlank() } ?: return
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .then(
-                if (onClick != null) {
-                    Modifier.clickable { onClick?.invoke() }
-                } else {
-                    Modifier
-                }
-            )
-            .padding(vertical = 2.dp),
-        verticalAlignment = Alignment.Top
-    ) {
-        if (icon != null) {
-            Icon(
-                imageVector = icon,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier
-                    .padding(top = 2.dp)
-                    .size(15.dp)
-            )
-            Spacer(modifier = Modifier.width(4.dp))
-        }
-        Text(
-            text = "$label：",
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.width(58.dp)
-        )
-        Text(
-            text = displayValue,
-            style = MaterialTheme.typography.bodySmall,
-            color = if (onClick != null) {
-                MaterialTheme.colorScheme.primary
-            } else {
-                MaterialTheme.colorScheme.onSurface
-            },
-            maxLines = 2,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.weight(1f)
-        )
-    }
-}
-
-@Composable
-private fun NovelTags(
-    tags: List<String>,
-    modifier: Modifier = Modifier
-) {
-    Column(modifier = modifier.fillMaxWidth()) {
-        Text(
-            text = stringResource(id = R.string.novel_tags),
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.Bold,
-            modifier = Modifier.padding(bottom = 6.dp)
-        )
-        Row(
-            modifier = Modifier.horizontalScroll(rememberScrollState()),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            tags.forEach { tag ->
-                androidx.compose.material3.Surface(
-                    color = MaterialTheme.colorScheme.secondaryContainer,
-                    contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
-                    shape = RoundedCornerShape(50),
-                    modifier = Modifier.padding(vertical = 2.dp)
-                ) {
-                    Text(
-                        text = tag,
-                        style = MaterialTheme.typography.labelMedium,
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
+                        },
+                        visibleRows = visibleRows,
+                        commentModel = commentModel,
+                        navigator = navigator,
+                        context = context,
+                        modifier = Modifier.weight(1f)
                     )
                 }
             }
         }
+
+        if (showMoreActions) {
+            NovelMoreActionsSheet(
+                detailed = (state as? NovelPageModel.State.Result)?.detailed,
+                onDismiss = { showMoreActions = false },
+                onOpenSource = {
+                    showMoreActions = false
+                    openExternal(
+                        context,
+                        (state as? NovelPageModel.State.Result)?.detailed?.sourceUrl
+                            ?.takeIf(String::isNotBlank)
+                            ?: EsjzoneUrls.resolve(novel.url)
+                    )
+                },
+                onOpenForum = { forumUrl ->
+                    showMoreActions = false
+                    openExternal(context, EsjzoneUrls.resolve(forumUrl))
+                }
+            )
+        }
+
+        LaunchedEffect(Unit) { screenModel.getDetail() }
+    }
+}
+
+@Composable
+private fun NovelDetailContent(
+    detailed: DetailedNovel,
+    authorization: Authorization,
+    history: ChapterStateHolder,
+    historyState: androidx.compose.runtime.MutableState<com.breakyuna.esjzone.novellibrary.novel.Chapter?>,
+    hasHistory: androidx.compose.runtime.MutableState<Boolean>,
+    favorite: Boolean,
+    favoritePending: Boolean,
+    favoriteFailed: Boolean,
+    onToggleFavorite: () -> Unit,
+    descriptionExpanded: Boolean,
+    onDescriptionExpandedChange: (Boolean) -> Unit,
+    showAllChapters: Boolean,
+    onShowAllChaptersChange: (Boolean) -> Unit,
+    onGroupToggle: (String) -> Unit,
+    visibleRows: List<com.breakyuna.esjzone.novellibrary.component.VisibleChapterRow>,
+    commentModel: CommentPageModel,
+    navigator: cafe.adriel.voyager.navigator.Navigator?,
+    context: Context,
+    modifier: Modifier = Modifier
+) {
+    val orderedChapters = detailed.chapterList.orderedChapters
+    val targetChapter = historyState.value ?: detailed.chapterList.toRead
+    val descriptionPreview = remember(detailed.description) {
+        detailed.description.preview(360)
+    }
+    val previewChapters = remember(detailed.chapterList, targetChapter) {
+        buildList {
+            targetChapter?.let(::add)
+            orderedChapters.lastOrNull()?.let(::add)
+        }.distinctBy { it.url }
+    }
+
+    Column(modifier = modifier.fillMaxWidth()) {
+        LazyColumn(
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxWidth()
+                .widthIn(max = QuietEditorial.contentMaxWidth)
+                .align(Alignment.CenterHorizontally),
+            contentPadding = PaddingValues(bottom = 24.dp)
+        ) {
+            item(key = "detail-hero") {
+                NovelDetailHero(
+                    novel = detailed,
+                    modifier = Modifier
+                        .padding(horizontal = 16.dp, vertical = 20.dp)
+                        .widthIn(max = QuietEditorial.contentMaxWidth)
+                )
+            }
+
+            item(key = "detail-stats") {
+                NovelDetailStats(
+                    novel = detailed,
+                    modifier = Modifier
+                        .padding(horizontal = 16.dp)
+                        .widthIn(max = QuietEditorial.contentMaxWidth)
+                )
+            }
+
+            if (detailed.tags.isNotEmpty()) {
+                item(key = "detail-tags") {
+                    NovelDetailTags(
+                        tags = detailed.tags,
+                        modifier = Modifier
+                            .padding(horizontal = 16.dp, vertical = 16.dp)
+                            .widthIn(max = QuietEditorial.contentMaxWidth)
+                    )
+                }
+            }
+
+            item(key = "detail-actions") {
+                Column(
+                    modifier = Modifier
+                        .padding(horizontal = 16.dp, vertical = 4.dp)
+                        .widthIn(max = QuietEditorial.contentMaxWidth),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Button(
+                            enabled = targetChapter != null,
+                            onClick = {
+                                targetChapter?.let { chapter ->
+                                    navigator?.pushIfNotCurrent(
+                                        ChapterPage(
+                                            novelId = detailed.id(),
+                                            chapter = chapter,
+                                            history = history,
+                                            chapterOrder = orderedChapters,
+                                            novelName = detailed.name,
+                                            novelUrl = detailed.url,
+                                            novelCoverUrl = detailed.coverUrl
+                                        )
+                                    )
+                                }
+                            },
+                            modifier = Modifier
+                                .weight(1.3f)
+                                .heightIn(min = 52.dp),
+                            shape = QuietEditorial.controlShape,
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 12.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.MenuBook,
+                                contentDescription = null,
+                                modifier = Modifier.size(19.dp)
+                            )
+                            Spacer(modifier = Modifier.width(7.dp))
+                            Text(
+                                text = stringResource(
+                                    if (hasHistory.value) R.string.continue_reading else R.string.start_reading
+                                ),
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                        FilledTonalButton(
+                            onClick = onToggleFavorite,
+                            modifier = Modifier
+                                .weight(1f)
+                                .heightIn(min = 52.dp),
+                            shape = QuietEditorial.controlShape,
+                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 12.dp)
+                        ) {
+                            Icon(
+                                imageVector = if (favorite) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder,
+                                contentDescription = stringResource(
+                                    if (favorite) R.string.novel_favorited else R.string.novel_favorite
+                                ),
+                                modifier = Modifier.size(19.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = if (favoriteFailed) {
+                                    stringResource(R.string.novel_favorite_failed)
+                                } else if (favoritePending) {
+                                    stringResource(R.string.novel_favorite_pending)
+                                } else {
+                                    stringResource(
+                                        if (favorite) R.string.novel_favorited else R.string.novel_favorite
+                                    )
+                                },
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    }
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        NovelDownloadActions(
+                            novel = detailed,
+                            authorization = authorization,
+                            modifier = Modifier.weight(1f)
+                        )
+                        if (detailed.forumUrl.isNotBlank()) {
+                            OutlinedButton(
+                                onClick = {
+                                    openExternal(context, EsjzoneUrls.resolve(detailed.forumUrl))
+                                },
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .heightIn(min = 52.dp),
+                                shape = QuietEditorial.controlShape,
+                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 12.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Filled.Forum,
+                                    contentDescription = stringResource(R.string.novel_open_forum),
+                                    modifier = Modifier.size(19.dp)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = stringResource(R.string.novel_open_forum),
+                                    maxLines = 2,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (descriptionPreview.isNotBlank() || detailed.description.components.isNotEmpty()) {
+                item(key = "detail-description") {
+                    Column(
+                        modifier = Modifier
+                            .padding(horizontal = 16.dp, vertical = 24.dp)
+                            .widthIn(max = QuietEditorial.contentMaxWidth)
+                    ) {
+                        NovelDetailSectionHeading(title = stringResource(R.string.description))
+                        Spacer(modifier = Modifier.height(8.dp))
+                        if (descriptionExpanded) {
+                            Description(
+                                description = detailed.description,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        } else if (descriptionPreview.isNotBlank()) {
+                            Text(
+                                text = descriptionPreview,
+                                style = QuietEditorial.body,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 5,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                        TextButton(
+                            onClick = {
+                                onDescriptionExpandedChange(!descriptionExpanded)
+                            },
+                            modifier = Modifier.align(Alignment.End)
+                        ) {
+                            Text(
+                                text = stringResource(
+                                    if (descriptionExpanded) {
+                                        R.string.novel_description_collapse
+                                    } else {
+                                        R.string.novel_description_expand
+                                    }
+                                )
+                            )
+                        }
+                    }
+                }
+            }
+
+            item(key = "detail-chapters-heading") {
+                Column(
+                    modifier = Modifier
+                        .padding(horizontal = 16.dp)
+                        .widthIn(max = QuietEditorial.contentMaxWidth)
+                ) {
+                    NovelDetailRule()
+                    Spacer(modifier = Modifier.height(18.dp))
+                    NovelDetailSectionHeading(
+                        title = stringResource(R.string.novel_chapterlist),
+                        supportingText = orderedChapters.takeIf { it.isNotEmpty() }?.let {
+                            stringResource(R.string.novel_chapter_count, it.size)
+                        },
+                        actionLabel = if (orderedChapters.isNotEmpty()) {
+                            stringResource(
+                                if (showAllChapters) R.string.novel_show_fewer_chapters
+                                else R.string.novel_show_all_chapters
+                            )
+                        } else null,
+                        onAction = if (orderedChapters.isNotEmpty()) {
+                            { onShowAllChaptersChange(!showAllChapters) }
+                        } else null
+                    )
+                }
+            }
+
+            if (orderedChapters.isEmpty()) {
+                item(key = "detail-chapters-empty") {
+                    Text(
+                        text = stringResource(R.string.reader_contents_empty),
+                        style = QuietEditorial.body,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier
+                            .padding(horizontal = 16.dp, vertical = 16.dp)
+                            .widthIn(max = QuietEditorial.contentMaxWidth)
+                    )
+                }
+            } else if (!showAllChapters) {
+                item(key = "detail-chapter-preview") {
+                    Column(
+                        modifier = Modifier
+                            .padding(horizontal = 16.dp, vertical = 8.dp)
+                            .widthIn(max = QuietEditorial.contentMaxWidth),
+                        verticalArrangement = Arrangement.spacedBy(2.dp)
+                    ) {
+                        previewChapters.forEachIndexed { index, chapter ->
+                            ChapterListRow(
+                                row = VisibleChapterItem(
+                                    item = ChapterItem(chapter),
+                                    key = "chapter-preview:${chapter.url}:$index",
+                                    depth = 0
+                                ),
+                                novelId = detailed.id(),
+                                history = historyState,
+                                hasHistory = hasHistory,
+                                chapterOrder = orderedChapters,
+                                novelName = detailed.name,
+                                novelCoverUrl = detailed.coverUrl,
+                                onGroupToggle = {}
+                            )
+                        }
+                    }
+                }
+            } else {
+                items(visibleRows, key = { it.key }) { row ->
+                    ChapterListRow(
+                        row = row,
+                        novelId = detailed.id(),
+                        history = historyState,
+                        hasHistory = hasHistory,
+                        chapterOrder = orderedChapters,
+                        novelName = detailed.name,
+                        novelCoverUrl = detailed.coverUrl,
+                        onGroupToggle = onGroupToggle
+                    )
+                }
+                item(key = "detail-chapters-collapse") {
+                    TextButton(
+                        onClick = { onShowAllChaptersChange(false) },
+                        modifier = Modifier.padding(horizontal = 16.dp)
+                    ) {
+                        Text(stringResource(R.string.novel_show_fewer_chapters))
+                    }
+                }
+            }
+
+            item(key = "detail-comments-rule") {
+                Column(
+                    modifier = Modifier
+                        .padding(horizontal = 16.dp, vertical = 18.dp)
+                        .widthIn(max = QuietEditorial.contentMaxWidth)
+                ) { NovelDetailRule() }
+            }
+            item(key = "detail-comments") {
+                Column(
+                    modifier = Modifier
+                        .padding(horizontal = 16.dp)
+                        .widthIn(max = QuietEditorial.contentMaxWidth)
+                ) {
+                    NovelDetailSectionHeading(title = stringResource(R.string.comments))
+                    Spacer(modifier = Modifier.height(8.dp))
+                    CommentSectionContent(
+                        model = commentModel,
+                        showHeader = false,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            }
+        }
+        CommentComposerHost(model = commentModel)
     }
 }
 
@@ -638,6 +657,7 @@ private enum class NovelExportFormat {
     EPUB
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun NovelDownloadActions(
     novel: DetailedNovel,
@@ -646,47 +666,73 @@ private fun NovelDownloadActions(
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    var downloaded by remember(novel.url) {
-        mutableStateOf<DownloadedNovelManifest?>(NovelDownloadStore.manifest(novel.url))
-    }
+    var showSheet by rememberSaveable(novel.url) { mutableStateOf(false) }
+    var downloaded by remember(novel.url) { mutableStateOf<DownloadedNovelManifest?>(null) }
+    var downloadStatus by remember(novel.url) { mutableStateOf<BackgroundDownloadStatus?>(null) }
     var downloading by remember(novel.url) { mutableStateOf(false) }
     var progress by remember(novel.url) { mutableStateOf<DownloadProgress?>(null) }
-    var downloadStatusVersion by remember(novel.url) { mutableStateOf(0) }
     var requestedWorkId by rememberSaveable(novel.url) { mutableStateOf<String?>(null) }
 
-    LaunchedEffect(novel.url, downloadStatusVersion) {
-        var startupPolls = 0
-        do {
+    LaunchedEffect(novel.url) {
+        downloaded = withContext(Dispatchers.IO) { NovelDownloadStore.manifest(novel.url) }
+    }
+
+    LaunchedEffect(novel.url, requestedWorkId) {
+        while (isActive) {
             val status = runCatching {
                 withContext(Dispatchers.IO) {
                     NovelDownloadManager.status(context, novel.url)
                 }
             }.getOrNull()
-            startupPolls += 1
-            val waitingForEnqueue = requestedWorkId != null &&
-                status?.id != requestedWorkId &&
-                startupPolls <= 8
-            downloading = status?.running == true || waitingForEnqueue
+            downloadStatus = status
             status?.progress?.let { progress = it }
-            if (status?.finished == true) {
+            val waitingForEnqueue = requestedWorkId != null &&
+                (status == null || status.id != requestedWorkId)
+            downloading = status?.running == true || waitingForEnqueue
+            // WorkManager keeps an already-running unique job when enqueue is
+            // called again. In that case the returned request id can differ
+            // from the job currently reported for this novel; the unique-job
+            // status is still the source of truth for this page.
+            if (status?.finished == true && requestedWorkId != null) {
                 downloaded = withContext(Dispatchers.IO) {
                     NovelDownloadStore.manifest(novel.url)
                 }
-                if (requestedWorkId == status.id) {
-                    Toast.makeText(
-                        context,
-                        if (status.succeeded) {
-                            R.string.novel_download_success
-                        } else {
-                            R.string.novel_download_failed
-                        },
-                        Toast.LENGTH_SHORT
-                    ).show()
-                    requestedWorkId = null
-                }
+                Toast.makeText(
+                    context,
+                    if (status.succeeded) R.string.novel_download_success
+                    else R.string.novel_download_failed,
+                    Toast.LENGTH_SHORT
+                ).show()
+                requestedWorkId = null
+                downloading = false
             }
-            if (downloading) delay(750)
-        } while (isActive && downloading)
+            if (!downloading && requestedWorkId == null) break
+            delay(750)
+        }
+    }
+
+    fun enqueueDownload() {
+        if (downloading || novel.chapterList.orderedChapters.isEmpty()) return
+        val existingCompleted = downloaded?.chapters?.count { it.downloaded } ?: 0
+        progress = DownloadProgress(
+            completed = existingCompleted,
+            total = novel.chapterList.orderedChapters.size,
+            chapterName = ""
+        )
+        downloading = true
+        runCatching {
+            NovelDownloadManager.enqueue(
+                context = context,
+                authorization = authorization,
+                novel = novel
+            )
+        }.onSuccess { requestId ->
+            requestedWorkId = requestId.toString()
+        }.onFailure { error ->
+            downloading = false
+            AppLogger.e("NovelPage", "Unable to schedule background novel download", error)
+            Toast.makeText(context, R.string.novel_download_failed, Toast.LENGTH_SHORT).show()
+        }
     }
 
     fun export(uri: Uri, format: NovelExportFormat) {
@@ -699,7 +745,7 @@ private fun NovelDownloadActions(
                     val output = context.contentResolver.openOutputStream(uri, "w")
                         ?: error("Unable to open the selected file")
                     output.use { stream ->
-                        val loader = { record: com.breakyuna.esjzone.offline.DownloadedChapterRecord ->
+                        val loader = { record: DownloadedChapterRecord ->
                             NovelDownloadStore.chapterContent(novel.url, record)
                         }
                         when (format) {
@@ -716,11 +762,7 @@ private fun NovelDownloadActions(
                     }
                 }
             }.onFailure { error ->
-                com.breakyuna.esjzone.util.AppLogger.e(
-                    "NovelPage",
-                    "Failed to export ${novel.name} as ${format.name}",
-                    error
-                )
+                AppLogger.e("NovelPage", "Failed to export ${novel.name} as ${format.name}", error)
             }.isSuccess
             Toast.makeText(
                 context,
@@ -732,142 +774,299 @@ private fun NovelDownloadActions(
 
     val txtLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument("text/plain")
-    ) { uri ->
-        uri?.let { export(it, NovelExportFormat.TXT) }
-    }
+    ) { uri -> uri?.let { export(it, NovelExportFormat.TXT) } }
     val epubLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument("application/epub+zip")
-    ) { uri ->
-        uri?.let { export(it, NovelExportFormat.EPUB) }
+    ) { uri -> uri?.let { export(it, NovelExportFormat.EPUB) } }
+
+    FilledTonalButton(
+        onClick = { showSheet = true },
+        modifier = modifier.heightIn(min = 52.dp),
+        shape = QuietEditorial.controlShape,
+        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 12.dp)
+    ) {
+        Icon(
+            imageVector = if (downloaded?.complete == true) Icons.Filled.DownloadDone else Icons.Filled.Download,
+            contentDescription = stringResource(R.string.novel_download),
+            modifier = Modifier.size(19.dp)
+        )
+        Spacer(modifier = Modifier.width(6.dp))
+        Text(
+            text = if (downloading) stringResource(R.string.novel_downloading_count,
+                progress?.completed ?: 0, progress?.total ?: novel.chapterList.orderedChapters.size)
+            else stringResource(
+                if (downloaded?.complete == true) R.string.novel_download_update
+                else R.string.novel_download
+            ),
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis
+        )
     }
 
-    Column(modifier = modifier.fillMaxWidth()) {
-        FilledTonalButton(
-            enabled = !downloading && novel.chapterList.orderedChapters.isNotEmpty(),
-            onClick = {
-                progress = DownloadProgress(
-                    completed = downloaded?.chapters?.count { it.downloaded } ?: 0,
-                    total = novel.chapterList.orderedChapters.size,
-                    chapterName = ""
-                )
-                downloading = true
-                runCatching {
-                    NovelDownloadManager.enqueue(
-                        context = context,
-                        authorization = authorization,
-                        novel = novel
-                    )
-                }.onSuccess { requestId ->
-                    requestedWorkId = requestId.toString()
-                    downloadStatusVersion += 1
-                }.onFailure { error ->
-                    downloading = false
-                    com.breakyuna.esjzone.util.AppLogger.e(
-                        "NovelPage",
-                        "Unable to schedule background novel download",
-                        error
-                    )
-                    Toast.makeText(
-                        context,
-                        R.string.novel_download_failed,
-                        Toast.LENGTH_SHORT
-                    ).show()
-                }
+    if (showSheet) {
+        NovelDownloadSheet(
+            novel = novel,
+            manifest = downloaded,
+            status = downloadStatus,
+            progress = progress,
+            downloading = downloading,
+            sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+            onDismiss = { showSheet = false },
+            onDownload = ::enqueueDownload,
+            onExportTxt = {
+                showSheet = false
+                txtLauncher.launch(NovelExporter.suggestedFileName(novel.name, "txt"))
             },
-            modifier = Modifier.fillMaxWidth()
+            onExportEpub = {
+                showSheet = false
+                epubLauncher.launch(NovelExporter.suggestedFileName(novel.name, "epub"))
+            }
+        )
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun NovelDownloadSheet(
+    novel: DetailedNovel,
+    manifest: DownloadedNovelManifest?,
+    status: BackgroundDownloadStatus?,
+    progress: DownloadProgress?,
+    downloading: Boolean,
+    sheetState: SheetState,
+    onDismiss: () -> Unit,
+    onDownload: () -> Unit,
+    onExportTxt: () -> Unit,
+    onExportEpub: () -> Unit
+) {
+    val completed = manifest?.chapters?.count { it.downloaded } ?: 0
+    val total = novel.chapterList.orderedChapters.size
+    val actualTotal = manifest?.chapters?.size?.takeIf { it > 0 } ?: total
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.65f)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .navigationBarsPadding()
+                .padding(horizontal = 20.dp, vertical = 8.dp)
+                .widthIn(max = QuietEditorial.contentMaxWidth),
+            verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
-            Icon(
-                imageVector = if (downloaded?.complete == true) {
-                    Icons.Filled.DownloadDone
-                } else {
-                    Icons.Filled.Download
-                },
-                contentDescription = null,
-                modifier = Modifier.size(18.dp)
-            )
-            Spacer(modifier = Modifier.width(8.dp))
-            Text(
-                text = stringResource(
-                    id = if (downloaded?.complete == true) {
-                        R.string.novel_download_update
-                    } else {
-                        R.string.novel_download
-                    }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    imageVector = Icons.Filled.Storage,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(22.dp)
                 )
-            )
-        }
-
-        if (downloading) {
-            val currentProgress = progress
-            Spacer(modifier = Modifier.height(8.dp))
-            LinearProgressIndicator(
-                progress = if (currentProgress == null || currentProgress.total <= 0) {
-                    0f
-                } else {
-                    currentProgress.completed.toFloat() / currentProgress.total.toFloat()
-                },
-                modifier = Modifier.fillMaxWidth()
-            )
-            if (currentProgress != null) {
+                Spacer(modifier = Modifier.width(9.dp))
                 Text(
-                    text = if (currentProgress.chapterName.isBlank()) {
-                        stringResource(
-                            id = R.string.novel_downloading_count,
-                            currentProgress.completed,
-                            currentProgress.total
-                        )
-                    } else {
-                        stringResource(
-                            id = R.string.novel_downloading,
-                            currentProgress.completed,
-                            currentProgress.total,
-                            currentProgress.chapterName
-                        )
-                    },
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.padding(top = 4.dp)
+                    text = stringResource(R.string.novel_local_copy_title),
+                    style = QuietEditorial.sectionTitle,
+                    modifier = Modifier.weight(1f)
+                )
+                IconButton(onClick = onDismiss, modifier = Modifier.size(48.dp)) {
+                    Icon(
+                        imageVector = Icons.Filled.Close,
+                        contentDescription = stringResource(R.string.close)
+                    )
+                }
+            }
+            Text(
+                text = novel.name,
+                style = QuietEditorial.cardTitle,
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis
+            )
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                shape = QuietEditorial.largeShape,
+                color = MaterialTheme.colorScheme.surface.copy(alpha = 0.62f)
+            ) {
+                Column(modifier = Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    when {
+                        downloading -> {
+                            Text(
+                                text = stringResource(R.string.novel_downloading_count,
+                                    progress?.completed ?: 0,
+                                    progress?.total ?: total),
+                                style = QuietEditorial.title
+                            )
+                            val current = progress
+                            if (current != null && current.total > 0) {
+                                androidx.compose.material3.LinearProgressIndicator(
+                                    progress = (current.completed.toFloat() / current.total.toFloat())
+                                        .coerceIn(0f, 1f),
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                                current.chapterName.takeIf(String::isNotBlank)?.let {
+                                    Text(
+                                        text = it,
+                                        style = QuietEditorial.label,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        maxLines = 2,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                            }
+                        }
+                        status?.finished == true && !status.succeeded -> {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    imageVector = Icons.Filled.ErrorOutline,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.error,
+                                    modifier = Modifier.size(21.dp)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = stringResource(R.string.novel_download_failed),
+                                    color = MaterialTheme.colorScheme.error,
+                                    style = QuietEditorial.body
+                                )
+                            }
+                            if (completed > 0) {
+                                Text(
+                                    text = stringResource(R.string.novel_local_copy_partial, completed, actualTotal),
+                                    style = QuietEditorial.body,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                        manifest?.complete == true -> {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    imageVector = Icons.Filled.CheckCircle,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(21.dp)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = stringResource(R.string.novel_local_copy_complete, completed, actualTotal),
+                                    style = QuietEditorial.title
+                                )
+                            }
+                        }
+                        manifest != null && completed > 0 -> {
+                            Text(
+                                text = stringResource(R.string.novel_local_copy_partial, completed, actualTotal),
+                                style = QuietEditorial.title
+                            )
+                        }
+                        total == 0 -> {
+                            Text(
+                                text = stringResource(R.string.novel_download_no_chapters),
+                                style = QuietEditorial.body,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        else -> {
+                            Text(
+                                text = stringResource(R.string.novel_local_copy_none),
+                                style = QuietEditorial.title
+                            )
+                            Text(
+                                text = stringResource(R.string.novel_download_background_note),
+                                style = QuietEditorial.body,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
+            }
+            FilledTonalButton(
+                enabled = !downloading && total > 0,
+                onClick = onDownload,
+                modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp),
+                shape = QuietEditorial.controlShape
+            ) {
+                Icon(
+                    imageVector = if (manifest?.complete == true) Icons.Filled.Refresh else Icons.Filled.Download,
+                    contentDescription = null,
+                    modifier = Modifier.size(19.dp)
+                )
+                Spacer(modifier = Modifier.width(7.dp))
+                Text(
+                    text = stringResource(
+                        if (manifest?.complete == true) R.string.novel_download_update
+                        else R.string.novel_download
+                    )
                 )
             }
-        }
 
-        if (downloaded?.complete == true && !downloading) {
-            Spacer(modifier = Modifier.height(8.dp))
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                FilledTonalButton(
-                    onClick = {
-                        txtLauncher.launch(NovelExporter.suggestedFileName(novel.name, "txt"))
-                    },
-                    modifier = Modifier.weight(1f)
+            if (manifest?.complete == true && !downloading) {
+                NovelDetailRule()
+                Text(
+                    text = stringResource(R.string.novel_export_title),
+                    style = QuietEditorial.sectionTitle
+                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    Icon(
-                        imageVector = Icons.Filled.TextSnippet,
-                        contentDescription = null,
-                        modifier = Modifier.size(17.dp)
-                    )
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text(text = stringResource(id = R.string.novel_export_txt))
-                }
-                FilledTonalButton(
-                    onClick = {
-                        epubLauncher.launch(NovelExporter.suggestedFileName(novel.name, "epub"))
-                    },
-                    modifier = Modifier.weight(1f)
-                ) {
-                    Icon(
-                        imageVector = Icons.AutoMirrored.Filled.MenuBook,
-                        contentDescription = null,
-                        modifier = Modifier.size(17.dp)
-                    )
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text(text = stringResource(id = R.string.novel_export_epub))
+                    OutlinedButton(
+                        onClick = onExportTxt,
+                        modifier = Modifier.weight(1f).heightIn(min = 52.dp),
+                        shape = QuietEditorial.controlShape
+                    ) {
+                        Icon(Icons.Filled.TextSnippet, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(stringResource(R.string.novel_export_txt))
+                    }
+                    OutlinedButton(
+                        onClick = onExportEpub,
+                        modifier = Modifier.weight(1f).heightIn(min = 52.dp),
+                        shape = QuietEditorial.controlShape
+                    ) {
+                        Icon(Icons.AutoMirrored.Filled.MenuBook, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(stringResource(R.string.novel_export_epub))
+                    }
                 }
             }
+            Spacer(modifier = Modifier.height(6.dp))
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun NovelMoreActionsSheet(
+    detailed: DetailedNovel?,
+    onDismiss: () -> Unit,
+    onOpenSource: () -> Unit,
+    onOpenForum: (String) -> Unit
+) {
+    ModalBottomSheet(onDismissRequest = onDismiss) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .navigationBarsPadding()
+                .padding(horizontal = 20.dp, vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            Text(
+                text = stringResource(R.string.novel_more_actions),
+                style = QuietEditorial.sectionTitle,
+                modifier = Modifier.padding(bottom = 6.dp)
+            )
+            TextButton(onClick = onOpenSource, modifier = Modifier.fillMaxWidth()) {
+                Text(stringResource(R.string.novel_open_source), modifier = Modifier.weight(1f))
+            }
+            detailed?.forumUrl?.takeIf(String::isNotBlank)?.let { forumUrl ->
+                TextButton(
+                    onClick = { onOpenForum(forumUrl) },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(stringResource(R.string.novel_open_forum), modifier = Modifier.weight(1f))
+                }
+            }
+            Spacer(modifier = Modifier.height(8.dp))
         }
     }
 }
@@ -876,16 +1075,10 @@ private fun openExternal(context: Context, rawUrl: String) {
     val url = rawUrl.trim()
     if (url.isBlank()) return
     runCatching {
-        context.startActivity(
-            Intent(Intent.ACTION_VIEW, Uri.parse(url))
-        )
+        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
     }.onFailure { error ->
         if (error !is ActivityNotFoundException) {
-            com.breakyuna.esjzone.util.AppLogger.w(
-                "NovelPage",
-                "Unable to open external URL $url",
-                error
-            )
+            AppLogger.w("NovelPage", "Unable to open external URL", error)
         }
     }
 }
@@ -924,34 +1117,23 @@ class NovelPageModel(
                 }
                 ensureActive()
                 mutableState.value = State.Result(detail)
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
                 val downloaded = NovelDownloadStore.readDetailedNovel(novel.url)
                 if (downloaded != null) {
                     mutableState.value = State.Result(downloaded)
-                    com.breakyuna.esjzone.util.AppLogger.w(
-                        "NovelPageModel",
-                        "Using downloaded novel detail for ${novel.name}",
-                        e
-                    )
+                    AppLogger.w("NovelPageModel", "Using downloaded novel detail for ${novel.name}", error)
                 } else {
-                    mutableState.value = State.Error(e.loadFailureKind())
-                    com.breakyuna.esjzone.util.AppLogger.e(
-                        "NovelPageModel",
-                        "Failed to load novel detail for ${novel.name}",
-                        e
-                    )
+                    mutableState.value = State.Error(error.loadFailureKind())
+                    AppLogger.e("NovelPageModel", "Failed to load novel detail for ${novel.name}", error)
                 }
             }
         }
     }
 
     fun retry() {
-        synchronized(detailLoadLock) {
-            detailLoadStarted = false
-        }
+        synchronized(detailLoadLock) { detailLoadStarted = false }
         getDetail()
     }
-
 }
