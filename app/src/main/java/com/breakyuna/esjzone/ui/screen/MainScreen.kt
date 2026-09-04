@@ -1,7 +1,5 @@
 package com.breakyuna.esjzone.ui.screen
 
-import android.os.SystemClock
-import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -12,11 +10,7 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
-import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
-import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -27,13 +21,11 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import cafe.adriel.voyager.core.screen.Screen
 import cafe.adriel.voyager.core.screen.ScreenKey
@@ -44,8 +36,6 @@ import com.breakyuna.esjzone.GlobalSettings
 import com.breakyuna.esjzone.R
 import cafe.adriel.voyager.navigator.Navigator
 import cafe.adriel.voyager.navigator.tab.CurrentTab
-import cafe.adriel.voyager.navigator.tab.LocalTabNavigator
-import cafe.adriel.voyager.navigator.tab.Tab
 import cafe.adriel.voyager.navigator.tab.TabNavigator
 import com.breakyuna.esjzone.network.Authorization
 import com.breakyuna.esjzone.network.LocalAuthorization
@@ -59,6 +49,9 @@ import com.breakyuna.esjzone.ui.tab.FavoriteTab
 import com.breakyuna.esjzone.ui.tab.HistoryTab
 import com.breakyuna.esjzone.ui.tab.HomeTab
 import com.breakyuna.esjzone.ui.tab.ProfileTab
+import com.breakyuna.esjzone.ui.component.QuietBottomNavigation
+import com.breakyuna.esjzone.ui.component.QuietBottomNavigationItem
+import com.breakyuna.esjzone.ui.theme.QuietEditorial
 
 class MainScreen(val authorization: Authorization) : Screen {
 
@@ -151,17 +144,18 @@ private fun SessionExpiredBanner(
             .fillMaxWidth()
             .statusBarsPadding(),
         color = MaterialTheme.colorScheme.errorContainer,
-        tonalElevation = 3.dp
+        tonalElevation = 0.dp
     ) {
-        Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
+        Column(modifier = Modifier.padding(horizontal = QuietEditorial.pagePadding, vertical = 12.dp)) {
             Text(
                 text = stringResource(R.string.session_expired_title),
-                style = MaterialTheme.typography.titleMedium,
+                style = QuietEditorial.title,
                 color = MaterialTheme.colorScheme.onErrorContainer
             )
             Spacer(modifier = Modifier.height(4.dp))
             Text(
                 text = stringResource(R.string.session_expired_message),
+                style = QuietEditorial.body,
                 color = MaterialTheme.colorScheme.onErrorContainer
             )
             Row(
@@ -186,18 +180,16 @@ private object TabScreen : Screen {
     @Composable
     override fun Content() {
         Scaffold(
+            containerColor = MaterialTheme.colorScheme.background,
             bottomBar = {
-                NavigationBar(
-                    tonalElevation = 3.dp,
-                    containerColor = MaterialTheme.colorScheme.surface
-                ) {
-                    TabNavigationItem(tab = HomeTab)
-                    TabNavigationItem(
+                QuietBottomNavigation {
+                    QuietBottomNavigationItem(tab = HomeTab)
+                    QuietBottomNavigationItem(
                         tab = HistoryTab,
                         onDoubleClick = HistoryTab::requestOpenLastReading
                     )
-                    TabNavigationItem(tab = FavoriteTab)
-                    TabNavigationItem(tab = ProfileTab)
+                    QuietBottomNavigationItem(tab = FavoriteTab)
+                    QuietBottomNavigationItem(tab = ProfileTab)
                 }
             }
         ) {
@@ -212,51 +204,4 @@ private object TabScreen : Screen {
         }
     }
 
-}
-
-@Composable
-private fun RowScope.TabNavigationItem(
-    tab: Tab,
-    onDoubleClick: (() -> Unit)? = null
-) {
-    val tabNavigator = LocalTabNavigator.current
-    val isSelected = tabNavigator.current == tab
-    val lastTapAt = remember { mutableLongStateOf(0L) }
-
-    NavigationBarItem(
-        selected = isSelected,
-        onClick = {
-            val now = SystemClock.uptimeMillis()
-            val wasAlreadySelected = tabNavigator.current == tab
-            val isDoubleClick = onDoubleClick != null &&
-                wasAlreadySelected &&
-                now - lastTapAt.longValue in 1..420
-            if (isDoubleClick) {
-                lastTapAt.longValue = 0L
-                tabNavigator.current = tab
-                onDoubleClick?.invoke()
-            } else {
-                lastTapAt.longValue = now
-                tabNavigator.current = tab
-            }
-        },
-        icon = {
-            tab.options.icon?.let { icon ->
-                Icon(painter = icon, contentDescription = tab.options.title)
-            }
-        },
-        label = {
-            Text(
-                text = tab.options.title,
-                fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal
-            )
-        },
-        colors = NavigationBarItemDefaults.colors(
-            selectedIconColor = MaterialTheme.colorScheme.onPrimaryContainer,
-            selectedTextColor = MaterialTheme.colorScheme.primary,
-            indicatorColor = MaterialTheme.colorScheme.primaryContainer,
-            unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-            unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
-        )
-    )
 }

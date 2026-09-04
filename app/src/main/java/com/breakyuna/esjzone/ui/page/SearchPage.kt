@@ -1,10 +1,10 @@
 package com.breakyuna.esjzone.ui.page
 
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.items
@@ -24,7 +24,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import cafe.adriel.voyager.core.model.StateScreenModel
 import cafe.adriel.voyager.core.model.rememberScreenModel
@@ -41,9 +40,11 @@ import com.breakyuna.esjzone.network.loadFailureKind
 import com.breakyuna.esjzone.network.PageableRequester
 import com.breakyuna.esjzone.network.features.search
 import com.breakyuna.esjzone.novellibrary.novel.CoveredNovel
-import com.breakyuna.esjzone.ui.component.AppBar
-import com.breakyuna.esjzone.ui.component.LoadError
-import com.breakyuna.esjzone.ui.component.Novel
+import com.breakyuna.esjzone.ui.component.QuietBackHeader
+import com.breakyuna.esjzone.ui.component.QuietEmptyState
+import com.breakyuna.esjzone.ui.component.QuietErrorState
+import com.breakyuna.esjzone.ui.component.QuietLoadingState
+import com.breakyuna.esjzone.ui.component.QuietNovelListItem
 import com.breakyuna.esjzone.ui.navigation.LocalBaseNavigator
 import com.breakyuna.esjzone.util.AppLogger
 import kotlinx.coroutines.CancellationException
@@ -63,14 +64,24 @@ class SearchPage(private val keyword: String) : Screen {
         val authorization = LocalAuthorization.current
         val model = rememberScreenModel { SearchPageModel(authorization) }
         val state by model.state.collectAsState()
-        LazyColumn {
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxWidth()
+                .statusBarsPadding()
+                .imePadding()
+        ) {
             item(key = "search-app-bar") {
-                AppBar(
-                    title = "${stringResource(R.string.search_result)}: $keyword",
+                QuietBackHeader(
+                    title = stringResource(R.string.search_result),
                     onBack = { navigator?.pop() }
                 )
             }
-            searchResultItems(model, state, onRetry = { model.search(keyword) })
+            searchResultItems(
+                model = model,
+                state = state,
+                onRetry = { model.search(keyword) },
+                keyword = keyword
+            )
         }
         LaunchedEffect(keyword) { model.search(keyword) }
     }
@@ -80,38 +91,62 @@ class SearchPage(private val keyword: String) : Screen {
 fun LazyListScope.searchResultItems(
     model: SearchPageModel,
     state: SearchPageModel.State,
-    onRetry: () -> Unit
+    onRetry: () -> Unit,
+    keyword: String? = null
 ) {
     item(key = "search-results-title") {
-        Text(
-            stringResource(R.string.search_result),
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.Bold,
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)
-        )
+        Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 16.dp)) {
+            Text(
+                text = stringResource(R.string.search_result),
+                style = com.breakyuna.esjzone.ui.theme.QuietEditorial.sectionTitle,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            keyword?.takeIf { it.isNotBlank() }?.let {
+                Text(
+                    text = stringResource(R.string.search_results_for, it),
+                    style = com.breakyuna.esjzone.ui.theme.QuietEditorial.body,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 4.dp)
+                )
+            }
+            if (state is SearchPageModel.State.Result) {
+                Text(
+                    text = stringResource(R.string.search_results_loaded, model.visibleItems.size),
+                    style = com.breakyuna.esjzone.ui.theme.QuietEditorial.label,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 3.dp)
+                )
+            }
+        }
     }
     when (state) {
         SearchPageModel.State.Loading -> item(key = "search-loading") {
-            Box(Modifier.fillMaxWidth().height(120.dp), contentAlignment = Alignment.Center) {
-                CircularProgressIndicator()
-            }
+            QuietLoadingState(modifier = Modifier.padding(horizontal = 16.dp))
         }
         is SearchPageModel.State.Error -> item(key = "search-error") {
-            LoadError(onRetry = onRetry, failure = state.failure)
+            QuietErrorState(
+                onRetry = onRetry,
+                failure = state.failure,
+                modifier = Modifier.padding(horizontal = 16.dp)
+            )
         }
         is SearchPageModel.State.Result -> {
             val visible = model.visibleItems
             if (visible.isEmpty()) {
                 item(key = "search-empty") {
-                    Text(
-                        stringResource(R.string.search_no_results),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(20.dp)
+                    QuietEmptyState(
+                        title = stringResource(R.string.search_no_results),
+                        message = stringResource(R.string.search_no_results_message),
+                        icon = androidx.compose.material.icons.Icons.Filled.Search,
+                        modifier = Modifier.padding(horizontal = 16.dp)
                     )
                 }
             }
             items(visible, key = { "search-book:${it.url.ifBlank { it.name }}" }) {
-                Novel(covered = it)
+                QuietNovelListItem(
+                    novel = it,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 5.dp)
+                )
             }
             if (model.currentPage <= state.requester.pages()) {
                 item(key = "search-more") {
@@ -140,6 +175,19 @@ fun LazyListScope.searchResultItems(
                             )
                         }
                     }
+                }
+            }
+            else {
+                item(key = "search-end") {
+                    Text(
+                        text = stringResource(R.string.search_end),
+                        style = com.breakyuna.esjzone.ui.theme.QuietEditorial.label,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 22.dp),
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                    )
                 }
             }
         }
