@@ -134,6 +134,47 @@ class NovelPage(
         val localShelfEntry by BookshelfRepository.observeEntry(authorization, novel.url)
             .collectAsState(initial = null)
         var showMoreActions by rememberSaveable(novel.url) { mutableStateOf(false) }
+        val exportScope = rememberCoroutineScope()
+        val detailedForExport = (state as? NovelPageModel.State.Result)?.detailed
+
+        fun export(uri: Uri, format: NovelExportFormat, detailed: DetailedNovel) {
+            exportScope.launch {
+                val succeeded = try {
+                    exportNovel(context, detailed, uri, format)
+                    true
+                } catch (error: CancellationException) {
+                    throw error
+                } catch (error: Exception) {
+                    AppLogger.e(
+                        "NovelPage",
+                        "Failed to export ${detailed.name} as ${format.name}",
+                        error
+                    )
+                    false
+                }
+                Toast.makeText(
+                    context,
+                    if (succeeded) R.string.novel_export_success else R.string.novel_export_failed,
+                    Toast.LENGTH_SHORT
+                ).show()
+            }
+        }
+
+        // Register launchers from the screen composition, not from a LazyColumn
+        // item subcomposition.  The latter may not carry the ActivityResult
+        // registry owner on some Android/Compose combinations.
+        val txtLauncher = rememberLauncherForActivityResult(
+            ActivityResultContracts.CreateDocument("text/plain")
+        ) { uri ->
+            val detailed = detailedForExport
+            if (uri != null && detailed != null) export(uri, NovelExportFormat.TXT, detailed)
+        }
+        val epubLauncher = rememberLauncherForActivityResult(
+            ActivityResultContracts.CreateDocument("application/epub+zip")
+        ) { uri ->
+            val detailed = detailedForExport
+            if (uri != null && detailed != null) export(uri, NovelExportFormat.EPUB, detailed)
+        }
 
         Column(
             modifier = Modifier
@@ -229,6 +270,12 @@ class NovelPage(
                         history = history,
                         historyState = historyState,
                         hasHistory = hasHistory,
+                        onExportTxt = {
+                            txtLauncher.launch(NovelExporter.suggestedFileName(detailed.name, "txt"))
+                        },
+                        onExportEpub = {
+                            epubLauncher.launch(NovelExporter.suggestedFileName(detailed.name, "epub"))
+                        },
                         favorite = rememberedFavorite,
                         favoritePending = localShelfEntry?.syncState != null &&
                             localShelfEntry?.syncState != BookshelfSyncState.SYNCED,
@@ -289,6 +336,8 @@ private fun NovelDetailContent(
     history: ChapterStateHolder,
     historyState: androidx.compose.runtime.MutableState<com.breakyuna.esjzone.novellibrary.novel.Chapter?>,
     hasHistory: androidx.compose.runtime.MutableState<Boolean>,
+    onExportTxt: () -> Unit,
+    onExportEpub: () -> Unit,
     favorite: Boolean,
     favoritePending: Boolean,
     favoriteFailed: Boolean,
@@ -455,6 +504,8 @@ private fun NovelDetailContent(
                         NovelDownloadActions(
                             novel = detailed,
                             authorization = authorization,
+                            onExportTxt = onExportTxt,
+                            onExportEpub = onExportEpub,
                             modifier = Modifier.weight(1f)
                         )
                         if (detailed.forumUrl.isNotBlank()) {
@@ -639,15 +690,47 @@ private enum class NovelExportFormat {
     EPUB
 }
 
+private suspend fun exportNovel(
+    context: Context,
+    novel: DetailedNovel,
+    uri: Uri,
+    format: NovelExportFormat
+) {
+    withContext(Dispatchers.IO) {
+        val manifest = NovelDownloadStore.manifest(novel.url)
+            ?.takeIf { it.complete }
+            ?: error("Novel download is incomplete")
+        val output = context.contentResolver.openOutputStream(uri, "w")
+            ?: error("Unable to open the selected file")
+        output.use { stream ->
+            val loader = { record: DownloadedChapterRecord ->
+                NovelDownloadStore.chapterContent(novel.url, record)
+            }
+            when (format) {
+                NovelExportFormat.TXT -> NovelExporter.exportTxt(manifest, loader, stream)
+                NovelExportFormat.EPUB -> NovelExporter.exportEpub(
+                    manifest = manifest,
+                    chapterLoader = loader,
+                    output = stream,
+                    imageLoader = { component ->
+                        NovelDownloadStore.imageFile(novel.url, component)
+                    }
+                )
+            }
+        }
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun NovelDownloadActions(
     novel: DetailedNovel,
     authorization: Authorization,
+    onExportTxt: () -> Unit,
+    onExportEpub: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
-    val scope = rememberCoroutineScope()
     var showSheet by rememberSaveable(novel.url) { mutableStateOf(false) }
     var downloaded by remember(novel.url) { mutableStateOf<DownloadedNovelManifest?>(null) }
     var downloadStatus by remember(novel.url) { mutableStateOf<BackgroundDownloadStatus?>(null) }
@@ -717,50 +800,6 @@ private fun NovelDownloadActions(
         }
     }
 
-    fun export(uri: Uri, format: NovelExportFormat) {
-        scope.launch {
-            val succeeded = runCatching {
-                withContext(Dispatchers.IO) {
-                    val manifest = NovelDownloadStore.manifest(novel.url)
-                        ?.takeIf { it.complete }
-                        ?: error("Novel download is incomplete")
-                    val output = context.contentResolver.openOutputStream(uri, "w")
-                        ?: error("Unable to open the selected file")
-                    output.use { stream ->
-                        val loader = { record: DownloadedChapterRecord ->
-                            NovelDownloadStore.chapterContent(novel.url, record)
-                        }
-                        when (format) {
-                            NovelExportFormat.TXT -> NovelExporter.exportTxt(manifest, loader, stream)
-                            NovelExportFormat.EPUB -> NovelExporter.exportEpub(
-                                manifest = manifest,
-                                chapterLoader = loader,
-                                output = stream,
-                                imageLoader = { component ->
-                                    NovelDownloadStore.imageFile(novel.url, component)
-                                }
-                            )
-                        }
-                    }
-                }
-            }.onFailure { error ->
-                AppLogger.e("NovelPage", "Failed to export ${novel.name} as ${format.name}", error)
-            }.isSuccess
-            Toast.makeText(
-                context,
-                if (succeeded) R.string.novel_export_success else R.string.novel_export_failed,
-                Toast.LENGTH_SHORT
-            ).show()
-        }
-    }
-
-    val txtLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.CreateDocument("text/plain")
-    ) { uri -> uri?.let { export(it, NovelExportFormat.TXT) } }
-    val epubLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.CreateDocument("application/epub+zip")
-    ) { uri -> uri?.let { export(it, NovelExportFormat.EPUB) } }
-
     FilledTonalButton(
         onClick = { showSheet = true },
         modifier = modifier.heightIn(min = 52.dp),
@@ -797,11 +836,11 @@ private fun NovelDownloadActions(
             onDownload = ::enqueueDownload,
             onExportTxt = {
                 showSheet = false
-                txtLauncher.launch(NovelExporter.suggestedFileName(novel.name, "txt"))
+                onExportTxt()
             },
             onExportEpub = {
                 showSheet = false
-                epubLauncher.launch(NovelExporter.suggestedFileName(novel.name, "epub"))
+                onExportEpub()
             }
         )
     }
