@@ -105,7 +105,7 @@ import com.breakyuna.esjzone.ui.component.NovelDetailSectionHeading
 import com.breakyuna.esjzone.ui.component.NovelDetailStats
 import com.breakyuna.esjzone.ui.component.NovelDetailTags
 import com.breakyuna.esjzone.ui.component.NovelDetailTopBar
-import com.breakyuna.esjzone.ui.component.QuietEditorial
+import com.breakyuna.esjzone.ui.theme.QuietEditorial
 import com.breakyuna.esjzone.ui.navigation.BooleanStateHolder
 import com.breakyuna.esjzone.ui.navigation.ChapterStateHolder
 import com.breakyuna.esjzone.ui.navigation.LocalBaseNavigator

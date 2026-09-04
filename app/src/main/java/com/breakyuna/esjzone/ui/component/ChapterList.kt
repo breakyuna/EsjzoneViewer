@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.ExpandLess
@@ -46,6 +47,7 @@ import com.breakyuna.esjzone.ui.navigation.ChapterStateHolder
 import com.breakyuna.esjzone.ui.navigation.LocalBaseNavigator
 import com.breakyuna.esjzone.ui.navigation.pushIfNotCurrent
 import com.breakyuna.esjzone.ui.page.ChapterPage
+import com.breakyuna.esjzone.ui.theme.QuietEditorial
 
 /** Compact compatibility wrapper for callers that do not own a LazyColumn. */
 @Composable
