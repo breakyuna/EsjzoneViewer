@@ -127,7 +127,7 @@ internal fun CommentListPage(
     val navigator = LocalBaseNavigator.current
 
     Column(modifier = Modifier.fillMaxSize()) {
-        com.breakyuna.esjzone.ui.component.AppBar(
+        com.breakyuna.esjzone.ui.component.QuietBackHeader(
             title = title,
             onBack = { navigator?.pop() }
         )

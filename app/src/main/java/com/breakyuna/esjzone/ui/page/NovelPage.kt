@@ -66,26 +66,22 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import cafe.adriel.voyager.core.model.StateScreenModel
 import cafe.adriel.voyager.core.model.rememberScreenModel
-import cafe.adriel.voyager.core.model.screenModelScope
 import cafe.adriel.voyager.core.screen.Screen
 import cafe.adriel.voyager.core.screen.ScreenKey
 import com.breakyuna.esjzone.R
 import com.breakyuna.esjzone.database.BookshelfRepository
 import com.breakyuna.esjzone.database.entity.BookshelfSyncState
 import com.breakyuna.esjzone.network.Authorization
-import com.breakyuna.esjzone.network.EsjzoneClient
 import com.breakyuna.esjzone.network.EsjzoneUrls
 import com.breakyuna.esjzone.network.LocalAuthorization
 import com.breakyuna.esjzone.network.LoadFailureKind
-import com.breakyuna.esjzone.network.features.getNovelDetail
-import com.breakyuna.esjzone.network.loadFailureKind
 import com.breakyuna.esjzone.novellibrary.component.ChapterItem
 import com.breakyuna.esjzone.novellibrary.component.VisibleChapterItem
 import com.breakyuna.esjzone.novellibrary.component.initiallyExpandedChapterKeys
 import com.breakyuna.esjzone.novellibrary.component.visibleChapterRows
 import com.breakyuna.esjzone.novellibrary.novel.DetailedNovel
+import com.breakyuna.esjzone.novellibrary.novel.Chapter
 import com.breakyuna.esjzone.novellibrary.novel.Novel
 import com.breakyuna.esjzone.novellibrary.novel.preview
 import com.breakyuna.esjzone.offline.BackgroundDownloadStatus
@@ -97,8 +93,8 @@ import com.breakyuna.esjzone.offline.NovelDownloadStore
 import com.breakyuna.esjzone.offline.NovelExporter
 import com.breakyuna.esjzone.ui.component.ChapterListRow
 import com.breakyuna.esjzone.ui.component.Description
-import com.breakyuna.esjzone.ui.component.LoadError
-import com.breakyuna.esjzone.ui.component.Loading
+import com.breakyuna.esjzone.ui.component.QuietErrorState
+import com.breakyuna.esjzone.ui.component.QuietLoadingState
 import com.breakyuna.esjzone.ui.component.NovelDetailHero
 import com.breakyuna.esjzone.ui.component.NovelDetailRule
 import com.breakyuna.esjzone.ui.component.NovelDetailSectionHeading
@@ -114,7 +110,6 @@ import com.breakyuna.esjzone.util.AppLogger
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -133,7 +128,6 @@ class NovelPage(
         val navigator = LocalBaseNavigator.current
         val authorization = LocalAuthorization.current
         val context = LocalContext.current
-        val scope = rememberCoroutineScope()
         val screenModel = rememberScreenModel { NovelPageModel(authorization, novel) }
         val commentModel = rememberScreenModel { CommentPageModel(authorization, novel.url) }
         val state by screenModel.state.collectAsState()
@@ -163,13 +157,13 @@ class NovelPage(
                 NovelPageModel.State.Loading -> Box(
                     modifier = Modifier.weight(1f).fillMaxWidth(),
                     contentAlignment = Alignment.Center
-                ) { Loading() }
+                ) { QuietLoadingState() }
 
                 is NovelPageModel.State.Error -> Box(
                     modifier = Modifier.weight(1f).fillMaxWidth(),
                     contentAlignment = Alignment.Center
                 ) {
-                    LoadError(
+                    QuietErrorState(
                         onRetry = screenModel::retry,
                         failure = snapshot.failure
                     )
@@ -215,9 +209,7 @@ class NovelPage(
                         // A local row is authoritative for the visual toggle;
                         // the detail response only supplements missing metadata.
                         if (localShelfEntry != null || detailed.isFavorite) {
-                            BookshelfRepository.seedRemoteFavorite(
-                                authorization = authorization,
-                                novel = novel,
+                            screenModel.seedFavoriteMetadata(
                                 author = detailed.author,
                                 coverUrl = detailed.coverUrl,
                                 isAdult = detailed.isAdult
@@ -245,25 +237,7 @@ class NovelPage(
                             val next = !rememberedFavorite
                             favoriteState.value = next
                             rememberedFavorite = next
-                            scope.launch {
-                                try {
-                                    withContext(Dispatchers.IO) {
-                                        BookshelfRepository.setFavorite(
-                                            authorization = authorization,
-                                            novel = novel,
-                                            desired = next
-                                        )
-                                    }
-                                } catch (error: CancellationException) {
-                                    throw error
-                                } catch (error: Exception) {
-                                    AppLogger.e(
-                                        "NovelPage",
-                                        "Failed to persist favorite intent for ${novel.name}",
-                                        error
-                                    )
-                                }
-                            }
+                            screenModel.persistFavorite(next)
                         },
                         descriptionExpanded = descriptionExpanded,
                         onDescriptionExpandedChange = { descriptionExpanded = it },
@@ -340,6 +314,21 @@ private fun NovelDetailContent(
             targetChapter?.let(::add)
             orderedChapters.lastOrNull()?.let(::add)
         }.distinctBy { it.url }
+    }
+    val onChapterOpen: (Chapter) -> Unit = { chapter ->
+        historyState.value = chapter
+        hasHistory.value = true
+        navigator?.pushIfNotCurrent(
+            ChapterPage(
+                novelId = detailed.id(),
+                chapter = chapter,
+                history = history,
+                chapterOrder = orderedChapters,
+                novelName = detailed.name,
+                novelUrl = detailed.url,
+                novelCoverUrl = detailed.coverUrl
+            )
+        )
     }
 
     Column(modifier = modifier.fillMaxWidth()) {
@@ -591,12 +580,9 @@ private fun NovelDetailContent(
                                     key = "chapter-preview:${chapter.url}:$index",
                                     depth = 0
                                 ),
-                                novelId = detailed.id(),
-                                history = historyState,
+                                currentChapter = historyState.value,
                                 hasHistory = hasHistory,
-                                chapterOrder = orderedChapters,
-                                novelName = detailed.name,
-                                novelCoverUrl = detailed.coverUrl,
+                                onChapterOpen = onChapterOpen,
                                 onGroupToggle = {}
                             )
                         }
@@ -606,12 +592,9 @@ private fun NovelDetailContent(
                 items(visibleRows, key = { it.key }) { row ->
                     ChapterListRow(
                         row = row,
-                        novelId = detailed.id(),
-                        history = historyState,
+                        currentChapter = historyState.value,
                         hasHistory = hasHistory,
-                        chapterOrder = orderedChapters,
-                        novelName = detailed.name,
-                        novelCoverUrl = detailed.coverUrl,
+                        onChapterOpen = onChapterOpen,
                         onGroupToggle = onGroupToggle
                     )
                 }
@@ -1079,60 +1062,5 @@ private fun openExternal(context: Context, rawUrl: String) {
         if (error !is ActivityNotFoundException) {
             AppLogger.w("NovelPage", "Unable to open external URL", error)
         }
-    }
-}
-
-class NovelPageModel(
-    private val authorization: Authorization,
-    private val novel: Novel
-) : StateScreenModel<NovelPageModel.State>(State.Loading) {
-
-    private val detailLoadLock = Any()
-    private var detailLoadStarted = false
-
-    sealed class State {
-        data object Loading : State()
-        data class Error(val failure: LoadFailureKind) : State()
-        data class Result(val detailed: DetailedNovel) : State()
-    }
-
-    fun getDetail() {
-        synchronized(detailLoadLock) {
-            if (detailLoadStarted) return
-            detailLoadStarted = true
-        }
-        screenModelScope.launch(Dispatchers.IO) {
-            mutableState.value = State.Loading
-            try {
-                val fetchedDetail = EsjzoneClient.getNovelDetail(
-                    authorization = authorization,
-                    novel = novel,
-                    includeComments = false
-                )
-                val detail = if (fetchedDetail.chapterList.orderedChapters.isEmpty()) {
-                    NovelDownloadStore.readDetailedNovel(novel.url) ?: fetchedDetail
-                } else {
-                    fetchedDetail
-                }
-                ensureActive()
-                mutableState.value = State.Result(detail)
-            } catch (error: CancellationException) {
-                throw error
-            } catch (error: Exception) {
-                val downloaded = NovelDownloadStore.readDetailedNovel(novel.url)
-                if (downloaded != null) {
-                    mutableState.value = State.Result(downloaded)
-                    AppLogger.w("NovelPageModel", "Using downloaded novel detail for ${novel.name}", error)
-                } else {
-                    mutableState.value = State.Error(error.loadFailureKind())
-                    AppLogger.e("NovelPageModel", "Failed to load novel detail for ${novel.name}", error)
-                }
-            }
-        }
-    }
-
-    fun retry() {
-        synchronized(detailLoadLock) { detailLoadStarted = false }
-        getDetail()
     }
 }

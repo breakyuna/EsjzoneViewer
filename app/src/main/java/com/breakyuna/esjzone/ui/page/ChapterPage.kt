@@ -589,8 +589,8 @@ class ChapterPage(
                         contentPadding = androidx.compose.foundation.layout.PaddingValues(
                             // Reserve a fixed, quiet header area. The header
                             // is an overlay and never changes list geometry.
-                            top = 52.dp,
-                            bottom = 80.dp
+                            top = ReaderLayout.contentTopPadding,
+                            bottom = ReaderLayout.contentBottomPadding
                         )
                     ) {
                     when (state) {
@@ -686,7 +686,7 @@ class ChapterPage(
                     modifier = Modifier
                         .align(Alignment.TopCenter)
                         .statusBarsPadding()
-                        .padding(top = 42.dp),
+                        .padding(top = ReaderLayout.previousLoadingTopPadding),
                     shape = RoundedCornerShape(20.dp),
                     tonalElevation = 4.dp,
                     shadowElevation = 4.dp
@@ -731,7 +731,11 @@ class ChapterPage(
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
                         .navigationBarsPadding()
-                        .padding(start = 16.dp, end = 16.dp, bottom = 14.dp)
+                        .padding(
+                            start = 16.dp,
+                            end = 16.dp,
+                            bottom = ReaderLayout.miniProgressBottomPadding
+                        )
                         .zIndex(2f)
                 )
             }
@@ -743,7 +747,7 @@ class ChapterPage(
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
                     .navigationBarsPadding()
-                    .padding(bottom = 150.dp)
+                    .padding(bottom = ReaderLayout.progressPreviewBottomPadding)
                     .zIndex(3f)
             ) {
                 progressPreview?.let { preview ->
@@ -1665,12 +1669,15 @@ private fun ChapterContent(
                 modifier = Modifier.padding(bottom = settings.paragraphSpacingDp.dp)
             )
         } else if (component is ImageComponent) {
+            // Rich-description images currently have no alt-text field in the
+            // source model, so keep them decorative instead of announcing a
+            // misleading URL or filename to screen readers.
             SubcomposeAsyncImage(
                 model = ImageRequest.Builder(LocalContext.current)
                     .data(component.url)
                     .crossfade(true)
                     .build(),
-                contentDescription = "chapter image",
+                contentDescription = null,
                 imageLoader = MainActivity.imageLoader,
                 loading = {
                     Box(

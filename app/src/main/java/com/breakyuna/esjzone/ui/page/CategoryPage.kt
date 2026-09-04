@@ -43,8 +43,7 @@ import com.breakyuna.esjzone.network.features.listNovels
 import com.breakyuna.esjzone.novellibrary.novel.Category
 import com.breakyuna.esjzone.novellibrary.novel.CategoryNovel
 import com.breakyuna.esjzone.novellibrary.novel.preview
-import com.breakyuna.esjzone.ui.component.AppBar
-import com.breakyuna.esjzone.ui.component.LoadError
+import com.breakyuna.esjzone.ui.component.QuietBackHeader
 import com.breakyuna.esjzone.ui.component.QuietEmptyState
 import com.breakyuna.esjzone.ui.component.QuietErrorState
 import com.breakyuna.esjzone.ui.component.QuietLoadingState
@@ -68,7 +67,7 @@ class CategoryPage(private val category: Category) : Screen {
         val state by categoryPageModel.state.collectAsState()
 
         Column(modifier = Modifier.fillMaxSize()) {
-            AppBar(
+            QuietBackHeader(
                 title = category.name,
                 onBack = {
                     navigator?.pop()
@@ -148,7 +147,7 @@ class CategoryPage(private val category: Category) : Screen {
                             val novel = detailLoader.details[key]
                             if (novel == null) {
                                 if (detailLoader.failures[key] != null) {
-                                    LoadError(
+                                    QuietErrorState(
                                         onRetry = {
                                             detailLoader.retry(categoryNovel)
                                         },

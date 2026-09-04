@@ -42,7 +42,7 @@ import com.breakyuna.esjzone.MainActivity
 import com.breakyuna.esjzone.R
 import com.breakyuna.esjzone.database.entity.Bookmark as LocalBookmark
 import com.breakyuna.esjzone.novellibrary.novel.Chapter
-import com.breakyuna.esjzone.ui.component.AppBar
+import com.breakyuna.esjzone.ui.component.QuietBackHeader
 import com.breakyuna.esjzone.ui.theme.QuietEditorial
 import com.breakyuna.esjzone.ui.component.QuietEmptyState
 import com.breakyuna.esjzone.ui.component.QuietLoadingState
@@ -65,7 +65,7 @@ object BookmarksPage : Screen {
         val state by model.state.collectAsState()
 
         Column(modifier = Modifier.fillMaxSize()) {
-            AppBar(
+            QuietBackHeader(
                 title = stringResource(id = R.string.bookmarks),
                 onBack = { navigator?.pop() }
             )

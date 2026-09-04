@@ -14,7 +14,7 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
@@ -73,20 +73,15 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
-import cafe.adriel.voyager.core.model.StateScreenModel
 import cafe.adriel.voyager.core.model.rememberScreenModel
-import cafe.adriel.voyager.core.model.screenModelScope
 import cafe.adriel.voyager.core.screen.Screen
 import com.breakyuna.esjzone.GlobalSettings
 import com.breakyuna.esjzone.R
 import com.breakyuna.esjzone.database.BookshelfRepository
-import com.breakyuna.esjzone.database.BookshelfSyncResult
 import com.breakyuna.esjzone.database.entity.BookshelfEntry
 import com.breakyuna.esjzone.database.entity.BookshelfSyncState
-import com.breakyuna.esjzone.network.Authorization
 import com.breakyuna.esjzone.network.LocalAuthorization
 import com.breakyuna.esjzone.network.LoadFailureKind
-import com.breakyuna.esjzone.network.loadFailureKind
 import com.breakyuna.esjzone.novellibrary.novel.CoveredNovelImpl
 import com.breakyuna.esjzone.ui.component.QuietNovelCover
 import com.breakyuna.esjzone.ui.navigation.BooleanStateHolder
@@ -94,9 +89,6 @@ import com.breakyuna.esjzone.ui.navigation.LocalBaseNavigator
 import com.breakyuna.esjzone.ui.navigation.pushIfNotCurrent
 import com.breakyuna.esjzone.ui.theme.QuietEditorial
 import com.breakyuna.esjzone.ui.theme.quietEditorialColors
-import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
 
 /**
  * Local-first bookshelf presentation.
@@ -228,6 +220,10 @@ object FavoritePage : Screen {
 
         Scaffold(
             containerColor = MaterialTheme.colorScheme.background,
+            // MainScreen owns system-bar insets for tab content. Keeping the
+            // nested page inset-free prevents the outer navigation bar from
+            // being counted twice.
+            contentWindowInsets = WindowInsets(0, 0, 0, 0),
             topBar = {
                 BookshelfHeader(
                     showBack = showBack,
@@ -303,7 +299,10 @@ object FavoritePage : Screen {
                     start = QuietEditorial.pagePadding,
                     end = QuietEditorial.pagePadding,
                     top = 12.dp,
-                    bottom = if (editing) 80.dp else 100.dp
+                    // Scaffold padding already accounts for the optional
+                    // batch bar and the root tab navigation. Keep only a
+                    // small visual breathing space here.
+                    bottom = 16.dp
                 ),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
@@ -961,7 +960,6 @@ private fun BookshelfBatchBar(
     ) {
         Column(
             modifier = Modifier
-                .navigationBarsPadding()
                 .padding(horizontal = QuietEditorial.pagePadding, vertical = 12.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
@@ -1257,67 +1255,6 @@ private fun Modifier.bookshelfPullToRefresh(
             } else if (enabled && gridState.firstVisibleItemIndex == 0) {
                 val delta = change.positionChange().y
                 if (delta > 0f) distance += delta
-            }
-        }
-    }
-}
-
-class FavoritePageModel(private val authorization: Authorization) :
-    StateScreenModel<FavoritePageModel.State>(State.Idle) {
-    val entries = BookshelfRepository.observe(authorization)
-
-    sealed class State {
-        data object Idle : State()
-        data object Syncing : State()
-        data class Completed(val result: BookshelfSyncResult) : State()
-        data class Failed(val failure: LoadFailureKind?) : State()
-    }
-
-    sealed class DeleteState {
-        data object Idle : DeleteState()
-        data object Deleting : DeleteState()
-        data class Completed(val count: Int) : DeleteState()
-        data object Failed : DeleteState()
-    }
-
-    private val _deleteState = kotlinx.coroutines.flow.MutableStateFlow<DeleteState>(DeleteState.Idle)
-    val deleteState: kotlinx.coroutines.flow.StateFlow<DeleteState> = _deleteState
-
-    fun sync() {
-        screenModelScope.launch(Dispatchers.IO) {
-            mutableState.value = State.Syncing
-            try {
-                val result = BookshelfRepository.sync(authorization)
-                mutableState.value = if (result.success) {
-                    State.Completed(result)
-                } else {
-                    State.Failed(result.loadFailure)
-                }
-            } catch (e: CancellationException) {
-                throw e
-            } catch (error: Exception) {
-                mutableState.value = State.Failed(error.loadFailureKind())
-            }
-        }
-    }
-
-    fun scheduleMetadataSupplement() {
-        BookshelfRepository.scheduleMetadataSupplement(authorization)
-    }
-
-    fun delete(entries: List<BookshelfEntry>) {
-        if (entries.isEmpty() || _deleteState.value is DeleteState.Deleting) return
-        // Set the guard before launching IO so two rapid confirmations cannot
-        // enqueue duplicate removal jobs.
-        _deleteState.value = DeleteState.Deleting
-        screenModelScope.launch(Dispatchers.IO) {
-            try {
-                val count = BookshelfRepository.removeBatch(authorization, entries)
-                _deleteState.value = DeleteState.Completed(count)
-            } catch (e: CancellationException) {
-                throw e
-            } catch (_: Exception) {
-                _deleteState.value = DeleteState.Failed
             }
         }
     }

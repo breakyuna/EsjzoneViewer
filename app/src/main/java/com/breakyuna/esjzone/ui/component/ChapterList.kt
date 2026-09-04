@@ -23,8 +23,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.MutableState
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -43,10 +41,6 @@ import com.breakyuna.esjzone.novellibrary.component.initiallyExpandedChapterKeys
 import com.breakyuna.esjzone.novellibrary.component.visibleChapterRows
 import com.breakyuna.esjzone.novellibrary.novel.Chapter
 import com.breakyuna.esjzone.novellibrary.novel.NovelChapterList
-import com.breakyuna.esjzone.ui.navigation.ChapterStateHolder
-import com.breakyuna.esjzone.ui.navigation.LocalBaseNavigator
-import com.breakyuna.esjzone.ui.navigation.pushIfNotCurrent
-import com.breakyuna.esjzone.ui.page.ChapterPage
 import com.breakyuna.esjzone.ui.theme.QuietEditorial
 
 /** Compact compatibility wrapper for callers that do not own a LazyColumn. */
@@ -54,11 +48,9 @@ import com.breakyuna.esjzone.ui.theme.QuietEditorial
 fun ChapterList(
     chapterList: NovelChapterList,
     modifier: Modifier = Modifier,
-    novelId: String = "",
-    novelName: String = "",
-    novelCoverUrl: String = "",
-    history: MutableState<Chapter?> = mutableStateOf(null),
-    hasHistory: MutableState<Boolean> = mutableStateOf(false)
+    currentChapter: Chapter?,
+    hasHistory: Boolean,
+    onChapterOpen: (Chapter) -> Unit
 ) {
     Column(modifier = modifier.fillMaxWidth()) {
         ChapterListHeader()
@@ -68,12 +60,9 @@ fun ChapterList(
         ).forEach { row ->
             ChapterListRow(
                 row = row,
-                novelId = novelId,
-                history = history,
+                currentChapter = currentChapter,
                 hasHistory = hasHistory,
-                chapterOrder = chapterList.orderedChapters,
-                novelName = novelName,
-                novelCoverUrl = novelCoverUrl,
+                onChapterOpen = onChapterOpen,
                 onGroupToggle = {}
             )
         }
@@ -118,12 +107,9 @@ fun ChapterListHeader(
 @Composable
 fun ChapterListRow(
     row: VisibleChapterRow,
-    novelId: String,
-    history: MutableState<Chapter?>,
-    hasHistory: MutableState<Boolean>,
-    chapterOrder: List<Chapter>,
-    novelName: String,
-    novelCoverUrl: String,
+    currentChapter: Chapter?,
+    hasHistory: Boolean,
+    onChapterOpen: (Chapter) -> Unit,
     onGroupToggle: (String) -> Unit
 ) {
     when (row) {
@@ -133,23 +119,17 @@ fun ChapterListRow(
                 ChapterDetailRow(
                     chapter = chapter,
                     depth = row.depth,
-                    novelId = novelId,
-                    history = history,
+                    currentChapter = currentChapter,
                     hasHistory = hasHistory,
-                    chapterOrder = chapterOrder,
-                    novelName = novelName,
-                    novelCoverUrl = novelCoverUrl
+                    onChapterOpen = onChapterOpen
                 )
             } else {
                 // Explanatory source text is rendered, but never becomes a
                 // synthetic chapter or a navigable row.
                 row.item.Render(
-                    novelId = novelId,
-                    history = history,
+                    currentChapter = currentChapter,
                     hasHistory = hasHistory,
-                    chapterOrder = chapterOrder,
-                    novelName = novelName,
-                    novelCoverUrl = novelCoverUrl
+                    onChapterOpen = onChapterOpen
                 )
             }
         }
@@ -169,15 +149,11 @@ fun ChapterListRow(
 private fun ChapterDetailRow(
     chapter: Chapter,
     depth: Int,
-    novelId: String,
-    history: MutableState<Chapter?>,
-    hasHistory: MutableState<Boolean>,
-    chapterOrder: List<Chapter>,
-    novelName: String,
-    novelCoverUrl: String
+    currentChapter: Chapter?,
+    hasHistory: Boolean,
+    onChapterOpen: (Chapter) -> Unit
 ) {
-    val navigator = LocalBaseNavigator.current
-    val current = chapter.isHistory || history.value == chapter
+    val current = chapter.isHistory || (hasHistory && currentChapter == chapter)
     val canOpen = chapter.url.contains("esjzone", ignoreCase = true) ||
         chapter.url.contains("/forum/", ignoreCase = true)
 
@@ -188,18 +164,7 @@ private fun ChapterDetailRow(
             .padding(start = (depth * 14).dp, top = 2.dp, bottom = 2.dp)
             .then(
                 if (canOpen) Modifier.clickable {
-                    history.value = chapter
-                    hasHistory.value = true
-                    navigator?.pushIfNotCurrent(
-                        ChapterPage(
-                            novelId = novelId,
-                            chapter = chapter,
-                            history = ChapterStateHolder(history),
-                            chapterOrder = chapterOrder,
-                            novelName = novelName,
-                            novelCoverUrl = novelCoverUrl
-                        )
-                    )
+                    onChapterOpen(chapter)
                 } else Modifier
             ),
         shape = QuietEditorial.controlShape,

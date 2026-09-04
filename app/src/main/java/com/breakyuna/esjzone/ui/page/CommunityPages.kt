@@ -52,7 +52,7 @@ import com.breakyuna.esjzone.novellibrary.community.ForumPost
 import com.breakyuna.esjzone.novellibrary.community.ForumTopic
 import com.breakyuna.esjzone.novellibrary.community.ForumThread
 import com.breakyuna.esjzone.novellibrary.novel.CategoryNovel
-import com.breakyuna.esjzone.ui.component.AppBar
+import com.breakyuna.esjzone.ui.component.QuietBackHeader
 import com.breakyuna.esjzone.ui.theme.QuietEditorial
 import com.breakyuna.esjzone.ui.component.QuietEmptyState
 import com.breakyuna.esjzone.ui.component.QuietErrorState
@@ -76,7 +76,7 @@ object ForumPage : Screen {
         val state by model.state.collectAsState()
 
         Column(modifier = Modifier.fillMaxSize()) {
-            AppBar(
+            QuietBackHeader(
                 title = stringResource(id = R.string.forum),
                 onBack = { navigator?.pop() }
             )
@@ -124,7 +124,7 @@ class ForumCategoryPage(private val category: ForumCategory) : Screen {
         val state by model.state.collectAsState()
 
         Column(modifier = Modifier.fillMaxSize()) {
-            AppBar(title = category.name, onBack = { navigator?.pop() })
+            QuietBackHeader(title = category.name, onBack = { navigator?.pop() })
             CommunityStateContent(
                 state = state,
                 emptyText = stringResource(id = R.string.forum_threads_empty),
@@ -161,7 +161,7 @@ class ForumBoardPage(private val thread: ForumThread) : Screen {
         val state by model.state.collectAsState()
 
         Column(modifier = Modifier.fillMaxSize()) {
-            AppBar(title = thread.title, onBack = { navigator?.pop() })
+            QuietBackHeader(title = thread.title, onBack = { navigator?.pop() })
             CommunityStateContent(
                 state = state,
                 emptyText = stringResource(id = R.string.forum_board_empty)
@@ -218,7 +218,7 @@ class ForumPostPage(private val topic: ForumTopic) : Screen {
         val postScrollState = rememberScrollState()
 
         Column(modifier = Modifier.fillMaxSize()) {
-            AppBar(title = topic.title, onBack = { navigator?.pop() })
+            QuietBackHeader(title = topic.title, onBack = { navigator?.pop() })
             when (val snapshot = state) {
                 is CommunityState.Loading -> QuietLoadingState(modifier = Modifier.fillMaxSize())
                 is CommunityState.Error -> QuietErrorState(

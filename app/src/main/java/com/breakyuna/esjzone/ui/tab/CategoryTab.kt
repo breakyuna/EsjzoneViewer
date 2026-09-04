@@ -70,7 +70,7 @@ import com.breakyuna.esjzone.network.features.getCategories
 import com.breakyuna.esjzone.novellibrary.novel.Category as NovelCategory
 import com.breakyuna.esjzone.ui.navigation.LocalBaseNavigator
 import com.breakyuna.esjzone.ui.navigation.pushIfNotCurrent
-import com.breakyuna.esjzone.ui.component.AppBar
+import com.breakyuna.esjzone.ui.component.QuietBackHeader
 import com.breakyuna.esjzone.ui.component.QuietErrorState
 import com.breakyuna.esjzone.ui.component.QuietEmptyState
 import com.breakyuna.esjzone.ui.component.QuietLoadingState
@@ -87,7 +87,7 @@ class CategoryBrowserPage : Screen {
         val authorization = LocalAuthorization.current
         val categoryModel = rememberScreenModel { CategoryModel(authorization) }
         Column(modifier = Modifier.fillMaxSize()) {
-            AppBar(
+            QuietBackHeader(
                 title = stringResource(id = R.string.categories),
                 onBack = { navigator?.pop() }
             )

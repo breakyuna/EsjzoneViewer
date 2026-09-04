@@ -90,7 +90,9 @@ fun Description(description: NovelDescription, modifier: Modifier = Modifier) {
                             .data(component.url)
                             .crossfade(true)
                             .build(),
-                        contentDescription = "description",
+                        // The image is part of rich description content; the
+                        // surrounding text provides its accessible context.
+                        contentDescription = null,
                         imageLoader = MainActivity.imageLoader,
                         loading = {
                             CircularProgressIndicator(strokeWidth = 2.dp)
@@ -168,7 +170,7 @@ fun FuriganaTestPreview() {
                             .data(component.url)
                             .crossfade(true)
                             .build(),
-                        contentDescription = "description",
+                        contentDescription = null,
                         imageLoader = MainActivity.imageLoader,
                         loading = {
                             CircularProgressIndicator()

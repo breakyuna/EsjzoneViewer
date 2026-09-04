@@ -67,7 +67,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import cafe.adriel.voyager.core.screen.Screen
 import com.breakyuna.esjzone.R
-import com.breakyuna.esjzone.ui.component.AppBar
+import com.breakyuna.esjzone.ui.component.QuietBackHeader
 import com.breakyuna.esjzone.ui.theme.QuietEditorial
 import com.breakyuna.esjzone.ui.component.QuietEmptyState
 import com.breakyuna.esjzone.ui.navigation.LocalBaseNavigator
@@ -111,10 +111,10 @@ object LogsPage : Screen {
         Column(
             modifier = Modifier.fillMaxSize()
         ) {
-            AppBar(
+            QuietBackHeader(
                 title = stringResource(id = R.string.system_logs),
-                onBack = { navigator?.pop() }
-            ) {
+                onBack = { navigator?.pop() },
+                belowContent = {
                 // Action row in top bar
                 Row(
                     modifier = Modifier
@@ -185,7 +185,8 @@ object LogsPage : Screen {
                         )
                     }
                 }
-            }
+                }
+            )
 
             // Search Bar & Filter Chips
             Column(

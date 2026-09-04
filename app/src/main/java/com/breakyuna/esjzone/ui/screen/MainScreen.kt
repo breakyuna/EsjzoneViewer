@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.Spacer
@@ -187,26 +188,33 @@ private object TabScreen : Screen {
 
     @Composable
     override fun Content() {
-        Box(modifier = Modifier.fillMaxSize()) {
+        // Keep the navigation bar in the root layout so every tab receives
+        // the exact safe-area padding supplied by Scaffold. Pages no longer
+        // need to guess its height with fixed bottom padding values.
+        Scaffold(
+            containerColor = MaterialTheme.colorScheme.background,
+            // Existing page headers own their top spacing. Only the custom
+            // bottom bar should contribute safe-area space at this level.
+            contentWindowInsets = WindowInsets(0, 0, 0, 0),
+            bottomBar = {
+                QuietBottomNavigation(modifier = Modifier.navigationBarsPadding()) {
+                    QuietBottomNavigationItem(tab = HomeTab)
+                    QuietBottomNavigationItem(
+                        tab = HistoryTab,
+                        onDoubleClick = HistoryTab::requestOpenLastReading
+                    )
+                    QuietBottomNavigationItem(tab = FavoriteTab)
+                    QuietBottomNavigationItem(tab = ProfileTab)
+                }
+            }
+        ) { contentPadding ->
             Surface(
-                modifier = Modifier.fillMaxSize(),
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(contentPadding),
                 color = MaterialTheme.colorScheme.background
             ) {
                 CurrentTab()
-            }
-
-            QuietBottomNavigation(
-                modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .navigationBarsPadding()
-            ) {
-                QuietBottomNavigationItem(tab = HomeTab)
-                QuietBottomNavigationItem(
-                    tab = HistoryTab,
-                    onDoubleClick = HistoryTab::requestOpenLastReading
-                )
-                QuietBottomNavigationItem(tab = FavoriteTab)
-                QuietBottomNavigationItem(tab = ProfileTab)
             }
         }
     }

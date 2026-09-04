@@ -36,7 +36,7 @@ import cafe.adriel.voyager.core.screen.Screen
 import com.breakyuna.esjzone.BuildConfig
 import com.breakyuna.esjzone.Constants
 import com.breakyuna.esjzone.R
-import com.breakyuna.esjzone.ui.component.AppBar
+import com.breakyuna.esjzone.ui.component.QuietBackHeader
 import com.breakyuna.esjzone.ui.component.QuietSectionHeader
 import com.breakyuna.esjzone.ui.navigation.LocalBaseNavigator
 
@@ -52,7 +52,7 @@ object AboutPage : Screen {
         Column(
             modifier = Modifier.fillMaxSize()
         ) {
-            AppBar(
+            QuietBackHeader(
                 title = stringResource(id = R.string.about),
                 onBack = {
                     navigator?.pop()

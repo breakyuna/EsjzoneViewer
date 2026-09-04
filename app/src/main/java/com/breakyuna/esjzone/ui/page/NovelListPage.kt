@@ -9,7 +9,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -58,9 +57,8 @@ import com.breakyuna.esjzone.network.features.getNovelDetail
 import com.breakyuna.esjzone.network.features.novels
 import com.breakyuna.esjzone.novellibrary.novel.CoveredNovel
 import com.breakyuna.esjzone.novellibrary.novel.preview
-import com.breakyuna.esjzone.ui.component.AppBar
+import com.breakyuna.esjzone.ui.component.QuietBackHeader
 import com.breakyuna.esjzone.ui.component.DropdownSelection
-import com.breakyuna.esjzone.ui.component.LoadError
 import com.breakyuna.esjzone.ui.component.QuietEmptyState
 import com.breakyuna.esjzone.ui.component.QuietErrorState
 import com.breakyuna.esjzone.ui.component.QuietLoadingState
@@ -131,12 +129,12 @@ class NovelListPage(
         }
 
         Column(modifier = Modifier.fillMaxSize()) {
-            AppBar(
+            QuietBackHeader(
                 title = stringResource(id = R.string.novel_list),
                 onBack = {
                     navigator?.pop()
-                }
-            ) {
+                },
+                belowContent = {
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -185,7 +183,8 @@ class NovelListPage(
                         nameProvider = { stringResource(id = sortResource(this)) }
                     )
                 }
-            }
+                }
+            )
 
             when (state) {
                 is NovelListPageModel.State.Loading -> QuietLoadingState(modifier = Modifier.fillMaxSize())
@@ -274,7 +273,7 @@ class NovelListPage(
                         item {
                             if (current <= max && max > 1) {
                                 if (pageFailed) {
-                                    LoadError(
+                                    QuietErrorState(
                                         onRetry = {
                                             pageFailed = false
                                             pageFailure = null

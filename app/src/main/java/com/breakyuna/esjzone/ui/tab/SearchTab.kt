@@ -32,10 +32,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -46,11 +44,6 @@ import androidx.compose.ui.unit.dp
 import cafe.adriel.voyager.core.model.rememberScreenModel
 import cafe.adriel.voyager.navigator.tab.Tab
 import cafe.adriel.voyager.navigator.tab.TabOptions
-import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
-import com.breakyuna.esjzone.MainActivity
 import com.breakyuna.esjzone.R
 import com.breakyuna.esjzone.database.entity.SearchHistory
 import com.breakyuna.esjzone.network.LocalAuthorization
@@ -60,7 +53,6 @@ import com.breakyuna.esjzone.ui.page.SearchPageModel
 import com.breakyuna.esjzone.ui.page.searchResultItems
 import com.breakyuna.esjzone.ui.navigation.LocalBaseNavigator
 import com.breakyuna.esjzone.ui.theme.QuietEditorial
-import com.breakyuna.esjzone.util.currentDateString
 import com.breakyuna.esjzone.util.formattedDate
 
 object SearchTab : Tab {
@@ -80,12 +72,11 @@ object SearchTab : Tab {
     override fun Content() {
         val navigator = LocalBaseNavigator.current
         val authorization = LocalAuthorization.current
-        val scope = rememberCoroutineScope()
         val searchModel = rememberScreenModel { SearchPageModel(authorization) }
         val searchState by searchModel.state.collectAsState()
+        val historyModel = rememberScreenModel { SearchHistoryModel() }
+        val historyState by historyModel.state.collectAsState()
 
-        var loadingHistory by remember { mutableStateOf(true) }
-        val histories = remember { mutableStateListOf<SearchHistory>() }
         var keyword by rememberSaveable { mutableStateOf("") }
         var activeSearchKeyword by rememberSaveable { mutableStateOf<String?>(null) }
 
@@ -93,31 +84,7 @@ object SearchTab : Tab {
             val trimmed = query.trim()
             if (trimmed.isBlank()) return
             activeSearchKeyword = trimmed
-            scope.launch(Dispatchers.IO) {
-                try {
-                    val dao = MainActivity.database.searchHistoryDao()
-                    val history = if (dao.exists(trimmed)) {
-                        dao.findByKeyword(trimmed)
-                    } else {
-                        SearchHistory(keyword = trimmed, time = currentDateString())
-                    }
-                    history.time = currentDateString()
-                    dao.insertAll(history)
-                    val updated = dao.getAll()
-                    withContext(kotlinx.coroutines.Dispatchers.Main.immediate) {
-                        histories.clear()
-                        histories.addAll(updated)
-                    }
-                } catch (e: CancellationException) {
-                    throw e
-                } catch (e: Exception) {
-                    com.breakyuna.esjzone.util.AppLogger.e(
-                        "SearchTab",
-                        "Failed to persist search history",
-                        e
-                    )
-                }
-            }
+            historyModel.save(trimmed)
         }
 
         LazyColumn(
@@ -161,24 +128,10 @@ object SearchTab : Tab {
                                 .weight(1f)
                                 .padding(start = 8.dp)
                         )
-                        if (histories.isNotEmpty()) {
+                        if (historyState.histories.isNotEmpty()) {
                                 TextButton(
                                 onClick = {
-                                    val items = histories.toList()
-                                    histories.clear()
-                                    scope.launch(Dispatchers.IO) {
-                                        try {
-                                            items.forEach { MainActivity.database.searchHistoryDao().delete(it) }
-                                        } catch (e: CancellationException) {
-                                            throw e
-                                        } catch (e: Exception) {
-                                            com.breakyuna.esjzone.util.AppLogger.e(
-                                                "SearchTab",
-                                                "Failed to clear search history",
-                                                e
-                                            )
-                                        }
-                                    }
+                                    historyModel.clear()
                                 }
                             ) {
                                 Icon(
@@ -196,12 +149,12 @@ object SearchTab : Tab {
                     }
 
                     when {
-                        loadingHistory -> {
+                        historyState.loading -> {
                             com.breakyuna.esjzone.ui.component.QuietLoadingState(
                                 modifier = Modifier.padding(horizontal = 0.dp)
                             )
                         }
-                        histories.isEmpty() -> {
+                        historyState.histories.isEmpty() -> {
                             QuietEmptyState(
                                 title = stringResource(R.string.search_no_history),
                                 message = stringResource(R.string.search_history_privacy),
@@ -217,8 +170,7 @@ object SearchTab : Tab {
                                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                                 verticalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
-                                histories
-                                    .toList()
+                                historyState.histories
                                     .sortedByDescending { it.time.formattedDate() }
                                     .forEach { history ->
                                         SearchHistoryPill(
@@ -228,20 +180,7 @@ object SearchTab : Tab {
                                                 performSearch(history.keyword)
                                             },
                                             onDelete = {
-                                                histories.remove(history)
-                                                scope.launch(Dispatchers.IO) {
-                                                    try {
-                                                        MainActivity.database.searchHistoryDao().delete(history)
-                                                    } catch (e: CancellationException) {
-                                                        throw e
-                                                    } catch (e: Exception) {
-                                                        com.breakyuna.esjzone.util.AppLogger.e(
-                                                            "SearchTab",
-                                                            "Failed to delete search history entry",
-                                                            e
-                                                        )
-                                                    }
-                                                }
+                                                historyModel.delete(history)
                                             }
                                         )
                                     }
@@ -284,25 +223,7 @@ object SearchTab : Tab {
             }
         }
 
-        LaunchedEffect(Unit) {
-            try {
-                val dbHistories = withContext(Dispatchers.IO) {
-                    MainActivity.database.searchHistoryDao().getAll()
-                }
-                histories.clear()
-                histories.addAll(dbHistories)
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                com.breakyuna.esjzone.util.AppLogger.e(
-                    "SearchTab",
-                    "Failed to load search history",
-                    e
-                )
-            } finally {
-                loadingHistory = false
-            }
-        }
+        LaunchedEffect(Unit) { historyModel.load() }
 
         LaunchedEffect(activeSearchKeyword) {
             activeSearchKeyword?.let { searchModel.search(it) }

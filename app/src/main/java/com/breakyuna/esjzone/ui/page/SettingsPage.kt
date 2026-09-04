@@ -50,7 +50,6 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -62,19 +61,11 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import cafe.adriel.voyager.core.screen.Screen
-import coil.annotation.ExperimentalCoilApi
-import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
+import cafe.adriel.voyager.core.model.rememberScreenModel
 import com.breakyuna.esjzone.AppLanguage
 import com.breakyuna.esjzone.GlobalSettings
-import com.breakyuna.esjzone.MainActivity
 import com.breakyuna.esjzone.R
-import com.breakyuna.esjzone.database.dao.put
-import com.breakyuna.esjzone.network.EsjzoneClient
 import com.breakyuna.esjzone.network.LocalAuthorization
-import com.breakyuna.esjzone.network.features.logout
 import com.breakyuna.esjzone.ui.navigation.LocalAppNavigator
 import com.breakyuna.esjzone.ui.navigation.LocalBaseNavigator
 import com.breakyuna.esjzone.ui.navigation.pushIfNotCurrent
@@ -88,60 +79,27 @@ import com.breakyuna.esjzone.util.LocaleHelper
 object SettingsPage : Screen {
     private fun readResolve(): Any = SettingsPage
 
-    @OptIn(ExperimentalCoilApi::class)
     @Composable
     override fun Content() {
         val appNavigator = LocalAppNavigator.current
         val navigator = LocalBaseNavigator.current
         val authorization = LocalAuthorization.current
-        val scope = rememberCoroutineScope()
         val context = LocalContext.current
+        val settingsModel = rememberScreenModel { SettingsPageModel() }
+        val settingsState by settingsModel.state.collectAsState()
         val adult by GlobalSettings.adult
         val theme by GlobalSettings.theme
         val domain by GlobalSettings.domain
         val language by GlobalSettings.language
         var showLogoutConfirmation by remember { mutableStateOf(false) }
-        var logoutInProgress by remember { mutableStateOf(false) }
-        var cacheOperation by remember { mutableStateOf<String?>(null) }
-        var cacheStatsError by remember { mutableStateOf(false) }
-        var cacheClearError by remember { mutableStateOf(false) }
-        var localCacheStats by remember { mutableStateOf<LocalCacheStats?>(null) }
         val crashReport by AppLogger.crashReportFlow.collectAsState()
 
-        fun persistCache(key: String, value: String) {
-            scope.launch(Dispatchers.IO) {
-                try {
-                    MainActivity.database.cacheDao().put(key, value)
-                } catch (e: CancellationException) {
-                    throw e
-                } catch (e: Exception) {
-                    AppLogger.e("SettingsPage", "Failed to persist setting: $key", e)
-                }
-            }
-        }
-
-        fun refreshLocalCacheStats() {
-            cacheStatsError = false
-            scope.launch(Dispatchers.IO) {
-                try {
-                    val pageStats = EsjzoneClient.pageCacheStats()
-                    val imageBytes = MainActivity.imageLoader.diskCache?.size ?: 0L
-                    withContext(Dispatchers.Main) {
-                        localCacheStats = LocalCacheStats(pageStats.sizeBytes, pageStats.entryCount, imageBytes)
-                        cacheStatsError = false
-                    }
-                } catch (e: CancellationException) {
-                    throw e
-                } catch (e: Exception) {
-                    AppLogger.e("SettingsPage", "Failed to calculate cache statistics", e)
-                    withContext(Dispatchers.Main) { cacheStatsError = true }
-                }
-            }
-        }
-
         LaunchedEffect(Unit) {
-            refreshLocalCacheStats()
+            settingsModel.refreshCacheStats()
             AppLogger.refreshCrashReport()
+        }
+        LaunchedEffect(settingsState.logoutCompleted) {
+            if (settingsState.logoutCompleted) appNavigator?.replaceAll(LoginScreen)
         }
 
         Column(modifier = Modifier.fillMaxSize()) {
@@ -164,8 +122,8 @@ object SettingsPage : Screen {
                             backup = candidate != GlobalSettings.DOMAINS.first(),
                             onClick = {
                                 GlobalSettings.setDomain(candidate)
-                                scope.launch(Dispatchers.IO) { EsjzoneClient.clearPageCache() }
-                                persistCache("domain", candidate)
+                                settingsModel.clearPageCache()
+                                settingsModel.persist("domain", candidate)
                             }
                         )
                     }
@@ -185,19 +143,19 @@ object SettingsPage : Screen {
                     )
                     ThemeFamily(stringResource(R.string.settings_theme_frappe), CatppuccinThemeType.frappes(), theme) {
                         GlobalSettings.setTheme(it)
-                        persistCache("theme", it.name)
+                        settingsModel.persist("theme", it.name)
                     }
                     ThemeFamily(stringResource(R.string.settings_theme_latte), CatppuccinThemeType.lattes(), theme) {
                         GlobalSettings.setTheme(it)
-                        persistCache("theme", it.name)
+                        settingsModel.persist("theme", it.name)
                     }
                     ThemeFamily(stringResource(R.string.settings_theme_macchiato), CatppuccinThemeType.macchiatos(), theme) {
                         GlobalSettings.setTheme(it)
-                        persistCache("theme", it.name)
+                        settingsModel.persist("theme", it.name)
                     }
                     ThemeFamily(stringResource(R.string.settings_theme_mocha), CatppuccinThemeType.mochas(), theme) {
                         GlobalSettings.setTheme(it)
-                        persistCache("theme", it.name)
+                        settingsModel.persist("theme", it.name)
                     }
                 }
 
@@ -215,7 +173,7 @@ object SettingsPage : Screen {
                             onClick = {
                                 GlobalSettings.setLanguage(candidate)
                                 LocaleHelper.syncSystemLocale(context, candidate)
-                                persistCache("language", candidate.code)
+                                settingsModel.persist("language", candidate.code)
                             }
                         )
                     }
@@ -229,17 +187,17 @@ object SettingsPage : Screen {
                         checked = adult,
                         onCheckedChange = {
                             GlobalSettings.setAdult(it)
-                            persistCache("show_adult", it.toString())
+                            settingsModel.persist("show_adult", it.toString())
                         }
                     )
                 }
 
                 SettingsSection(Icons.Filled.Storage, stringResource(R.string.settings_storage_section)) {
-                    val cacheStats = localCacheStats
+                    val cacheStats = settingsState.cacheStats
                     CacheRow(
                         title = stringResource(R.string.settings_page_cache),
                         value = when {
-                            cacheStatsError -> stringResource(R.string.local_cache_stats_failed)
+                            settingsState.cacheStatsError -> stringResource(R.string.local_cache_stats_failed)
                             cacheStats == null ->
                             stringResource(R.string.local_cache_loading)
                             else -> {
@@ -252,57 +210,24 @@ object SettingsPage : Screen {
                         },
                         accent = MaterialTheme.colorScheme.primary,
                         actionLabel = stringResource(R.string.local_cache_clear_pages),
-                        busy = cacheOperation != null,
+                        busy = settingsState.cacheOperation != null,
                         onAction = {
-                            cacheOperation = "pages"
-                            cacheClearError = false
-                            scope.launch(Dispatchers.IO) {
-                                try {
-                                    EsjzoneClient.clearPageCache()
-                                } catch (e: CancellationException) {
-                                    throw e
-                                } catch (e: Exception) {
-                                    AppLogger.e("SettingsPage", "Failed to clear page cache", e)
-                                    withContext(Dispatchers.Main) { cacheClearError = true }
-                                } finally {
-                                    withContext(Dispatchers.Main) {
-                                        cacheOperation = null
-                                        refreshLocalCacheStats()
-                                    }
-                                }
-                            }
+                            settingsModel.clearPageCache()
                         }
                     )
                     HorizontalDivider(color = quietRuleColor())
                     CacheRow(
                         title = stringResource(R.string.settings_image_cache),
                         value = when {
-                            cacheStatsError -> stringResource(R.string.local_cache_stats_failed)
+                            settingsState.cacheStatsError -> stringResource(R.string.local_cache_stats_failed)
                             cacheStats == null -> stringResource(R.string.local_cache_loading)
                             else -> formatBytes(cacheStats.imageBytes)
                         },
                         accent = MaterialTheme.colorScheme.tertiary,
                         actionLabel = stringResource(R.string.local_cache_clear_images),
-                        busy = cacheOperation != null,
+                        busy = settingsState.cacheOperation != null,
                         onAction = {
-                            cacheOperation = "images"
-                            cacheClearError = false
-                            scope.launch(Dispatchers.IO) {
-                                try {
-                                    MainActivity.imageLoader.memoryCache?.clear()
-                                    MainActivity.imageLoader.diskCache?.clear()
-                                } catch (e: CancellationException) {
-                                    throw e
-                                } catch (e: Exception) {
-                                    AppLogger.e("SettingsPage", "Failed to clear image cache", e)
-                                    withContext(Dispatchers.Main) { cacheClearError = true }
-                                } finally {
-                                    withContext(Dispatchers.Main) {
-                                        cacheOperation = null
-                                        refreshLocalCacheStats()
-                                    }
-                                }
-                            }
+                            settingsModel.clearImageCache()
                         }
                     )
                     Surface(
@@ -323,7 +248,7 @@ object SettingsPage : Screen {
                             )
                         }
                     }
-                    if (cacheOperation != null) {
+                    if (settingsState.cacheOperation != null) {
                         Row(
                             modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
                             verticalAlignment = Alignment.CenterVertically
@@ -337,7 +262,7 @@ object SettingsPage : Screen {
                             )
                         }
                     }
-                    if (cacheStatsError) {
+                    if (settingsState.cacheStatsError) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(
                                 stringResource(R.string.local_cache_stats_failed),
@@ -345,12 +270,12 @@ object SettingsPage : Screen {
                                 color = MaterialTheme.colorScheme.error,
                                 modifier = Modifier.weight(1f)
                             )
-                            TextButton(onClick = ::refreshLocalCacheStats) {
+                            TextButton(onClick = settingsModel::refreshCacheStats) {
                                 Text(stringResource(R.string.retry))
                             }
                         }
                     }
-                    if (cacheClearError) {
+                    if (settingsState.cacheClearError) {
                         Text(
                             stringResource(R.string.local_cache_clear_failed),
                             style = QuietEditorial.body,
@@ -402,7 +327,7 @@ object SettingsPage : Screen {
                         summary = stringResource(R.string.logout_consequence),
                         tag = "M02",
                         destructive = true,
-                        onClick = { if (!logoutInProgress) showLogoutConfirmation = true }
+                        onClick = { if (!settingsState.logoutInProgress) showLogoutConfirmation = true }
                     )
                 }
                 Spacer(modifier = Modifier.height(8.dp))
@@ -411,53 +336,25 @@ object SettingsPage : Screen {
 
         if (showLogoutConfirmation) {
             AlertDialog(
-                onDismissRequest = { if (!logoutInProgress) showLogoutConfirmation = false },
+                onDismissRequest = { if (!settingsState.logoutInProgress) showLogoutConfirmation = false },
                 shape = QuietEditorial.dialogShape,
                 title = { Text(stringResource(R.string.logout_confirm_message)) },
                 text = { Text(stringResource(R.string.logout_consequence)) },
                 dismissButton = {
                     TextButton(
                         onClick = { showLogoutConfirmation = false },
-                        enabled = !logoutInProgress
+                        enabled = !settingsState.logoutInProgress
                     ) { Text(stringResource(R.string.logout_cancel)) }
                 },
                 confirmButton = {
                     TextButton(
-                        enabled = !logoutInProgress,
+                        enabled = !settingsState.logoutInProgress,
                         onClick = {
-                            logoutInProgress = true
-                            scope.launch(Dispatchers.IO) {
-                                try {
-                                    EsjzoneClient.logout(authorization)
-                                } catch (e: CancellationException) {
-                                    throw e
-                                } catch (e: Exception) {
-                                    AppLogger.w("SettingsPage", "Server logout failed; clearing local session", e)
-                                }
-                                try {
-                                    EsjzoneClient.clearSession(
-                                        authorization.domain.ifBlank { GlobalSettings.domain.value }
-                                    )
-                                    val dao = MainActivity.database.cacheDao()
-                                    dao.deleteByKey("ews_key")
-                                    dao.deleteByKey("ews_token")
-                                    dao.getAll()
-                                        .filter { it.key.startsWith("profile:") }
-                                        .forEach { dao.delete(it) }
-                                } catch (e: CancellationException) {
-                                    throw e
-                                } catch (e: Exception) {
-                                    AppLogger.e("SettingsPage", "Failed to clear local session", e)
-                                }
-                                withContext(Dispatchers.Main) {
-                                    logoutInProgress = false
-                                    showLogoutConfirmation = false
-                                    appNavigator?.replaceAll(LoginScreen)
-                                }
-                            }
+                            settingsModel.logout(authorization)
+                            showLogoutConfirmation = false
                         }
                     ) {
-                        if (logoutInProgress) {
+                        if (settingsState.logoutInProgress) {
                             CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
                         } else {
                             Text(stringResource(R.string.logout_confirm))
@@ -778,18 +675,5 @@ private fun RadioMark(selected: Boolean) {
                 )
             }
         }
-    }
-}
-
-private data class LocalCacheStats(val pageBytes: Long, val pageEntries: Int, val imageBytes: Long)
-
-private fun formatBytes(bytes: Long): String {
-    val safeBytes = bytes.coerceAtLeast(0L)
-    val kib = 1024.0
-    val mib = kib * 1024.0
-    return when {
-        safeBytes >= mib -> String.format("%.1f MiB", safeBytes / mib)
-        safeBytes >= kib -> String.format("%.1f KiB", safeBytes / kib)
-        else -> "$safeBytes B"
     }
 }
