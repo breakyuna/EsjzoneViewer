@@ -64,7 +64,7 @@ fun NovelDetailTopBar(
                     modifier = Modifier.size(48.dp)
                 ) {
                     Icon(
-                        imageVector = androidx.compose.material.icons.automirrored.filled.ArrowBack,
+                        imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                         contentDescription = stringResource(R.string.reader_back)
                     )
                 }

@@ -92,7 +92,7 @@ fun ChapterListHeader(
         verticalAlignment = Alignment.CenterVertically
     ) {
         Icon(
-            imageVector = androidx.compose.material.icons.automirrored.filled.List,
+            imageVector = Icons.AutoMirrored.Filled.List,
             contentDescription = null,
             tint = MaterialTheme.colorScheme.primary,
             modifier = Modifier.size(20.dp)
