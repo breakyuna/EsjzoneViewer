@@ -159,7 +159,7 @@
     <string name="home_discover">Discover</string>
     <string name="home_tagline">Daily picks and live translated serials</string>
     <string name="home_site_status">Main site · %1$s</string>
-    <string name="home_editor_picks">Editor's picks</string>
+    <string name="home_editor_picks">Editor\'s picks</string>
     <string name="home_recommendation_label">Recommended reading</string>
     <string name="home_browse_more">Browse more</string>
     <string name="home_collection_empty_title">Nothing here yet</string>
