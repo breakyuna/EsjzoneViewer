@@ -324,20 +324,20 @@ internal class PersistentCookieJar(context: Context) : CookieJar {
         val SESSION_COOKIE_NAMES = setOf("ews_key", "ews_token")
 
         private fun createSecurePreferences(context: Context): SharedPreferences? =
-            runCatching {
-                val appContext = context.applicationContext
-                val masterKey = MasterKey.Builder(appContext)
+            runCatching<SharedPreferences> {
+                val appContext: Context = context.applicationContext
+                val masterKey: MasterKey = MasterKey.Builder(appContext)
                     .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
                     .build()
                 EncryptedSharedPreferences.create(
+                    appContext,
                     SECURE_PREFERENCES,
                     masterKey,
-                    appContext,
                     EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
                     EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
                 )
-            }.onFailure {
-                Log.e(TAG, "Secure session storage is unavailable; session persistence disabled", it)
+            }.onFailure { error: Throwable ->
+                Log.e(TAG, "Secure session storage is unavailable; session persistence disabled", error)
             }.getOrNull()
 
         const val SECURE_PREFERENCES = "esj_session_secure"
