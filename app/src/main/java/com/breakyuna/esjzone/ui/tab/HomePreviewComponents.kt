@@ -1,5 +1,6 @@
 package com.breakyuna.esjzone.ui.tab
 
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.gestures.snapping.rememberSnapFlingBehavior
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -49,6 +50,7 @@ private val HomePreviewCoverHeight = 96.dp
  * trigger.
  */
 @Composable
+@OptIn(ExperimentalFoundationApi::class)
 internal fun HomePreviewRail(
     novels: List<CoveredNovel>,
     modifier: Modifier = Modifier
