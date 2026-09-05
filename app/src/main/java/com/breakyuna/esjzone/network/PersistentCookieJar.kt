@@ -1,6 +1,10 @@
 package com.breakyuna.esjzone.network
 
 import android.content.Context
+import android.content.SharedPreferences
+import android.util.Log
+import androidx.security.crypto.EncryptedSharedPreferences
+import androidx.security.crypto.MasterKey
 import com.google.gson.Gson
 import com.google.gson.JsonSyntaxException
 import okhttp3.Cookie
@@ -18,10 +22,21 @@ import java.util.UUID
  */
 internal class PersistentCookieJar(context: Context) : CookieJar {
 
+    /**
+     * Non-secret cache metadata remains in ordinary preferences. Session cookies are
+     * stored separately with an Android Keystore-backed AES key. There is deliberately
+     * no plaintext fallback when the secure store cannot be opened.
+     */
     private val preferences = context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
+    private val securePreferences: SharedPreferences? = createSecurePreferences(context)
     private val gson = Gson()
     private val lock = Any()
-    private val cookies = loadCookies()
+    private val cookies = mutableListOf<StoredCookie>()
+
+    init {
+        migrateLegacyCookies()
+        cookies += loadCookies()
+    }
 
     override fun loadForRequest(url: HttpUrl): List<Cookie> {
         synchronized(lock) {
@@ -172,6 +187,7 @@ internal class PersistentCookieJar(context: Context) : CookieJar {
             .path("/")
             .name(name)
             .value(value)
+            .secure()
             .build()
     }
 
@@ -181,17 +197,47 @@ internal class PersistentCookieJar(context: Context) : CookieJar {
     }
 
     private fun loadCookies(): MutableList<StoredCookie> {
-        val json = preferences.getString(COOKIES, null) ?: return mutableListOf()
+        val json = runCatching { securePreferences?.getString(COOKIES, null) }
+            .getOrNull()
+            ?: return mutableListOf()
+        return parseCookies(json)
+    }
+
+    private fun parseCookies(json: String): MutableList<StoredCookie> {
         return try {
             gson.fromJson(json, Array<StoredCookie>::class.java)?.toMutableList()
                 ?: mutableListOf()
-        } catch (_: JsonSyntaxException) {
+        } catch (_: Exception) {
             mutableListOf()
         }
     }
 
     private fun persistLocked() {
-        preferences.edit().putString(COOKIES, gson.toJson(cookies)).apply()
+        runCatching {
+            securePreferences?.edit()?.putString(COOKIES, gson.toJson(cookies))?.apply()
+        }.onFailure {
+            // Keep the current process usable, but never fall back to plaintext storage.
+            Log.e(TAG, "Unable to persist the secure session", it)
+        }
+    }
+
+    /** Migrates the old plaintext cookie JSON once, then removes that copy. */
+    private fun migrateLegacyCookies() = synchronized(lock) {
+        val legacyJson = preferences.getString(COOKIES, null)
+        val secure = securePreferences
+        runCatching {
+            if (secure != null && !secure.contains(COOKIES) && !legacyJson.isNullOrBlank()) {
+                val migrated = parseCookies(legacyJson)
+                if (migrated.isNotEmpty()) {
+                    secure.edit().putString(COOKIES, gson.toJson(migrated)).commit()
+                }
+            }
+        }.onFailure {
+            Log.e(TAG, "Unable to migrate the legacy session securely", it)
+        }
+        // Never retain a plaintext session copy, including when secure storage was
+        // unavailable; failing closed is safer than allowing a future backup to copy it.
+        if (legacyJson != null) preferences.edit().remove(COOKIES).commit()
     }
 
     private fun domainMatchesHost(domain: String, host: String): Boolean {
@@ -244,7 +290,7 @@ internal class PersistentCookieJar(context: Context) : CookieJar {
                     builder.domain(domain)
                 }
                 if (expiresAt != Long.MAX_VALUE) builder.expiresAt(expiresAt)
-                if (secure) builder.secure()
+                if (secure || name in SESSION_COOKIE_NAMES) builder.secure()
                 if (httpOnly) builder.httpOnly()
                 builder.build()
             }.getOrNull()
@@ -275,5 +321,26 @@ internal class PersistentCookieJar(context: Context) : CookieJar {
         const val LEGACY_MIGRATED_HOSTS = "legacy_migrated_hosts"
         const val CACHE_SCOPE_PREFIX = "cache_scope_"
         const val VERIFIED_AT_PREFIX = "verified_at_"
+        val SESSION_COOKIE_NAMES = setOf("ews_key", "ews_token")
+
+        private fun createSecurePreferences(context: Context): SharedPreferences? =
+            runCatching {
+                val appContext = context.applicationContext
+                val masterKey = MasterKey.Builder(appContext)
+                    .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
+                    .build()
+                EncryptedSharedPreferences.create(
+                    SECURE_PREFERENCES,
+                    masterKey,
+                    appContext,
+                    EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+                    EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
+                )
+            }.onFailure {
+                Log.e(TAG, "Secure session storage is unavailable; session persistence disabled", it)
+            }.getOrNull()
+
+        const val SECURE_PREFERENCES = "esj_session_secure"
+        const val TAG = "PersistentCookieJar"
     }
 }

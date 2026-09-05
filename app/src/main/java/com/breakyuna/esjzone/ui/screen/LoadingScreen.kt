@@ -69,12 +69,6 @@ class LoadingScreen : Screen {
             val authorization = withContext(Dispatchers.IO) {
                 try {
                     val dao = MainActivity.database.cacheDao()
-                    if (dao.findByKey("ews_key") == null) {
-                        dao.put("ews_key", "null")
-                    }
-                    if (dao.findByKey("ews_token") == null) {
-                        dao.put("ews_token", "null")
-                    }
                     if (dao.findByKey("show_adult") == null) {
                         dao.put("show_adult", "false")
                     }
@@ -96,6 +90,14 @@ class LoadingScreen : Screen {
                         selectedDomain,
                         legacySession
                     )
+                    // Older releases kept the session in the Room cache table. Once the
+                    // secure cookie jar has imported it, remove the legacy rows so they
+                    // cannot remain in local backups or be read by unrelated code.
+                    if (storedAuthorization != null || !legacyAuthorization.hasCredentials()) {
+                        dao.deleteByKey("ews_key")
+                        dao.deleteByKey("ews_token")
+                        dao.deleteByKey("session_domain")
+                    }
                     storedAuthorization?.takeIf { it.hasCredentials() }
                 } catch (e: CancellationException) {
                     throw e

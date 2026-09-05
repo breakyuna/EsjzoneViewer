@@ -12,6 +12,7 @@ import okhttp3.FormBody
 import okhttp3.HttpUrl
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import java.util.concurrent.TimeUnit
 
 fun EsjzoneClient.login(email: String, password: String): Authorization? {
     return try {
@@ -19,6 +20,10 @@ fun EsjzoneClient.login(email: String, password: String): Authorization? {
         val cookieJar = LoginCookieJar()
         val httpClient = OkHttpClient.Builder()
             .cookieJar(cookieJar)
+            .connectTimeout(5, TimeUnit.SECONDS)
+            .readTimeout(5, TimeUnit.SECONDS)
+            .writeTimeout(5, TimeUnit.SECONDS)
+            .callTimeout(10, TimeUnit.SECONDS)
             .build()
 
         val authorizationToken = httpClient.newCall(

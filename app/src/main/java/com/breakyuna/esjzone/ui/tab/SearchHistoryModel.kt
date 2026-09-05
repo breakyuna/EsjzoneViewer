@@ -36,11 +36,8 @@ class SearchHistoryModel : StateScreenModel<SearchHistoryModel.State>(State()) {
         screenModelScope.launch(Dispatchers.IO) {
             try {
                 val dao = MainActivity.database.searchHistoryDao()
-                val history = if (dao.exists(keyword)) {
-                    dao.findByKeyword(keyword)
-                } else {
-                    SearchHistory(keyword = keyword, time = currentDateString())
-                }
+                val history = dao.findByKeyword(keyword)
+                    ?: SearchHistory(keyword = keyword, time = currentDateString())
                 history.time = currentDateString()
                 dao.insertAll(history)
                 mutableState.value = State(dao.getAll(), loading = false)

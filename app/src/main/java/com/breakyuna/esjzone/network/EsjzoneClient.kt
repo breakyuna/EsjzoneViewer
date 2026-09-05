@@ -2,6 +2,7 @@ package com.breakyuna.esjzone.network
 
 import android.content.Context
 import java.nio.charset.StandardCharsets
+import java.net.SocketTimeoutException
 import java.security.MessageDigest
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.ConcurrentHashMap
@@ -52,10 +53,15 @@ object EsjzoneClient {
         )
         .build()
 
-    var EMPTY_HTTP_CLIENT = OkHttpClient()
+    var EMPTY_HTTP_CLIENT = OkHttpClient.Builder()
+        .connectTimeout(5, TimeUnit.SECONDS)
+        .readTimeout(15, TimeUnit.SECONDS)
+        .writeTimeout(15, TimeUnit.SECONDS)
+        .callTimeout(30, TimeUnit.SECONDS)
+        .build()
 
     @Volatile
-    private var sharedHttpClient: OkHttpClient = OkHttpClient()
+    private var sharedHttpClient: OkHttpClient = EMPTY_HTTP_CLIENT
 
     @Volatile
     internal var persistentCookieJar: PersistentCookieJar? = null
@@ -78,7 +84,12 @@ object EsjzoneClient {
         // PageCache owns response persistence. The shared client is intentionally kept
         // without OkHttp's URL-only HTTP cache so one account can never receive another
         // account's authenticated HTML response.
-        sharedHttpClient = OkHttpClient.Builder().build()
+        sharedHttpClient = OkHttpClient.Builder()
+            .connectTimeout(5, TimeUnit.SECONDS)
+            .readTimeout(15, TimeUnit.SECONDS)
+            .writeTimeout(15, TimeUnit.SECONDS)
+            .callTimeout(30, TimeUnit.SECONDS)
+            .build()
         initialized = true
     }
 
@@ -86,6 +97,17 @@ object EsjzoneClient {
     fun authenticatedClient(authorization: Authorization): OkHttpClient =
         sharedHttpClient.newBuilder()
             .cookieJar(AuthorizationCookieJar(authorization))
+            .build()
+
+    /**
+     * Download requests stream potentially large responses and therefore receive a
+     * longer read/call budget without weakening the bounds on ordinary page requests.
+     */
+    fun downloadClient(authorization: Authorization): OkHttpClient =
+        sharedHttpClient.newBuilder()
+            .cookieJar(AuthorizationCookieJar(authorization))
+            .readTimeout(60, TimeUnit.SECONDS)
+            .callTimeout(2, TimeUnit.MINUTES)
             .build()
 
     /**
@@ -174,7 +196,18 @@ object EsjzoneClient {
         }
 
         return try {
-            networkPermits.acquire()
+            val permitAcquired = try {
+                networkPermits.tryAcquire(NETWORK_PERMIT_WAIT_SECONDS, TimeUnit.SECONDS)
+            } catch (error: InterruptedException) {
+                Thread.currentThread().interrupt()
+                throw NetworkRequestException(url, error)
+            }
+            if (!permitAcquired) {
+                throw NetworkRequestException(
+                    url,
+                    SocketTimeoutException("Timed out waiting for a network permit")
+                )
+            }
             val responseData = try {
                 val response = try {
                     authenticatedClient(authorization).newCall(
@@ -375,4 +408,6 @@ object EsjzoneClient {
         val finalUrl: String,
         val contentType: String?
     )
+
+    private const val NETWORK_PERMIT_WAIT_SECONDS = 30L
 }

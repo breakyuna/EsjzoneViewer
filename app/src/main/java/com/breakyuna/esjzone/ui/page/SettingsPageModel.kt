@@ -111,6 +111,7 @@ class SettingsPageModel : StateScreenModel<SettingsPageModel.State>(State()) {
                 val dao = MainActivity.database.cacheDao()
                 dao.deleteByKey("ews_key")
                 dao.deleteByKey("ews_token")
+                dao.deleteByKey("session_domain")
                 dao.getAll()
                     .filter { it.key.startsWith("profile:") }
                     .forEach { dao.delete(it) }

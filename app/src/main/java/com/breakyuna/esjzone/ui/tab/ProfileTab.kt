@@ -299,10 +299,7 @@ private fun ProfileAvatar(data: UserProfile?, domain: String) {
 
 private fun resolveAvatarUrl(avatarUrl: String, domain: String): String {
     if (avatarUrl.isBlank()) return ""
-    return when {
-        avatarUrl.startsWith("http://") || avatarUrl.startsWith("https://") -> avatarUrl
-        else -> EsjzoneUrls.resolve(avatarUrl, EsjzoneUrls.baseForDomain(domain))
-    }
+    return EsjzoneUrls.resolve(avatarUrl, EsjzoneUrls.baseForDomain(domain))
 }
 
 /** Keeps profile snapshots isolated per account without persisting credentials in cache keys. */

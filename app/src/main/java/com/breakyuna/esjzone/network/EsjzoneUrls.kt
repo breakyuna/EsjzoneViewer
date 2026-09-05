@@ -4,27 +4,52 @@ import java.net.URI
 import com.breakyuna.esjzone.GlobalSettings
 import org.jsoup.nodes.Element
 import okhttp3.HttpUrl.Companion.toHttpUrl
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 
 object EsjzoneUrls {
 
     private val FORUM_BOARD_PATH = Regex("^/forum/[0-9]+/([0-9]+)$")
 
-    /** Resolves a page link without rewriting a valid cross-host URL from the site. */
+    /**
+     * Resolves a site link while guaranteeing that the result is an HTTPS HTTP URL.
+     * ESJ occasionally emits absolute HTTP links; upgrading those links keeps normal
+     * navigation working without ever allowing a caller to opt into cleartext traffic.
+     */
     fun resolve(rawUrl: String): String {
         return resolve(rawUrl, Base)
     }
 
     fun resolve(rawUrl: String, baseUrl: String): String {
         val url = rawUrl.trim()
-        val base = baseUrl.trim()
-        return when {
-            url.startsWith("http://") || url.startsWith("https://") -> url
-            else -> base.toHttpUrl().resolve(url)?.toString()
-                ?: "$base${url.removePrefix("/")}"
+        if (url.isBlank()) return ""
+        val base = normalizeHttpUrl(baseUrl.trim()) ?: return ""
+        val candidate = if (url.startsWith("http://", ignoreCase = true) ||
+            url.startsWith("https://", ignoreCase = true)
+        ) {
+            url
+        } else {
+            base.toHttpUrl().resolve(url)?.toString() ?: return ""
         }
+        return normalizeHttpUrl(candidate).orEmpty()
     }
 
-    fun baseForDomain(domain: String): String = "https://${domain.trim().removePrefix("https://").removePrefix("http://").trimEnd('/')}"
+    fun baseForDomain(domain: String): String = "https://${domain.trim()
+        .replaceFirst(Regex("(?i)^https?://"), "")
+        .trimEnd('/')}"
+
+    private fun normalizeHttpUrl(rawUrl: String): String? {
+        val parsed = rawUrl.toHttpUrlOrNull() ?: return null
+        if (parsed.username.isNotEmpty() || parsed.password.isNotEmpty()) return null
+        return when (parsed.scheme.lowercase()) {
+            "https" -> parsed.toString()
+            "http" -> parsed.newBuilder()
+                .scheme("https")
+                .apply { if (parsed.port == 80) port(443) }
+                .build()
+                .toString()
+            else -> null
+        }
+    }
 
     /**
      * Builds a tag/search result URL using the route exposed by ESJ.

@@ -122,9 +122,10 @@ fun EsjzoneClient.submitForumComment(
         form.hasClass("commentEditor") -> "forum"
         else -> null
     }
-    val actionUrl = form.absUrl("action")
-        .ifBlank { targetUrl }
-        .substringBefore('#')
+    val actionUrl = EsjzoneUrls.resolve(
+        form.absUrl("action").ifBlank { targetUrl },
+        targetUrl
+    ).ifBlank { targetUrl }.substringBefore('#')
     // forum_id is a submission routing field, not the stable identity used to
     // compare comments before and after the request (detail pages use 0 for it).
     val parentId = commentParentId(targetUrl)
@@ -730,11 +731,7 @@ private fun resolveImageUrl(image: Element): String? {
                 .substringBefore(' ')
                 .trim()
             if (raw.isBlank()) return@mapNotNull null
-            val resolved = if (attribute == "srcset") {
-                resolveRawImageUrl(image, raw)
-            } else {
-                image.absUrl(attribute).ifBlank { raw }
-            }
+            val resolved = resolveRawImageUrl(image, raw)
                 .trim()
             resolved.takeIf { it.isNotBlank() && isUsableImageUrl(it) }
         }
@@ -781,20 +778,14 @@ private fun resolveCommentTimestamp(element: Element): String? {
 
 private fun resolveRawImageUrl(image: Element, rawUrl: String): String {
     val raw = rawUrl.trim()
-    if (raw.startsWith("http://") || raw.startsWith("https://")) return raw
-    if (raw.startsWith("//")) return "https:$raw"
     val baseUri = image.baseUri().trim()
-    if (baseUri.isNotBlank()) {
-        runCatching {
-            java.net.URI(baseUri).resolve(raw).toString()
-        }.getOrNull()?.takeIf { it.isNotBlank() }?.let { return it }
-    }
-    return raw
+    return EsjzoneUrls.resolve(raw, baseUri.ifBlank { EsjzoneUrls.Base })
 }
 
 private fun isUsableImageUrl(url: String): Boolean {
     val normalized = url.lowercase()
-    return !normalized.startsWith("data:") &&
+    return normalized.isNotBlank() &&
+        !normalized.startsWith("data:") &&
         !normalized.startsWith("javascript:") &&
         !normalized.startsWith("about:") &&
         normalized != "#" &&

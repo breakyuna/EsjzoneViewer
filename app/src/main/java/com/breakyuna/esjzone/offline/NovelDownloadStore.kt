@@ -596,7 +596,7 @@ object NovelDownloadStore {
                         mediaType = mediaTypeFromUrl(existing.name)
                     )
                 }
-            val response = EsjzoneClient.authenticatedClient(authorization).newCall(
+            val response = EsjzoneClient.downloadClient(authorization).newCall(
                 Request.Builder()
                     .url(url)
                     .headers(EsjzoneClient.headers)

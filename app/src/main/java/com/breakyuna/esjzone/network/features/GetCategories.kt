@@ -37,7 +37,5 @@ fun EsjzoneClient.getCategories(authorization: Authorization): List<Category> {
         throw IOException("ESJ forum page contained no recognizable categories")
     }
 
-    println("Categories: $categories")
-
     return categories.toList()
 }
