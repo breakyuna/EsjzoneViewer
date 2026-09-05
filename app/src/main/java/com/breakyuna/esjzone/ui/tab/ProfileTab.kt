@@ -22,6 +22,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowForwardIos
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.Person
@@ -70,6 +71,7 @@ import com.breakyuna.esjzone.ui.navigation.LocalBaseNavigator
 import com.breakyuna.esjzone.ui.navigation.pushIfNotCurrent
 import com.breakyuna.esjzone.ui.page.AboutPage
 import com.breakyuna.esjzone.ui.page.BookmarksPage
+import com.breakyuna.esjzone.ui.page.DownloadPage
 import com.breakyuna.esjzone.ui.page.SettingsPage
 import com.breakyuna.esjzone.ui.theme.QuietEditorial
 
@@ -327,6 +329,14 @@ private fun ProfileMenu(
             title = stringResource(R.string.bookmarks),
             subtitle = stringResource(R.string.bookmarks_description),
             onClick = { navigator?.pushIfNotCurrent(BookmarksPage) }
+        )
+        ProfileMenuItem(
+            icon = Icons.Filled.Download,
+            iconTint = MaterialTheme.colorScheme.secondary,
+            iconBg = MaterialTheme.colorScheme.secondaryContainer,
+            title = stringResource(R.string.downloads),
+            subtitle = stringResource(R.string.profile_downloads_description),
+            onClick = { navigator?.pushIfNotCurrent(DownloadPage) }
         )
         ProfileMenuItem(
             icon = Icons.Filled.Settings,

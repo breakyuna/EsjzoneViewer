@@ -1,5 +1,6 @@
 package com.breakyuna.esjzone.ui.component
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -338,7 +339,8 @@ fun NovelDetailSectionHeading(
 @Composable
 fun NovelDetailTags(
     tags: List<String>,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onTagClick: ((String) -> Unit)? = null
 ) {
     val visibleTags = tags.map(String::trim).filter(String::isNotBlank).distinct()
     if (visibleTags.isEmpty()) return
@@ -349,7 +351,18 @@ fun NovelDetailTags(
         horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         visibleTags.forEach { tag ->
-            QuietTag(text = tag, modifier = Modifier.padding(vertical = 2.dp))
+            QuietTag(
+                text = tag,
+                modifier = Modifier
+                    .padding(vertical = 2.dp)
+                    .then(
+                        if (onTagClick != null) {
+                            Modifier.clickable { onTagClick(tag) }
+                        } else {
+                            Modifier
+                        }
+                    )
+            )
         }
     }
 }
@@ -362,4 +375,3 @@ fun NovelDetailRule(modifier: Modifier = Modifier) {
         color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
     )
 }
-

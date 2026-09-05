@@ -3,6 +3,7 @@ package com.breakyuna.esjzone.ui.page
 import androidx.compose.runtime.MutableState
 import cafe.adriel.voyager.core.model.StateScreenModel
 import cafe.adriel.voyager.core.model.screenModelScope
+import com.breakyuna.esjzone.GlobalSettings
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -13,6 +14,7 @@ import com.breakyuna.esjzone.network.EsjzoneUrls
 import com.breakyuna.esjzone.network.LoadFailureKind
 import com.breakyuna.esjzone.network.loadFailureKind
 import com.breakyuna.esjzone.network.features.getChapterDetail
+import com.breakyuna.esjzone.offline.NovelDownloadStore
 import com.breakyuna.esjzone.network.features.getNovelDetail
 import com.breakyuna.esjzone.novellibrary.novel.Chapter
 import com.breakyuna.esjzone.novellibrary.novel.DetailedChapter
@@ -28,7 +30,10 @@ class ChapterPageModel(
     private val authorization: Authorization,
     private val requestedChapter: MutableState<Chapter>,
     private val novelId: String,
-    chapterOrder: List<Chapter>
+    chapterOrder: List<Chapter>,
+    private val novelName: String = "",
+    private val novelUrl: String = "",
+    private val novelCoverUrl: String = ""
 ) : StateScreenModel<ChapterPageModel.State>(State.Loading) {
 
     private companion object {
@@ -328,7 +333,10 @@ class ChapterPageModel(
     private suspend fun loadDetail(chapter: Chapter): DetailedChapter? {
         val key = chapterKey(chapter)
         val prefetched = synchronized(lock) { prefetchedDetails.remove(key) }
-        if (prefetched != null) return prefetched
+        if (prefetched != null) {
+            persistLoadedChapter(chapter, prefetched)
+            return prefetched
+        }
 
         val prefetchJob = synchronized(lock) { prefetchJobs[key] }
         if (prefetchJob != null) {
@@ -337,14 +345,20 @@ class ChapterPageModel(
             } catch (e: CancellationException) {
                 throw e
             }
-            synchronized(lock) { prefetchedDetails.remove(key) }?.let { return it }
+            synchronized(lock) { prefetchedDetails.remove(key) }?.let {
+                persistLoadedChapter(chapter, it)
+                return it
+            }
         }
 
         // The prefetch can finish between the first cache check and job lookup.
         // Check one more time before issuing a duplicate request.
-        synchronized(lock) { prefetchedDetails.remove(key) }?.let { return it }
+        synchronized(lock) { prefetchedDetails.remove(key) }?.let {
+            persistLoadedChapter(chapter, it)
+            return it
+        }
 
-        return try {
+        val detail = try {
             EsjzoneClient.getChapterDetail(authorization, chapter)
         } catch (e: CancellationException) {
             throw e
@@ -355,6 +369,29 @@ class ChapterPageModel(
                 e
             )
             throw e
+        }
+        persistLoadedChapter(chapter, detail)
+        return detail
+    }
+
+    /** Saves successfully loaded reader content without delaying UI publication. */
+    private fun persistLoadedChapter(chapter: Chapter, detail: DetailedChapter) {
+        if (!GlobalSettings.readerAutoSaveFlow.value) return
+        val targetNovelUrl = novelUrl.trim().ifBlank {
+            if (novelId.isBlank()) "" else "${EsjzoneUrls.Base}/detail/$novelId.html"
+        }
+        if (targetNovelUrl.isBlank()) return
+        runCatching {
+            NovelDownloadStore.saveChapter(
+                novelName = novelName,
+                novelUrl = targetNovelUrl,
+                coverUrl = novelCoverUrl,
+                chapterOrder = synchronized(lock) { orderedChapters.toList() },
+                chapter = chapter,
+                detail = detail
+            )
+        }.onFailure { error ->
+            AppLogger.w("ChapterPageModel", "Failed to auto-save chapter ${chapter.name}", error)
         }
     }
 
@@ -395,6 +432,7 @@ class ChapterPageModel(
                     if (detail != null) prefetchedDetails[key] = detail
                     prefetchJobs.remove(key)
                 }
+                if (detail != null) persistLoadedChapter(chapter, detail)
             }
         }
     }

@@ -103,16 +103,24 @@ class MainActivity : ComponentActivity() {
                 val dao = database.cacheDao()
                 if (dao.findByKey("theme") == null) dao.put("theme", GlobalSettings.theme.value.name)
                 if (dao.findByKey("domain") == null) dao.put("domain", GlobalSettings.domain.value)
+                if (dao.findByKey(GlobalSettings.READER_AUTO_SAVE_KEY) == null) {
+                    dao.put(GlobalSettings.READER_AUTO_SAVE_KEY, "false")
+                }
                 val savedTheme = dao.findByKey("theme")?.value ?: GlobalSettings.theme.value.name
                 val savedDomain = dao.findByKey("domain")?.value?.takeIf { it in GlobalSettings.DOMAINS }
                     ?: GlobalSettings.domain.value
                 val savedLanguage = dao.findByKey("language")?.value
+                val savedReaderAutoSave = dao.findByKey(GlobalSettings.READER_AUTO_SAVE_KEY)
+                    ?.value
+                    ?.toBooleanStrictOrNull()
+                    ?: false
                 GlobalSettings.setDomain(savedDomain)
                 GlobalSettings.setTheme(
                     runCatching { CatppuccinThemeType.valueOf(savedTheme) }
                         .getOrElse { CatppuccinThemeType.LATTE_YELLOW }
                 )
                 GlobalSettings.setLanguage(AppLanguage.fromCode(savedLanguage))
+                GlobalSettings.setReaderAutoSave(savedReaderAutoSave)
                 startupState.value = StartupState.Ready
             } catch (e: Exception) {
                 AppLogger.e("MainActivity", "Failed to initialize database or settings", e)

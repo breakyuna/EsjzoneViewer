@@ -29,6 +29,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.MenuBook
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.DownloadDone
 import androidx.compose.material.icons.filled.ErrorOutline
@@ -41,6 +42,7 @@ import androidx.compose.material.icons.filled.TextSnippet
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -427,6 +429,9 @@ private fun NovelDetailContent(
                 item(key = "detail-tags") {
                     NovelDetailTags(
                         tags = detailed.tags,
+                        onTagClick = { tag ->
+                            navigator?.pushIfNotCurrent(SearchPage(tag))
+                        },
                         modifier = Modifier
                             .padding(horizontal = 16.dp, vertical = 10.dp)
                             .widthIn(max = QuietEditorial.contentMaxWidth)
@@ -782,6 +787,9 @@ private fun NovelDownloadActions(
     var downloading by remember(novel.url) { mutableStateOf(false) }
     var progress by remember(novel.url) { mutableStateOf<DownloadProgress?>(null) }
     var requestedWorkId by rememberSaveable(novel.url) { mutableStateOf<String?>(null) }
+    var deletingDownload by remember(novel.url) { mutableStateOf(false) }
+    var showDeleteDownloadDialog by rememberSaveable(novel.url) { mutableStateOf(false) }
+    val downloadScope = rememberCoroutineScope()
 
     LaunchedEffect(novel.url) {
         downloaded = withContext(Dispatchers.IO) { NovelDownloadStore.manifest(novel.url) }
@@ -845,6 +853,22 @@ private fun NovelDownloadActions(
         }
     }
 
+    fun deleteDownload() {
+        if (downloading || deletingDownload || downloaded == null) return
+        showDeleteDownloadDialog = false
+        deletingDownload = true
+        downloadScope.launch {
+            val deleted = withContext(Dispatchers.IO) {
+                NovelDownloadStore.delete(novel.url)
+            }
+            downloaded = null
+            deletingDownload = false
+            if (deleted) {
+                Toast.makeText(context, R.string.novel_download_deleted, Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
     OutlinedButton(
         onClick = { showSheet = true },
         modifier = modifier.heightIn(min = 54.dp),
@@ -858,12 +882,22 @@ private fun NovelDownloadActions(
         )
         Spacer(modifier = Modifier.width(6.dp))
         Text(
-            text = if (downloading) stringResource(R.string.novel_downloading_count,
-                progress?.completed ?: 0, progress?.total ?: novel.chapterList.orderedChapters.size)
-            else stringResource(
-                if (downloaded?.complete == true) R.string.novel_download_update
-                else R.string.novel_download
-            ),
+            text = if (downloading) {
+                stringResource(
+                    R.string.novel_downloading_count,
+                    progress?.completed ?: 0,
+                    progress?.total ?: novel.chapterList.orderedChapters.size
+                )
+            } else {
+                val downloadedCount = downloaded?.chapters?.count { it.downloaded } ?: 0
+                stringResource(
+                    when {
+                        downloaded?.complete == true -> R.string.novel_download_update
+                        downloadedCount > 0 -> R.string.novel_download_continue
+                        else -> R.string.novel_download
+                    }
+                )
+            },
             maxLines = 2,
             overflow = TextOverflow.Ellipsis
         )
@@ -879,6 +913,11 @@ private fun NovelDownloadActions(
             sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
             onDismiss = { showSheet = false },
             onDownload = ::enqueueDownload,
+            onDeleteDownload = {
+                if (!downloading && !deletingDownload && downloaded != null) {
+                    showDeleteDownloadDialog = true
+                }
+            },
             onExportTxt = {
                 showSheet = false
                 onExportTxt()
@@ -886,6 +925,30 @@ private fun NovelDownloadActions(
             onExportEpub = {
                 showSheet = false
                 onExportEpub()
+            }
+        )
+    }
+
+    if (showDeleteDownloadDialog) {
+        AlertDialog(
+            onDismissRequest = { if (!deletingDownload) showDeleteDownloadDialog = false },
+            title = { Text(stringResource(R.string.novel_download_delete_title)) },
+            text = { Text(stringResource(R.string.novel_download_delete_message, novel.name)) },
+            confirmButton = {
+                TextButton(
+                    onClick = ::deleteDownload,
+                    enabled = !downloading && !deletingDownload
+                ) {
+                    Text(stringResource(R.string.remove))
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = { showDeleteDownloadDialog = false },
+                    enabled = !deletingDownload
+                ) {
+                    Text(stringResource(R.string.close))
+                }
             }
         )
     }
@@ -902,6 +965,7 @@ private fun NovelDownloadSheet(
     sheetState: SheetState,
     onDismiss: () -> Unit,
     onDownload: () -> Unit,
+    onDeleteDownload: () -> Unit,
     onExportTxt: () -> Unit,
     onExportEpub: () -> Unit
 ) {
@@ -1059,10 +1123,32 @@ private fun NovelDownloadSheet(
                 Spacer(modifier = Modifier.width(7.dp))
                 Text(
                     text = stringResource(
-                        if (manifest?.complete == true) R.string.novel_download_update
-                        else R.string.novel_download
+                        when {
+                            manifest?.complete == true -> R.string.novel_download_update
+                            completed > 0 -> R.string.novel_download_continue
+                            else -> R.string.novel_download
+                        }
                     )
                 )
+            }
+
+            if (manifest != null && completed > 0 && !downloading) {
+                OutlinedButton(
+                    onClick = onDeleteDownload,
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 50.dp),
+                    shape = QuietEditorial.controlShape,
+                    colors = androidx.compose.material3.ButtonDefaults.outlinedButtonColors(
+                        contentColor = MaterialTheme.colorScheme.error
+                    )
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.Delete,
+                        contentDescription = stringResource(R.string.download_delete),
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(modifier = Modifier.width(7.dp))
+                    Text(stringResource(R.string.download_delete))
+                }
             }
 
             if (manifest?.complete == true && !downloading) {
@@ -1148,4 +1234,3 @@ private fun openExternal(context: Context, rawUrl: String) {
         }
     }
 }
-

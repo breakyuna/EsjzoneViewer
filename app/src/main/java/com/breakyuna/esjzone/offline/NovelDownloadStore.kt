@@ -77,6 +77,17 @@ data class DownloadedComponent(
     val mediaType: String? = null
 )
 
+/** A lightweight row model for download management screens. */
+data class DownloadedNovelSummary(
+    val manifest: DownloadedNovelManifest,
+    val downloadedChapterCount: Int,
+    val storageBytes: Long
+) {
+    val novelUrl: String get() = manifest.url
+    val novelName: String get() = manifest.name
+    val coverUrl: String get() = manifest.coverUrl
+}
+
 /**
  * Persistent, user-requested novel downloads.
  *
@@ -109,6 +120,145 @@ object NovelDownloadStore {
     }
 
     fun isDownloaded(novelUrl: String): Boolean = manifest(novelUrl)?.complete == true
+
+    /**
+     * Lists every novel with at least one persisted chapter, including partial
+     * auto-saves and interrupted background downloads.
+     */
+    fun listDownloadedNovels(): List<DownloadedNovelSummary> = synchronized(ioLock) {
+        rootDirectory?.listFiles()
+            .orEmpty()
+            .asSequence()
+            .filter(File::isDirectory)
+            .mapNotNull { directory ->
+                val stored = readManifest(directory) ?: return@mapNotNull null
+                val count = stored.chapters.count { record ->
+                    record.downloaded && resolveLocalFile(directory, record.fileName)?.isFile == true
+                }
+                if (count == 0) return@mapNotNull null
+                DownloadedNovelSummary(
+                    manifest = stored,
+                    downloadedChapterCount = count,
+                    storageBytes = directory.walkTopDown()
+                        .filter(File::isFile)
+                        .sumOf(File::length)
+                )
+            }
+            .sortedByDescending { it.manifest.downloadedAt }
+            .toList()
+    }
+
+    /** Returns the on-disk size of one downloaded novel, including its manifest. */
+    fun storageBytes(novelUrl: String): Long = synchronized(ioLock) {
+        val directory = directoryFor(novelUrl, create = false) ?: return@synchronized 0L
+        directory.walkTopDown().filter(File::isFile).sumOf(File::length)
+    }
+
+    /**
+     * Deletes only this novel's private download directory. Other local data
+     * (bookshelf, reading history, bookmarks and cloud state) is untouched.
+     */
+    fun delete(novelUrl: String): Boolean = synchronized(ioLock) {
+        val directory = directoryFor(novelUrl, create = false) ?: return@synchronized false
+        directory.deleteRecursively()
+    }
+
+    /** Deletes several novel download directories and returns the number removed. */
+    fun deleteAll(novelUrls: Iterable<String>): Int = synchronized(ioLock) {
+        novelUrls.distinct()
+            .count { url ->
+                val directory = directoryFor(url, create = false) ?: return@count false
+                directory.deleteRecursively()
+            }
+    }
+
+    /**
+     * Persists one chapter loaded by the reader. This is intentionally a local
+     * write only: images retain their remote URL and are not fetched again.
+     * The operation is idempotent for an already persisted chapter.
+     */
+    fun saveChapter(
+        novelName: String,
+        novelUrl: String,
+        coverUrl: String,
+        chapterOrder: List<Chapter>,
+        chapter: Chapter,
+        detail: DetailedChapter
+    ): DownloadedNovelManifest? = synchronized(ioLock) {
+        saveChapterLocked(
+            novelName = novelName,
+            novelUrl = novelUrl,
+            coverUrl = coverUrl,
+            chapterOrder = chapterOrder,
+            chapter = chapter,
+            detail = detail
+        )
+    }
+
+    private fun saveChapterLocked(
+        novelName: String,
+        novelUrl: String,
+        coverUrl: String,
+        chapterOrder: List<Chapter>,
+        chapter: Chapter,
+        detail: DetailedChapter
+    ): DownloadedNovelManifest? {
+        val normalizedNovelUrl = novelUrl.trim()
+        if (normalizedNovelUrl.isBlank()) return null
+        val directory = directoryFor(normalizedNovelUrl, create = true) ?: return null
+        val previous = synchronized(ioLock) { readManifest(directory) }
+        val previousByKey = previous?.chapters.orEmpty().associateBy { chapterKey(it.url) }
+        val ordered = buildList {
+            addAll(chapterOrder)
+            add(chapter)
+        }.filter { chapterKey(it.url).isNotBlank() }.distinctBy { chapterKey(it.url) }
+        val knownKeys = ordered.map { chapterKey(it.url) }.toHashSet()
+        val records = ordered.mapIndexed { index, item ->
+            val old = previousByKey[chapterKey(item.url)]
+            DownloadedChapterRecord(
+                index = index,
+                name = item.name,
+                url = item.url,
+                fileName = old?.fileName ?: chapterFileName(item.url),
+                downloaded = old?.downloaded == true &&
+                    resolveLocalFile(directory, old.fileName)?.isFile == true
+            )
+        }.toMutableList()
+        // Preserve old records absent from a temporarily incomplete TOC. A
+        // later full download can reconcile them against the refreshed TOC.
+        previous?.chapters.orEmpty()
+            .filter { chapterKey(it.url) !in knownKeys }
+            .forEach { old -> records += old.copy(index = records.size) }
+
+        val targetKey = chapterKey(chapter.url)
+        val targetIndex = records.indexOfFirst { chapterKey(it.url) == targetKey }
+        if (targetIndex < 0) return null
+        val target = records[targetIndex]
+        if (!target.downloaded) {
+            synchronized(ioLock) {
+                writeJson(File(directory, target.fileName), detail.toStoredContent(chapter))
+            }
+            records[targetIndex] = target.copy(downloaded = true)
+        }
+        val complete = if (chapterOrder.isNotEmpty()) {
+            records.all { it.downloaded }
+        } else {
+            // A history/bookmark reader may not have a TOC. Preserve a
+            // previously verified full download in that case.
+            previous?.complete == true
+        }
+        val current = manifestFromMetadata(
+            previous = previous,
+            name = novelName,
+            url = normalizedNovelUrl,
+            coverUrl = coverUrl,
+            records = records,
+            downloadedAt = System.currentTimeMillis(),
+            complete = complete
+        )
+        synchronized(ioLock) { writeManifest(directory, current) }
+        return current
+    }
 
     /**
      * Downloads missing chapters and resumes an interrupted download when possible.
@@ -318,6 +468,35 @@ object NovelDownloadStore {
         }.trim(),
         sourceUrl = novel.sourceUrl,
         updatedAt = novel.updatedAt,
+        chapters = records,
+        downloadedAt = downloadedAt,
+        complete = complete
+    )
+
+    private fun manifestFromMetadata(
+        previous: DownloadedNovelManifest?,
+        name: String,
+        url: String,
+        coverUrl: String,
+        records: List<DownloadedChapterRecord>,
+        downloadedAt: Long,
+        complete: Boolean
+    ) = DownloadedNovelManifest(
+        version = previous?.version ?: 1,
+        name = name.trim().ifBlank { previous?.name.orEmpty() },
+        url = url,
+        coverUrl = coverUrl.trim().ifBlank { previous?.coverUrl.orEmpty() },
+        views = previous?.views ?: 0,
+        likes = previous?.likes ?: 0,
+        words = previous?.words ?: 0,
+        type = previous?.type.orEmpty(),
+        author = previous?.author.orEmpty(),
+        forumUrl = previous?.forumUrl.orEmpty(),
+        tags = previous?.tags.orEmpty(),
+        isAdult = previous?.isAdult ?: false,
+        description = previous?.description.orEmpty(),
+        sourceUrl = previous?.sourceUrl,
+        updatedAt = previous?.updatedAt,
         chapters = records,
         downloadedAt = downloadedAt,
         complete = complete
@@ -551,6 +730,28 @@ object NovelDownloadStore {
     private fun digest(value: String): String = MessageDigest.getInstance("SHA-256")
         .digest(value.toByteArray(StandardCharsets.UTF_8))
         .joinToString("") { byte -> "%02x".format(byte.toInt() and 0xff) }
+
+    private fun DetailedChapter.toStoredContent(chapter: Chapter) = DownloadedChapterContent(
+        name = name.ifBlank { chapter.name },
+        url = chapter.url,
+        components = content.mapNotNull { component ->
+            when (component) {
+                is TextComponent -> DownloadedComponent(
+                    type = TEXT_COMPONENT,
+                    value = component.plainText()
+                )
+
+                is ImageComponent -> DownloadedComponent(
+                    type = IMAGE_COMPONENT,
+                    value = component.url
+                )
+
+                else -> null
+            }
+        },
+        contentHtml = contentHtml,
+        baseUrl = sourceUrl ?: chapter.url
+    )
 
     private fun DownloadedChapterRecord.toChapter() = Chapter(name, url, false)
 

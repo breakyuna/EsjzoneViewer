@@ -8,6 +8,8 @@ import com.breakyuna.esjzone.database.entity.BookshelfEntry
 import com.breakyuna.esjzone.network.Authorization
 import com.breakyuna.esjzone.network.LoadFailureKind
 import com.breakyuna.esjzone.network.loadFailureKind
+import com.breakyuna.esjzone.network.EsjzoneUrls
+import com.breakyuna.esjzone.offline.NovelDownloadStore
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -18,6 +20,20 @@ import kotlinx.coroutines.launch
 class FavoritePageModel(private val authorization: Authorization) :
     StateScreenModel<FavoritePageModel.State>(State.Idle) {
     val entries = BookshelfRepository.observe(authorization)
+
+    private val _downloadedBookKeys = MutableStateFlow<Set<String>>(emptySet())
+    val downloadedBookKeys: StateFlow<Set<String>> = _downloadedBookKeys
+
+    /** Refreshes the local-download index without blocking bookshelf composition. */
+    fun refreshDownloaded() {
+        screenModelScope.launch(Dispatchers.IO) {
+            _downloadedBookKeys.value = NovelDownloadStore.listDownloadedNovels()
+                .mapTo(LinkedHashSet()) { summary ->
+                    BookshelfRepository.keyFor(summary.novelUrl)
+                        .ifBlank { EsjzoneUrls.canonicalPageKey(summary.novelUrl) }
+                }
+        }
+    }
 
     sealed class State {
         data object Idle : State()

@@ -179,7 +179,9 @@ private fun HomeCollection(
         accent = accent,
         actionLabel = stringResource(R.string.home_browse_more).takeIf { onMore != null },
         onAction = onMore,
-        modifier = Modifier.padding(top = if (featured) 8.dp else QuietEditorial.sectionGap)
+        // Keep the featured section breathing room, but tighten the gap
+        // between subsequent home collections to avoid a large blank band.
+        modifier = Modifier.padding(top = if (featured) 8.dp else 24.dp)
     )
 
     if (visible.isEmpty()) {

@@ -28,6 +28,9 @@ enum class AppLanguage(
 
 object GlobalSettings {
 
+    /** Cache key shared by startup and the settings screen for reader auto-save. */
+    const val READER_AUTO_SAVE_KEY = "reader_auto_save"
+
     val DOMAINS = listOf(
         "www.esjzone.cc",
         "www.esjzone.one"
@@ -53,6 +56,11 @@ object GlobalSettings {
     private val _languageFlow = MutableStateFlow(AppLanguage.SYSTEM)
     val languageFlow: StateFlow<AppLanguage> = _languageFlow.asStateFlow()
 
+    private val _readerAutoSaveState = mutableStateOf(false)
+    val readerAutoSave: State<Boolean> get() = _readerAutoSaveState
+    private val _readerAutoSaveFlow = MutableStateFlow(false)
+    val readerAutoSaveFlow: StateFlow<Boolean> = _readerAutoSaveFlow.asStateFlow()
+
     fun setAdult(value: Boolean) {
         _adultState.value = value
         _adultFlow.value = value
@@ -71,5 +79,10 @@ object GlobalSettings {
     fun setLanguage(value: AppLanguage) {
         _languageState.value = value
         _languageFlow.value = value
+    }
+
+    fun setReaderAutoSave(value: Boolean) {
+        _readerAutoSaveState.value = value
+        _readerAutoSaveFlow.value = value
     }
 }

@@ -20,7 +20,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.History
-import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -160,7 +159,6 @@ object SearchTab : Tab {
                         historyState.histories.isEmpty() -> {
                             QuietEmptyState(
                                 title = stringResource(R.string.search_no_history),
-                                message = stringResource(R.string.search_history_privacy),
                                 icon = Icons.Filled.Search,
                                 modifier = Modifier.padding(horizontal = 0.dp)
                             )
@@ -191,25 +189,6 @@ object SearchTab : Tab {
                         }
                     }
 
-                    Row(
-                        modifier = Modifier.padding(top = 16.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(
-                            imageVector = Icons.Filled.Lock,
-                            contentDescription = null,
-                            modifier = Modifier.size(15.dp),
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Text(
-                            text = stringResource(R.string.search_history_privacy),
-                            style = QuietEditorial.label,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(start = 6.dp),
-                            maxLines = 2,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                    }
                 }
             }
 

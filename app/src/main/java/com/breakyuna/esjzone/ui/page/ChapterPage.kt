@@ -193,7 +193,10 @@ class ChapterPage(
                     authorization = authorization,
                     requestedChapter = requestedChapter,
                     novelId = novelId,
-                    chapterOrder = chapterOrder
+                    chapterOrder = chapterOrder,
+                    novelName = novelName,
+                    novelUrl = novelUrl,
+                    novelCoverUrl = novelCoverUrl
                 )
             }
         val state by chapterPageModel.state.collectAsState()

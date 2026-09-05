@@ -106,6 +106,7 @@ object FavoritePage : Screen {
         val authorization = LocalAuthorization.current
         val model = rememberScreenModel { FavoritePageModel(authorization) }
         val entries by model.entries.collectAsState(initial = emptyList())
+        val downloadedBookKeys by model.downloadedBookKeys.collectAsState()
         val syncState by model.state.collectAsState()
         val deleteState by model.deleteState.collectAsState()
         val snackbar = remember { SnackbarHostState() }
@@ -124,12 +125,20 @@ object FavoritePage : Screen {
         var selectedKeys by remember { mutableStateOf<Set<String>>(emptySet()) }
         var pendingDelete by remember { mutableStateOf<List<BookshelfEntry>>(emptyList()) }
         var showDeleteDialog by remember { mutableStateOf(false) }
+        var downloadedOnly by rememberSaveable { mutableStateOf(false) }
 
         val visibleEntries = remember(entries, adult) {
             entries.filter { adult || !it.isAdultHint() }
         }
-        val visibleKeys = remember(visibleEntries) {
-            visibleEntries.mapTo(LinkedHashSet<String>()) { it.bookKey }
+        val filteredEntries = remember(visibleEntries, downloadedBookKeys, downloadedOnly) {
+            if (downloadedOnly) {
+                visibleEntries.filter { it.bookKey in downloadedBookKeys }
+            } else {
+                visibleEntries
+            }
+        }
+        val visibleKeys = remember(filteredEntries) {
+            filteredEntries.mapTo(LinkedHashSet<String>()) { it.bookKey }
         }
         val selectedCount = selectedKeys.size
         val deleting = deleteState is FavoritePageModel.DeleteState.Deleting
@@ -159,6 +168,15 @@ object FavoritePage : Screen {
 
         LaunchedEffect(Unit) {
             model.scheduleMetadataSupplement()
+            model.refreshDownloaded()
+        }
+
+        LaunchedEffect(entries) {
+            model.refreshDownloaded()
+        }
+
+        LaunchedEffect(navigator?.items?.size) {
+            model.refreshDownloaded()
         }
 
         LaunchedEffect(syncState) {
@@ -227,7 +245,7 @@ object FavoritePage : Screen {
                     editing = editing,
                     deleting = deleting,
                     selectedCount = selectedCount,
-                    totalCount = visibleEntries.size,
+                    totalCount = filteredEntries.size,
                     allSelected = visibleKeys.isNotEmpty() && selectedKeys == visibleKeys,
                     syncing = syncing,
                     onBack = {
@@ -253,7 +271,7 @@ object FavoritePage : Screen {
                         if (!deleting && selectedKeys.isNotEmpty()) {
                             // Capture the exact visible rows now. A later sync
                             // cannot change what this confirmation removes.
-                            pendingDelete = visibleEntries.filter {
+                            pendingDelete = filteredEntries.filter {
                                 it.bookKey in selectedKeys
                             }
                             showDeleteDialog = pendingDelete.isNotEmpty()
@@ -270,7 +288,7 @@ object FavoritePage : Screen {
                         onCancel = ::leaveEditMode,
                         onDelete = {
                             if (!deleting && selectedKeys.isNotEmpty()) {
-                                pendingDelete = visibleEntries.filter {
+                                pendingDelete = filteredEntries.filter {
                                     it.bookKey in selectedKeys
                                 }
                                 showDeleteDialog = pendingDelete.isNotEmpty()
@@ -301,8 +319,12 @@ object FavoritePage : Screen {
                     // small visual breathing space here.
                     bottom = 16.dp
                 ),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
+                // More room around every cover improves scanning and keeps
+                // the three-column shelf from feeling visually crowded.
+                // The wider gutters also reduce each adaptive cell slightly,
+                // so covers become smaller without changing their ratio.
+                horizontalArrangement = Arrangement.spacedBy(16.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
                 if (editing) {
                     item(span = { GridItemSpan(maxLineSpan) }) {
@@ -310,17 +332,23 @@ object FavoritePage : Screen {
                     }
                 } else {
                     item(span = { GridItemSpan(maxLineSpan) }) {
-                        BookshelfCollectionSummary()
+                        BookshelfCollectionSummary(
+                            downloadedOnly = downloadedOnly,
+                            onDownloadedOnlyChange = { downloadedOnly = it }
+                        )
                     }
                 }
 
-                if (visibleEntries.isEmpty()) {
+                if (filteredEntries.isEmpty()) {
                     item(span = { GridItemSpan(maxLineSpan) }) {
-                        BookshelfEmptyState(adultFiltered = adultFiltered)
+                        BookshelfEmptyState(
+                            adultFiltered = adultFiltered,
+                            downloadedFiltered = downloadedOnly
+                        )
                     }
                 } else {
                     items(
-                        items = visibleEntries,
+                        items = filteredEntries,
                         key = { entry -> entry.bookKey }
                     ) { entry ->
                         BookshelfGridItem(
@@ -557,7 +585,10 @@ private fun ShelfSyncButton(syncing: Boolean, onClick: () -> Unit) {
 }
 
 @Composable
-private fun BookshelfCollectionSummary() {
+private fun BookshelfCollectionSummary(
+    downloadedOnly: Boolean,
+    onDownloadedOnlyChange: (Boolean) -> Unit
+) {
     Column(modifier = Modifier.fillMaxWidth()) {
         Row(
             modifier = Modifier
@@ -577,6 +608,59 @@ private fun BookshelfCollectionSummary() {
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 8.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            ShelfFilterButton(
+                selected = !downloadedOnly,
+                label = stringResource(R.string.bookshelf_filter_all),
+                onClick = { onDownloadedOnlyChange(false) }
+            )
+            ShelfFilterButton(
+                selected = downloadedOnly,
+                label = stringResource(R.string.bookshelf_filter_downloaded),
+                onClick = { onDownloadedOnlyChange(true) }
+            )
+        }
+    }
+}
+
+@Composable
+private fun ShelfFilterButton(
+    selected: Boolean,
+    label: String,
+    onClick: () -> Unit
+) {
+    OutlinedButton(
+        onClick = onClick,
+        modifier = Modifier.heightIn(min = 38.dp),
+        shape = RoundedCornerShape(999.dp),
+        colors = ButtonDefaults.outlinedButtonColors(
+            containerColor = if (selected) {
+                MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
+            } else {
+                Color.Transparent
+            },
+            contentColor = if (selected) {
+                MaterialTheme.colorScheme.primary
+            } else {
+                MaterialTheme.colorScheme.onSurfaceVariant
+            }
+        ),
+        border = androidx.compose.foundation.BorderStroke(
+            width = 1.dp,
+            color = if (selected) {
+                MaterialTheme.colorScheme.primary
+            } else {
+                MaterialTheme.colorScheme.outlineVariant
+            }
+        ),
+        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 0.dp)
+    ) {
+        Text(label, style = QuietEditorial.label)
     }
 }
 
@@ -707,7 +791,10 @@ private fun BookshelfSelectionOverlay(selected: Boolean, modifier: Modifier = Mo
 }
 
 @Composable
-private fun BookshelfEmptyState(adultFiltered: Boolean) {
+private fun BookshelfEmptyState(
+    adultFiltered: Boolean,
+    downloadedFiltered: Boolean
+) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -730,7 +817,9 @@ private fun BookshelfEmptyState(adultFiltered: Boolean) {
         }
         Text(
             text = stringResource(
-                if (adultFiltered) {
+                if (downloadedFiltered) {
+                    R.string.download_empty
+                } else if (adultFiltered) {
                     R.string.bookshelf_empty_filtered
                 } else {
                     R.string.bookshelf_empty
@@ -742,7 +831,9 @@ private fun BookshelfEmptyState(adultFiltered: Boolean) {
         )
         Text(
             text = stringResource(
-                if (adultFiltered) {
+                if (downloadedFiltered) {
+                    R.string.download_empty_hint
+                } else if (adultFiltered) {
                     R.string.bookshelf_empty_filtered_hint
                 } else {
                     R.string.bookshelf_empty_hint
