@@ -112,6 +112,9 @@
     <string name="novel_views">%1$d 次观看</string>
     <string name="novel_likes">%1$d 个赞</string>
     <string name="novel_words">%1$d 字</string>
+    <string name="novel_views_label">观看</string>
+    <string name="novel_likes_label">点赞</string>
+    <string name="novel_words_label">字数</string>
     <string name="novel_favorite">收藏</string>
     <string name="novel_favorited">已收藏</string>
     <string name="novel_favorite_pending">收藏同步中…</string>
@@ -120,6 +123,8 @@
     <string name="novel_more_actions">更多作品操作</string>
     <string name="novel_open_forum">前往论坛</string>
     <string name="novel_chapter_count">%1$d 章</string>
+    <string name="novel_last_read">上次阅读</string>
+    <string name="novel_latest_chapter">最新章节</string>
     <string name="novel_show_all_chapters">查看全部目录</string>
     <string name="novel_show_fewer_chapters">收起目录</string>
     <string name="novel_description_expand">展开完整简介</string>
@@ -381,3 +386,4 @@
     <string name="login_site_title">选择站点</string>
     <string name="login_account_title">账号</string>
 </resources>
+
