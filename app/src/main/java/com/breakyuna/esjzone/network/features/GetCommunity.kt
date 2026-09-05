@@ -779,7 +779,18 @@ private fun resolveCommentTimestamp(element: Element): String? {
 private fun resolveRawImageUrl(image: Element, rawUrl: String): String {
     val raw = rawUrl.trim()
     val baseUri = image.baseUri().trim()
-    return EsjzoneUrls.resolve(raw, baseUri.ifBlank { EsjzoneUrls.Base })
+    if (baseUri.isBlank()) {
+        // Parser callers may provide an HTML fragment without a document base.
+        // Preserve relative community URLs in that case, while still sending
+        // absolute/protocol-relative URLs through the HTTPS normalizer.
+        return when {
+            raw.startsWith("http://", ignoreCase = true) ||
+                raw.startsWith("https://", ignoreCase = true) -> EsjzoneUrls.resolve(raw)
+            raw.startsWith("//") -> EsjzoneUrls.resolve("https:$raw")
+            else -> raw
+        }
+    }
+    return EsjzoneUrls.resolve(raw, baseUri)
 }
 
 private fun isUsableImageUrl(url: String): Boolean {
