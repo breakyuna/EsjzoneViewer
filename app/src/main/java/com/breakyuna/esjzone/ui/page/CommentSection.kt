@@ -51,6 +51,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -227,7 +228,8 @@ internal fun CommentSectionContent(
 @Composable
 internal fun CommentComposerHost(
     model: CommentPageModel,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onHeightChanged: ((Int) -> Unit)? = null
 ) {
     var savedDraft by rememberSaveable(model.pageUrl) { mutableStateOf("") }
     var savedReplyToken by rememberSaveable(model.pageUrl) { mutableStateOf<String?>(null) }
@@ -283,7 +285,7 @@ internal fun CommentComposerHost(
             model.load(forceRefresh = true)
         },
         onSubmit = { model.submit(draft, model.replyToken.value) },
-        modifier = modifier
+        modifier = modifier.onSizeChanged { onHeightChanged?.invoke(it.height) }
     )
 }
 
@@ -733,3 +735,4 @@ internal enum class CommentSubmitError(val messageResource: Int) {
 
 private fun <T> List<T>.toCommunityState(): CommunityState<List<T>> =
     if (isEmpty()) CommunityState.Empty else CommunityState.Result(this)
+
