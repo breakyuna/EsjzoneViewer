@@ -12,12 +12,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.OpenInNew
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -37,8 +34,8 @@ import com.breakyuna.esjzone.BuildConfig
 import com.breakyuna.esjzone.Constants
 import com.breakyuna.esjzone.R
 import com.breakyuna.esjzone.ui.component.QuietBackHeader
-import com.breakyuna.esjzone.ui.component.QuietSectionHeader
 import com.breakyuna.esjzone.ui.navigation.LocalBaseNavigator
+import com.breakyuna.esjzone.ui.theme.QuietEditorial
 
 object AboutPage : Screen {
 
@@ -66,17 +63,15 @@ object AboutPage : Screen {
                     .padding(horizontal = 16.dp, vertical = 12.dp)
             ) {
                 // Compile Information Card
-                QuietSectionHeader(
+                AboutSectionHeader(
                     title = stringResource(id = R.string.compile_information),
                     modifier = Modifier.padding(bottom = 8.dp)
                 )
 
-                Card(
+                Surface(
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(16.dp),
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-                    )
+                    shape = QuietEditorial.cardShape,
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.38f)
                 ) {
                     Column(
                         modifier = Modifier
@@ -104,17 +99,15 @@ object AboutPage : Screen {
                 Spacer(modifier = Modifier.height(20.dp))
 
                 // Maintainers
-                QuietSectionHeader(
+                AboutSectionHeader(
                     title = stringResource(id = R.string.maintainers),
                     modifier = Modifier.padding(bottom = 8.dp)
                 )
 
-                Card(
+                Surface(
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(16.dp),
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-                    )
+                    shape = QuietEditorial.cardShape,
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.38f)
                 ) {
                     Column(
                         modifier = Modifier
@@ -135,17 +128,15 @@ object AboutPage : Screen {
                 Spacer(modifier = Modifier.height(20.dp))
 
                 // Contributors
-                QuietSectionHeader(
+                AboutSectionHeader(
                     title = stringResource(id = R.string.contributors),
                     modifier = Modifier.padding(bottom = 8.dp)
                 )
 
-                Card(
+                Surface(
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(16.dp),
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-                    )
+                    shape = QuietEditorial.cardShape,
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.38f)
                 ) {
                     Column(
                         modifier = Modifier
@@ -166,17 +157,15 @@ object AboutPage : Screen {
                 Spacer(modifier = Modifier.height(20.dp))
 
                 // Open Source Libraries
-                QuietSectionHeader(
+                AboutSectionHeader(
                     title = stringResource(id = R.string.open_source_libraries),
                     modifier = Modifier.padding(bottom = 8.dp)
                 )
 
-                Card(
+                Surface(
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(16.dp),
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-                    )
+                    shape = QuietEditorial.cardShape,
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.38f)
                 ) {
                     Column(modifier = Modifier.fillMaxWidth()) {
                         Constants.OPEN_SOURCE_LIBRARIES.forEachIndexed { index, library ->
@@ -292,6 +281,16 @@ object AboutPage : Screen {
                 Spacer(modifier = Modifier.height(24.dp))
             }
         }
+    }
+
+    @Composable
+    private fun AboutSectionHeader(title: String, modifier: Modifier = Modifier) {
+        Text(
+            text = title,
+            style = QuietEditorial.sectionTitle,
+            color = MaterialTheme.colorScheme.onSurface,
+            modifier = modifier
+        )
     }
 
     @Composable

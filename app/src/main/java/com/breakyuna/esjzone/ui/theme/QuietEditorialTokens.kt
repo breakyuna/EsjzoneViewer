@@ -25,6 +25,8 @@ object QuietEditorial {
     val sectionGap: Dp = 32.dp
     val itemGap: Dp = 12.dp
     val hairline: Dp = 0.5.dp
+    /** Space needed below root-tab content while the navigation overlay is visible. */
+    val bottomNavigationPadding: Dp = 112.dp
     /** Bookshelf cards stay at least this wide before the grid adds columns. */
     val bookshelfMinCardWidth: Dp = 148.dp
 
@@ -35,7 +37,8 @@ object QuietEditorial {
     val bookshelfCardShape = RoundedCornerShape(14.dp)
     val selectionShape = RoundedCornerShape(8.dp)
     val dialogShape = RoundedCornerShape(28.dp)
-    val largeShape = RoundedCornerShape(24.dp)
+    /** Structural containers use a quieter radius than dialogs and sheets. */
+    val largeShape = RoundedCornerShape(16.dp)
 
     val serif = FontFamily.Serif
     val sans = FontFamily.SansSerif
@@ -94,7 +97,7 @@ data class QuietEditorialColors(
 @Composable
 fun quietEditorialColors(): QuietEditorialColors = QuietEditorialColors(
     inkRule = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
-    softSurface = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.38f),
-    cardSurface = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.32f),
+    softSurface = MaterialTheme.colorScheme.surfaceContainerLow,
+    cardSurface = MaterialTheme.colorScheme.surfaceContainer,
     mutedInk = MaterialTheme.colorScheme.onSurfaceVariant
 )

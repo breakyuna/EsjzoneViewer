@@ -50,6 +50,7 @@ import com.breakyuna.esjzone.ui.component.QuietLoadingState
 import com.breakyuna.esjzone.ui.component.QuietNovelListItem
 import com.breakyuna.esjzone.ui.component.QuietSectionHeader
 import com.breakyuna.esjzone.ui.navigation.LocalBaseNavigator
+import com.breakyuna.esjzone.ui.theme.QuietEditorial
 
 class CategoryPage(private val category: Category) : Screen {
 
@@ -112,8 +113,8 @@ class CategoryPage(private val category: Category) : Screen {
 
                     LazyColumn(
                         modifier = Modifier.fillMaxSize(),
-                        verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(10.dp),
-                        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 16.dp, vertical = 16.dp)
+                        verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(QuietEditorial.itemGap),
+                        contentPadding = androidx.compose.foundation.layout.PaddingValues(vertical = 16.dp)
                     ) {
                         item {
                             QuietSectionHeader(
@@ -153,13 +154,16 @@ class CategoryPage(private val category: Category) : Screen {
                                         },
                                         modifier = Modifier
                                             .fillMaxWidth()
+                                            .padding(horizontal = QuietEditorial.pagePadding)
                                             .padding(vertical = 8.dp),
                                         failure = detailLoader.failures[key]
                                             ?: LoadFailureKind.CLIENT
                                     )
                                 } else {
                                     Column(
-                                        modifier = Modifier.fillMaxWidth(),
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(horizontal = QuietEditorial.pagePadding),
                                         horizontalAlignment = Alignment.CenterHorizontally
                                     ) {
                                         CircularProgressIndicator(modifier = Modifier.padding(16.dp))
@@ -171,7 +175,8 @@ class CategoryPage(private val category: Category) : Screen {
                                 if (adult || !novel.isAdult) {
                                     QuietNovelListItem(
                                         novel = novel,
-                                        summary = novel.description.preview()
+                                        summary = novel.description.preview(),
+                                        modifier = Modifier.padding(horizontal = QuietEditorial.pagePadding)
                                     )
                                 }
                             }

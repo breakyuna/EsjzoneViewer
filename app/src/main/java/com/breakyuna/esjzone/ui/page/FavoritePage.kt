@@ -69,7 +69,6 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import cafe.adriel.voyager.core.model.rememberScreenModel
@@ -264,25 +263,31 @@ object FavoritePage : Screen {
             },
             bottomBar = {
                 if (editing) {
-                    BookshelfBatchBar(
-                        selectedCount = selectedCount,
-                        deleting = deleting,
-                        onCancel = ::leaveEditMode,
-                        onDelete = {
-                            if (!deleting && selectedKeys.isNotEmpty()) {
-                                pendingDelete = visibleEntries.filter {
-                                    it.bookKey in selectedKeys
+                    Box(
+                        modifier = Modifier.padding(
+                            bottom = if (showBack) 0.dp else QuietEditorial.bottomNavigationPadding
+                        )
+                    ) {
+                        BookshelfBatchBar(
+                            selectedCount = selectedCount,
+                            deleting = deleting,
+                            onCancel = ::leaveEditMode,
+                            onDelete = {
+                                if (!deleting && selectedKeys.isNotEmpty()) {
+                                    pendingDelete = visibleEntries.filter {
+                                        it.bookKey in selectedKeys
+                                    }
+                                    showDeleteDialog = pendingDelete.isNotEmpty()
                                 }
-                                showDeleteDialog = pendingDelete.isNotEmpty()
                             }
-                        }
-                    )
+                        )
+                    }
                 }
             },
             snackbarHost = { SnackbarHost(hostState = snackbar) }
         ) { padding ->
             LazyVerticalGrid(
-                columns = GridCells.Fixed(3),
+                columns = GridCells.Adaptive(minSize = QuietEditorial.bookshelfMinCardWidth),
                 state = gridState,
                 modifier = Modifier
                     .fillMaxSize()
@@ -296,13 +301,13 @@ object FavoritePage : Screen {
                     start = QuietEditorial.pagePadding,
                     end = QuietEditorial.pagePadding,
                     top = 12.dp,
-                    // Scaffold padding already accounts for the optional
-                    // batch bar and the root tab navigation. Keep only a
-                    // small visual breathing space here.
-                    bottom = 16.dp
+                    // The root tab navigation is an overlay rather than a
+                    // Scaffold bottomBar, so protect the final grid row when
+                    // this page is rendered as the bookshelf tab.
+                    bottom = if (showBack) 16.dp else QuietEditorial.bottomNavigationPadding
                 ),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
+                horizontalArrangement = Arrangement.spacedBy(QuietEditorial.itemGap),
+                verticalArrangement = Arrangement.spacedBy(QuietEditorial.itemGap)
             ) {
                 if (editing) {
                     item(span = { GridItemSpan(maxLineSpan) }) {
@@ -623,7 +628,7 @@ private fun BookshelfGridItem(
     onClick: () -> Unit
 ) {
     val itemShape = QuietEditorial.bookshelfCardShape
-    Column(
+    Surface(
         modifier = Modifier
             .fillMaxWidth()
             .then(
@@ -633,9 +638,11 @@ private fun BookshelfGridItem(
                     Modifier
                 }
             )
-            .clip(itemShape)
             .clickable(enabled = enabled, onClick = onClick)
             .padding(if (selected && editing) 4.dp else 0.dp)
+            .clip(itemShape),
+        shape = itemShape,
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.28f)
     ) {
         Box(modifier = Modifier.fillMaxWidth()) {
             QuietNovelCover(
@@ -657,14 +664,11 @@ private fun BookshelfGridItem(
         }
         Text(
             text = entry.title,
-            style = QuietEditorial.body.copy(
-                fontWeight = FontWeight.SemiBold,
-                lineHeight = 18.sp
-            ),
+            style = QuietEditorial.cardTitle,
             color = MaterialTheme.colorScheme.onSurface,
             maxLines = 2,
             overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.padding(top = 8.dp, start = 2.dp, end = 2.dp)
+            modifier = Modifier.padding(top = 8.dp, start = 8.dp, end = 8.dp, bottom = 8.dp)
         )
     }
 }
@@ -673,7 +677,7 @@ private fun BookshelfGridItem(
 private fun BookshelfSelectionOverlay(selected: Boolean, modifier: Modifier = Modifier) {
     Box(
         modifier = modifier
-            .size(30.dp)
+            .size(28.dp)
             .background(
                 color = if (selected) {
                     MaterialTheme.colorScheme.primary
@@ -716,7 +720,7 @@ private fun BookshelfEmptyState(adultFiltered: Boolean) {
     ) {
         Surface(
             modifier = Modifier.size(64.dp),
-            shape = RoundedCornerShape(22.dp),
+            shape = QuietEditorial.coverShape,
             color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.55f)
         ) {
             Box(contentAlignment = Alignment.Center) {

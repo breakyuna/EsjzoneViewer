@@ -29,7 +29,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import cafe.adriel.voyager.core.model.StateScreenModel
 import cafe.adriel.voyager.core.model.rememberScreenModel
@@ -294,7 +293,7 @@ private fun ForumCategoryCard(category: ForumCategory, onClick: () -> Unit) {
     Surface(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 7.dp)
+            .padding(horizontal = QuietEditorial.pagePadding, vertical = 6.dp)
             .clickable(onClick = onClick),
         shape = QuietEditorial.cardShape,
         color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.34f)
@@ -312,8 +311,7 @@ private fun ForumCategoryCard(category: ForumCategory, onClick: () -> Unit) {
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = category.name,
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold
+                    style = QuietEditorial.cardTitle
                 )
                 category.description?.let {
                     Text(
@@ -340,7 +338,7 @@ private fun ForumThreadCard(thread: ForumThread, onClick: () -> Unit) {
     Surface(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 7.dp)
+            .padding(horizontal = QuietEditorial.pagePadding, vertical = 6.dp)
             .clickable(onClick = onClick),
         shape = QuietEditorial.cardShape,
         color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.34f)
@@ -348,8 +346,7 @@ private fun ForumThreadCard(thread: ForumThread, onClick: () -> Unit) {
         Column(modifier = Modifier.padding(16.dp)) {
             Text(
                 text = thread.title,
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold
+                style = QuietEditorial.cardTitle
             )
             Row(
                 modifier = Modifier
@@ -424,15 +421,14 @@ private fun ForumNovelBoardContent(
             Surface(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 12.dp),
-                shape = QuietEditorial.largeShape,
+                    .padding(horizontal = QuietEditorial.pagePadding, vertical = 12.dp),
+                shape = QuietEditorial.cardShape,
                 color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.36f)
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
                     Text(
                         text = thread.title,
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.SemiBold
+                        style = QuietEditorial.cardTitle
                     )
                     Text(
                         text = stringResource(id = R.string.forum_novel_board),
@@ -474,7 +470,7 @@ private fun ForumTopicCard(topic: ForumTopic, onClick: () -> Unit) {
     Surface(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 7.dp)
+            .padding(horizontal = QuietEditorial.pagePadding, vertical = 6.dp)
             .clickable(onClick = onClick),
         shape = QuietEditorial.cardShape,
         color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.34f)
@@ -482,8 +478,7 @@ private fun ForumTopicCard(topic: ForumTopic, onClick: () -> Unit) {
         Column(modifier = Modifier.padding(16.dp)) {
             Text(
                 text = topic.title,
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold
+                style = QuietEditorial.cardTitle
             )
             val authorAndDate = listOfNotNull(topic.author, topic.createdAt)
                 .joinToString(" · ")
@@ -538,15 +533,14 @@ private fun ForumPostCard(post: ForumPost) {
     Surface(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 12.dp),
-        shape = QuietEditorial.largeShape,
+            .padding(horizontal = QuietEditorial.pagePadding, vertical = 12.dp),
+        shape = QuietEditorial.cardShape,
         color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.34f)
     ) {
-        Column(modifier = Modifier.padding(18.dp)) {
+        Column(modifier = Modifier.padding(16.dp)) {
             Text(
                 text = post.title,
-                style = MaterialTheme.typography.headlineSmall,
-                fontWeight = FontWeight.Bold
+                style = QuietEditorial.sectionTitle
             )
             val authorAndDate = listOfNotNull(post.author, post.createdAt)
                 .joinToString(" · ")
@@ -561,7 +555,7 @@ private fun ForumPostCard(post: ForumPost) {
             if (post.contentText.isNotBlank()) {
                 Text(
                     text = post.contentText,
-                    style = MaterialTheme.typography.bodyLarge,
+                    style = MaterialTheme.typography.bodyLarge.copy(fontFamily = QuietEditorial.serif),
                     color = MaterialTheme.colorScheme.onSurface,
                     modifier = Modifier.padding(top = 18.dp)
                 )

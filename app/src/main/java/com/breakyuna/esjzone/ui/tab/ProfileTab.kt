@@ -13,13 +13,11 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowForwardIos
 import androidx.compose.material.icons.filled.Info
@@ -112,7 +110,8 @@ object ProfileTab : Tab {
                 contentPadding = PaddingValues(
                     start = horizontalPadding,
                     end = horizontalPadding,
-                    top = 16.dp
+                    top = 16.dp,
+                    bottom = QuietEditorial.bottomNavigationPadding
                 ),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
@@ -208,27 +207,18 @@ private fun ProfileHero(
 ) {
     Surface(
         modifier = modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(28.dp),
-        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.72f),
+        shape = QuietEditorial.cardShape,
+        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.42f),
         border = BorderStroke(
-            1.dp,
-            MaterialTheme.colorScheme.primary.copy(alpha = 0.14f)
+            QuietEditorial.hairline,
+            MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
         )
     ) {
         Box(modifier = Modifier.fillMaxWidth()) {
-            Box(
-                modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .offset(x = 38.dp, y = (-46).dp)
-                    .size(150.dp)
-                    .clip(CircleShape)
-                    .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.1f))
-            )
-
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(20.dp),
+                    .padding(16.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 ProfileAvatar(data = data, domain = domain)
@@ -258,10 +248,10 @@ private fun ProfileHero(
 @Composable
 private fun ProfileAvatar(data: UserProfile?, domain: String) {
     Surface(
-        modifier = Modifier.size(86.dp),
+        modifier = Modifier.size(72.dp),
         shape = CircleShape,
-        color = MaterialTheme.colorScheme.surface,
-        border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.28f))
+        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.8f),
+        border = BorderStroke(QuietEditorial.hairline, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f))
     ) {
         if (data == null) {
             Box(contentAlignment = Alignment.Center) {
@@ -318,7 +308,7 @@ private fun ProfileMenu(
 ) {
     Column(
         modifier = modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(10.dp)
+        verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         ProfileMenuItem(
             icon = Icons.Filled.Bookmark,
@@ -360,11 +350,11 @@ private fun ProfileMenuItem(
         modifier = Modifier
             .fillMaxWidth()
             .clickable(onClick = onClick),
-        shape = RoundedCornerShape(20.dp),
-        color = MaterialTheme.colorScheme.surface,
+        shape = QuietEditorial.cardShape,
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.34f),
         border = BorderStroke(
-            1.dp,
-            MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.58f)
+            QuietEditorial.hairline,
+            MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
         )
     ) {
         Row(

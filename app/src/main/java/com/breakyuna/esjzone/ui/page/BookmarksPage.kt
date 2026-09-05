@@ -26,7 +26,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import cafe.adriel.voyager.core.model.StateScreenModel
@@ -83,8 +82,11 @@ object BookmarksPage : Screen {
                     } else {
                         LazyColumn(
                             modifier = Modifier.fillMaxSize(),
-                            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
-                            verticalArrangement = Arrangement.spacedBy(10.dp)
+                            contentPadding = PaddingValues(
+                                horizontal = QuietEditorial.pagePadding,
+                                vertical = QuietEditorial.pagePadding
+                            ),
+                            verticalArrangement = Arrangement.spacedBy(QuietEditorial.itemGap)
                         ) {
                             item {
                                 QuietSectionHeader(
@@ -139,7 +141,7 @@ private fun BookmarkRow(
             .fillMaxWidth()
             .clickable(onClick = onOpen),
         shape = QuietEditorial.cardShape,
-        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.32f)
+            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.38f)
     ) {
         Row(
             modifier = Modifier
@@ -160,9 +162,7 @@ private fun BookmarkRow(
             ) {
                 Text(
                     text = bookmark.novelName.ifBlank { bookmark.novelId },
-                    style = MaterialTheme.typography.titleMedium.copy(
-                        fontWeight = FontWeight.SemiBold
-                    ),
+                    style = QuietEditorial.cardTitle,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
@@ -172,7 +172,7 @@ private fun BookmarkRow(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.padding(top = 3.dp)
+                    modifier = Modifier.padding(top = 4.dp)
                 )
             }
             IconButton(onClick = onDelete) {

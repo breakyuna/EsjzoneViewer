@@ -110,11 +110,11 @@ fun NovelDetailHero(
             coverUrl = novel.coverUrl,
             title = novel.name,
             isAdult = novel.isAdult,
-            modifier = Modifier.size(width = 132.dp, height = 184.dp)
+            modifier = Modifier.size(width = 96.dp, height = 132.dp)
         )
         Column(
             modifier = Modifier.weight(1f),
-            verticalArrangement = Arrangement.spacedBy(7.dp)
+            verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             Text(
                 text = novel.name,

@@ -19,7 +19,6 @@ import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.itemsIndexed
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowForwardIos
@@ -76,6 +75,7 @@ import com.breakyuna.esjzone.ui.component.QuietEmptyState
 import com.breakyuna.esjzone.ui.component.QuietLoadingState
 import com.breakyuna.esjzone.ui.component.QuietSectionHeader
 import com.breakyuna.esjzone.ui.page.CategoryPage
+import com.breakyuna.esjzone.ui.theme.QuietEditorial
 
 class CategoryBrowserPage : Screen {
 
@@ -95,7 +95,8 @@ class CategoryBrowserPage : Screen {
                 categoryModel = categoryModel,
                 modifier = Modifier
                     .weight(1f)
-                    .fillMaxWidth()
+                    .fillMaxWidth(),
+                protectBottomNavigation = false
             )
         }
     }
@@ -171,7 +172,8 @@ object CategoryTab : Tab {
         val categoryModel = rememberScreenModel { CategoryModel(authorization) }
         CategoryBrowserContent(
             categoryModel = categoryModel,
-            modifier = Modifier.fillMaxSize()
+            modifier = Modifier.fillMaxSize(),
+            protectBottomNavigation = true
         )
     }
 }
@@ -179,17 +181,23 @@ object CategoryTab : Tab {
 @Composable
 private fun CategoryBrowserContent(
     categoryModel: CategoryModel,
-    modifier: Modifier
+    modifier: Modifier,
+    protectBottomNavigation: Boolean
 ) {
     val navigator = LocalBaseNavigator.current
     val state by categoryModel.state.collectAsState()
     val adult by remember { GlobalSettings.adult }
+    val safeStateModifier = if (protectBottomNavigation) {
+        modifier.padding(bottom = QuietEditorial.bottomNavigationPadding)
+    } else {
+        modifier
+    }
 
     when (state) {
-        is CategoryModel.State.Loading -> QuietLoadingState(modifier = modifier)
+        is CategoryModel.State.Loading -> QuietLoadingState(modifier = safeStateModifier)
 
         is CategoryModel.State.Error -> Column(
-            modifier = modifier,
+            modifier = safeStateModifier,
             verticalArrangement = Arrangement.Center
         ) {
             QuietErrorState(
@@ -208,22 +216,31 @@ private fun CategoryBrowserContent(
                     title = stringResource(R.string.categories_empty),
                     message = stringResource(R.string.home_adult_hidden),
                     icon = Icons.Filled.Category,
-                    modifier = modifier
+                    modifier = safeStateModifier
                 )
             } else {
                 LazyVerticalGrid(
                     state = gridState,
                     columns = GridCells.Adaptive(minSize = 156.dp),
-                    contentPadding = PaddingValues(horizontal = 20.dp, vertical = 20.dp),
-                    horizontalArrangement = Arrangement.spacedBy(14.dp),
-                    verticalArrangement = Arrangement.spacedBy(14.dp),
+                    contentPadding = PaddingValues(
+                        start = QuietEditorial.pagePadding,
+                        top = QuietEditorial.pagePadding,
+                        end = QuietEditorial.pagePadding,
+                        bottom = if (protectBottomNavigation) {
+                            QuietEditorial.bottomNavigationPadding
+                        } else {
+                            QuietEditorial.pagePadding
+                        }
+                    ),
+                    horizontalArrangement = Arrangement.spacedBy(QuietEditorial.itemGap),
+                    verticalArrangement = Arrangement.spacedBy(QuietEditorial.itemGap),
                     modifier = modifier
                 ) {
                     item(span = { GridItemSpan(maxLineSpan) }) {
                         Column(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(bottom = 6.dp)
+                                .padding(bottom = 4.dp)
                         ) {
                             QuietSectionHeader(title = stringResource(R.string.categories))
                         }
@@ -264,22 +281,22 @@ private fun CategoryCard(
     Surface(
         modifier = Modifier
             .fillMaxWidth()
-            .height(154.dp)
+            .height(148.dp)
             .clickable(onClick = onClick),
-        shape = RoundedCornerShape(24.dp),
-        color = MaterialTheme.colorScheme.surface,
-        tonalElevation = 1.dp,
+        shape = QuietEditorial.cardShape,
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.32f),
+        tonalElevation = 0.dp,
         border = BorderStroke(
-            width = 1.dp,
-            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f)
+            width = QuietEditorial.hairline,
+            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
         )
     ) {
         Box(modifier = Modifier.fillMaxSize()) {
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(6.dp)
-                    .clip(RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp))
+                    .height(4.dp)
+                    .clip(RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp))
                     .background(accent)
             )
 
@@ -297,7 +314,7 @@ private fun CategoryCard(
                     Box(
                         modifier = Modifier
                             .size(46.dp)
-                            .clip(CircleShape)
+                            .clip(QuietEditorial.controlShape)
                             .background(accentContainer),
                         contentAlignment = Alignment.Center
                     ) {

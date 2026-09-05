@@ -47,6 +47,10 @@ class LoadingScreen : Screen {
     override fun Content() {
         val navigator = LocalNavigator.currentOrThrow
 
+        Surface(
+            modifier = Modifier.fillMaxSize(),
+            color = MaterialTheme.colorScheme.background
+        ) {
         Box(modifier = Modifier.fillMaxSize().safeDrawingPadding(), contentAlignment = Alignment.Center) {
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
@@ -60,9 +64,18 @@ class LoadingScreen : Screen {
                         .size(72.dp)
                         .clip(CircleShape)
                 )
-                Text(stringResource(R.string.app_name), style = QuietEditorial.display)
-                CircularProgressIndicator(strokeWidth = 2.5.dp)
+                Text(
+                    stringResource(R.string.app_name),
+                    style = QuietEditorial.display,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                CircularProgressIndicator(
+                    modifier = Modifier.size(28.dp),
+                    strokeWidth = 2.5.dp,
+                    color = MaterialTheme.colorScheme.primary
+                )
             }
+        }
         }
 
         LaunchedEffect(Unit) {

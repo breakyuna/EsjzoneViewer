@@ -393,7 +393,7 @@ private fun NovelDetailContent(
                 NovelDetailHero(
                     novel = detailed,
                     modifier = Modifier
-                        .padding(horizontal = 16.dp, vertical = 20.dp)
+                        .padding(horizontal = 16.dp, vertical = 16.dp)
                         .widthIn(max = QuietEditorial.contentMaxWidth)
                 )
             }
@@ -540,7 +540,7 @@ private fun NovelDetailContent(
                 item(key = "detail-description") {
                     Column(
                         modifier = Modifier
-                            .padding(horizontal = 16.dp, vertical = 24.dp)
+                        .padding(horizontal = 16.dp, vertical = 20.dp)
                             .widthIn(max = QuietEditorial.contentMaxWidth)
                     ) {
                         NovelDetailSectionHeading(title = stringResource(R.string.description))
@@ -866,13 +866,13 @@ private fun NovelDownloadSheet(
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
-        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.65f)
+        containerColor = MaterialTheme.colorScheme.surfaceContainer
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .navigationBarsPadding()
-                .padding(horizontal = 20.dp, vertical = 8.dp)
+                .padding(horizontal = 16.dp, vertical = 8.dp)
                 .widthIn(max = QuietEditorial.contentMaxWidth),
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {

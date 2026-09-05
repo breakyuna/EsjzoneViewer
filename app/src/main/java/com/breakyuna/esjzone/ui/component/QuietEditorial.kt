@@ -136,8 +136,8 @@ fun QuietHomeHeader(
                         color = MaterialTheme.colorScheme.onSurface
                     )
                     Surface(
-                        shape = RoundedCornerShape(999.dp),
-                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f)
+                        shape = QuietEditorial.badgeShape,
+                        color = MaterialTheme.colorScheme.surfaceContainer
                     ) {
                         Row(
                             modifier = Modifier.padding(horizontal = 9.dp, vertical = 5.dp),
@@ -279,7 +279,7 @@ fun QuietSearchHeader(
                 modifier = Modifier.weight(1f),
                 enabled = enabled,
                 singleLine = true,
-                shape = RoundedCornerShape(28.dp),
+                shape = QuietEditorial.controlShape,
                 textStyle = QuietEditorial.body,
                 placeholder = {
                     Text(
@@ -309,9 +309,9 @@ fun QuietSearchHeader(
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
                 keyboardActions = KeyboardActions(onSearch = { onSearch() }),
                 colors = TextFieldDefaults.colors(
-                    focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.52f),
-                    unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.38f),
-                    disabledContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.25f),
+                    focusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                    unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainer,
+                    disabledContainerColor = MaterialTheme.colorScheme.surfaceContainerLow,
                     focusedIndicatorColor = Color.Transparent,
                     unfocusedIndicatorColor = Color.Transparent,
                     disabledIndicatorColor = Color.Transparent
@@ -321,7 +321,7 @@ fun QuietSearchHeader(
                 onClick = onSearch,
                 enabled = enabled,
                 modifier = Modifier.height(48.dp),
-                shape = RoundedCornerShape(18.dp),
+                shape = QuietEditorial.controlShape,
                 contentPadding = ButtonDefaults.ContentPadding,
                 colors = ButtonDefaults.buttonColors(
                     containerColor = MaterialTheme.colorScheme.primary,

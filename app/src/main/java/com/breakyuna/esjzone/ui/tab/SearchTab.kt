@@ -91,7 +91,11 @@ object SearchTab : Tab {
             modifier = Modifier
                 .fillMaxSize()
                 .imePadding(),
-            horizontalAlignment = Alignment.CenterHorizontally
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(QuietEditorial.itemGap),
+            contentPadding = androidx.compose.foundation.layout.PaddingValues(
+                bottom = QuietEditorial.bottomNavigationPadding
+            )
         ) {
             item(key = "search-header") {
                 QuietSearchHeader(
