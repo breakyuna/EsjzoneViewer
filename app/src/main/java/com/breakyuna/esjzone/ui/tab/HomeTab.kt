@@ -1,16 +1,10 @@
 package com.breakyuna.esjzone.ui.tab
 
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -43,10 +37,8 @@ import com.breakyuna.esjzone.novellibrary.data.HomeData
 import com.breakyuna.esjzone.novellibrary.novel.CoveredNovel
 import com.breakyuna.esjzone.ui.component.QuietEmptyState
 import com.breakyuna.esjzone.ui.component.QuietErrorState
-import com.breakyuna.esjzone.ui.component.QuietFeaturedNovelCard
 import com.breakyuna.esjzone.ui.component.QuietHomeHeader
 import com.breakyuna.esjzone.ui.component.QuietLoadingState
-import com.breakyuna.esjzone.ui.component.QuietNovelListItem
 import com.breakyuna.esjzone.ui.component.QuietSectionHeader
 import com.breakyuna.esjzone.ui.navigation.LocalBaseNavigator
 import com.breakyuna.esjzone.ui.navigation.pushIfNotCurrent
@@ -196,33 +188,11 @@ private fun HomeCollection(
             message = stringResource(R.string.home_collection_empty_message),
             modifier = Modifier.padding(horizontal = QuietEditorial.pagePadding)
         )
-    } else if (featured) {
-        LazyRow(
-            contentPadding = PaddingValues(horizontal = QuietEditorial.pagePadding),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(top = 12.dp)
-        ) {
-            items(
-                items = visible,
-                key = { it.url.ifBlank { it.name } }
-            ) { novel ->
-                QuietFeaturedNovelCard(novel = novel)
-            }
-        }
     } else {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = QuietEditorial.pagePadding)
-                .padding(top = 12.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
-        ) {
-            visible.forEach { novel ->
-                QuietNovelListItem(novel = novel, compact = true)
-            }
-        }
+        HomePreviewRail(
+            novels = visible,
+            modifier = Modifier.padding(top = 12.dp)
+        )
     }
 }
 

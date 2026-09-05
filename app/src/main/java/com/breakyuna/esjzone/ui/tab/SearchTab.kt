@@ -32,6 +32,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -79,6 +80,8 @@ object SearchTab : Tab {
 
         var keyword by rememberSaveable { mutableStateOf("") }
         var activeSearchKeyword by rememberSaveable { mutableStateOf<String?>(null) }
+        var category by rememberSaveable { mutableIntStateOf(0) }
+        var sort by rememberSaveable { mutableIntStateOf(1) }
 
         fun performSearch(query: String) {
             val trimmed = query.trim()
@@ -115,7 +118,7 @@ object SearchTab : Tab {
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Icon(
-                            imageVector = Icons.Filled.Lock,
+                            imageVector = Icons.Filled.History,
                             contentDescription = null,
                             modifier = Modifier.size(20.dp),
                             tint = MaterialTheme.colorScheme.primary
@@ -193,7 +196,7 @@ object SearchTab : Tab {
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Icon(
-                            imageVector = Icons.Filled.History,
+                            imageVector = Icons.Filled.Lock,
                             contentDescription = null,
                             modifier = Modifier.size(15.dp),
                             tint = MaterialTheme.colorScheme.onSurfaceVariant
@@ -214,8 +217,12 @@ object SearchTab : Tab {
                 searchResultItems(
                     model = searchModel,
                     state = searchState,
-                    onRetry = { searchModel.search(currentKeyword) },
-                    keyword = currentKeyword
+                    onRetry = { searchModel.search(currentKeyword, category, sort) },
+                    keyword = currentKeyword,
+                    category = category,
+                    sort = sort,
+                    onCategoryChange = { category = it },
+                    onSortChange = { sort = it }
                 )
             }
             item(key = "search-bottom-space") {
@@ -225,8 +232,10 @@ object SearchTab : Tab {
 
         LaunchedEffect(Unit) { historyModel.load() }
 
-        LaunchedEffect(activeSearchKeyword) {
-            activeSearchKeyword?.let { searchModel.search(it) }
+        LaunchedEffect(activeSearchKeyword, category, sort) {
+            activeSearchKeyword?.let {
+                searchModel.search(it, category, sort)
+            }
         }
     }
 }

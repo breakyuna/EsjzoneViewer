@@ -360,6 +360,7 @@
     <string name="comment_time_unknown">Time unavailable</string>
     <string name="community_load_failed">Unable to load community content</string>
     <string name="comment_hint">Write a comment...</string>
+    <string name="comment_emoji">Choose an emoji</string>
     <string name="comment_send">Post</string>
     <string name="comment_submitting">Posting...</string>
     <string name="comment_reply">Reply</string>
@@ -386,4 +387,3 @@
     <string name="login_site_title">Choose a site</string>
     <string name="login_account_title">Account</string>
 </resources>
-

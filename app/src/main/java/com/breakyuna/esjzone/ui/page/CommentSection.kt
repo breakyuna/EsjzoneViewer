@@ -1,16 +1,21 @@
 package com.breakyuna.esjzone.ui.page
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.IntrinsicSize
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
@@ -18,22 +23,26 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
+import androidx.compose.material.icons.automirrored.filled.Reply
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.EmojiEmotions
 import androidx.compose.material.icons.filled.FirstPage
+import androidx.compose.material.icons.filled.FormatQuote
 import androidx.compose.material.icons.filled.Forum
 import androidx.compose.material.icons.filled.LastPage
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Send
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilledTonalIconButton
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -50,12 +59,14 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import cafe.adriel.voyager.core.model.StateScreenModel
 import cafe.adriel.voyager.core.model.screenModelScope
 import coil.compose.SubcomposeAsyncImage
@@ -346,7 +357,6 @@ private fun CommentSection(
                 },
                 onLast = { selectedPageIndex = pages.lastIndex }
             )
-            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
             pages[safePageIndex].forEach { comment ->
                 CommentCard(
                     comment = comment,
@@ -376,79 +386,145 @@ private fun CommentComposer(
     modifier: Modifier = Modifier
 ) {
     Surface(
-        modifier = modifier
-            .fillMaxWidth()
-            .padding(horizontal = 12.dp, vertical = 4.dp),
-        color = MaterialTheme.colorScheme.surface,
-        tonalElevation = 1.dp,
+        modifier = modifier.fillMaxWidth(),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.76f),
+        tonalElevation = 0.dp,
         shadowElevation = 0.dp,
-        shape = QuietEditorial.largeShape
+        shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp)
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .navigationBarsPadding()
                 .imePadding()
-                .padding(horizontal = 10.dp, vertical = 6.dp)
+                .padding(horizontal = 16.dp, vertical = 8.dp)
         ) {
             if (replyAuthor != null) {
-                Row(
+                Surface(
                     modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically
+                    shape = QuietEditorial.badgeShape,
+                    color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.62f),
+                    contentColor = MaterialTheme.colorScheme.onPrimaryContainer
                 ) {
-                    Text(
-                        text = stringResource(id = R.string.comment_replying_to, replyAuthor),
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.weight(1f)
-                    )
-                    IconButton(
-                        onClick = onCancelReply,
-                        enabled = !isSubmitting,
-                        modifier = Modifier.size(36.dp)
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(32.dp)
+                            .padding(start = 10.dp, end = 2.dp),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
                         Icon(
-                            imageVector = Icons.Filled.Close,
-                            contentDescription = stringResource(id = R.string.comment_cancel_reply)
+                            imageVector = Icons.AutoMirrored.Filled.Reply,
+                            contentDescription = null,
+                            modifier = Modifier.size(16.dp)
                         )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = stringResource(id = R.string.comment_replying_to, replyAuthor),
+                            style = QuietEditorial.label,
+                            maxLines = 1,
+                            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f)
+                        )
+                        Box(
+                            modifier = Modifier
+                                .size(28.dp)
+                                .clip(CircleShape)
+                                .clickable(
+                                    enabled = !isSubmitting,
+                                    onClick = onCancelReply
+                                ),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.Close,
+                                contentDescription = stringResource(id = R.string.comment_cancel_reply),
+                                modifier = Modifier.size(16.dp)
+                            )
+                        }
                     }
                 }
+                Spacer(modifier = Modifier.height(6.dp))
             }
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                OutlinedTextField(
+                BasicTextField(
                     value = draft,
                     onValueChange = onDraftChange,
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(52.dp),
                     enabled = !isSubmitting,
-                    placeholder = {
-                        Text(
-                            text = stringResource(id = R.string.comment_hint),
-                            style = QuietEditorial.body
-                        )
-                    },
-                    minLines = 1,
-                    maxLines = 3,
-                    shape = QuietEditorial.controlShape
+                    singleLine = true,
+                    textStyle = QuietEditorial.body.copy(
+                        fontSize = 15.sp,
+                        lineHeight = 20.sp,
+                        color = MaterialTheme.colorScheme.onSurface
+                    ),
+                    cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                    decorationBox = { innerTextField ->
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .clip(QuietEditorial.badgeShape)
+                                .background(MaterialTheme.colorScheme.surface)
+                                .padding(horizontal = 18.dp),
+                            contentAlignment = Alignment.CenterStart
+                        ) {
+                            if (draft.isBlank()) {
+                                Text(
+                                    text = stringResource(id = R.string.comment_hint),
+                                    style = QuietEditorial.body.copy(
+                                        fontSize = 15.sp,
+                                        lineHeight = 20.sp
+                                    ),
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 1,
+                                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                                )
+                            }
+                            innerTextField()
+                        }
+                    }
                 )
+                IconButton(
+                    onClick = { },
+                    enabled = !isSubmitting,
+                    modifier = Modifier.size(44.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.EmojiEmotions,
+                        contentDescription = stringResource(id = R.string.comment_emoji),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(24.dp)
+                    )
+                }
                 Button(
                     onClick = onSubmit,
                     enabled = !isSubmitting && draft.isNotBlank(),
-                    modifier = Modifier
-                        .padding(start = 8.dp)
-                        .height(40.dp)
-                ) {
-                    Text(
-                        text = stringResource(
-                            id = if (isSubmitting) {
-                                R.string.comment_submitting
-                            } else {
-                                R.string.comment_send
-                            }
-                        )
+                    modifier = Modifier.size(52.dp),
+                    shape = CircleShape,
+                    contentPadding = PaddingValues(0.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.primary,
+                        contentColor = MaterialTheme.colorScheme.onPrimary
                     )
+                ) {
+                    if (isSubmitting) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(20.dp),
+                            strokeWidth = 2.dp,
+                            color = MaterialTheme.colorScheme.onPrimary
+                        )
+                    } else {
+                        Icon(
+                            imageVector = Icons.Filled.Send,
+                            contentDescription = stringResource(id = R.string.comment_send),
+                            modifier = Modifier.size(23.dp)
+                        )
+                    }
                 }
             }
             error?.let {
@@ -525,70 +601,159 @@ private fun CommentCard(comment: Comment, onReply: (() -> Unit)?) {
     Surface(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 7.dp),
-        shape = RoundedCornerShape(18.dp),
-        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.28f)
+            .padding(horizontal = 16.dp, vertical = 6.dp),
+        shape = QuietEditorial.largeShape,
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.36f)
     ) {
-        Row(
-            modifier = Modifier.padding(16.dp),
-            verticalAlignment = Alignment.Top
+        Column(
+            modifier = Modifier.padding(horizontal = 20.dp, vertical = 18.dp)
         ) {
-            CommentAvatar(comment)
-            Spacer(modifier = Modifier.width(12.dp))
-            Column(modifier = Modifier.weight(1f)) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.Top
+            ) {
+                CommentAvatar(comment)
+                Spacer(modifier = Modifier.width(12.dp))
+                Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = comment.authorName ?: stringResource(id = R.string.anonymous_user),
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier.weight(1f)
+                        text = comment.authorName
+                            ?.trim()
+                            ?.takeIf { it.isNotBlank() }
+                            ?: stringResource(id = R.string.anonymous_user),
+                        style = QuietEditorial.title.copy(
+                            fontSize = 17.sp,
+                            lineHeight = 22.sp
+                        ),
+                        color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 1,
+                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
                     )
-                    comment.floor?.let {
-                        Text(
-                            text = it,
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                    }
+                    Text(
+                        text = comment.createdAt
+                            ?.trim()
+                            ?.takeIf { it.isNotBlank() }
+                            ?: stringResource(id = R.string.comment_time_unknown),
+                        style = QuietEditorial.label.copy(
+                            fontSize = 13.sp,
+                            lineHeight = 18.sp
+                        ),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 2.dp),
+                        maxLines = 1,
+                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                    )
                 }
-                Text(
-                    text = comment.createdAt
-                        ?: stringResource(id = R.string.comment_time_unknown),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(top = 2.dp)
-                )
-                comment.quotedContentText?.let { quotedText ->
+                comment.floor
+                    ?.trim()
+                    ?.takeIf { it.isNotBlank() }
+                    ?.let { floor ->
+                        Surface(
+                            shape = QuietEditorial.badgeShape,
+                            color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.68f),
+                            contentColor = MaterialTheme.colorScheme.primary
+                        ) {
+                            Text(
+                                text = floor,
+                                style = QuietEditorial.label.copy(
+                                    fontSize = 13.sp,
+                                    lineHeight = 18.sp,
+                                    fontWeight = FontWeight.SemiBold
+                                ),
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
+                            )
+                        }
+                    }
+            }
+
+            comment.quotedContentText
+                ?.trim()
+                ?.takeIf { it.isNotBlank() }
+                ?.let { quotedText ->
                     Surface(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(top = 10.dp),
-                        color = MaterialTheme.colorScheme.surfaceVariant,
+                            .padding(top = 16.dp),
+                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.72f),
                         contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                        shape = RoundedCornerShape(8.dp)
+                        shape = RoundedCornerShape(16.dp)
                     ) {
-                        Text(
-                            text = quotedText,
-                            style = MaterialTheme.typography.bodySmall,
-                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp)
-                        )
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(IntrinsicSize.Min)
+                                .heightIn(min = 54.dp),
+                            verticalAlignment = Alignment.Top
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .width(4.dp)
+                                    .fillMaxHeight()
+                                    .clip(QuietEditorial.badgeShape)
+                                    .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.72f))
+                            )
+                            Column(
+                                modifier = Modifier.padding(
+                                    horizontal = 12.dp,
+                                    vertical = 10.dp
+                                )
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Filled.FormatQuote,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Text(
+                                    text = quotedText,
+                                    style = QuietEditorial.body.copy(
+                                        fontSize = 14.sp,
+                                        lineHeight = 21.sp
+                                    ),
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 3,
+                                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                                    modifier = Modifier.padding(top = 2.dp)
+                                )
+                            }
+                        }
                     }
                 }
-                Text(
-                    text = comment.contentText,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    modifier = Modifier.padding(top = 12.dp)
-                )
-                if (onReply != null) {
-                    TextButton(
-                        onClick = onReply,
-                        modifier = Modifier.align(Alignment.End)
+
+            Text(
+                text = comment.contentText,
+                style = QuietEditorial.body.copy(
+                    fontSize = 16.sp,
+                    lineHeight = 26.sp
+                ),
+                color = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.padding(top = 16.dp)
+            )
+
+            if (onReply != null) {
+                Surface(
+                    modifier = Modifier
+                        .align(Alignment.End)
+                        .padding(top = 14.dp)
+                        .clip(QuietEditorial.badgeShape)
+                        .clickable(onClick = onReply),
+                    shape = QuietEditorial.badgeShape,
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.72f),
+                    contentColor = MaterialTheme.colorScheme.onSurfaceVariant
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
-                        Text(text = stringResource(id = R.string.comment_reply))
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.Reply,
+                            contentDescription = null,
+                            modifier = Modifier.size(17.dp)
+                        )
+                        Text(
+                            text = stringResource(id = R.string.comment_reply),
+                            style = QuietEditorial.label
+                        )
                     }
                 }
             }
@@ -600,7 +765,7 @@ private fun CommentCard(comment: Comment, onReply: (() -> Unit)?) {
 private fun CommentAvatar(comment: Comment) {
     Box(
         modifier = Modifier
-            .size(44.dp)
+            .size(48.dp)
             .clip(CircleShape)
             .background(MaterialTheme.colorScheme.secondaryContainer),
         contentAlignment = Alignment.Center
@@ -735,4 +900,3 @@ internal enum class CommentSubmitError(val messageResource: Int) {
 
 private fun <T> List<T>.toCommunityState(): CommunityState<List<T>> =
     if (isEmpty()) CommunityState.Empty else CommunityState.Result(this)
-

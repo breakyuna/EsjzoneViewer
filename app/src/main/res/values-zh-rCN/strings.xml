@@ -360,6 +360,7 @@
     <string name="comment_time_unknown">时间未知</string>
     <string name="community_load_failed">社区内容加载失败</string>
     <string name="comment_hint">写下你的评论…</string>
+    <string name="comment_emoji">选择表情</string>
     <string name="comment_send">发表</string>
     <string name="comment_submitting">发表中…</string>
     <string name="comment_reply">回复</string>
@@ -386,4 +387,3 @@
     <string name="login_site_title">选择站点</string>
     <string name="login_account_title">账号</string>
 </resources>
-

@@ -26,13 +26,48 @@ object EsjzoneUrls {
 
     fun baseForDomain(domain: String): String = "https://${domain.trim().removePrefix("https://").removePrefix("http://").trimEnd('/')}"
 
-    fun tagsUrl(keyword: String, sort: Int? = null, page: Int? = null): String {
+    /**
+     * Builds a tag/search result URL using the route exposed by ESJ.
+     *
+     * The site's first page keeps the historical `/tags/{keyword}/` route for
+     * the default (all novels + recently updated) query.  Every non-default
+     * query, and every paginated request, uses the two-digit
+     * `/{category}{sort}` route (`tags-14` = Japanese + most views).  The
+     * nullable category preserves the old overload semantics for callers that
+     * only need the default tag URL.
+     */
+    fun tagsUrl(
+        keyword: String,
+        sort: Int? = null,
+        page: Int? = null,
+        category: Int? = null
+    ): String {
+        val categoryWasSpecified = category != null
+        val safeCategory = (category ?: 0).takeIf { it in VALID_TAG_CATEGORIES } ?: 0
+        val safeSort = (sort ?: 1).coerceIn(MIN_TAG_SORT, MAX_TAG_SORT)
+        val useLegacyDefaultRoute = !categoryWasSpecified && sort == null && page == null
+        val useDefaultFirstPageRoute =
+            safeCategory == DEFAULT_TAG_CATEGORY &&
+                safeSort == DEFAULT_TAG_SORT &&
+                page == null
+        val route = if (useLegacyDefaultRoute || useDefaultFirstPageRoute) {
+            "tags"
+        } else {
+            "tags-${safeCategory}${safeSort}"
+        }
+
         val builder = Base.toHttpUrl().newBuilder()
-        builder.addPathSegment(if (sort == null) "tags" else "tags-${sort.toString().padStart(2, '0')}")
+        builder.addPathSegment(route)
         builder.addPathSegment(keyword)
         if (page != null) builder.addPathSegment("$page.html")
         return builder.build().toString()
     }
+
+    private const val DEFAULT_TAG_CATEGORY = 0
+    private const val DEFAULT_TAG_SORT = 1
+    private const val MIN_TAG_SORT = 1
+    private const val MAX_TAG_SORT = 8
+    private val VALID_TAG_CATEGORIES = setOf(0, 1, 2, 3)
 
     /**
      * Returns a stable page identity for navigation and state keys.
