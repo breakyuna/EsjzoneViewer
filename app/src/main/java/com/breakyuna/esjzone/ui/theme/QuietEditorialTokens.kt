@@ -28,7 +28,7 @@ object QuietEditorial {
     /** Bookshelf cards stay at least this wide before the grid adds columns. */
     val bookshelfMinCardWidth: Dp = 148.dp
 
-    val badgeShape = RoundedCornerShape(6.dp)
+    val badgeShape = RoundedCornerShape(50)
     val controlShape = RoundedCornerShape(8.dp)
     val coverShape = RoundedCornerShape(12.dp)
     val cardShape = RoundedCornerShape(16.dp)
@@ -98,3 +98,4 @@ fun quietEditorialColors(): QuietEditorialColors = QuietEditorialColors(
     cardSurface = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.32f),
     mutedInk = MaterialTheme.colorScheme.onSurfaceVariant
 )
+
