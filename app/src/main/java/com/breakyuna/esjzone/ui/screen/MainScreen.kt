@@ -190,7 +190,7 @@ private object TabScreen : Screen {
         Scaffold(
             containerColor = MaterialTheme.colorScheme.background,
             contentWindowInsets = WindowInsets(0, 0, 0, 0)
-        ) {
+        ) { _ ->
             Box(modifier = Modifier.fillMaxSize()) {
                 Surface(
                     modifier = Modifier.fillMaxSize(),
