@@ -62,14 +62,12 @@
     <string name="logout_confirm">Confirm</string>
     <string name="field_required">This field is required</string>
     <string name="categories">Categories</string>
-    <string name="categories_description">Find your next story by genre and theme</string>
     <string name="categories_empty">No categories are visible</string>
     <string name="settings">Settings</string>
     <string name="settings_showadultcontent">Show Adult Content</string>
     <string name="favorites">Favorites</string>
     <string name="favorites_description">Keep your favorite stories close at hand</string>
     <string name="bookshelf">Bookshelf</string>
-    <string name="bookshelf_description">Your local-first reading shelf</string>
     <string name="bookshelf_count">%1$d books</string>
     <string name="bookshelf_collection">Saved novels</string>
     <string name="bookshelf_order_automatic">Automatic order</string>
@@ -79,7 +77,6 @@
     <string name="bookshelf_empty_hint">Favorite a novel to keep its shelf entry on this device.</string>
     <string name="bookshelf_empty_filtered">No visible books</string>
     <string name="bookshelf_empty_filtered_hint">Books hidden by your content preference are still stored locally.</string>
-    <string name="bookshelf_local_only_note">Stored locally; cloud sync only supplements this collection.</string>
     <string name="sync_bookshelf">Sync bookshelf</string>
     <string name="delete_bookshelf">Remove from bookshelf</string>
     <string name="bookshelf_edit">Edit bookshelf</string>
@@ -106,14 +103,7 @@
     <string name="bookshelf_sync_done">Bookshelf synced</string>
     <string name="bookshelf_sync_added">Added %1$d favorite(s)</string>
     <string name="bookshelf_sync_failed">Sync failed; showing local bookshelf</string>
-    <string name="bookshelf_sync_local_first">Local bookshelf first</string>
-    <string name="bookshelf_sync_running">Syncing cloud favorites in the background. Your local shelf stays visible.</string>
     <string name="bookshelf_sync_running_short">Syncing</string>
-    <string name="bookshelf_sync_offline">Cloud favorites can supplement this shelf; they never erase local books.</string>
-    <string name="bookshelf_sync_failure_detail">The local shelf is unchanged. Try again when the connection is available.</string>
-    <string name="bookshelf_sync_complete_added">Cloud sync added %1$d new book(s)</string>
-    <string name="bookshelf_local_entry">On this device</string>
-    <string name="bookshelf_pending_sync">Waiting for cloud sync</string>
     <string name="description">Description</string>
     <string name="novel_type">Type</string>
     <string name="novel_source">Web source</string>
@@ -155,7 +145,6 @@
     <string name="novel_download_no_chapters">No chapters are available to download.</string>
     <string name="novel_download_background_note">Downloads continue in the background and keep completed chapters after an interruption.</string>
     <string name="history">History</string>
-    <string name="history_description">Tap once to browse; double-tap to continue reading</string>
     <string name="history_local">Local history</string>
     <string name="history_cloud">Cloud history</string>
     <string name="history_local_empty">No local reading history yet</string>
@@ -163,7 +152,6 @@
     <string name="history_cloud_separate">Website records stay separate from this device</string>
     <string name="history_load_failed">Unable to load cloud history</string>
     <string name="history_local_load_failed">Unable to load local history</string>
-    <string name="history_local_device_only">Stored on this device; never uploaded</string>
     <string name="history_local_count">Local history (%1$d)</string>
     <string name="history_search">Search history</string>
     <string name="history_search_placeholder">Search by novel or chapter</string>
@@ -176,7 +164,6 @@
     <string name="history_local_duration_hours">%1$d hr %2$d min</string>
     <string name="history_local_duration_minutes">%1$d min</string>
     <string name="history_local_duration_seconds">%1$d sec</string>
-    <string name="profile_description">Your library, reading history and preferences</string>
     <string name="profile_signed_in">Signed in to ESJ Zone</string>
     <string name="profile_favorites_description">Manage saved novels and bookmarks</string>
     <string name="profile_history_description">Pick up where you left off reading</string>
@@ -215,7 +202,6 @@
     <string name="loading_content">Loading content…</string>
     <string name="adult_badge">18+</string>
     <string name="home_discover">Discover</string>
-    <string name="home_tagline">Daily picks and live translated serials</string>
     <string name="home_site_status">Main site · %1$s</string>
     <string name="home_editor_picks">Editor\'s picks</string>
     <string name="home_recommendation_label">Recommended reading</string>
@@ -238,7 +224,6 @@
     <string name="commit_id">Commit Id</string>
     <string name="settings_category_network">Network &amp; Domain</string>
     <string name="settings_screen_title">App settings</string>
-    <string name="settings_screen_subtitle">Preferences and system diagnostics</string>
     <string name="settings_network_section">Site &amp; service connection</string>
     <string name="settings_active_mirror">Active mirror</string>
     <string name="settings_primary_description">Primary site · current access source</string>

@@ -385,11 +385,6 @@ private fun SettingsHeader(onBack: () -> Unit) {
                 }
                 Column(modifier = Modifier.padding(start = 8.dp)) {
                     Text(stringResource(R.string.settings_screen_title), style = QuietEditorial.display)
-                    Text(
-                        stringResource(R.string.settings_screen_subtitle),
-                        style = QuietEditorial.body,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
                 }
             }
             HorizontalDivider(thickness = QuietEditorial.hairline, color = quietRuleColor())

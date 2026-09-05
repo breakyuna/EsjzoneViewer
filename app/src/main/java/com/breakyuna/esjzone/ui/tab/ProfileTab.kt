@@ -123,12 +123,6 @@ object ProfileTab : Tab {
                             style = QuietEditorial.display,
                             color = MaterialTheme.colorScheme.onSurface
                         )
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text(
-                            text = stringResource(R.string.profile_description),
-                            style = QuietEditorial.body,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
                     }
                 }
 

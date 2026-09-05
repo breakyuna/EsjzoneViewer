@@ -37,7 +37,6 @@ import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.RadioButtonUnchecked
 import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material.icons.filled.WarningAmber
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -79,7 +78,6 @@ import com.breakyuna.esjzone.GlobalSettings
 import com.breakyuna.esjzone.R
 import com.breakyuna.esjzone.database.BookshelfRepository
 import com.breakyuna.esjzone.database.entity.BookshelfEntry
-import com.breakyuna.esjzone.database.entity.BookshelfSyncState
 import com.breakyuna.esjzone.network.LocalAuthorization
 import com.breakyuna.esjzone.network.LoadFailureKind
 import com.breakyuna.esjzone.novellibrary.novel.CoveredNovelImpl
@@ -88,7 +86,6 @@ import com.breakyuna.esjzone.ui.navigation.BooleanStateHolder
 import com.breakyuna.esjzone.ui.navigation.LocalBaseNavigator
 import com.breakyuna.esjzone.ui.navigation.pushIfNotCurrent
 import com.breakyuna.esjzone.ui.theme.QuietEditorial
-import com.breakyuna.esjzone.ui.theme.quietEditorialColors
 
 /**
  * Local-first bookshelf presentation.
@@ -313,16 +310,7 @@ object FavoritePage : Screen {
                     }
                 } else {
                     item(span = { GridItemSpan(maxLineSpan) }) {
-                        BookshelfSyncBanner(
-                            state = syncState,
-                            syncing = syncing,
-                            onRefresh = ::refresh
-                        )
-                    }
-                    item(span = { GridItemSpan(maxLineSpan) }) {
-                        BookshelfCollectionSummary(
-                            visibleCount = visibleEntries.size
-                        )
+                        BookshelfCollectionSummary()
                     }
                 }
 
@@ -450,12 +438,6 @@ private fun BookshelfHeader(
                                 maxLines = 1
                             )
                         }
-                        Text(
-                            text = stringResource(R.string.bookshelf_edit),
-                            style = QuietEditorial.smallLabel,
-                            color = MaterialTheme.colorScheme.tertiary,
-                            modifier = Modifier.padding(top = 2.dp)
-                        )
                     }
                     TextButton(
                         onClick = onSelectAll,
@@ -528,14 +510,6 @@ private fun BookshelfHeader(
                                 maxLines = 1
                             )
                         }
-                        Text(
-                            text = stringResource(R.string.bookshelf_description),
-                            style = QuietEditorial.smallLabel,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.padding(top = 3.dp)
-                        )
                     }
                     ShelfSyncButton(syncing = syncing, onClick = onRefresh)
                     IconButton(
@@ -603,96 +577,7 @@ private fun ShelfSyncButton(syncing: Boolean, onClick: () -> Unit) {
 }
 
 @Composable
-private fun BookshelfSyncBanner(
-    state: FavoritePageModel.State,
-    syncing: Boolean,
-    onRefresh: () -> Unit
-) {
-    val colors = quietEditorialColors()
-    val isFailure = state is FavoritePageModel.State.Failed
-    val headline = when (state) {
-        is FavoritePageModel.State.Completed -> {
-            if (state.result.added > 0) {
-                stringResource(R.string.bookshelf_sync_complete_added)
-                    .format(state.result.added)
-            } else {
-                stringResource(R.string.bookshelf_sync_done)
-            }
-        }
-
-        is FavoritePageModel.State.Failed -> stringResource(R.string.bookshelf_sync_failed)
-        else -> stringResource(R.string.bookshelf_sync_local_first)
-    }
-    val supporting = when {
-        syncing -> stringResource(R.string.bookshelf_sync_running)
-        isFailure -> stringResource(R.string.bookshelf_sync_failure_detail)
-        else -> stringResource(R.string.bookshelf_sync_offline)
-    }
-
-    Surface(
-        modifier = Modifier.fillMaxWidth(),
-        shape = QuietEditorial.cardShape,
-        color = if (isFailure) {
-            MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.56f)
-        } else {
-            colors.softSurface
-        }
-    ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 14.dp, vertical = 11.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(10.dp)
-        ) {
-            if (syncing) {
-                CircularProgressIndicator(
-                    modifier = Modifier.size(18.dp),
-                    strokeWidth = 2.dp,
-                    color = MaterialTheme.colorScheme.primary
-                )
-            } else {
-                Icon(
-                    imageVector = if (isFailure) Icons.Filled.WarningAmber else Icons.Filled.Info,
-                    contentDescription = null,
-                    tint = if (isFailure) {
-                        MaterialTheme.colorScheme.error
-                    } else {
-                        MaterialTheme.colorScheme.primary
-                    },
-                    modifier = Modifier.size(18.dp)
-                )
-            }
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = headline,
-                    style = QuietEditorial.label.copy(fontWeight = FontWeight.SemiBold),
-                    color = MaterialTheme.colorScheme.onSurface,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                Text(
-                    text = supporting,
-                    style = QuietEditorial.smallLabel,
-                    color = if (isFailure) {
-                        MaterialTheme.colorScheme.onErrorContainer
-                    } else {
-                        MaterialTheme.colorScheme.onSurfaceVariant
-                    },
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.padding(top = 2.dp)
-                )
-            }
-            if (isFailure) {
-                TextButton(onClick = onRefresh, enabled = !syncing) {
-                    Text(stringResource(R.string.retry), style = QuietEditorial.label)
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun BookshelfCollectionSummary(visibleCount: Int) {
+private fun BookshelfCollectionSummary() {
     Column(modifier = Modifier.fillMaxWidth()) {
         Row(
             modifier = Modifier
@@ -710,14 +595,6 @@ private fun BookshelfCollectionSummary(visibleCount: Int) {
                 text = stringResource(R.string.bookshelf_order_automatic),
                 style = QuietEditorial.smallLabel,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-        if (visibleCount > 0) {
-            Text(
-                text = stringResource(R.string.bookshelf_local_only_note),
-                style = QuietEditorial.smallLabel,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(top = 2.dp, bottom = 4.dp)
             )
         }
     }
@@ -765,99 +642,50 @@ private fun BookshelfGridItem(
     enabled: Boolean,
     onClick: () -> Unit
 ) {
-    val cardShape = QuietEditorial.bookshelfCardShape
-    val cardColors = quietEditorialColors()
-    Surface(
+    val itemShape = QuietEditorial.bookshelfCardShape
+    Column(
         modifier = Modifier
             .fillMaxWidth()
             .then(
                 if (selected && editing) {
-                    Modifier.border(2.dp, MaterialTheme.colorScheme.primary, cardShape)
+                    Modifier.border(2.dp, MaterialTheme.colorScheme.primary, itemShape)
                 } else {
                     Modifier
                 }
             )
-            .clip(cardShape)
-            .clickable(enabled = enabled, onClick = onClick),
-        shape = cardShape,
-        color = if (selected && editing) {
-            MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.22f)
-        } else {
-            cardColors.cardSurface
-        }
+            .clip(itemShape)
+            .clickable(enabled = enabled, onClick = onClick)
+            .padding(if (selected && editing) 4.dp else 0.dp)
     ) {
-        Column(modifier = Modifier.padding(6.dp)) {
-            Box(modifier = Modifier.fillMaxWidth()) {
-                QuietNovelCover(
-                    coverUrl = entry.coverUrl,
-                    title = entry.title,
-                    isAdult = entry.isAdultHint(),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .aspectRatio(0.73f)
-                )
-                if (editing) {
-                    BookshelfSelectionOverlay(
-                        selected = selected,
-                        modifier = Modifier
-                            .align(Alignment.TopStart)
-                            .padding(4.dp)
-                    )
-                }
-            }
-            Text(
-                text = entry.title,
-                style = QuietEditorial.body.copy(
-                    fontWeight = FontWeight.SemiBold,
-                    lineHeight = 18.sp
-                ),
-                color = MaterialTheme.colorScheme.onSurface,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.padding(top = 6.dp, start = 2.dp, end = 2.dp)
+        Box(modifier = Modifier.fillMaxWidth()) {
+            QuietNovelCover(
+                coverUrl = entry.coverUrl,
+                title = entry.title,
+                isAdult = entry.isAdultHint(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .aspectRatio(0.73f)
             )
-            if (entry.author.isNotBlank()) {
-                Text(
-                    text = entry.author,
-                    style = QuietEditorial.smallLabel,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.padding(top = 3.dp, start = 2.dp, end = 2.dp)
-                )
-            }
-            Row(
-                modifier = Modifier.padding(top = 6.dp, start = 2.dp, end = 2.dp, bottom = 2.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(4.dp)
-            ) {
-                Box(
+            if (editing) {
+                BookshelfSelectionOverlay(
+                    selected = selected,
                     modifier = Modifier
-                        .size(7.dp)
-                        .clip(RoundedCornerShape(999.dp))
-                        .background(
-                            if (entry.syncState == BookshelfSyncState.PENDING_ADD) {
-                                MaterialTheme.colorScheme.tertiary
-                            } else {
-                                MaterialTheme.colorScheme.primary
-                            }
-                        )
-                )
-                Text(
-                    text = stringResource(
-                        if (entry.syncState == BookshelfSyncState.PENDING_ADD) {
-                            R.string.bookshelf_pending_sync
-                        } else {
-                            R.string.bookshelf_local_entry
-                        }
-                    ),
-                    style = QuietEditorial.smallLabel,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
+                        .align(Alignment.TopStart)
+                        .padding(4.dp)
                 )
             }
         }
+        Text(
+            text = entry.title,
+            style = QuietEditorial.body.copy(
+                fontWeight = FontWeight.SemiBold,
+                lineHeight = 18.sp
+            ),
+            color = MaterialTheme.colorScheme.onSurface,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.padding(top = 8.dp, start = 2.dp, end = 2.dp)
+        )
     }
 }
 

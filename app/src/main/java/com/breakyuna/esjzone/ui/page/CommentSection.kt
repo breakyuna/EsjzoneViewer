@@ -376,7 +376,7 @@ private fun CommentComposer(
     Surface(
         modifier = modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 8.dp),
+            .padding(horizontal = 12.dp, vertical = 4.dp),
         color = MaterialTheme.colorScheme.surface,
         tonalElevation = 1.dp,
         shadowElevation = 0.dp,
@@ -387,7 +387,7 @@ private fun CommentComposer(
                 .fillMaxWidth()
                 .navigationBarsPadding()
                 .imePadding()
-                .padding(horizontal = 14.dp, vertical = 12.dp)
+                .padding(horizontal = 10.dp, vertical = 6.dp)
         ) {
             if (replyAuthor != null) {
                 Row(
@@ -400,7 +400,11 @@ private fun CommentComposer(
                         color = MaterialTheme.colorScheme.primary,
                         modifier = Modifier.weight(1f)
                     )
-                    IconButton(onClick = onCancelReply, enabled = !isSubmitting) {
+                    IconButton(
+                        onClick = onCancelReply,
+                        enabled = !isSubmitting,
+                        modifier = Modifier.size(36.dp)
+                    ) {
                         Icon(
                             imageVector = Icons.Filled.Close,
                             contentDescription = stringResource(id = R.string.comment_cancel_reply)
@@ -408,21 +412,43 @@ private fun CommentComposer(
                     }
                 }
             }
-            OutlinedTextField(
-                value = draft,
-                onValueChange = onDraftChange,
+            Row(
                 modifier = Modifier.fillMaxWidth(),
-                enabled = !isSubmitting,
-                placeholder = {
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                OutlinedTextField(
+                    value = draft,
+                    onValueChange = onDraftChange,
+                    modifier = Modifier.weight(1f),
+                    enabled = !isSubmitting,
+                    placeholder = {
+                        Text(
+                            text = stringResource(id = R.string.comment_hint),
+                            style = QuietEditorial.body
+                        )
+                    },
+                    minLines = 1,
+                    maxLines = 3,
+                    shape = QuietEditorial.controlShape
+                )
+                Button(
+                    onClick = onSubmit,
+                    enabled = !isSubmitting && draft.isNotBlank(),
+                    modifier = Modifier
+                        .padding(start = 8.dp)
+                        .height(40.dp)
+                ) {
                     Text(
-                        text = stringResource(id = R.string.comment_hint),
-                        style = QuietEditorial.body
+                        text = stringResource(
+                            id = if (isSubmitting) {
+                                R.string.comment_submitting
+                            } else {
+                                R.string.comment_send
+                            }
+                        )
                     )
-                },
-                minLines = 2,
-                maxLines = 5,
-                shape = QuietEditorial.controlShape
-            )
+                }
+            }
             error?.let {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -442,23 +468,6 @@ private fun CommentComposer(
                         }
                     }
                 }
-            }
-            Button(
-                onClick = onSubmit,
-                enabled = !isSubmitting && draft.isNotBlank(),
-                modifier = Modifier
-                    .align(Alignment.End)
-                    .padding(top = 8.dp)
-            ) {
-                Text(
-                    text = stringResource(
-                        id = if (isSubmitting) {
-                            R.string.comment_submitting
-                        } else {
-                            R.string.comment_send
-                        }
-                    )
-                )
             }
         }
     }

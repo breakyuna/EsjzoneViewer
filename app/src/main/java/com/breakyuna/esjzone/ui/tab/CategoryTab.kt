@@ -226,12 +226,6 @@ private fun CategoryBrowserContent(
                                 .padding(bottom = 6.dp)
                         ) {
                             QuietSectionHeader(title = stringResource(R.string.categories))
-                            Spacer(modifier = Modifier.height(4.dp))
-                            Text(
-                                text = stringResource(R.string.categories_description),
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
                         }
                     }
 

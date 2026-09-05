@@ -160,14 +160,6 @@ fun QuietHomeHeader(
                         }
                     }
                 }
-                Text(
-                    text = stringResource(R.string.home_tagline),
-                    style = QuietEditorial.body,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.padding(top = 4.dp)
-                )
             }
 
             IconButton(

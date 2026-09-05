@@ -47,7 +47,6 @@ import com.breakyuna.esjzone.ui.component.QuietFeaturedNovelCard
 import com.breakyuna.esjzone.ui.component.QuietHomeHeader
 import com.breakyuna.esjzone.ui.component.QuietLoadingState
 import com.breakyuna.esjzone.ui.component.QuietNovelListItem
-import com.breakyuna.esjzone.ui.component.QuietNotice
 import com.breakyuna.esjzone.ui.component.QuietSectionHeader
 import com.breakyuna.esjzone.ui.navigation.LocalBaseNavigator
 import com.breakyuna.esjzone.ui.navigation.pushIfNotCurrent
@@ -98,13 +97,6 @@ object HomeTab : Tab {
                     onForum = { navigator?.pushIfNotCurrent(ForumPage) },
                     onGuestbook = { navigator?.pushIfNotCurrent(GuestbookPage) }
                 )
-
-                if (!adult) {
-                    QuietNotice(
-                        text = stringResource(R.string.home_adult_hidden),
-                        modifier = Modifier.padding(horizontal = QuietEditorial.pagePadding)
-                    )
-                }
 
                 when (val snapshot = state) {
                     HomeTabModel.State.Loading -> QuietLoadingState(

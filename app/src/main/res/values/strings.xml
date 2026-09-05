@@ -62,14 +62,12 @@
     <string name="logout_confirm">确认</string>
     <string name="field_required">此栏为必填项</string>
     <string name="categories">分类</string>
-    <string name="categories_description">按题材和主题，找到下一本想读的小说</string>
     <string name="categories_empty">当前没有可显示的分类</string>
     <string name="settings">设置</string>
     <string name="settings_showadultcontent">显示成人内容</string>
     <string name="favorites">收藏</string>
     <string name="favorites_description">收藏喜欢的作品，随时继续阅读</string>
     <string name="bookshelf">书架</string>
-    <string name="bookshelf_description">本地优先的阅读书架</string>
     <string name="bookshelf_count">共 %1$d 本</string>
     <string name="bookshelf_collection">收藏作品</string>
     <string name="bookshelf_order_automatic">自动按阅读顺序</string>
@@ -79,7 +77,6 @@
     <string name="bookshelf_empty_hint">收藏小说后，书架条目会保存在本机。</string>
     <string name="bookshelf_empty_filtered">没有可显示的书籍</string>
     <string name="bookshelf_empty_filtered_hint">被当前内容偏好隐藏的书籍仍保存在本地。</string>
-    <string name="bookshelf_local_only_note">书架保存在本地，云端同步只会补充内容。</string>
     <string name="sync_bookshelf">同步书架</string>
     <string name="delete_bookshelf">从书架移除</string>
     <string name="bookshelf_edit">编辑书架</string>
@@ -106,14 +103,7 @@
     <string name="bookshelf_sync_done">已同步书架</string>
     <string name="bookshelf_sync_added">新增 %1$d 本收藏</string>
     <string name="bookshelf_sync_failed">同步失败，当前显示本地书架</string>
-    <string name="bookshelf_sync_local_first">本地书架优先</string>
-    <string name="bookshelf_sync_running">正在后台同步云端收藏，本地书架仍保持显示。</string>
     <string name="bookshelf_sync_running_short">同步中</string>
-    <string name="bookshelf_sync_offline">云端收藏只会补充书架，不会删除本地书籍。</string>
-    <string name="bookshelf_sync_failure_detail">本地书架未改变。网络恢复后可以再次尝试。</string>
-    <string name="bookshelf_sync_complete_added">云端同步新增 %1$d 本书</string>
-    <string name="bookshelf_local_entry">已保存在本机</string>
-    <string name="bookshelf_pending_sync">等待云端同步</string>
     <string name="description">作品简介</string>
     <string name="novel_type">类型</string>
     <string name="novel_source">Web 生肉</string>
@@ -155,7 +145,6 @@
     <string name="novel_download_no_chapters">没有可下载的章节。</string>
     <string name="novel_download_background_note">下载会在后台继续，任务中断后已完成的章节仍会保留。</string>
     <string name="history">历史记录</string>
-    <string name="history_description">单击查看全部记录，双击继续上次阅读</string>
     <string name="history_local">本地历史</string>
     <string name="history_cloud">云端历史</string>
     <string name="history_local_empty">暂无本地阅读记录</string>
@@ -163,7 +152,6 @@
     <string name="history_cloud_separate">云端记录与本地设备记录彼此独立</string>
     <string name="history_load_failed">云端历史加载失败</string>
     <string name="history_local_load_failed">本地历史加载失败</string>
-    <string name="history_local_device_only">仅保存在此设备，不会上传</string>
     <string name="history_local_count">本地记录（%1$d）</string>
     <string name="history_search">搜索历史</string>
     <string name="history_search_placeholder">按书名或章节搜索</string>
@@ -176,7 +164,6 @@
     <string name="history_local_duration_hours">%1$d小时%2$d分钟</string>
     <string name="history_local_duration_minutes">%1$d分钟</string>
     <string name="history_local_duration_seconds">%1$d秒</string>
-    <string name="profile_description">管理你的收藏、阅读记录和偏好设置</string>
     <string name="profile_signed_in">已登录 ESJ Zone</string>
     <string name="profile_favorites_description">管理收藏的作品和书签</string>
     <string name="profile_history_description">从上次读到的位置继续阅读</string>
@@ -215,7 +202,6 @@
     <string name="loading_content">正在加载内容…</string>
     <string name="adult_badge">18+</string>
     <string name="home_discover">发现</string>
-    <string name="home_tagline">每日精选与实时翻译连载</string>
     <string name="home_site_status">主节点 · %1$s</string>
     <string name="home_editor_picks">编辑强推</string>
     <string name="home_recommendation_label">值得一读</string>
@@ -238,7 +224,6 @@
     <string name="commit_id">提交 Id</string>
     <string name="settings_category_network">网络与站点</string>
     <string name="settings_screen_title">应用设置</string>
-    <string name="settings_screen_subtitle">偏好配置与系统诊断</string>
     <string name="settings_network_section">站点与服务连接</string>
     <string name="settings_active_mirror">活动镜像站点</string>
     <string name="settings_primary_description">主站点 · 当前访问源</string>

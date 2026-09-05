@@ -6,9 +6,9 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.Spacer
@@ -197,7 +197,7 @@ private object TabScreen : Screen {
             // bottom bar should contribute safe-area space at this level.
             contentWindowInsets = WindowInsets(0, 0, 0, 0),
             bottomBar = {
-                QuietBottomNavigation(modifier = Modifier.navigationBarsPadding()) {
+                QuietBottomNavigation {
                     QuietBottomNavigationItem(tab = HomeTab)
                     QuietBottomNavigationItem(
                         tab = HistoryTab,
@@ -211,7 +211,8 @@ private object TabScreen : Screen {
             Surface(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(contentPadding),
+                    .padding(contentPadding)
+                    .consumeWindowInsets(contentPadding),
                 color = MaterialTheme.colorScheme.background
             ) {
                 CurrentTab()

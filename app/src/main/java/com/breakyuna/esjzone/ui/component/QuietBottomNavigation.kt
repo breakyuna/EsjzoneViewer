@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
@@ -89,6 +90,9 @@ fun QuietBottomNavigation(
     Box(
         modifier = modifier
             .fillMaxWidth()
+            // Keep the system gesture/navigation area inside the floating
+            // component so Scaffold reserves exactly the rendered bar area.
+            .navigationBarsPadding()
             .padding(horizontal = 20.dp, vertical = 10.dp),
         contentAlignment = Alignment.Center
     ) {

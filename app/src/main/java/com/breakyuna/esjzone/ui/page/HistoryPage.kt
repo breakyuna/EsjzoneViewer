@@ -96,7 +96,6 @@ import com.breakyuna.esjzone.ui.component.QuietBackHeader
 import com.breakyuna.esjzone.ui.component.QuietEmptyState
 import com.breakyuna.esjzone.ui.component.QuietErrorState
 import com.breakyuna.esjzone.ui.component.QuietLoadingState
-import com.breakyuna.esjzone.ui.component.QuietNotice
 import com.breakyuna.esjzone.ui.theme.QuietEditorial
 import com.breakyuna.esjzone.ui.navigation.LocalBaseNavigator
 import com.breakyuna.esjzone.ui.navigation.ChapterStateHolder
@@ -175,16 +174,6 @@ object HistoryPage : Screen {
                     ?: 0,
                 onSelect = { selectedPage = it }
             )
-            if (selectedPage == 0) {
-                QuietNotice(
-                    text = stringResource(R.string.history_local_device_only),
-                    modifier = Modifier.padding(
-                        horizontal = QuietEditorial.pagePadding,
-                        vertical = 8.dp
-                    )
-                )
-            }
-
             HorizontalPager(
                 state = pagerState,
                 // Page 0 is local history and page 1 is cloud history. Keep
@@ -548,12 +537,6 @@ private fun HistoryHeader(
                         )
                         actions()
                     }
-                    Text(
-                        text = stringResource(R.string.history_description),
-                        style = QuietEditorial.body,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(top = 2.dp)
-                    )
                 }
             }
         }
@@ -733,7 +716,7 @@ private fun LocalHistoryContent(
                             R.string.history_search_empty
                         }
                     ),
-                    message = stringResource(R.string.history_local_device_only),
+                    message = null,
                     icon = Icons.Filled.AutoStories,
                     modifier = Modifier.fillMaxSize()
                 )
