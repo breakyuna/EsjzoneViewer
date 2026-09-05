@@ -534,43 +534,23 @@ private fun BookshelfHeader(
 
 @Composable
 private fun ShelfSyncButton(syncing: Boolean, onClick: () -> Unit) {
-    Surface(
-        modifier = Modifier
-            .heightIn(min = 48.dp)
-            .clickable(enabled = !syncing, onClick = onClick),
-        shape = RoundedCornerShape(999.dp),
-        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.65f)
+    IconButton(
+        onClick = onClick,
+        enabled = !syncing,
+        modifier = Modifier.size(48.dp)
     ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(6.dp)
-        ) {
-            if (syncing) {
-                CircularProgressIndicator(
-                    modifier = Modifier.size(17.dp),
-                    strokeWidth = 2.dp,
-                    color = MaterialTheme.colorScheme.primary
-                )
-            } else {
-                Icon(
-                    imageVector = Icons.Filled.Refresh,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(18.dp)
-                )
-            }
-            Text(
-                text = stringResource(
-                    if (syncing) {
-                        R.string.bookshelf_sync_running_short
-                    } else {
-                        R.string.sync_bookshelf
-                    }
-                ),
-                style = QuietEditorial.smallLabel,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1
+        if (syncing) {
+            CircularProgressIndicator(
+                modifier = Modifier.size(20.dp),
+                strokeWidth = 2.dp,
+                color = MaterialTheme.colorScheme.primary
+            )
+        } else {
+            Icon(
+                imageVector = Icons.Filled.Refresh,
+                contentDescription = stringResource(R.string.sync_bookshelf),
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(24.dp)
             )
         }
     }
