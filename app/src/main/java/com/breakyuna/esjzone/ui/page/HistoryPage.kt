@@ -22,6 +22,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AutoStories
 import androidx.compose.material.icons.filled.CloudSync
@@ -30,6 +31,8 @@ import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -59,6 +62,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import cafe.adriel.voyager.core.model.StateScreenModel
@@ -178,7 +182,6 @@ object HistoryPage : Screen {
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxWidth()
-                    .padding(bottom = if (showBack) 0.dp else QuietEditorial.bottomNavigationPadding)
             ) { page ->
                 if (page == 0) {
                     LocalHistoryContent(
@@ -282,12 +285,14 @@ object HistoryPage : Screen {
                                     var expanded by remember { mutableStateOf(false) }
 
                                     if (historyNovel.vid !in deletedIds) {
-                                        Surface(
+                                        Card(
                                             modifier = Modifier
                                                 .fillMaxWidth()
                                                 .padding(horizontal = 12.dp, vertical = 6.dp),
-                                            shape = QuietEditorial.cardShape,
-                                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.38f)
+                                            shape = RoundedCornerShape(16.dp),
+                                            colors = CardDefaults.cardColors(
+                                                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                                            )
                                         ) {
                                             DropdownMenu(
                                                 expanded = expanded,
@@ -336,7 +341,7 @@ object HistoryPage : Screen {
                                                         modifier = Modifier
                                                             .width(72.dp)
                                                             .height(100.dp)
-                                                            .clip(QuietEditorial.coverShape)
+                                                            .clip(RoundedCornerShape(10.dp))
                                                             .background(MaterialTheme.colorScheme.surface)
                                                     ) {
                                                         SubcomposeAsyncImage(
@@ -373,7 +378,9 @@ object HistoryPage : Screen {
                                                     Column {
                                                         Text(
                                                             text = novel.name,
-                                                            style = QuietEditorial.cardTitle,
+                                                            style = MaterialTheme.typography.titleSmall.copy(
+                                                                fontWeight = FontWeight.SemiBold
+                                                            ),
                                                             maxLines = 2,
                                                             overflow = TextOverflow.Ellipsis,
                                                             color = MaterialTheme.colorScheme.onSurface
@@ -381,7 +388,7 @@ object HistoryPage : Screen {
                                                         Spacer(modifier = Modifier.height(6.dp))
                                                         Text(
                                                             text = historyChapter.value?.name ?: "",
-                                                            style = QuietEditorial.body,
+                                                            style = MaterialTheme.typography.bodySmall,
                                                             color = MaterialTheme.colorScheme.primary,
                                                             maxLines = 1,
                                                             overflow = TextOverflow.Ellipsis
@@ -548,7 +555,7 @@ private fun HistoryHeader(
                 leadingIcon = {
                     Icon(imageVector = Icons.Filled.Search, contentDescription = null)
                 },
-                shape = QuietEditorial.controlShape,
+                shape = RoundedCornerShape(22.dp),
                 colors = TextFieldDefaults.colors(
                     focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.48f),
                     unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.34f),
@@ -570,7 +577,7 @@ private fun HistorySourceSelector(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = QuietEditorial.pagePadding, vertical = 4.dp),
-        shape = QuietEditorial.controlShape,
+        shape = RoundedCornerShape(28.dp),
         color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.42f)
     ) {
         Row(
@@ -613,7 +620,7 @@ private fun HistorySourceItem(
         modifier = modifier
             .height(48.dp)
             .clickable(onClick = onClick),
-        shape = QuietEditorial.controlShape,
+        shape = RoundedCornerShape(24.dp),
         color = if (selected) {
             MaterialTheme.colorScheme.surface
         } else {
@@ -639,7 +646,7 @@ private fun HistorySourceItem(
             )
             Text(
                 text = label,
-                style = QuietEditorial.label,
+                style = QuietEditorial.title,
                 color = MaterialTheme.colorScheme.onSurface,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
@@ -779,12 +786,13 @@ private fun LocalHistoryRow(
         stringResource(id = R.string.history_local_percent, progress)
     }
 
-    Surface(
+    Card(
         modifier = Modifier
             .fillMaxWidth()
             .clickable(onClick = onOpen),
-        shape = QuietEditorial.cardShape,
-        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.38f)
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)
+        )
     ) {
         Row(
             modifier = Modifier
@@ -796,7 +804,7 @@ private fun LocalHistoryRow(
                 modifier = Modifier
                     .width(72.dp)
                     .height(100.dp)
-                    .clip(QuietEditorial.coverShape)
+                    .clip(RoundedCornerShape(10.dp))
                     .background(MaterialTheme.colorScheme.surface)
             ) {
                 SubcomposeAsyncImage(
@@ -834,7 +842,9 @@ private fun LocalHistoryRow(
             ) {
                 Text(
                     text = activity.novelName.ifBlank { activity.novelId },
-                    style = QuietEditorial.cardTitle,
+                    style = MaterialTheme.typography.titleMedium.copy(
+                        fontWeight = FontWeight.SemiBold
+                    ),
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis
                 )

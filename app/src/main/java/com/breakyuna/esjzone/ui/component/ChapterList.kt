@@ -169,9 +169,9 @@ private fun ChapterDetailRow(
             ),
         shape = QuietEditorial.controlShape,
         color = if (current) {
-            MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.72f)
+            MaterialTheme.colorScheme.primaryContainer
         } else {
-            MaterialTheme.colorScheme.surfaceContainerLow
+            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.26f)
         },
         contentColor = if (current) {
             MaterialTheme.colorScheme.onPrimaryContainer
@@ -240,7 +240,7 @@ private fun ChapterGroupRow(
             .clip(QuietEditorial.cardShape)
             .clickable(onClick = onToggle),
         shape = QuietEditorial.cardShape,
-        color = MaterialTheme.colorScheme.surfaceContainer
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.48f)
     ) {
         Row(
             modifier = Modifier

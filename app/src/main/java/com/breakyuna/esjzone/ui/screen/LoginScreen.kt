@@ -137,7 +137,7 @@ object LoginScreen : Screen {
                     .widthIn(max = 560.dp)
                     .fillMaxWidth()
                     .verticalScroll(rememberScrollState())
-                    .padding(horizontal = QuietEditorial.pagePadding, vertical = 32.dp),
+                    .padding(horizontal = 24.dp, vertical = 32.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(18.dp)
             ) {

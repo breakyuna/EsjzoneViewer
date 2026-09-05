@@ -175,7 +175,7 @@ fun QuietFeaturedNovelCard(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(top = 12.dp)
-                    .background(MaterialTheme.colorScheme.surfaceContainer, QuietEditorial.controlShape)
+                    .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.56f), QuietEditorial.controlShape)
                     .padding(horizontal = 10.dp, vertical = 9.dp),
                 horizontalArrangement = Arrangement.spacedBy(14.dp),
                 verticalAlignment = Alignment.CenterVertically

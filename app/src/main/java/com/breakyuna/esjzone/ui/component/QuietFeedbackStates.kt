@@ -62,8 +62,8 @@ fun QuietEmptyState(
     ) {
         Surface(
             modifier = Modifier.size(56.dp),
-            shape = QuietEditorial.controlShape,
-            color = MaterialTheme.colorScheme.surfaceContainer
+            shape = androidx.compose.foundation.shape.RoundedCornerShape(18.dp),
+            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
         ) {
             Box(contentAlignment = Alignment.Center) {
                 Icon(

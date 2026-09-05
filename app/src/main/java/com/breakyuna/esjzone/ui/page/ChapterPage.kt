@@ -687,9 +687,9 @@ class ChapterPage(
                         .align(Alignment.TopCenter)
                         .statusBarsPadding()
                         .padding(top = ReaderLayout.previousLoadingTopPadding),
-                    shape = QuietEditorial.controlShape,
-                    tonalElevation = 0.dp,
-                    shadowElevation = 0.dp
+                    shape = RoundedCornerShape(20.dp),
+                    tonalElevation = 4.dp,
+                    shadowElevation = 4.dp
                 ) {
                     Row(
                         modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
@@ -747,14 +747,14 @@ class ChapterPage(
                 ) {
                     Surface(
                         modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
-                        color = MaterialTheme.colorScheme.surfaceContainer,
+                        shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
+                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.96f),
                         shadowElevation = 0.dp
                     ) {
                         Column(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(start = 16.dp, top = 8.dp, end = 16.dp)
+                                .padding(start = 16.dp, top = 4.dp, end = 16.dp)
                         ) {
                             if (state is ChapterPageModel.State.Result) {
                                 val readerResult = state as ChapterPageModel.State.Result
@@ -916,8 +916,8 @@ class ChapterPage(
             ) {
                 Surface(
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(bottomStart = 16.dp, bottomEnd = 16.dp),
-                    color = MaterialTheme.colorScheme.surfaceContainer
+                    shape = RoundedCornerShape(bottomStart = 20.dp, bottomEnd = 20.dp),
+                    color = MaterialTheme.colorScheme.surface.copy(alpha = 0.96f)
                 ) {
                     Row(
                         modifier = Modifier
@@ -1204,7 +1204,7 @@ private fun ReaderProgressPreview(
         color = MaterialTheme.colorScheme.inverseSurface,
         contentColor = MaterialTheme.colorScheme.inverseOnSurface,
         shadowElevation = 0.dp,
-        tonalElevation = 0.dp
+        tonalElevation = 1.dp
     ) {
         Column {
             Row(
@@ -1583,7 +1583,7 @@ private fun ReaderDrawer(
                 shape = shape,
                 color = MaterialTheme.colorScheme.surface,
                 shadowElevation = 0.dp,
-                tonalElevation = 0.dp
+                tonalElevation = 1.dp
             ) {
                 content()
             }

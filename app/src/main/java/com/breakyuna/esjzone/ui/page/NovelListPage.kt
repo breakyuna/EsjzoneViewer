@@ -65,7 +65,6 @@ import com.breakyuna.esjzone.ui.component.QuietLoadingState
 import com.breakyuna.esjzone.ui.component.QuietNovelListItem
 import com.breakyuna.esjzone.ui.component.QuietSectionHeader
 import com.breakyuna.esjzone.ui.navigation.LocalBaseNavigator
-import com.breakyuna.esjzone.ui.theme.QuietEditorial
 
 private fun typeResource(type: Int): Int {
     return when (type) {
@@ -139,7 +138,7 @@ class NovelListPage(
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = QuietEditorial.pagePadding, vertical = 8.dp),
+                        .padding(horizontal = 16.dp, vertical = 6.dp),
                     verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(6.dp)
                 ) {
                     var typeExposed by remember { mutableStateOf(false) }
@@ -235,7 +234,7 @@ class NovelListPage(
 
                     LazyColumn(
                         state = listState,
-                        verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(QuietEditorial.itemGap),
+                        verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(10.dp),
                         contentPadding = androidx.compose.foundation.layout.PaddingValues(vertical = 16.dp)
                     ) {
                         item {

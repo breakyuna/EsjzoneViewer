@@ -146,7 +146,8 @@ private fun SessionExpiredBanner(
             .fillMaxWidth()
             .statusBarsPadding(),
         color = MaterialTheme.colorScheme.errorContainer,
-        shape = androidx.compose.foundation.shape.RoundedCornerShape(bottomStart = 16.dp, bottomEnd = 16.dp)
+        tonalElevation = 1.dp,
+        shape = androidx.compose.foundation.shape.RoundedCornerShape(bottomStart = 20.dp, bottomEnd = 20.dp)
     ) {
         Column(
             modifier = Modifier

@@ -17,7 +17,7 @@ fun QuietGroup(
     Surface(
         modifier = modifier.fillMaxWidth(),
         shape = QuietEditorial.cardShape,
-        color = MaterialTheme.colorScheme.surfaceContainerLow
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.28f)
     ) {
         Column(content = content)
     }

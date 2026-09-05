@@ -86,7 +86,6 @@ object HomeTab : Tab {
             Column(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(bottom = QuietEditorial.bottomNavigationPadding)
                     .verticalScroll(rememberScrollState())
                     .widthIn(max = QuietEditorial.contentMaxWidth),
                 horizontalAlignment = Alignment.CenterHorizontally
@@ -218,7 +217,7 @@ private fun HomeCollection(
                 .fillMaxWidth()
                 .padding(horizontal = QuietEditorial.pagePadding)
                 .padding(top = 12.dp),
-            verticalArrangement = Arrangement.spacedBy(QuietEditorial.itemGap)
+            verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             visible.forEach { novel ->
                 QuietNovelListItem(novel = novel, compact = true)

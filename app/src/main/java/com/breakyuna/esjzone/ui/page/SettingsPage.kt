@@ -317,7 +317,7 @@ object SettingsPage : Screen {
                     )
                 }
                 Surface(
-                    shape = QuietEditorial.cardShape,
+                    shape = QuietEditorial.largeShape,
                     color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.22f),
                     modifier = Modifier.fillMaxWidth()
                 ) {
@@ -415,11 +415,11 @@ private fun SettingsSection(
         }
         Surface(
             modifier = Modifier.fillMaxWidth(),
-            shape = QuietEditorial.cardShape,
+            shape = QuietEditorial.largeShape,
             color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.36f)
         ) {
             Column(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 16.dp),
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 16.dp),
                 content = content
             )
         }
@@ -520,7 +520,7 @@ private fun ThemeFamily(
                     onClick = { onSelect(type) },
                     shape = QuietEditorial.controlShape,
                     color = type.baseColor,
-                    modifier = Modifier.size(48.dp)
+                    modifier = Modifier.size(40.dp)
                 ) {
                     Box(contentAlignment = Alignment.Center) {
                         if (selected == type) Icon(Icons.Filled.Check, contentDescription = null, tint = Color.White)
@@ -574,13 +574,13 @@ private fun CacheRow(
         Button(
             onClick = onAction,
             enabled = !busy,
-            shape = QuietEditorial.controlShape,
+            shape = QuietEditorial.largeShape,
             contentPadding = ButtonDefaults.ContentPadding,
             colors = ButtonDefaults.buttonColors(
                 containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.72f),
                 contentColor = MaterialTheme.colorScheme.primary
             ),
-            modifier = Modifier.widthIn(min = 96.dp).height(48.dp)
+            modifier = Modifier.widthIn(min = 96.dp)
         ) { Text(actionLabel, maxLines = 1, overflow = TextOverflow.Ellipsis) }
     }
 }
@@ -597,11 +597,11 @@ private fun SettingsLinkRow(
 ) {
     val color = if (destructive) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface
     Surface(onClick = onClick, enabled = enabled, color = Color.Transparent, modifier = Modifier.fillMaxWidth()) {
-        Row(modifier = Modifier.padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+        Row(modifier = Modifier.padding(vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
             Surface(
                 shape = CircleShape,
                 color = if (destructive) MaterialTheme.colorScheme.errorContainer else MaterialTheme.colorScheme.primaryContainer,
-                modifier = Modifier.size(48.dp)
+                modifier = Modifier.size(44.dp)
             ) {
                 Box(contentAlignment = Alignment.Center) { Icon(icon, contentDescription = null, tint = color, modifier = Modifier.size(24.dp)) }
             }

@@ -1,7 +1,6 @@
 package com.breakyuna.esjzone.ui.page
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -345,10 +344,7 @@ private fun CommentSection(
                 },
                 onLast = { selectedPageIndex = pages.lastIndex }
             )
-            HorizontalDivider(
-                thickness = QuietEditorial.hairline,
-                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
-            )
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
             pages[safePageIndex].forEach { comment ->
                 CommentCard(
                     comment = comment,
@@ -380,16 +376,11 @@ private fun CommentComposer(
     Surface(
         modifier = modifier
             .fillMaxWidth()
-            .padding(horizontal = QuietEditorial.pagePadding, vertical = 4.dp)
-            .border(
-                width = QuietEditorial.hairline,
-                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
-                shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp)
-            ),
-        color = MaterialTheme.colorScheme.surfaceContainer,
-        tonalElevation = 0.dp,
+            .padding(horizontal = 12.dp, vertical = 4.dp),
+        color = MaterialTheme.colorScheme.surface,
+        tonalElevation = 1.dp,
         shadowElevation = 0.dp,
-        shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp)
+        shape = QuietEditorial.largeShape
     ) {
         Column(
             modifier = Modifier
@@ -412,7 +403,7 @@ private fun CommentComposer(
                     IconButton(
                         onClick = onCancelReply,
                         enabled = !isSubmitting,
-                        modifier = Modifier.size(48.dp)
+                        modifier = Modifier.size(36.dp)
                     ) {
                         Icon(
                             imageVector = Icons.Filled.Close,
@@ -445,7 +436,7 @@ private fun CommentComposer(
                     enabled = !isSubmitting && draft.isNotBlank(),
                     modifier = Modifier
                         .padding(start = 8.dp)
-                        .height(48.dp)
+                        .height(40.dp)
                 ) {
                     Text(
                         text = stringResource(
@@ -532,8 +523,8 @@ private fun CommentCard(comment: Comment, onReply: (() -> Unit)?) {
     Surface(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = QuietEditorial.pagePadding, vertical = 6.dp),
-        shape = QuietEditorial.cardShape,
+            .padding(horizontal = 16.dp, vertical = 7.dp),
+        shape = RoundedCornerShape(18.dp),
         color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.28f)
     ) {
         Row(

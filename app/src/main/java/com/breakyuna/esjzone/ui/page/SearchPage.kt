@@ -1,6 +1,5 @@
 package com.breakyuna.esjzone.ui.page
 
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.imePadding
@@ -69,9 +68,7 @@ class SearchPage(private val keyword: String) : Screen {
         LazyColumn(
             modifier = Modifier
                 .fillMaxWidth()
-                .imePadding(),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-            contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 16.dp)
+                .imePadding()
         ) {
             item(key = "search-app-bar") {
                 QuietBackHeader(
@@ -148,7 +145,7 @@ fun LazyListScope.searchResultItems(
             items(visible, key = { "search-book:${it.url.ifBlank { it.name }}" }) {
                 QuietNovelListItem(
                     novel = it,
-                    modifier = Modifier.padding(horizontal = 16.dp)
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 5.dp)
                 )
             }
             if (model.currentPage <= state.requester.pages()) {

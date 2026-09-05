@@ -17,7 +17,6 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.size
@@ -210,7 +209,7 @@ object LogsPage : Screen {
                         }
                     },
                     singleLine = true,
-                    shape = QuietEditorial.controlShape,
+                    shape = RoundedCornerShape(12.dp),
                     modifier = Modifier.fillMaxWidth()
                 )
 
@@ -391,7 +390,7 @@ private fun LogItemCard(entry: LogEntry) {
     val (badgeBgColor, badgeTextColor) = when (entry.level) {
         LogLevel.CRASH -> MaterialTheme.colorScheme.error to MaterialTheme.colorScheme.onError
         LogLevel.ERROR -> MaterialTheme.colorScheme.errorContainer to MaterialTheme.colorScheme.onErrorContainer
-        LogLevel.WARN -> MaterialTheme.colorScheme.tertiaryContainer to MaterialTheme.colorScheme.onTertiaryContainer
+        LogLevel.WARN -> Color(0xFFF9A825) to Color.Black
         LogLevel.INFO -> MaterialTheme.colorScheme.primaryContainer to MaterialTheme.colorScheme.onPrimaryContainer
         LogLevel.DEBUG -> MaterialTheme.colorScheme.surfaceVariant to MaterialTheme.colorScheme.onSurfaceVariant
     }
@@ -483,7 +482,6 @@ private fun LogItemCard(entry: LogEntry) {
                         .fillMaxWidth()
                         .clip(RoundedCornerShape(6.dp))
                         .clickable { expanded = !expanded }
-                        .heightIn(min = 48.dp)
                         .padding(vertical = 4.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
@@ -508,12 +506,12 @@ private fun LogItemCard(entry: LogEntry) {
                             clipboard.setPrimaryClip(clip)
                             Toast.makeText(context, context.getString(R.string.logs_copied_toast), Toast.LENGTH_SHORT).show()
                         },
-                        modifier = Modifier.size(48.dp)
+                        modifier = Modifier.size(24.dp)
                     ) {
                         Icon(
                             imageVector = Icons.Filled.ContentCopy,
                             contentDescription = stringResource(R.string.logs_copy_stacktrace),
-                            modifier = Modifier.size(20.dp),
+                            modifier = Modifier.size(16.dp),
                             tint = MaterialTheme.colorScheme.outline
                         )
                     }
