@@ -49,14 +49,14 @@ fun QuietTag(
     text: String,
     modifier: Modifier = Modifier,
     color: Color = MaterialTheme.colorScheme.onSurfaceVariant,
-    containerColor: Color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.65f)
+    containerColor: Color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.42f)
 ) {
     Surface(modifier = modifier, shape = QuietEditorial.badgeShape, color = containerColor) {
         Text(
             text = text,
             style = QuietEditorial.smallLabel,
             color = color,
-            modifier = Modifier.padding(horizontal = 7.dp, vertical = 4.dp)
+            modifier = Modifier.padding(horizontal = 9.dp, vertical = 5.dp)
         )
     }
 }
@@ -256,3 +256,4 @@ private fun formatCount(count: Int): String = when {
     count >= 1_000 -> "%.1fK".format(count / 1_000.0)
     else -> count.toString()
 }
+
