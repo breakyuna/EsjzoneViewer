@@ -63,6 +63,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -77,6 +78,7 @@ import com.breakyuna.esjzone.network.EsjzoneUrls
 import com.breakyuna.esjzone.network.LocalAuthorization
 import com.breakyuna.esjzone.network.LoadFailureKind
 import com.breakyuna.esjzone.novellibrary.component.ChapterItem
+import com.breakyuna.esjzone.novellibrary.component.TextComponent
 import com.breakyuna.esjzone.novellibrary.component.VisibleChapterItem
 import com.breakyuna.esjzone.novellibrary.component.initiallyExpandedChapterKeys
 import com.breakyuna.esjzone.novellibrary.component.visibleChapterRows
@@ -358,12 +360,21 @@ private fun NovelDetailContent(
     val descriptionPreview = remember(detailed.description) {
         detailed.description.preview(360)
     }
+    val descriptionText = remember(detailed.description) {
+        detailed.description.preview(Int.MAX_VALUE)
+    }
+    val hasRichDescription = remember(detailed.description) {
+        detailed.description.components.any { it !is TextComponent }
+    }
+    val showDescriptionToggle = descriptionText != descriptionPreview ||
+        (hasRichDescription && descriptionPreview.isNotBlank())
     val previewChapters = remember(detailed.chapterList, targetChapter) {
         buildList {
             targetChapter?.let(::add)
             orderedChapters.lastOrNull()?.let(::add)
         }.distinctBy { it.url }
     }
+    val latestChapter = orderedChapters.lastOrNull()
     val onChapterOpen: (Chapter) -> Unit = { chapter ->
         historyState.value = chapter
         hasHistory.value = true
@@ -380,6 +391,11 @@ private fun NovelDetailContent(
         )
     }
 
+    val density = LocalDensity.current
+    var composerHeightPx by remember { mutableStateOf(0) }
+    val composerBottomPadding = with(density) { composerHeightPx.toDp() }
+        .coerceAtLeast(24.dp)
+
     Column(modifier = modifier.fillMaxWidth()) {
         LazyColumn(
             modifier = Modifier
@@ -387,7 +403,7 @@ private fun NovelDetailContent(
                 .fillMaxWidth()
                 .widthIn(max = QuietEditorial.contentMaxWidth)
                 .align(Alignment.CenterHorizontally),
-            contentPadding = PaddingValues(bottom = 24.dp)
+            contentPadding = PaddingValues(bottom = composerBottomPadding)
         ) {
             item(key = "detail-hero") {
                 NovelDetailHero(
@@ -412,7 +428,7 @@ private fun NovelDetailContent(
                     NovelDetailTags(
                         tags = detailed.tags,
                         modifier = Modifier
-                            .padding(horizontal = 16.dp, vertical = 16.dp)
+                            .padding(horizontal = 16.dp, vertical = 10.dp)
                             .widthIn(max = QuietEditorial.contentMaxWidth)
                     )
                 }
@@ -423,11 +439,11 @@ private fun NovelDetailContent(
                     modifier = Modifier
                         .padding(horizontal = 16.dp, vertical = 4.dp)
                         .widthIn(max = QuietEditorial.contentMaxWidth),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
                         Button(
                             enabled = targetChapter != null,
@@ -447,10 +463,10 @@ private fun NovelDetailContent(
                                 }
                             },
                             modifier = Modifier
-                                .weight(1.3f)
-                                .heightIn(min = 52.dp),
-                            shape = QuietEditorial.controlShape,
-                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 12.dp)
+                                .weight(1f)
+                                .heightIn(min = 54.dp),
+                            shape = QuietEditorial.cardShape,
+                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 8.dp)
                         ) {
                             Icon(
                                 imageVector = Icons.AutoMirrored.Filled.MenuBook,
@@ -470,9 +486,9 @@ private fun NovelDetailContent(
                             onClick = onToggleFavorite,
                             modifier = Modifier
                                 .weight(1f)
-                                .heightIn(min = 52.dp),
-                            shape = QuietEditorial.controlShape,
-                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 12.dp)
+                                .heightIn(min = 54.dp),
+                            shape = QuietEditorial.cardShape,
+                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 8.dp)
                         ) {
                             Icon(
                                 imageVector = if (favorite) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder,
@@ -499,14 +515,18 @@ private fun NovelDetailContent(
                     }
                     Row(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
                         NovelDownloadActions(
                             novel = detailed,
                             authorization = authorization,
                             onExportTxt = onExportTxt,
                             onExportEpub = onExportEpub,
-                            modifier = Modifier.weight(1f)
+                            modifier = if (detailed.forumUrl.isBlank()) {
+                                Modifier.fillMaxWidth()
+                            } else {
+                                Modifier.weight(1f)
+                            }
                         )
                         if (detailed.forumUrl.isNotBlank()) {
                             OutlinedButton(
@@ -515,9 +535,9 @@ private fun NovelDetailContent(
                                 },
                                 modifier = Modifier
                                     .weight(1f)
-                                    .heightIn(min = 52.dp),
-                                shape = QuietEditorial.controlShape,
-                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 12.dp)
+                                    .heightIn(min = 54.dp),
+                                shape = QuietEditorial.cardShape,
+                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 8.dp)
                             ) {
                                 Icon(
                                     imageVector = Icons.Filled.Forum,
@@ -545,7 +565,7 @@ private fun NovelDetailContent(
                     ) {
                         NovelDetailSectionHeading(title = stringResource(R.string.description))
                         Spacer(modifier = Modifier.height(8.dp))
-                        if (descriptionExpanded) {
+                        if (descriptionExpanded || descriptionPreview.isBlank()) {
                             Description(
                                 description = detailed.description,
                                 modifier = Modifier.fillMaxWidth()
@@ -559,21 +579,23 @@ private fun NovelDetailContent(
                                 overflow = TextOverflow.Ellipsis
                             )
                         }
-                        TextButton(
-                            onClick = {
-                                onDescriptionExpandedChange(!descriptionExpanded)
-                            },
-                            modifier = Modifier.align(Alignment.End)
-                        ) {
-                            Text(
-                                text = stringResource(
-                                    if (descriptionExpanded) {
-                                        R.string.novel_description_collapse
-                                    } else {
-                                        R.string.novel_description_expand
-                                    }
+                        if (showDescriptionToggle) {
+                            TextButton(
+                                onClick = {
+                                    onDescriptionExpandedChange(!descriptionExpanded)
+                                },
+                                modifier = Modifier.align(Alignment.End)
+                            ) {
+                                Text(
+                                    text = stringResource(
+                                        if (descriptionExpanded) {
+                                            R.string.novel_description_collapse
+                                        } else {
+                                            R.string.novel_description_expand
+                                        }
+                                    )
                                 )
-                            )
+                            }
                         }
                     }
                 }
@@ -622,20 +644,40 @@ private fun NovelDetailContent(
                         modifier = Modifier
                             .padding(horizontal = 16.dp, vertical = 8.dp)
                             .widthIn(max = QuietEditorial.contentMaxWidth),
-                        verticalArrangement = Arrangement.spacedBy(2.dp)
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
                         previewChapters.forEachIndexed { index, chapter ->
-                            ChapterListRow(
-                                row = VisibleChapterItem(
-                                    item = ChapterItem(chapter),
-                                    key = "chapter-preview:${chapter.url}:$index",
-                                    depth = 0
-                                ),
-                                currentChapter = historyState.value,
-                                hasHistory = hasHistory.value,
-                                onChapterOpen = onChapterOpen,
-                                onGroupToggle = {}
-                            )
+                            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                when {
+                                    hasHistory.value && targetChapter?.url == chapter.url -> {
+                                        Text(
+                                            text = stringResource(R.string.novel_last_read),
+                                            style = QuietEditorial.smallLabel,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            modifier = Modifier.padding(start = 4.dp)
+                                        )
+                                    }
+                                    latestChapter?.url == chapter.url -> {
+                                        Text(
+                                            text = stringResource(R.string.novel_latest_chapter),
+                                            style = QuietEditorial.smallLabel,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            modifier = Modifier.padding(start = 4.dp)
+                                        )
+                                    }
+                                }
+                                ChapterListRow(
+                                    row = VisibleChapterItem(
+                                        item = ChapterItem(chapter),
+                                        key = "chapter-preview:${chapter.url}:$index",
+                                        depth = 0
+                                    ),
+                                    currentChapter = historyState.value,
+                                    hasHistory = hasHistory.value,
+                                    onChapterOpen = onChapterOpen,
+                                    onGroupToggle = {}
+                                )
+                            }
                         }
                     }
                 }
@@ -681,7 +723,10 @@ private fun NovelDetailContent(
                 }
             }
         }
-        CommentComposerHost(model = commentModel)
+        CommentComposerHost(
+            model = commentModel,
+            onHeightChanged = { composerHeightPx = it }
+        )
     }
 }
 
@@ -800,11 +845,11 @@ private fun NovelDownloadActions(
         }
     }
 
-    FilledTonalButton(
+    OutlinedButton(
         onClick = { showSheet = true },
-        modifier = modifier.heightIn(min = 52.dp),
-        shape = QuietEditorial.controlShape,
-        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 12.dp)
+        modifier = modifier.heightIn(min = 54.dp),
+        shape = QuietEditorial.cardShape,
+        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 8.dp)
     ) {
         Icon(
             imageVector = if (downloaded?.complete == true) Icons.Filled.DownloadDone else Icons.Filled.Download,
@@ -1103,3 +1148,4 @@ private fun openExternal(context: Context, rawUrl: String) {
         }
     }
 }
+
