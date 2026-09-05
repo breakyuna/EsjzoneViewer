@@ -189,7 +189,7 @@ private fun directSiblingCount(
 private fun Element.isStatIcon(): Boolean {
     val dataName = attr("data-feather").ifBlank { attr("data-icon") }
     if (dataName in anyStatIconTokens) return true
-    return classNames.any { className ->
+    return classNames().any { className ->
         anyStatIconTokens.any { token ->
             className.contains("icon-$token") || className.contains("feather-$token")
         }
