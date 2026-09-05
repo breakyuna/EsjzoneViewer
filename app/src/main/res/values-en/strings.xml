@@ -112,6 +112,9 @@
     <string name="novel_views">%1$d views</string>
     <string name="novel_likes">%1$d likes</string>
     <string name="novel_words">%1$d words</string>
+    <string name="novel_views_label">Views</string>
+    <string name="novel_likes_label">Likes</string>
+    <string name="novel_words_label">Words</string>
     <string name="novel_favorite">Favorite</string>
     <string name="novel_favorited">Favorited</string>
     <string name="novel_favorite_pending">Syncing favorite…</string>
@@ -120,6 +123,8 @@
     <string name="novel_more_actions">More novel actions</string>
     <string name="novel_open_forum">Open forum</string>
     <string name="novel_chapter_count">%1$d chapters</string>
+    <string name="novel_last_read">Last read</string>
+    <string name="novel_latest_chapter">Latest chapter</string>
     <string name="novel_show_all_chapters">Show all chapters</string>
     <string name="novel_show_fewer_chapters">Show fewer chapters</string>
     <string name="novel_description_expand">Read full description</string>
@@ -381,3 +386,4 @@
     <string name="login_site_title">Choose a site</string>
     <string name="login_account_title">Account</string>
 </resources>
+
