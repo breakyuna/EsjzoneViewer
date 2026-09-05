@@ -1,29 +1,23 @@
 package com.breakyuna.esjzone.ui.page
 
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.KeyboardArrowDown
-import androidx.compose.material.icons.filled.RemoveRedEye
 import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.ThumbUp
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -58,15 +52,12 @@ import com.breakyuna.esjzone.network.loadFailureKind
 import com.breakyuna.esjzone.network.PageableRequester
 import com.breakyuna.esjzone.network.features.search
 import com.breakyuna.esjzone.novellibrary.novel.CoveredNovel
-import com.breakyuna.esjzone.ui.component.QuietMetric
 import com.breakyuna.esjzone.ui.component.QuietEmptyState
 import com.breakyuna.esjzone.ui.component.QuietErrorState
 import com.breakyuna.esjzone.ui.component.QuietLoadingState
-import com.breakyuna.esjzone.ui.component.QuietNovelCover
+import com.breakyuna.esjzone.ui.component.QuietNovelPreviewCard
 import com.breakyuna.esjzone.ui.navigation.LocalBaseNavigator
-import com.breakyuna.esjzone.ui.navigation.pushIfNotCurrent
 import com.breakyuna.esjzone.ui.theme.QuietEditorial
-import com.breakyuna.esjzone.ui.theme.quietEditorialColors
 import com.breakyuna.esjzone.util.AppLogger
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -178,8 +169,10 @@ fun LazyListScope.searchResultItems(
             items(visible, key = { novel ->
                 "search-book:${novel.url.trim().ifBlank { novel.name.trim() }}"
             }) { novel ->
-                SearchResultRow(
+                QuietNovelPreviewCard(
                     novel = novel,
+                    compact = false,
+                    showLatestChapter = false,
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 5.dp)
                 )
             }
@@ -391,74 +384,6 @@ private fun SearchResultsHeader(
             )
         }
     }
-}
-
-/** A result row intentionally renders only fields guaranteed by CoveredNovel. */
-@Composable
-private fun SearchResultRow(
-    novel: CoveredNovel,
-    modifier: Modifier = Modifier
-) {
-    val navigator = LocalBaseNavigator.current
-    val editorialColors = quietEditorialColors()
-
-    Surface(
-        modifier = modifier
-            .fillMaxWidth()
-            .clickable {
-                navigator?.pushIfNotCurrent(NovelPage(novel))
-            },
-        shape = QuietEditorial.cardShape,
-        color = editorialColors.cardSurface
-    ) {
-        Row(
-            modifier = Modifier.padding(12.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-            verticalAlignment = Alignment.Top
-        ) {
-            QuietNovelCover(
-                coverUrl = novel.coverUrl,
-                title = novel.name,
-                modifier = Modifier.size(width = 88.dp, height = 120.dp),
-                isAdult = novel.isAdult
-            )
-            Column(
-                modifier = Modifier
-                    .weight(1f)
-                    .heightIn(min = 120.dp),
-                verticalArrangement = Arrangement.SpaceBetween
-            ) {
-                Text(
-                    text = novel.name,
-                    style = QuietEditorial.cardTitle,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    maxLines = 4,
-                    overflow = TextOverflow.Ellipsis
-                )
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(14.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    QuietMetric(
-                        icon = Icons.Filled.RemoveRedEye,
-                        value = formatSearchCount(novel.views),
-                        tint = MaterialTheme.colorScheme.primary
-                    )
-                    QuietMetric(
-                        icon = Icons.Filled.ThumbUp,
-                        value = formatSearchCount(novel.likes),
-                        tint = MaterialTheme.colorScheme.tertiary
-                    )
-                }
-            }
-        }
-    }
-}
-
-private fun formatSearchCount(count: Int): String = when {
-    count >= 1_000_000 -> "%.1fM".format(count / 1_000_000.0)
-    count >= 1_000 -> "%.1fK".format(count / 1_000.0)
-    else -> count.toString()
 }
 
 class SearchPageModel(

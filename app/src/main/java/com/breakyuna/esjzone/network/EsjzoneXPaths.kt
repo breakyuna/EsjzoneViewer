@@ -5,6 +5,42 @@ import us.codecraft.xsoup.Xsoup
 
 object EsjzoneXPaths {
 
+    /**
+     * Semantic selectors shared by the home, search and list card templates.
+     *
+     * The old card expressions below are kept for source compatibility with
+     * callers that still use them, but card parsing must prefer these class
+     * and icon based selectors.  The site has inserted extra wrapper divs in
+     * the past, so positional `div[n]` expressions are deliberately avoided
+     * for fields that can be identified by their meaning.
+     */
+    object NovelCard {
+        const val TitleLinkSelector = "h5.card-title a, h5 a[href*='/detail/']"
+        const val ImageSelector =
+            "img, [data-src], [data-original], [data-lazy-src], [data-original-src]"
+        const val LatestLinkSelector = ".card-ep a"
+        const val AuthorLinkSelector = ".card-author a"
+        const val StatsSelector = ".card-other"
+        const val R18BadgeSelector = ".product-badge.top"
+
+        val TitleLink: XPathEvaluator = Xsoup.compile(
+            "//*[contains(concat(' ', normalize-space(@class), ' '), ' card-title ')]//a"
+        )
+        val LatestLink: XPathEvaluator = Xsoup.compile(
+            "//*[contains(concat(' ', normalize-space(@class), ' '), ' card-ep ')]//a"
+        )
+        val AuthorLink: XPathEvaluator = Xsoup.compile(
+            "//*[contains(concat(' ', normalize-space(@class), ' '), ' card-author ')]//a"
+        )
+        val Stats: XPathEvaluator = Xsoup.compile(
+            "//*[contains(concat(' ', normalize-space(@class), ' '), ' card-other ')]"
+        )
+        val R18Badge: XPathEvaluator = Xsoup.compile(
+            "//*[contains(concat(' ', normalize-space(@class), ' '), ' product-badge ')" +
+                " and contains(concat(' ', normalize-space(@class), ' '), ' top ')]"
+        )
+    }
+
     object Home {
 
         object RecentlyUpdateTranslated {
