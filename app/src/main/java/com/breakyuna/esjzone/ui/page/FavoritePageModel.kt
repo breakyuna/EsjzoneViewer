@@ -1,8 +1,7 @@
 package com.breakyuna.esjzone.ui.page
 import com.breakyuna.esjzone.app.PresentationAccess
 
-import cafe.adriel.voyager.core.model.StateScreenModel
-import cafe.adriel.voyager.core.model.screenModelScope
+import com.breakyuna.esjzone.ui.navigation.AppStateViewModel
 import com.breakyuna.esjzone.database.BookshelfRepository
 import com.breakyuna.esjzone.database.BookshelfSyncResult
 import com.breakyuna.esjzone.database.entity.BookshelfEntry
@@ -18,7 +17,7 @@ import kotlinx.coroutines.launch
 
 /** Owns bookshelf synchronization and deletion jobs for the page. */
 class FavoritePageModel(private val authorization: Authorization) :
-    StateScreenModel<FavoritePageModel.State>(State.Idle) {
+    AppStateViewModel<FavoritePageModel.State>(State.Idle) {
     val entries = BookshelfRepository.observe(authorization)
 
     private val _downloadedBookKeys = MutableStateFlow<Set<String>>(emptySet())

@@ -1,26 +1,22 @@
 package com.breakyuna.esjzone.ui.screen
 import com.breakyuna.esjzone.app.PresentationAccess
 
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.Button
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -30,33 +26,23 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
-import cafe.adriel.voyager.core.screen.Screen
-import cafe.adriel.voyager.core.screen.ScreenKey
+import com.breakyuna.esjzone.ui.navigation.AppDestination
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import com.breakyuna.esjzone.R
-import cafe.adriel.voyager.navigator.Navigator
-import cafe.adriel.voyager.navigator.tab.CurrentTab
-import cafe.adriel.voyager.navigator.tab.TabNavigator
 import com.breakyuna.esjzone.network.Authorization
 import com.breakyuna.esjzone.network.LocalAuthorization
 import com.breakyuna.esjzone.network.features.AuthorizationCheckResult
 import com.breakyuna.esjzone.network.features.checkAuthorization
-import com.breakyuna.esjzone.ui.navigation.CoverTransition
 import com.breakyuna.esjzone.ui.navigation.LocalAppNavigator
-import com.breakyuna.esjzone.ui.navigation.LocalBaseNavigator
-import com.breakyuna.esjzone.ui.tab.FavoriteTab
-import com.breakyuna.esjzone.ui.tab.HistoryTab
-import com.breakyuna.esjzone.ui.tab.HomeTab
-import com.breakyuna.esjzone.ui.tab.ProfileTab
-import com.breakyuna.esjzone.ui.component.QuietBottomNavigation
-import com.breakyuna.esjzone.ui.component.QuietBottomNavigationItem
-import com.breakyuna.esjzone.ui.theme.QuietEditorial
+import com.breakyuna.esjzone.ui.navigation.AdaptiveAppShell
+import com.breakyuna.esjzone.ui.designsystem.AppSpacing
+import com.breakyuna.esjzone.ui.designsystem.AppTypography
 
-class MainScreen(val authorization: Authorization) : Screen {
+class MainScreen(val authorization: Authorization) : AppDestination {
 
-    override val key: ScreenKey = "MainScreen"
+    override val key: String = "MainScreen"
 
     @Composable
     override fun Content() {
@@ -94,41 +80,30 @@ class MainScreen(val authorization: Authorization) : Screen {
             }
         }
 
-        CompositionLocalProvider(value = LocalAuthorization provides authorization) {
+        androidx.compose.runtime.CompositionLocalProvider(
+            LocalAuthorization provides authorization
+        ) {
             Column(modifier = Modifier.fillMaxSize()) {
-                if (authorizationCheckResult == AuthorizationCheckResult.UNAUTHORIZED &&
-                    !sessionPromptDismissed
-                ) {
+                val showSessionBanner = authorizationCheckResult ==
+                    AuthorizationCheckResult.UNAUTHORIZED && !sessionPromptDismissed
+                if (showSessionBanner) {
                     SessionExpiredBanner(
                         onRelogin = {
                             appNavigator?.replace(LoginScreen) ?: run {
                                 sessionPromptDismissed = true
                             }
                         },
-                        onContinueOffline = {
-                            sessionPromptDismissed = true
-                        }
+                        onContinueOffline = { sessionPromptDismissed = true }
                     )
                 }
-
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .weight(1f)
-                ) {
-                    // Keep the tab navigator above the page stack.  TabScreen is
-                    // replaced while a detail/reader page is open; placing the tab
-                    // navigator inside it would recreate it with HomeTab on return.
-                    TabNavigator(tab = HomeTab) {
-                        Navigator(screen = TabScreen) { navigator ->
-                            CoverTransition(navigator = navigator) { screen ->
-                                CompositionLocalProvider(value = LocalBaseNavigator provides navigator) {
-                                    screen.Content()
-                                }
-                            }
-                        }
-                    }
-                }
+                AdaptiveAppShell(
+                    authorization = authorization,
+                    rootNavigator = appNavigator ?: error("Navigation 3 root is not provided"),
+                    modifier = Modifier.weight(1f),
+                    // The banner owns the status-bar inset while it is
+                    // visible; the shell owns it in every other state.
+                    topInsetConsumed = showSessionBanner
+                )
             }
         }
     }
@@ -150,19 +125,19 @@ private fun SessionExpiredBanner(
     ) {
         Column(
             modifier = Modifier
-                .widthIn(max = QuietEditorial.contentMaxWidth)
+                .widthIn(max = 960.dp)
                 .fillMaxWidth()
-                .padding(horizontal = QuietEditorial.pagePadding, vertical = 12.dp)
+                .padding(horizontal = AppSpacing.lg, vertical = AppSpacing.sm)
         ) {
             Text(
                 text = stringResource(R.string.session_expired_title),
-                style = QuietEditorial.title,
+                style = AppTypography.titleMedium,
                 color = MaterialTheme.colorScheme.onErrorContainer
             )
             Spacer(modifier = Modifier.height(4.dp))
             Text(
                 text = stringResource(R.string.session_expired_message),
-                style = QuietEditorial.body,
+                style = AppTypography.bodyMedium,
                 color = MaterialTheme.colorScheme.onErrorContainer
             )
             Row(
@@ -179,42 +154,4 @@ private fun SessionExpiredBanner(
             }
         }
     }
-}
-
-private object TabScreen : Screen {
-    private fun readResolve(): Any = TabScreen
-
-    @Composable
-    override fun Content() {
-        Scaffold(
-            containerColor = MaterialTheme.colorScheme.background,
-            contentWindowInsets = WindowInsets(0, 0, 0, 0)
-        ) { contentPadding ->
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(contentPadding)
-            ) {
-                Surface(
-                    modifier = Modifier.fillMaxSize(),
-                    color = MaterialTheme.colorScheme.background
-                ) {
-                    CurrentTab()
-                }
-
-                QuietBottomNavigation(
-                    modifier = Modifier.align(Alignment.BottomCenter)
-                ) {
-                    QuietBottomNavigationItem(tab = HomeTab)
-                    QuietBottomNavigationItem(
-                        tab = HistoryTab,
-                        onDoubleClick = HistoryTab::requestOpenLastReading
-                    )
-                    QuietBottomNavigationItem(tab = FavoriteTab)
-                    QuietBottomNavigationItem(tab = ProfileTab)
-                }
-            }
-        }
-    }
-
 }

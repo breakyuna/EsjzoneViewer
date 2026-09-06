@@ -2,7 +2,6 @@ package com.breakyuna.esjzone.ui.page
 import com.breakyuna.esjzone.app.PresentationAccess
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -33,13 +32,14 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.EmojiEmotions
 import androidx.compose.material.icons.filled.FirstPage
 import androidx.compose.material.icons.filled.FormatQuote
-import androidx.compose.material.icons.filled.Forum
 import androidx.compose.material.icons.filled.LastPage
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -47,6 +47,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -57,21 +58,15 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.key
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.SolidColor
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-import cafe.adriel.voyager.core.model.StateScreenModel
-import cafe.adriel.voyager.core.model.screenModelScope
-import coil.compose.SubcomposeAsyncImage
-import coil.request.ImageRequest
+import com.breakyuna.esjzone.ui.navigation.AppStateViewModel
 import com.breakyuna.esjzone.R
 import com.breakyuna.esjzone.network.Authorization
 import com.breakyuna.esjzone.network.EsjzoneUrls
@@ -83,17 +78,52 @@ import com.breakyuna.esjzone.network.features.submitForumComment
 import com.breakyuna.esjzone.novellibrary.novel.COMMENT_PAGE_SIZE
 import com.breakyuna.esjzone.novellibrary.novel.Comment
 import com.breakyuna.esjzone.ui.navigation.LocalBaseNavigator
-import com.breakyuna.esjzone.ui.theme.QuietEditorial
-import com.breakyuna.esjzone.ui.component.QuietEmptyState
-import com.breakyuna.esjzone.ui.component.QuietErrorState
-import com.breakyuna.esjzone.ui.component.QuietLoadingState
-import com.breakyuna.esjzone.ui.component.QuietSectionHeader
+import com.breakyuna.esjzone.ui.designsystem.AppImage
+import com.breakyuna.esjzone.ui.designsystem.AppShapes
+import com.breakyuna.esjzone.ui.designsystem.AppSpacing
+import com.breakyuna.esjzone.ui.designsystem.AppTouchTarget
+import com.breakyuna.esjzone.ui.designsystem.AppTypography
+import com.breakyuna.esjzone.ui.designsystem.appStateColors
+import com.breakyuna.esjzone.ui.product.EmptyState
+import com.breakyuna.esjzone.ui.product.ErrorState
+import com.breakyuna.esjzone.ui.product.LoadingSkeleton
+import com.breakyuna.esjzone.ui.product.OfflineState
+import com.breakyuna.esjzone.ui.product.ProductComponentContentTypes
+import com.breakyuna.esjzone.ui.product.stableProductKey
 import com.breakyuna.esjzone.util.AppLogger
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+internal fun CommunityTopBar(title: String, onBack: () -> Unit) {
+    CenterAlignedTopAppBar(
+        title = { Text(title, style = AppTypography.titleMedium, maxLines = 1) },
+        navigationIcon = {
+            IconButton(onClick = onBack, modifier = Modifier.size(AppTouchTarget.minimum)) {
+                Icon(
+                    imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                    contentDescription = stringResource(R.string.reader_back)
+                )
+            }
+        },
+        colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
+            containerColor = MaterialTheme.colorScheme.surface
+        )
+    )
+}
+
+@Composable
+private fun CommentSectionHeader(title: String, modifier: Modifier = Modifier) {
+    Text(
+        text = title,
+        style = AppTypography.titleMedium,
+        modifier = modifier.fillMaxWidth().padding(horizontal = AppSpacing.lg)
+    )
+}
 
 internal sealed class CommunityState<out T> {
     data object Loading : CommunityState<Nothing>()
@@ -107,25 +137,52 @@ internal fun <T> CommunityStateContent(
     state: CommunityState<T>,
     emptyText: String,
     onRetry: (() -> Unit)? = null,
+    modifier: Modifier = Modifier,
     content: @Composable (T) -> Unit
 ) {
     when (state) {
-        is CommunityState.Loading -> QuietLoadingState(modifier = Modifier.fillMaxSize())
+        is CommunityState.Loading -> Box(
+            modifier = modifier.fillMaxWidth(),
+            contentAlignment = Alignment.Center
+        ) {
+            LoadingSkeleton(modifier = Modifier.fillMaxWidth())
+        }
 
-        is CommunityState.Error -> QuietErrorState(
-            failure = state.failure,
-            onRetry = onRetry,
-            modifier = Modifier.fillMaxSize()
-        )
+        is CommunityState.Error -> if (state.failure == LoadFailureKind.NETWORK) {
+            Box(modifier = modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                OfflineState(
+                    modifier = Modifier.fillMaxWidth(),
+                    onRetry = onRetry
+                )
+            }
+        } else {
+            Box(modifier = modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                ErrorState(
+                    title = stringResource(R.string.community_load_failed),
+                    message = stringResource(R.string.community_empty_guidance),
+                    modifier = Modifier.fillMaxWidth(),
+                    onRetry = onRetry
+                )
+            }
+        }
 
-        is CommunityState.Empty -> QuietEmptyState(
-            title = emptyText,
-            message = stringResource(R.string.community_empty_guidance),
-            icon = Icons.Filled.Forum,
-            modifier = Modifier.fillMaxSize()
-        )
+        is CommunityState.Empty -> Box(
+            modifier = modifier.fillMaxWidth(),
+            contentAlignment = Alignment.Center
+        ) {
+            EmptyState(
+                title = emptyText,
+                message = stringResource(R.string.community_empty_guidance),
+                modifier = Modifier.fillMaxWidth()
+            )
+        }
 
-        is CommunityState.Result -> content(state.data)
+        is CommunityState.Result -> Box(
+            modifier = modifier.fillMaxWidth(),
+            contentAlignment = Alignment.TopCenter
+        ) {
+            content(state.data)
+        }
     }
 }
 
@@ -138,7 +195,7 @@ internal fun CommentListPage(
     val navigator = LocalBaseNavigator.current
 
     Column(modifier = Modifier.fillMaxSize()) {
-        com.breakyuna.esjzone.ui.component.QuietBackHeader(
+        CommunityTopBar(
             title = title,
             onBack = { navigator?.pop() }
         )
@@ -201,16 +258,27 @@ internal fun CommentSectionContent(
     }
 
     when (val snapshot = state) {
-        is CommunityState.Loading -> QuietLoadingState(modifier = modifier)
+        is CommunityState.Loading -> LoadingSkeleton(modifier = modifier)
 
-        is CommunityState.Error -> QuietErrorState(
-            failure = snapshot.failure,
-            onRetry = {
-                model.clearSubmitError()
-                model.load(forceRefresh = true)
-            },
-            modifier = modifier
-        )
+        is CommunityState.Error -> if (snapshot.failure == LoadFailureKind.NETWORK) {
+            OfflineState(
+                modifier = modifier,
+                onRetry = {
+                    model.clearSubmitError()
+                    model.load(forceRefresh = true)
+                }
+            )
+        } else {
+            ErrorState(
+                title = stringResource(R.string.community_load_failed),
+                message = stringResource(R.string.community_empty_guidance),
+                modifier = modifier,
+                onRetry = {
+                    model.clearSubmitError()
+                    model.load(forceRefresh = true)
+                }
+            )
+        }
 
         is CommunityState.Empty -> CommentSection(
             comments = emptyList(),
@@ -330,17 +398,17 @@ private fun CommentSection(
 
     Column(modifier = modifier) {
         if (showHeader) {
-            QuietSectionHeader(
+            CommentSectionHeader(
                 title = stringResource(id = R.string.comments),
-                modifier = Modifier.padding(top = 4.dp)
+                modifier = Modifier.padding(top = AppSpacing.sm)
             )
         }
 
         if (pages.isEmpty()) {
-            QuietEmptyState(
+            EmptyState(
                 title = stringResource(id = R.string.comments_empty),
                 message = stringResource(id = R.string.community_empty_guidance),
-                icon = Icons.Filled.Person
+                modifier = Modifier.fillMaxWidth()
             )
         } else {
             CommentPager(
@@ -357,14 +425,16 @@ private fun CommentSection(
                 onLast = { selectedPageIndex = pages.lastIndex }
             )
             pages[safePageIndex].forEach { comment ->
-                CommentCard(
-                    comment = comment,
-                    onReply = if (!comment.replyToken.isNullOrBlank()) {
-                        { onReply(comment) }
-                    } else {
-                        null
-                    }
-                )
+                key(stableProductKey(comment.id, ProductComponentContentTypes.Comment)) {
+                    CommentCard(
+                        comment = comment,
+                        onReply = if (!comment.replyToken.isNullOrBlank()) {
+                            { onReply(comment) }
+                        } else {
+                            null
+                        }
+                    )
+                }
             }
         }
 
@@ -386,10 +456,10 @@ private fun CommentComposer(
 ) {
     Surface(
         modifier = modifier.fillMaxWidth(),
-        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.76f),
+        color = appStateColors().containerRaised,
         tonalElevation = 0.dp,
         shadowElevation = 0.dp,
-        shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp)
+        shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp)
     ) {
         Column(
             modifier = Modifier
@@ -401,8 +471,8 @@ private fun CommentComposer(
             if (replyAuthor != null) {
                 Surface(
                     modifier = Modifier.fillMaxWidth(),
-                    shape = QuietEditorial.badgeShape,
-                    color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.62f),
+                    shape = AppShapes.compact,
+                    color = MaterialTheme.colorScheme.primaryContainer,
                     contentColor = MaterialTheme.colorScheme.onPrimaryContainer
                 ) {
                     Row(
@@ -420,20 +490,15 @@ private fun CommentComposer(
                         Spacer(modifier = Modifier.width(6.dp))
                         Text(
                             text = stringResource(id = R.string.comment_replying_to, replyAuthor),
-                            style = QuietEditorial.label,
+                            style = AppTypography.labelMedium,
                             maxLines = 1,
                             overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
                             modifier = Modifier.weight(1f)
                         )
-                        Box(
-                            modifier = Modifier
-                                .size(28.dp)
-                                .clip(CircleShape)
-                                .clickable(
-                                    enabled = !isSubmitting,
-                                    onClick = onCancelReply
-                                ),
-                            contentAlignment = Alignment.Center
+                        IconButton(
+                            onClick = onCancelReply,
+                            enabled = !isSubmitting,
+                            modifier = Modifier.size(AppTouchTarget.minimum)
                         ) {
                             Icon(
                                 imageVector = Icons.Filled.Close,
@@ -454,31 +519,25 @@ private fun CommentComposer(
                     onValueChange = onDraftChange,
                     modifier = Modifier
                         .weight(1f)
-                        .height(52.dp),
+                        .heightIn(min = AppTouchTarget.minimum),
                     enabled = !isSubmitting,
                     singleLine = true,
-                    textStyle = QuietEditorial.body.copy(
-                        fontSize = 15.sp,
-                        lineHeight = 20.sp,
+                    textStyle = AppTypography.bodyMedium.copy(
                         color = MaterialTheme.colorScheme.onSurface
                     ),
-                    cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
                     decorationBox = { innerTextField ->
                         Box(
                             modifier = Modifier
                                 .fillMaxSize()
-                                .clip(QuietEditorial.badgeShape)
+                                .clip(AppShapes.standard)
                                 .background(MaterialTheme.colorScheme.surface)
-                                .padding(horizontal = 18.dp),
+                                .padding(horizontal = AppSpacing.md),
                             contentAlignment = Alignment.CenterStart
                         ) {
                             if (draft.isBlank()) {
                                 Text(
                                     text = stringResource(id = R.string.comment_hint),
-                                    style = QuietEditorial.body.copy(
-                                        fontSize = 15.sp,
-                                        lineHeight = 20.sp
-                                    ),
+                                    style = AppTypography.bodyMedium,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     maxLines = 1,
                                     overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
@@ -491,7 +550,7 @@ private fun CommentComposer(
                 IconButton(
                     onClick = { },
                     enabled = !isSubmitting,
-                    modifier = Modifier.size(44.dp)
+                    modifier = Modifier.size(AppTouchTarget.minimum)
                 ) {
                     Icon(
                         imageVector = Icons.Filled.EmojiEmotions,
@@ -503,8 +562,8 @@ private fun CommentComposer(
                 Button(
                     onClick = onSubmit,
                     enabled = !isSubmitting && draft.isNotBlank(),
-                    modifier = Modifier.size(52.dp),
-                    shape = CircleShape,
+                    modifier = Modifier.size(AppTouchTarget.minimum),
+                    shape = AppShapes.pill,
                     contentPadding = PaddingValues(0.dp),
                     colors = ButtonDefaults.buttonColors(
                         containerColor = MaterialTheme.colorScheme.primary,
@@ -533,7 +592,7 @@ private fun CommentComposer(
                 ) {
                     Text(
                         text = stringResource(id = it.messageResource),
-                        style = MaterialTheme.typography.bodySmall,
+                        style = AppTypography.bodySmall,
                         color = MaterialTheme.colorScheme.error,
                         modifier = Modifier
                             .weight(1f)
@@ -560,9 +619,9 @@ private fun CommentPager(
     onLast: () -> Unit
 ) {
     Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 10.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = AppSpacing.lg, vertical = AppSpacing.sm),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -579,7 +638,7 @@ private fun CommentPager(
         }
         Text(
             text = stringResource(id = R.string.page_indicator, page, totalPages),
-            style = MaterialTheme.typography.labelLarge
+            style = AppTypography.labelLarge
         )
         Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
             FilledTonalIconButton(onClick = onNext, enabled = page < totalPages) {
@@ -600,12 +659,12 @@ private fun CommentCard(comment: Comment, onReply: (() -> Unit)?) {
     Surface(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 6.dp),
-        shape = QuietEditorial.largeShape,
-        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.36f)
+            .padding(vertical = AppSpacing.xs),
+        shape = AppShapes.standard,
+        color = appStateColors().containerRaised
     ) {
         Column(
-            modifier = Modifier.padding(horizontal = 20.dp, vertical = 18.dp)
+            modifier = Modifier.padding(AppSpacing.lg)
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -619,10 +678,7 @@ private fun CommentCard(comment: Comment, onReply: (() -> Unit)?) {
                             ?.trim()
                             ?.takeIf { it.isNotBlank() }
                             ?: stringResource(id = R.string.anonymous_user),
-                        style = QuietEditorial.title.copy(
-                            fontSize = 17.sp,
-                            lineHeight = 22.sp
-                        ),
+                        style = AppTypography.titleMedium,
                         color = MaterialTheme.colorScheme.onSurface,
                         maxLines = 1,
                         overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
@@ -632,10 +688,7 @@ private fun CommentCard(comment: Comment, onReply: (() -> Unit)?) {
                             ?.trim()
                             ?.takeIf { it.isNotBlank() }
                             ?: stringResource(id = R.string.comment_time_unknown),
-                        style = QuietEditorial.label.copy(
-                            fontSize = 13.sp,
-                            lineHeight = 18.sp
-                        ),
+                        style = AppTypography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(top = 2.dp),
                         maxLines = 1,
@@ -647,17 +700,13 @@ private fun CommentCard(comment: Comment, onReply: (() -> Unit)?) {
                     ?.takeIf { it.isNotBlank() }
                     ?.let { floor ->
                         Surface(
-                            shape = QuietEditorial.badgeShape,
-                            color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.68f),
+                            shape = AppShapes.compact,
+                            color = MaterialTheme.colorScheme.primaryContainer,
                             contentColor = MaterialTheme.colorScheme.primary
                         ) {
                             Text(
                                 text = floor,
-                                style = QuietEditorial.label.copy(
-                                    fontSize = 13.sp,
-                                    lineHeight = 18.sp,
-                                    fontWeight = FontWeight.SemiBold
-                                ),
+                                style = AppTypography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
                                 modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
                             )
                         }
@@ -672,9 +721,9 @@ private fun CommentCard(comment: Comment, onReply: (() -> Unit)?) {
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(top = 16.dp),
-                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.72f),
+                        color = MaterialTheme.colorScheme.surface,
                         contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                        shape = RoundedCornerShape(16.dp)
+                        shape = AppShapes.standard
                     ) {
                         Row(
                             modifier = Modifier
@@ -687,7 +736,7 @@ private fun CommentCard(comment: Comment, onReply: (() -> Unit)?) {
                                 modifier = Modifier
                                     .width(4.dp)
                                     .fillMaxHeight()
-                                    .clip(QuietEditorial.badgeShape)
+                                    .clip(AppShapes.compact)
                                     .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.72f))
                             )
                             Column(
@@ -704,10 +753,7 @@ private fun CommentCard(comment: Comment, onReply: (() -> Unit)?) {
                                 )
                                 Text(
                                     text = quotedText,
-                                    style = QuietEditorial.body.copy(
-                                        fontSize = 14.sp,
-                                        lineHeight = 21.sp
-                                    ),
+                                    style = AppTypography.bodyMedium,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     maxLines = 3,
                                     overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
@@ -720,40 +766,29 @@ private fun CommentCard(comment: Comment, onReply: (() -> Unit)?) {
 
             Text(
                 text = comment.contentText,
-                style = QuietEditorial.body.copy(
-                    fontSize = 16.sp,
-                    lineHeight = 26.sp
-                ),
+                style = AppTypography.bodyLarge,
                 color = MaterialTheme.colorScheme.onSurface,
                 modifier = Modifier.padding(top = 16.dp)
             )
 
             if (onReply != null) {
-                Surface(
+                TextButton(
                     modifier = Modifier
                         .align(Alignment.End)
-                        .padding(top = 14.dp)
-                        .clip(QuietEditorial.badgeShape)
-                        .clickable(onClick = onReply),
-                    shape = QuietEditorial.badgeShape,
-                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.72f),
-                    contentColor = MaterialTheme.colorScheme.onSurfaceVariant
+                        .padding(top = AppSpacing.md)
+                        .heightIn(min = AppTouchTarget.minimum),
+                    onClick = onReply
                 ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.Reply,
-                            contentDescription = null,
-                            modifier = Modifier.size(17.dp)
-                        )
-                        Text(
-                            text = stringResource(id = R.string.comment_reply),
-                            style = QuietEditorial.label
-                        )
-                    }
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.Reply,
+                        contentDescription = null,
+                        modifier = Modifier.size(17.dp)
+                    )
+                    Spacer(modifier = Modifier.width(AppSpacing.xs))
+                    Text(
+                        text = stringResource(id = R.string.comment_reply),
+                        style = AppTypography.labelMedium
+                    )
                 }
             }
         }
@@ -781,27 +816,9 @@ private fun CommentAvatar(comment: Comment) {
                 tint = MaterialTheme.colorScheme.onSecondaryContainer
             )
         } else {
-            SubcomposeAsyncImage(
-                model = ImageRequest.Builder(LocalContext.current)
-                    .data(avatarUrl)
-                    .crossfade(true)
-                    .build(),
+            AppImage(
+                model = avatarUrl,
                 contentDescription = comment.authorName,
-                imageLoader = PresentationAccess.imageLoader,
-                loading = {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(18.dp),
-                        strokeWidth = 2.dp
-                    )
-                },
-                error = {
-                    Icon(
-                        imageVector = Icons.Filled.Person,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onSecondaryContainer
-                    )
-                },
-                contentScale = ContentScale.Crop,
                 modifier = Modifier.fillMaxSize()
             )
         }
@@ -811,7 +828,7 @@ private fun CommentAvatar(comment: Comment) {
 internal class CommentPageModel(
     private val authorization: Authorization,
     internal val pageUrl: String
-) : StateScreenModel<CommunityState<List<Comment>>>(CommunityState.Loading) {
+) : AppStateViewModel<CommunityState<List<Comment>>>(CommunityState.Loading) {
     private var loadJob: Job? = null
     private var loadStarted = false
 

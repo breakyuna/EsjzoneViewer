@@ -1,19 +1,13 @@
 package com.breakyuna.esjzone.ui.page
-import com.breakyuna.esjzone.app.PresentationAccess
 
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
@@ -21,7 +15,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.Check
@@ -32,19 +25,20 @@ import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Language
 import androidx.compose.material.icons.filled.NoAdultContent
 import androidx.compose.material.icons.filled.Storage
-import androidx.compose.material.icons.filled.Translate
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -54,621 +48,193 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import cafe.adriel.voyager.core.screen.Screen
-import cafe.adriel.voyager.core.model.rememberScreenModel
 import com.breakyuna.esjzone.AppLanguage
 import com.breakyuna.esjzone.R
+import com.breakyuna.esjzone.app.PresentationAccess
 import com.breakyuna.esjzone.network.LocalAuthorization
+import com.breakyuna.esjzone.ui.navigation.AppDestination
 import com.breakyuna.esjzone.ui.navigation.LocalAppNavigator
 import com.breakyuna.esjzone.ui.navigation.LocalBaseNavigator
-import com.breakyuna.esjzone.ui.navigation.pushIfNotCurrent
+import com.breakyuna.esjzone.ui.navigation.rememberAppViewModel
 import com.breakyuna.esjzone.ui.screen.LoginScreen
-import com.breakyuna.esjzone.ui.theme.QuietEditorial
-import com.breakyuna.esjzone.ui.theme.catppuccin.CatppuccinThemeType
+import com.breakyuna.esjzone.ui.designsystem.AppThemeVariant
 import com.breakyuna.esjzone.util.AppLogger
 import com.breakyuna.esjzone.util.LocaleHelper
 
-/** Quiet Editorial settings document, preserving the existing preference and session behavior. */
-object SettingsPage : Screen {
+/** Account preferences and local maintenance; every write retains existing semantics. */
+object SettingsPage : AppDestination {
     private fun readResolve(): Any = SettingsPage
 
+    @OptIn(ExperimentalMaterial3Api::class)
     @Composable
     override fun Content() {
-        val appNavigator = LocalAppNavigator.current
+        val rootNavigator = LocalAppNavigator.current
         val navigator = LocalBaseNavigator.current
         val authorization = LocalAuthorization.current
         val context = LocalContext.current
-        val settingsModel = rememberScreenModel { SettingsPageModel() }
-        val settingsState by settingsModel.state.collectAsState()
+        val model = rememberAppViewModel { SettingsPageModel() }
+        val state by model.state.collectAsState()
         val adult by PresentationAccess.settings.adult
         val theme by PresentationAccess.settings.theme
         val domain by PresentationAccess.settings.domain
         val language by PresentationAccess.settings.language
-        var showLogoutConfirmation by remember { mutableStateOf(false) }
         val crashReport by AppLogger.crashReportFlow.collectAsState()
+        var showLogout by remember { mutableStateOf(false) }
+        LaunchedEffect(Unit) { model.refreshCacheStats(); AppLogger.refreshCrashReport() }
+        LaunchedEffect(state.logoutCompleted) { if (state.logoutCompleted) rootNavigator?.replaceAll(LoginScreen) }
 
-        LaunchedEffect(Unit) {
-            settingsModel.refreshCacheStats()
-            AppLogger.refreshCrashReport()
-        }
-        LaunchedEffect(settingsState.logoutCompleted) {
-            if (settingsState.logoutCompleted) appNavigator?.replaceAll(LoginScreen)
-        }
-
-        Column(modifier = Modifier.fillMaxSize()) {
-            SettingsHeader(onBack = { navigator?.pop() })
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .weight(1f)
-                    .verticalScroll(rememberScrollState())
-                    .navigationBarsPadding()
-                    .padding(horizontal = QuietEditorial.pagePadding, vertical = 16.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
+        Scaffold(
+            topBar = {
+                TopAppBar(
+                    title = { Text(stringResource(R.string.settings_screen_title), style = com.breakyuna.esjzone.ui.designsystem.AppTypography.titleLarge) },
+                    navigationIcon = { BackIconButton { navigator?.pop() } }
+                )
+            }
+        ) { padding ->
+            Column(Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(com.breakyuna.esjzone.ui.designsystem.AppSpacing.lg), verticalArrangement = Arrangement.spacedBy(com.breakyuna.esjzone.ui.designsystem.AppSpacing.lg)) {
                 SettingsSection(Icons.Filled.Dns, stringResource(R.string.settings_network_section)) {
-                    SettingsLabel(stringResource(R.string.settings_active_mirror))
+                    Text(stringResource(R.string.settings_active_mirror), style = com.breakyuna.esjzone.ui.designsystem.AppTypography.labelLarge)
                     PresentationAccess.settings.DOMAINS.forEach { candidate ->
-                        MirrorRow(
-                            domain = candidate,
+                        ChoiceRow(
+                            title = candidate,
+                            subtitle = stringResource(if (candidate == PresentationAccess.settings.DOMAINS.first()) R.string.settings_primary_description else R.string.settings_backup_description),
                             selected = candidate == domain,
-                            backup = candidate != PresentationAccess.settings.DOMAINS.first(),
-                            onClick = {
-                                PresentationAccess.settings.setDomain(candidate)
-                                settingsModel.clearPageCache()
-                                settingsModel.persist("domain", candidate)
-                            }
+                            onClick = { PresentationAccess.settings.setDomain(candidate); model.clearPageCache(); model.persist("domain", candidate) }
                         )
                     }
-                    Text(
-                        stringResource(R.string.settings_mirror_note),
-                        style = QuietEditorial.body,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(top = 8.dp)
-                    )
+                    Text(stringResource(R.string.settings_mirror_note), style = com.breakyuna.esjzone.ui.designsystem.AppTypography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = com.breakyuna.esjzone.ui.designsystem.AppSpacing.sm))
                 }
 
                 SettingsSection(Icons.Filled.ColorLens, stringResource(R.string.settings_appearance_section)) {
-                    Text(
-                        stringResource(R.string.settings_theme_description),
-                        style = QuietEditorial.body,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    ThemeFamily(stringResource(R.string.settings_theme_frappe), CatppuccinThemeType.frappes(), theme) {
+                    Text(stringResource(R.string.settings_theme_description), style = com.breakyuna.esjzone.ui.designsystem.AppTypography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    ThemeSwatches(
+                    label = stringResource(R.string.settings_theme),
+                    themes = AppThemeVariant.entries,
+                        selected = theme
+                    ) {
                         PresentationAccess.settings.setTheme(it)
-                        settingsModel.persist("theme", it.name)
-                    }
-                    ThemeFamily(stringResource(R.string.settings_theme_latte), CatppuccinThemeType.lattes(), theme) {
-                        PresentationAccess.settings.setTheme(it)
-                        settingsModel.persist("theme", it.name)
-                    }
-                    ThemeFamily(stringResource(R.string.settings_theme_macchiato), CatppuccinThemeType.macchiatos(), theme) {
-                        PresentationAccess.settings.setTheme(it)
-                        settingsModel.persist("theme", it.name)
-                    }
-                    ThemeFamily(stringResource(R.string.settings_theme_mocha), CatppuccinThemeType.mochas(), theme) {
-                        PresentationAccess.settings.setTheme(it)
-                        settingsModel.persist("theme", it.name)
+                        model.persist("theme", it.name)
                     }
                 }
 
-                SettingsSection(Icons.Filled.Translate, stringResource(R.string.settings_language_section)) {
-                    Text(
-                        stringResource(R.string.settings_language_description),
-                        style = QuietEditorial.body,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    for (candidate in AppLanguage.entries) {
-                        LanguageRow(
-                            title = stringResource(candidate.titleRes),
-                            description = stringResource(candidate.subtitleRes),
-                            selected = candidate == language,
-                            onClick = {
-                                PresentationAccess.settings.setLanguage(candidate)
-                                LocaleHelper.syncSystemLocale(context, candidate)
-                                settingsModel.persist("language", candidate.code)
-                            }
-                        )
+                SettingsSection(Icons.Filled.Language, stringResource(R.string.settings_language_section)) {
+                    Text(stringResource(R.string.settings_language_description), style = com.breakyuna.esjzone.ui.designsystem.AppTypography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    AppLanguage.entries.forEach { candidate ->
+                        ChoiceRow(stringResource(candidate.titleRes), stringResource(candidate.subtitleRes), candidate == language) { PresentationAccess.settings.setLanguage(candidate); LocaleHelper.syncSystemLocale(context, candidate); model.persist("language", candidate.code) }
                     }
                 }
 
                 SettingsSection(Icons.Filled.NoAdultContent, stringResource(R.string.settings_content_section)) {
-                    SettingToggleRow(
-                        title = stringResource(R.string.settings_showadultcontent),
-                        summary = stringResource(R.string.settings_adult_description),
-                        badge = stringResource(R.string.adult_badge),
-                        checked = adult,
-                        onCheckedChange = {
-                            PresentationAccess.settings.setAdult(it)
-                            settingsModel.persist("show_adult", it.toString())
-                        }
-                    )
+                    ToggleRow(stringResource(R.string.settings_showadultcontent), stringResource(R.string.settings_adult_description), adult) { PresentationAccess.settings.setAdult(it); model.persist("show_adult", it.toString()) }
                 }
 
                 SettingsSection(Icons.Filled.Storage, stringResource(R.string.settings_storage_section)) {
-                    val cacheStats = settingsState.cacheStats
-                    CacheRow(
-                        title = stringResource(R.string.settings_page_cache),
-                        value = when {
-                            settingsState.cacheStatsError -> stringResource(R.string.local_cache_stats_failed)
-                            cacheStats == null ->
-                            stringResource(R.string.local_cache_loading)
-                            else -> {
-                            stringResource(
-                                R.string.local_cache_pages,
-                                formatBytes(cacheStats.pageBytes),
-                                cacheStats.pageEntries
-                            )
-                            }
-                        },
-                        accent = MaterialTheme.colorScheme.primary,
-                        actionLabel = stringResource(R.string.local_cache_clear_pages),
-                        busy = settingsState.cacheOperation != null,
-                        onAction = {
-                            settingsModel.clearPageCache()
-                        }
-                    )
-                    HorizontalDivider(color = quietRuleColor())
-                    CacheRow(
-                        title = stringResource(R.string.settings_image_cache),
-                        value = when {
-                            settingsState.cacheStatsError -> stringResource(R.string.local_cache_stats_failed)
-                            cacheStats == null -> stringResource(R.string.local_cache_loading)
-                            else -> formatBytes(cacheStats.imageBytes)
-                        },
-                        accent = MaterialTheme.colorScheme.tertiary,
-                        actionLabel = stringResource(R.string.local_cache_clear_images),
-                        busy = settingsState.cacheOperation != null,
-                        onAction = {
-                            settingsModel.clearImageCache()
-                        }
-                    )
-                    Surface(
-                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.42f),
-                        shape = QuietEditorial.controlShape,
-                        modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
-                            verticalAlignment = Alignment.Top
-                        ) {
-                            Icon(Icons.Filled.Info, contentDescription = null, modifier = Modifier.size(20.dp))
-                            Text(
-                                stringResource(R.string.settings_cache_note),
-                                style = QuietEditorial.body,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.padding(start = 8.dp)
-                            )
-                        }
-                    }
-                    if (settingsState.cacheOperation != null) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
-                            Text(
-                                stringResource(R.string.local_cache_clearing),
-                                style = QuietEditorial.body,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.padding(start = 8.dp)
-                            )
-                        }
-                    }
-                    if (settingsState.cacheStatsError) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(
-                                stringResource(R.string.local_cache_stats_failed),
-                                style = QuietEditorial.body,
-                                color = MaterialTheme.colorScheme.error,
-                                modifier = Modifier.weight(1f)
-                            )
-                            TextButton(onClick = settingsModel::refreshCacheStats) {
-                                Text(stringResource(R.string.retry))
-                            }
-                        }
-                    }
-                    if (settingsState.cacheClearError) {
-                        Text(
-                            stringResource(R.string.local_cache_clear_failed),
-                            style = QuietEditorial.body,
-                            color = MaterialTheme.colorScheme.error,
-                            modifier = Modifier.padding(top = 4.dp)
-                        )
-                    }
+                    val cache = state.cacheStats
+                    CacheRow(stringResource(R.string.settings_page_cache), when { state.cacheStatsError -> stringResource(R.string.local_cache_stats_failed); cache == null -> stringResource(R.string.local_cache_loading); else -> stringResource(R.string.local_cache_pages, formatBytes(cache.pageBytes), cache.pageEntries) }, state.cacheOperation != null, stringResource(R.string.local_cache_clear_pages)) { model.clearPageCache() }
+                    HorizontalDivider()
+                    CacheRow(stringResource(R.string.settings_image_cache), when { state.cacheStatsError -> stringResource(R.string.local_cache_stats_failed); cache == null -> stringResource(R.string.local_cache_loading); else -> formatBytes(cache.imageBytes) }, state.cacheOperation != null, stringResource(R.string.local_cache_clear_images)) { model.clearImageCache() }
+                    Text(stringResource(R.string.settings_cache_note), style = com.breakyuna.esjzone.ui.designsystem.AppTypography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    if (state.cacheOperation != null) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+                    if (state.cacheStatsError) TextButton(onClick = model::refreshCacheStats) { Text(stringResource(R.string.retry)) }
+                    if (state.cacheClearError) Text(stringResource(R.string.local_cache_clear_failed), color = MaterialTheme.colorScheme.error)
                 }
 
                 SettingsSection(Icons.Filled.BugReport, stringResource(R.string.settings_diagnostics_section)) {
-                    SettingsLinkRow(
-                        icon = Icons.Filled.BugReport,
-                        title = stringResource(R.string.system_logs),
-                        summary = stringResource(R.string.settings_logs_description),
-                        tag = "S13",
-                        onClick = { navigator?.pushIfNotCurrent(LogsPage) }
-                    )
-                    HorizontalDivider(color = quietRuleColor())
-                    SettingsLinkRow(
-                        icon = Icons.Filled.Info,
-                        title = stringResource(R.string.logs_last_crash_title),
-                        summary = stringResource(
-                            if (crashReport == null) R.string.settings_crash_none
-                            else R.string.settings_crash_available
-                        ),
-                        tag = "M04",
-                        enabled = crashReport != null,
-                        onClick = { navigator?.pushIfNotCurrent(LogsPage) }
-                    )
+                    LinkRow(Icons.Filled.BugReport, stringResource(R.string.system_logs), stringResource(R.string.settings_logs_description)) { navigator?.pushIfNotCurrent(LogsPage) }
+                    LinkRow(Icons.Filled.Info, stringResource(R.string.logs_last_crash_title), if (crashReport == null) stringResource(R.string.settings_crash_none) else stringResource(R.string.settings_crash_available), enabled = crashReport != null) { navigator?.pushIfNotCurrent(LogsPage) }
                 }
-
                 SettingsSection(Icons.Filled.Info, stringResource(R.string.settings_about_section)) {
-                    SettingsLinkRow(
-                        icon = Icons.Filled.Info,
-                        title = stringResource(R.string.about),
-                        summary = stringResource(R.string.profile_about_description),
-                        tag = "S14",
-                        onClick = { navigator?.pushIfNotCurrent(AboutPage) }
-                    )
+                    LinkRow(Icons.Filled.Info, stringResource(R.string.about), stringResource(R.string.profile_about_description)) { navigator?.pushIfNotCurrent(AboutPage) }
                 }
-                Surface(
-                    shape = QuietEditorial.largeShape,
-                    color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.22f),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    SettingsLinkRow(
-                        icon = Icons.AutoMirrored.Filled.Logout,
-                        title = stringResource(R.string.settings_logout_title),
-                        summary = stringResource(R.string.logout_consequence),
-                        tag = "M02",
-                        destructive = true,
-                        onClick = { if (!settingsState.logoutInProgress) showLogoutConfirmation = true }
-                    )
-                }
-                Spacer(modifier = Modifier.height(8.dp))
-            }
-        }
-
-        if (showLogoutConfirmation) {
-            AlertDialog(
-                onDismissRequest = { if (!settingsState.logoutInProgress) showLogoutConfirmation = false },
-                shape = QuietEditorial.dialogShape,
-                title = { Text(stringResource(R.string.logout_confirm_message)) },
-                text = { Text(stringResource(R.string.logout_consequence)) },
-                dismissButton = {
-                    TextButton(
-                        onClick = { showLogoutConfirmation = false },
-                        enabled = !settingsState.logoutInProgress
-                    ) { Text(stringResource(R.string.logout_cancel)) }
-                },
-                confirmButton = {
-                    TextButton(
-                        enabled = !settingsState.logoutInProgress,
-                        onClick = {
-                            settingsModel.logout(authorization)
-                            showLogoutConfirmation = false
-                        }
-                    ) {
-                        if (settingsState.logoutInProgress) {
-                            CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
-                        } else {
-                            Text(stringResource(R.string.logout_confirm))
-                        }
-                    }
-                }
-            )
-        }
-    }
-}
-
-@Composable
-private fun quietRuleColor(): Color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f)
-
-@Composable
-private fun SettingsHeader(onBack: () -> Unit) {
-    Surface(color = MaterialTheme.colorScheme.surface, modifier = Modifier.fillMaxWidth()) {
-        Column {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 8.dp)
-                    .padding(top = 16.dp, bottom = 12.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                IconButton(onClick = onBack, modifier = Modifier.size(48.dp)) {
-                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.reader_back))
-                }
-                Column(modifier = Modifier.padding(start = 8.dp)) {
-                    Text(stringResource(R.string.settings_screen_title), style = QuietEditorial.display)
-                }
-            }
-            HorizontalDivider(thickness = QuietEditorial.hairline, color = quietRuleColor())
-        }
-    }
-}
-
-@Composable
-private fun SettingsSection(
-    icon: ImageVector,
-    title: String,
-    content: @Composable ColumnScope.() -> Unit
-) {
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(24.dp))
-            Text(
-                text = title,
-                style = QuietEditorial.sectionTitle,
-                color = MaterialTheme.colorScheme.primary,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.weight(1f).padding(start = 8.dp)
-            )
-        }
-        Surface(
-            modifier = Modifier.fillMaxWidth(),
-            shape = QuietEditorial.largeShape,
-            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.36f)
-        ) {
-            Column(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 16.dp),
-                content = content
-            )
-        }
-    }
-}
-
-@Composable
-private fun SettingsLabel(text: String) {
-    Text(text, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-}
-
-@Composable
-private fun LanguageRow(
-    title: String,
-    description: String,
-    selected: Boolean,
-    onClick: () -> Unit
-) {
-    Surface(
-        onClick = onClick,
-        shape = QuietEditorial.cardShape,
-        color = if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.08f)
-        else MaterialTheme.colorScheme.surface.copy(alpha = 0.34f),
-        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
-    ) {
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    title,
-                    style = QuietEditorial.title,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                Text(
-                    description,
-                    style = QuietEditorial.body,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-            RadioMark(selected)
-        }
-    }
-}
-
-@Composable
-private fun MirrorRow(domain: String, selected: Boolean, backup: Boolean, onClick: () -> Unit) {
-    Surface(
-        onClick = onClick,
-        shape = QuietEditorial.cardShape,
-        color = if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.08f)
-        else MaterialTheme.colorScheme.surface.copy(alpha = 0.34f),
-        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
-    ) {
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        domain,
-                        style = QuietEditorial.title,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f)
-                    )
-                    if (backup) QuietBadge(stringResource(R.string.settings_backup_mirror))
-                }
-                Text(
-                    stringResource(if (backup) R.string.settings_backup_description else R.string.settings_primary_description),
-                    style = QuietEditorial.body,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-            RadioMark(selected)
-        }
-    }
-}
-
-@Composable
-private fun ThemeFamily(
-    label: String,
-    themes: List<CatppuccinThemeType>,
-    selected: CatppuccinThemeType,
-    onSelect: (CatppuccinThemeType) -> Unit
-) {
-    Column(modifier = Modifier.padding(top = 8.dp)) {
-        Text(label, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Row(
-            modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(top = 6.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            themes.forEach { type ->
-                Surface(
-                    onClick = { onSelect(type) },
-                    shape = QuietEditorial.controlShape,
-                    color = type.baseColor,
-                    modifier = Modifier.size(40.dp)
-                ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        if (selected == type) Icon(Icons.Filled.Check, contentDescription = null, tint = Color.White)
-                    }
+                Surface(color = MaterialTheme.colorScheme.errorContainer, shape = com.breakyuna.esjzone.ui.designsystem.AppShapes.standard) {
+                    LinkRow(Icons.AutoMirrored.Filled.Logout, stringResource(R.string.settings_logout_title), stringResource(R.string.logout_consequence), destructive = true) { if (!state.logoutInProgress) showLogout = true }
                 }
             }
         }
-    }
-}
-
-@Composable
-private fun SettingToggleRow(
-    title: String,
-    summary: String,
-    badge: String,
-    checked: Boolean,
-    onCheckedChange: (Boolean) -> Unit
-) {
-    Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        Column(modifier = Modifier.weight(1f).padding(end = 12.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    title,
-                    style = QuietEditorial.title,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f)
-                )
-                QuietBadge(badge, destructive = true)
-            }
-            Text(summary, style = QuietEditorial.body, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
-        Switch(checked = checked, onCheckedChange = onCheckedChange)
-    }
-}
-
-@Composable
-private fun CacheRow(
-    title: String,
-    value: String,
-    accent: Color,
-    actionLabel: String,
-    busy: Boolean,
-    onAction: () -> Unit
-) {
-    Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        Column(modifier = Modifier.weight(1f).padding(end = 12.dp)) {
-            Text(title, style = QuietEditorial.title)
-            Text(value, style = QuietEditorial.body, color = accent)
-        }
-        Button(
-            onClick = onAction,
-            enabled = !busy,
-            shape = QuietEditorial.largeShape,
-            contentPadding = ButtonDefaults.ContentPadding,
-            colors = ButtonDefaults.buttonColors(
-                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.72f),
-                contentColor = MaterialTheme.colorScheme.primary
-            ),
-            modifier = Modifier.widthIn(min = 96.dp)
-        ) { Text(actionLabel, maxLines = 1, overflow = TextOverflow.Ellipsis) }
-    }
-}
-
-@Composable
-private fun SettingsLinkRow(
-    icon: ImageVector,
-    title: String,
-    summary: String,
-    tag: String,
-    enabled: Boolean = true,
-    destructive: Boolean = false,
-    onClick: () -> Unit
-) {
-    val color = if (destructive) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface
-    Surface(onClick = onClick, enabled = enabled, color = Color.Transparent, modifier = Modifier.fillMaxWidth()) {
-        Row(modifier = Modifier.padding(vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
-            Surface(
-                shape = CircleShape,
-                color = if (destructive) MaterialTheme.colorScheme.errorContainer else MaterialTheme.colorScheme.primaryContainer,
-                modifier = Modifier.size(44.dp)
-            ) {
-                Box(contentAlignment = Alignment.Center) { Icon(icon, contentDescription = null, tint = color, modifier = Modifier.size(24.dp)) }
-            }
-            Column(modifier = Modifier.weight(1f).padding(horizontal = 12.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        title,
-                        style = QuietEditorial.title,
-                        color = color,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f)
-                    )
-                    QuietBadge(tag, destructive = destructive)
-                }
-                Text(
-                    summary,
-                    style = QuietEditorial.body,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 3,
-                    overflow = TextOverflow.Ellipsis
-                )
-            }
-            if (enabled) Icon(Icons.Filled.ChevronRight, contentDescription = null, tint = color.copy(alpha = 0.7f))
-        }
-    }
-}
-
-@Composable
-private fun QuietBadge(text: String, destructive: Boolean = false) {
-    Surface(
-        shape = QuietEditorial.badgeShape,
-        color = if (destructive) MaterialTheme.colorScheme.errorContainer else MaterialTheme.colorScheme.surfaceVariant,
-        modifier = Modifier.padding(start = 8.dp)
-    ) {
-        Text(
-            text,
-            style = QuietEditorial.smallLabel,
-            color = if (destructive) MaterialTheme.colorScheme.onErrorContainer else MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(horizontal = 7.dp, vertical = 4.dp)
+        if (showLogout) AlertDialog(
+            onDismissRequest = { if (!state.logoutInProgress) showLogout = false },
+            title = { Text(stringResource(R.string.logout_confirm_message)) },
+            text = { Text(stringResource(R.string.logout_consequence)) },
+            confirmButton = { TextButton(onClick = { model.logout(authorization); showLogout = false }, enabled = !state.logoutInProgress) { if (state.logoutInProgress) CircularProgressIndicator(Modifier.size(18.dp)) else Text(stringResource(R.string.logout_confirm)) } },
+            dismissButton = { TextButton(onClick = { showLogout = false }, enabled = !state.logoutInProgress) { Text(stringResource(R.string.logout_cancel)) } }
         )
     }
 }
 
 @Composable
-private fun RadioMark(selected: Boolean) {
-    Box(
-        modifier = Modifier.size(32.dp).clip(CircleShape).background(
-            if (selected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent
-        ),
-        contentAlignment = Alignment.Center
-    ) {
-        Box(
-            modifier = Modifier
-                .size(22.dp)
-                .clip(CircleShape)
-                .then(
-                    if (selected) Modifier.background(MaterialTheme.colorScheme.primary)
-                    else Modifier.border(2.dp, MaterialTheme.colorScheme.outline, CircleShape)
-                )
-        ) {
-            if (selected) {
-                Box(
-                    modifier = Modifier.size(10.dp).align(Alignment.Center).clip(CircleShape)
-                        .background(MaterialTheme.colorScheme.onPrimary)
-                )
+private fun SettingsSection(icon: ImageVector, title: String, content: @Composable ColumnScope.() -> Unit) {
+    Column(verticalArrangement = Arrangement.spacedBy(com.breakyuna.esjzone.ui.designsystem.AppSpacing.sm)) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(com.breakyuna.esjzone.ui.designsystem.AppSpacing.sm)) {
+            Icon(icon, null, tint = MaterialTheme.colorScheme.primary)
+            Text(title, style = com.breakyuna.esjzone.ui.designsystem.AppTypography.titleMedium, color = MaterialTheme.colorScheme.primary)
+        }
+        Surface(color = MaterialTheme.colorScheme.surfaceContainer, shape = com.breakyuna.esjzone.ui.designsystem.AppShapes.standard) {
+            Column(Modifier.fillMaxWidth().padding(com.breakyuna.esjzone.ui.designsystem.AppSpacing.lg), verticalArrangement = Arrangement.spacedBy(com.breakyuna.esjzone.ui.designsystem.AppSpacing.sm), content = content)
+        }
+    }
+}
+
+@Composable
+private fun ChoiceRow(title: String, subtitle: String, selected: Boolean, onClick: () -> Unit) {
+    Surface(onClick = onClick, color = if (selected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent, shape = com.breakyuna.esjzone.ui.designsystem.AppShapes.compact, modifier = Modifier.fillMaxWidth()) {
+        Row(Modifier.fillMaxWidth().padding(com.breakyuna.esjzone.ui.designsystem.AppSpacing.md), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) { Text(title, style = com.breakyuna.esjzone.ui.designsystem.AppTypography.labelLarge, maxLines = 1, overflow = TextOverflow.Ellipsis); Text(subtitle, style = com.breakyuna.esjzone.ui.designsystem.AppTypography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+            if (selected) Icon(Icons.Filled.Check, null, tint = MaterialTheme.colorScheme.primary)
+        }
+    }
+}
+
+@Composable
+private fun ThemeSwatches(label: String, themes: List<AppThemeVariant>, selected: AppThemeVariant, onSelect: (AppThemeVariant) -> Unit) {
+    Column(verticalArrangement = Arrangement.spacedBy(com.breakyuna.esjzone.ui.designsystem.AppSpacing.xs)) {
+        Text(label, style = com.breakyuna.esjzone.ui.designsystem.AppTypography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(com.breakyuna.esjzone.ui.designsystem.AppSpacing.sm)) {
+            themes.forEach { type ->
+                val themeLabel = stringResource(type.labelRes)
+                Surface(
+                    onClick = { onSelect(type) },
+                    shape = CircleShape,
+                    color = type.lightAccent,
+                    modifier = Modifier
+                        .size(40.dp)
+                        .semantics {
+                            contentDescription = themeLabel
+                        }
+                ) {
+                    if (selected == type) {
+                        Icon(Icons.Filled.Check, null, tint = Color.White, modifier = Modifier.padding(10.dp))
+                    }
+                }
             }
+        }
+    }
+}
+
+@Composable
+private fun ToggleRow(title: String, subtitle: String, checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) { Column(Modifier.weight(1f)) { Text(title, style = com.breakyuna.esjzone.ui.designsystem.AppTypography.labelLarge); Text(subtitle, style = com.breakyuna.esjzone.ui.designsystem.AppTypography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }; Switch(checked, onCheckedChange) }
+}
+
+@Composable
+private fun CacheRow(title: String, value: String, busy: Boolean, action: String, onClick: () -> Unit) {
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) { Column(Modifier.weight(1f)) { Text(title, style = com.breakyuna.esjzone.ui.designsystem.AppTypography.labelLarge); Text(value, style = com.breakyuna.esjzone.ui.designsystem.AppTypography.bodySmall, color = MaterialTheme.colorScheme.primary) }; Button(onClick = onClick, enabled = !busy, colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primaryContainer, contentColor = MaterialTheme.colorScheme.onPrimaryContainer)) { Text(action) } }
+}
+
+@Composable
+private fun LinkRow(icon: ImageVector, title: String, subtitle: String, enabled: Boolean = true, destructive: Boolean = false, onClick: () -> Unit) {
+    Surface(onClick = onClick, enabled = enabled, color = Color.Transparent, modifier = Modifier.fillMaxWidth()) {
+        Row(Modifier.fillMaxWidth().padding(vertical = com.breakyuna.esjzone.ui.designsystem.AppSpacing.xs), verticalAlignment = Alignment.CenterVertically) {
+            Icon(icon, null, tint = if (destructive) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary, modifier = Modifier.size(28.dp))
+            Column(Modifier.weight(1f).padding(horizontal = com.breakyuna.esjzone.ui.designsystem.AppSpacing.md)) { Text(title, style = com.breakyuna.esjzone.ui.designsystem.AppTypography.labelLarge, color = if (destructive) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface); Text(subtitle, style = com.breakyuna.esjzone.ui.designsystem.AppTypography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis) }
+            if (enabled) Icon(Icons.Filled.ChevronRight, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }

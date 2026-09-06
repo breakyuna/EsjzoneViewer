@@ -47,7 +47,7 @@ import com.breakyuna.esjzone.domain.repository.ReaderRepository
 import com.breakyuna.esjzone.domain.repository.SearchRepository
 import com.breakyuna.esjzone.domain.repository.SessionRepository
 import com.breakyuna.esjzone.domain.repository.SettingsRepository
-import com.breakyuna.esjzone.ui.theme.catppuccin.CatppuccinThemeType
+import com.breakyuna.esjzone.ui.designsystem.AppThemeVariant
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.StateFlow
 
@@ -62,7 +62,7 @@ class NetworkSessionRepository : SessionRepository {
 
 class CacheSettingsRepository(private val database: GeneralDatabase) : SettingsRepository {
     override val adult: StateFlow<Boolean> = GlobalSettings.adultFlow
-    override val theme: StateFlow<CatppuccinThemeType> = GlobalSettings.themeFlow
+    override val theme: StateFlow<AppThemeVariant> = GlobalSettings.themeFlow
     override val domain: StateFlow<String> = GlobalSettings.domainFlow
     override val language: StateFlow<AppLanguage> = GlobalSettings.languageFlow
     override val readerAutoSave: StateFlow<Boolean> = GlobalSettings.readerAutoSaveFlow
@@ -72,7 +72,7 @@ class CacheSettingsRepository(private val database: GeneralDatabase) : SettingsR
         database.cacheDao().put("adult", value.toString())
     }
 
-    override fun setTheme(value: CatppuccinThemeType) {
+    override fun setTheme(value: AppThemeVariant) {
         GlobalSettings.setTheme(value)
         database.cacheDao().put("theme", value.name)
     }

@@ -35,7 +35,7 @@ import com.breakyuna.esjzone.offline.NovelDownloadStore
  * Application-scoped ownership of infrastructure and repository adapters.
  *
  * This is deliberately a small hand-written container for the transition period. It has no
- * Compose or Voyager dependency and does not alter the existing database or download contracts.
+ * Compose dependency and does not alter the existing database or download contracts.
  */
 class AppContainer(context: Context) {
     private val appContext = context.applicationContext

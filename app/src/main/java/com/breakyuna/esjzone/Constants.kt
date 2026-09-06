@@ -19,10 +19,10 @@ object Constants {
             "Square’s meticulous HTTP client for the JVM, Android, and GraalVM."
         ),
         GithubRepo(
-            "https://github.com/adrielcafe/voyager",
-            "Adriel Café",
-            "Voyager",
-            "\uD83D\uDEF8 A pragmatic navigation library for Jetpack Compose"
+            "https://developer.android.com/jetpack/androidx/releases/navigation3",
+            "AndroidX",
+            "Navigation 3",
+            "Compose-first type-safe navigation with saveable back stacks."
         ),
         GithubRepo(
             "https://github.com/coil-kt/coil",
@@ -48,12 +48,6 @@ object Constants {
             "xsoup",
             "When jsoup meets XPath."
         ),
-        GithubRepo(
-            "https://github.com/catppuccin/catppuccin",
-            "Catppuccin",
-            "Catppuccin",
-            "\uD83D\uDE38 Soothing pastel theme for the high-spirited!"
-        )
     )
 
 }

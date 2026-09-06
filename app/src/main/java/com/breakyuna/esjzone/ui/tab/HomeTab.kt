@@ -1,34 +1,36 @@
 package com.breakyuna.esjzone.ui.tab
-import com.breakyuna.esjzone.app.PresentationAccess
 
-import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListScope
+import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Category
+import androidx.compose.material.icons.filled.Forum
 import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.remember
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.vector.rememberVectorPainter
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
-import cafe.adriel.voyager.core.model.StateScreenModel
-import cafe.adriel.voyager.core.model.rememberScreenModel
-import cafe.adriel.voyager.core.model.screenModelScope
-import cafe.adriel.voyager.navigator.tab.Tab
-import cafe.adriel.voyager.navigator.tab.TabOptions
 import com.breakyuna.esjzone.R
+import com.breakyuna.esjzone.app.PresentationAccess
 import com.breakyuna.esjzone.network.Authorization
 import com.breakyuna.esjzone.network.LoadFailureKind
 import com.breakyuna.esjzone.network.LocalAuthorization
@@ -36,173 +38,208 @@ import com.breakyuna.esjzone.network.features.getHomeData
 import com.breakyuna.esjzone.network.loadFailureKind
 import com.breakyuna.esjzone.novellibrary.data.HomeData
 import com.breakyuna.esjzone.novellibrary.novel.CoveredNovel
-import com.breakyuna.esjzone.ui.component.QuietEmptyState
-import com.breakyuna.esjzone.ui.component.QuietErrorState
-import com.breakyuna.esjzone.ui.component.QuietHomeHeader
-import com.breakyuna.esjzone.ui.component.QuietLoadingState
-import com.breakyuna.esjzone.ui.component.QuietSectionHeader
+import com.breakyuna.esjzone.ui.discovery.DiscoveryEmptyState
+import com.breakyuna.esjzone.ui.discovery.DiscoveryErrorState
+import com.breakyuna.esjzone.ui.discovery.DiscoveryLoadingState
+import com.breakyuna.esjzone.ui.discovery.DiscoveryNovelCard
+import com.breakyuna.esjzone.ui.discovery.DiscoveryOfflineBanner
+import com.breakyuna.esjzone.ui.discovery.DiscoveryScaffold
+import com.breakyuna.esjzone.ui.navigation.AppNavigator
+import com.breakyuna.esjzone.ui.navigation.AppStateViewModel
+import com.breakyuna.esjzone.ui.navigation.AppTab
+import com.breakyuna.esjzone.ui.navigation.AppTabOptions
 import com.breakyuna.esjzone.ui.navigation.LocalBaseNavigator
-import com.breakyuna.esjzone.ui.navigation.pushIfNotCurrent
+import com.breakyuna.esjzone.ui.navigation.rememberAppViewModel
 import com.breakyuna.esjzone.ui.page.ForumPage
 import com.breakyuna.esjzone.ui.page.GuestbookPage
 import com.breakyuna.esjzone.ui.page.NovelListPage
-import com.breakyuna.esjzone.ui.theme.QuietEditorial
+import com.breakyuna.esjzone.ui.page.NovelPage
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 
-object HomeTab : Tab {
+object HomeTab : AppTab {
 
     private fun readResolve(): Any = HomeTab
 
-    override val options: TabOptions
+    override val options: AppTabOptions
         @Composable
-        get() = TabOptions(
-            index = 0u,
+        get() = AppTabOptions(
+            index = 0,
             title = stringResource(R.string.screen_main_tab_home),
-            icon = rememberVectorPainter(image = Icons.Filled.Home)
+            icon = androidx.compose.ui.graphics.vector.rememberVectorPainter(image = Icons.Filled.Home)
         )
 
     @Composable
     override fun Content() {
         val navigator = LocalBaseNavigator.current
         val authorization = LocalAuthorization.current
-        val model = rememberScreenModel { HomeTabModel(authorization) }
+        val model = rememberAppViewModel { HomeTabModel(authorization) }
         val state by model.state.collectAsState()
         val adult by PresentationAccess.settings.adult
 
-        Box(
-            modifier = Modifier.fillMaxSize(),
-            contentAlignment = Alignment.TopCenter
-        ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .verticalScroll(rememberScrollState())
-                    .widthIn(max = QuietEditorial.contentMaxWidth),
-                horizontalAlignment = Alignment.CenterHorizontally
+        DiscoveryScaffold(
+            title = stringResource(R.string.home_discover),
+            onRefresh = model::reload
+        ) { padding ->
+            LazyColumn(
+                modifier = Modifier.fillMaxSize().padding(padding),
+                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
+                verticalArrangement = Arrangement.spacedBy(20.dp)
             ) {
-                QuietHomeHeader(
-                    domain = PresentationAccess.settings.domain.value,
-                    onSearch = { navigator?.pushIfNotCurrent(SearchTab) },
-                    onCategories = { navigator?.pushIfNotCurrent(CategoryBrowserPage()) },
-                    onForum = { navigator?.pushIfNotCurrent(ForumPage) },
-                    onGuestbook = { navigator?.pushIfNotCurrent(GuestbookPage) }
-                )
-
+                item(key = "home-actions", contentType = "home-actions") {
+                    HomeActions(
+                        onSearch = { navigator?.pushIfNotCurrent(SearchTab) },
+                        onCategories = { navigator?.pushIfNotCurrent(CategoryBrowserPage()) },
+                        onForum = { navigator?.pushIfNotCurrent(ForumPage) },
+                        onGuestbook = { navigator?.pushIfNotCurrent(GuestbookPage) }
+                    )
+                }
                 when (val snapshot = state) {
-                    HomeTabModel.State.Loading -> QuietLoadingState(
-                        modifier = Modifier.padding(horizontal = QuietEditorial.pagePadding)
-                    )
-
-                    is HomeTabModel.State.Error -> QuietErrorState(
-                        failure = snapshot.failure,
-                        onRetry = model::retry,
-                        modifier = Modifier.padding(horizontal = QuietEditorial.pagePadding)
-                    )
-
+                    HomeTabModel.State.Loading -> item(key = "home-loading", contentType = "loading") {
+                        DiscoveryLoadingState()
+                    }
+                    is HomeTabModel.State.Error -> item(key = "home-error", contentType = "error") {
+                        Column {
+                            if (snapshot.failure == LoadFailureKind.NETWORK) {
+                                DiscoveryOfflineBanner(modifier = Modifier.padding(bottom = 8.dp))
+                            }
+                            DiscoveryErrorState(
+                                message = stringResource(failureMessage(snapshot.failure)),
+                                onRetry = model::reload
+                            )
+                        }
+                    }
                     is HomeTabModel.State.Result -> {
-                        HomeCollection(
+                        homeCollection(
                             title = stringResource(R.string.home_editor_picks),
                             novels = snapshot.homeData.recommendation,
-                            accent = androidx.compose.material3.MaterialTheme.colorScheme.primary,
-                            featured = true,
-                            onMore = null
+                            onMore = null,
+                            adult = adult,
+                            navigator = navigator
                         )
-                        HomeCollection(
+                        homeCollection(
                             title = stringResource(R.string.tab_home_recentlyupdate_tranlated),
                             novels = snapshot.homeData.recentlyUpdateTranslated,
-                            accent = androidx.compose.material3.MaterialTheme.colorScheme.primary,
-                            onMore = {
-                                navigator?.pushIfNotCurrent(NovelListPage(1, 1, false))
-                            }
+                            onMore = { navigator?.pushIfNotCurrent(NovelListPage(1, 1, false)) },
+                            adult = adult,
+                            navigator = navigator
                         )
-                        HomeCollection(
+                        homeCollection(
                             title = stringResource(R.string.tab_home_recentlyupdate_original),
                             novels = snapshot.homeData.recentlyUpdateOriginal,
-                            accent = androidx.compose.material3.MaterialTheme.colorScheme.tertiary,
-                            onMore = {
-                                navigator?.pushIfNotCurrent(NovelListPage(2, 1, false))
-                            }
+                            onMore = { navigator?.pushIfNotCurrent(NovelListPage(2, 1, false)) },
+                            adult = adult,
+                            navigator = navigator
                         )
-
                         if (adult) {
-                            HomeCollection(
+                            homeCollection(
                                 title = stringResource(R.string.tab_home_recentlyupdate_tranlated_r18),
                                 novels = snapshot.homeData.recentlyUpdateTranslatedR18,
-                                accent = androidx.compose.material3.MaterialTheme.colorScheme.error,
-                                onMore = {
-                                    navigator?.pushIfNotCurrent(NovelListPage(1, 1, true))
-                                }
+                                onMore = { navigator?.pushIfNotCurrent(NovelListPage(1, 1, true)) },
+                                adult = true,
+                                navigator = navigator
                             )
-                            HomeCollection(
+                            homeCollection(
                                 title = stringResource(R.string.tab_home_recentlyupdate_original_r18),
                                 novels = snapshot.homeData.recentlyUpdateOriginalR18,
-                                accent = androidx.compose.material3.MaterialTheme.colorScheme.error,
-                                onMore = {
-                                    navigator?.pushIfNotCurrent(NovelListPage(2, 1, true))
-                                }
+                                onMore = { navigator?.pushIfNotCurrent(NovelListPage(2, 1, true)) },
+                                adult = true,
+                                navigator = navigator
                             )
                         }
                     }
                 }
-                Spacer(Modifier.height(112.dp))
             }
         }
 
-        LaunchedEffect(Unit) {
-            model.getHomeData()
+        LaunchedEffect(Unit) { model.getHomeData() }
+    }
+}
+
+@Composable
+private fun HomeActions(
+    onSearch: () -> Unit,
+    onCategories: () -> Unit,
+    onForum: () -> Unit,
+    onGuestbook: () -> Unit
+) {
+    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+        HomeAction(stringResource(R.string.search_action), Icons.Filled.Search, onSearch)
+        HomeAction(stringResource(R.string.categories), Icons.Filled.Category, onCategories)
+        HomeAction(stringResource(R.string.forum), Icons.Filled.Forum, onForum)
+        HomeAction(stringResource(R.string.guestbook), Icons.Filled.Forum, onGuestbook)
+    }
+}
+
+@Composable
+private fun HomeAction(
+    label: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    onClick: () -> Unit
+) {
+    IconButton(onClick = onClick, modifier = Modifier.semantics { contentDescription = label }) {
+        Icon(icon, contentDescription = null)
+    }
+}
+
+private fun LazyListScope.homeCollection(
+    title: String,
+    novels: List<CoveredNovel>,
+    onMore: (() -> Unit)?,
+    adult: Boolean,
+    navigator: AppNavigator?
+) {
+    val visible = novels
+        .asSequence()
+        .filter { adult || !it.isAdult }
+        .distinctBy { it.url.trim().ifBlank { it.name.trim() } }
+        .take(4)
+        .toList()
+
+    item(key = "home-section-$title", contentType = "home-section") {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+            verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
+        ) {
+            Text(title, style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
+            if (onMore != null) {
+                TextButton(onClick = onMore) { Text(stringResource(R.string.home_browse_more)) }
+            }
+        }
+    }
+    if (visible.isEmpty()) {
+        item(key = "home-empty-$title", contentType = "empty") {
+            DiscoveryEmptyState(
+                title = stringResource(R.string.home_collection_empty_title),
+                message = stringResource(R.string.home_collection_empty_message)
+            )
+        }
+    } else {
+        items(
+            items = visible,
+            key = { novel -> "home-novel-${novel.url.trim().ifBlank { novel.name.trim() }}" },
+            contentType = { "novel" }
+        ) { novel ->
+            DiscoveryNovelCard(
+                novel = novel,
+                compact = true,
+                modifier = Modifier.fillMaxWidth(),
+                onClick = { navigator?.pushIfNotCurrent(NovelPage(novel)) }
+            )
         }
     }
 }
 
-/** Keeps collection filtering and navigation in the presentation boundary. */
-@Composable
-private fun HomeCollection(
-    title: String,
-    novels: List<CoveredNovel>,
-    accent: Color,
-    featured: Boolean = false,
-    onMore: (() -> Unit)?
-) {
-    val adult by PresentationAccess.settings.adult
-    val visible = remember(novels, adult) {
-        novels
-            .asSequence()
-            .filter { adult || !it.isAdult }
-            .distinctBy { it.url.ifBlank { it.name } }
-            .take(4)
-            .toList()
-    }
-
-    QuietSectionHeader(
-        title = title,
-        accent = accent,
-        actionLabel = stringResource(R.string.home_browse_more).takeIf { onMore != null },
-        onAction = onMore,
-        // Keep the featured section breathing room, but tighten the gap
-        // between subsequent home collections to avoid a large blank band.
-        modifier = Modifier.padding(top = if (featured) 8.dp else 24.dp)
-    )
-
-    if (visible.isEmpty()) {
-        QuietEmptyState(
-            title = stringResource(R.string.home_collection_empty_title),
-            message = stringResource(R.string.home_collection_empty_message),
-            modifier = Modifier.padding(horizontal = QuietEditorial.pagePadding)
-        )
-    } else {
-        HomePreviewRail(
-            novels = visible,
-            modifier = Modifier.padding(top = 12.dp)
-        )
-    }
+private fun failureMessage(failure: LoadFailureKind): Int = when (failure) {
+    LoadFailureKind.NETWORK -> R.string.load_network_error
+    LoadFailureKind.CLIENT -> R.string.load_client_error
 }
 
 class HomeTabModel(
     private val authorization: Authorization
-) : StateScreenModel<HomeTabModel.State>(State.Loading) {
+) : AppStateViewModel<HomeTabModel.State>(State.Loading) {
 
     private var loadStarted = false
 
@@ -231,7 +268,7 @@ class HomeTabModel(
         }
     }
 
-    fun retry() {
+    fun reload() {
         loadStarted = false
         getHomeData()
     }

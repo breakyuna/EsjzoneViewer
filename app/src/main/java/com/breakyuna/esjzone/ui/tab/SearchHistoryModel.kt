@@ -1,8 +1,7 @@
 package com.breakyuna.esjzone.ui.tab
 import com.breakyuna.esjzone.app.PresentationAccess
 
-import cafe.adriel.voyager.core.model.StateScreenModel
-import cafe.adriel.voyager.core.model.screenModelScope
+import com.breakyuna.esjzone.ui.navigation.AppStateViewModel
 import com.breakyuna.esjzone.database.entity.SearchHistory
 import com.breakyuna.esjzone.util.AppLogger
 import com.breakyuna.esjzone.util.currentDateString
@@ -11,7 +10,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 
 /** Owns local search-history persistence so the tab remains a presentation layer. */
-class SearchHistoryModel : StateScreenModel<SearchHistoryModel.State>(State()) {
+class SearchHistoryModel : AppStateViewModel<SearchHistoryModel.State>(State()) {
 
     data class State(
         val histories: List<SearchHistory> = emptyList(),

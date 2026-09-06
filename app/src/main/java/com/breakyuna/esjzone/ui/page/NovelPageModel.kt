@@ -1,8 +1,7 @@
 package com.breakyuna.esjzone.ui.page
 import com.breakyuna.esjzone.app.PresentationAccess
 
-import cafe.adriel.voyager.core.model.StateScreenModel
-import cafe.adriel.voyager.core.model.screenModelScope
+import com.breakyuna.esjzone.ui.navigation.AppStateViewModel
 import com.breakyuna.esjzone.database.BookshelfRepository
 import com.breakyuna.esjzone.network.Authorization
 import com.breakyuna.esjzone.network.LoadFailureKind
@@ -20,7 +19,7 @@ import kotlinx.coroutines.launch
 class NovelPageModel(
     private val authorization: Authorization,
     private val novel: Novel
-) : StateScreenModel<NovelPageModel.State>(State.Loading) {
+) : AppStateViewModel<NovelPageModel.State>(State.Loading) {
 
     private val detailLoadLock = Any()
     private var detailLoadStarted = false

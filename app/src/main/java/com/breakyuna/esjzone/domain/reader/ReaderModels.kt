@@ -1,6 +1,6 @@
 package com.breakyuna.esjzone.domain.reader
 
-/** Stable identity for a chapter. The domain layer never depends on Compose or Voyager. */
+/** Stable identity for a chapter. The domain layer never depends on Compose or navigation. */
 data class ReaderChapterRef(
     val name: String,
     val url: String

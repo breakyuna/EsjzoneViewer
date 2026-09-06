@@ -1,5 +1,4 @@
 package com.breakyuna.esjzone.ui.component
-import com.breakyuna.esjzone.app.PresentationAccess
 
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
@@ -9,10 +8,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -21,7 +18,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -29,8 +25,6 @@ import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import coil.compose.SubcomposeAsyncImage
-import coil.request.ImageRequest
 import com.breakyuna.esjzone.R
 import com.breakyuna.esjzone.novellibrary.component.BackgroundColorTextStyle
 import com.breakyuna.esjzone.novellibrary.component.BoldTextStyle
@@ -41,6 +35,11 @@ import com.breakyuna.esjzone.novellibrary.component.ImageComponent
 import com.breakyuna.esjzone.novellibrary.component.TextComponent
 import com.breakyuna.esjzone.novellibrary.novel.NovelDescription
 import com.breakyuna.esjzone.novellibrary.novel.analyseDescription
+import com.breakyuna.esjzone.ui.designsystem.AppImage
+import com.breakyuna.esjzone.ui.designsystem.AppShapes
+import com.breakyuna.esjzone.ui.designsystem.AppSpacing
+import com.breakyuna.esjzone.ui.designsystem.AppTypography
+import com.breakyuna.esjzone.ui.designsystem.appSurfaceColors
 import org.jsoup.Jsoup
 import org.jsoup.nodes.Document
 import org.jsoup.nodes.Element
@@ -53,22 +52,22 @@ fun Description(description: NovelDescription, modifier: Modifier = Modifier) {
 
     Card(
         modifier = modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(18.dp),
+        shape = AppShapes.standard,
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)
+            containerColor = appSurfaceColors().subtle
         )
     ) {
         Column(
-            modifier = Modifier.padding(18.dp)
+            modifier = Modifier.padding(AppSpacing.lg)
         ) {
             Text(
                 text = stringResource(id = R.string.description),
-                style = MaterialTheme.typography.titleMedium.copy(
+                style = AppTypography.titleMedium.copy(
                     fontWeight = FontWeight.Bold
                 ),
                 color = MaterialTheme.colorScheme.primary
             )
-            Spacer(modifier = Modifier.height(10.dp))
+            Spacer(modifier = Modifier.height(AppSpacing.sm))
             for (component in description.components) {
                 if (component is TextComponent) {
                     val (str, inlines) = component.toInlineAnnotatedString(
@@ -79,29 +78,20 @@ fun Description(description: NovelDescription, modifier: Modifier = Modifier) {
                     Text(
                         text = str,
                         inlineContent = inlines,
-                        style = MaterialTheme.typography.bodyMedium.copy(
+                        style = AppTypography.bodyMedium.copy(
                             lineHeight = 22.sp
                         ),
                         color = MaterialTheme.colorScheme.onSurface
                     )
                 } else if (component is ImageComponent) {
-                    SubcomposeAsyncImage(
-                        model = ImageRequest.Builder(LocalContext.current)
-                            .data(component.url)
-                            .crossfade(true)
-                            .build(),
-                        // The image is part of rich description content; the
-                        // surrounding text provides its accessible context.
+                    AppImage(
+                        model = component.url,
                         contentDescription = null,
-                        imageLoader = PresentationAccess.imageLoader,
-                        loading = {
-                            CircularProgressIndicator(strokeWidth = 2.dp)
-                        },
                         contentScale = ContentScale.FillWidth,
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(vertical = 6.dp)
-                            .clip(RoundedCornerShape(8.dp))
+                            .clip(AppShapes.compact)
                     )
                 }
             }
@@ -150,7 +140,7 @@ fun FuriganaTestPreview() {
     ) {
         Column(
             modifier = Modifier
-                .padding(8.dp)
+                .padding(AppSpacing.sm)
                 .verticalScroll(rememberScrollState())
         ) {
             for (component in description.components) {
@@ -165,16 +155,9 @@ fun FuriganaTestPreview() {
                         inlineContent = inlines
                     )
                 } else if (component is ImageComponent) {
-                    SubcomposeAsyncImage(
-                        model = ImageRequest.Builder(LocalContext.current)
-                            .data(component.url)
-                            .crossfade(true)
-                            .build(),
+                    AppImage(
+                        model = component.url,
                         contentDescription = null,
-                        imageLoader = PresentationAccess.imageLoader,
-                        loading = {
-                            CircularProgressIndicator()
-                        },
                         contentScale = ContentScale.FillWidth,
                         modifier = Modifier
                             .fillMaxWidth()

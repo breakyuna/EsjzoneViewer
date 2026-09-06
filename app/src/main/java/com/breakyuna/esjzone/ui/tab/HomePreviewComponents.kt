@@ -16,8 +16,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.breakyuna.esjzone.novellibrary.novel.CoveredNovel
-import com.breakyuna.esjzone.ui.component.QuietNovelPreviewCard
-import com.breakyuna.esjzone.ui.theme.QuietEditorial
+import com.breakyuna.esjzone.ui.component.AppNovelPreviewCard
+import com.breakyuna.esjzone.ui.designsystem.AppSpacing
 
 /**
  * A finite, two-row home rail. Each page contains at most two cards and the
@@ -45,7 +45,7 @@ internal fun HomePreviewRail(
     ) {
         // The side inset and the page width share the same value, so both the
         // first and last page can settle with their centre aligned to the rail.
-        val sideInset = QuietEditorial.pagePadding
+        val sideInset = AppSpacing.lg
         val pageWidth = if (maxWidth > sideInset * 2) {
             maxWidth - sideInset * 2
         } else {
@@ -58,7 +58,7 @@ internal fun HomePreviewRail(
             state = listState,
             flingBehavior = flingBehavior,
             contentPadding = PaddingValues(horizontal = sideInset),
-            horizontalArrangement = Arrangement.spacedBy(QuietEditorial.itemGap),
+            horizontalArrangement = Arrangement.spacedBy(AppSpacing.md),
             modifier = Modifier.fillMaxWidth()
         ) {
             itemsIndexed(
@@ -75,7 +75,7 @@ internal fun HomePreviewRail(
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
                     page.forEach { novel ->
-                        QuietNovelPreviewCard(
+                        AppNovelPreviewCard(
                             novel = novel,
                             compact = true,
                             showLatestChapter = true

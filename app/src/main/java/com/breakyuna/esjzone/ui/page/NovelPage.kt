@@ -9,6 +9,7 @@ import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -24,10 +25,12 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.MenuBook
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
@@ -37,6 +40,9 @@ import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.Forum
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material.icons.filled.TextSnippet
@@ -44,6 +50,10 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CenterAlignedTopAppBar
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -53,11 +63,13 @@ import androidx.compose.material3.SheetState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -70,9 +82,8 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import cafe.adriel.voyager.core.model.rememberScreenModel
-import cafe.adriel.voyager.core.screen.Screen
-import cafe.adriel.voyager.core.screen.ScreenKey
+import com.breakyuna.esjzone.ui.navigation.rememberAppViewModel
+import com.breakyuna.esjzone.ui.navigation.AppDestination
 import com.breakyuna.esjzone.R
 import com.breakyuna.esjzone.database.BookshelfRepository
 import com.breakyuna.esjzone.database.entity.BookshelfSyncState
@@ -83,6 +94,7 @@ import com.breakyuna.esjzone.network.LoadFailureKind
 import com.breakyuna.esjzone.novellibrary.component.ChapterItem
 import com.breakyuna.esjzone.novellibrary.component.TextComponent
 import com.breakyuna.esjzone.novellibrary.component.VisibleChapterItem
+import com.breakyuna.esjzone.novellibrary.component.VisibleChapterGroup
 import com.breakyuna.esjzone.novellibrary.component.initiallyExpandedChapterKeys
 import com.breakyuna.esjzone.novellibrary.component.visibleChapterRows
 import com.breakyuna.esjzone.novellibrary.novel.DetailedNovel
@@ -95,21 +107,27 @@ import com.breakyuna.esjzone.offline.DownloadedChapterRecord
 import com.breakyuna.esjzone.offline.DownloadedNovelManifest
 import com.breakyuna.esjzone.offline.NovelDownloadManager
 import com.breakyuna.esjzone.offline.NovelExporter
-import com.breakyuna.esjzone.ui.component.ChapterListRow
 import com.breakyuna.esjzone.ui.component.Description
-import com.breakyuna.esjzone.ui.component.QuietErrorState
-import com.breakyuna.esjzone.ui.component.QuietLoadingState
-import com.breakyuna.esjzone.ui.component.NovelDetailHero
-import com.breakyuna.esjzone.ui.component.NovelDetailRule
-import com.breakyuna.esjzone.ui.component.NovelDetailSectionHeading
-import com.breakyuna.esjzone.ui.component.NovelDetailStats
-import com.breakyuna.esjzone.ui.component.NovelDetailTags
-import com.breakyuna.esjzone.ui.component.NovelDetailTopBar
-import com.breakyuna.esjzone.ui.theme.QuietEditorial
+import com.breakyuna.esjzone.ui.designsystem.AppShapes
+import com.breakyuna.esjzone.ui.designsystem.AppSpacing
+import com.breakyuna.esjzone.ui.designsystem.AppTypography
+import com.breakyuna.esjzone.ui.designsystem.AppTouchTarget
+import com.breakyuna.esjzone.ui.designsystem.appStateColors
+import com.breakyuna.esjzone.ui.designsystem.AppAdaptiveMetrics
+import com.breakyuna.esjzone.ui.designsystem.AppWindowSizeClass
+import com.breakyuna.esjzone.ui.designsystem.rememberAppAdaptiveMetrics
+import com.breakyuna.esjzone.ui.product.NovelCoverModel
+import com.breakyuna.esjzone.ui.product.NovelHero
+import com.breakyuna.esjzone.ui.product.NovelMetadataModel
+import com.breakyuna.esjzone.ui.product.NovelTag
+import com.breakyuna.esjzone.ui.product.NovelTagModel
+import com.breakyuna.esjzone.ui.product.LoadingSkeleton
+import com.breakyuna.esjzone.ui.product.ErrorState
+import com.breakyuna.esjzone.ui.product.OfflineState
 import com.breakyuna.esjzone.ui.navigation.BooleanStateHolder
 import com.breakyuna.esjzone.ui.navigation.ChapterStateHolder
 import com.breakyuna.esjzone.ui.navigation.LocalBaseNavigator
-import com.breakyuna.esjzone.ui.navigation.pushIfNotCurrent
+import com.breakyuna.esjzone.ui.navigation.AppNavigator
 import com.breakyuna.esjzone.util.AppLogger
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -122,9 +140,9 @@ class NovelPage(
     private val novel: Novel,
     private val history: ChapterStateHolder = ChapterStateHolder(),
     private val favorite: BooleanStateHolder = BooleanStateHolder()
-) : Screen {
+) : AppDestination {
 
-    override val key: ScreenKey =
+    override val key: String =
         "NovelPage:" + EsjzoneUrls.canonicalPageKey(novel.url).ifBlank { novel.name.trim() }
 
     @Composable
@@ -132,8 +150,8 @@ class NovelPage(
         val navigator = LocalBaseNavigator.current
         val authorization = LocalAuthorization.current
         val context = LocalContext.current
-        val screenModel = rememberScreenModel { NovelPageModel(authorization, novel) }
-        val commentModel = rememberScreenModel { CommentPageModel(authorization, novel.url) }
+        val screenModel = rememberAppViewModel { NovelPageModel(authorization, novel) }
+        val commentModel = rememberAppViewModel { CommentPageModel(authorization, novel.url) }
         val state by screenModel.state.collectAsState()
         val localShelfEntry by BookshelfRepository.observeEntry(authorization, novel.url)
             .collectAsState(initial = null)
@@ -185,7 +203,8 @@ class NovelPage(
                 .fillMaxSize()
                 .background(MaterialTheme.colorScheme.surface)
         ) {
-            NovelDetailTopBar(
+            RebuiltDetailTopBar(
+                title = novel.name,
                 onBack = { navigator?.pop() },
                 onOpenExternal = {
                     openExternal(
@@ -201,17 +220,26 @@ class NovelPage(
             when (val snapshot = state) {
                 NovelPageModel.State.Loading -> Box(
                     modifier = Modifier.weight(1f).fillMaxWidth(),
-                    contentAlignment = Alignment.Center
-                ) { QuietLoadingState() }
+                    contentAlignment = Alignment.TopCenter
+                ) { LoadingSkeleton(modifier = Modifier.fillMaxWidth()) }
 
                 is NovelPageModel.State.Error -> Box(
                     modifier = Modifier.weight(1f).fillMaxWidth(),
                     contentAlignment = Alignment.Center
                 ) {
-                    QuietErrorState(
-                        onRetry = screenModel::retry,
-                        failure = snapshot.failure
-                    )
+                    if (snapshot.failure == LoadFailureKind.NETWORK) {
+                        OfflineState(
+                            modifier = Modifier.fillMaxWidth(),
+                            onRetry = screenModel::retry
+                        )
+                    } else {
+                        ErrorState(
+                            title = stringResource(R.string.community_load_failed),
+                            message = stringResource(R.string.community_empty_guidance),
+                            modifier = Modifier.fillMaxWidth(),
+                            onRetry = screenModel::retry
+                        )
+                    }
                 }
 
                 is NovelPageModel.State.Result -> {
@@ -353,12 +381,13 @@ private fun NovelDetailContent(
     onGroupToggle: (String) -> Unit,
     visibleRows: List<com.breakyuna.esjzone.novellibrary.component.VisibleChapterRow>,
     commentModel: CommentPageModel,
-    navigator: cafe.adriel.voyager.navigator.Navigator?,
+    navigator: AppNavigator?,
     context: Context,
     modifier: Modifier = Modifier
 ) {
     val orderedChapters = detailed.chapterList.orderedChapters
     val targetChapter = historyState.value ?: detailed.chapterList.toRead
+    val metrics = rememberAppAdaptiveMetrics()
     val descriptionPreview = remember(detailed.description) {
         detailed.description.preview(360)
     }
@@ -402,53 +431,41 @@ private fun NovelDetailContent(
         LazyColumn(
             modifier = Modifier
                 .weight(1f)
+                .widthIn(max = metrics.contentMaxWidth)
                 .fillMaxWidth()
-                .widthIn(max = QuietEditorial.contentMaxWidth)
                 .align(Alignment.CenterHorizontally),
-            contentPadding = PaddingValues(bottom = composerBottomPadding)
+            contentPadding = PaddingValues(
+                start = metrics.horizontalPadding,
+                end = metrics.horizontalPadding,
+                bottom = composerBottomPadding
+            ),
+            verticalArrangement = Arrangement.spacedBy(AppSpacing.sm)
         ) {
-            item(key = "detail-hero") {
-                NovelDetailHero(
-                    novel = detailed,
-                    modifier = Modifier
-                        .padding(horizontal = 16.dp, vertical = 20.dp)
-                        .widthIn(max = QuietEditorial.contentMaxWidth)
-                )
+            item(key = "detail-hero", contentType = "novel-hero") {
+                RebuiltNovelHero(detailed, metrics)
             }
 
-            item(key = "detail-stats") {
-                NovelDetailStats(
-                    novel = detailed,
-                    modifier = Modifier
-                        .padding(horizontal = 16.dp)
-                        .widthIn(max = QuietEditorial.contentMaxWidth)
-                )
+            item(key = "detail-stats", contentType = "novel-stats") {
+                RebuiltNovelStats(detailed)
             }
 
             if (detailed.tags.isNotEmpty()) {
-                item(key = "detail-tags") {
-                    NovelDetailTags(
+                item(key = "detail-tags", contentType = "novel-tags") {
+                    RebuiltNovelTags(
                         tags = detailed.tags,
-                        onTagClick = { tag ->
-                            navigator?.pushIfNotCurrent(SearchPage(tag))
-                        },
-                        modifier = Modifier
-                            .padding(horizontal = 16.dp, vertical = 10.dp)
-                            .widthIn(max = QuietEditorial.contentMaxWidth)
+                        onTagClick = { tag -> navigator?.pushIfNotCurrent(SearchPage(tag)) }
                     )
                 }
             }
 
-            item(key = "detail-actions") {
+            item(key = "detail-actions", contentType = "novel-actions") {
                 Column(
-                    modifier = Modifier
-                        .padding(horizontal = 16.dp, vertical = 4.dp)
-                        .widthIn(max = QuietEditorial.contentMaxWidth),
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(AppSpacing.sm)
                 ) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        horizontalArrangement = Arrangement.spacedBy(AppSpacing.sm)
                     ) {
                         Button(
                             enabled = targetChapter != null,
@@ -469,9 +486,9 @@ private fun NovelDetailContent(
                             },
                             modifier = Modifier
                                 .weight(1f)
-                                .heightIn(min = 54.dp),
-                            shape = QuietEditorial.cardShape,
-                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 8.dp)
+                                .heightIn(min = AppTouchTarget.minimum),
+                            shape = AppShapes.standard,
+                            contentPadding = PaddingValues(horizontal = AppSpacing.sm, vertical = AppSpacing.sm)
                         ) {
                             Icon(
                                 imageVector = Icons.AutoMirrored.Filled.MenuBook,
@@ -491,9 +508,9 @@ private fun NovelDetailContent(
                             onClick = onToggleFavorite,
                             modifier = Modifier
                                 .weight(1f)
-                                .heightIn(min = 54.dp),
-                            shape = QuietEditorial.cardShape,
-                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 8.dp)
+                                .heightIn(min = AppTouchTarget.minimum),
+                            shape = AppShapes.standard,
+                            contentPadding = PaddingValues(horizontal = AppSpacing.sm, vertical = AppSpacing.sm)
                         ) {
                             Icon(
                                 imageVector = if (favorite) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder,
@@ -540,9 +557,9 @@ private fun NovelDetailContent(
                                 },
                                 modifier = Modifier
                                     .weight(1f)
-                                    .heightIn(min = 54.dp),
-                                shape = QuietEditorial.cardShape,
-                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 8.dp)
+                                    .heightIn(min = AppTouchTarget.minimum),
+                                shape = AppShapes.standard,
+                                contentPadding = PaddingValues(horizontal = AppSpacing.sm, vertical = AppSpacing.sm)
                             ) {
                                 Icon(
                                     imageVector = Icons.Filled.Forum,
@@ -562,14 +579,12 @@ private fun NovelDetailContent(
             }
 
             if (descriptionPreview.isNotBlank() || detailed.description.components.isNotEmpty()) {
-                item(key = "detail-description") {
+                item(key = "detail-description", contentType = "novel-description") {
                     Column(
-                        modifier = Modifier
-                            .padding(horizontal = 16.dp, vertical = 24.dp)
-                            .widthIn(max = QuietEditorial.contentMaxWidth)
+                        modifier = Modifier.fillMaxWidth()
                     ) {
-                        NovelDetailSectionHeading(title = stringResource(R.string.description))
-                        Spacer(modifier = Modifier.height(8.dp))
+                        RebuiltSectionHeading(title = stringResource(R.string.description))
+                        Spacer(modifier = Modifier.height(AppSpacing.sm))
                         if (descriptionExpanded || descriptionPreview.isBlank()) {
                             Description(
                                 description = detailed.description,
@@ -578,8 +593,8 @@ private fun NovelDetailContent(
                         } else if (descriptionPreview.isNotBlank()) {
                             Text(
                                 text = descriptionPreview,
-                                style = QuietEditorial.body,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                style = AppTypography.bodyMedium,
+                                color = appStateColors().contentMuted,
                                 maxLines = 5,
                                 overflow = TextOverflow.Ellipsis
                             )
@@ -606,15 +621,13 @@ private fun NovelDetailContent(
                 }
             }
 
-            item(key = "detail-chapters-heading") {
+            item(key = "detail-chapters-heading", contentType = "chapter-heading") {
                 Column(
-                    modifier = Modifier
-                        .padding(horizontal = 16.dp)
-                        .widthIn(max = QuietEditorial.contentMaxWidth)
+                    modifier = Modifier.fillMaxWidth()
                 ) {
-                    NovelDetailRule()
-                    Spacer(modifier = Modifier.height(18.dp))
-                    NovelDetailSectionHeading(
+                    RebuiltRule()
+                    Spacer(modifier = Modifier.height(AppSpacing.lg))
+                    RebuiltSectionHeading(
                         title = stringResource(R.string.novel_chapterlist),
                         supportingText = orderedChapters.takeIf { it.isNotEmpty() }?.let {
                             stringResource(R.string.novel_chapter_count, it.size)
@@ -633,62 +646,69 @@ private fun NovelDetailContent(
             }
 
             if (orderedChapters.isEmpty()) {
-                item(key = "detail-chapters-empty") {
+                item(key = "detail-chapters-empty", contentType = "chapter-empty") {
                     Text(
                         text = stringResource(R.string.reader_contents_empty),
-                        style = QuietEditorial.body,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = AppTypography.bodyMedium,
+                        color = appStateColors().contentMuted,
                         modifier = Modifier
-                            .padding(horizontal = 16.dp, vertical = 16.dp)
-                            .widthIn(max = QuietEditorial.contentMaxWidth)
+                            .fillMaxWidth()
+                            .padding(vertical = AppSpacing.lg)
                     )
                 }
             } else if (!showAllChapters) {
-                item(key = "detail-chapter-preview") {
+                item(key = "detail-chapter-preview", contentType = "chapter-preview") {
                     Column(
-                        modifier = Modifier
-                            .padding(horizontal = 16.dp, vertical = 8.dp)
-                            .widthIn(max = QuietEditorial.contentMaxWidth),
-                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalArrangement = Arrangement.spacedBy(AppSpacing.sm)
                     ) {
                         previewChapters.forEachIndexed { index, chapter ->
-                            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                                when {
-                                    hasHistory.value && targetChapter?.url == chapter.url -> {
-                                        Text(
-                                            text = stringResource(R.string.novel_last_read),
-                                            style = QuietEditorial.smallLabel,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                            modifier = Modifier.padding(start = 4.dp)
-                                        )
+                            key("chapter-preview:${chapter.url}:$index") {
+                                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                    when {
+                                        hasHistory.value && targetChapter?.url == chapter.url -> {
+                                            Text(
+                                                text = stringResource(R.string.novel_last_read),
+                                                style = AppTypography.labelMedium,
+                                                color = appStateColors().contentMuted
+                                            )
+                                        }
+                                        latestChapter?.url == chapter.url -> {
+                                            Text(
+                                                text = stringResource(R.string.novel_latest_chapter),
+                                                style = AppTypography.labelMedium,
+                                                color = appStateColors().contentMuted
+                                            )
+                                        }
                                     }
-                                    latestChapter?.url == chapter.url -> {
-                                        Text(
-                                            text = stringResource(R.string.novel_latest_chapter),
-                                            style = QuietEditorial.smallLabel,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                            modifier = Modifier.padding(start = 4.dp)
-                                        )
-                                    }
+                                    RebuiltChapterRow(
+                                        row = VisibleChapterItem(
+                                            item = ChapterItem(chapter),
+                                            key = "chapter-preview:${chapter.url}:$index",
+                                            depth = 0
+                                        ),
+                                        currentChapter = historyState.value,
+                                        hasHistory = hasHistory.value,
+                                        onChapterOpen = onChapterOpen,
+                                        onGroupToggle = {}
+                                    )
                                 }
-                                ChapterListRow(
-                                    row = VisibleChapterItem(
-                                        item = ChapterItem(chapter),
-                                        key = "chapter-preview:${chapter.url}:$index",
-                                        depth = 0
-                                    ),
-                                    currentChapter = historyState.value,
-                                    hasHistory = hasHistory.value,
-                                    onChapterOpen = onChapterOpen,
-                                    onGroupToggle = {}
-                                )
                             }
                         }
                     }
                 }
             } else {
-                items(visibleRows, key = { it.key }) { row ->
-                    ChapterListRow(
+                items(
+                    visibleRows,
+                    key = { it.key },
+                    contentType = { row ->
+                        when (row) {
+                            is VisibleChapterGroup -> "chapter-group"
+                            is VisibleChapterItem -> "chapter-item"
+                        }
+                    }
+                ) { row ->
+                    RebuiltChapterRow(
                         row = row,
                         currentChapter = historyState.value,
                         hasHistory = hasHistory.value,
@@ -696,30 +716,27 @@ private fun NovelDetailContent(
                         onGroupToggle = onGroupToggle
                     )
                 }
-                item(key = "detail-chapters-collapse") {
+                item(key = "detail-chapters-collapse", contentType = "chapter-collapse") {
                     TextButton(
                         onClick = { onShowAllChaptersChange(false) },
-                        modifier = Modifier.padding(horizontal = 16.dp)
+                        modifier = Modifier.fillMaxWidth()
                     ) {
                         Text(stringResource(R.string.novel_show_fewer_chapters))
                     }
                 }
             }
 
-            item(key = "detail-comments-rule") {
+            item(key = "detail-comments-rule", contentType = "section-divider") {
                 Column(
-                    modifier = Modifier
-                        .padding(horizontal = 16.dp, vertical = 18.dp)
-                        .widthIn(max = QuietEditorial.contentMaxWidth)
-                ) { NovelDetailRule() }
+                    modifier = Modifier.fillMaxWidth()
+                ) { RebuiltRule() }
             }
-            item(key = "detail-comments") {
+            item(key = "detail-comments", contentType = "comments") {
                 Column(
-                    modifier = Modifier
-                        .widthIn(max = QuietEditorial.contentMaxWidth)
+                    modifier = Modifier.fillMaxWidth()
                 ) {
-                    NovelDetailSectionHeading(title = stringResource(R.string.comments))
-                    Spacer(modifier = Modifier.height(8.dp))
+                    RebuiltSectionHeading(title = stringResource(R.string.comments))
+                    Spacer(modifier = Modifier.height(AppSpacing.sm))
                     CommentSectionContent(
                         model = commentModel,
                         showHeader = false,
@@ -732,6 +749,240 @@ private fun NovelDetailContent(
             model = commentModel,
             onHeightChanged = { composerHeightPx = it }
         )
+    }
+}
+
+/** Feature-owned detail building blocks. They intentionally consume only the
+ * rebuilt token/component layer; networking and domain models stay untouched. */
+@Composable
+private fun RebuiltNovelHero(novel: DetailedNovel, metrics: AppAdaptiveMetrics) {
+    val adultLabel = stringResource(R.string.adult_badge)
+    val metadataDescription = listOfNotNull(
+        novel.type.trim().takeIf(String::isNotBlank),
+        novel.updatedAt?.trim()?.takeIf(String::isNotBlank)
+    ).joinToString(" · ").takeIf(String::isNotBlank)
+    NovelHero(
+        novel = com.breakyuna.esjzone.ui.product.NovelCardModel(
+            id = novel.id().ifBlank { novel.url },
+            title = novel.name,
+            cover = NovelCoverModel(
+                model = EsjzoneUrls.coverOrEmpty(novel.coverUrl)
+                    .takeIf(String::isNotBlank)
+                    ?: R.drawable.missing_cover,
+                contentDescription = novel.name
+            ),
+            metadata = NovelMetadataModel(
+                author = novel.author.trim().takeIf(String::isNotBlank),
+                description = metadataDescription,
+                tags = listOfNotNull(
+                    adultLabel.takeIf { novel.isAdult }?.let { NovelTagModel(it) }
+                ),
+                metrics = emptyList()
+            )
+        ),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(
+                horizontal = if (metrics.sizeClass == AppWindowSizeClass.Compact) AppSpacing.zero else AppSpacing.md,
+                vertical = AppSpacing.md
+            )
+    )
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun RebuiltDetailTopBar(
+    title: String,
+    onBack: () -> Unit,
+    onOpenExternal: () -> Unit,
+    onMore: () -> Unit
+) {
+    CenterAlignedTopAppBar(
+        title = {
+            Text(
+                title,
+                style = AppTypography.titleMedium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        },
+        navigationIcon = {
+            IconButton(onClick = onBack, modifier = Modifier.size(AppTouchTarget.minimum)) {
+                Icon(
+                    imageVector = androidx.compose.material.icons.automirrored.filled.ArrowBack,
+                    contentDescription = stringResource(R.string.reader_back)
+                )
+            }
+        },
+        actions = {
+            IconButton(onClick = onOpenExternal, modifier = Modifier.size(AppTouchTarget.minimum)) {
+                Icon(
+                    imageVector = androidx.compose.material.icons.filled.OpenInNew,
+                    contentDescription = stringResource(R.string.novel_open_source)
+                )
+            }
+            IconButton(onClick = onMore, modifier = Modifier.size(AppTouchTarget.minimum)) {
+                Icon(
+                    imageVector = androidx.compose.material.icons.filled.MoreVert,
+                    contentDescription = stringResource(R.string.novel_more_actions)
+                )
+            }
+        },
+        colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
+            containerColor = MaterialTheme.colorScheme.surface
+        )
+    )
+}
+
+@Composable
+private fun RebuiltNovelStats(novel: DetailedNovel) {
+    val stats = listOfNotNull(
+        novel.views.takeIf { it > 0 }?.let { stringResource(R.string.novel_views_label) to it.toString() },
+        novel.likes.takeIf { it > 0 }?.let { stringResource(R.string.novel_likes_label) to it.toString() },
+        novel.words.takeIf { it > 0 }?.let { stringResource(R.string.novel_words_label) to it.toString() }
+    )
+    if (stats.isEmpty()) return
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = AppShapes.standard,
+        colors = CardDefaults.cardColors(containerColor = appStateColors().containerRaised)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(AppSpacing.md),
+            horizontalArrangement = Arrangement.SpaceEvenly
+        ) {
+            stats.forEach { (label, value) ->
+                key("novel-stat:$label") {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text(value, style = AppTypography.titleMedium)
+                        Text(label, style = AppTypography.bodySmall, color = appStateColors().contentMuted)
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun RebuiltNovelTags(tags: List<String>, onTagClick: (String) -> Unit) {
+    val visibleTags = tags.map(String::trim).filter(String::isNotBlank).distinct()
+    if (visibleTags.isEmpty()) return
+    Row(
+        modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+        horizontalArrangement = Arrangement.spacedBy(AppSpacing.xs)
+    ) {
+        visibleTags.forEach { tag ->
+            key("novel-tag:$tag") {
+                NovelTag(
+                    tag = NovelTagModel(label = tag),
+                    onClick = { onTagClick(tag) }
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun RebuiltSectionHeading(
+    title: String,
+    supportingText: String? = null,
+    actionLabel: String? = null,
+    onAction: (() -> Unit)? = null
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(vertical = AppSpacing.sm),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(title, style = AppTypography.titleMedium, modifier = Modifier.weight(1f))
+        supportingText?.takeIf(String::isNotBlank)?.let {
+            Text(it, style = AppTypography.bodySmall, color = appStateColors().contentMuted)
+        }
+        if (actionLabel != null && onAction != null) {
+            TextButton(onClick = onAction, modifier = Modifier.heightIn(min = AppTouchTarget.minimum)) {
+                Text(actionLabel)
+                Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = actionLabel)
+            }
+        }
+    }
+}
+
+@Composable
+private fun RebuiltRule() {
+    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f))
+}
+
+@Composable
+private fun RebuiltChapterRow(
+    row: com.breakyuna.esjzone.novellibrary.component.VisibleChapterRow,
+    currentChapter: Chapter?,
+    hasHistory: Boolean,
+    onChapterOpen: (Chapter) -> Unit,
+    onGroupToggle: (String) -> Unit
+) {
+    when (row) {
+        is VisibleChapterGroup -> Card(
+            onClick = { onGroupToggle(row.key) },
+            modifier = Modifier.fillMaxWidth().padding(vertical = AppSpacing.xs),
+            shape = AppShapes.standard,
+            colors = CardDefaults.cardColors(containerColor = appStateColors().containerRaised)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(AppSpacing.md),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(AppSpacing.sm)
+            ) {
+                Icon(Icons.Filled.Folder, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                Text(row.group.name.text, style = AppTypography.titleMedium, modifier = Modifier.weight(1f))
+                Icon(
+                    imageVector = if (row.expanded) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
+                    contentDescription = stringResource(
+                        if (row.expanded) R.string.chapter_group_collapse else R.string.chapter_group_expand
+                    ),
+                    tint = appStateColors().contentMuted
+                )
+            }
+        }
+
+        is VisibleChapterItem -> {
+            val chapter = row.item as? ChapterItem
+            if (chapter == null) {
+                // Non-chapter source notes still use their domain renderer;
+                // they are not made navigable or converted into fake chapters.
+                row.item.Render(currentChapter, hasHistory, onChapterOpen)
+            } else {
+                val current = chapter.chapter.isHistory ||
+                    (hasHistory && chapter.chapter == currentChapter)
+                val canOpen = chapter.chapter.url.contains("esjzone", ignoreCase = true) ||
+                    chapter.chapter.url.contains("forum", ignoreCase = true)
+                Card(
+                    onClick = { if (canOpen) onChapterOpen(chapter.chapter) },
+                    enabled = canOpen,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(start = AppSpacing.md * row.depth, top = AppSpacing.xs, bottom = AppSpacing.xs),
+                    shape = AppShapes.compact,
+                    colors = CardDefaults.cardColors(
+                        containerColor = if (current) appStateColors().containerAccent else appStateColors().containerRaised
+                    )
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(AppSpacing.md),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(AppSpacing.sm)
+                    ) {
+                        if (current) Icon(Icons.Filled.CheckCircle, contentDescription = stringResource(R.string.chapter_current), tint = MaterialTheme.colorScheme.primary)
+                        Text(
+                            chapter.chapter.name.ifBlank { stringResource(R.string.untitled_chapter) },
+                            style = AppTypography.bodyMedium,
+                            maxLines = 3,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f)
+                        )
+                        Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -872,8 +1123,8 @@ private fun NovelDownloadActions(
     OutlinedButton(
         onClick = { showSheet = true },
         modifier = modifier.heightIn(min = 54.dp),
-        shape = QuietEditorial.cardShape,
-        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 8.dp)
+        shape = AppShapes.standard,
+        contentPadding = PaddingValues(horizontal = AppSpacing.sm, vertical = AppSpacing.sm)
     ) {
         Icon(
             imageVector = if (downloaded?.complete == true) Icons.Filled.DownloadDone else Icons.Filled.Download,
@@ -972,6 +1223,7 @@ private fun NovelDownloadSheet(
     val completed = manifest?.chapters?.count { it.downloaded } ?: 0
     val total = novel.chapterList.orderedChapters.size
     val actualTotal = manifest?.chapters?.size?.takeIf { it > 0 } ?: total
+    val metrics = rememberAppAdaptiveMetrics()
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
@@ -981,9 +1233,9 @@ private fun NovelDownloadSheet(
             modifier = Modifier
                 .fillMaxWidth()
                 .navigationBarsPadding()
-                .padding(horizontal = 20.dp, vertical = 8.dp)
-                .widthIn(max = QuietEditorial.contentMaxWidth),
-            verticalArrangement = Arrangement.spacedBy(14.dp)
+                .padding(horizontal = metrics.horizontalPadding, vertical = AppSpacing.sm)
+                .widthIn(max = metrics.contentMaxWidth),
+            verticalArrangement = Arrangement.spacedBy(AppSpacing.md)
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(
@@ -995,7 +1247,7 @@ private fun NovelDownloadSheet(
                 Spacer(modifier = Modifier.width(9.dp))
                 Text(
                     text = stringResource(R.string.novel_local_copy_title),
-                    style = QuietEditorial.sectionTitle,
+                    style = AppTypography.titleMedium,
                     modifier = Modifier.weight(1f)
                 )
                 IconButton(onClick = onDismiss, modifier = Modifier.size(48.dp)) {
@@ -1007,24 +1259,24 @@ private fun NovelDownloadSheet(
             }
             Text(
                 text = novel.name,
-                style = QuietEditorial.cardTitle,
+                style = AppTypography.titleMedium,
                 color = MaterialTheme.colorScheme.onSurface,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis
             )
             Surface(
                 modifier = Modifier.fillMaxWidth(),
-                shape = QuietEditorial.largeShape,
+                shape = AppShapes.prominent,
                 color = MaterialTheme.colorScheme.surface.copy(alpha = 0.62f)
             ) {
-                Column(modifier = Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Column(modifier = Modifier.padding(AppSpacing.lg), verticalArrangement = Arrangement.spacedBy(AppSpacing.sm)) {
                     when {
                         downloading -> {
                             Text(
                                 text = stringResource(R.string.novel_downloading_count,
                                     progress?.completed ?: 0,
                                     progress?.total ?: total),
-                                style = QuietEditorial.title
+                                style = AppTypography.titleMedium
                             )
                             val current = progress
                             if (current != null && current.total > 0) {
@@ -1036,8 +1288,8 @@ private fun NovelDownloadSheet(
                                 current.chapterName.takeIf(String::isNotBlank)?.let {
                                     Text(
                                         text = it,
-                                        style = QuietEditorial.label,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        style = AppTypography.labelMedium,
+                                        color = appStateColors().contentMuted,
                                         maxLines = 2,
                                         overflow = TextOverflow.Ellipsis
                                     )
@@ -1056,14 +1308,14 @@ private fun NovelDownloadSheet(
                                 Text(
                                     text = stringResource(R.string.novel_download_failed),
                                     color = MaterialTheme.colorScheme.error,
-                                    style = QuietEditorial.body
+                                    style = AppTypography.bodyMedium
                                 )
                             }
                             if (completed > 0) {
                                 Text(
                                     text = stringResource(R.string.novel_local_copy_partial, completed, actualTotal),
-                                    style = QuietEditorial.body,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    style = AppTypography.bodyMedium,
+                                    color = appStateColors().contentMuted
                                 )
                             }
                         }
@@ -1078,32 +1330,32 @@ private fun NovelDownloadSheet(
                                 Spacer(modifier = Modifier.width(8.dp))
                                 Text(
                                     text = stringResource(R.string.novel_local_copy_complete, completed, actualTotal),
-                                    style = QuietEditorial.title
+                                    style = AppTypography.titleMedium
                                 )
                             }
                         }
                         manifest != null && completed > 0 -> {
                             Text(
                                 text = stringResource(R.string.novel_local_copy_partial, completed, actualTotal),
-                                style = QuietEditorial.title
+                                style = AppTypography.titleMedium
                             )
                         }
                         total == 0 -> {
                             Text(
                                 text = stringResource(R.string.novel_download_no_chapters),
-                                style = QuietEditorial.body,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                style = AppTypography.bodyMedium,
+                                color = appStateColors().contentMuted
                             )
                         }
                         else -> {
                             Text(
                                 text = stringResource(R.string.novel_local_copy_none),
-                                style = QuietEditorial.title
+                                style = AppTypography.titleMedium
                             )
                             Text(
                                 text = stringResource(R.string.novel_download_background_note),
-                                style = QuietEditorial.body,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                style = AppTypography.bodyMedium,
+                                color = appStateColors().contentMuted
                             )
                         }
                     }
@@ -1113,7 +1365,7 @@ private fun NovelDownloadSheet(
                 enabled = !downloading && total > 0,
                 onClick = onDownload,
                 modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp),
-                shape = QuietEditorial.controlShape
+                shape = AppShapes.standard
             ) {
                 Icon(
                     imageVector = if (manifest?.complete == true) Icons.Filled.Refresh else Icons.Filled.Download,
@@ -1136,7 +1388,7 @@ private fun NovelDownloadSheet(
                 OutlinedButton(
                     onClick = onDeleteDownload,
                     modifier = Modifier.fillMaxWidth().heightIn(min = 50.dp),
-                    shape = QuietEditorial.controlShape,
+                    shape = AppShapes.standard,
                     colors = androidx.compose.material3.ButtonDefaults.outlinedButtonColors(
                         contentColor = MaterialTheme.colorScheme.error
                     )
@@ -1152,10 +1404,10 @@ private fun NovelDownloadSheet(
             }
 
             if (manifest?.complete == true && !downloading) {
-                NovelDetailRule()
+                RebuiltRule()
                 Text(
                     text = stringResource(R.string.novel_export_title),
-                    style = QuietEditorial.sectionTitle
+                    style = AppTypography.titleMedium
                 )
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -1164,7 +1416,7 @@ private fun NovelDownloadSheet(
                     OutlinedButton(
                         onClick = onExportTxt,
                         modifier = Modifier.weight(1f).heightIn(min = 52.dp),
-                        shape = QuietEditorial.controlShape
+                        shape = AppShapes.standard
                     ) {
                         Icon(Icons.Filled.TextSnippet, contentDescription = null, modifier = Modifier.size(18.dp))
                         Spacer(modifier = Modifier.width(6.dp))
@@ -1173,7 +1425,7 @@ private fun NovelDownloadSheet(
                     OutlinedButton(
                         onClick = onExportEpub,
                         modifier = Modifier.weight(1f).heightIn(min = 52.dp),
-                        shape = QuietEditorial.controlShape
+                        shape = AppShapes.standard
                     ) {
                         Icon(Icons.AutoMirrored.Filled.MenuBook, contentDescription = null, modifier = Modifier.size(18.dp))
                         Spacer(modifier = Modifier.width(6.dp))
@@ -1204,7 +1456,7 @@ private fun NovelMoreActionsSheet(
         ) {
             Text(
                 text = stringResource(R.string.novel_more_actions),
-                style = QuietEditorial.sectionTitle,
+                style = AppTypography.titleMedium,
                 modifier = Modifier.padding(bottom = 6.dp)
             )
             TextButton(onClick = onOpenSource, modifier = Modifier.fillMaxWidth()) {

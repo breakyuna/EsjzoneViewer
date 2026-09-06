@@ -1,8 +1,7 @@
 package com.breakyuna.esjzone.ui.page
 import com.breakyuna.esjzone.app.PresentationAccess
 
-import cafe.adriel.voyager.core.model.StateScreenModel
-import cafe.adriel.voyager.core.model.screenModelScope
+import com.breakyuna.esjzone.ui.navigation.AppStateViewModel
 import com.breakyuna.esjzone.network.Authorization
 import com.breakyuna.esjzone.network.LoadFailureKind
 import com.breakyuna.esjzone.network.features.getHistories
@@ -22,7 +21,7 @@ import kotlinx.coroutines.launch
 /** Cloud history loader isolated from the tab and its paging presentation. */
 class HistoryPageModel(
     private val authorization: Authorization
-) : StateScreenModel<HistoryPageModel.State>(State.Loading) {
+) : AppStateViewModel<HistoryPageModel.State>(State.Loading) {
 
     private var loadJob: Job? = null
     private var loadStarted = false

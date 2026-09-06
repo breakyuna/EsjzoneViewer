@@ -2,8 +2,7 @@ package com.breakyuna.esjzone.ui.page
 import com.breakyuna.esjzone.app.PresentationAccess
 
 import androidx.compose.runtime.MutableState
-import cafe.adriel.voyager.core.model.StateScreenModel
-import cafe.adriel.voyager.core.model.screenModelScope
+import com.breakyuna.esjzone.ui.navigation.AppStateViewModel
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -17,11 +16,17 @@ import com.breakyuna.esjzone.network.features.getNovelDetail
 import com.breakyuna.esjzone.novellibrary.novel.Chapter
 import com.breakyuna.esjzone.novellibrary.novel.DetailedChapter
 import com.breakyuna.esjzone.novellibrary.novel.FavoriteNovel
+import com.breakyuna.esjzone.ui.reader.toReaderDocument
 import com.breakyuna.esjzone.util.AppLogger
 
 data class ReaderChapter(
     val chapter: Chapter,
-    val detail: DetailedChapter
+    /** Legacy data is retained only for download/export compatibility. */
+    val detail: DetailedChapter,
+    /** Reader presentation consumes the stable domain AST, not HTML components. */
+    val document: com.breakyuna.esjzone.domain.reader.ReaderChapterDocument =
+        detail.toReaderDocument(chapter),
+    val isOffline: Boolean = false
 )
 
 class ChapterPageModel(
@@ -32,7 +37,7 @@ class ChapterPageModel(
     private val novelName: String = "",
     private val novelUrl: String = "",
     private val novelCoverUrl: String = ""
-) : StateScreenModel<ChapterPageModel.State>(State.Loading) {
+) : AppStateViewModel<ChapterPageModel.State>(State.Loading) {
 
     private companion object {
         /** Keep a small bidirectional reading window instead of the whole book in RAM. */
@@ -41,6 +46,7 @@ class ChapterPageModel(
 
     sealed class State {
         data object Loading : State()
+        data object Empty : State()
         data class Error(val failure: LoadFailureKind) : State()
         data class Result(
             val chapters: List<ReaderChapter>,
@@ -48,13 +54,15 @@ class ChapterPageModel(
             val next: Chapter?,
             val isLoadingNext: Boolean,
             val isLoadingPrevious: Boolean = false,
-            val chapterOrder: List<Chapter> = emptyList()
+            val chapterOrder: List<Chapter> = emptyList(),
+            val isOffline: Boolean = false
         ) : State()
     }
 
     private val lock = Any()
     private val loadedChapters = mutableListOf<ReaderChapter>()
     private val prefetchedDetails = mutableMapOf<String, DetailedChapter>()
+    private val offlineChapterKeys = mutableSetOf<String>()
     private val prefetchJobs = mutableMapOf<String, Job>()
     private var orderedChapters = normalizeChapterOrder(chapterOrder)
     private var orderResolved = orderedChapters.isNotEmpty()
@@ -119,6 +127,7 @@ class ChapterPageModel(
             orderLoading = false
             pendingNextRequest = false
             pendingPreviousRequest = false
+            offlineChapterKeys.clear()
             windowAnchor = null
         }
         // Cancel outside the model lock: cancellation handlers may publish or
@@ -147,10 +156,19 @@ class ChapterPageModel(
                 mutableState.value = State.Error(LoadFailureKind.CLIENT)
                 return@launch
             }
+            if (detail.content.isEmpty()) {
+                mutableState.value = State.Empty
+                return@launch
+            }
 
             synchronized(lock) {
                 if (isCurrentSessionLocked(currentSession)) {
-                    loadedChapters += ReaderChapter(chapter, detail)
+                    val loadedOffline = offlineChapterKeys.remove(chapterKey(chapter))
+                    loadedChapters += ReaderChapter(
+                        chapter = chapter,
+                        detail = detail,
+                        isOffline = loadedOffline
+                    )
                 }
             }
             publish(currentSession)
@@ -200,7 +218,12 @@ class ChapterPageModel(
                         if (isCurrentSessionLocked(session) &&
                             loadedChapters.none { sameChapter(it.chapter, chapterToLoad) }
                         ) {
-                            loadedChapters += ReaderChapter(chapterToLoad, detail)
+                            val loadedOffline = offlineChapterKeys.remove(chapterKey(chapterToLoad))
+                            loadedChapters += ReaderChapter(
+                                chapter = chapterToLoad,
+                                detail = detail,
+                                isOffline = loadedOffline
+                            )
                             trimLoadedChaptersFromStart()
                         }
                     }
@@ -262,7 +285,15 @@ class ChapterPageModel(
                         if (isCurrentSessionLocked(session) &&
                             loadedChapters.none { sameChapter(it.chapter, chapterToLoad) }
                         ) {
-                            loadedChapters.add(0, ReaderChapter(chapterToLoad, detail))
+                            val loadedOffline = offlineChapterKeys.remove(chapterKey(chapterToLoad))
+                            loadedChapters.add(
+                                0,
+                                ReaderChapter(
+                                    chapter = chapterToLoad,
+                                    detail = detail,
+                                    isOffline = loadedOffline
+                                )
+                            )
                             trimLoadedChaptersFromEnd()
                         }
                     }
@@ -361,6 +392,20 @@ class ChapterPageModel(
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
+            if (e.loadFailureKind() == LoadFailureKind.NETWORK) {
+                val downloaded = runCatching {
+                    PresentationAccess.downloads.readChapter(chapter.url)
+                }.getOrNull()
+                if (downloaded != null) {
+                    synchronized(lock) { offlineChapterKeys += key }
+                    AppLogger.i(
+                        "ChapterPageModel",
+                        "Using downloaded chapter while offline: ${chapter.name}"
+                    )
+                    persistLoadedChapter(chapter, downloaded)
+                    return downloaded
+                }
+            }
             AppLogger.e(
                 "ChapterPageModel",
                 "Failed to load chapter detail for ${chapter.name}",
@@ -507,7 +552,8 @@ class ChapterPageModel(
                 next = last?.let { adjacentChapter(it.chapter, 1, it.detail) },
                 isLoadingNext = loadingNext,
                 isLoadingPrevious = loadingPrevious,
-                chapterOrder = orderedChapters.toList()
+                chapterOrder = orderedChapters.toList(),
+                isOffline = snapshot.any(ReaderChapter::isOffline)
             )
         }
     }

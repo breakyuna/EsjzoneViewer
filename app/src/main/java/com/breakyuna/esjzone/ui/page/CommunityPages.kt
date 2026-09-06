@@ -1,19 +1,20 @@
 package com.breakyuna.esjzone.ui.page
 import com.breakyuna.esjzone.app.PresentationAccess
 
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyColumn
@@ -24,6 +25,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Forum
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material3.Icon
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
@@ -37,15 +40,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import cafe.adriel.voyager.core.model.StateScreenModel
-import cafe.adriel.voyager.core.model.rememberScreenModel
-import cafe.adriel.voyager.core.model.screenModelScope
-import cafe.adriel.voyager.core.screen.Screen
-import cafe.adriel.voyager.core.screen.ScreenKey
+import com.breakyuna.esjzone.ui.navigation.AppStateViewModel
+import com.breakyuna.esjzone.ui.navigation.rememberAppViewModel
+import com.breakyuna.esjzone.ui.navigation.AppDestination
 import com.breakyuna.esjzone.R
 import com.breakyuna.esjzone.network.Authorization
 import com.breakyuna.esjzone.network.EsjzoneUrls
 import com.breakyuna.esjzone.network.LocalAuthorization
+import com.breakyuna.esjzone.network.LoadFailureKind
 import com.breakyuna.esjzone.network.loadFailureKind
 import com.breakyuna.esjzone.network.features.getForumCategories
 import com.breakyuna.esjzone.network.features.getForumBoard
@@ -57,30 +59,35 @@ import com.breakyuna.esjzone.novellibrary.community.ForumPost
 import com.breakyuna.esjzone.novellibrary.community.ForumTopic
 import com.breakyuna.esjzone.novellibrary.community.ForumThread
 import com.breakyuna.esjzone.novellibrary.novel.CategoryNovel
-import com.breakyuna.esjzone.ui.component.QuietBackHeader
-import com.breakyuna.esjzone.ui.theme.QuietEditorial
-import com.breakyuna.esjzone.ui.component.QuietEmptyState
-import com.breakyuna.esjzone.ui.component.QuietErrorState
-import com.breakyuna.esjzone.ui.component.QuietLoadingState
+import com.breakyuna.esjzone.ui.designsystem.AppShapes
+import com.breakyuna.esjzone.ui.designsystem.AppSpacing
+import com.breakyuna.esjzone.ui.designsystem.AppTouchTarget
+import com.breakyuna.esjzone.ui.designsystem.AppTypography
+import com.breakyuna.esjzone.ui.designsystem.appStateColors
+import com.breakyuna.esjzone.ui.designsystem.rememberAppAdaptiveMetrics
+import com.breakyuna.esjzone.ui.product.EmptyState
+import com.breakyuna.esjzone.ui.product.ErrorState
+import com.breakyuna.esjzone.ui.product.LoadingSkeleton
+import com.breakyuna.esjzone.ui.product.OfflineState
 import com.breakyuna.esjzone.ui.navigation.LocalBaseNavigator
-import com.breakyuna.esjzone.ui.navigation.pushIfNotCurrent
 import com.breakyuna.esjzone.util.AppLogger
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 
-object ForumPage : Screen {
+object ForumPage : AppDestination {
     private fun readResolve(): Any = ForumPage
 
     @Composable
     override fun Content() {
         val navigator = LocalBaseNavigator.current
         val authorization = LocalAuthorization.current
-        val model = rememberScreenModel { ForumPageModel(authorization) }
+        val model = rememberAppViewModel { ForumPageModel(authorization) }
         val state by model.state.collectAsState()
+        val metrics = rememberAppAdaptiveMetrics()
 
         Column(modifier = Modifier.fillMaxSize()) {
-            QuietBackHeader(
+            CommunityTopBar(
                 title = stringResource(id = R.string.forum),
                 onBack = { navigator?.pop() }
             )
@@ -88,20 +95,25 @@ object ForumPage : Screen {
             CommunityStateContent(
                 state = state,
                 emptyText = stringResource(id = R.string.forum_empty),
+                onRetry = model::retry,
+                modifier = Modifier.weight(1f).fillMaxWidth(),
             ) { categories ->
                 val grouped = categories.groupBy { it.groupName.orEmpty() }
                 LazyColumn(
-                    modifier = Modifier.fillMaxSize(),
+                    modifier = Modifier
+                        .widthIn(max = metrics.contentMaxWidth)
+                        .fillMaxWidth()
+                        .fillMaxHeight(),
                     contentPadding = PaddingValues(
-                        start = QuietEditorial.pagePadding,
-                        end = QuietEditorial.pagePadding,
-                        top = 18.dp,
-                        bottom = 32.dp
+                        start = metrics.horizontalPadding,
+                        end = metrics.horizontalPadding,
+                        top = AppSpacing.lg,
+                        bottom = AppSpacing.xxl
                     ),
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                    verticalArrangement = Arrangement.spacedBy(AppSpacing.sm)
                 ) {
                     grouped.forEach { (groupName, groupCategories) ->
-                        item(key = "group-$groupName") {
+                        item(key = "group-$groupName", contentType = "forum-group") {
                             ForumGroupHeader(
                                 name = groupName.ifBlank { stringResource(R.string.forum) },
                                 boardCount = groupCategories.size
@@ -109,14 +121,15 @@ object ForumPage : Screen {
                         }
                         itemsIndexed(
                             groupCategories,
-                            key = { _, category -> "forum-category-${category.id}" }
+                            key = { _, category -> "forum-category-${category.id}" },
+                            contentType = { _, _ -> "forum-category" }
                         ) { index, category ->
                             ForumCategoryCard(category = category, accentIndex = index) {
                                 navigator?.pushIfNotCurrent(ForumCategoryPage(category))
                             }
                         }
-                        item(key = "group-spacer-$groupName") {
-                            Spacer(modifier = Modifier.height(18.dp))
+                        item(key = "group-spacer-$groupName", contentType = "spacer") {
+                            Spacer(modifier = Modifier.height(AppSpacing.lg))
                         }
                     }
                 }
@@ -127,25 +140,40 @@ object ForumPage : Screen {
     }
 }
 
-class ForumCategoryPage(private val category: ForumCategory) : Screen {
-    override val key: ScreenKey =
-        "ForumCategoryPage:" + category.id.ifBlank { category.url.trim() }
+class ForumCategoryPage(private val category: ForumCategory) : AppDestination {
+    override val key: String =
+        "ForumCategoryPage:" + category.id.ifBlank { category.url.trim() } + ":" +
+            EsjzoneUrls.canonicalPageKey(category.url)
+                .ifBlank { category.url.trim() }
 
     @Composable
     override fun Content() {
         val navigator = LocalBaseNavigator.current
         val authorization = LocalAuthorization.current
-        val model = rememberScreenModel { ForumCategoryPageModel(authorization, category) }
+        val model = rememberAppViewModel { ForumCategoryPageModel(authorization, category) }
         val state by model.state.collectAsState()
+        val metrics = rememberAppAdaptiveMetrics()
 
         Column(modifier = Modifier.fillMaxSize()) {
-            QuietBackHeader(title = category.name, onBack = { navigator?.pop() })
+            CommunityTopBar(title = category.name, onBack = { navigator?.pop() })
             CommunityStateContent(
                 state = state,
                 emptyText = stringResource(id = R.string.forum_threads_empty),
+                onRetry = model::retry,
+                modifier = Modifier.weight(1f).fillMaxWidth(),
             ) { threads ->
-                LazyColumn(modifier = Modifier.fillMaxSize()) {
-                    items(threads, key = { "forum-thread-${it.categoryId}-${it.id}" }) { thread ->
+                LazyColumn(
+                    modifier = Modifier
+                        .widthIn(max = metrics.contentMaxWidth)
+                        .fillMaxWidth()
+                        .fillMaxHeight(),
+                    contentPadding = PaddingValues(bottom = AppSpacing.xxl)
+                ) {
+                    items(
+                        threads,
+                        key = { "forum-thread-${it.categoryId}-${it.id}" },
+                        contentType = { "forum-thread" }
+                    ) { thread ->
                         ForumThreadCard(thread) {
                             // A board can be either a novel forum or a nested
                             // topic board; ForumBoardPage detects the template.
@@ -154,7 +182,9 @@ class ForumCategoryPage(private val category: ForumCategory) : Screen {
                             )
                         }
                     }
-                    item { Spacer(modifier = Modifier.height(24.dp)) }
+                    item(key = "forum-threads-footer", contentType = "spacer") {
+                        Spacer(modifier = Modifier.height(AppSpacing.xxl))
+                    }
                 }
             }
         }
@@ -163,8 +193,8 @@ class ForumCategoryPage(private val category: ForumCategory) : Screen {
     }
 }
 
-class ForumBoardPage(private val thread: ForumThread) : Screen {
-    override val key: ScreenKey =
+class ForumBoardPage(private val thread: ForumThread) : AppDestination {
+    override val key: String =
         "ForumBoardPage:" + EsjzoneUrls.canonicalPageKey(thread.url)
             .ifBlank { thread.id }
 
@@ -172,14 +202,16 @@ class ForumBoardPage(private val thread: ForumThread) : Screen {
     override fun Content() {
         val navigator = LocalBaseNavigator.current
         val authorization = LocalAuthorization.current
-        val model = rememberScreenModel { ForumBoardPageModel(authorization, thread) }
+        val model = rememberAppViewModel { ForumBoardPageModel(authorization, thread) }
         val state by model.state.collectAsState()
 
         Column(modifier = Modifier.fillMaxSize()) {
-            QuietBackHeader(title = thread.title, onBack = { navigator?.pop() })
+            CommunityTopBar(title = thread.title, onBack = { navigator?.pop() })
             CommunityStateContent(
                 state = state,
-                emptyText = stringResource(id = R.string.forum_board_empty)
+                emptyText = stringResource(id = R.string.forum_board_empty),
+                onRetry = model::retry,
+                modifier = Modifier.weight(1f).fillMaxWidth()
             ) { board ->
                 when (board) {
                     is ForumBoardResult.Novel -> {
@@ -216,8 +248,8 @@ class ForumBoardPage(private val thread: ForumThread) : Screen {
     }
 }
 
-class ForumPostPage(private val topic: ForumTopic) : Screen {
-    override val key: ScreenKey =
+class ForumPostPage(private val topic: ForumTopic) : AppDestination {
+    override val key: String =
         "ForumPostPage:" + EsjzoneUrls.canonicalPageKey(topic.url)
             .ifBlank { "${topic.boardId}-${topic.id}" }
 
@@ -225,32 +257,40 @@ class ForumPostPage(private val topic: ForumTopic) : Screen {
     override fun Content() {
         val navigator = LocalBaseNavigator.current
         val authorization = LocalAuthorization.current
-        val model = rememberScreenModel { ForumPostPageModel(authorization, topic) }
-        val commentsModel = rememberScreenModel {
+        val model = rememberAppViewModel { ForumPostPageModel(authorization, topic) }
+        val commentsModel = rememberAppViewModel {
             CommentPageModel(authorization, topic.url)
         }
         val state by model.state.collectAsState()
         val postScrollState = rememberScrollState()
+        val metrics = rememberAppAdaptiveMetrics()
 
         Column(modifier = Modifier.fillMaxSize()) {
-            QuietBackHeader(title = topic.title, onBack = { navigator?.pop() })
+            CommunityTopBar(title = topic.title, onBack = { navigator?.pop() })
             when (val snapshot = state) {
-                is CommunityState.Loading -> QuietLoadingState(modifier = Modifier.fillMaxSize())
-                is CommunityState.Error -> QuietErrorState(
-                    failure = snapshot.failure,
-                    modifier = Modifier.fillMaxSize()
-                )
-                is CommunityState.Empty -> QuietEmptyState(
+                is CommunityState.Loading -> LoadingSkeleton(modifier = Modifier.fillMaxWidth())
+                is CommunityState.Error -> if (snapshot.failure == LoadFailureKind.NETWORK) {
+                    OfflineState(modifier = Modifier.fillMaxWidth(), onRetry = model::retry)
+                } else {
+                    ErrorState(
+                        title = stringResource(R.string.community_load_failed),
+                        message = stringResource(R.string.community_empty_guidance),
+                        modifier = Modifier.fillMaxWidth(),
+                        onRetry = model::retry
+                    )
+                }
+                is CommunityState.Empty -> EmptyState(
                     title = stringResource(R.string.forum_threads_empty),
                     message = stringResource(R.string.community_empty_guidance),
-                    icon = Icons.Filled.Forum,
-                    modifier = Modifier.fillMaxSize()
+                    modifier = Modifier.fillMaxWidth()
                 )
                 is CommunityState.Result -> Column(modifier = Modifier.fillMaxSize()) {
                     Column(
                         modifier = Modifier
                             .weight(1f)
+                            .widthIn(max = metrics.contentMaxWidth)
                             .fillMaxWidth()
+                            .align(Alignment.CenterHorizontally)
                             .verticalScroll(postScrollState)
                     ) {
                         ForumPostCard(snapshot.data)
@@ -270,13 +310,13 @@ class ForumPostPage(private val topic: ForumTopic) : Screen {
     }
 }
 
-object GuestbookPage : Screen {
+object GuestbookPage : AppDestination {
     private fun readResolve(): Any = GuestbookPage
 
     @Composable
     override fun Content() {
         val authorization = LocalAuthorization.current
-        val model = rememberScreenModel {
+        val model = rememberAppViewModel {
             CommentPageModel(authorization, EsjzoneUrls.Guestbook)
         }
         CommentListPage(
@@ -289,15 +329,15 @@ object GuestbookPage : Screen {
 class ChapterCommentsPage(
     private val chapterName: String,
     private val chapterUrl: String
-) : Screen {
-    override val key: ScreenKey =
+) : AppDestination {
+    override val key: String =
         "ChapterCommentsPage:" + EsjzoneUrls.canonicalPageKey(chapterUrl)
             .ifBlank { chapterName.trim() }
 
     @Composable
     override fun Content() {
         val authorization = LocalAuthorization.current
-        val model = rememberScreenModel {
+        val model = rememberAppViewModel {
             CommentPageModel(authorization, chapterUrl)
         }
         CommentListPage(title = chapterName, model = model)
@@ -309,9 +349,9 @@ private fun ForumGroupHeader(name: String, boardCount: Int) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(top = 2.dp, bottom = 4.dp),
+            .padding(top = AppSpacing.xs, bottom = AppSpacing.xs),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(9.dp)
+        horizontalArrangement = Arrangement.spacedBy(AppSpacing.sm)
     ) {
         Surface(
             modifier = Modifier
@@ -322,19 +362,18 @@ private fun ForumGroupHeader(name: String, boardCount: Int) {
         ) {}
         Text(
             text = name,
-            style = QuietEditorial.sectionTitle,
-            color = MaterialTheme.colorScheme.onSurface,
+            style = AppTypography.titleMedium,
             modifier = Modifier.weight(1f)
         )
         Surface(
-            shape = QuietEditorial.badgeShape,
-            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.72f)
+            shape = AppShapes.pill,
+            color = appStateColors().containerRaised
         ) {
             Text(
                 text = stringResource(R.string.forum_board_count, boardCount),
-                style = QuietEditorial.smallLabel,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(horizontal = 9.dp, vertical = 5.dp)
+                style = AppTypography.labelMedium,
+                color = appStateColors().contentMuted,
+                modifier = Modifier.padding(horizontal = AppSpacing.sm, vertical = AppSpacing.xs)
             )
         }
     }
@@ -351,21 +390,21 @@ private fun ForumCategoryCard(
         1 -> MaterialTheme.colorScheme.tertiary
         else -> MaterialTheme.colorScheme.secondary
     }
-    Surface(
+    Card(
+        onClick = onClick,
         modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick),
-        shape = QuietEditorial.largeShape,
-        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
+            .fillMaxWidth(),
+        shape = AppShapes.prominent,
+        colors = CardDefaults.cardColors(containerColor = appStateColors().containerRaised)
     ) {
         Row(
-            modifier = Modifier.padding(horizontal = 18.dp, vertical = 17.dp),
+            modifier = Modifier.padding(AppSpacing.lg),
             verticalAlignment = Alignment.Top,
-            horizontalArrangement = Arrangement.spacedBy(14.dp)
+            horizontalArrangement = Arrangement.spacedBy(AppSpacing.md)
         ) {
             Surface(
-                modifier = Modifier.size(48.dp),
-                shape = RoundedCornerShape(18.dp),
+                modifier = Modifier.size(AppTouchTarget.minimum),
+                shape = AppShapes.standard,
                 color = iconTint.copy(alpha = 0.13f)
             ) {
                 Box(contentAlignment = Alignment.Center) {
@@ -379,28 +418,27 @@ private fun ForumCategoryCard(
             }
             Column(
                 modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(5.dp)
+                verticalArrangement = Arrangement.spacedBy(AppSpacing.xs)
             ) {
                 Text(
                     text = category.name,
-                    style = QuietEditorial.cardTitle,
-                    color = MaterialTheme.colorScheme.onSurface,
+                    style = AppTypography.titleMedium,
                     maxLines = 2
                 )
                 category.description?.takeIf(String::isNotBlank)?.let {
                     Text(
                         text = it,
-                        style = QuietEditorial.body,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = AppTypography.bodyMedium,
+                        color = appStateColors().contentMuted,
                         maxLines = 2
                     )
                 }
                 category.postCount?.let { count ->
                     Text(
                         text = stringResource(R.string.forum_post_count, count),
-                        style = QuietEditorial.label,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(top = 2.dp)
+                        style = AppTypography.labelMedium,
+                        color = appStateColors().contentMuted,
+                        modifier = Modifier.padding(top = AppSpacing.xs)
                     )
                 }
             }
@@ -410,39 +448,39 @@ private fun ForumCategoryCard(
 
 @Composable
 private fun ForumThreadCard(thread: ForumThread, onClick: () -> Unit) {
-    Surface(
+    Card(
+        onClick = onClick,
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 7.dp)
-            .clickable(onClick = onClick),
-        shape = QuietEditorial.cardShape,
-        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.34f)
+            .padding(horizontal = AppSpacing.lg, vertical = AppSpacing.xs),
+        shape = AppShapes.standard,
+        colors = CardDefaults.cardColors(containerColor = appStateColors().containerRaised)
     ) {
-        Column(modifier = Modifier.padding(16.dp)) {
+        Column(modifier = Modifier.padding(AppSpacing.lg)) {
             Text(
                 text = thread.title,
-                style = MaterialTheme.typography.titleMedium,
+                style = AppTypography.titleMedium,
                 fontWeight = FontWeight.SemiBold
             )
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(top = 10.dp),
-                horizontalArrangement = Arrangement.spacedBy(14.dp),
+                    .padding(top = AppSpacing.sm),
+                horizontalArrangement = Arrangement.spacedBy(AppSpacing.md),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 thread.topicCount?.let {
                     Text(
                         text = stringResource(id = R.string.forum_topic_count, it),
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        style = AppTypography.labelMedium,
+                        color = appStateColors().contentMuted
                     )
                 }
                 thread.replyCount?.let {
                     Text(
                         text = stringResource(id = R.string.forum_reply_count, it),
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        style = AppTypography.labelMedium,
+                        color = appStateColors().contentMuted
                     )
                 }
                 Spacer(modifier = Modifier.weight(1f))
@@ -450,12 +488,12 @@ private fun ForumThreadCard(thread: ForumThread, onClick: () -> Unit) {
                     Icon(
                         imageVector = Icons.Filled.Schedule,
                         contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        tint = appStateColors().contentMuted
                     )
                     Text(
                         text = it,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        style = AppTypography.bodySmall,
+                        color = appStateColors().contentMuted
                     )
                 }
             }
@@ -468,19 +506,31 @@ private fun ForumTopicsContent(
     topics: List<ForumTopic>,
     onTopicClick: (ForumTopic) -> Unit
 ) {
-        if (topics.isEmpty()) {
-            QuietEmptyState(
+    val metrics = rememberAppAdaptiveMetrics()
+    if (topics.isEmpty()) {
+        EmptyState(
             title = stringResource(id = R.string.forum_board_empty),
             message = stringResource(R.string.forum_board_empty_guidance),
-            icon = Icons.Filled.Forum,
-            modifier = Modifier.fillMaxSize()
+            modifier = Modifier.fillMaxWidth()
         )
     } else {
-        LazyColumn(modifier = Modifier.fillMaxSize()) {
-            items(topics, key = { "forum-topic-${it.boardId}-${it.id}" }) { topic ->
+        LazyColumn(
+            modifier = Modifier
+                .widthIn(max = metrics.contentMaxWidth)
+                .fillMaxWidth()
+                .fillMaxHeight(),
+            contentPadding = PaddingValues(bottom = AppSpacing.xxl)
+        ) {
+            items(
+                topics,
+                key = { "forum-topic-${it.boardId}-${it.id}" },
+                contentType = { "forum-topic" }
+            ) { topic ->
                 ForumTopicCard(topic) { onTopicClick(topic) }
             }
-            item { Spacer(modifier = Modifier.height(24.dp)) }
+            item(key = "forum-topics-footer", contentType = "spacer") {
+                Spacer(modifier = Modifier.height(AppSpacing.xxl))
+            }
         }
     }
 }
@@ -492,32 +542,39 @@ private fun ForumNovelBoardContent(
     onOpenNovel: () -> Unit,
     onTopicClick: (ForumTopic) -> Unit
 ) {
-    LazyColumn(modifier = Modifier.fillMaxSize()) {
-        item(key = "forum-novel-info") {
-            Surface(
+    val metrics = rememberAppAdaptiveMetrics()
+    LazyColumn(
+        modifier = Modifier
+            .widthIn(max = metrics.contentMaxWidth)
+            .fillMaxWidth()
+            .fillMaxHeight(),
+        contentPadding = PaddingValues(bottom = AppSpacing.xxl)
+    ) {
+        item(key = "forum-novel-info", contentType = "novel-board-header") {
+            Card(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 12.dp),
-                shape = QuietEditorial.largeShape,
-                color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.36f)
+                    .padding(horizontal = AppSpacing.lg, vertical = AppSpacing.md),
+                shape = AppShapes.prominent,
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
             ) {
-                Column(modifier = Modifier.padding(16.dp)) {
+                Column(modifier = Modifier.padding(AppSpacing.lg)) {
                     Text(
                         text = thread.title,
-                        style = MaterialTheme.typography.titleMedium,
+                        style = AppTypography.titleMedium,
                         fontWeight = FontWeight.SemiBold
                     )
                     Text(
                         text = stringResource(id = R.string.forum_novel_board),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(top = 4.dp)
+                        style = AppTypography.bodySmall,
+                        color = appStateColors().contentMuted,
+                        modifier = Modifier.padding(top = AppSpacing.xs)
                     )
                     OutlinedButton(
                         onClick = onOpenNovel,
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(top = 12.dp)
+                            .padding(top = AppSpacing.md)
                     ) {
                         Text(text = stringResource(id = R.string.forum_open_novel))
                     }
@@ -525,37 +582,42 @@ private fun ForumNovelBoardContent(
             }
         }
         if (board.items.isEmpty()) {
-            item(key = "forum-novel-empty") {
-                QuietEmptyState(
+            item(key = "forum-novel-empty", contentType = "empty-state") {
+                EmptyState(
                     title = stringResource(id = R.string.forum_board_empty),
                     message = stringResource(R.string.forum_board_empty_guidance),
-                    icon = Icons.Filled.Forum,
                     modifier = Modifier.fillMaxWidth()
                 )
             }
         } else {
-            items(board.items, key = { "forum-topic-${it.boardId}-${it.id}" }) { topic ->
+            items(
+                board.items,
+                key = { "forum-topic-${it.boardId}-${it.id}" },
+                contentType = { "forum-topic" }
+            ) { topic ->
                 ForumTopicCard(topic) { onTopicClick(topic) }
             }
         }
-        item { Spacer(modifier = Modifier.height(24.dp)) }
+        item(key = "forum-novel-footer", contentType = "spacer") {
+            Spacer(modifier = Modifier.height(AppSpacing.xxl))
+        }
     }
 }
 
 @Composable
 private fun ForumTopicCard(topic: ForumTopic, onClick: () -> Unit) {
-    Surface(
+    Card(
+        onClick = onClick,
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 7.dp)
-            .clickable(onClick = onClick),
-        shape = QuietEditorial.cardShape,
-        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.34f)
+            .padding(horizontal = AppSpacing.lg, vertical = AppSpacing.xs),
+        shape = AppShapes.standard,
+        colors = CardDefaults.cardColors(containerColor = appStateColors().containerRaised)
     ) {
-        Column(modifier = Modifier.padding(16.dp)) {
+        Column(modifier = Modifier.padding(AppSpacing.lg)) {
             Text(
                 text = topic.title,
-                style = MaterialTheme.typography.titleMedium,
+                style = AppTypography.titleMedium,
                 fontWeight = FontWeight.SemiBold
             )
             val authorAndDate = listOfNotNull(topic.author, topic.createdAt)
@@ -563,9 +625,9 @@ private fun ForumTopicCard(topic: ForumTopic, onClick: () -> Unit) {
             if (authorAndDate.isNotBlank()) {
                 Text(
                     text = authorAndDate,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(top = 8.dp)
+                    style = AppTypography.bodySmall,
+                    color = appStateColors().contentMuted,
+                    modifier = Modifier.padding(top = AppSpacing.sm)
                 )
             }
             val stats = listOfNotNull(
@@ -576,15 +638,15 @@ private fun ForumTopicCard(topic: ForumTopic, onClick: () -> Unit) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(top = 8.dp),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        .padding(top = AppSpacing.sm),
+                    horizontalArrangement = Arrangement.spacedBy(AppSpacing.sm),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     if (stats.isNotBlank()) {
                         Text(
                             text = stats,
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            style = AppTypography.labelMedium,
+                            color = appStateColors().contentMuted
                         )
                     }
                     Spacer(modifier = Modifier.weight(1f))
@@ -592,12 +654,12 @@ private fun ForumTopicCard(topic: ForumTopic, onClick: () -> Unit) {
                         Icon(
                             imageVector = Icons.Filled.Schedule,
                             contentDescription = null,
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                            tint = appStateColors().contentMuted
                         )
                         Text(
                             text = it,
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            style = AppTypography.bodySmall,
+                            color = appStateColors().contentMuted
                         )
                     }
                 }
@@ -608,17 +670,17 @@ private fun ForumTopicCard(topic: ForumTopic, onClick: () -> Unit) {
 
 @Composable
 private fun ForumPostCard(post: ForumPost) {
-    Surface(
+    Card(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 12.dp),
-        shape = QuietEditorial.largeShape,
-        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.34f)
+            .padding(horizontal = AppSpacing.lg, vertical = AppSpacing.md),
+        shape = AppShapes.prominent,
+        colors = CardDefaults.cardColors(containerColor = appStateColors().containerRaised)
     ) {
-        Column(modifier = Modifier.padding(18.dp)) {
+        Column(modifier = Modifier.padding(AppSpacing.lg)) {
             Text(
                 text = post.title,
-                style = MaterialTheme.typography.headlineSmall,
+                style = AppTypography.displayMedium,
                 fontWeight = FontWeight.Bold
             )
             val authorAndDate = listOfNotNull(post.author, post.createdAt)
@@ -626,15 +688,15 @@ private fun ForumPostCard(post: ForumPost) {
             if (authorAndDate.isNotBlank()) {
                 Text(
                     text = authorAndDate,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(top = 8.dp)
+                    style = AppTypography.bodySmall,
+                    color = appStateColors().contentMuted,
+                    modifier = Modifier.padding(top = AppSpacing.sm)
                 )
             }
             if (post.contentText.isNotBlank()) {
                 Text(
                     text = post.contentText,
-                    style = MaterialTheme.typography.bodyLarge,
+                    style = AppTypography.bodyLarge,
                     color = MaterialTheme.colorScheme.onSurface,
                     modifier = Modifier.padding(top = 18.dp)
                 )
@@ -645,7 +707,7 @@ private fun ForumPostCard(post: ForumPost) {
 
 private class ForumPageModel(
     private val authorization: Authorization
-) : StateScreenModel<CommunityState<List<ForumCategory>>>(CommunityState.Loading) {
+) : AppStateViewModel<CommunityState<List<ForumCategory>>>(CommunityState.Loading) {
     private var loadStarted = false
 
     fun retry() = load()
@@ -670,7 +732,7 @@ private class ForumPageModel(
 private class ForumCategoryPageModel(
     private val authorization: Authorization,
     private val category: ForumCategory
-) : StateScreenModel<CommunityState<List<ForumThread>>>(CommunityState.Loading) {
+) : AppStateViewModel<CommunityState<List<ForumThread>>>(CommunityState.Loading) {
     private var loadStarted = false
 
     fun retry() = load()
@@ -699,7 +761,7 @@ private class ForumCategoryPageModel(
 private class ForumBoardPageModel(
     private val authorization: Authorization,
     private val thread: ForumThread
-) : StateScreenModel<CommunityState<com.breakyuna.esjzone.network.features.ForumBoardResult>>(
+) : AppStateViewModel<CommunityState<com.breakyuna.esjzone.network.features.ForumBoardResult>>(
     CommunityState.Loading
 ) {
     private var loadStarted = false
@@ -730,7 +792,7 @@ private class ForumBoardPageModel(
 private class ForumPostPageModel(
     private val authorization: Authorization,
     private val topic: ForumTopic
-) : StateScreenModel<CommunityState<ForumPost>>(CommunityState.Loading) {
+) : AppStateViewModel<CommunityState<ForumPost>>(CommunityState.Loading) {
     private var loadStarted = false
 
     fun retry() = load()

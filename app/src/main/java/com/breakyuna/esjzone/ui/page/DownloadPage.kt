@@ -1,31 +1,18 @@
 package com.breakyuna.esjzone.ui.page
-import com.breakyuna.esjzone.app.PresentationAccess
 
 import androidx.activity.compose.BackHandler
-import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Done
@@ -33,10 +20,13 @@ import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.SelectAll
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -45,6 +35,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -55,495 +46,231 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import cafe.adriel.voyager.core.model.StateScreenModel
-import cafe.adriel.voyager.core.model.rememberScreenModel
-import cafe.adriel.voyager.core.model.screenModelScope
-import cafe.adriel.voyager.core.screen.Screen
-import cafe.adriel.voyager.core.screen.ScreenKey
-import coil.compose.SubcomposeAsyncImage
-import coil.request.ImageRequest
 import com.breakyuna.esjzone.R
+import com.breakyuna.esjzone.app.PresentationAccess
 import com.breakyuna.esjzone.database.dao.put
 import com.breakyuna.esjzone.offline.DownloadedNovelSummary
-import com.breakyuna.esjzone.ui.component.QuietBackHeader
-import com.breakyuna.esjzone.ui.component.QuietEmptyState
-import com.breakyuna.esjzone.ui.component.QuietNovelCover
-import com.breakyuna.esjzone.ui.component.QuietSectionHeader
+import com.breakyuna.esjzone.ui.designsystem.AppImage
+import com.breakyuna.esjzone.ui.designsystem.AppShapes
+import com.breakyuna.esjzone.ui.designsystem.AppSpacing
+import com.breakyuna.esjzone.ui.designsystem.AppTypography
+import com.breakyuna.esjzone.ui.navigation.AppDestination
 import com.breakyuna.esjzone.ui.navigation.LocalBaseNavigator
-import com.breakyuna.esjzone.ui.theme.QuietEditorial
-import com.breakyuna.esjzone.ui.theme.quietEditorialColors
+import com.breakyuna.esjzone.ui.navigation.AppStateViewModel
+import com.breakyuna.esjzone.ui.navigation.rememberAppViewModel
+import com.breakyuna.esjzone.ui.product.EmptyState
+import com.breakyuna.esjzone.ui.product.ErrorState
+import com.breakyuna.esjzone.ui.product.LoadingSkeleton
+import com.breakyuna.esjzone.util.AppLogger
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 
-/** Local-first management screen for complete and partially downloaded novels. */
-object DownloadPage : Screen {
-
+/** Local download inventory. Deleting it never touches bookshelf/history/bookmarks. */
+object DownloadPage : AppDestination {
     private fun readResolve(): Any = DownloadPage
+    override val key: String = "DownloadPage"
 
-    override val key: ScreenKey = "DownloadPage"
-
+    @OptIn(ExperimentalMaterial3Api::class)
     @Composable
     override fun Content() {
         val navigator = LocalBaseNavigator.current
-        val model = rememberScreenModel { DownloadPageModel() }
+        val model = rememberAppViewModel { DownloadPageModel() }
         val state by model.state.collectAsState()
         val autoSave by PresentationAccess.settings.readerAutoSave
         var editing by rememberSaveable { mutableStateOf(false) }
-        var selectedUrls by remember { mutableStateOf<Set<String>>(emptySet()) }
-        var pendingDeleteUrls by remember { mutableStateOf<List<String>>(emptyList()) }
-        var showDeleteDialog by remember { mutableStateOf(false) }
-        var settingsExpanded by remember { mutableStateOf(false) }
+        var selected by remember { mutableStateOf<Set<String>>(emptySet()) }
+        var pendingDelete by remember { mutableStateOf<List<String>>(emptyList()) }
+        var showDelete by remember { mutableStateOf(false) }
+        var showSettings by remember { mutableStateOf(false) }
 
-        val novels = (state as? DownloadPageModel.State.Content)?.novels.orEmpty()
-        val visibleUrls = remember(novels) { novels.mapTo(LinkedHashSet()) { it.novelUrl } }
+        LaunchedEffect(Unit) { model.refresh() }
+        val entries = (state as? DownloadPageModel.State.Content)?.novels.orEmpty()
         val deleting = (state as? DownloadPageModel.State.Content)?.deleting == true
-
-        fun leaveEditMode() {
-            if (deleting) return
-            editing = false
-            selectedUrls = emptySet()
-            pendingDeleteUrls = emptyList()
-            showDeleteDialog = false
+        LaunchedEffect(entries) { selected = selected.intersect(entries.mapTo(LinkedHashSet()) { it.novelUrl }) }
+        BackHandler(enabled = editing && !showDelete) {
+            if (!deleting) { editing = false; selected = emptySet() }
         }
 
         fun requestDelete(urls: Collection<String>) {
-            val distinct = urls.distinct().filter { it.isNotBlank() }
-            if (distinct.isNotEmpty() && !deleting) {
-                pendingDeleteUrls = distinct
-                showDeleteDialog = true
-            }
+            pendingDelete = urls.distinct().filter(String::isNotBlank)
+            showDelete = pendingDelete.isNotEmpty()
         }
 
-        LaunchedEffect(Unit) { model.refresh() }
-        LaunchedEffect(visibleUrls) {
-            selectedUrls = selectedUrls.intersect(visibleUrls)
-        }
-
-        BackHandler(enabled = editing && !showDeleteDialog) { leaveEditMode() }
-
-        if (showDeleteDialog) {
-            DownloadDeleteDialog(
-                count = pendingDeleteUrls.size,
-                onDismiss = {
-                    showDeleteDialog = false
-                    pendingDeleteUrls = emptyList()
-                },
-                onConfirm = {
-                    val urls = pendingDeleteUrls
-                    showDeleteDialog = false
-                    pendingDeleteUrls = emptyList()
-                    selectedUrls = selectedUrls - urls.toSet()
-                    model.delete(urls)
-                }
-            )
-        }
-
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .safeDrawingPadding()
-        ) {
-            QuietBackHeader(
-                title = stringResource(R.string.downloads),
-                onBack = {
-                    if (editing) leaveEditMode() else navigator?.pop()
-                },
-                actions = {
-                    if (editing && selectedUrls.isNotEmpty()) {
-                        IconButton(
-                            onClick = { requestDelete(selectedUrls) },
-                            enabled = !deleting
-                        ) {
-                            Icon(
-                                imageVector = Icons.Filled.DeleteOutline,
-                                contentDescription = stringResource(R.string.download_delete_selected)
-                            )
-                        }
-                    }
-                    IconButton(
-                        onClick = {
-                            if (editing) leaveEditMode() else editing = true
-                        },
-                        enabled = !deleting
-                    ) {
-                        Icon(
-                            imageVector = if (editing) Icons.Filled.Done else Icons.Filled.Edit,
-                            contentDescription = stringResource(
-                                if (editing) R.string.download_edit_done else R.string.download_edit
-                            )
-                        )
-                    }
-                    Box {
-                        IconButton(onClick = { settingsExpanded = true }) {
-                            Icon(
-                                imageVector = Icons.Filled.Settings,
-                                contentDescription = stringResource(R.string.download_settings)
-                            )
-                        }
-                        DropdownMenu(
-                            expanded = settingsExpanded,
-                            onDismissRequest = { settingsExpanded = false }
-                        ) {
-                            DropdownMenuItem(
-                                text = {
-                                    Column {
-                                        Text(
-                                            text = stringResource(R.string.download_auto_save),
-                                            style = MaterialTheme.typography.titleSmall
-                                        )
-                                        Text(
-                                            text = stringResource(R.string.download_auto_save_description),
-                                            style = MaterialTheme.typography.bodySmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                                        )
-                                    }
-                                },
-                                trailingIcon = {
-                                    Switch(
-                                        checked = autoSave,
-                                        onCheckedChange = { model.setAutoSave(it) }
-                                    )
-                                },
-                                onClick = { model.setAutoSave(!autoSave) }
-                            )
-                        }
-                    }
-                },
-                belowContent = {
-                    if (editing) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 16.dp, vertical = 4.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            TextButton(
-                                onClick = {
-                                    selectedUrls = if (selectedUrls == visibleUrls) {
-                                        emptySet()
-                                    } else {
-                                        visibleUrls
-                                    }
-                                },
-                                enabled = visibleUrls.isNotEmpty() && !deleting
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Filled.SelectAll,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(18.dp)
-                                )
-                                Spacer(Modifier.width(6.dp))
-                                Text(stringResource(R.string.download_select_all))
+        Scaffold(
+            topBar = {
+                TopAppBar(
+                    title = { Text(if (editing) "${stringResource(R.string.download_edit)} (${selected.size})" else stringResource(R.string.downloads), style = AppTypography.titleLarge) },
+                    navigationIcon = { BackIconButton { if (editing) { editing = false; selected = emptySet() } else navigator?.pop() } },
+                    actions = {
+                        if (editing) {
+                            IconButton(onClick = { selected = if (selected.size == entries.size) emptySet() else entries.mapTo(LinkedHashSet()) { it.novelUrl } }, enabled = entries.isNotEmpty() && !deleting) {
+                                Icon(Icons.Filled.SelectAll, stringResource(R.string.download_select_all))
                             }
-                            Text(
-                                text = stringResource(
-                                    R.string.download_selected_count,
-                                    selectedUrls.size
-                                ),
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
+                            IconButton(onClick = { requestDelete(selected) }, enabled = selected.isNotEmpty() && !deleting) {
+                                Icon(Icons.Filled.DeleteOutline, stringResource(R.string.download_delete_selected), tint = MaterialTheme.colorScheme.error)
+                            }
+                            IconButton(onClick = { editing = false; selected = emptySet() }, enabled = !deleting) {
+                                Icon(Icons.Filled.Done, stringResource(R.string.download_edit_done))
+                            }
+                        } else {
+                            IconButton(onClick = { editing = true }, enabled = entries.isNotEmpty()) { Icon(Icons.Filled.Edit, stringResource(R.string.download_edit)) }
+                            Box {
+                                IconButton(onClick = { showSettings = true }) { Icon(Icons.Filled.Settings, stringResource(R.string.download_settings)) }
+                                DropdownMenu(expanded = showSettings, onDismissRequest = { showSettings = false }) {
+                                    DropdownMenuItem(
+                                        text = { Column {
+                                            Text(stringResource(R.string.download_auto_save), style = AppTypography.labelLarge)
+                                            Text(stringResource(R.string.download_auto_save_description), style = AppTypography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                        } },
+                                        trailingIcon = { Switch(checked = autoSave, onCheckedChange = { model.setAutoSave(it) }) },
+                                        onClick = { model.setAutoSave(!autoSave) }
+                                    )
+                                }
+                            }
                         }
                     }
-                }
-            )
-
+                )
+            }
+        ) { padding ->
             when (val current = state) {
-                DownloadPageModel.State.Loading -> {
-                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        CircularProgressIndicator(strokeWidth = 2.5.dp)
-                    }
-                }
-
-                is DownloadPageModel.State.Content -> {
-                    if (current.novels.isEmpty()) {
-                        QuietEmptyState(
-                            title = stringResource(R.string.download_empty),
-                            message = stringResource(R.string.download_empty_hint),
-                            icon = Icons.Filled.Download,
-                            modifier = Modifier.fillMaxSize()
-                        )
-                    } else {
-                        DownloadedNovelList(
-                            novels = current.novels,
-                            editing = editing,
-                            selectedUrls = selectedUrls,
-                            deleting = current.deleting,
-                            onToggleSelection = { url ->
-                                selectedUrls = if (url in selectedUrls) {
-                                    selectedUrls - url
-                                } else {
-                                    selectedUrls + url
-                                }
-                            },
-                            onDelete = { url -> requestDelete(listOf(url)) }
-                        )
-                    }
+                DownloadPageModel.State.Loading -> LoadingSkeleton(Modifier.fillMaxWidth().padding(padding), stringResource(R.string.downloads))
+                is DownloadPageModel.State.Error -> ErrorState(
+                    title = stringResource(R.string.load_client_error),
+                    message = current.message.ifBlank { stringResource(R.string.load_client_error) },
+                    retryLabel = stringResource(R.string.retry),
+                    onRetry = model::refresh,
+                    modifier = Modifier.fillMaxSize().padding(padding)
+                )
+                is DownloadPageModel.State.Content -> if (current.novels.isEmpty()) {
+                    EmptyState(
+                        title = stringResource(R.string.download_empty),
+                        message = stringResource(R.string.download_empty_hint),
+                        modifier = Modifier.fillMaxSize().padding(padding)
+                    )
+                } else {
+                    DownloadList(
+                        novels = current.novels,
+                        selected = selected,
+                        editing = editing,
+                        deleting = deleting,
+                        onToggle = { url -> selected = if (url in selected) selected - url else selected + url },
+                        onDelete = { requestDelete(listOf(it)) },
+                        modifier = Modifier.fillMaxSize().padding(padding)
+                    )
                 }
             }
+        }
+
+        if (showDelete) {
+            AlertDialog(
+                onDismissRequest = { if (!deleting) showDelete = false },
+                title = { Text(stringResource(R.string.download_delete_title, pendingDelete.size)) },
+                text = { Text(stringResource(R.string.download_delete_confirm)) },
+                confirmButton = {
+                    TextButton(onClick = { model.delete(pendingDelete) }, enabled = !deleting) {
+                        Text(stringResource(R.string.download_delete_confirm_action), color = MaterialTheme.colorScheme.error)
+                    }
+                },
+                dismissButton = { TextButton(onClick = { showDelete = false }, enabled = !deleting) { Text(stringResource(android.R.string.cancel)) } }
+            )
         }
     }
 }
 
 @Composable
-private fun DownloadedNovelList(
+private fun DownloadList(
     novels: List<DownloadedNovelSummary>,
+    selected: Set<String>,
     editing: Boolean,
-    selectedUrls: Set<String>,
     deleting: Boolean,
-    onToggleSelection: (String) -> Unit,
-    onDelete: (String) -> Unit
+    onToggle: (String) -> Unit,
+    onDelete: (String) -> Unit,
+    modifier: Modifier = Modifier
 ) {
     val totalBytes = novels.sumOf { it.storageBytes }
-
-    Box(
-        modifier = Modifier.fillMaxSize(),
-        contentAlignment = Alignment.TopCenter
+    LazyColumn(
+        modifier = modifier,
+        contentPadding = PaddingValues(AppSpacing.lg),
+        verticalArrangement = Arrangement.spacedBy(AppSpacing.md)
     ) {
-        LazyColumn(
-            modifier = Modifier
-                .fillMaxWidth()
-                .widthIn(max = QuietEditorial.contentMaxWidth),
-            contentPadding = PaddingValues(
-                start = QuietEditorial.pagePadding,
-                end = QuietEditorial.pagePadding,
-                top = 14.dp,
-                bottom = 20.dp
-            ),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
-        ) {
-            item(key = "download-summary") {
-                QuietSectionHeader(
-                    title = stringResource(R.string.download_library),
-                    modifier = Modifier.padding(bottom = 2.dp)
-                )
-                Text(
-                    text = stringResource(
-                        R.string.download_total_summary,
-                        novels.size,
-                        formatStorageSize(totalBytes)
-                    ),
-                    style = QuietEditorial.label,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(horizontal = QuietEditorial.pagePadding)
-                )
+        item(key = "download-summary") {
+            Column(verticalArrangement = Arrangement.spacedBy(AppSpacing.xs)) {
+                Text(stringResource(R.string.download_library), style = AppTypography.displayMedium)
+                Text(stringResource(R.string.download_total_summary, novels.size, formatStorageSize(totalBytes)), style = AppTypography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            items(novels, key = { it.novelUrl }) { summary ->
-                DownloadedNovelCard(
-                    summary = summary,
-                    editing = editing,
-                    selected = summary.novelUrl in selectedUrls,
-                    deleting = deleting,
-                    onToggleSelection = { onToggleSelection(summary.novelUrl) },
-                    onDelete = { onDelete(summary.novelUrl) }
-                )
-            }
+        }
+        items(novels, key = { it.novelUrl }, contentType = { "download" }) { summary ->
+            DownloadCard(summary, editing, summary.novelUrl in selected, deleting, { onToggle(summary.novelUrl) }, { onDelete(summary.novelUrl) })
         }
     }
 }
 
 @Composable
-private fun DownloadedNovelCard(
+private fun DownloadCard(
     summary: DownloadedNovelSummary,
     editing: Boolean,
     selected: Boolean,
     deleting: Boolean,
-    onToggleSelection: () -> Unit,
+    onToggle: () -> Unit,
     onDelete: () -> Unit
 ) {
-    val colors = quietEditorialColors()
-    val coverWidth = 76.dp
-    val coverHeight = 96.dp
     Surface(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(enabled = editing && !deleting, onClick = onToggleSelection),
-        shape = QuietEditorial.cardShape,
-        color = if (selected) {
-            MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f)
-        } else {
-            colors.cardSurface
-        },
-        border = if (selected) {
-            BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.65f))
-        } else {
-            null
-        }
+        onClick = { if (editing) onToggle() },
+        enabled = editing && !deleting,
+        modifier = Modifier.fillMaxWidth().semantics { if (editing) role = Role.Button },
+        shape = AppShapes.standard,
+        color = if (selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainer
     ) {
-        Row(
-            modifier = Modifier.padding(10.dp),
-            horizontalArrangement = Arrangement.spacedBy(11.dp),
-            verticalAlignment = Alignment.Top
-        ) {
-            if (editing) {
-                Checkbox(
-                    checked = selected,
-                    onCheckedChange = { onToggleSelection() },
-                    enabled = !deleting,
-                    modifier = Modifier
-                        .size(40.dp)
-                        .padding(top = 27.dp)
-                )
+        Row(Modifier.fillMaxWidth().padding(AppSpacing.md), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(AppSpacing.md)) {
+            if (editing) Checkbox(checked = selected, onCheckedChange = { onToggle() }, enabled = !deleting)
+            AppImage(summary.coverUrl.takeIf(String::isNotBlank) ?: R.drawable.missing_cover, summary.novelName, Modifier.size(width = 64.dp, height = 88.dp))
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(AppSpacing.xs)) {
+                Text(summary.novelName.ifBlank { stringResource(R.string.download_unknown_novel) }, style = AppTypography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                Text(stringResource(R.string.download_chapters_count, summary.downloadedChapterCount), style = AppTypography.bodyMedium, color = MaterialTheme.colorScheme.primary)
+                Text(formatStorageSize(summary.storageBytes), style = AppTypography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            QuietNovelCover(
-                coverUrl = summary.coverUrl,
-                title = summary.novelName,
-                modifier = Modifier.size(width = coverWidth, height = coverHeight),
-                isAdult = summary.manifest.isAdult
-            )
-            Column(
-                modifier = Modifier
-                    .weight(1f)
-                    .height(coverHeight),
-                verticalArrangement = Arrangement.SpaceBetween
-            ) {
-                Text(
-                    text = summary.novelName.ifBlank { stringResource(R.string.download_unknown_novel) },
-                    style = QuietEditorial.cardTitle.copy(fontWeight = FontWeight.SemiBold),
-                    color = MaterialTheme.colorScheme.onSurface,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis
-                )
-                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                    Text(
-                        text = stringResource(
-                            R.string.download_chapters_count,
-                            summary.downloadedChapterCount
-                        ),
-                        style = QuietEditorial.label,
-                        color = MaterialTheme.colorScheme.primary
-                    )
-                    Text(
-                        text = formatStorageSize(summary.storageBytes),
-                        style = QuietEditorial.label,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            }
-            IconButton(
-                onClick = onDelete,
-                enabled = !deleting,
-                modifier = Modifier
-                    .size(40.dp)
-                    .clip(CircleShape)
-                    .background(MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.6f))
-            ) {
-                Icon(
-                    imageVector = Icons.Filled.DeleteOutline,
-                    contentDescription = stringResource(R.string.download_delete),
-                    tint = MaterialTheme.colorScheme.error,
-                    modifier = Modifier.size(20.dp)
-                )
-            }
+            IconButton(onClick = onDelete, enabled = !deleting) { Icon(Icons.Filled.DeleteOutline, stringResource(R.string.download_delete), tint = MaterialTheme.colorScheme.error) }
         }
     }
 }
 
-@Composable
-private fun DownloadDeleteDialog(
-    count: Int,
-    onDismiss: () -> Unit,
-    onConfirm: () -> Unit
-) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        icon = {
-            Icon(
-                imageVector = Icons.Filled.DeleteOutline,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.error
-            )
-        },
-        title = {
-            Text(
-                text = stringResource(R.string.download_delete_title, count),
-                style = QuietEditorial.title
-            )
-        },
-        text = {
-            Text(
-                text = stringResource(R.string.download_delete_confirm, count),
-                style = QuietEditorial.body
-            )
-        },
-        confirmButton = {
-            TextButton(onClick = onConfirm) {
-                Text(
-                    text = stringResource(R.string.download_delete_confirm_action),
-                    color = MaterialTheme.colorScheme.error
-                )
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text(stringResource(R.string.logout_cancel))
-            }
-        }
-    )
-}
-
-private class DownloadPageModel : StateScreenModel<DownloadPageModel.State>(State.Loading) {
-
+private class DownloadPageModel : AppStateViewModel<DownloadPageModel.State>(State.Loading) {
     sealed class State {
         data object Loading : State()
-        data class Content(
-            val novels: List<DownloadedNovelSummary>,
-            val deleting: Boolean = false
-        ) : State()
+        data class Content(val novels: List<DownloadedNovelSummary>, val deleting: Boolean = false) : State()
+        data class Error(val message: String) : State()
     }
 
     fun refresh() {
+        mutableState.value = State.Loading
         screenModelScope.launch(Dispatchers.IO) {
             try {
                 mutableState.value = State.Content(PresentationAccess.downloads.listDownloadedNovels())
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                com.breakyuna.esjzone.util.AppLogger.e(
-                    "DownloadPageModel",
-                    "Failed to list downloaded novels",
-                    e
-                )
-                mutableState.value = State.Content(emptyList())
+                AppLogger.e("DownloadPageModel", "Failed to list downloaded novels", e)
+                mutableState.value = State.Error(e.message.orEmpty())
             }
         }
     }
 
     fun delete(urls: Iterable<String>) {
-        val targets = urls.distinct().filter { it.isNotBlank() }
+        val targets = urls.distinct().filter(String::isNotBlank)
         if (targets.isEmpty()) return
         val current = mutableState.value as? State.Content
         mutableState.value = current?.copy(deleting = true) ?: State.Content(emptyList(), true)
         screenModelScope.launch(Dispatchers.IO) {
-            try {
-                PresentationAccess.downloads.deleteAll(targets)
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                com.breakyuna.esjzone.util.AppLogger.e(
-                    "DownloadPageModel",
-                    "Failed to delete downloaded novels",
-                    e
-                )
-            }
-            try {
-                mutableState.value = State.Content(PresentationAccess.downloads.listDownloadedNovels())
-            } catch (e: Exception) {
-                com.breakyuna.esjzone.util.AppLogger.e(
-                    "DownloadPageModel",
-                    "Failed to refresh after deletion",
-                    e
-                )
-                mutableState.value = State.Content(emptyList())
-            }
+            try { PresentationAccess.downloads.deleteAll(targets) }
+            catch (e: CancellationException) { throw e }
+            catch (e: Exception) { AppLogger.e("DownloadPageModel", "Failed to delete downloaded novels", e) }
+            refresh()
         }
     }
 
@@ -551,19 +278,9 @@ private class DownloadPageModel : StateScreenModel<DownloadPageModel.State>(Stat
         PresentationAccess.settings.setReaderAutoSave(enabled)
         screenModelScope.launch(Dispatchers.IO) {
             try {
-                PresentationAccess.database.cacheDao().put(
-                    PresentationAccess.settings.READER_AUTO_SAVE_KEY,
-                    enabled.toString()
-                )
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                com.breakyuna.esjzone.util.AppLogger.e(
-                    "DownloadPageModel",
-                    "Failed to persist reader auto-save preference",
-                    e
-                )
-            }
+                PresentationAccess.database.cacheDao().put(PresentationAccess.settings.READER_AUTO_SAVE_KEY, enabled.toString())
+            } catch (e: CancellationException) { throw e }
+            catch (e: Exception) { AppLogger.e("DownloadPageModel", "Failed to persist reader auto-save preference", e) }
         }
     }
 }

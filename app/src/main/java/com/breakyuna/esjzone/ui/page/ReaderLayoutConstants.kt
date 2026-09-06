@@ -3,8 +3,8 @@ package com.breakyuna.esjzone.ui.page
 import androidx.compose.ui.unit.dp
 
 /**
- * Named geometry for reader overlays. These values are intentional reader
- * chrome reservations, not substitutes for application navigation insets.
+ * Reader-only geometry for immersive chrome reservations. These values are
+ * deliberately separate from the application shell's navigation insets.
  */
 internal object ReaderLayout {
     val contentTopPadding = 52.dp

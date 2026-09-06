@@ -46,11 +46,11 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.CoroutineScope
 import com.breakyuna.esjzone.database.dao.put
 import com.breakyuna.esjzone.ui.app.App
-import com.breakyuna.esjzone.ui.theme.catppuccin.CatppuccinDynamicTheme
-import com.breakyuna.esjzone.ui.theme.catppuccin.CatppuccinThemeType
+import com.breakyuna.esjzone.ui.designsystem.AppTheme
+import com.breakyuna.esjzone.ui.designsystem.AppThemeVariant
+import com.breakyuna.esjzone.ui.designsystem.AppTypography
 import com.breakyuna.esjzone.util.AppLogger
 import com.breakyuna.esjzone.util.CrashHandler
-import com.breakyuna.esjzone.ui.theme.QuietEditorial
 import com.breakyuna.esjzone.update.ReleaseUpdateChecker
 import com.breakyuna.esjzone.update.ReleaseUpdateDialog
 import com.breakyuna.esjzone.util.LocaleHelper
@@ -88,10 +88,7 @@ class MainActivity : ComponentActivity() {
                     ?.toBooleanStrictOrNull()
                     ?: false
                 GlobalSettings.setDomain(savedDomain)
-                GlobalSettings.setTheme(
-                    runCatching { CatppuccinThemeType.valueOf(savedTheme) }
-                        .getOrElse { CatppuccinThemeType.LATTE_YELLOW }
-                )
+                GlobalSettings.setTheme(AppThemeVariant.fromPersistedName(savedTheme))
                 GlobalSettings.setLanguage(AppLanguage.fromCode(savedLanguage))
                 GlobalSettings.setReaderAutoSave(savedReaderAutoSave)
                 startupState.value = StartupState.Ready
@@ -111,6 +108,7 @@ class MainActivity : ComponentActivity() {
         setContent {
             val state by startup.collectAsState()
             val appLanguage by GlobalSettings.languageFlow.collectAsState()
+            val appTheme by GlobalSettings.themeFlow.collectAsState()
             val baseContext = LocalContext.current
             val currentConfiguration = LocalConfiguration.current
 
@@ -126,7 +124,7 @@ class MainActivity : ComponentActivity() {
                 LocalContext provides localizedContext,
                 LocalConfiguration provides localizedConfiguration
             ) {
-                CatppuccinDynamicTheme {
+                AppTheme(variant = appTheme) {
                     if (state is StartupState.Ready) {
                         App()
                         ReleaseUpdateDialog()
@@ -163,7 +161,7 @@ private fun StartupContent(state: StartupState, retry: () -> Unit) {
                 .size(72.dp)
                 .clip(CircleShape)
         )
-        Text(stringResource(R.string.app_name), style = QuietEditorial.display)
+        Text(stringResource(R.string.app_name), style = AppTypography.displayMedium)
         if (state is StartupState.Starting) {
             Spacer(Modifier.height(16.dp))
             CircularProgressIndicator(strokeWidth = 2.5.dp)
@@ -171,7 +169,7 @@ private fun StartupContent(state: StartupState, retry: () -> Unit) {
         if (state is StartupState.Failed) {
             Text(
                 stringResource(R.string.startup_failed),
-                style = QuietEditorial.body,
+                style = AppTypography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(top = 12.dp)
             )

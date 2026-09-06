@@ -9,9 +9,9 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.History
 import androidx.compose.ui.graphics.vector.rememberVectorPainter
 import androidx.compose.ui.res.stringResource
-import cafe.adriel.voyager.navigator.Navigator
-import cafe.adriel.voyager.navigator.tab.Tab
-import cafe.adriel.voyager.navigator.tab.TabOptions
+import com.breakyuna.esjzone.ui.navigation.AppNavigator
+import com.breakyuna.esjzone.ui.navigation.AppTab
+import com.breakyuna.esjzone.ui.navigation.AppTabOptions
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -20,12 +20,11 @@ import com.breakyuna.esjzone.database.entity.LocalReadingActivity
 import com.breakyuna.esjzone.novellibrary.novel.Chapter
 import com.breakyuna.esjzone.ui.navigation.LocalBaseNavigator
 import com.breakyuna.esjzone.ui.navigation.ChapterStateHolder
-import com.breakyuna.esjzone.ui.navigation.pushIfNotCurrent
 import com.breakyuna.esjzone.ui.page.ChapterPage
 import com.breakyuna.esjzone.ui.page.HistoryPage
 
 /** The history tab can be reselected twice to jump straight to the latest location. */
-object HistoryTab : Tab {
+object HistoryTab : AppTab {
 
     private val openLastReadingRequest = mutableIntStateOf(0)
     private val requestLock = Any()
@@ -46,10 +45,10 @@ object HistoryTab : Tab {
         }
     }
 
-    override val options: TabOptions
+    override val options: AppTabOptions
         @Composable
-        get() = TabOptions(
-            index = 2u,
+        get() = AppTabOptions(
+            index = 1,
             title = stringResource(id = R.string.history),
             icon = rememberVectorPainter(image = Icons.Filled.History)
         )
@@ -84,7 +83,7 @@ object HistoryTab : Tab {
 }
 
 private fun openLocalActivity(
-    navigator: Navigator?,
+    navigator: AppNavigator?,
     activity: LocalReadingActivity
 ) {
     val chapter = Chapter(

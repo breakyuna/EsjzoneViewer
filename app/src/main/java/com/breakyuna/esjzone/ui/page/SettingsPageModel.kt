@@ -1,8 +1,7 @@
 package com.breakyuna.esjzone.ui.page
 import com.breakyuna.esjzone.app.PresentationAccess
 
-import cafe.adriel.voyager.core.model.StateScreenModel
-import cafe.adriel.voyager.core.model.screenModelScope
+import com.breakyuna.esjzone.ui.navigation.AppStateViewModel
 import com.breakyuna.esjzone.database.dao.put
 import com.breakyuna.esjzone.network.Authorization
 import com.breakyuna.esjzone.network.features.logout
@@ -12,7 +11,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 
 /** Coordinates settings persistence and cache/session maintenance off the UI. */
-class SettingsPageModel : StateScreenModel<SettingsPageModel.State>(State()) {
+class SettingsPageModel : AppStateViewModel<SettingsPageModel.State>(State()) {
 
     data class State(
         val cacheStats: LocalCacheStats? = null,

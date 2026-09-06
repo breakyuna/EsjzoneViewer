@@ -1,22 +1,46 @@
 package com.breakyuna.esjzone.ui.designsystem
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.CloudOff
+import androidx.compose.material.icons.outlined.Inbox
+import androidx.compose.material.icons.outlined.WarningAmber
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.ProgressBarRangeInfo
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.progressBarRangeInfo
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.dp
 
+/** A compact feedback block for inline validation and one-off messages. */
 @Composable
 fun AppFeedback(
     title: String,
@@ -26,11 +50,14 @@ fun AppFeedback(
     modifier: Modifier = Modifier
 ) {
     Column(
-        modifier = modifier.fillMaxWidth().padding(AppSpacing.xl),
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(AppSpacing.xl)
+            .semantics { liveRegion = LiveRegionMode.Polite },
         verticalArrangement = Arrangement.spacedBy(AppSpacing.md)
     ) {
-        Text(title, style = AppTypography.titleMedium)
-        Text(message, style = AppTypography.bodyMedium)
+        Text(title, style = AppTypography.titleMedium, color = appStateColors().content)
+        Text(message, style = AppTypography.bodyMedium, color = appStateColors().contentMuted)
         if (actionLabel != null && onAction != null) {
             Row(horizontalArrangement = Arrangement.End, modifier = Modifier.fillMaxWidth()) {
                 Button(onClick = onAction) { Text(actionLabel) }
@@ -39,11 +66,152 @@ fun AppFeedback(
     }
 }
 
+/** Full-size loading state for data-driven destinations. */
 @Composable
-fun AppLoading(modifier: Modifier = Modifier) {
-    CircularProgressIndicator(modifier = modifier)
+fun AppLoadingState(
+    modifier: Modifier = Modifier.fillMaxSize(),
+    message: String? = null
+) {
+    Box(
+        modifier = modifier.semantics {
+            liveRegion = LiveRegionMode.Polite
+            progressBarRangeInfo = ProgressBarRangeInfo.Indeterminate
+        },
+        contentAlignment = Alignment.Center
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(AppSpacing.md)
+        ) {
+            CircularProgressIndicator(modifier = Modifier.size(32.dp), strokeWidth = 3.dp)
+            message?.takeIf(String::isNotBlank)?.let {
+                Text(it, style = AppTypography.bodyMedium, color = appStateColors().contentMuted)
+            }
+        }
+    }
 }
 
+/** Small inline loading indicator for buttons, rows, and compact cards. */
+@Composable
+fun AppLoading(modifier: Modifier = Modifier, size: Dp = 24.dp) {
+    CircularProgressIndicator(
+        modifier = modifier
+            .size(size)
+            .semantics { progressBarRangeInfo = ProgressBarRangeInfo.Indeterminate },
+        strokeWidth = 2.5.dp
+    )
+}
+
+/** Empty state with an optional action. The title is the accessible state label. */
+@Composable
+fun AppEmptyState(
+    title: String,
+    message: String? = null,
+    modifier: Modifier = Modifier,
+    icon: ImageVector = Icons.Outlined.Inbox,
+    actionLabel: String? = null,
+    onAction: (() -> Unit)? = null
+) {
+    AppStateMessage(
+        title = title,
+        message = message,
+        modifier = modifier,
+        icon = icon,
+        actionLabel = actionLabel,
+        onAction = onAction
+    )
+}
+
+/** Error state with an explicit retry action. */
+@Composable
+fun AppErrorState(
+    title: String,
+    message: String? = null,
+    onRetry: (() -> Unit)? = null,
+    retryLabel: String? = null,
+    modifier: Modifier = Modifier,
+    icon: ImageVector = Icons.Outlined.WarningAmber
+) {
+    AppStateMessage(
+        title = title,
+        message = message,
+        modifier = modifier,
+        icon = icon,
+        actionLabel = retryLabel,
+        onAction = onRetry,
+        accent = appStateColors().danger
+    )
+}
+
+/** Offline state that can still host cached content or a reconnect action. */
+@Composable
+fun AppOfflineState(
+    title: String,
+    message: String? = null,
+    onRetry: (() -> Unit)? = null,
+    retryLabel: String? = null,
+    modifier: Modifier = Modifier,
+    icon: ImageVector = Icons.Outlined.CloudOff
+) {
+    AppStateMessage(
+        title = title,
+        message = message,
+        modifier = modifier,
+        icon = icon,
+        actionLabel = retryLabel,
+        onAction = onRetry,
+        accent = MaterialTheme.colorScheme.tertiary
+    )
+}
+
+@Composable
+private fun AppStateMessage(
+    title: String,
+    message: String?,
+    modifier: Modifier,
+    icon: ImageVector,
+    actionLabel: String?,
+    onAction: (() -> Unit)?,
+    accent: Color = MaterialTheme.colorScheme.primary
+) {
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(horizontal = AppSpacing.xl, vertical = AppSpacing.xxxl)
+            .semantics { liveRegion = LiveRegionMode.Polite },
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(AppSpacing.md)
+    ) {
+        Surface(
+            modifier = Modifier.size(56.dp),
+            shape = CircleShape,
+            color = accent.copy(alpha = 0.12f)
+        ) {
+            Box(contentAlignment = Alignment.Center) {
+                Icon(icon, contentDescription = null, tint = accent, modifier = Modifier.size(28.dp))
+            }
+        }
+        Text(title, style = AppTypography.titleMedium, color = appStateColors().content)
+        message?.takeIf(String::isNotBlank)?.let {
+            Text(
+                text = it,
+                style = AppTypography.bodyMedium,
+                color = appStateColors().contentMuted,
+                modifier = Modifier.fillMaxWidth(),
+                textAlign = TextAlign.Center
+            )
+        }
+        if (actionLabel != null && onAction != null) {
+            Button(
+                onClick = onAction,
+                modifier = Modifier.padding(top = AppSpacing.xs),
+                shape = RoundedCornerShape(20.dp)
+            ) { Text(actionLabel) }
+        }
+    }
+}
+
+/** Standard confirmation dialog used by destructive and account actions. */
 @Composable
 fun AppDialog(
     visible: Boolean,
@@ -75,7 +243,7 @@ fun AppBottomSheet(
     content: @Composable () -> Unit
 ) {
     if (visible) {
-        ModalBottomSheet(onDismissRequest = onDismissRequest, content = { content() })
+        ModalBottomSheet(onDismissRequest = onDismissRequest) { content() }
     }
 }
 

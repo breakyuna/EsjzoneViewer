@@ -1,7 +1,5 @@
 package com.breakyuna.esjzone.ui.page
-import com.breakyuna.esjzone.app.PresentationAccess
 
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -15,181 +13,154 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.DeleteOutline
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
+import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import cafe.adriel.voyager.core.model.StateScreenModel
-import cafe.adriel.voyager.core.model.rememberScreenModel
-import cafe.adriel.voyager.core.model.screenModelScope
-import cafe.adriel.voyager.core.screen.Screen
-import cafe.adriel.voyager.core.screen.ScreenKey
+import androidx.compose.ui.res.stringResource
+import com.breakyuna.esjzone.R
+import com.breakyuna.esjzone.app.PresentationAccess
+import com.breakyuna.esjzone.database.entity.Bookmark as LocalBookmark
+import com.breakyuna.esjzone.novellibrary.novel.Chapter
+import com.breakyuna.esjzone.ui.designsystem.AppShapes
+import com.breakyuna.esjzone.ui.designsystem.AppSpacing
+import com.breakyuna.esjzone.ui.designsystem.AppTypography
+import com.breakyuna.esjzone.ui.navigation.AppDestination
+import com.breakyuna.esjzone.ui.navigation.ChapterStateHolder
+import com.breakyuna.esjzone.ui.navigation.LocalBaseNavigator
+import com.breakyuna.esjzone.ui.navigation.rememberAppViewModel
+import com.breakyuna.esjzone.ui.product.EmptyState
+import com.breakyuna.esjzone.ui.product.ErrorState
+import com.breakyuna.esjzone.ui.product.LoadingSkeleton
+import com.breakyuna.esjzone.util.AppLogger
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
-import com.breakyuna.esjzone.R
-import com.breakyuna.esjzone.database.entity.Bookmark as LocalBookmark
-import com.breakyuna.esjzone.novellibrary.novel.Chapter
-import com.breakyuna.esjzone.ui.component.QuietBackHeader
-import com.breakyuna.esjzone.ui.theme.QuietEditorial
-import com.breakyuna.esjzone.ui.component.QuietEmptyState
-import com.breakyuna.esjzone.ui.component.QuietLoadingState
-import com.breakyuna.esjzone.ui.component.QuietSectionHeader
-import com.breakyuna.esjzone.ui.navigation.ChapterStateHolder
-import com.breakyuna.esjzone.ui.navigation.LocalBaseNavigator
-import com.breakyuna.esjzone.ui.navigation.pushIfNotCurrent
-import com.breakyuna.esjzone.util.AppLogger
 
-object BookmarksPage : Screen {
-
+/** Device-only chapter bookmarks; opening one delegates to the reader shell. */
+object BookmarksPage : AppDestination {
     private fun readResolve(): Any = BookmarksPage
+    override val key: String = "BookmarksPage"
 
-    override val key: ScreenKey = "BookmarksPage"
-
+    @OptIn(ExperimentalMaterial3Api::class)
     @Composable
     override fun Content() {
         val navigator = LocalBaseNavigator.current
-        val model = rememberScreenModel { BookmarksPageModel() }
+        val model = rememberAppViewModel { BookmarksPageModel() }
         val state by model.state.collectAsState()
+        LaunchedEffect(Unit) { model.load() }
 
-        Column(modifier = Modifier.fillMaxSize()) {
-            QuietBackHeader(
-                title = stringResource(id = R.string.bookmarks),
-                onBack = { navigator?.pop() }
-            )
-
+        Scaffold(
+            topBar = {
+                TopAppBar(
+                    title = { Text(stringResource(R.string.bookmarks), style = AppTypography.titleLarge) },
+                    navigationIcon = { BackIconButton { navigator?.pop() } }
+                )
+            }
+        ) { padding ->
             when (val current = state) {
-                BookmarksPageModel.State.Loading -> QuietLoadingState(modifier = Modifier.fillMaxSize())
-                is BookmarksPageModel.State.Result -> {
-                    if (current.bookmarks.isEmpty()) {
-                        QuietEmptyState(
-                            title = stringResource(id = R.string.bookmarks_empty),
-                            message = stringResource(id = R.string.bookmarks_description),
-                            icon = Icons.Filled.Bookmark,
-                            modifier = Modifier.fillMaxSize()
-                        )
-                    } else {
-                        LazyColumn(
-                            modifier = Modifier.fillMaxSize(),
-                            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
-                            verticalArrangement = Arrangement.spacedBy(10.dp)
-                        ) {
-                            item {
-                                QuietSectionHeader(
-                                    title = stringResource(R.string.bookmarks),
-                                    modifier = Modifier.padding(bottom = 2.dp)
-                                )
-                            }
-                            items(
-                                items = current.bookmarks,
-                                key = { it.chapterUrl }
-                            ) { bookmark ->
-                                BookmarkRow(
-                                    bookmark = bookmark,
-                                    onOpen = {
-                                        val chapter = Chapter(
-                                            bookmark.chapterName,
-                                            bookmark.chapterUrl,
-                                            false
+                BookmarksPageModel.State.Loading -> LoadingSkeleton(Modifier.fillMaxWidth().padding(padding), stringResource(R.string.bookmarks))
+                is BookmarksPageModel.State.Error -> ErrorState(
+                    title = stringResource(R.string.load_client_error),
+                    message = stringResource(R.string.history_local_load_failed),
+                    onRetry = model::retry,
+                    modifier = Modifier.fillMaxSize().padding(padding)
+                )
+                is BookmarksPageModel.State.Result -> if (current.bookmarks.isEmpty()) {
+                    EmptyState(
+                        title = stringResource(R.string.bookmarks_empty),
+                        message = stringResource(R.string.bookmarks_description),
+                        modifier = Modifier.fillMaxSize().padding(padding)
+                    )
+                } else {
+                    LazyColumn(
+                        modifier = Modifier.fillMaxSize().padding(padding),
+                        contentPadding = PaddingValues(AppSpacing.lg),
+                        verticalArrangement = Arrangement.spacedBy(AppSpacing.md)
+                    ) {
+                        item(key = "bookmark-header") {
+                            Text(
+                                stringResource(R.string.bookmarks_description),
+                                style = AppTypography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(bottom = AppSpacing.sm)
+                            )
+                        }
+                        items(
+                            current.bookmarks,
+                            key = { "bookmark:${it.chapterUrl}" },
+                            contentType = { "bookmark" }
+                        ) { bookmark ->
+                            BookmarkCard(
+                                bookmark = bookmark,
+                                onOpen = {
+                                    val chapter = Chapter(bookmark.chapterName, bookmark.chapterUrl, false)
+                                    navigator?.pushIfNotCurrent(
+                                        ChapterPage(
+                                            novelId = bookmark.novelId,
+                                            chapter = chapter,
+                                            history = ChapterStateHolder(chapter),
+                                            novelName = bookmark.novelName
                                         )
-                                        navigator?.pushIfNotCurrent(
-                                            ChapterPage(
-                                                novelId = bookmark.novelId,
-                                                chapter = chapter,
-                                                history = ChapterStateHolder(chapter),
-                                                novelName = bookmark.novelName
-                                            )
-                                        )
-                                    },
-                                    onDelete = { model.delete(bookmark) }
-                                )
-                            }
+                                    )
+                                },
+                                onDelete = { model.delete(bookmark) }
+                            )
                         }
                     }
                 }
             }
         }
-
-        LaunchedEffect(Unit) {
-            model.load()
-        }
     }
 }
 
 @Composable
-private fun BookmarkRow(
-    bookmark: LocalBookmark,
-    onOpen: () -> Unit,
-    onDelete: () -> Unit
-) {
-    Surface(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onOpen),
-        shape = QuietEditorial.cardShape,
-        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.32f)
+private fun BookmarkCard(bookmark: LocalBookmark, onOpen: () -> Unit, onDelete: () -> Unit) {
+    Card(
+        onClick = onOpen,
+        modifier = Modifier.fillMaxWidth().semantics { role = Role.Button },
+        shape = AppShapes.standard,
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)
     ) {
         Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(start = 16.dp, top = 12.dp, bottom = 12.dp, end = 8.dp),
-            verticalAlignment = Alignment.CenterVertically
+            Modifier.fillMaxWidth().padding(AppSpacing.md),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(AppSpacing.md)
         ) {
-            Icon(
-                imageVector = Icons.Filled.Bookmark,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.size(24.dp)
-            )
-            Column(
-                modifier = Modifier
-                    .weight(1f)
-                    .padding(horizontal = 12.dp)
-            ) {
-                Text(
-                    text = bookmark.novelName.ifBlank { bookmark.novelId },
-                    style = MaterialTheme.typography.titleMedium.copy(
-                        fontWeight = FontWeight.SemiBold
-                    ),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                Text(
-                    text = bookmark.chapterName,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.padding(top = 3.dp)
-                )
+            Icon(Icons.Filled.Bookmark, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(28.dp))
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(AppSpacing.xs)) {
+                Text(bookmark.novelName.ifBlank { bookmark.novelId }, style = AppTypography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(bookmark.chapterName, style = AppTypography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
             }
             IconButton(onClick = onDelete) {
-                Icon(
-                    imageVector = Icons.Filled.DeleteOutline,
-                    contentDescription = stringResource(id = R.string.bookmark_remove)
-                )
+                Icon(Icons.Filled.DeleteOutline, contentDescription = stringResource(R.string.bookmark_remove))
             }
         }
     }
 }
 
-private class BookmarksPageModel : StateScreenModel<BookmarksPageModel.State>(State.Loading) {
-
+private class BookmarksPageModel : AppStateViewModel<BookmarksPageModel.State>(State.Loading) {
     sealed class State {
         data object Loading : State()
         data class Result(val bookmarks: List<LocalBookmark>) : State()
+        data object Error : State()
     }
 
     private var loadStarted = false
@@ -199,26 +170,26 @@ private class BookmarksPageModel : StateScreenModel<BookmarksPageModel.State>(St
         loadStarted = true
         screenModelScope.launch(Dispatchers.IO) {
             try {
-                PresentationAccess.database.bookmarkDao().observeAll().collect { bookmarks ->
-                    mutableState.value = State.Result(bookmarks)
-                }
+                PresentationAccess.database.bookmarkDao().observeAll().collect { mutableState.value = State.Result(it) }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                AppLogger.e("BookmarksPageModel", "Failed to load local bookmarks", e)
                 loadStarted = false
-                // Room failures are diagnostic-only here. Keep the screen usable
-                // and follow the local-first empty state contract.
-                mutableState.value = State.Result(emptyList())
+                mutableState.value = State.Error
+                AppLogger.e("BookmarksPageModel", "Failed to load local bookmarks", e)
             }
         }
     }
 
+    fun retry() {
+        loadStarted = false
+        mutableState.value = State.Loading
+        load()
+    }
+
     fun delete(bookmark: LocalBookmark) {
         val current = mutableState.value as? State.Result ?: return
-        mutableState.value = State.Result(
-            current.bookmarks.filterNot { it.chapterUrl == bookmark.chapterUrl }
-        )
+        mutableState.value = State.Result(current.bookmarks.filterNot { it.chapterUrl == bookmark.chapterUrl })
         screenModelScope.launch(Dispatchers.IO) {
             try {
                 PresentationAccess.database.bookmarkDao().delete(bookmark)

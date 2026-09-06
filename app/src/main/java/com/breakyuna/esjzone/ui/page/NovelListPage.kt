@@ -1,371 +1,310 @@
 package com.breakyuna.esjzone.ui.page
-import com.breakyuna.esjzone.app.PresentationAccess
 
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.MutableIntState
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
-import cafe.adriel.voyager.core.model.StateScreenModel
-import cafe.adriel.voyager.core.model.rememberScreenModel
-import cafe.adriel.voyager.core.model.screenModelScope
-import cafe.adriel.voyager.core.screen.Screen
-import cafe.adriel.voyager.core.screen.ScreenKey
+import com.breakyuna.esjzone.R
+import com.breakyuna.esjzone.app.PresentationAccess
+import com.breakyuna.esjzone.network.Authorization
+import com.breakyuna.esjzone.network.LoadFailureKind
+import com.breakyuna.esjzone.network.LocalAuthorization
+import com.breakyuna.esjzone.network.PageableRequester
+import com.breakyuna.esjzone.network.features.novels
+import com.breakyuna.esjzone.network.loadFailureKind
+import com.breakyuna.esjzone.novellibrary.novel.CoveredNovel
+import com.breakyuna.esjzone.ui.discovery.DiscoveryErrorState
+import com.breakyuna.esjzone.ui.discovery.DiscoveryFilterMenu
+import com.breakyuna.esjzone.ui.discovery.DiscoveryFilterOption
+import com.breakyuna.esjzone.ui.discovery.DiscoveryNovelCard
+import com.breakyuna.esjzone.ui.discovery.DiscoveryOfflineBanner
+import com.breakyuna.esjzone.ui.discovery.DiscoveryScaffold
+import com.breakyuna.esjzone.ui.discovery.DiscoveryLoadingState
+import com.breakyuna.esjzone.ui.discovery.discoveryLoadingFooter
+import com.breakyuna.esjzone.ui.navigation.AppDestination
+import com.breakyuna.esjzone.ui.navigation.AppStateViewModel
+import com.breakyuna.esjzone.ui.navigation.LocalBaseNavigator
+import com.breakyuna.esjzone.ui.navigation.rememberAppViewModel
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import kotlinx.coroutines.flow.distinctUntilChanged
-import com.breakyuna.esjzone.R
-import com.breakyuna.esjzone.network.Authorization
-import com.breakyuna.esjzone.network.LocalAuthorization
-import com.breakyuna.esjzone.network.PageableRequester
-import com.breakyuna.esjzone.network.LoadFailureKind
-import com.breakyuna.esjzone.network.loadFailureKind
-import com.breakyuna.esjzone.network.features.getNovelDetail
-import com.breakyuna.esjzone.network.features.novels
-import com.breakyuna.esjzone.novellibrary.novel.CoveredNovel
-import com.breakyuna.esjzone.novellibrary.novel.preview
-import com.breakyuna.esjzone.ui.component.QuietBackHeader
-import com.breakyuna.esjzone.ui.component.DropdownSelection
-import com.breakyuna.esjzone.ui.component.QuietEmptyState
-import com.breakyuna.esjzone.ui.component.QuietErrorState
-import com.breakyuna.esjzone.ui.component.QuietLoadingState
-import com.breakyuna.esjzone.ui.component.QuietNovelListItem
-import com.breakyuna.esjzone.ui.component.QuietSectionHeader
-import com.breakyuna.esjzone.ui.navigation.LocalBaseNavigator
 
-private fun typeResource(type: Int): Int {
-    return when (type) {
-        0 -> R.string.novel_list_all
-        1 -> R.string.novel_list_japanese
-        2 -> R.string.novel_list_original
-        3 -> R.string.novel_list_korean
-        else -> R.string.novel_list_all
-    }
+private fun typeResource(type: Int): Int = when (type) {
+    1 -> R.string.novel_list_japanese
+    2 -> R.string.novel_list_original
+    3 -> R.string.novel_list_korean
+    else -> R.string.novel_list_all
 }
 
-private fun sortResource(type: Int): Int {
-    return when (type) {
-        1 -> R.string.novel_filter_recentlyupdate
-        2 -> R.string.novel_filter_recentlyupload
-        3 -> R.string.novel_filter_highestrating
-        4 -> R.string.novel_filter_mostviews
-        5 -> R.string.novel_filter_mostchapters
-        6 -> R.string.novel_filter_mostcomments
-        7 -> R.string.novel_filter_mostfavorites
-        8 -> R.string.novel_filter_mostwords
-        else -> R.string.novel_filter_recentlyupdate
-    }
+private fun sortResource(type: Int): Int = when (type) {
+    2 -> R.string.novel_filter_recentlyupload
+    3 -> R.string.novel_filter_highestrating
+    4 -> R.string.novel_filter_mostviews
+    5 -> R.string.novel_filter_mostchapters
+    6 -> R.string.novel_filter_mostcomments
+    7 -> R.string.novel_filter_mostfavorites
+    8 -> R.string.novel_filter_mostwords
+    else -> R.string.novel_filter_recentlyupdate
 }
 
 class NovelListPage(
     private val initializedNovelType: Int,
     private val initializedSortType: Int,
     private val initializedAdultOnly: Boolean
-) : Screen {
-
-    override val key: ScreenKey =
-        "NovelListPage:" +
-            initializedNovelType + ":" +
-            initializedSortType + ":" +
-            initializedAdultOnly
+) : AppDestination {
+    override val key: String = "NovelListPage:$initializedNovelType:$initializedSortType:$initializedAdultOnly"
 
     @Composable
     override fun Content() {
         val navigator = LocalBaseNavigator.current
-
         val authorization = LocalAuthorization.current
+        val novelType = rememberSaveable { mutableIntStateOf(initializedNovelType) }
+        val sortType = rememberSaveable { mutableIntStateOf(initializedSortType) }
+        var adultOnly by rememberSaveable { mutableStateOf(initializedAdultOnly) }
+        val model = rememberAppViewModel { NovelListPageModel(authorization, novelType, sortType) }
+        val state by model.state.collectAsState()
+        val adult by PresentationAccess.settings.adult
 
-        val novelType = rememberSaveable {
-            mutableIntStateOf(initializedNovelType)
-        }
-
-        val sortType = rememberSaveable {
-            mutableIntStateOf(initializedSortType)
-        }
-
-        var adultOnly by rememberSaveable {
-            mutableStateOf(initializedAdultOnly)
-        }
-
-        val novelListModel =
-            rememberScreenModel { NovelListPageModel(authorization, novelType, sortType) }
-        val state by novelListModel.state.collectAsState()
-
-        val adult by remember {
-            PresentationAccess.settings.adult
-        }
-
-        Column(modifier = Modifier.fillMaxSize()) {
-            QuietBackHeader(
-                title = stringResource(id = R.string.novel_list),
-                onBack = {
-                    navigator?.pop()
-                },
-                belowContent = {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 6.dp),
-                    verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(6.dp)
-                ) {
-                    var typeExposed by remember { mutableStateOf(false) }
-                    var sortExposed by remember { mutableStateOf(false) }
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        DropdownSelection(
-                            label = stringResource(id = R.string.novel_list_type),
-                            items = listOf(0, 2, 1, 3),
-                            current = novelType.intValue,
-                            onChange = {
-                                novelType.intValue = it
-                                novelListModel.getRequester(forceRefresh = true)
-                            },
-                            exposed = typeExposed,
-                            onExposeChanged = { typeExposed = it },
-                            modifier = Modifier.weight(1f),
-                            nameProvider = { stringResource(id = typeResource(this)) }
-                        )
-                        if (adult) {
-                            FilterChip(
-                                selected = adultOnly,
-                                onClick = { adultOnly = !adultOnly },
-                                label = { Text(stringResource(id = R.string.novel_list_adultonly)) }
-                            )
-                        }
-                    }
-                    DropdownSelection(
-                        label = stringResource(id = R.string.novel_list_sort),
-                        items = listOf(1, 2, 3, 4, 5, 6, 7, 8),
-                        current = sortType.intValue,
-                        onChange = {
-                            sortType.intValue = it
-                            novelListModel.getRequester(forceRefresh = true)
-                        },
-                        exposed = sortExposed,
-                        onExposeChanged = { sortExposed = it },
-                        modifier = Modifier.fillMaxWidth(),
-                        nameProvider = { stringResource(id = sortResource(this)) }
-                    )
-                }
-                }
-            )
-
-            when (state) {
-                is NovelListPageModel.State.Loading -> QuietLoadingState(modifier = Modifier.fillMaxSize())
-
-                is NovelListPageModel.State.Error -> QuietErrorState(
-                    onRetry = novelListModel::retry,
-                    failure = (state as NovelListPageModel.State.Error).failure,
-                    modifier = Modifier.fillMaxSize()
+        DiscoveryScaffold(
+            title = stringResource(R.string.novel_list),
+            onBack = { navigator?.pop() },
+            onRefresh = model::retry
+        ) { padding ->
+            when (val snapshot = state) {
+                NovelListPageModel.State.Loading -> DiscoveryLoadingState(
+                    modifier = Modifier.fillMaxSize().padding(padding)
                 )
-
+                is NovelListPageModel.State.Error -> {
+                    val contentModifier = Modifier.fillMaxSize().padding(padding)
+                    if (snapshot.failure == LoadFailureKind.NETWORK) {
+                        DiscoveryOfflineBanner(modifier = contentModifier.padding(16.dp))
+                    } else {
+                        DiscoveryErrorState(
+                            message = stringResource(listFailureMessage(snapshot.failure)),
+                            onRetry = model::retry,
+                            modifier = contentModifier
+                        )
+                    }
+                }
                 is NovelListPageModel.State.Result -> {
-                    val result = (state as NovelListPageModel.State.Result)
-                    val requester = result.requester
-
-                    var current by remember(result) {
-                        mutableIntStateOf(2)
-                    }
-                    var pageFailed by remember(result) {
-                        mutableStateOf(false)
-                    }
-                    var pageFailure by remember(result) {
-                        mutableStateOf<LoadFailureKind?>(null)
-                    }
-                    var pageRetry by remember(result) {
-                        mutableIntStateOf(0)
-                    }
-
-                    val max = requester.pages()
-
-                    val items = remember(result) {
-                        mutableStateListOf<CoveredNovel>().apply {
-                            addAll(result.firstPage)
-                        }
-                    }
-
-                    val visibleItems by remember(items, adult, adultOnly) {
-                        derivedStateOf {
-                            items.asSequence()
-                                .filter { adult && (!adultOnly || it.isAdult) || !adult && !it.isAdult }
-                                .distinctBy { it.url.ifBlank { it.name } }
-                                .toList()
-                        }
-                    }
-
-                    val listState = rememberLazyListState()
-                    var isLoadingPage by remember(result) { mutableStateOf(false) }
-
-                    LazyColumn(
-                        state = listState,
-                        verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(10.dp),
-                        contentPadding = androidx.compose.foundation.layout.PaddingValues(vertical = 16.dp)
-                    ) {
-                        item {
-                            QuietSectionHeader(
-                                title = stringResource(R.string.novel_list),
-                                modifier = Modifier.padding(bottom = 2.dp)
-                            )
-                        }
-                        if (visibleItems.isEmpty()) {
-                            item {
-                                QuietEmptyState(
-                                    title = stringResource(R.string.search_no_results),
-                                    message = stringResource(R.string.home_collection_empty_message)
-                                )
-                            }
-                        }
-                        items(visibleItems, key = { novel ->
-                            "novel-list-${novel.url.trim().ifBlank { novel.name.trim() }}"
-                        }) { novel ->
-                            val summaryKey = novel.url.ifBlank { novel.name }
-                            val summary = novelListModel.summaries[summaryKey]
-
-                            QuietNovelListItem(
-                                novel = novel,
-                                summary = summary,
-                                modifier = Modifier.padding(horizontal = 16.dp)
-                            )
-
-                            if (summary == null) {
-                                LaunchedEffect(summaryKey) {
-                                    novelListModel.loadSummary(novel)
-                                }
-                            }
-                        }
-
-                        item {
-                            if (current <= max && max > 1) {
-                                if (pageFailed) {
-                                    QuietErrorState(
-                                        onRetry = {
-                                            pageFailed = false
-                                            pageFailure = null
-                                            pageRetry += 1
-                                        },
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .padding(vertical = 8.dp),
-                                        failure = pageFailure ?: LoadFailureKind.CLIENT
-                                    )
-                                } else {
-                                    Box(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .padding(8.dp),
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        CircularProgressIndicator()
-                                    }
-                                }
-                            }
-                            Spacer(modifier = Modifier.height(8.dp))
-                        }
-
-                        if (current > max || max <= 1) {
-                            item(key = "novel-list-end") {
-                                Row(modifier = Modifier.fillMaxWidth()) {
-                                    Spacer(modifier = Modifier.weight(1f))
-                                    Text(text = stringResource(id = R.string.the_end), modifier = Modifier.padding(16.dp))
-                                    Spacer(modifier = Modifier.weight(1f))
-                                }
-                            }
-                        }
-                    }
-
-                    // The filtered-empty state is a real lazy item. Include it
-                    // when locating the footer so it is not mistaken for the
-                    // load trigger on every recomposition.
-                    val footerIndex = 1 + visibleItems.size +
-                        if (visibleItems.isEmpty()) 1 else 0
-                    LaunchedEffect(listState, footerIndex, current, pageRetry, pageFailed) {
-                        snapshotFlow {
-                            listState.layoutInfo.visibleItemsInfo.any { it.index >= footerIndex }
-                        }.distinctUntilChanged().collect { footerVisible ->
-                            if (footerVisible && !pageFailed && !isLoadingPage && current <= max && max > 1) {
-                                isLoadingPage = true
-                                try {
-                                    val newlyLoaded = withContext(Dispatchers.IO) { requester.more(current) }
-                                    newlyLoaded.forEach { item ->
-                                        val itemKey = item.url.trim().ifBlank { item.name.trim() }
-                                        if (items.none { it.url.trim().ifBlank { it.name.trim() } == itemKey }) {
-                                            items.add(item)
-                                        }
-                                    }
-                                    pageFailed = false
-                                    pageFailure = null
-                                    current += 1
-                                } catch (e: CancellationException) {
-                                    throw e
-                                } catch (e: Exception) {
-                                    pageFailed = true
-                                    pageFailure = e.loadFailureKind()
-                                    com.breakyuna.esjzone.util.AppLogger.e("NovelListPage", "Failed to load novel page $current", e)
-                                } finally {
-                                    isLoadingPage = false
-                                }
-                            }
-                        }
-                    }
+                    NovelListResult(
+                        result = snapshot,
+                        model = model,
+                        novelType = novelType,
+                        sortType = sortType,
+                        adult = adult,
+                        adultOnly = adultOnly,
+                        onAdultOnlyChange = { adultOnly = it },
+                        onFilterChanged = { model.getRequester(forceRefresh = true) },
+                        navigator = navigator,
+                        modifier = Modifier.fillMaxSize().padding(padding)
+                    )
                 }
             }
         }
 
-        LaunchedEffect(Unit) {
-            novelListModel.getRequester()
+        LaunchedEffect(Unit) { model.getRequester() }
+    }
+}
+
+@Composable
+private fun NovelListResult(
+    result: NovelListPageModel.State.Result,
+    model: NovelListPageModel,
+    novelType: androidx.compose.runtime.MutableIntState,
+    sortType: androidx.compose.runtime.MutableIntState,
+    adult: Boolean,
+    adultOnly: Boolean,
+    onAdultOnlyChange: (Boolean) -> Unit,
+    onFilterChanged: () -> Unit,
+    navigator: com.breakyuna.esjzone.ui.navigation.AppNavigator?,
+    modifier: Modifier
+) {
+    val listState = rememberLazyListState()
+    val scope = rememberCoroutineScope()
+    val items = remember(result.requester) {
+        mutableStateListOf<CoveredNovel>().apply { addAll(result.firstPage) }
+    }
+    val visibleItems by remember(items, adult, adultOnly) {
+        derivedStateOf {
+            items.asSequence()
+                .filter { adult && (!adultOnly || it.isAdult) || !adult && !it.isAdult }
+                .distinctBy { it.url.trim().ifBlank { it.name.trim() } }
+                .toList()
+        }
+    }
+    var page by remember(result.requester) { mutableIntStateOf(2) }
+    var loading by remember(result.requester) { mutableStateOf(false) }
+    var pageFailure by remember(result.requester) { mutableStateOf<LoadFailureKind?>(null) }
+    val maxPage = result.requester.pages()
+
+    fun loadMore() {
+        if (loading || page > maxPage) return
+        val targetPage = page
+        loading = true
+        pageFailure = null
+        scope.launch {
+            try {
+                val loaded = withContext(Dispatchers.IO) { result.requester.more(targetPage) }
+                val existing = items.mapTo(mutableSetOf()) { novelKey(it) }
+                loaded.forEach { novel -> if (existing.add(novelKey(novel))) items.add(novel) }
+                page = targetPage + 1
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                pageFailure = error.loadFailureKind()
+                com.breakyuna.esjzone.util.AppLogger.e(
+                    "NovelListPage",
+                    "Failed to load novel page $targetPage",
+                    error
+                )
+            } finally {
+                loading = false
+            }
         }
     }
 
+    LazyColumn(
+        state = listState,
+        modifier = modifier,
+        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        item(key = "novel-list-filters", contentType = "filters") {
+            NovelListFilters(
+                novelType = novelType,
+                sortType = sortType,
+                adult = adult,
+                adultOnly = adultOnly,
+                onAdultOnlyChange = onAdultOnlyChange,
+                onFilterChanged = onFilterChanged
+            )
+        }
+        if (visibleItems.isEmpty()) {
+            item(key = "novel-list-empty", contentType = "empty") {
+                com.breakyuna.esjzone.ui.discovery.DiscoveryEmptyState(
+                    title = stringResource(R.string.search_no_results),
+                    message = stringResource(R.string.search_no_results_message)
+                )
+            }
+        }
+        items(
+            items = visibleItems,
+            key = { novel -> "novel-list:${novelKey(novel)}" },
+            contentType = { "novel" }
+        ) { novel ->
+            DiscoveryNovelCard(
+                novel = novel,
+                onClick = { navigator?.pushIfNotCurrent(NovelPage(novel)) }
+            )
+        }
+        discoveryLoadingFooter(
+            loading = loading,
+            hasMore = page <= maxPage,
+            onRetry = if (pageFailure != null) ::loadMore else null,
+            errorMessage = pageFailure?.let { stringResource(listFailureMessage(it)) }
+        )
+    }
+
+    LaunchedEffect(listState, visibleItems.size, page, pageFailure) {
+        snapshotFlow {
+            val last = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
+            val total = listState.layoutInfo.totalItemsCount
+            last >= total - 3
+        }.collect { nearEnd ->
+            if (nearEnd && pageFailure == null) loadMore()
+        }
+    }
+}
+
+@Composable
+private fun NovelListFilters(
+    novelType: androidx.compose.runtime.MutableIntState,
+    sortType: androidx.compose.runtime.MutableIntState,
+    adult: Boolean,
+    adultOnly: Boolean,
+    onAdultOnlyChange: (Boolean) -> Unit,
+    onFilterChanged: () -> Unit
+) {
+    val typeOptions = listOf(0, 2, 1, 3).map {
+        DiscoveryFilterOption(it, stringResource(typeResource(it)))
+    }
+    val sortOptions = (1..8).map {
+        DiscoveryFilterOption(it, stringResource(sortResource(it)))
+    }
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        DiscoveryFilterMenu(
+            label = stringResource(R.string.novel_list_type),
+            selected = typeOptions.firstOrNull { it.value == novelType.intValue } ?: typeOptions.first(),
+            options = typeOptions,
+            onSelected = {
+                novelType.intValue = it
+                onFilterChanged()
+            },
+            modifier = Modifier.weight(1f)
+        )
+        DiscoveryFilterMenu(
+            label = stringResource(R.string.novel_list_sort),
+            selected = sortOptions.firstOrNull { it.value == sortType.intValue } ?: sortOptions.first(),
+            options = sortOptions,
+            onSelected = {
+                sortType.intValue = it
+                onFilterChanged()
+            },
+            modifier = Modifier.weight(1f)
+        )
+        if (adult) {
+            FilterChip(
+                selected = adultOnly,
+                onClick = { onAdultOnlyChange(!adultOnly) },
+                label = { Text(stringResource(R.string.novel_list_adultonly)) }
+            )
+        }
+    }
+}
+
+private fun novelKey(novel: CoveredNovel): String = novel.url.trim().ifBlank { novel.name.trim() }
+
+private fun listFailureMessage(failure: LoadFailureKind): Int = when (failure) {
+    LoadFailureKind.NETWORK -> R.string.load_network_error
+    LoadFailureKind.CLIENT -> R.string.load_client_error
 }
 
 class NovelListPageModel(
     private val authorization: Authorization,
-    private val novelType: MutableIntState,
-    private val sortType: MutableIntState,
-) : StateScreenModel<NovelListPageModel.State>(State.Loading) {
-
-    private var requestJob: Job? = null
+    private val novelType: androidx.compose.runtime.MutableIntState,
+    private val sortType: androidx.compose.runtime.MutableIntState
+) : AppStateViewModel<NovelListPageModel.State>(State.Loading) {
+    private var requestJob: kotlinx.coroutines.Job? = null
     private var initialRequestStarted = false
-
-    val summaries = mutableStateMapOf<String, String>()
-    private val summaryLock = Any()
-    private val summaryRequests = mutableSetOf<String>()
-    private val summaryFailures = mutableSetOf<String>()
 
     sealed class State {
         data object Loading : State()
@@ -376,49 +315,6 @@ class NovelListPageModel(
         ) : State()
     }
 
-    fun loadSummary(novel: CoveredNovel) {
-        val key = novel.url.ifBlank { novel.name }
-        if (key.isBlank()) return
-
-        synchronized(summaryLock) {
-            if (summaries.containsKey(key) ||
-                key in summaryFailures ||
-                !summaryRequests.add(key)
-            ) {
-                return
-            }
-        }
-
-        screenModelScope.launch(Dispatchers.IO) {
-            try {
-                val detail = PresentationAccess.client.getNovelDetail(authorization, novel)
-                val preview = detail.description.preview()
-                if (preview.isBlank()) {
-                    synchronized(summaryLock) {
-                        summaryFailures.add(key)
-                    }
-                } else {
-                    summaries[key] = preview
-                }
-            } catch (e: kotlinx.coroutines.CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                synchronized(summaryLock) {
-                    summaryFailures.add(key)
-                }
-                com.breakyuna.esjzone.util.AppLogger.w(
-                    "NovelListPageModel",
-                    "Failed to load summary for ${novel.name}",
-                    e
-                )
-            } finally {
-                synchronized(summaryLock) {
-                    summaryRequests.remove(key)
-                }
-            }
-        }
-    }
-
     fun getRequester(forceRefresh: Boolean = false) {
         if (!forceRefresh && initialRequestStarted) return
         initialRequestStarted = true
@@ -426,27 +322,27 @@ class NovelListPageModel(
         requestJob = screenModelScope.launch(Dispatchers.IO) {
             mutableState.value = State.Loading
             try {
-                val (requester, novels) = PresentationAccess.client.novels(
-                    authorization,
-                    novelType.intValue,
-                    sortType.intValue,
+                val (requester, firstPage) = PresentationAccess.client.novels(
+                    authorization = authorization,
+                    novelType = novelType.intValue,
+                    sortType = sortType.intValue,
                     forceRefresh = forceRefresh
                 )
                 ensureActive()
-                mutableState.value = State.Result(requester, novels)
+                mutableState.value = State.Result(requester, firstPage)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                mutableState.value = State.Error(e.loadFailureKind())
-                // Allow a later lifecycle/network recovery request to try again.
                 initialRequestStarted = false
-                com.breakyuna.esjzone.util.AppLogger.e("NovelListPageModel", "Failed to load novel list for type=${novelType.intValue}, sort=${sortType.intValue}", e)
+                mutableState.value = State.Error(e.loadFailureKind())
+                com.breakyuna.esjzone.util.AppLogger.e(
+                    "NovelListPageModel",
+                    "Failed to load novel list for type=${novelType.intValue}, sort=${sortType.intValue}",
+                    e
+                )
             }
         }
     }
 
-    fun retry() {
-        getRequester(forceRefresh = true)
-    }
-
+    fun retry() = getRequester(forceRefresh = true)
 }

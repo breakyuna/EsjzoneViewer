@@ -22,9 +22,8 @@ enum class ReaderBackground {
     @Composable
     fun containerColor(): Color = when (this) {
         SYSTEM -> MaterialTheme.colorScheme.background
-        // Reader surfaces intentionally stay independent from the app-wide
-        // Catppuccin appearance. These values follow Quiet Editorial's low
-        // glare paper palette and keep long reading sessions comfortable.
+        // Reader surfaces use stable low-glare palettes while controls remain
+        // connected to the active Material color scheme.
         PAPER -> Color(0xFFFBF7F0)
         SEPIA -> Color(0xFFF4ECD8)
         DARK -> Color(0xFF12161A)

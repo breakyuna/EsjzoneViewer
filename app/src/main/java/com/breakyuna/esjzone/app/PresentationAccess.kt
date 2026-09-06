@@ -8,7 +8,7 @@ import com.breakyuna.esjzone.GlobalSettings
 import com.breakyuna.esjzone.database.GeneralDatabase
 import com.breakyuna.esjzone.network.EsjzoneClient
 import com.breakyuna.esjzone.offline.NovelDownloadStore
-import com.breakyuna.esjzone.ui.theme.catppuccin.CatppuccinThemeType
+import com.breakyuna.esjzone.ui.designsystem.AppThemeVariant
 import kotlinx.coroutines.flow.StateFlow
 
 /**
@@ -45,8 +45,8 @@ object SettingsStateBoundary {
 
     val adult: State<Boolean> get() = GlobalSettings.adult
     val adultFlow: StateFlow<Boolean> get() = GlobalSettings.adultFlow
-    val theme: State<CatppuccinThemeType> get() = GlobalSettings.theme
-    val themeFlow: StateFlow<CatppuccinThemeType> get() = GlobalSettings.themeFlow
+    val theme: State<AppThemeVariant> get() = GlobalSettings.theme
+    val themeFlow: StateFlow<AppThemeVariant> get() = GlobalSettings.themeFlow
     val domain: State<String> get() = GlobalSettings.domain
     val domainFlow: StateFlow<String> get() = GlobalSettings.domainFlow
     val language: State<AppLanguage> get() = GlobalSettings.language
@@ -55,7 +55,7 @@ object SettingsStateBoundary {
     val readerAutoSaveFlow: StateFlow<Boolean> get() = GlobalSettings.readerAutoSaveFlow
 
     fun setAdult(value: Boolean) = GlobalSettings.setAdult(value)
-    fun setTheme(value: CatppuccinThemeType) = GlobalSettings.setTheme(value)
+    fun setTheme(value: AppThemeVariant) = GlobalSettings.setTheme(value)
     fun setDomain(value: String) = GlobalSettings.setDomain(value)
     fun setLanguage(value: AppLanguage) = GlobalSettings.setLanguage(value)
     fun setReaderAutoSave(value: Boolean) = GlobalSettings.setReaderAutoSave(value)

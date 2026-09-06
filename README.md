@@ -73,7 +73,7 @@
 - 🔍 **浏览与搜索**：查看热门推荐、最新更新和分类，按关键词搜索小说，并管理本地搜索历史。
 - 📚 **本地优先书架**：优先显示本地书籍，后台补充云端收藏；支持封面宫格、按最近阅读排序、批量移除与删除确认。
 - 📖 **连续阅读**：滚动衔接章节，通过目录和全书进度条定位，支持进度预览与返回原进度。
-- 🎨 **阅读自定义**：调整字体大小、行距、段距、页边距和背景，支持简繁体切换与 Catppuccin 主题配色。
+- 🎨 **阅读自定义**：调整字体大小、行距、段距、页边距和背景，支持简繁体切换与多套主题配色。
 - 🕘 **阅读历史**：保存本机阅读位置，同一本书保留最近记录，本地与云端历史分开展示。
 - 🔖 **本地书签**：收藏章节位置，方便再次访问。
 - 📥 **后台下载**：下载任务可在离开详情页后继续，失败时保留已完成的章节。
@@ -92,13 +92,12 @@
 
 - **Kotlin**：应用开发语言
 - **Jetpack Compose / Material 3**：界面与交互
-- **Voyager**：页面与 Tab 导航
+- **AndroidX Navigation 3**：类型化页面与 Tab 导航
 - **Room**：本地书架、历史、书签和状态存储
 - **OkHttp**：网络请求与会话处理
 - **Jsoup / Xsoup**：HTML 与 XPath 解析
 - **Coil**：封面、头像和插图加载
 - **Gson**：JSON 数据处理
-- **Catppuccin**：主题配色
 
 ## 🌐 网络接口与页面分析
 
@@ -122,7 +121,7 @@ ESJ Zone 的网络请求、登录认证、页面结构与 HTML 解析相关说�
 
 感谢原作者 [DeeChael](https://github.com/DeeChael) 提供项目基础，感谢所有参与开发、测试和反馈的贡献者。
 
-同时感谢 Jetpack Compose、Material 3、Room、[Voyager](https://github.com/adrielcafe/voyager)、[OkHttp](https://github.com/square/okhttp)、[Coil](https://github.com/coil-kt/coil)、[Gson](https://github.com/google/gson)、[Jsoup](https://github.com/jhy/jsoup)、[Xsoup](https://github.com/code4craft/xsoup) 和 [Catppuccin](https://github.com/catppuccin/catppuccin) 等开源项目。
+同时感谢 Jetpack Compose、Material 3、Room、AndroidX Navigation 3、[OkHttp](https://github.com/square/okhttp)、[Coil](https://github.com/coil-kt/coil)、[Gson](https://github.com/google/gson)、[Jsoup](https://github.com/jhy/jsoup) 和 [Xsoup](https://github.com/code4craft/xsoup) 等开源项目。
 
 ## 📄 许可证
 

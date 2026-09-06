@@ -1,9 +1,7 @@
 package com.breakyuna.esjzone
 
 import androidx.activity.compose.setContent
-import cafe.adriel.voyager.navigator.Navigator
-import com.breakyuna.esjzone.ui.screen.LoadingScreen
-import com.breakyuna.esjzone.ui.screen.LoginScreen
+import com.breakyuna.esjzone.ui.app.App
 import com.breakyuna.esjzone.update.ReleaseVersion
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -45,7 +43,7 @@ class StartupTest {
         val controller = Robolectric.buildActivity(MainActivity::class.java)
         val activity = controller.get()
         activity.setContent {
-            Navigator(LoadingScreen())
+            App()
         }
     }
 
@@ -54,8 +52,7 @@ class StartupTest {
         val controller = Robolectric.buildActivity(MainActivity::class.java)
         val activity = controller.get()
         activity.setContent {
-            Navigator(LoginScreen)
+            App()
         }
     }
 }
-

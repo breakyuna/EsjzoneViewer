@@ -41,7 +41,9 @@ import com.breakyuna.esjzone.novellibrary.component.initiallyExpandedChapterKeys
 import com.breakyuna.esjzone.novellibrary.component.visibleChapterRows
 import com.breakyuna.esjzone.novellibrary.novel.Chapter
 import com.breakyuna.esjzone.novellibrary.novel.NovelChapterList
-import com.breakyuna.esjzone.ui.theme.QuietEditorial
+import com.breakyuna.esjzone.ui.designsystem.AppShapes
+import com.breakyuna.esjzone.ui.designsystem.AppTypography
+import com.breakyuna.esjzone.ui.designsystem.AppContentType
 
 /** Compact compatibility wrapper for callers that do not own a LazyColumn. */
 @Composable
@@ -167,7 +169,7 @@ private fun ChapterDetailRow(
                     onChapterOpen(chapter)
                 } else Modifier
             ),
-        shape = QuietEditorial.controlShape,
+        shape = AppShapes.compact,
         color = if (current) {
             MaterialTheme.colorScheme.primaryContainer
         } else {
@@ -198,7 +200,7 @@ private fun ChapterDetailRow(
             }
             Text(
                 text = chapter.name.trim().ifBlank { stringResource(R.string.untitled_chapter) },
-                style = QuietEditorial.body.copy(
+                style = AppTypography.bodyMedium.copy(
                     fontWeight = if (current) FontWeight.SemiBold else FontWeight.Normal
                 ),
                 maxLines = 3,
@@ -237,9 +239,9 @@ private fun ChapterGroupRow(
         modifier = Modifier
             .fillMaxWidth()
             .padding(start = (depth * 14).dp, top = 4.dp, bottom = 4.dp)
-            .clip(QuietEditorial.cardShape)
+            .clip(AppShapes.standard)
             .clickable(onClick = onToggle),
-        shape = QuietEditorial.cardShape,
+        shape = AppShapes.standard,
         color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.48f)
     ) {
         Row(
@@ -258,7 +260,7 @@ private fun ChapterGroupRow(
             Text(
                 text = text,
                 inlineContent = inlineContent,
-                style = QuietEditorial.title,
+                style = AppTypography.titleMedium,
                 maxLines = 3,
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f)
@@ -273,4 +275,13 @@ private fun ChapterGroupRow(
             )
         }
     }
+}
+
+/** Use as the `key` of a lazy table-of-contents item. */
+fun appChapterRowKey(row: VisibleChapterRow): String = row.key
+
+/** Use as the `contentType` of a lazy table-of-contents item. */
+fun appChapterRowContentType(row: VisibleChapterRow): String = when (row) {
+    is VisibleChapterGroup -> AppContentType.chapterGroup
+    is VisibleChapterItem -> AppContentType.chapter
 }

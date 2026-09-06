@@ -22,10 +22,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
-import cafe.adriel.voyager.core.screen.Screen
-import cafe.adriel.voyager.core.screen.ScreenKey
-import cafe.adriel.voyager.navigator.LocalNavigator
-import cafe.adriel.voyager.navigator.currentOrThrow
+import com.breakyuna.esjzone.ui.navigation.AppDestination
+import com.breakyuna.esjzone.ui.navigation.LocalAppNavigator
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -35,15 +33,15 @@ import com.breakyuna.esjzone.network.Authorization
 import com.breakyuna.esjzone.network.hasCredentials
 import com.breakyuna.esjzone.util.AppLogger
 import com.breakyuna.esjzone.R
-import com.breakyuna.esjzone.ui.theme.QuietEditorial
+import com.breakyuna.esjzone.ui.designsystem.AppTypography
 
-class LoadingScreen : Screen {
+class LoadingScreen : AppDestination {
 
-    override val key: ScreenKey = "LoadingScreen"
+    override val key: String = "LoadingScreen"
 
     @Composable
     override fun Content() {
-        val navigator = LocalNavigator.currentOrThrow
+        val navigator = LocalAppNavigator.current ?: error("Navigation 3 root is not provided")
 
         Box(modifier = Modifier.fillMaxSize().safeDrawingPadding(), contentAlignment = Alignment.Center) {
             Column(
@@ -58,7 +56,7 @@ class LoadingScreen : Screen {
                         .size(72.dp)
                         .clip(CircleShape)
                 )
-                Text(stringResource(R.string.app_name), style = QuietEditorial.display)
+                Text(stringResource(R.string.app_name), style = AppTypography.displayMedium)
                 CircularProgressIndicator(strokeWidth = 2.5.dp)
             }
         }

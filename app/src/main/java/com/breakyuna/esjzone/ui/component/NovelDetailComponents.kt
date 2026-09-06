@@ -40,7 +40,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.breakyuna.esjzone.R
 import com.breakyuna.esjzone.novellibrary.novel.DetailedNovel
-import com.breakyuna.esjzone.ui.theme.QuietEditorial
+import com.breakyuna.esjzone.ui.designsystem.AppLayout
+import com.breakyuna.esjzone.ui.designsystem.AppShapes
+import com.breakyuna.esjzone.ui.designsystem.AppTypography
 
 /** A low-chrome detail toolbar that leaves the title to the editorial hero. */
 @Composable
@@ -90,7 +92,7 @@ fun NovelDetailTopBar(
                 }
             }
             HorizontalDivider(
-                thickness = QuietEditorial.hairline,
+                thickness = AppLayout.divider,
                 color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.18f)
             )
         }
@@ -106,11 +108,11 @@ fun NovelDetailHero(
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .widthIn(max = QuietEditorial.contentMaxWidth),
+            .widthIn(max = AppLayout.contentMaxWidth),
         horizontalArrangement = Arrangement.spacedBy(16.dp),
         verticalAlignment = Alignment.Top
     ) {
-        QuietNovelCover(
+        AppNovelCover(
             coverUrl = novel.coverUrl,
             title = novel.name,
             isAdult = novel.isAdult,
@@ -122,7 +124,7 @@ fun NovelDetailHero(
         ) {
             Text(
                 text = novel.name,
-                style = QuietEditorial.display.copy(
+                style = AppTypography.displayMedium.copy(
                     fontSize = 24.sp,
                     lineHeight = 31.sp
                 ),
@@ -178,13 +180,13 @@ fun NovelDetailMetadata(
         }
         Text(
             text = "$label ·",
-            style = QuietEditorial.label,
+            style = AppTypography.labelMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             maxLines = 1
         )
         Text(
             text = cleanValue,
-            style = QuietEditorial.body,
+            style = AppTypography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurface,
             maxLines = 2,
             overflow = TextOverflow.Ellipsis,
@@ -238,7 +240,7 @@ fun NovelDetailStats(
     Surface(
         modifier = modifier
             .fillMaxWidth(),
-        shape = QuietEditorial.cardShape,
+        shape = AppShapes.standard,
         color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.34f)
     ) {
         Row(
@@ -264,14 +266,14 @@ fun NovelDetailStats(
                     )
                     Text(
                         text = stat.value,
-                        style = QuietEditorial.title,
+                        style = AppTypography.titleMedium,
                         color = MaterialTheme.colorScheme.onSurface,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
                     Text(
                         text = stat.label,
-                        style = QuietEditorial.smallLabel,
+                        style = AppTypography.labelMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
@@ -296,14 +298,14 @@ fun NovelDetailSectionHeading(
     ) {
         Text(
             text = title,
-            style = QuietEditorial.sectionTitle,
+            style = AppTypography.titleLarge,
             color = MaterialTheme.colorScheme.onSurface,
             modifier = Modifier.weight(1f)
         )
         supportingText?.trim()?.takeIf(String::isNotBlank)?.let { support ->
             Text(
                 text = support,
-                style = QuietEditorial.label,
+                style = AppTypography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
@@ -318,7 +320,7 @@ fun NovelDetailSectionHeading(
             ) {
                 Text(
                     text = actionLabel,
-                    style = QuietEditorial.label,
+                    style = AppTypography.labelLarge,
                     color = MaterialTheme.colorScheme.primary,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
@@ -351,7 +353,7 @@ fun NovelDetailTags(
         horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         visibleTags.forEach { tag ->
-            QuietTag(
+            AppTag(
                 text = tag,
                 modifier = Modifier
                     .padding(vertical = 2.dp)
@@ -371,7 +373,7 @@ fun NovelDetailTags(
 fun NovelDetailRule(modifier: Modifier = Modifier) {
     HorizontalDivider(
         modifier = modifier,
-        thickness = QuietEditorial.hairline,
+        thickness = AppLayout.divider,
         color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
     )
 }

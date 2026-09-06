@@ -2,8 +2,7 @@ package com.breakyuna.esjzone.ui.page
 import com.breakyuna.esjzone.app.PresentationAccess
 
 import androidx.compose.runtime.mutableStateMapOf
-import cafe.adriel.voyager.core.model.StateScreenModel
-import cafe.adriel.voyager.core.model.screenModelScope
+import com.breakyuna.esjzone.ui.navigation.AppStateViewModel
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.Dispatchers
@@ -18,7 +17,7 @@ import com.breakyuna.esjzone.novellibrary.novel.Novel
 import com.breakyuna.esjzone.novellibrary.novel.DetailedNovel
 
 /** Shared, cancellable detail completion for lists that start with covered novels. */
-class NovelDetailLoader(private val authorization: Authorization) : StateScreenModel<Unit>(Unit) {
+class NovelDetailLoader(private val authorization: Authorization) : AppStateViewModel<Unit>(Unit) {
     val details = mutableStateMapOf<String, DetailedNovel>()
     val failures = mutableStateMapOf<String, LoadFailureKind>()
     private val jobs = mutableMapOf<String, Job>()

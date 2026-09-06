@@ -9,14 +9,25 @@ This package is the only presentation entry point for the rebuilt visual system.
 - `AppMotion`: duration, easing, and animation specs.
 - `rememberAppAdaptiveMetrics`: compact, medium, and expanded layout metrics.
 - `AppImage`: image loading seam; feature code must not import a concrete image loader.
-- `AppFeedback`, `AppLoading`, `AppDialog`, `AppBottomSheet`, and `AppSnackbarHost`: feedback primitives.
+- `AppFeedback`, `AppLoadingState`, `AppEmptyState`, `AppErrorState`, `AppOfflineState`, `AppDialog`, `AppBottomSheet`, and `AppSnackbarHost`: feedback primitives.
 - `glass.AppGlassSurface`: the only feature-facing glass surface.
+
+Component APIs live in `ui.component` and are named `App*`: `AppNovel*`, `AppCommentItem`,
+`AppDownloadItem`, `AppHistoryItem`, `AppBookshelfItem`, `AppBackHeader`, `AppSearchHeader`,
+`AppSectionHeader`, and `AppGroup`. Use `appNovelKey`/`appNovelContentType`,
+`appChapterRowKey`/`appChapterRowContentType`, and the item content-type constants when wiring
+lazy lists. Keys must be derived from a stable server or local identifier, never the row index.
+
+## Runtime ownership
+
+There is no compatibility UI layer. Feature pages use the `App*` components directly, so the
+rebuilt presentation has one visual implementation and one set of accessibility contracts.
 
 ## Experimental isolation
 
-The `glass` package owns the future Haze adapter. Haze is intentionally not added to feature source
-sets or the public feature API. Until the dependency is introduced and verified in CI, the surface
-uses a translucent Material fallback with the same contract.
+The `glass` package owns the optional future blur adapter. No Haze, Telephoto, Lottie, Shimmer, or
+other experimental dependency is added until a feature has a verified use case. Until then the
+surface uses a translucent Material fallback with the same contract.
 
 ## Ownership rules
 

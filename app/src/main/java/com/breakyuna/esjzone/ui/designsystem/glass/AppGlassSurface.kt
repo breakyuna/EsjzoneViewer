@@ -36,8 +36,11 @@ fun AppGlassSurface(
     Surface(
         modifier = modifier,
         shape = spec.shape,
-        color = base.copy(alpha = spec.alpha),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = spec.borderAlpha))
+        color = base.copy(alpha = spec.alpha.coerceIn(0f, 1f)),
+        border = BorderStroke(
+            1.dp,
+            MaterialTheme.colorScheme.outline.copy(alpha = spec.borderAlpha.coerceIn(0f, 1f))
+        )
     ) {
         Box(content = content)
     }

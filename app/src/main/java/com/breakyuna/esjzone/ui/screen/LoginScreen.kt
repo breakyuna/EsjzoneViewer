@@ -51,28 +51,28 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
-import cafe.adriel.voyager.core.screen.Screen
-import cafe.adriel.voyager.navigator.LocalNavigator
-import cafe.adriel.voyager.navigator.currentOrThrow
+import com.breakyuna.esjzone.ui.navigation.AppDestination
+import com.breakyuna.esjzone.ui.navigation.LocalAppNavigator
 import com.breakyuna.esjzone.R
 import com.breakyuna.esjzone.database.BookshelfRepository
 import com.breakyuna.esjzone.database.dao.put
 import com.breakyuna.esjzone.network.features.login
-import com.breakyuna.esjzone.ui.theme.QuietEditorial
-import com.breakyuna.esjzone.ui.component.QuietGroup
-import com.breakyuna.esjzone.ui.component.QuietSectionHeader
+import com.breakyuna.esjzone.ui.component.AppGroup
+import com.breakyuna.esjzone.ui.component.AppSectionHeader
+import com.breakyuna.esjzone.ui.designsystem.AppShapes
+import com.breakyuna.esjzone.ui.designsystem.AppTypography
 import com.breakyuna.esjzone.util.AppLogger
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-object LoginScreen : Screen {
+object LoginScreen : AppDestination {
     private fun readResolve(): Any = LoginScreen
 
     @Composable
     override fun Content() {
-        val navigator = LocalNavigator.currentOrThrow
+        val navigator = LocalAppNavigator.current ?: error("Navigation 3 root is not provided")
         val scope = rememberCoroutineScope()
         val currentDomain by PresentationAccess.settings.domain
         var email by remember { mutableStateOf("") }
@@ -149,13 +149,13 @@ object LoginScreen : Screen {
                     )
                     Text(
                         text = stringResource(R.string.app_name),
-                        style = QuietEditorial.display,
+                        style = AppTypography.displayMedium,
                         color = MaterialTheme.colorScheme.onSurface
                     )
                 }
 
-                QuietGroup {
-                    QuietSectionHeader(
+                AppGroup {
+                    AppSectionHeader(
                         title = stringResource(R.string.login_site_title),
                         modifier = Modifier.padding(top = 8.dp)
                     )
@@ -195,8 +195,8 @@ object LoginScreen : Screen {
                     }
                 }
 
-                QuietGroup {
-                    QuietSectionHeader(
+                AppGroup {
+                    AppSectionHeader(
                         title = stringResource(R.string.login_account_title),
                         modifier = Modifier.padding(top = 8.dp)
                     )
@@ -260,7 +260,7 @@ object LoginScreen : Screen {
                     if (loginFailed) {
                         Text(
                             text = stringResource(R.string.login_fail),
-                            style = QuietEditorial.body,
+                            style = AppTypography.bodyMedium,
                             color = MaterialTheme.colorScheme.error,
                             modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp)
                         )
@@ -271,7 +271,7 @@ object LoginScreen : Screen {
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(16.dp),
-                        shape = QuietEditorial.controlShape
+                        shape = AppShapes.standard
                     ) {
                         if (loggingIn) {
                             CircularProgressIndicator(

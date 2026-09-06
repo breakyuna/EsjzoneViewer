@@ -1,6 +1,5 @@
 package com.breakyuna.esjzone.ui.page
 
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -10,302 +9,115 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalUriHandler
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import cafe.adriel.voyager.core.screen.Screen
 import com.breakyuna.esjzone.BuildConfig
 import com.breakyuna.esjzone.Constants
 import com.breakyuna.esjzone.R
-import com.breakyuna.esjzone.ui.component.QuietBackHeader
-import com.breakyuna.esjzone.ui.component.QuietSectionHeader
+import com.breakyuna.esjzone.ui.designsystem.AppShapes
+import com.breakyuna.esjzone.ui.designsystem.AppSpacing
+import com.breakyuna.esjzone.ui.designsystem.AppTypography
+import com.breakyuna.esjzone.ui.navigation.AppDestination
 import com.breakyuna.esjzone.ui.navigation.LocalBaseNavigator
 
-object AboutPage : Screen {
-
+/** Product identity and open-source attribution, with no build/debug noise. */
+object AboutPage : AppDestination {
     private fun readResolve(): Any = AboutPage
 
+    @OptIn(ExperimentalMaterial3Api::class)
     @Composable
     override fun Content() {
         val navigator = LocalBaseNavigator.current
         val uriHandler = LocalUriHandler.current
-
-        Column(
-            modifier = Modifier.fillMaxSize()
-        ) {
-            QuietBackHeader(
-                title = stringResource(id = R.string.about),
-                onBack = {
-                    navigator?.pop()
-                }
-            )
-
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .verticalScroll(rememberScrollState())
-                    .padding(horizontal = 16.dp, vertical = 12.dp)
+        Scaffold(
+            topBar = {
+                TopAppBar(
+                    title = { Text(stringResource(R.string.about), style = AppTypography.titleLarge) },
+                    navigationIcon = { BackIconButton { navigator?.pop() } }
+                )
+            }
+        ) { padding ->
+            LazyColumn(
+                modifier = Modifier.fillMaxSize().padding(padding),
+                contentPadding = androidx.compose.foundation.layout.PaddingValues(AppSpacing.lg),
+                verticalArrangement = Arrangement.spacedBy(AppSpacing.lg)
             ) {
-                // Version Card
-                QuietSectionHeader(
-                    title = stringResource(id = R.string.compile_information),
-                    modifier = Modifier.padding(bottom = 8.dp)
-                )
-
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(16.dp),
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-                    )
-                ) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(16.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        InfoRow(
-                            label = stringResource(id = R.string.build_version),
-                            value = BuildConfig.VERSION_NAME
-                        )
+                item(key = "about-version") {
+                    AboutSection(title = stringResource(R.string.compile_information)) {
+                        AboutRow(stringResource(R.string.build_version), BuildConfig.VERSION_NAME)
                     }
                 }
-
-                Spacer(modifier = Modifier.height(20.dp))
-
-                // Maintainers
-                QuietSectionHeader(
-                    title = stringResource(id = R.string.maintainers),
-                    modifier = Modifier.padding(bottom = 8.dp)
-                )
-
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(16.dp),
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-                    )
-                ) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(16.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        for (maintainer in Constants.MAINTAINERS) {
-                            Text(
-                                text = maintainer,
-                                style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium),
-                                color = MaterialTheme.colorScheme.onSurface
-                            )
-                        }
+                item(key = "about-maintainers") {
+                    AboutSection(title = stringResource(R.string.maintainers)) {
+                        Constants.MAINTAINERS.forEach { Text(it, style = AppTypography.bodyLarge) }
                     }
                 }
-
-                Spacer(modifier = Modifier.height(20.dp))
-
-                // Contributors
-                QuietSectionHeader(
-                    title = stringResource(id = R.string.contributors),
-                    modifier = Modifier.padding(bottom = 8.dp)
-                )
-
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(16.dp),
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-                    )
-                ) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(16.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        for (contributor in Constants.CONTRIBUTORS) {
-                            Text(
-                                text = contributor,
-                                style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium),
-                                color = MaterialTheme.colorScheme.onSurface
-                            )
-                        }
+                item(key = "about-contributors") {
+                    AboutSection(title = stringResource(R.string.contributors)) {
+                        Constants.CONTRIBUTORS.forEach { Text(it, style = AppTypography.bodyLarge) }
                     }
                 }
-
-                Spacer(modifier = Modifier.height(20.dp))
-
-                // Open Source Libraries
-                QuietSectionHeader(
-                    title = stringResource(id = R.string.open_source_libraries),
-                    modifier = Modifier.padding(bottom = 8.dp)
-                )
-
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(16.dp),
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-                    )
-                ) {
-                    Column(modifier = Modifier.fillMaxWidth()) {
-                        Constants.OPEN_SOURCE_LIBRARIES.forEachIndexed { index, library ->
-                            Surface(
-                                onClick = { uriHandler.openUri(library.url) },
-                                color = androidx.compose.ui.graphics.Color.Transparent,
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(16.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Column(modifier = Modifier.weight(1f)) {
-                                            Text(
-                                                text = library.name,
-                                                style = MaterialTheme.typography.bodyLarge.copy(
-                                                    fontWeight = FontWeight.SemiBold
-                                                ),
-                                                color = MaterialTheme.colorScheme.onSurface,
-                                                maxLines = 3,
-                                                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
-                                            )
-                                            Text(
-                                                text = library.owner,
-                                                style = MaterialTheme.typography.labelMedium,
-                                                color = MaterialTheme.colorScheme.primary,
-                                                maxLines = 2,
-                                                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
-                                                modifier = Modifier.padding(top = 2.dp)
-                                            )
-                                        Spacer(modifier = Modifier.height(4.dp))
-                                        Text(
-                                            text = library.description,
-                                            style = MaterialTheme.typography.bodySmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                                        )
-                                    }
-                                    Spacer(modifier = Modifier.width(8.dp))
-                                    Icon(
-                                        imageVector = Icons.AutoMirrored.Filled.OpenInNew,
-                                        contentDescription = null,
-                                        tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
-                                        modifier = Modifier.size(16.dp)
-                                    )
-                                }
+                item(key = "about-libraries-title") { Text(stringResource(R.string.open_source_libraries), style = AppTypography.titleMedium) }
+                items(Constants.OPEN_SOURCE_LIBRARIES, key = { "license:${it.name}" }, contentType = { "license" }) { library ->
+                    Card(
+                        onClick = { uriHandler.openUri(library.url) },
+                        shape = AppShapes.standard,
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)
+                    ) {
+                        Row(Modifier.fillMaxWidth().padding(AppSpacing.md), verticalAlignment = Alignment.CenterVertically) {
+                            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(AppSpacing.xs)) {
+                                Text(library.name, style = AppTypography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                                Text(library.owner, style = AppTypography.labelMedium, color = MaterialTheme.colorScheme.primary)
+                                Text(library.description, style = AppTypography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
-                            if (index < Constants.OPEN_SOURCE_LIBRARIES.size - 1) {
-                                HorizontalDivider(
-                                    modifier = Modifier.padding(horizontal = 16.dp),
-                                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)
-                                )
-                            }
+                            Icon(Icons.AutoMirrored.Filled.OpenInNew, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     }
                 }
-
-                Spacer(modifier = Modifier.height(36.dp))
-
-                Column(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    Text(
-                        text = stringResource(R.string.about_powered_by),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Image(
-                            painter = painterResource(id = R.drawable.jetpack_compose_high),
-                            contentScale = ContentScale.Inside,
-                            contentDescription = stringResource(R.string.about_jetpack_compose),
-                            modifier = Modifier.height(18.dp)
-                        )
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text(
-                            text = stringResource(R.string.about_jetpack_compose),
-                            style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
+                item(key = "about-powered") {
+                    Column(Modifier.fillMaxWidth().padding(top = AppSpacing.lg), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(AppSpacing.sm)) {
+                        Text(stringResource(R.string.about_powered_by), style = AppTypography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(stringResource(R.string.about_designed_with), style = AppTypography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(stringResource(R.string.about_design_system), style = AppTypography.labelLarge)
                     }
                 }
-
-                Spacer(modifier = Modifier.height(6.dp))
-
-                Column(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    Text(
-                        text = stringResource(R.string.about_designed_with),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Image(
-                            painter = painterResource(id = R.drawable.catppuccin_high),
-                            contentScale = ContentScale.Inside,
-                            contentDescription = stringResource(R.string.about_catppuccin),
-                            modifier = Modifier.height(18.dp)
-                        )
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text(
-                            text = stringResource(R.string.about_catppuccin),
-                            style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(24.dp))
             }
         }
     }
+}
 
-    @Composable
-    private fun InfoRow(label: String, value: String) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.Top
-        ) {
-            Text(
-                text = label,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.weight(0.38f)
-            )
-            Text(
-                text = value,
-                style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium),
-                color = MaterialTheme.colorScheme.onSurface,
-                modifier = Modifier
-                    .weight(0.62f)
-                    .padding(start = 12.dp),
-                softWrap = true
-            )
+@Composable
+private fun AboutSection(title: String, content: @Composable () -> Unit) {
+    Column(verticalArrangement = Arrangement.spacedBy(AppSpacing.sm)) {
+        Text(title, style = AppTypography.titleMedium, color = MaterialTheme.colorScheme.primary)
+        Card(shape = AppShapes.standard, colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)) {
+            Column(Modifier.fillMaxWidth().padding(AppSpacing.lg), verticalArrangement = Arrangement.spacedBy(AppSpacing.sm)) { content() }
         }
     }
+}
 
+@Composable
+private fun AboutRow(label: String, value: String) {
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(AppSpacing.lg)) {
+        Text(label, style = AppTypography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(0.4f))
+        Text(value, style = AppTypography.bodyLarge, modifier = Modifier.weight(0.6f))
+    }
 }

@@ -16,6 +16,20 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  static-contracts:
+    name: Static contracts and hygiene
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout tagged commit
+        uses: actions/checkout@v4
+
+      - name: Verify source and resource contracts
+        run: python3 tools/qa/verify_static_contracts.py
+
+      - name: Check patch whitespace
+        run: git diff --check
+
   validate-version:
     name: Validate release version
     runs-on: ubuntu-latest
@@ -48,7 +62,7 @@ jobs:
 
   unit-tests:
     name: JVM unit tests
-    needs: validate-version
+    needs: [validate-version, static-contracts]
     runs-on: ubuntu-latest
 
     steps:

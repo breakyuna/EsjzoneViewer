@@ -2,7 +2,7 @@ package com.breakyuna.esjzone
 
 import androidx.compose.runtime.State
 import androidx.compose.runtime.mutableStateOf
-import com.breakyuna.esjzone.ui.theme.catppuccin.CatppuccinThemeType
+import com.breakyuna.esjzone.ui.designsystem.AppThemeVariant
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -41,10 +41,10 @@ object GlobalSettings {
     private val _adultFlow = MutableStateFlow(true)
     val adultFlow: StateFlow<Boolean> = _adultFlow.asStateFlow()
 
-    private val _themeState = mutableStateOf(CatppuccinThemeType.LATTE_YELLOW)
-    val theme: State<CatppuccinThemeType> get() = _themeState
-    private val _themeFlow = MutableStateFlow(CatppuccinThemeType.LATTE_YELLOW)
-    val themeFlow: StateFlow<CatppuccinThemeType> = _themeFlow.asStateFlow()
+    private val _themeState = mutableStateOf(AppThemeVariant.DEFAULT)
+    val theme: State<AppThemeVariant> get() = _themeState
+    private val _themeFlow = MutableStateFlow(AppThemeVariant.DEFAULT)
+    val themeFlow: StateFlow<AppThemeVariant> = _themeFlow.asStateFlow()
 
     private val _domainState = mutableStateOf(DOMAINS[0])
     val domain: State<String> get() = _domainState
@@ -66,7 +66,7 @@ object GlobalSettings {
         _adultFlow.value = value
     }
 
-    fun setTheme(value: CatppuccinThemeType) {
+    fun setTheme(value: AppThemeVariant) {
         _themeState.value = value
         _themeFlow.value = value
     }

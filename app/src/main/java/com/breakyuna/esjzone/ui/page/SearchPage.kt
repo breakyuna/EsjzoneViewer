@@ -1,27 +1,18 @@
 package com.breakyuna.esjzone.ui.page
-import com.breakyuna.esjzone.app.PresentationAccess
 
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.items
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.KeyboardArrowDown
-import androidx.compose.material.icons.filled.Search
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -30,38 +21,37 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import cafe.adriel.voyager.core.model.StateScreenModel
-import cafe.adriel.voyager.core.model.rememberScreenModel
-import cafe.adriel.voyager.core.model.screenModelScope
-import cafe.adriel.voyager.core.screen.Screen
-import cafe.adriel.voyager.core.screen.ScreenKey
 import com.breakyuna.esjzone.R
+import com.breakyuna.esjzone.app.PresentationAccess
 import com.breakyuna.esjzone.network.Authorization
-import com.breakyuna.esjzone.network.LocalAuthorization
 import com.breakyuna.esjzone.network.LoadFailureKind
-import com.breakyuna.esjzone.network.loadFailureKind
+import com.breakyuna.esjzone.network.LocalAuthorization
 import com.breakyuna.esjzone.network.PageableRequester
 import com.breakyuna.esjzone.network.features.search
+import com.breakyuna.esjzone.network.loadFailureKind
 import com.breakyuna.esjzone.novellibrary.novel.CoveredNovel
-import com.breakyuna.esjzone.ui.component.QuietEmptyState
-import com.breakyuna.esjzone.ui.component.QuietErrorState
-import com.breakyuna.esjzone.ui.component.QuietLoadingState
-import com.breakyuna.esjzone.ui.component.QuietNovelPreviewCard
+import com.breakyuna.esjzone.ui.discovery.DiscoveryEmptyState
+import com.breakyuna.esjzone.ui.discovery.DiscoveryErrorState
+import com.breakyuna.esjzone.ui.discovery.DiscoveryFilterMenu
+import com.breakyuna.esjzone.ui.discovery.DiscoveryFilterOption
+import com.breakyuna.esjzone.ui.discovery.DiscoveryNovelCard
+import com.breakyuna.esjzone.ui.discovery.DiscoveryOfflineBanner
+import com.breakyuna.esjzone.ui.discovery.DiscoveryScaffold
+import com.breakyuna.esjzone.ui.discovery.DiscoverySearchField
+import com.breakyuna.esjzone.ui.navigation.AppDestination
+import com.breakyuna.esjzone.ui.navigation.AppStateViewModel
 import com.breakyuna.esjzone.ui.navigation.LocalBaseNavigator
-import com.breakyuna.esjzone.ui.theme.QuietEditorial
-import com.breakyuna.esjzone.ui.theme.quietEditorialColors
-import com.breakyuna.esjzone.util.AppLogger
+import com.breakyuna.esjzone.ui.navigation.rememberAppViewModel
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -69,209 +59,192 @@ import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-/** Small compatibility screen for any previously saved search destination. */
-class SearchPage(private val keyword: String) : Screen {
-    override val key: ScreenKey = "SearchPage:" + keyword.trim()
+private fun searchTypeResource(type: Int): Int = when (type) {
+    1 -> R.string.novel_list_japanese
+    2 -> R.string.novel_list_original
+    3 -> R.string.novel_list_korean
+    else -> R.string.novel_list_all
+}
+
+private fun searchSortResource(type: Int): Int = when (type) {
+    2 -> R.string.novel_filter_recentlyupload
+    3 -> R.string.novel_filter_highestrating
+    4 -> R.string.novel_filter_mostviews
+    5 -> R.string.novel_filter_mostchapters
+    6 -> R.string.novel_filter_mostcomments
+    7 -> R.string.novel_filter_mostfavorites
+    8 -> R.string.novel_filter_mostwords
+    else -> R.string.novel_filter_recentlyupdate
+}
+
+class SearchPage(private val keyword: String) : AppDestination {
+    override val key: String = "SearchPage:${keyword.trim()}"
 
     @Composable
     override fun Content() {
         val navigator = LocalBaseNavigator.current
         val authorization = LocalAuthorization.current
-        val model = rememberScreenModel { SearchPageModel(authorization) }
+        val model = rememberAppViewModel { SearchPageModel(authorization) }
         val state by model.state.collectAsState()
         var query by rememberSaveable { mutableStateOf(keyword.trim()) }
         var activeQuery by rememberSaveable { mutableStateOf(keyword.trim()) }
         var category by rememberSaveable { mutableIntStateOf(0) }
         var sort by rememberSaveable { mutableIntStateOf(1) }
 
-        LazyColumn(
-            modifier = Modifier
-                .fillMaxWidth()
-                .imePadding()
-        ) {
-            item(key = "search-app-bar") {
-                com.breakyuna.esjzone.ui.component.QuietSearchHeader(
+        DiscoveryScaffold(
+            title = stringResource(R.string.search_result),
+            onBack = { navigator?.pop() },
+            onRefresh = {
+                activeQuery.takeIf { it.isNotBlank() }?.let { model.refresh(it, category, sort) }
+            }
+        ) { padding ->
+            Column(
+                modifier = Modifier.fillMaxSize().padding(padding),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                DiscoverySearchField(
                     value = query,
                     onValueChange = { query = it },
-                    onSearch = {
-                        query.trim().takeIf { it.isNotBlank() }?.let { activeQuery = it }
-                    },
+                    onSearch = { query.trim().takeIf { it.isNotBlank() }?.let { activeQuery = it } },
                     onClear = { query = "" },
-                    onBack = { navigator?.pop() }
+                    modifier = Modifier.padding(horizontal = 16.dp)
+                )
+                DiscoverySearchResults(
+                    model = model,
+                    state = state,
+                    keyword = activeQuery,
+                    category = category,
+                    sort = sort,
+                    onCategoryChange = { category = it },
+                    onSortChange = { sort = it },
+                    onRetry = { model.search(activeQuery, category, sort) },
+                    navigator = navigator,
+                    modifier = Modifier.fillMaxWidth().weight(1f)
                 )
             }
-            searchResultItems(
-                model = model,
-                state = state,
-                onRetry = { model.search(activeQuery, category, sort) },
-                keyword = activeQuery,
-                category = category,
-                sort = sort,
-                onCategoryChange = { category = it },
-                onSortChange = { sort = it }
-            )
         }
+
         LaunchedEffect(activeQuery, category, sort) {
-            activeQuery.takeIf { it.isNotBlank() }?.let {
-                model.search(it, category, sort)
-            }
+            activeQuery.takeIf { it.isNotBlank() }?.let { model.search(it, category, sort) }
         }
     }
 }
-
-/** Adds individual rows to the caller's list, without nesting a scroll container. */
-fun LazyListScope.searchResultItems(
-    model: SearchPageModel,
-    state: SearchPageModel.State,
-    onRetry: () -> Unit,
-    keyword: String? = null,
-    category: Int = 0,
-    sort: Int = 1,
-    onCategoryChange: (Int) -> Unit = {},
-    onSortChange: (Int) -> Unit = {}
-) {
-    item(key = "search-results-title") {
-        SearchResultsHeader(
-            keyword = keyword,
-            loadedCount = (state as? SearchPageModel.State.Result)?.let {
-                model.visibleItems.size
-            }
-        )
-    }
-    item(key = "search-filters") {
-        SearchFilterBar(
-            category = category,
-            sort = sort,
-            onCategoryChange = onCategoryChange,
-            onSortChange = onSortChange
-        )
-    }
-    when (state) {
-        SearchPageModel.State.Loading -> item(key = "search-loading") {
-            QuietLoadingState(modifier = Modifier.padding(horizontal = 16.dp))
-        }
-        is SearchPageModel.State.Error -> item(key = "search-error") {
-            QuietErrorState(
-                onRetry = onRetry,
-                failure = state.failure,
-                modifier = Modifier.padding(horizontal = 16.dp)
-            )
-        }
-        is SearchPageModel.State.Result -> {
-            val visible = model.visibleItems
-            if (visible.isEmpty()) {
-                item(key = "search-empty") {
-                    QuietEmptyState(
-                        title = stringResource(R.string.search_no_results),
-                        message = stringResource(R.string.search_no_results_message),
-                        icon = androidx.compose.material.icons.Icons.Filled.Search,
-                        modifier = Modifier.padding(horizontal = 16.dp)
-                    )
-                }
-            }
-            items(visible, key = { novel ->
-                "search-book:${novel.url.trim().ifBlank { novel.name.trim() }}"
-            }) { novel ->
-                QuietNovelPreviewCard(
-                    novel = novel,
-                    compact = false,
-                    showLatestChapter = false,
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 5.dp)
-                )
-            }
-            if (model.currentPage <= state.requester.pages()) {
-                item(key = "search-more") {
-                    Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
-                        TextButton(
-                            enabled = !model.loadingMore,
-                            onClick = { model.loadMore(state.requester) }
-                        ) {
-                            if (model.loadingMore) {
-                                CircularProgressIndicator(strokeWidth = 2.dp)
-                            } else {
-                                Text(stringResource(if (model.moreFailed) R.string.retry else R.string.search_load_more))
-                            }
-                        }
-                        if (model.moreFailed) {
-                            Text(
-                                text = stringResource(
-                                    if (model.moreFailure == LoadFailureKind.NETWORK) {
-                                        R.string.load_network_error
-                                    } else {
-                                        R.string.load_client_error
-                                    }
-                                ),
-                                color = MaterialTheme.colorScheme.error,
-                                modifier = Modifier.padding(horizontal = 16.dp)
-                            )
-                        }
-                    }
-                }
-            }
-            else {
-                item(key = "search-end") {
-                    Text(
-                        text = stringResource(R.string.search_end),
-                        style = QuietEditorial.label,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 22.dp),
-                        textAlign = TextAlign.Center
-                    )
-                }
-            }
-        }
-    }
-}
-
-private data class SearchFilterOption(
-    val value: Int,
-    val label: String
-)
 
 @Composable
-private fun SearchFilterBar(
+fun DiscoverySearchResults(
+    model: SearchPageModel,
+    state: SearchPageModel.State,
+    keyword: String,
+    category: Int,
+    sort: Int,
+    onCategoryChange: (Int) -> Unit,
+    onSortChange: (Int) -> Unit,
+    onRetry: () -> Unit,
+    navigator: com.breakyuna.esjzone.ui.navigation.AppNavigator?,
+    modifier: Modifier = Modifier
+) {
+    val listState = rememberLazyListState()
+    LazyColumn(
+        state = listState,
+        modifier = modifier,
+        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 6.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        item(key = "search-results-heading", contentType = "heading") {
+            Column(modifier = Modifier.fillMaxWidth()) {
+                Text(stringResource(R.string.search_result), style = MaterialTheme.typography.titleLarge)
+                if (keyword.isNotBlank()) {
+                    Text(
+                        text = stringResource(R.string.search_results_for, keyword),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+        }
+        item(key = "search-filters", contentType = "filters") {
+            SearchFilters(
+                category = category,
+                sort = sort,
+                onCategoryChange = onCategoryChange,
+                onSortChange = onSortChange
+            )
+        }
+        when (val snapshot = state) {
+            SearchPageModel.State.Loading -> item(key = "search-loading", contentType = "loading") {
+                com.breakyuna.esjzone.ui.discovery.DiscoveryLoadingState()
+            }
+            is SearchPageModel.State.Error -> item(key = "search-error", contentType = "error") {
+                if (snapshot.failure == LoadFailureKind.NETWORK) {
+                    DiscoveryOfflineBanner(modifier = Modifier.padding(bottom = 8.dp))
+                }
+                DiscoveryErrorState(
+                    message = stringResource(searchFailureMessage(snapshot.failure)),
+                    onRetry = onRetry
+                )
+            }
+            is SearchPageModel.State.Result -> {
+                val visible = model.visibleItems
+                if (visible.isEmpty()) {
+                    item(key = "search-empty", contentType = "empty") {
+                        DiscoveryEmptyState(
+                            title = stringResource(R.string.search_no_results),
+                            message = stringResource(R.string.search_no_results_message)
+                        )
+                    }
+                }
+                items(
+                    items = visible,
+                    key = { novel -> "search:${novelKey(novel)}" },
+                    contentType = { "novel" }
+                ) { novel ->
+                    DiscoveryNovelCard(
+                        novel = novel,
+                        onClick = { navigator?.pushIfNotCurrent(NovelPage(novel)) }
+                    )
+                }
+                item(key = "search-pagination", contentType = "pagination") {
+                    SearchPagination(model, snapshot.requester)
+                }
+            }
+        }
+    }
+
+    LaunchedEffect(listState, model.currentPage, model.moreFailed, model.visibleItems.size, state) {
+        if (state !is SearchPageModel.State.Result) return@LaunchedEffect
+        snapshotFlow {
+            val last = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
+            val total = listState.layoutInfo.totalItemsCount
+            last >= total - 3
+        }.collect { nearEnd ->
+            if (nearEnd && !model.loadingMore && !model.moreFailed) {
+                model.loadMore(state.requester)
+            }
+        }
+    }
+}
+
+@Composable
+private fun SearchFilters(
     category: Int,
     sort: Int,
     onCategoryChange: (Int) -> Unit,
     onSortChange: (Int) -> Unit
 ) {
-    val categoryOptions = listOf(
-        SearchFilterOption(0, stringResource(R.string.novel_list_all)),
-        SearchFilterOption(2, stringResource(R.string.novel_list_original)),
-        SearchFilterOption(1, stringResource(R.string.novel_list_japanese)),
-        SearchFilterOption(3, stringResource(R.string.novel_list_korean))
-    )
-    val sortOptions = listOf(
-        SearchFilterOption(1, stringResource(R.string.novel_filter_recentlyupdate)),
-        SearchFilterOption(2, stringResource(R.string.novel_filter_recentlyupload)),
-        SearchFilterOption(3, stringResource(R.string.novel_filter_highestrating)),
-        SearchFilterOption(4, stringResource(R.string.novel_filter_mostviews)),
-        SearchFilterOption(5, stringResource(R.string.novel_filter_mostchapters)),
-        SearchFilterOption(6, stringResource(R.string.novel_filter_mostcomments)),
-        SearchFilterOption(7, stringResource(R.string.novel_filter_mostfavorites)),
-        SearchFilterOption(8, stringResource(R.string.novel_filter_mostwords))
-    )
-
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = QuietEditorial.pagePadding)
-            .padding(top = 8.dp, bottom = 2.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp)
-    ) {
-        SearchFilterMenu(
+    val categories = listOf(0, 2, 1, 3).map { DiscoveryFilterOption(it, stringResource(searchTypeResource(it))) }
+    val sorts = (1..8).map { DiscoveryFilterOption(it, stringResource(searchSortResource(it))) }
+    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        DiscoveryFilterMenu(
             label = stringResource(R.string.novel_list_type),
-            options = categoryOptions,
-            selectedValue = category,
+            selected = categories.firstOrNull { it.value == category } ?: categories.first(),
+            options = categories,
             onSelected = onCategoryChange,
             modifier = Modifier.weight(1f)
         )
-        SearchFilterMenu(
+        DiscoveryFilterMenu(
             label = stringResource(R.string.novel_list_sort),
-            options = sortOptions,
-            selectedValue = sort,
+            selected = sorts.firstOrNull { it.value == sort } ?: sorts.first(),
+            options = sorts,
             onSelected = onSortChange,
             modifier = Modifier.weight(1f)
         )
@@ -279,123 +252,51 @@ private fun SearchFilterBar(
 }
 
 @Composable
-private fun SearchFilterMenu(
-    label: String,
-    options: List<SearchFilterOption>,
-    selectedValue: Int,
-    onSelected: (Int) -> Unit,
-    modifier: Modifier = Modifier
-) {
-    var expanded by remember { mutableStateOf(false) }
-    val selected = options.firstOrNull { it.value == selectedValue } ?: options.first()
-    val editorialColors = quietEditorialColors()
-
-    Box(modifier = modifier) {
-        Surface(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clickable { expanded = true },
-            shape = QuietEditorial.controlShape,
-            color = editorialColors.softSurface
-        ) {
-            Row(
-                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = label,
-                        style = QuietEditorial.smallLabel,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                    Text(
-                        text = selected.label,
-                        style = QuietEditorial.body,
-                        color = MaterialTheme.colorScheme.onSurface,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                }
-                Icon(
-                    imageVector = Icons.Filled.KeyboardArrowDown,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(20.dp)
+private fun SearchPagination(model: SearchPageModel, requester: PageableRequester<CoveredNovel>) {
+    val hasMore = model.currentPage <= requester.pages()
+    Column(
+        modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
+        horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally
+    ) {
+        when {
+            model.moreFailed -> {
+                Text(
+                    text = stringResource(searchFailureMessage(model.moreFailure ?: LoadFailureKind.CLIENT)),
+                    color = MaterialTheme.colorScheme.error,
+                    style = MaterialTheme.typography.bodySmall
                 )
+                TextButton(onClick = { model.loadMore(requester) }) { Text(stringResource(R.string.retry)) }
             }
-        }
-
-        DropdownMenu(
-            expanded = expanded,
-            onDismissRequest = { expanded = false }
-        ) {
-            options.forEach { option ->
-                DropdownMenuItem(
-                    text = {
-                        Text(
-                            text = option.label,
-                            style = QuietEditorial.body,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                    },
-                    onClick = {
-                        expanded = false
-                        onSelected(option.value)
-                    }
-                )
-            }
+            model.loadingMore -> CircularProgressIndicator(modifier = Modifier.padding(10.dp))
+            hasMore -> Text(
+                stringResource(R.string.search_load_more),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            else -> Text(
+                stringResource(R.string.search_end),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
         }
     }
 }
 
-@Composable
-private fun SearchResultsHeader(
-    keyword: String?,
-    loadedCount: Int?
-) {
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = QuietEditorial.pagePadding)
-            .padding(top = 14.dp, bottom = 8.dp)
-    ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(
-                text = stringResource(R.string.search_result),
-                style = QuietEditorial.sectionTitle,
-                color = MaterialTheme.colorScheme.primary
-            )
-            keyword?.takeIf { it.isNotBlank() }?.let {
-                Text(
-                    text = stringResource(R.string.search_results_for, it),
-                    style = QuietEditorial.body,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(start = 8.dp),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-            }
-        }
-        loadedCount?.let {
-            Text(
-                text = stringResource(R.string.search_results_loaded, it),
-                style = QuietEditorial.label,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(top = 3.dp)
-            )
-        }
-    }
+private fun novelKey(novel: CoveredNovel): String = novel.url.trim().ifBlank { novel.name.trim() }
+
+private fun searchFailureMessage(failure: LoadFailureKind): Int = when (failure) {
+    LoadFailureKind.NETWORK -> R.string.load_network_error
+    LoadFailureKind.CLIENT -> R.string.load_client_error
 }
 
 class SearchPageModel(
     private val authorization: Authorization
-) : StateScreenModel<SearchPageModel.State>(State.Loading) {
+) : AppStateViewModel<SearchPageModel.State>(State.Loading) {
     private val pageItems = mutableStateListOf<CoveredNovel>()
     val visibleItems: List<CoveredNovel> by derivedStateOf {
-        pageItems.filter { !it.isAdult || PresentationAccess.settings.adult.value }
-            .distinctBy { it.url.ifBlank { it.name } }
+        pageItems
+            .filter { !it.isAdult || PresentationAccess.settings.adult.value }
+            .distinctBy { novelKey(it) }
     }
     var currentPage by mutableIntStateOf(2)
         private set
@@ -421,13 +322,10 @@ class SearchPageModel(
     fun search(keyword: String, category: Int = 0, sort: Int = 1) {
         val normalizedKeyword = keyword.trim()
         if (normalizedKeyword.isBlank()) return
-        if (activeKeyword == normalizedKeyword &&
-            activeCategory == category &&
-            activeSort == sort &&
+        if (activeKeyword == normalizedKeyword && activeCategory == category && activeSort == sort &&
             (requestJob?.isActive == true || mutableState.value is State.Result)
         ) return
 
-        // Invalidate both request families before starting a new keyword.
         generation += 1
         val token = generation
         activeKeyword = normalizedKeyword
@@ -444,12 +342,7 @@ class SearchPageModel(
         requestJob = screenModelScope.launch {
             try {
                 val (requester, novels) = withContext(Dispatchers.IO) {
-                    PresentationAccess.client.search(
-                        authorization = authorization,
-                        keyword = normalizedKeyword,
-                        category = category,
-                        sort = sort
-                    )
+                    PresentationAccess.client.search(authorization, normalizedKeyword, category, sort)
                 }
                 ensureActive()
                 if (token != generation) return@launch
@@ -458,17 +351,21 @@ class SearchPageModel(
             } catch (error: CancellationException) {
                 throw error
             } catch (error: Exception) {
-                ensureActive()
                 if (token == generation) mutableState.value = State.Error(error.loadFailureKind())
-                AppLogger.e("SearchPageModel", "Failed to search for keyword", error)
+                com.breakyuna.esjzone.util.AppLogger.e("SearchPageModel", "Failed to search for keyword", error)
             }
         }
     }
 
+    fun refresh(keyword: String, category: Int = 0, sort: Int = 1) {
+        activeKeyword = null
+        activeCategory = null
+        activeSort = null
+        search(keyword, category, sort)
+    }
+
     fun loadMore(requester: PageableRequester<CoveredNovel>) {
-        if ((mutableState.value as? State.Result)?.requester !== requester ||
-            loadingMore || currentPage > requester.pages()
-        ) return
+        if ((mutableState.value as? State.Result)?.requester !== requester || loadingMore || currentPage > requester.pages()) return
         val page = currentPage
         val token = generation
         loadingMore = true
@@ -479,18 +376,17 @@ class SearchPageModel(
                 val loaded = withContext(Dispatchers.IO) { requester.more(page) }
                 ensureActive()
                 if (token != generation) return@launch
-                val keys = pageItems.mapTo(mutableSetOf()) { it.url.ifBlank { it.name } }
-                pageItems.addAll(loaded.filter { keys.add(it.url.ifBlank { it.name }) })
+                val keys = pageItems.mapTo(mutableSetOf()) { novelKey(it) }
+                pageItems.addAll(loaded.filter { keys.add(novelKey(it)) })
                 currentPage = page + 1
             } catch (error: CancellationException) {
                 throw error
             } catch (error: Exception) {
-                ensureActive()
                 if (token == generation) {
                     moreFailed = true
                     moreFailure = error.loadFailureKind()
                 }
-                AppLogger.e("SearchPageModel", "Failed to load search page $page", error)
+                com.breakyuna.esjzone.util.AppLogger.e("SearchPageModel", "Failed to load search page $page", error)
             } finally {
                 if (token == generation) loadingMore = false
             }

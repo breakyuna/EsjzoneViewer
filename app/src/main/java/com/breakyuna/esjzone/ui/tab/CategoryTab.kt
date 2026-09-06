@@ -1,239 +1,148 @@
 package com.breakyuna.esjzone.ui.tab
-import com.breakyuna.esjzone.app.PresentationAccess
 
-import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.itemsIndexed
-import androidx.compose.foundation.lazy.grid.rememberLazyGridState
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowForwardIos
 import androidx.compose.material.icons.filled.Category
-import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.Favorite
-import androidx.compose.material.icons.filled.LocalFireDepartment
-import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.remember
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.vector.rememberVectorPainter
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-import cafe.adriel.voyager.core.model.StateScreenModel
-import cafe.adriel.voyager.core.model.rememberScreenModel
-import cafe.adriel.voyager.core.model.screenModelScope
-import cafe.adriel.voyager.core.screen.Screen
-import cafe.adriel.voyager.core.screen.ScreenKey
-import cafe.adriel.voyager.navigator.tab.Tab
-import cafe.adriel.voyager.navigator.tab.TabOptions
+import com.breakyuna.esjzone.R
+import com.breakyuna.esjzone.app.PresentationAccess
+import com.breakyuna.esjzone.network.Authorization
+import com.breakyuna.esjzone.network.LoadFailureKind
+import com.breakyuna.esjzone.network.LocalAuthorization
+import com.breakyuna.esjzone.network.features.getCategories
+import com.breakyuna.esjzone.network.loadFailureKind
+import com.breakyuna.esjzone.novellibrary.novel.Category
+import com.breakyuna.esjzone.ui.discovery.DiscoveryCategoryCard
+import com.breakyuna.esjzone.ui.discovery.DiscoveryEmptyState
+import com.breakyuna.esjzone.ui.discovery.DiscoveryErrorState
+import com.breakyuna.esjzone.ui.discovery.DiscoveryOfflineBanner
+import com.breakyuna.esjzone.ui.discovery.DiscoveryScaffold
+import com.breakyuna.esjzone.ui.discovery.DiscoveryLoadingState
+import com.breakyuna.esjzone.ui.navigation.AppDestination
+import com.breakyuna.esjzone.ui.navigation.AppStateViewModel
+import com.breakyuna.esjzone.ui.navigation.AppTab
+import com.breakyuna.esjzone.ui.navigation.AppTabOptions
+import com.breakyuna.esjzone.ui.navigation.LocalBaseNavigator
+import com.breakyuna.esjzone.ui.navigation.rememberAppViewModel
+import com.breakyuna.esjzone.ui.page.CategoryPage
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
-import com.breakyuna.esjzone.R
-import com.breakyuna.esjzone.network.Authorization
-import com.breakyuna.esjzone.network.LocalAuthorization
-import com.breakyuna.esjzone.network.LoadFailureKind
-import com.breakyuna.esjzone.network.loadFailureKind
-import com.breakyuna.esjzone.network.features.getCategories
-import com.breakyuna.esjzone.novellibrary.novel.Category as NovelCategory
-import com.breakyuna.esjzone.ui.navigation.LocalBaseNavigator
-import com.breakyuna.esjzone.ui.navigation.pushIfNotCurrent
-import com.breakyuna.esjzone.ui.component.QuietBackHeader
-import com.breakyuna.esjzone.ui.component.QuietErrorState
-import com.breakyuna.esjzone.ui.component.QuietEmptyState
-import com.breakyuna.esjzone.ui.component.QuietLoadingState
-import com.breakyuna.esjzone.ui.component.QuietSectionHeader
-import com.breakyuna.esjzone.ui.page.CategoryPage
 
-class CategoryBrowserPage : Screen {
-
-    override val key: ScreenKey = "CategoryBrowserPage"
+/** Full-screen category browser opened from Home. */
+class CategoryBrowserPage : AppDestination {
+    override val key: String = "CategoryBrowserPage"
 
     @Composable
     override fun Content() {
         val navigator = LocalBaseNavigator.current
         val authorization = LocalAuthorization.current
-        val categoryModel = rememberScreenModel { CategoryModel(authorization) }
-        Column(modifier = Modifier.fillMaxSize()) {
-            QuietBackHeader(
-                title = stringResource(id = R.string.categories),
-                onBack = { navigator?.pop() }
-            )
+        val model = rememberAppViewModel { CategoryModel(authorization) }
+        DiscoveryScaffold(
+            title = stringResource(R.string.categories),
+            onBack = { navigator?.pop() },
+            onRefresh = model::reload
+        ) { padding ->
             CategoryBrowserContent(
-                categoryModel = categoryModel,
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxWidth()
+                model = model,
+                modifier = Modifier.fillMaxSize().padding(padding)
             )
         }
     }
 }
 
-@Composable
-private fun CategoryIcon(index: Int, modifier: Modifier = Modifier, tint: Color) {
-    when (index % 5) {
-        0 -> Icon(
-            imageVector = Icons.Filled.Refresh,
-            contentDescription = null,
-            modifier = modifier,
-            tint = tint
-        )
-
-        1 -> Icon(
-            painter = painterResource(id = R.drawable.outline_swords_24),
-            contentDescription = null,
-            modifier = modifier,
-            tint = tint
-        )
-
-        2 -> Icon(
-            imageVector = Icons.Filled.Favorite,
-            contentDescription = null,
-            modifier = modifier,
-            tint = tint
-        )
-
-        3 -> Icon(
-            imageVector = Icons.Filled.Edit,
-            contentDescription = null,
-            modifier = modifier,
-            tint = tint
-        )
-
-        else -> Icon(
-            imageVector = Icons.Filled.LocalFireDepartment,
-            contentDescription = null,
-            modifier = modifier,
-            tint = tint
-        )
-    }
-}
-
-@Composable
-private fun categoryAccent(index: Int): Pair<Color, Color> {
-    val scheme = MaterialTheme.colorScheme
-    return when (index % 5) {
-        0 -> scheme.primary to scheme.primaryContainer
-        1 -> scheme.secondary to scheme.secondaryContainer
-        2 -> scheme.tertiary to scheme.tertiaryContainer
-        3 -> scheme.primary to scheme.primaryContainer
-        else -> scheme.error to scheme.errorContainer
-    }
-}
-
-object CategoryTab : Tab {
-
+object CategoryTab : AppTab {
     private fun readResolve(): Any = CategoryTab
 
-    override val options: TabOptions
+    override val options: AppTabOptions
         @Composable
-        get() = TabOptions(
-            index = 1u,
-            title = stringResource(id = R.string.screen_main_tab_category),
-            icon = rememberVectorPainter(image = Icons.Filled.Category)
+        get() = AppTabOptions(
+            index = 1,
+            title = stringResource(R.string.screen_main_tab_category),
+            icon = androidx.compose.ui.graphics.vector.rememberVectorPainter(image = Icons.Filled.Category)
         )
 
     @Composable
     override fun Content() {
         val authorization = LocalAuthorization.current
-        val categoryModel = rememberScreenModel { CategoryModel(authorization) }
-        CategoryBrowserContent(
-            categoryModel = categoryModel,
-            modifier = Modifier.fillMaxSize()
-        )
+        val model = rememberAppViewModel { CategoryModel(authorization) }
+        DiscoveryScaffold(
+            title = stringResource(R.string.categories),
+            onRefresh = model::reload
+        ) { padding ->
+            CategoryBrowserContent(model, Modifier.fillMaxSize().padding(padding))
+        }
     }
 }
 
 @Composable
-private fun CategoryBrowserContent(
-    categoryModel: CategoryModel,
-    modifier: Modifier
-) {
+private fun CategoryBrowserContent(model: CategoryModel, modifier: Modifier) {
     val navigator = LocalBaseNavigator.current
-    val state by categoryModel.state.collectAsState()
-    val adult by remember { PresentationAccess.settings.adult }
+    val state by model.state.collectAsState()
+    val adult by PresentationAccess.settings.adult
 
-    when (state) {
-        is CategoryModel.State.Loading -> QuietLoadingState(modifier = modifier)
-
-        is CategoryModel.State.Error -> Column(
-            modifier = modifier,
-            verticalArrangement = Arrangement.Center
-        ) {
-            QuietErrorState(
-                failure = (state as CategoryModel.State.Error).failure,
-                onRetry = categoryModel::retry
-            )
+    when (val snapshot = state) {
+        CategoryModel.State.Loading -> DiscoveryLoadingState(modifier)
+        is CategoryModel.State.Error -> {
+            Column(modifier = modifier) {
+                if (snapshot.failure == LoadFailureKind.NETWORK) {
+                    DiscoveryOfflineBanner(modifier = Modifier.padding(16.dp))
+                }
+                DiscoveryErrorState(
+                    message = stringResource(categoryFailureMessage(snapshot.failure)),
+                    onRetry = model::retry,
+                    modifier = Modifier.fillMaxSize()
+                )
+            }
         }
-
         is CategoryModel.State.Result -> {
-            val categories = (state as CategoryModel.State.Result).categories
-                .filterNot { it.isAdult && !adult }
-            val gridState = rememberLazyGridState()
-
+            val categories = snapshot.categories.filterNot { it.isAdult && !adult }
             if (categories.isEmpty()) {
-                QuietEmptyState(
+                DiscoveryEmptyState(
                     title = stringResource(R.string.categories_empty),
                     message = stringResource(R.string.home_adult_hidden),
-                    icon = Icons.Filled.Category,
                     modifier = modifier
                 )
             } else {
                 LazyVerticalGrid(
-                    state = gridState,
+                    modifier = modifier,
                     columns = GridCells.Adaptive(minSize = 156.dp),
-                    contentPadding = PaddingValues(horizontal = 20.dp, vertical = 20.dp),
-                    horizontalArrangement = Arrangement.spacedBy(14.dp),
-                    verticalArrangement = Arrangement.spacedBy(14.dp),
-                    modifier = modifier
+                    contentPadding = PaddingValues(16.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    item(span = { GridItemSpan(maxLineSpan) }) {
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(bottom = 6.dp)
-                        ) {
-                            QuietSectionHeader(title = stringResource(R.string.categories))
-                        }
+                    item(span = { GridItemSpan(maxLineSpan) }, key = "category-heading", contentType = "heading") {
+                        Text(
+                            text = stringResource(R.string.categories),
+                            style = MaterialTheme.typography.titleMedium,
+                            modifier = Modifier.padding(bottom = 4.dp)
+                        )
                     }
-
                     itemsIndexed(
                         items = categories,
-                        key = { _, item -> "category-${item.url.trim().ifBlank { item.name.trim() }}" }
+                        key = { _, category -> categoryKey(category) },
+                        contentType = { _, _ -> "category" }
                     ) { index, category ->
-                        CategoryCard(
-                            category = category,
+                        DiscoveryCategoryCard(
+                            title = category.name,
+                            isAdult = category.isAdult,
                             index = index,
                             onClick = { navigator?.pushIfNotCurrent(CategoryPage(category)) }
                         )
@@ -243,101 +152,26 @@ private fun CategoryBrowserContent(
         }
     }
 
-    LaunchedEffect(Unit) {
-        categoryModel.getCategories()
-    }
+    LaunchedEffect(Unit) { model.getCategories() }
 }
 
-@Composable
-private fun CategoryCard(
-    category: NovelCategory,
-    index: Int,
-    onClick: () -> Unit
-) {
-    val (accent, accentContainer) = if (category.isAdult) {
-        MaterialTheme.colorScheme.error to MaterialTheme.colorScheme.errorContainer
-    } else {
-        categoryAccent(index)
-    }
+private fun categoryKey(category: Category): String =
+    "category:${category.url.trim().ifBlank { category.name.trim() }}"
 
-    Surface(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(154.dp)
-            .clickable(onClick = onClick),
-        shape = RoundedCornerShape(24.dp),
-        color = MaterialTheme.colorScheme.surface,
-        tonalElevation = 1.dp,
-        border = BorderStroke(
-            width = 1.dp,
-            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f)
-        )
-    ) {
-        Box(modifier = Modifier.fillMaxSize()) {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(6.dp)
-                    .clip(RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp))
-                    .background(accent)
-            )
-
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(16.dp),
-                verticalArrangement = Arrangement.SpaceBetween
-            ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .size(46.dp)
-                            .clip(CircleShape)
-                            .background(accentContainer),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        CategoryIcon(
-                            index = index,
-                            modifier = Modifier.size(23.dp),
-                            tint = accent
-                        )
-                    }
-                    Icon(
-                        imageVector = Icons.Filled.ArrowForwardIos,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
-                        modifier = Modifier.size(20.dp)
-                    )
-                }
-
-                Text(
-                    text = category.name,
-                    style = MaterialTheme.typography.titleMedium.copy(
-                        fontWeight = FontWeight.SemiBold
-                    ),
-                    color = MaterialTheme.colorScheme.onSurface,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis
-                )
-            }
-        }
-    }
+private fun categoryFailureMessage(failure: LoadFailureKind): Int = when (failure) {
+    LoadFailureKind.NETWORK -> R.string.load_network_error
+    LoadFailureKind.CLIENT -> R.string.load_client_error
 }
 
 class CategoryModel(
     private val authorization: Authorization
-) : StateScreenModel<CategoryModel.State>(State.Loading) {
-
+) : AppStateViewModel<CategoryModel.State>(State.Loading) {
     private var loadStarted = false
 
     sealed class State {
         data object Loading : State()
         data class Error(val failure: LoadFailureKind) : State()
-        data class Result(val categories: List<NovelCategory>) : State()
+        data class Result(val categories: List<Category>) : State()
     }
 
     fun getCategories() {
@@ -354,11 +188,7 @@ class CategoryModel(
             } catch (e: Exception) {
                 loadStarted = false
                 mutableState.value = State.Error(e.loadFailureKind())
-                com.breakyuna.esjzone.util.AppLogger.e(
-                    "CategoryModel",
-                    "Failed to load categories",
-                    e
-                )
+                com.breakyuna.esjzone.util.AppLogger.e("CategoryModel", "Failed to load categories", e)
             }
         }
     }
@@ -367,4 +197,6 @@ class CategoryModel(
         loadStarted = false
         getCategories()
     }
+
+    fun reload() = retry()
 }
