@@ -250,7 +250,7 @@
     <string name="load_failed">内容加载失败</string>
     <string name="load_network_error">网络错误，请稍候再试</string>
     <string name="load_client_error">客户端错误，请联系开发者</string>
-    <string name="compile_information">编译信息</string>
+    <string name="compile_information">版本</string>
     <string name="build_version">构建版本</string>
     <string name="build_date">构建日期</string>
     <string name="commit_id">提交 Id</string>

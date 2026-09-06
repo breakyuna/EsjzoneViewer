@@ -2,7 +2,9 @@ package com.breakyuna.esjzone.ui.tab
 
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
@@ -146,6 +148,7 @@ object HomeTab : Tab {
                         }
                     }
                 }
+                Spacer(Modifier.height(112.dp))
             }
         }
 

@@ -317,7 +317,7 @@ object FavoritePage : Screen {
                     // Scaffold padding already accounts for the optional
                     // batch bar and the root tab navigation. Keep only a
                     // small visual breathing space here.
-                    bottom = 16.dp
+                    bottom = 112.dp
                 ),
                 // More room around every cover improves scanning and keeps
                 // the three-column shelf from feeling visually crowded.

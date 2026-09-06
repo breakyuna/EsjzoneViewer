@@ -65,7 +65,7 @@ object AboutPage : Screen {
                     .verticalScroll(rememberScrollState())
                     .padding(horizontal = 16.dp, vertical = 12.dp)
             ) {
-                // Compile Information Card
+                // Version Card
                 QuietSectionHeader(
                     title = stringResource(id = R.string.compile_information),
                     modifier = Modifier.padding(bottom = 8.dp)
@@ -87,16 +87,6 @@ object AboutPage : Screen {
                         InfoRow(
                             label = stringResource(id = R.string.build_version),
                             value = BuildConfig.VERSION_NAME
-                        )
-                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
-                        InfoRow(
-                            label = stringResource(id = R.string.build_date),
-                            value = BuildConfig.BUILD_DATE
-                        )
-                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
-                        InfoRow(
-                            label = stringResource(id = R.string.commit_id),
-                            value = BuildConfig.COMMIT_ID
                         )
                     }
                 }

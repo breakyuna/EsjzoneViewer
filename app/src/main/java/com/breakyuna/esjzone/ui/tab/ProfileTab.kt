@@ -114,7 +114,8 @@ object ProfileTab : Tab {
                 contentPadding = PaddingValues(
                     start = horizontalPadding,
                     end = horizontalPadding,
-                    top = 16.dp
+                    top = 16.dp,
+                    bottom = 112.dp
                 ),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
