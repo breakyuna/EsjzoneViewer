@@ -15,7 +15,7 @@ room = "2.8.4"
 work = "2.11.2"
 securityCrypto = "1.1.0"
 
-okhttp = "5.5.0"
+okhttp = "5.4.0"
 coil = "2.6.0"
 voyager = "1.1.0-alpha03"
 gson = "2.14.0"
