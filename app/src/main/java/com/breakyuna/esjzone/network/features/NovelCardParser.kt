@@ -2,6 +2,8 @@ package com.breakyuna.esjzone.network.features
 
 import com.breakyuna.esjzone.network.EsjzoneUrls
 import com.breakyuna.esjzone.network.EsjzoneXPaths
+import com.breakyuna.esjzone.network.HtmlSelector
+import com.breakyuna.esjzone.network.JsoupHtmlSelector
 import com.breakyuna.esjzone.novellibrary.novel.CoveredNovel
 import com.breakyuna.esjzone.novellibrary.novel.CoveredNovelImpl
 import org.jsoup.nodes.Element
@@ -42,7 +44,8 @@ internal fun parseNovelCard(
     authorUrl: String? = null,
     words: Int? = null,
     articleCount: Int? = null,
-    discussionCount: Int? = null
+    discussionCount: Int? = null,
+    selector: HtmlSelector = JsoupHtmlSelector
 ): CoveredNovel {
     return CoveredNovelImpl(
         coverUrl = EsjzoneUrls.coverUrlFromNovelCard(card),
@@ -50,7 +53,7 @@ internal fun parseNovelCard(
         url = url.trim(),
         views = parseCardCount(views),
         likes = parseCardCount(likes),
-        isAdult = r18 || card.select(EsjzoneXPaths.NovelCard.R18BadgeSelector).isNotEmpty(),
+        isAdult = r18 || selector.select(card, EsjzoneXPaths.NovelCard.R18BadgeSelector).isNotEmpty(),
         latestTitle = latestTitle.cleanCardText(),
         latestUrl = latestUrl.cleanCardUrl(),
         author = author.cleanCardText(),
@@ -75,19 +78,20 @@ internal enum class NovelCardLayout { HOME, LIST }
 internal fun parseNovelCard(
     card: Element,
     r18: Boolean,
-    layout: NovelCardLayout
+    layout: NovelCardLayout,
+    selector: HtmlSelector = JsoupHtmlSelector
 ): CoveredNovel {
-    val titleLink = card.selectFirst(EsjzoneXPaths.NovelCard.TitleLinkSelector)
-    val imageLink = card.selectFirst(".card-img-tiles[href], a[href*='/detail/']")
+    val titleLink = selector.first(card, EsjzoneXPaths.NovelCard.TitleLinkSelector)
+    val imageLink = selector.first(card, ".card-img-tiles[href], a[href*='/detail/']")
     // A list card can split its statistics across several `.card-other`
     // blocks (commonly words, views/favorites, then articles/discussions).
     // Keep every block so semantic icon lookup cannot stop at the first one.
-    val stats = card.select(EsjzoneXPaths.NovelCard.StatsSelector)
-    val latestLink = card.selectFirst(EsjzoneXPaths.NovelCard.LatestLinkSelector)
-    val authorLink = card.selectFirst(EsjzoneXPaths.NovelCard.AuthorLinkSelector)
+    val stats = selector.select(card, EsjzoneXPaths.NovelCard.StatsSelector)
+    val latestLink = selector.first(card, EsjzoneXPaths.NovelCard.LatestLinkSelector)
+    val authorLink = selector.first(card, EsjzoneXPaths.NovelCard.AuthorLinkSelector)
 
-    val views = statCount(stats, StatKind.VIEWS)
-    val likes = statCount(stats, StatKind.LIKES)
+    val views = statCount(stats, StatKind.VIEWS, selector)
+    val likes = statCount(stats, StatKind.LIKES, selector)
     val isList = layout == NovelCardLayout.LIST
 
     return parseNovelCard(
@@ -104,9 +108,10 @@ internal fun parseNovelCard(
         latestUrl = latestLink?.attr("href"),
         author = authorLink?.text().takeIf { isList },
         authorUrl = authorLink?.attr("href").takeIf { isList },
-        words = statCount(stats, StatKind.WORDS).takeIf { isList },
-        articleCount = statCount(stats, StatKind.ARTICLES).takeIf { isList },
-        discussionCount = statCount(stats, StatKind.DISCUSSIONS).takeIf { isList }
+        words = statCount(stats, StatKind.WORDS, selector).takeIf { isList },
+        articleCount = statCount(stats, StatKind.ARTICLES, selector).takeIf { isList },
+        discussionCount = statCount(stats, StatKind.DISCUSSIONS, selector).takeIf { isList },
+        selector = selector
     )
 }
 
@@ -144,9 +149,9 @@ private val anyStatIconTokens = setOf(
 )
 
 /** Finds the number next to a semantic icon without relying on div position. */
-private fun statCount(stats: Iterable<Element>, kind: StatKind): Int? {
+private fun statCount(stats: Iterable<Element>, kind: StatKind, selector: HtmlSelector): Int? {
     for (statsBlock in stats) {
-        val icon = statsBlock.selectFirst(kind.selectors) ?: continue
+        val icon = selector.first(statsBlock, kind.selectors) ?: continue
 
         var node: Element? = icon
         repeat(5) {

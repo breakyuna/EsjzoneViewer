@@ -2,6 +2,7 @@
 agp = "9.4.0"
 kotlin = "2.4.10"
 ksp = "2.3.11"
+coroutines = "1.11.0"
 
 coreKtx = "1.18.0"
 junit = "4.13.2"
@@ -11,14 +12,14 @@ lifecycleRuntimeKtx = "2.10.0"
 activityCompose = "1.13.0"
 composeBom = "2026.06.01"
 room = "2.8.4"
-work = "2.9.1"
-securityCrypto = "1.1.0-alpha06"
+work = "2.11.2"
+securityCrypto = "1.1.0"
 
-okhttp = "4.12.0"
+okhttp = "5.5.0"
 coil = "2.6.0"
 voyager = "1.1.0-alpha03"
-gson = "2.10.1"
-jsoup = "1.17.2"
+gson = "2.14.0"
+jsoup = "1.23.2"
 xsoup = "0.3.7"
 
 [libraries]
@@ -33,6 +34,7 @@ okhttp = { group = 'com.squareup.okhttp3', name = 'okhttp', version.ref = "okhtt
 gson = { group = "com.google.code.gson", name = "gson", version.ref = "gson" }
 jsoup = { group = "org.jsoup", name = "jsoup", version.ref = "jsoup" }
 xsoup = { group = "us.codecraft", name = "xsoup", version.ref = "xsoup" }
+kotlinx-coroutines-android = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-android", version.ref = "coroutines" }
 
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
 junit = { group = "junit", name = "junit", version.ref = "junit" }

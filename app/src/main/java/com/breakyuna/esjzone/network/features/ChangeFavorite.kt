@@ -7,7 +7,7 @@ import com.breakyuna.esjzone.network.PageResponsePolicy
 import com.breakyuna.esjzone.database.entity.BookshelfEntry
 import com.breakyuna.esjzone.novellibrary.novel.Novel
 import okhttp3.Request
-import okhttp3.internal.EMPTY_REQUEST
+import okhttp3.RequestBody
 
 fun EsjzoneClient.changeFavorites(authorization: Authorization, novel: Novel) {
     runNetworkSafely("ChangeFavorite", Unit) {
@@ -24,7 +24,7 @@ fun EsjzoneClient.toggleFavorite(authorization: Authorization, novel: Novel): Bo
         authenticatedClient(authorization).newCall(
                 Request.Builder()
                     .url(EsjzoneUrls.Inc.MemFavorite)
-                    .post(EMPTY_REQUEST)
+                    .post(RequestBody.EMPTY)
                     .headers(this.headers)
                     .header("Authorization", authToken)
                     .build()
