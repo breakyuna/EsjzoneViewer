@@ -13,7 +13,7 @@ val app_version = project.properties["app_version"].toString()
 
 android {
     namespace = "com.breakyuna.esjzone"
-    compileSdk = 37
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "com.breakyuna.esjzone"
@@ -92,7 +92,6 @@ dependencies {
     implementation(libs.androidx.lifecycle.viewmodel.compose)
     implementation(libs.androidx.compose.adaptive)
     implementation(libs.androidx.compose.adaptive.layout)
-    implementation(libs.androidx.compose.adaptive.navigation3)
     implementation(libs.gson)
     implementation(libs.jsoup)
     implementation(libs.xsoup)

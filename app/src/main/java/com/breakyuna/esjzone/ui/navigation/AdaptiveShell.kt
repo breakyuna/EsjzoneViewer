@@ -37,7 +37,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
-import androidx.compose.material3.adaptive.currentWindowAdaptiveInfoV2
+import androidx.compose.material3.adaptive.currentWindowAdaptiveInfo
 import androidx.window.core.layout.WindowWidthSizeClass
 import androidx.lifecycle.viewmodel.navigation3.rememberViewModelStoreNavEntryDecorator
 import androidx.navigation3.runtime.entryProvider
@@ -78,10 +78,10 @@ fun AdaptiveAppShell(
     val bookshelfStack: MutableList<NavKey> = rememberNavBackStack(AppNavKey.BookshelfTab)
     val profileStack: MutableList<NavKey> = rememberNavBackStack(AppNavKey.ProfileTab)
     var selectedTab by rememberSaveable { mutableStateOf(AppTabId.HOME.name) }
-    // WindowWidthSizeClass is the stable 1.3.0 API. The breakpoint helpers and
+    // WindowWidthSizeClass is available in the locked Adaptive 1.2.0 API. The breakpoint helpers and
     // constants on WindowSizeClass were added by WindowManager 1.4 and must
-    // not leak into this stage's locked Adaptive 1.3.0 dependency set.
-    val widthSizeClass = currentWindowAdaptiveInfoV2().windowSizeClass.windowWidthSizeClass
+    // not leak into this stage's locked Adaptive 1.2.0 dependency set.
+    val widthSizeClass = currentWindowAdaptiveInfo().windowSizeClass.windowWidthSizeClass
     val tab = AppTabId.valueOf(selectedTab)
     val homeNavigator = remember(homeStack, rootNavigator) { rootNavigator.child(homeStack) }
     val historyNavigator = remember(historyStack, rootNavigator) { rootNavigator.child(historyStack) }
