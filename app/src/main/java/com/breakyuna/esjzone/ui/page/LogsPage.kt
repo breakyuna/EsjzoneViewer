@@ -151,7 +151,7 @@ object LogsPage : Screen {
                             val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                             val clip = ClipData.newPlainText("Esjzone Logs", text)
                             clipboard.setPrimaryClip(clip)
-                            Toast.makeText(context, context.getString(R.string.logs_copied_toast), Toast.LENGTH_SHORT).show()
+                            Toast.makeText(context, copiedToast, Toast.LENGTH_SHORT).show()
                         }
                     ) {
                         Icon(
@@ -169,7 +169,7 @@ object LogsPage : Screen {
                                 putExtra(Intent.EXTRA_SUBJECT, "Esjzone System Logs")
                                 type = "text/plain"
                             }
-                            val shareIntent = Intent.createChooser(sendIntent, context.getString(R.string.logs_share))
+                            val shareIntent = Intent.createChooser(sendIntent, shareTitle)
                             context.startActivity(shareIntent)
                         }
                     ) {
@@ -315,7 +315,7 @@ object LogsPage : Screen {
                         onClick = {
                             AppLogger.clearLogs()
                             showClearDialog = false
-                            Toast.makeText(context, context.getString(R.string.logs_cleared_toast), Toast.LENGTH_SHORT).show()
+                            Toast.makeText(context, clearedToast, Toast.LENGTH_SHORT).show()
                         }
                     ) {
                         Text(text = stringResource(id = R.string.delete_history), color = MaterialTheme.colorScheme.error)
@@ -369,7 +369,7 @@ object LogsPage : Screen {
                             val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                             val clip = ClipData.newPlainText("Esjzone Crash Report", lastCrashReport)
                             clipboard.setPrimaryClip(clip)
-                            Toast.makeText(context, context.getString(R.string.logs_copied_toast), Toast.LENGTH_SHORT).show()
+                            Toast.makeText(context, copiedToast, Toast.LENGTH_SHORT).show()
                         }
                     ) {
                         Text(text = stringResource(id = R.string.logs_copy_report))
@@ -508,7 +508,7 @@ private fun LogItemCard(entry: LogEntry) {
                             val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                             val clip = ClipData.newPlainText("Stack Trace", entry.stackTrace)
                             clipboard.setPrimaryClip(clip)
-                            Toast.makeText(context, context.getString(R.string.logs_copied_toast), Toast.LENGTH_SHORT).show()
+                            Toast.makeText(context, copiedToast, Toast.LENGTH_SHORT).show()
                         },
                         modifier = Modifier.size(24.dp)
                     ) {
