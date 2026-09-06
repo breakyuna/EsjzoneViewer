@@ -113,12 +113,13 @@ fun DiscoveryNovelCard(
     compact: Boolean = false,
     onClick: () -> Unit
 ) {
+    val accessibilityLabel = stringResource(R.string.forum_open_novel)
     AppNovelPreviewCard(
         novel = novel,
         compact = compact,
         showLatestChapter = compact,
         modifier = modifier.semantics {
-            contentDescription = "${androidx.compose.ui.res.stringResource(R.string.forum_open_novel)}：${novel.name}"
+            contentDescription = "$accessibilityLabel：${novel.name}"
             role = Role.Button
         },
         onClick = onClick
@@ -175,6 +176,7 @@ fun DiscoveryCategoryCard(
     onClick: () -> Unit
 ) {
     val colors = MaterialTheme.colorScheme
+    val accessibilityLabel = stringResource(R.string.categories)
     val accent = if (isAdult) colors.error else when (index % 3) {
         0 -> colors.primary
         1 -> colors.tertiary
@@ -186,7 +188,7 @@ fun DiscoveryCategoryCard(
             .fillMaxWidth()
             .height(148.dp)
             .semantics {
-                contentDescription = "${androidx.compose.ui.res.stringResource(R.string.categories)}：$title"
+                contentDescription = "$accessibilityLabel：$title"
                 role = Role.Button
             },
         shape = AppShapes.prominent,
@@ -269,13 +271,14 @@ fun DiscoverySearchField(
     modifier: Modifier = Modifier,
     placeholder: String = androidx.compose.ui.res.stringResource(R.string.search_placeholder)
 ) {
+    val accessibilityLabel = stringResource(R.string.search_placeholder)
     OutlinedTextField(
         value = value,
         onValueChange = onValueChange,
         modifier = modifier
             .fillMaxWidth()
             .semantics {
-                contentDescription = androidx.compose.ui.res.stringResource(R.string.search_placeholder)
+                contentDescription = accessibilityLabel
             },
         singleLine = true,
         leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },

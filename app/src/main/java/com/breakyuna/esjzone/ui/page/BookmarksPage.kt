@@ -42,6 +42,7 @@ import com.breakyuna.esjzone.ui.designsystem.AppShapes
 import com.breakyuna.esjzone.ui.designsystem.AppSpacing
 import com.breakyuna.esjzone.ui.designsystem.AppTypography
 import com.breakyuna.esjzone.ui.navigation.AppDestination
+import com.breakyuna.esjzone.ui.navigation.AppStateViewModel
 import com.breakyuna.esjzone.ui.navigation.ChapterStateHolder
 import com.breakyuna.esjzone.ui.navigation.LocalBaseNavigator
 import com.breakyuna.esjzone.ui.navigation.rememberAppViewModel

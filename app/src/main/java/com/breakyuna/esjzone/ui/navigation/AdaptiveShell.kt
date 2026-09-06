@@ -9,10 +9,11 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.WindowInsetsSides
-import androidx.compose.foundation.layout.background
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.layout.only
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AutoStories
 import androidx.compose.material.icons.filled.History
@@ -177,6 +178,7 @@ fun AdaptiveAppShell(
     }
 }
 
+@Composable
 private fun shellSafeDrawing(top: Boolean, bottom: Boolean): WindowInsets {
     val sides = when {
         top && bottom -> WindowInsetsSides.Top + WindowInsetsSides.Bottom +
@@ -253,7 +255,7 @@ private fun TabStackDisplay(
             onBack = { if (!navigator.pop()) Unit },
             transitionSpec = pushTransition,
             popTransitionSpec = popTransition,
-            predictivePopTransitionSpec = popTransition,
+            predictivePopTransitionSpec = predictivePopTransition,
             entryDecorators = listOf(
                 rememberSaveableStateHolderNavEntryDecorator(),
                 rememberViewModelStoreNavEntryDecorator()

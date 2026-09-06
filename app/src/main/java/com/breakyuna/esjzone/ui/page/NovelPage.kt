@@ -31,6 +31,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.MenuBook
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
@@ -46,6 +47,8 @@ import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material.icons.filled.TextSnippet
+import androidx.compose.material.icons.filled.OpenInNew
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
@@ -809,7 +812,7 @@ private fun RebuiltDetailTopBar(
         navigationIcon = {
             IconButton(onClick = onBack, modifier = Modifier.size(AppTouchTarget.minimum)) {
                 Icon(
-                    imageVector = androidx.compose.material.icons.automirrored.filled.ArrowBack,
+                    imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                     contentDescription = stringResource(R.string.reader_back)
                 )
             }
@@ -817,13 +820,13 @@ private fun RebuiltDetailTopBar(
         actions = {
             IconButton(onClick = onOpenExternal, modifier = Modifier.size(AppTouchTarget.minimum)) {
                 Icon(
-                    imageVector = androidx.compose.material.icons.filled.OpenInNew,
+                    imageVector = Icons.Filled.OpenInNew,
                     contentDescription = stringResource(R.string.novel_open_source)
                 )
             }
             IconButton(onClick = onMore, modifier = Modifier.size(AppTouchTarget.minimum)) {
                 Icon(
-                    imageVector = androidx.compose.material.icons.filled.MoreVert,
+                    imageVector = Icons.Filled.MoreVert,
                     contentDescription = stringResource(R.string.novel_more_actions)
                 )
             }

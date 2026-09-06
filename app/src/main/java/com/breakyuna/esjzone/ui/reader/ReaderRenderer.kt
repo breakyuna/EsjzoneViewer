@@ -99,7 +99,7 @@ fun ReaderRenderer(
                         modifier = Modifier.padding(vertical = settings.paragraphSpacingDp.dp)
                     )
                     ReaderBlock.LineBreak -> Spacer(
-                        modifier = Modifier.height(textStyle.lineHeight.value.sp)
+                        modifier = Modifier.height(settings.lineHeightSp.dp)
                     )
                 }
             }

@@ -112,6 +112,12 @@ object FavoritePage : AppDestination {
         val visibleKeys = remember(shown) { shown.mapTo(LinkedHashSet()) { it.bookKey } }
         val syncing = syncState is FavoritePageModel.State.Syncing
         val deleting = deleteState is FavoritePageModel.DeleteState.Deleting
+        val syncAddedMessage = stringResource(R.string.bookshelf_sync_added)
+        val syncDoneMessage = stringResource(R.string.bookshelf_sync_done)
+        val networkErrorMessage = stringResource(R.string.load_network_error)
+        val syncFailedMessage = stringResource(R.string.bookshelf_sync_failed)
+        val deleteDoneMessage = stringResource(R.string.bookshelf_delete_done)
+        val deleteFailedMessage = stringResource(R.string.bookshelf_delete_failed)
 
         fun requestDelete() {
             pendingDelete = shown.filter { it.bookKey in selected }
@@ -135,13 +141,13 @@ object FavoritePage : AppDestination {
         LaunchedEffect(syncState) {
             when (val state = syncState) {
                 is FavoritePageModel.State.Completed -> snackbar.showSnackbar(
-                    if (state.result.added > 0) stringResource(R.string.bookshelf_sync_added).format(state.result.added)
-                    else stringResource(R.string.bookshelf_sync_done)
+                    if (state.result.added > 0) syncAddedMessage.format(state.result.added)
+                    else syncDoneMessage
                 )
                 is FavoritePageModel.State.Failed -> snackbar.showSnackbar(
                     when (state.failure) {
-                        LoadFailureKind.NETWORK -> stringResource(R.string.load_network_error)
-                        else -> stringResource(R.string.bookshelf_sync_failed)
+                        LoadFailureKind.NETWORK -> networkErrorMessage
+                        else -> syncFailedMessage
                     }
                 )
                 else -> Unit
@@ -154,9 +160,9 @@ object FavoritePage : AppDestination {
                     selected = emptySet()
                     pendingDelete = emptyList()
                     showDeleteDialog = false
-                    snackbar.showSnackbar(stringResource(R.string.bookshelf_delete_done).format(state.count))
+                    snackbar.showSnackbar(deleteDoneMessage.format(state.count))
                 }
-                FavoritePageModel.DeleteState.Failed -> snackbar.showSnackbar(stringResource(R.string.bookshelf_delete_failed))
+                FavoritePageModel.DeleteState.Failed -> snackbar.showSnackbar(deleteFailedMessage)
                 else -> Unit
             }
         }
@@ -415,7 +421,7 @@ private fun ShelfCard(
             style = AppTypography.labelLarge,
             maxLines = 2,
             overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.fillMaxWidth().padding(top = AppSpacing.sm, horizontal = AppSpacing.xs)
+            modifier = Modifier.fillMaxWidth().padding(top = AppSpacing.sm, start = AppSpacing.xs, end = AppSpacing.xs)
         )
     }
 }

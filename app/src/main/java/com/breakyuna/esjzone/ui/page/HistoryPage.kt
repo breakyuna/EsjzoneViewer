@@ -61,6 +61,7 @@ import com.breakyuna.esjzone.network.EsjzoneUrls
 import com.breakyuna.esjzone.network.LoadFailureKind
 import com.breakyuna.esjzone.network.LocalAuthorization
 import com.breakyuna.esjzone.network.features.getHistories
+import com.breakyuna.esjzone.network.features.getNovelDetail
 import com.breakyuna.esjzone.network.features.removeHistory
 import com.breakyuna.esjzone.network.loadFailureKind
 import com.breakyuna.esjzone.novellibrary.novel.Chapter

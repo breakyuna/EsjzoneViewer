@@ -78,6 +78,14 @@ object HomeTab : AppTab {
         val model = rememberAppViewModel { HomeTabModel(authorization) }
         val state by model.state.collectAsState()
         val adult by PresentationAccess.settings.adult
+        val editorPicksTitle = stringResource(R.string.home_editor_picks)
+        val translatedTitle = stringResource(R.string.tab_home_recentlyupdate_tranlated)
+        val originalTitle = stringResource(R.string.tab_home_recentlyupdate_original)
+        val translatedAdultTitle = stringResource(R.string.tab_home_recentlyupdate_tranlated_r18)
+        val originalAdultTitle = stringResource(R.string.tab_home_recentlyupdate_original_r18)
+        val browseMoreLabel = stringResource(R.string.home_browse_more)
+        val emptyCollectionTitle = stringResource(R.string.home_collection_empty_title)
+        val emptyCollectionMessage = stringResource(R.string.home_collection_empty_message)
 
         DiscoveryScaffold(
             title = stringResource(R.string.home_discover),
@@ -113,40 +121,55 @@ object HomeTab : AppTab {
                     }
                     is HomeTabModel.State.Result -> {
                         homeCollection(
-                            title = stringResource(R.string.home_editor_picks),
+                            title = editorPicksTitle,
                             novels = snapshot.homeData.recommendation,
                             onMore = null,
                             adult = adult,
-                            navigator = navigator
+                            navigator = navigator,
+                            browseMoreLabel = browseMoreLabel,
+                            emptyTitle = emptyCollectionTitle,
+                            emptyMessage = emptyCollectionMessage
                         )
                         homeCollection(
-                            title = stringResource(R.string.tab_home_recentlyupdate_tranlated),
+                            title = translatedTitle,
                             novels = snapshot.homeData.recentlyUpdateTranslated,
                             onMore = { navigator?.pushIfNotCurrent(NovelListPage(1, 1, false)) },
                             adult = adult,
-                            navigator = navigator
+                            navigator = navigator,
+                            browseMoreLabel = browseMoreLabel,
+                            emptyTitle = emptyCollectionTitle,
+                            emptyMessage = emptyCollectionMessage
                         )
                         homeCollection(
-                            title = stringResource(R.string.tab_home_recentlyupdate_original),
+                            title = originalTitle,
                             novels = snapshot.homeData.recentlyUpdateOriginal,
                             onMore = { navigator?.pushIfNotCurrent(NovelListPage(2, 1, false)) },
                             adult = adult,
-                            navigator = navigator
+                            navigator = navigator,
+                            browseMoreLabel = browseMoreLabel,
+                            emptyTitle = emptyCollectionTitle,
+                            emptyMessage = emptyCollectionMessage
                         )
                         if (adult) {
                             homeCollection(
-                                title = stringResource(R.string.tab_home_recentlyupdate_tranlated_r18),
+                                title = translatedAdultTitle,
                                 novels = snapshot.homeData.recentlyUpdateTranslatedR18,
                                 onMore = { navigator?.pushIfNotCurrent(NovelListPage(1, 1, true)) },
                                 adult = true,
-                                navigator = navigator
+                                navigator = navigator,
+                                browseMoreLabel = browseMoreLabel,
+                                emptyTitle = emptyCollectionTitle,
+                                emptyMessage = emptyCollectionMessage
                             )
                             homeCollection(
-                                title = stringResource(R.string.tab_home_recentlyupdate_original_r18),
+                                title = originalAdultTitle,
                                 novels = snapshot.homeData.recentlyUpdateOriginalR18,
                                 onMore = { navigator?.pushIfNotCurrent(NovelListPage(2, 1, true)) },
                                 adult = true,
-                                navigator = navigator
+                                navigator = navigator,
+                                browseMoreLabel = browseMoreLabel,
+                                emptyTitle = emptyCollectionTitle,
+                                emptyMessage = emptyCollectionMessage
                             )
                         }
                     }
@@ -189,7 +212,10 @@ private fun LazyListScope.homeCollection(
     novels: List<CoveredNovel>,
     onMore: (() -> Unit)?,
     adult: Boolean,
-    navigator: AppNavigator?
+    navigator: AppNavigator?,
+    browseMoreLabel: String,
+    emptyTitle: String,
+    emptyMessage: String
 ) {
     val visible = novels
         .asSequence()
@@ -205,15 +231,15 @@ private fun LazyListScope.homeCollection(
         ) {
             Text(title, style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
             if (onMore != null) {
-                TextButton(onClick = onMore) { Text(stringResource(R.string.home_browse_more)) }
+                TextButton(onClick = onMore) { Text(browseMoreLabel) }
             }
         }
     }
     if (visible.isEmpty()) {
         item(key = "home-empty-$title", contentType = "empty") {
             DiscoveryEmptyState(
-                title = stringResource(R.string.home_collection_empty_title),
-                message = stringResource(R.string.home_collection_empty_message)
+                title = emptyTitle,
+                message = emptyMessage
             )
         }
     } else {

@@ -16,13 +16,14 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalViewModelStoreOwner
+import androidx.lifecycle.viewmodel.compose.LocalViewModelStoreOwner
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.navigation3.rememberViewModelStoreNavEntryDecorator
 import androidx.navigation3.runtime.NavKey
+import androidx.navigation3.scene.Scene
 import androidx.navigation3.runtime.entryProvider
 import androidx.navigation3.runtime.rememberNavBackStack
 import androidx.navigation3.runtime.rememberSaveableStateHolderNavEntryDecorator
@@ -414,7 +415,7 @@ private fun LegacyRoute.restore(): AppDestination? = when (this) {
         token == ForumPage.key || token.endsWith(".ForumPage") -> ForumPage
         token == GuestbookPage.key || token.endsWith(".GuestbookPage") -> GuestbookPage
         token == SearchTab.key || token.endsWith(".SearchTab") -> SearchTab
-        token == CategoryBrowserPage.key -> CategoryBrowserPage()
+        token == CategoryBrowserPage().key -> CategoryBrowserPage()
         else -> null
     }
     is LegacyRoute.Search -> SearchPage(keyword)
@@ -461,12 +462,18 @@ private fun LegacyRoute.restore(): AppDestination? = when (this) {
 }
 
 /** Predictive-back compatible defaults: new content covers the old entry. */
-internal val pushTransition: AnimatedContentTransitionScope<NavKey>.() -> ContentTransform = {
+internal val pushTransition: AnimatedContentTransitionScope<Scene<NavKey>>.() -> ContentTransform = {
     slideInHorizontally(initialOffsetX = { it }) togetherWith
         ExitTransition.KeepUntilTransitionsFinished
 }
 
-internal val popTransition: AnimatedContentTransitionScope<NavKey>.() -> ContentTransform = {
+internal val popTransition: AnimatedContentTransitionScope<Scene<NavKey>>.() -> ContentTransform = {
+    slideInHorizontally(initialOffsetX = { -it }) togetherWith
+        slideOutHorizontally(targetOffsetX = { it })
+}
+
+internal val predictivePopTransition:
+    AnimatedContentTransitionScope<Scene<NavKey>>.(Int) -> ContentTransform = { _ ->
     slideInHorizontally(initialOffsetX = { -it }) togetherWith
         slideOutHorizontally(targetOffsetX = { it })
 }
@@ -518,7 +525,7 @@ fun AppNavigation() {
                 ),
                 transitionSpec = pushTransition,
                 popTransitionSpec = popTransition,
-                predictivePopTransitionSpec = popTransition,
+                predictivePopTransitionSpec = predictivePopTransition,
                 entryProvider = entryProvider {
                     entry<AppNavKey.Loading> {
                         LoadingScreen().Content()

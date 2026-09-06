@@ -31,7 +31,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.rememberSaveable
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -85,6 +85,7 @@ object ProfileTab : AppTab {
         var profileName by rememberSaveable(domain, authorization.ewsKey) { mutableStateOf<String?>(null) }
         var profileAvatar by rememberSaveable(domain, authorization.ewsKey) { mutableStateOf("") }
         val profile = profileName?.let { UserProfile(it, profileAvatar) }
+        val menuItems = profileMenuItems()
 
         LaunchedEffect(domain, authorization.ewsKey, authorization.ewsToken) {
             val prefix = profileCachePrefix(authorization, domain)
@@ -115,7 +116,7 @@ object ProfileTab : AppTab {
             LazyColumn(Modifier.fillMaxSize().padding(padding), contentPadding = PaddingValues(AppSpacing.lg), verticalArrangement = Arrangement.spacedBy(AppSpacing.md)) {
                 item(key = "profile-hero") { ProfileHero(profile, domain) }
                 item(key = "profile-menu-title") { Text(stringResource(R.string.profile_signed_in), style = AppTypography.titleMedium, color = MaterialTheme.colorScheme.onSurfaceVariant) }
-                items(profileMenuItems(), key = { it.id }, contentType = { "profile_action" }) { item ->
+                items(menuItems, key = { it.id }, contentType = { "profile_action" }) { item ->
                     ProfileAction(item, onClick = { navigator?.pushIfNotCurrent(item.destination) })
                 }
             }
