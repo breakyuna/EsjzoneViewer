@@ -43,8 +43,8 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Install Android 37 platform
-        run: sdkmanager "platforms;android-37"
+      - name: Install Android 36 platform
+        run: sdkmanager "platforms;android-36"
 
       - name: Grant Gradle permission
         run: chmod +x ./gradlew
@@ -73,8 +73,8 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Install Android 37 platform
-        run: sdkmanager "platforms;android-37"
+      - name: Install Android 36 platform
+        run: sdkmanager "platforms;android-36"
 
       - name: Grant Gradle permission
         run: chmod +x ./gradlew
@@ -107,10 +107,10 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
-      # 5. 安装项目需要的 Android 37 Build Tools
+      # 5. 安装项目需要的 Android 36 Build Tools
       - name: Install Android build tools
         run: |
-          sdkmanager "platforms;android-37" "build-tools;36.0.0"
+          sdkmanager "platforms;android-36" "build-tools;36.0.0"
 
       # 7. Gradle Wrapper 权限
       - name: Grant Gradle permission
