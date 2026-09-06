@@ -3,7 +3,6 @@ import java.util.Date
 
 plugins {
     alias(libs.plugins.android.application)
-    alias(libs.plugins.jetbrains.kotlin.android)
     alias(libs.plugins.google.ksp)
     alias(libs.plugins.compose.compiler)
 }
@@ -13,12 +12,12 @@ val app_version = project.properties["app_version"].toString()
 
 android {
     namespace = "com.breakyuna.esjzone"
-    compileSdk = 34
+    compileSdk = 37
 
     defaultConfig {
         applicationId = "com.breakyuna.esjzone"
         minSdk = 29
-        targetSdk = 34
+        targetSdk = 37
         versionCode = app_version_index
         versionName = app_version
 
@@ -26,6 +25,16 @@ android {
         vectorDrawables {
             useSupportLibrary = true
         }
+
+        val env = System.getenv()
+        val commit = if (env.containsKey("COMMIT_ID")) {
+            env["COMMIT_ID"]!!
+        } else {
+            "Unreachable"
+        }
+        buildConfigField("String", "APP_VERSION", "\"$app_version\"")
+        buildConfigField("String", "BUILD_DATE", "\"${SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(Date())}\"")
+        buildConfigField("String", "COMMIT_ID", "\"$commit\"")
     }
 
     signingConfigs {
@@ -58,9 +67,6 @@ android {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
-    kotlinOptions {
-        jvmTarget = "17"
-    }
     buildFeatures {
         compose = true
         buildConfig = true
@@ -69,17 +75,6 @@ android {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
         }
-    }
-    defaultConfig {
-        val env = System.getenv()
-        val commit = if (env.containsKey("COMMIT_ID")) {
-            env["COMMIT_ID"]!!
-        } else {
-            "Unreachable"
-        }
-        buildConfigField("String", "APP_VERSION", "\"$app_version\"")
-        buildConfigField("String", "BUILD_DATE", "\"${SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(Date())}\"")
-        buildConfigField("String", "COMMIT_ID", "\"$commit\"")
     }
 }
 

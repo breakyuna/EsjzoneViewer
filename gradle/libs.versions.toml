@@ -1,15 +1,15 @@
 [versions]
-agp = "8.7.3"
-kotlin = "2.0.21"
-ksp = "2.0.21-1.0.28"
+agp = "9.4.0"
+kotlin = "2.4.10"
+ksp = "2.3.11"
 
-coreKtx = "1.12.0"
+coreKtx = "1.19.0"
 junit = "4.13.2"
 junitVersion = "1.1.5"
 espressoCore = "3.5.1"
-lifecycleRuntimeKtx = "2.7.0"
-activityCompose = "1.8.2"
-composeBom = "2024.02.02"
+lifecycleRuntimeKtx = "2.11.0"
+activityCompose = "1.13.0"
+composeBom = "2026.08.00"
 room = "2.6.1"
 work = "2.9.1"
 securityCrypto = "1.1.0-alpha06"
@@ -20,7 +20,6 @@ voyager = "1.1.0-alpha03"
 gson = "2.10.1"
 jsoup = "1.17.2"
 xsoup = "0.3.7"
-ktorm = "3.6.0"
 
 [libraries]
 voyager-navigator = { group = "cafe.adriel.voyager", name = "voyager-navigator", version.ref = "voyager" }
@@ -58,6 +57,5 @@ androidx-security-crypto = { group = "androidx.security", name = "security-crypt
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
-jetbrains-kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }
 google-ksp = { id = "com.google.devtools.ksp", version.ref = "ksp" }
 compose-compiler = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }

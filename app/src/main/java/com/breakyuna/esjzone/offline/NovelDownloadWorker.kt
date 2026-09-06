@@ -100,7 +100,12 @@ object NovelDownloadManager {
         )
     }
 
-    private fun uniqueWorkName(novelUrl: String): String {
+    /**
+     * Stable identity for WorkManager's KEEP policy.  Kept pure so the
+     * manifest/work contract can be regression-tested without Android's
+     * WorkManager runtime.
+     */
+    internal fun uniqueWorkName(novelUrl: String): String {
         val key = EsjzoneUrls.canonicalPageKey(novelUrl).ifBlank { novelUrl.trim() }
         val digest = MessageDigest.getInstance("SHA-256")
             .digest(key.toByteArray())

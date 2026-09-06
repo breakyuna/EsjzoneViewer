@@ -17,6 +17,22 @@ class PageResponsePolicyTest {
     }
 
     @Test
+    fun rejectsNonHtmlResponsesBeforeTheyCanReplaceAValidCacheEntry() {
+        val json = "{\"status\":\"ok\",\"html\":\"<div>not a page</div>\"}"
+        val validation = PageResponsePolicy.validate(
+            statusCode = 200,
+            body = json,
+            requestedUrl = url,
+            contentType = "application/json"
+        )
+        assertFalse(validation.trusted)
+        assertEquals(
+            validHome(),
+            PageResponsePolicy.selectTrustedBody(validation, json, validHome())
+        )
+    }
+
+    @Test
     fun rejectsWafChallengeAndLoginPagesBeforeCaching() {
         val challenge = """
             <!doctype html><html><head><title>Just a moment...</title>
