@@ -83,6 +83,9 @@ object LogsPage : Screen {
     override fun Content() {
         val navigator = LocalBaseNavigator.current
         val context = LocalContext.current
+        val copiedToast = stringResource(R.string.logs_copied_toast)
+        val shareTitle = stringResource(R.string.logs_share)
+        val clearedToast = stringResource(R.string.logs_cleared_toast)
 
         val logs by AppLogger.logsFlow.collectAsState()
         val lastCrashReport = AppLogger.crashReportFlow.collectAsState().value
@@ -385,6 +388,7 @@ object LogsPage : Screen {
 @Composable
 private fun LogItemCard(entry: LogEntry) {
     val context = LocalContext.current
+    val copiedToast = stringResource(R.string.logs_copied_toast)
     var expanded by remember { mutableStateOf(false) }
 
     val (badgeBgColor, badgeTextColor) = when (entry.level) {
