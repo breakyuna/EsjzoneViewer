@@ -4,35 +4,95 @@ import java.net.URI
 import com.breakyuna.esjzone.GlobalSettings
 import org.jsoup.nodes.Element
 import okhttp3.HttpUrl.Companion.toHttpUrl
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 
 object EsjzoneUrls {
 
     private val FORUM_BOARD_PATH = Regex("^/forum/[0-9]+/([0-9]+)$")
 
-    /** Resolves a page link without rewriting a valid cross-host URL from the site. */
+    /**
+     * Resolves a site link while guaranteeing that the result is an HTTPS HTTP URL.
+     * ESJ occasionally emits absolute HTTP links; upgrading those links keeps normal
+     * navigation working without ever allowing a caller to opt into cleartext traffic.
+     */
     fun resolve(rawUrl: String): String {
         return resolve(rawUrl, Base)
     }
 
     fun resolve(rawUrl: String, baseUrl: String): String {
         val url = rawUrl.trim()
-        val base = baseUrl.trim()
-        return when {
-            url.startsWith("http://") || url.startsWith("https://") -> url
-            else -> base.toHttpUrl().resolve(url)?.toString()
-                ?: "$base${url.removePrefix("/")}"
+        if (url.isBlank()) return ""
+        val base = normalizeHttpUrl(baseUrl.trim()) ?: return ""
+        val candidate = if (url.startsWith("http://", ignoreCase = true) ||
+            url.startsWith("https://", ignoreCase = true)
+        ) {
+            url
+        } else {
+            base.toHttpUrl().resolve(url)?.toString() ?: return ""
+        }
+        return normalizeHttpUrl(candidate).orEmpty()
+    }
+
+    fun baseForDomain(domain: String): String = "https://${domain.trim()
+        .replaceFirst(Regex("(?i)^https?://"), "")
+        .trimEnd('/')}"
+
+    private fun normalizeHttpUrl(rawUrl: String): String? {
+        val parsed = rawUrl.toHttpUrlOrNull() ?: return null
+        if (parsed.username.isNotEmpty() || parsed.password.isNotEmpty()) return null
+        return when (parsed.scheme.lowercase()) {
+            "https" -> parsed.toString()
+            "http" -> parsed.newBuilder()
+                .scheme("https")
+                .apply { if (parsed.port == 80) port(443) }
+                .build()
+                .toString()
+            else -> null
         }
     }
 
-    fun baseForDomain(domain: String): String = "https://${domain.trim().removePrefix("https://").removePrefix("http://").trimEnd('/')}"
+    /**
+     * Builds a tag/search result URL using the route exposed by ESJ.
+     *
+     * The site's first page keeps the historical `/tags/{keyword}/` route for
+     * the default (all novels + recently updated) query.  Every non-default
+     * query, and every paginated request, uses the two-digit
+     * `/{category}{sort}` route (`tags-14` = Japanese + most views).  The
+     * nullable category preserves the old overload semantics for callers that
+     * only need the default tag URL.
+     */
+    fun tagsUrl(
+        keyword: String,
+        sort: Int? = null,
+        page: Int? = null,
+        category: Int? = null
+    ): String {
+        val categoryWasSpecified = category != null
+        val safeCategory = (category ?: 0).takeIf { it in VALID_TAG_CATEGORIES } ?: 0
+        val safeSort = (sort ?: 1).coerceIn(MIN_TAG_SORT, MAX_TAG_SORT)
+        val useLegacyDefaultRoute = !categoryWasSpecified && sort == null && page == null
+        val useDefaultFirstPageRoute =
+            safeCategory == DEFAULT_TAG_CATEGORY &&
+                safeSort == DEFAULT_TAG_SORT &&
+                page == null
+        val route = if (useLegacyDefaultRoute || useDefaultFirstPageRoute) {
+            "tags"
+        } else {
+            "tags-${safeCategory}${safeSort}"
+        }
 
-    fun tagsUrl(keyword: String, sort: Int? = null, page: Int? = null): String {
         val builder = Base.toHttpUrl().newBuilder()
-        builder.addPathSegment(if (sort == null) "tags" else "tags-${sort.toString().padStart(2, '0')}")
+        builder.addPathSegment(route)
         builder.addPathSegment(keyword)
         if (page != null) builder.addPathSegment("$page.html")
         return builder.build().toString()
     }
+
+    private const val DEFAULT_TAG_CATEGORY = 0
+    private const val DEFAULT_TAG_SORT = 1
+    private const val MIN_TAG_SORT = 1
+    private const val MAX_TAG_SORT = 8
+    private val VALID_TAG_CATEGORIES = setOf(0, 1, 2, 3)
 
     /**
      * Returns a stable page identity for navigation and state keys.

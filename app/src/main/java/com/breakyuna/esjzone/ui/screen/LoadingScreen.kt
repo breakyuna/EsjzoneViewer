@@ -1,12 +1,26 @@
 package com.breakyuna.esjzone.ui.screen
 
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawingPadding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.unit.dp
 import cafe.adriel.voyager.core.screen.Screen
 import cafe.adriel.voyager.core.screen.ScreenKey
 import cafe.adriel.voyager.navigator.LocalNavigator
@@ -22,6 +36,8 @@ import com.breakyuna.esjzone.network.Authorization
 import com.breakyuna.esjzone.network.EsjzoneClient
 import com.breakyuna.esjzone.network.hasCredentials
 import com.breakyuna.esjzone.util.AppLogger
+import com.breakyuna.esjzone.R
+import com.breakyuna.esjzone.ui.theme.QuietEditorial
 
 class LoadingScreen : Screen {
 
@@ -31,23 +47,28 @@ class LoadingScreen : Screen {
     override fun Content() {
         val navigator = LocalNavigator.currentOrThrow
 
-        Box(
-            modifier = Modifier.fillMaxSize(),
-            contentAlignment = Alignment.Center
-        ) {
-            CircularProgressIndicator()
+        Box(modifier = Modifier.fillMaxSize().safeDrawingPadding(), contentAlignment = Alignment.Center) {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(16.dp),
+                modifier = Modifier.padding(32.dp)
+            ) {
+                Image(
+                    painter = painterResource(R.drawable.esjzone_icon_round),
+                    contentDescription = stringResource(R.string.app_name),
+                    modifier = Modifier
+                        .size(72.dp)
+                        .clip(CircleShape)
+                )
+                Text(stringResource(R.string.app_name), style = QuietEditorial.display)
+                CircularProgressIndicator(strokeWidth = 2.5.dp)
+            }
         }
 
         LaunchedEffect(Unit) {
             val authorization = withContext(Dispatchers.IO) {
                 try {
                     val dao = MainActivity.database.cacheDao()
-                    if (dao.findByKey("ews_key") == null) {
-                        dao.put("ews_key", "null")
-                    }
-                    if (dao.findByKey("ews_token") == null) {
-                        dao.put("ews_token", "null")
-                    }
                     if (dao.findByKey("show_adult") == null) {
                         dao.put("show_adult", "false")
                     }
@@ -55,8 +76,9 @@ class LoadingScreen : Screen {
                     val ewsKey = dao.findByKey("ews_key")?.value ?: "null"
                     val ewsToken = dao.findByKey("ews_token")?.value ?: "null"
                     val sessionDomain = dao.findByKey("session_domain")?.value
-                    GlobalSettings.adult.value =
+                    GlobalSettings.setAdult(
                         dao.findByKey("show_adult")?.value?.toBooleanStrictOrNull() ?: false
+                    )
 
                     val selectedDomain = GlobalSettings.domain.value
                     val legacyAuthorization = Authorization(ewsKey, ewsToken, selectedDomain)
@@ -68,6 +90,14 @@ class LoadingScreen : Screen {
                         selectedDomain,
                         legacySession
                     )
+                    // Older releases kept the session in the Room cache table. Once the
+                    // secure cookie jar has imported it, remove the legacy rows so they
+                    // cannot remain in local backups or be read by unrelated code.
+                    if (storedAuthorization != null || !legacyAuthorization.hasCredentials()) {
+                        dao.deleteByKey("ews_key")
+                        dao.deleteByKey("ews_token")
+                        dao.deleteByKey("session_domain")
+                    }
                     storedAuthorization?.takeIf { it.hasCredentials() }
                 } catch (e: CancellationException) {
                     throw e

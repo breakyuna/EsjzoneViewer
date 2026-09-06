@@ -38,12 +38,14 @@ class AuthorizationCookieJar(
                 .path("/")
                 .name("ews_key")
                 .value(authorization.ewsKey)
+                .secure()
                 .build(),
             Cookie.Builder()
                 .domain(normalizedSessionHost)
                 .path("/")
                 .name("ews_token")
                 .value(authorization.ewsToken)
+                .secure()
                 .build()
         )
     }

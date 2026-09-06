@@ -24,7 +24,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -40,21 +39,14 @@ import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.breakyuna.esjzone.novellibrary.novel.Chapter
-import com.breakyuna.esjzone.ui.navigation.LocalBaseNavigator
-import com.breakyuna.esjzone.ui.navigation.ChapterStateHolder
-import com.breakyuna.esjzone.ui.navigation.pushIfNotCurrent
-import com.breakyuna.esjzone.ui.page.ChapterPage
 
 interface Item {
 
     @Composable
     fun Render(
-        novelId: String,
-        history: MutableState<Chapter?>,
-        hasHistory: MutableState<Boolean>,
-        chapterOrder: List<Chapter>,
-        novelName: String = "",
-        novelCoverUrl: String = ""
+        currentChapter: Chapter?,
+        hasHistory: Boolean,
+        onChapterOpen: (Chapter) -> Unit
     )
 
 }
@@ -63,12 +55,9 @@ class TextItem(private val component: TextComponent) : Item {
 
     @Composable
     override fun Render(
-        novelId: String,
-        history: MutableState<Chapter?>,
-        hasHistory: MutableState<Boolean>,
-        chapterOrder: List<Chapter>,
-        novelName: String,
-        novelCoverUrl: String
+        currentChapter: Chapter?,
+        hasHistory: Boolean,
+        onChapterOpen: (Chapter) -> Unit
     ) {
         val textMeasurer = rememberTextMeasurer()
         val textStyle = LocalTextStyle.current
@@ -96,40 +85,16 @@ class ChapterItem(val chapter: Chapter) : Item {
 
     @Composable
     override fun Render(
-        novelId: String,
-        history: MutableState<Chapter?>,
-        hasHistory: MutableState<Boolean>,
-        chapterOrder: List<Chapter>,
-        novelName: String,
-        novelCoverUrl: String
+        currentChapter: Chapter?,
+        hasHistory: Boolean,
+        onChapterOpen: (Chapter) -> Unit
     ) {
-        val navigator = LocalBaseNavigator.current
-
-        var historied by rememberSaveable {
-            hasHistory
-        }
-
-        var rememberedHistory by rememberSaveable {
-            history
-        }
-
-        val isCurrent = (historied && chapter == rememberedHistory) || chapter.isHistory
+        val isCurrent = (hasHistory && chapter == currentChapter) || chapter.isHistory
 
         Surface(
             onClick = {
                 if (chapter.url.contains("esjzone") || chapter.url.contains("forum")) {
-                    historied = true
-                    rememberedHistory = this.chapter
-                    navigator?.pushIfNotCurrent(
-                        ChapterPage(
-                            novelId = novelId,
-                            chapter = chapter,
-                            history = ChapterStateHolder(history),
-                            chapterOrder = chapterOrder,
-                            novelName = novelName,
-                            novelCoverUrl = novelCoverUrl
-                        )
-                    )
+                    onChapterOpen(chapter)
                 }
             },
             shape = RoundedCornerShape(12.dp),
@@ -190,12 +155,9 @@ class ChapterListItem(
 
     @Composable
     override fun Render(
-        novelId: String,
-        history: MutableState<Chapter?>,
-        hasHistory: MutableState<Boolean>,
-        chapterOrder: List<Chapter>,
-        novelName: String,
-        novelCoverUrl: String
+        currentChapter: Chapter?,
+        hasHistory: Boolean,
+        onChapterOpen: (Chapter) -> Unit
     ) {
         val textMeasurer = rememberTextMeasurer()
         val textStyle = LocalTextStyle.current
@@ -210,7 +172,7 @@ class ChapterListItem(
                 containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
             )
         ) {
-            var expanded by rememberSaveable(novelId, name.text, chapters.firstOrNull()?.url) {
+            var expanded by rememberSaveable(name.text, chapters.firstOrNull()?.url) {
                 mutableStateOf(initiallyExpanded)
             }
             Column(
@@ -265,7 +227,11 @@ class ChapterListItem(
                         modifier = Modifier.padding(start = 12.dp, end = 12.dp, bottom = 10.dp)
                     ) {
                         for (item in children) {
-                            item.Render(novelId, history, hasHistory, chapterOrder, novelName, novelCoverUrl)
+                            item.Render(
+                                currentChapter = currentChapter,
+                                hasHistory = hasHistory,
+                                onChapterOpen = onChapterOpen
+                            )
                         }
                     }
                 }

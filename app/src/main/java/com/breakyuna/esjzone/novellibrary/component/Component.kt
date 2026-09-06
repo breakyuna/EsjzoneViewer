@@ -1,5 +1,6 @@
 package com.breakyuna.esjzone.novellibrary.component
 
+import com.breakyuna.esjzone.network.EsjzoneUrls
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -65,10 +66,12 @@ internal fun analyseParagraph(paragraph: Element): List<Component> {
 
 private fun resolveImageUrl(image: Element): String {
     // A non-empty placeholder src must not hide the real lazy-loaded URL.
+    val baseUrl = image.baseUri().trim().ifBlank { EsjzoneUrls.Base }
     return sequenceOf("data-src", "data-original", "data-lazy-src", "src")
         .mapNotNull { attribute ->
-            image.absUrl(attribute)
-                .ifBlank { image.attr(attribute) }
+            val raw = image.attr(attribute).trim()
+            if (raw.startsWith("file://", ignoreCase = true)) raw
+            else EsjzoneUrls.resolve(raw, baseUrl)
                 .trim()
                 .takeIf { it.isNotBlank() }
         }

@@ -1,7 +1,7 @@
 package com.breakyuna.esjzone.ui.tab
 
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Bookmark
+import androidx.compose.material.icons.filled.AutoStories
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.vector.rememberVectorPainter
 import androidx.compose.ui.res.stringResource
@@ -19,7 +19,7 @@ object FavoriteTab : Tab {
         get() = TabOptions(
             index = 3u,
             title = stringResource(id = R.string.bookshelf),
-            icon = rememberVectorPainter(image = Icons.Filled.Bookmark)
+            icon = rememberVectorPainter(image = Icons.Filled.AutoStories)
         )
 
     @Composable

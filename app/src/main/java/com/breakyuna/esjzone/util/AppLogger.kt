@@ -111,7 +111,9 @@ object AppLogger {
     }
 
     fun getLastCrashReport(): String? = synchronized(fileLock) {
-        runCatching { crashFile?.takeIf { it.isFile && it.length() > 0 }?.readText() }.getOrNull()
+        runCatching {
+            crashFile?.takeIf { it.isFile && it.length() > 0 }?.readText()?.let(::sanitize)
+        }.getOrNull()
     }
     fun refreshCrashReport() = synchronized(stateLock) {
         val requestGeneration = generation
@@ -133,7 +135,7 @@ object AppLogger {
             appendLine("Adult Content Enabled: ${runCatching { GlobalSettings.adult.value }.getOrDefault("unknown")}")
             appendLine("Total Entries: ${logList.size}")
             logList.forEach { appendLine(it.toFormattedString()) }
-        }
+        }.let(::sanitize)
     }
 
     private fun synchronizedGeneration(): Long = synchronized(stateLock) { generation }
@@ -193,8 +195,53 @@ object AppLogger {
         val writer = StringWriter(); throwable.printStackTrace(PrintWriter(writer)); return sanitize(writer.toString())
     }
     private fun safeThrowable(throwable: Throwable): String = stackTrace(throwable)
-    private fun sanitize(input: String): String = input.replace(
-        Regex("(?i)(ews_key|ews_token|password|pwd)([=:])([^&;\\s,]+)"), "$1$2***"
+    private fun sanitize(input: String): String {
+        var sanitized = input
+            // Header values are untrusted and may contain several cookies/tokens.
+            .replace(AUTHORIZATION_HEADER_PATTERN) { "${it.groupValues[1]}***" }
+            .replace(COOKIE_HEADER_PATTERN) { "${it.groupValues[1]}***" }
+            // Also cover JSON/form fields whose quoted values may contain spaces.
+            .replace(STRUCTURED_SECRET_PATTERN) { match ->
+                val value = match.groupValues[2]
+                val replacement = if (value.length >= 2 &&
+                    value.first() == value.last() &&
+                    (value.first() == '"' || value.first() == '\'')
+                ) {
+                    "${value.first()}***${value.last()}"
+                } else {
+                    "***"
+                }
+                "${match.groupValues[1]}$replacement"
+            }
+            .replace(STRUCTURED_HEADER_PATTERN) { match ->
+                "${match.groupValues[1]}***"
+            }
+            // Finally catch URL-encoded/query and ordinary key=value forms.
+            .replace(PLAIN_SECRET_PATTERN) { "${it.groupValues[1]}${it.groupValues[2]}***" }
+
+        sanitized = sanitized.replace(EMAIL_PATTERN, "<redacted-email>")
+        return sanitized
+    }
+
+    private val AUTHORIZATION_HEADER_PATTERN = Regex(
+        "(?im)(\\bAuthorization\\s*:\\s*)(?:Bearer\\s+)?[^\\r\\n,;]+"
     )
+    private val COOKIE_HEADER_PATTERN = Regex(
+        "(?im)(\\b(?:Set-)?Cookie\\s*:\\s*)[^\\r\\n]+"
+    )
+    private val STRUCTURED_SECRET_PATTERN = Regex(
+        "(?i)([\\\"']?(?:ews_key|ews_token|password|passwd|pwd|email)[\\\"']?\\s*[:=]\\s*)(\\\"(?:\\\\.|[^\\\"])*\\\"|'(?:\\\\.|[^'])*'|[^,}\\]\\s&;]+)"
+    )
+    private val PLAIN_SECRET_PATTERN = Regex(
+        "(?i)(\\b(?:ews_key|ews_token|password|passwd|pwd|email)\\b\\s*[=:]\\s*)([^&;\\s,}\\]]+)"
+    )
+    private val STRUCTURED_HEADER_PATTERN = Regex(
+        """(?i)([\"']?(?:authorization|cookie|set-cookie)[\"']?\s*[:=]\s*)(\"[^\"]*\"|'[^']*'|[^,}\]\s]+)"""
+    )
+    private val EMAIL_PATTERN = Regex(
+        "[A-Z0-9._%+-]+@[A-Z0-9.-]+\\.[A-Z]{2,}",
+        RegexOption.IGNORE_CASE
+    )
+
     fun sanitizeForDisplay(input: String): String = sanitize(input)
 }

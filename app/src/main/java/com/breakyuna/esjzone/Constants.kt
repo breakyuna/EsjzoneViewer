@@ -7,7 +7,8 @@ object Constants {
     )
 
     val CONTRIBUTORS = listOf(
-        "DeeChael"
+        "DeeChael",
+        "breakyuna"
     )
 
     val OPEN_SOURCE_LIBRARIES = listOf(

@@ -14,9 +14,15 @@ internal val pagesRegex = "total: ([0-9]+)".toRegex()
 
 fun EsjzoneClient.search(
     authorization: Authorization,
-    keyword: String
+    keyword: String,
+    category: Int = 0,
+    sort: Int = 1
 ): Pair<PageableRequester<CoveredNovel>, List<CoveredNovel>> {
-    val searchUrl = EsjzoneUrls.tagsUrl(keyword)
+    val searchUrl = EsjzoneUrls.tagsUrl(
+        keyword = keyword,
+        category = category,
+        sort = sort
+    )
     val responseBody = getPage(
         authorization,
         searchUrl,
@@ -34,20 +40,19 @@ fun EsjzoneClient.search(
     val novels = mutableListOf<CoveredNovel>()
 
     for (novelData in EsjzoneXPaths.Tags.Novel.All.evaluate(document).elements) {
-        val r18Elements = EsjzoneXPaths.Tags.Novel.R18Badge.evaluate(novelData).elements
-        val isR18 = r18Elements.firstOrNull()?.attr("class")?.contains("badge") == true
-
         novels.add(
-            parseNovelCard(novelData, isR18, NovelCardLayout.LIST)
+            parseNovelCard(novelData, false, NovelCardLayout.LIST)
         )
     }
 
-    return SearchNovelRequester(authorization, keyword, pages) to novels
+    return SearchNovelRequester(authorization, keyword, category, sort, pages) to novels
 }
 
 private class SearchNovelRequester(
     private val authorization: Authorization,
     private val keyword: String,
+    private val category: Int,
+    private val sort: Int,
     private val pages: Int
 ) : PageableRequester<CoveredNovel> {
 
@@ -63,7 +68,12 @@ private class SearchNovelRequester(
     }
 
     override fun more(page: Int): List<CoveredNovel> {
-        val pageUrl = EsjzoneUrls.tagsUrl(keyword, sort = 1, page = page)
+        val pageUrl = EsjzoneUrls.tagsUrl(
+            keyword = keyword,
+            category = category,
+            sort = sort,
+            page = page
+        )
         val responseBody = EsjzoneClient.getPage(
             authorization,
             pageUrl,
@@ -76,10 +86,7 @@ private class SearchNovelRequester(
         val novels = mutableListOf<CoveredNovel>()
 
         for (novelData in EsjzoneXPaths.Tags.Novel.All.evaluate(document).elements) {
-            val r18Elements = EsjzoneXPaths.Tags.Novel.R18Badge.evaluate(novelData).elements
-            val isR18 = r18Elements.firstOrNull()?.attr("class")?.contains("badge") == true
-
-            novels.add(parseNovelCard(novelData, isR18, NovelCardLayout.LIST))
+            novels.add(parseNovelCard(novelData, false, NovelCardLayout.LIST))
         }
 
         return novels.toList()

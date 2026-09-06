@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - master
+      - beta
     # 只有本次推送的所有改动都属于文档/模板时才跳过构建。
     paths-ignore:
       - '*.md'

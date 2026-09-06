@@ -84,7 +84,7 @@ fun EsjzoneClient.getNovelDetail(
     val sourceLinks = detailInfo?.select("a[href]").orEmpty()
         .mapNotNull { link ->
             val href = link.absUrl("href").ifBlank { link.attr("href") }.trim()
-            href.takeIf { it.startsWith("http://") || it.startsWith("https://") }
+            EsjzoneUrls.resolve(href, targetUrl).takeIf { it.isNotBlank() }
         }
     val sourceUrl = sourceLinks.firstOrNull { href ->
         !href.contains("esjzone", ignoreCase = true)

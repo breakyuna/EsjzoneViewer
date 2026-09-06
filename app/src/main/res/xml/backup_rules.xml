@@ -6,8 +6,17 @@
    See https://developer.android.com/about/versions/12/backup-restore
 -->
 <full-backup-content>
-    <!--
-   <include domain="sharedpref" path="."/>
-   <exclude domain="sharedpref" path="device.xml"/>
--->
+    <!-- Sessions are encrypted at rest, but neither the ciphertext nor legacy
+         plaintext session data should be transferred to another device. -->
+    <exclude domain="sharedpref" path="esj_session.xml" />
+    <exclude domain="sharedpref" path="esj_session_secure.xml" />
+    <!-- The database may contain legacy session rows on an upgraded install. -->
+    <exclude domain="database" path="general" />
+    <exclude domain="database" path="general-wal" />
+    <exclude domain="database" path="general-shm" />
+    <!-- Cached authenticated HTML, images, logs and offline content are local-only. -->
+    <exclude domain="file" path="logs" />
+    <exclude domain="file" path="novel_page_cache" />
+    <exclude domain="file" path="image_cache" />
+    <exclude domain="file" path="downloaded_novels" />
 </full-backup-content>

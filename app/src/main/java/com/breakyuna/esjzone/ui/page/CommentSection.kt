@@ -1,16 +1,21 @@
 package com.breakyuna.esjzone.ui.page
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.IntrinsicSize
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
@@ -18,23 +23,26 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
+import androidx.compose.material.icons.automirrored.filled.Reply
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.EmojiEmotions
 import androidx.compose.material.icons.filled.FirstPage
+import androidx.compose.material.icons.filled.FormatQuote
+import androidx.compose.material.icons.filled.Forum
 import androidx.compose.material.icons.filled.LastPage
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Send
 import androidx.compose.material3.Button
-import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.FilledTonalIconButton
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -51,11 +59,14 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import cafe.adriel.voyager.core.model.StateScreenModel
 import cafe.adriel.voyager.core.model.screenModelScope
 import coil.compose.SubcomposeAsyncImage
@@ -73,7 +84,11 @@ import com.breakyuna.esjzone.network.features.submitForumComment
 import com.breakyuna.esjzone.novellibrary.novel.COMMENT_PAGE_SIZE
 import com.breakyuna.esjzone.novellibrary.novel.Comment
 import com.breakyuna.esjzone.ui.navigation.LocalBaseNavigator
-import com.breakyuna.esjzone.ui.component.LoadError
+import com.breakyuna.esjzone.ui.theme.QuietEditorial
+import com.breakyuna.esjzone.ui.component.QuietEmptyState
+import com.breakyuna.esjzone.ui.component.QuietErrorState
+import com.breakyuna.esjzone.ui.component.QuietLoadingState
+import com.breakyuna.esjzone.ui.component.QuietSectionHeader
 import com.breakyuna.esjzone.util.AppLogger
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -92,40 +107,24 @@ internal sealed class CommunityState<out T> {
 internal fun <T> CommunityStateContent(
     state: CommunityState<T>,
     emptyText: String,
+    onRetry: (() -> Unit)? = null,
     content: @Composable (T) -> Unit
 ) {
     when (state) {
-        is CommunityState.Loading -> Box(
-            modifier = Modifier.fillMaxSize(),
-            contentAlignment = Alignment.Center
-        ) { CircularProgressIndicator() }
+        is CommunityState.Loading -> QuietLoadingState(modifier = Modifier.fillMaxSize())
 
-        is CommunityState.Error -> Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(24.dp),
-            contentAlignment = Alignment.Center
-        ) {
-            Text(
-                text = stringResource(
-                    if (state.failure == LoadFailureKind.NETWORK) {
-                        R.string.load_network_error
-                    } else {
-                        R.string.load_client_error
-                    }
-                ),
-                color = MaterialTheme.colorScheme.error
-            )
-        }
+        is CommunityState.Error -> QuietErrorState(
+            failure = state.failure,
+            onRetry = onRetry,
+            modifier = Modifier.fillMaxSize()
+        )
 
-        is CommunityState.Empty -> Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(24.dp),
-            contentAlignment = Alignment.Center
-        ) {
-            Text(text = emptyText, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
+        is CommunityState.Empty -> QuietEmptyState(
+            title = emptyText,
+            message = stringResource(R.string.community_empty_guidance),
+            icon = Icons.Filled.Forum,
+            modifier = Modifier.fillMaxSize()
+        )
 
         is CommunityState.Result -> content(state.data)
     }
@@ -140,7 +139,7 @@ internal fun CommentListPage(
     val navigator = LocalBaseNavigator.current
 
     Column(modifier = Modifier.fillMaxSize()) {
-        com.breakyuna.esjzone.ui.component.AppBar(
+        com.breakyuna.esjzone.ui.component.QuietBackHeader(
             title = title,
             onBack = { navigator?.pop() }
         )
@@ -160,17 +159,19 @@ internal fun CommentSectionHost(
     modifier: Modifier = Modifier,
     showHeader: Boolean = true
 ) {
+    val scrollState = rememberScrollState()
     Column(modifier = modifier) {
         Box(
             modifier = Modifier
                 .weight(1f)
                 .fillMaxWidth()
-                .verticalScroll(rememberScrollState())
+                .verticalScroll(scrollState)
         ) {
             CommentSectionContent(
                 model = model,
                 showHeader = showHeader,
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier.fillMaxWidth(),
+                scrollState = scrollState
             )
         }
         CommentComposerHost(model = model)
@@ -186,24 +187,30 @@ internal fun CommentSectionHost(
 internal fun CommentSectionContent(
     model: CommentPageModel,
     modifier: Modifier = Modifier,
-    showHeader: Boolean = true
+    showHeader: Boolean = true,
+    scrollState: androidx.compose.foundation.ScrollState? = null
 ) {
     val state by model.state.collectAsState()
     val lastCreatedCommentId by model.lastCreatedCommentId
+    val anonymousName = stringResource(R.string.anonymous_user)
+
+    fun selectReply(comment: Comment) {
+        model.replyToken.value = comment.replyToken?.trim()?.takeIf { it.isNotBlank() }
+        model.replyAuthor.value = comment.authorName?.trim()?.takeIf { it.isNotBlank() }
+            ?: anonymousName
+        model.clearSubmitError()
+    }
 
     when (val snapshot = state) {
-        is CommunityState.Loading -> Box(
-            modifier = modifier,
-            contentAlignment = Alignment.Center
-        ) { CircularProgressIndicator() }
+        is CommunityState.Loading -> QuietLoadingState(modifier = modifier)
 
-        is CommunityState.Error -> LoadError(
+        is CommunityState.Error -> QuietErrorState(
+            failure = snapshot.failure,
             onRetry = {
                 model.clearSubmitError()
                 model.load(forceRefresh = true)
             },
-            modifier = modifier,
-            failure = snapshot.failure
+            modifier = modifier
         )
 
         is CommunityState.Empty -> CommentSection(
@@ -211,11 +218,8 @@ internal fun CommentSectionContent(
             lastCreatedCommentId = lastCreatedCommentId,
             showHeader = showHeader,
             modifier = modifier,
-            onReply = { comment ->
-                model.replyToken.value = comment.replyToken
-                model.replyAuthor.value = comment.authorName
-                model.clearSubmitError()
-            },
+            onReply = ::selectReply,
+            scrollState = scrollState,
         )
 
         is CommunityState.Result -> CommentSection(
@@ -223,11 +227,8 @@ internal fun CommentSectionContent(
             lastCreatedCommentId = lastCreatedCommentId,
             showHeader = showHeader,
             modifier = modifier,
-            onReply = { comment ->
-                model.replyToken.value = comment.replyToken
-                model.replyAuthor.value = comment.authorName
-                model.clearSubmitError()
-            },
+            onReply = ::selectReply,
+            scrollState = scrollState,
         )
     }
 
@@ -238,11 +239,13 @@ internal fun CommentSectionContent(
 @Composable
 internal fun CommentComposerHost(
     model: CommentPageModel,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onHeightChanged: ((Int) -> Unit)? = null
 ) {
     var savedDraft by rememberSaveable(model.pageUrl) { mutableStateOf("") }
     var savedReplyToken by rememberSaveable(model.pageUrl) { mutableStateOf<String?>(null) }
     var savedReplyAuthor by rememberSaveable(model.pageUrl) { mutableStateOf<String?>(null) }
+    val anonymousLabel = stringResource(id = R.string.anonymous_user)
     LaunchedEffect(model) {
         // Restore the composer after an activity/process recreation, then keep
         // the saveable mirror current while the screen model remains the
@@ -263,7 +266,16 @@ internal fun CommentComposerHost(
         }
     }
     val draft by model.draft
-    val replyAuthor by model.replyAuthor
+    val replyToken by model.replyToken
+    val rawReplyAuthor by model.replyAuthor
+    // A reply token is authoritative context even when the source comment
+    // has no author field. Keep the context row and cancel affordance visible
+    // instead of silently turning an anonymous reply into a new comment.
+    val replyAuthor = if (replyToken != null) {
+        rawReplyAuthor?.trim()?.takeIf { it.isNotEmpty() } ?: anonymousLabel
+    } else {
+        null
+    }
     val isSubmitting by model.isSubmitting
     val submitError by model.submitError
     CommentComposer(
@@ -284,7 +296,7 @@ internal fun CommentComposerHost(
             model.load(forceRefresh = true)
         },
         onSubmit = { model.submit(draft, model.replyToken.value) },
-        modifier = modifier
+        modifier = modifier.onSizeChanged { onHeightChanged?.invoke(it.height) }
     )
 }
 
@@ -294,7 +306,8 @@ private fun CommentSection(
     lastCreatedCommentId: String?,
     showHeader: Boolean,
     modifier: Modifier,
-    onReply: (Comment) -> Unit
+    onReply: (Comment) -> Unit,
+    scrollState: androidx.compose.foundation.ScrollState? = null
 ) {
     val pages = remember(comments) { comments.chunked(COMMENT_PAGE_SIZE) }
     var selectedPageIndex by rememberSaveable { mutableIntStateOf(0) }
@@ -312,21 +325,23 @@ private fun CommentSection(
         }
     }
 
+    LaunchedEffect(safePageIndex) {
+        scrollState?.animateScrollTo(0)
+    }
+
     Column(modifier = modifier) {
         if (showHeader) {
-            Text(
-                text = stringResource(id = R.string.comments),
-                style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.Bold,
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+            QuietSectionHeader(
+                title = stringResource(id = R.string.comments),
+                modifier = Modifier.padding(top = 4.dp)
             )
         }
 
         if (pages.isEmpty()) {
-            Text(
-                text = stringResource(id = R.string.comments_empty),
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+            QuietEmptyState(
+                title = stringResource(id = R.string.comments_empty),
+                message = stringResource(id = R.string.community_empty_guidance),
+                icon = Icons.Filled.Person
             )
         } else {
             CommentPager(
@@ -342,11 +357,10 @@ private fun CommentSection(
                 },
                 onLast = { selectedPageIndex = pages.lastIndex }
             )
-            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
             pages[safePageIndex].forEach { comment ->
                 CommentCard(
                     comment = comment,
-                    onReply = if (comment.replyToken != null) {
+                    onReply = if (!comment.replyToken.isNullOrBlank()) {
                         { onReply(comment) }
                     } else {
                         null
@@ -372,49 +386,147 @@ private fun CommentComposer(
     modifier: Modifier = Modifier
 ) {
     Surface(
-        modifier = modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 8.dp),
-        color = MaterialTheme.colorScheme.surface,
-        tonalElevation = 3.dp,
-        shadowElevation = 3.dp,
-        shape = RoundedCornerShape(16.dp)
+        modifier = modifier.fillMaxWidth(),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.76f),
+        tonalElevation = 0.dp,
+        shadowElevation = 0.dp,
+        shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp)
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .navigationBarsPadding()
                 .imePadding()
-                .padding(horizontal = 14.dp, vertical = 12.dp)
+                .padding(horizontal = 16.dp, vertical = 8.dp)
         ) {
             if (replyAuthor != null) {
-                Row(
+                Surface(
                     modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically
+                    shape = QuietEditorial.badgeShape,
+                    color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.62f),
+                    contentColor = MaterialTheme.colorScheme.onPrimaryContainer
                 ) {
-                    Text(
-                        text = stringResource(id = R.string.comment_replying_to, replyAuthor),
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.weight(1f)
-                    )
-                    IconButton(onClick = onCancelReply, enabled = !isSubmitting) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(32.dp)
+                            .padding(start = 10.dp, end = 2.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
                         Icon(
-                            imageVector = Icons.Filled.Close,
-                            contentDescription = stringResource(id = R.string.comment_cancel_reply)
+                            imageVector = Icons.AutoMirrored.Filled.Reply,
+                            contentDescription = null,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = stringResource(id = R.string.comment_replying_to, replyAuthor),
+                            style = QuietEditorial.label,
+                            maxLines = 1,
+                            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f)
+                        )
+                        Box(
+                            modifier = Modifier
+                                .size(28.dp)
+                                .clip(CircleShape)
+                                .clickable(
+                                    enabled = !isSubmitting,
+                                    onClick = onCancelReply
+                                ),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.Close,
+                                contentDescription = stringResource(id = R.string.comment_cancel_reply),
+                                modifier = Modifier.size(16.dp)
+                            )
+                        }
+                    }
+                }
+                Spacer(modifier = Modifier.height(6.dp))
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                BasicTextField(
+                    value = draft,
+                    onValueChange = onDraftChange,
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(52.dp),
+                    enabled = !isSubmitting,
+                    singleLine = true,
+                    textStyle = QuietEditorial.body.copy(
+                        fontSize = 15.sp,
+                        lineHeight = 20.sp,
+                        color = MaterialTheme.colorScheme.onSurface
+                    ),
+                    cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                    decorationBox = { innerTextField ->
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .clip(QuietEditorial.badgeShape)
+                                .background(MaterialTheme.colorScheme.surface)
+                                .padding(horizontal = 18.dp),
+                            contentAlignment = Alignment.CenterStart
+                        ) {
+                            if (draft.isBlank()) {
+                                Text(
+                                    text = stringResource(id = R.string.comment_hint),
+                                    style = QuietEditorial.body.copy(
+                                        fontSize = 15.sp,
+                                        lineHeight = 20.sp
+                                    ),
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 1,
+                                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                                )
+                            }
+                            innerTextField()
+                        }
+                    }
+                )
+                IconButton(
+                    onClick = { },
+                    enabled = !isSubmitting,
+                    modifier = Modifier.size(44.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.EmojiEmotions,
+                        contentDescription = stringResource(id = R.string.comment_emoji),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(24.dp)
+                    )
+                }
+                Button(
+                    onClick = onSubmit,
+                    enabled = !isSubmitting && draft.isNotBlank(),
+                    modifier = Modifier.size(52.dp),
+                    shape = CircleShape,
+                    contentPadding = PaddingValues(0.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.primary,
+                        contentColor = MaterialTheme.colorScheme.onPrimary
+                    )
+                ) {
+                    if (isSubmitting) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(20.dp),
+                            strokeWidth = 2.dp,
+                            color = MaterialTheme.colorScheme.onPrimary
+                        )
+                    } else {
+                        Icon(
+                            imageVector = Icons.Filled.Send,
+                            contentDescription = stringResource(id = R.string.comment_send),
+                            modifier = Modifier.size(23.dp)
                         )
                     }
                 }
             }
-            OutlinedTextField(
-                value = draft,
-                onValueChange = onDraftChange,
-                modifier = Modifier.fillMaxWidth(),
-                enabled = !isSubmitting,
-                placeholder = { Text(text = stringResource(id = R.string.comment_hint)) },
-                minLines = 2,
-                maxLines = 5
-            )
             error?.let {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -434,23 +546,6 @@ private fun CommentComposer(
                         }
                     }
                 }
-            }
-            Button(
-                onClick = onSubmit,
-                enabled = !isSubmitting && draft.isNotBlank(),
-                modifier = Modifier
-                    .align(Alignment.End)
-                    .padding(top = 8.dp)
-            ) {
-                Text(
-                    text = stringResource(
-                        id = if (isSubmitting) {
-                            R.string.comment_submitting
-                        } else {
-                            R.string.comment_send
-                        }
-                    )
-                )
             }
         }
     }
@@ -503,75 +598,162 @@ private fun CommentPager(
 
 @Composable
 private fun CommentCard(comment: Comment, onReply: (() -> Unit)?) {
-    ElevatedCard(
+    Surface(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 7.dp),
-        shape = RoundedCornerShape(18.dp),
-        colors = CardDefaults.elevatedCardColors(
-            containerColor = MaterialTheme.colorScheme.surface
-        )
+            .padding(horizontal = 16.dp, vertical = 6.dp),
+        shape = QuietEditorial.largeShape,
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.36f)
     ) {
-        Row(
-            modifier = Modifier.padding(16.dp),
-            verticalAlignment = Alignment.Top
+        Column(
+            modifier = Modifier.padding(horizontal = 20.dp, vertical = 18.dp)
         ) {
-            CommentAvatar(comment)
-            Spacer(modifier = Modifier.width(12.dp))
-            Column(modifier = Modifier.weight(1f)) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.Top
+            ) {
+                CommentAvatar(comment)
+                Spacer(modifier = Modifier.width(12.dp))
+                Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = comment.authorName ?: stringResource(id = R.string.anonymous_user),
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier.weight(1f)
+                        text = comment.authorName
+                            ?.trim()
+                            ?.takeIf { it.isNotBlank() }
+                            ?: stringResource(id = R.string.anonymous_user),
+                        style = QuietEditorial.title.copy(
+                            fontSize = 17.sp,
+                            lineHeight = 22.sp
+                        ),
+                        color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 1,
+                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
                     )
-                    comment.floor?.let {
-                        Text(
-                            text = it,
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                    }
+                    Text(
+                        text = comment.createdAt
+                            ?.trim()
+                            ?.takeIf { it.isNotBlank() }
+                            ?: stringResource(id = R.string.comment_time_unknown),
+                        style = QuietEditorial.label.copy(
+                            fontSize = 13.sp,
+                            lineHeight = 18.sp
+                        ),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 2.dp),
+                        maxLines = 1,
+                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                    )
                 }
-                Text(
-                    text = comment.createdAt
-                        ?: stringResource(id = R.string.comment_time_unknown),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(top = 2.dp)
-                )
-                comment.quotedContentText?.let { quotedText ->
+                comment.floor
+                    ?.trim()
+                    ?.takeIf { it.isNotBlank() }
+                    ?.let { floor ->
+                        Surface(
+                            shape = QuietEditorial.badgeShape,
+                            color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.68f),
+                            contentColor = MaterialTheme.colorScheme.primary
+                        ) {
+                            Text(
+                                text = floor,
+                                style = QuietEditorial.label.copy(
+                                    fontSize = 13.sp,
+                                    lineHeight = 18.sp,
+                                    fontWeight = FontWeight.SemiBold
+                                ),
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
+                            )
+                        }
+                    }
+            }
+
+            comment.quotedContentText
+                ?.trim()
+                ?.takeIf { it.isNotBlank() }
+                ?.let { quotedText ->
                     Surface(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(top = 10.dp),
-                        color = MaterialTheme.colorScheme.surfaceVariant,
+                            .padding(top = 16.dp),
+                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.72f),
                         contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                        shape = RoundedCornerShape(8.dp)
+                        shape = RoundedCornerShape(16.dp)
                     ) {
-                        Text(
-                            text = quotedText,
-                            style = MaterialTheme.typography.bodySmall,
-                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp)
-                        )
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(IntrinsicSize.Min)
+                                .heightIn(min = 54.dp),
+                            verticalAlignment = Alignment.Top
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .width(4.dp)
+                                    .fillMaxHeight()
+                                    .clip(QuietEditorial.badgeShape)
+                                    .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.72f))
+                            )
+                            Column(
+                                modifier = Modifier.padding(
+                                    horizontal = 12.dp,
+                                    vertical = 10.dp
+                                )
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Filled.FormatQuote,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Text(
+                                    text = quotedText,
+                                    style = QuietEditorial.body.copy(
+                                        fontSize = 14.sp,
+                                        lineHeight = 21.sp
+                                    ),
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 3,
+                                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                                    modifier = Modifier.padding(top = 2.dp)
+                                )
+                            }
+                        }
                     }
                 }
-                Text(
-                    text = comment.contentText,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    modifier = Modifier.padding(top = 12.dp)
-                )
-                if (onReply != null) {
-                    TextButton(
-                        onClick = onReply,
-                        modifier = Modifier.align(Alignment.End)
+
+            Text(
+                text = comment.contentText,
+                style = QuietEditorial.body.copy(
+                    fontSize = 16.sp,
+                    lineHeight = 26.sp
+                ),
+                color = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.padding(top = 16.dp)
+            )
+
+            if (onReply != null) {
+                Surface(
+                    modifier = Modifier
+                        .align(Alignment.End)
+                        .padding(top = 14.dp)
+                        .clip(QuietEditorial.badgeShape)
+                        .clickable(onClick = onReply),
+                    shape = QuietEditorial.badgeShape,
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.72f),
+                    contentColor = MaterialTheme.colorScheme.onSurfaceVariant
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
-                        Text(text = stringResource(id = R.string.comment_reply))
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.Reply,
+                            contentDescription = null,
+                            modifier = Modifier.size(17.dp)
+                        )
+                        Text(
+                            text = stringResource(id = R.string.comment_reply),
+                            style = QuietEditorial.label
+                        )
                     }
                 }
             }
@@ -583,7 +765,7 @@ private fun CommentCard(comment: Comment, onReply: (() -> Unit)?) {
 private fun CommentAvatar(comment: Comment) {
     Box(
         modifier = Modifier
-            .size(44.dp)
+            .size(48.dp)
             .clip(CircleShape)
             .background(MaterialTheme.colorScheme.secondaryContainer),
         contentAlignment = Alignment.Center

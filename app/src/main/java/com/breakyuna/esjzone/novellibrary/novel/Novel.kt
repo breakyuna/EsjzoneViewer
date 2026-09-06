@@ -12,6 +12,27 @@ interface CoveredNovel : Novel {
     val views: Int
     val likes: Int
     val isAdult: Boolean
+
+    /**
+     * Fields observed on server-rendered home/list cards.  They are nullable
+     * because the home card intentionally does not expose the list metadata.
+     * DetailedNovel supplies its existing author/words values through the
+     * same contract without requiring a second detail request.
+     */
+    val latestTitle: String?
+        get() = null
+    val latestUrl: String?
+        get() = null
+    val author: String?
+        get() = null
+    val authorUrl: String?
+        get() = null
+    val words: Int?
+        get() = null
+    val articleCount: Int?
+        get() = null
+    val discussionCount: Int?
+        get() = null
 }
 
 data class HistoryNovel(
@@ -38,7 +59,14 @@ data class CoveredNovelImpl(
     override val url: String,
     override val views: Int,
     override val likes: Int,
-    override val isAdult: Boolean
+    override val isAdult: Boolean,
+    override val latestTitle: String? = null,
+    override val latestUrl: String? = null,
+    override val author: String? = null,
+    override val authorUrl: String? = null,
+    override val words: Int? = null,
+    override val articleCount: Int? = null,
+    override val discussionCount: Int? = null
 ) : CoveredNovel {
 
     override fun equals(other: Any?): Boolean {
@@ -65,9 +93,9 @@ data class DetailedNovel(
     override val coverUrl: String,
     override val views: Int,
     override val likes: Int,
-    val words: Int,
+    override val words: Int,
     val type: String,
-    val author: String,
+    override val author: String,
     val forumUrl: String,
     val tags: List<String>,
     override val isAdult: Boolean,

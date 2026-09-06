@@ -15,7 +15,7 @@ interface SearchHistoryDao {
     fun getAll(): List<SearchHistory>
 
     @Query("SELECT * FROM searchhistory WHERE keyword = :keyword LIMIT 1")
-    fun findByKeyword(keyword: String): SearchHistory
+    fun findByKeyword(keyword: String): SearchHistory?
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     fun insertAll(vararg histories: SearchHistory)
@@ -25,8 +25,5 @@ interface SearchHistoryDao {
 
     @Delete
     fun delete(vararg histories: SearchHistory)
-
-    @Query("SELECT EXISTS(SELECT * FROM searchhistory WHERE keyword = :keyword)")
-    fun exists(keyword: String): Boolean
 
 }

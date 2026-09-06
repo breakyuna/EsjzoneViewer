@@ -14,6 +14,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import com.breakyuna.esjzone.BuildConfig
 import com.breakyuna.esjzone.R
+import com.breakyuna.esjzone.ui.theme.QuietEditorial
 
 @Composable
 internal fun ReleaseUpdateDialog() {
@@ -22,6 +23,7 @@ internal fun ReleaseUpdateDialog() {
     val context = LocalContext.current
     AlertDialog(
         onDismissRequest = ReleaseUpdateChecker::dismiss,
+        shape = QuietEditorial.dialogShape,
         title = { Text(stringResource(R.string.update_available_title)) },
         text = { Text(stringResource(R.string.update_available_message, BuildConfig.VERSION_NAME, release.version)) },
         confirmButton = {

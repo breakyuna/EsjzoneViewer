@@ -5,15 +5,25 @@
 -->
 <data-extraction-rules>
     <cloud-backup>
-        <!-- TODO: Use <include> and <exclude> to control what is backed up.
-        <include .../>
-        <exclude .../>
-        -->
+        <exclude domain="sharedpref" path="esj_session.xml" />
+        <exclude domain="sharedpref" path="esj_session_secure.xml" />
+        <exclude domain="database" path="general" />
+        <exclude domain="database" path="general-wal" />
+        <exclude domain="database" path="general-shm" />
+        <exclude domain="file" path="logs" />
+        <exclude domain="file" path="novel_page_cache" />
+        <exclude domain="file" path="image_cache" />
+        <exclude domain="file" path="downloaded_novels" />
     </cloud-backup>
-    <!--
     <device-transfer>
-        <include .../>
-        <exclude .../>
+        <exclude domain="sharedpref" path="esj_session.xml" />
+        <exclude domain="sharedpref" path="esj_session_secure.xml" />
+        <exclude domain="database" path="general" />
+        <exclude domain="database" path="general-wal" />
+        <exclude domain="database" path="general-shm" />
+        <exclude domain="file" path="logs" />
+        <exclude domain="file" path="novel_page_cache" />
+        <exclude domain="file" path="image_cache" />
+        <exclude domain="file" path="downloaded_novels" />
     </device-transfer>
-    -->
 </data-extraction-rules>

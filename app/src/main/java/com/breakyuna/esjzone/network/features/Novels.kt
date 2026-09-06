@@ -35,11 +35,8 @@ fun EsjzoneClient.novels(
     val novels = mutableListOf<CoveredNovel>()
 
     for (novelData in EsjzoneXPaths.Tags.Novel.All.evaluate(document).elements) {
-        val r18Elements = EsjzoneXPaths.Tags.Novel.R18Badge.evaluate(novelData).elements
-        val isR18 = r18Elements.firstOrNull()?.attr("class")?.contains("badge") == true
-
         novels.add(
-            parseNovelCard(novelData, isR18, NovelCardLayout.LIST)
+            parseNovelCard(novelData, false, NovelCardLayout.LIST)
         )
     }
 
@@ -79,11 +76,8 @@ private class ListNovelRequester(
         val novels = mutableListOf<CoveredNovel>()
 
         for (novelData in EsjzoneXPaths.Tags.Novel.All.evaluate(document).elements) {
-            val r18Elements = EsjzoneXPaths.Tags.Novel.R18Badge.evaluate(novelData).elements
-            val isR18 = r18Elements.firstOrNull()?.attr("class")?.contains("badge") == true
-
             novels.add(
-                parseNovelCard(novelData, isR18, NovelCardLayout.LIST)
+                parseNovelCard(novelData, false, NovelCardLayout.LIST)
             )
         }
 
