@@ -8,6 +8,8 @@ import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import cafe.adriel.voyager.core.screen.Screen
@@ -59,7 +61,16 @@ fun CoverTransition(
         // values such as reader scroll position and selected tabs are lost
         // whenever a page is pushed and later popped.
         navigator.saveableState("currentScreen", screen) {
-            content(screen)
+            // The background belongs inside each animated screen layer.  A
+            // background on AnimatedContent itself would remain below both
+            // the outgoing and incoming layers and would not hide the old
+            // page while the new one slides in.
+            Surface(
+                modifier = Modifier.fillMaxSize(),
+                color = MaterialTheme.colorScheme.background
+            ) {
+                content(screen)
+            }
         }
     }
 }
