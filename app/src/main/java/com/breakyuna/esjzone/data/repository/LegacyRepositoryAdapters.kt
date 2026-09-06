@@ -98,6 +98,9 @@ class NetworkNovelRepository : NovelRepository, ReaderRepository {
     override fun detail(authorization: Authorization, novel: Novel, includeComments: Boolean): DetailedNovel =
         EsjzoneClient.getNovelDetail(authorization, novel, includeComments)
 
+    override fun chapter(authorization: Authorization, chapter: Chapter): DetailedChapter =
+        chapter(authorization, chapter, preferDownloaded = true)
+
     override fun chapter(
         authorization: Authorization,
         chapter: Chapter,
