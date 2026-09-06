@@ -162,6 +162,7 @@ private fun NovelListResult(
     var loading by remember(result.requester) { mutableStateOf(false) }
     var pageFailure by remember(result.requester) { mutableStateOf<LoadFailureKind?>(null) }
     val maxPage = result.requester.pages()
+    val pageErrorMessage = pageFailure?.let { stringResource(listFailureMessage(it)) }
 
     fun loadMore() {
         if (loading || page > maxPage) return
@@ -227,7 +228,7 @@ private fun NovelListResult(
             loading = loading,
             hasMore = page <= maxPage,
             onRetry = if (pageFailure != null) ::loadMore else null,
-            errorMessage = pageFailure?.let { stringResource(listFailureMessage(it)) }
+            errorMessage = pageErrorMessage
         )
     }
 
