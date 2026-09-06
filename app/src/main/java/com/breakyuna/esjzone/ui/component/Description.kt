@@ -1,4 +1,5 @@
 package com.breakyuna.esjzone.ui.component
+import com.breakyuna.esjzone.app.PresentationAccess
 
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
@@ -30,7 +31,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.SubcomposeAsyncImage
 import coil.request.ImageRequest
-import com.breakyuna.esjzone.MainActivity
 import com.breakyuna.esjzone.R
 import com.breakyuna.esjzone.novellibrary.component.BackgroundColorTextStyle
 import com.breakyuna.esjzone.novellibrary.component.BoldTextStyle
@@ -93,7 +93,7 @@ fun Description(description: NovelDescription, modifier: Modifier = Modifier) {
                         // The image is part of rich description content; the
                         // surrounding text provides its accessible context.
                         contentDescription = null,
-                        imageLoader = MainActivity.imageLoader,
+                        imageLoader = PresentationAccess.imageLoader,
                         loading = {
                             CircularProgressIndicator(strokeWidth = 2.dp)
                         },
@@ -171,7 +171,7 @@ fun FuriganaTestPreview() {
                             .crossfade(true)
                             .build(),
                         contentDescription = null,
-                        imageLoader = MainActivity.imageLoader,
+                        imageLoader = PresentationAccess.imageLoader,
                         loading = {
                             CircularProgressIndicator()
                         },

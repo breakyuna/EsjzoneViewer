@@ -1,16 +1,15 @@
 package com.breakyuna.esjzone.ui.page
+import com.breakyuna.esjzone.app.PresentationAccess
 
 import cafe.adriel.voyager.core.model.StateScreenModel
 import cafe.adriel.voyager.core.model.screenModelScope
 import com.breakyuna.esjzone.database.BookshelfRepository
 import com.breakyuna.esjzone.network.Authorization
-import com.breakyuna.esjzone.network.EsjzoneClient
 import com.breakyuna.esjzone.network.LoadFailureKind
 import com.breakyuna.esjzone.network.features.getNovelDetail
 import com.breakyuna.esjzone.network.loadFailureKind
 import com.breakyuna.esjzone.novellibrary.novel.DetailedNovel
 import com.breakyuna.esjzone.novellibrary.novel.Novel
-import com.breakyuna.esjzone.offline.NovelDownloadStore
 import com.breakyuna.esjzone.util.AppLogger
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -40,13 +39,13 @@ class NovelPageModel(
         screenModelScope.launch(Dispatchers.IO) {
             mutableState.value = State.Loading
             try {
-                val fetchedDetail = EsjzoneClient.getNovelDetail(
+                val fetchedDetail = PresentationAccess.client.getNovelDetail(
                     authorization = authorization,
                     novel = novel,
                     includeComments = false
                 )
                 val detail = if (fetchedDetail.chapterList.orderedChapters.isEmpty()) {
-                    NovelDownloadStore.readDetailedNovel(novel.url) ?: fetchedDetail
+                    PresentationAccess.downloads.readDetailedNovel(novel.url) ?: fetchedDetail
                 } else {
                     fetchedDetail
                 }
@@ -55,7 +54,7 @@ class NovelPageModel(
             } catch (error: CancellationException) {
                 throw error
             } catch (error: Exception) {
-                val downloaded = NovelDownloadStore.readDetailedNovel(novel.url)
+                val downloaded = PresentationAccess.downloads.readDetailedNovel(novel.url)
                 if (downloaded != null) {
                     mutableState.value = State.Result(downloaded)
                     AppLogger.w("NovelPageModel", "Using downloaded novel detail for ${novel.name}", error)

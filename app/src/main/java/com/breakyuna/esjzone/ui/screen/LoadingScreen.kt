@@ -1,4 +1,5 @@
 package com.breakyuna.esjzone.ui.screen
+import com.breakyuna.esjzone.app.PresentationAccess
 
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Box
@@ -28,12 +29,9 @@ import cafe.adriel.voyager.navigator.currentOrThrow
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import com.breakyuna.esjzone.GlobalSettings
-import com.breakyuna.esjzone.MainActivity
 import com.breakyuna.esjzone.database.dao.put
 import com.breakyuna.esjzone.database.BookshelfRepository
 import com.breakyuna.esjzone.network.Authorization
-import com.breakyuna.esjzone.network.EsjzoneClient
 import com.breakyuna.esjzone.network.hasCredentials
 import com.breakyuna.esjzone.util.AppLogger
 import com.breakyuna.esjzone.R
@@ -68,7 +66,7 @@ class LoadingScreen : Screen {
         LaunchedEffect(Unit) {
             val authorization = withContext(Dispatchers.IO) {
                 try {
-                    val dao = MainActivity.database.cacheDao()
+                    val dao = PresentationAccess.database.cacheDao()
                     if (dao.findByKey("show_adult") == null) {
                         dao.put("show_adult", "false")
                     }
@@ -76,17 +74,17 @@ class LoadingScreen : Screen {
                     val ewsKey = dao.findByKey("ews_key")?.value ?: "null"
                     val ewsToken = dao.findByKey("ews_token")?.value ?: "null"
                     val sessionDomain = dao.findByKey("session_domain")?.value
-                    GlobalSettings.setAdult(
+                    PresentationAccess.settings.setAdult(
                         dao.findByKey("show_adult")?.value?.toBooleanStrictOrNull() ?: false
                     )
 
-                    val selectedDomain = GlobalSettings.domain.value
+                    val selectedDomain = PresentationAccess.settings.domain.value
                     val legacyAuthorization = Authorization(ewsKey, ewsToken, selectedDomain)
                     val legacySession = legacyAuthorization.takeIf {
                         it.hasCredentials() &&
                             (sessionDomain.isNullOrBlank() || sessionDomain == selectedDomain)
                     }
-                    val storedAuthorization = EsjzoneClient.restoreAuthorization(
+                    val storedAuthorization = PresentationAccess.client.restoreAuthorization(
                         selectedDomain,
                         legacySession
                     )

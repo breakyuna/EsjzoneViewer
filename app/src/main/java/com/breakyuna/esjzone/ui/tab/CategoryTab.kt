@@ -1,4 +1,5 @@
 package com.breakyuna.esjzone.ui.tab
+import com.breakyuna.esjzone.app.PresentationAccess
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -59,10 +60,8 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
-import com.breakyuna.esjzone.GlobalSettings
 import com.breakyuna.esjzone.R
 import com.breakyuna.esjzone.network.Authorization
-import com.breakyuna.esjzone.network.EsjzoneClient
 import com.breakyuna.esjzone.network.LocalAuthorization
 import com.breakyuna.esjzone.network.LoadFailureKind
 import com.breakyuna.esjzone.network.loadFailureKind
@@ -183,7 +182,7 @@ private fun CategoryBrowserContent(
 ) {
     val navigator = LocalBaseNavigator.current
     val state by categoryModel.state.collectAsState()
-    val adult by remember { GlobalSettings.adult }
+    val adult by remember { PresentationAccess.settings.adult }
 
     when (state) {
         is CategoryModel.State.Loading -> QuietLoadingState(modifier = modifier)
@@ -347,7 +346,7 @@ class CategoryModel(
         screenModelScope.launch(Dispatchers.IO) {
             mutableState.value = State.Loading
             try {
-                val categories = EsjzoneClient.getCategories(authorization)
+                val categories = PresentationAccess.client.getCategories(authorization)
                 ensureActive()
                 mutableState.value = State.Result(categories)
             } catch (e: CancellationException) {

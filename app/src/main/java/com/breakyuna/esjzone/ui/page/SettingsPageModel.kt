@@ -1,12 +1,10 @@
 package com.breakyuna.esjzone.ui.page
+import com.breakyuna.esjzone.app.PresentationAccess
 
 import cafe.adriel.voyager.core.model.StateScreenModel
 import cafe.adriel.voyager.core.model.screenModelScope
-import com.breakyuna.esjzone.GlobalSettings
-import com.breakyuna.esjzone.MainActivity
 import com.breakyuna.esjzone.database.dao.put
 import com.breakyuna.esjzone.network.Authorization
-import com.breakyuna.esjzone.network.EsjzoneClient
 import com.breakyuna.esjzone.network.features.logout
 import com.breakyuna.esjzone.util.AppLogger
 import kotlinx.coroutines.CancellationException
@@ -30,7 +28,7 @@ class SettingsPageModel : StateScreenModel<SettingsPageModel.State>(State()) {
     fun persist(key: String, value: String) {
         screenModelScope.launch(Dispatchers.IO) {
             try {
-                MainActivity.database.cacheDao().put(key, value)
+                PresentationAccess.database.cacheDao().put(key, value)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -43,8 +41,8 @@ class SettingsPageModel : StateScreenModel<SettingsPageModel.State>(State()) {
         mutableState.value = mutableState.value.copy(cacheStatsError = false)
         screenModelScope.launch(Dispatchers.IO) {
             try {
-                val pageStats = EsjzoneClient.pageCacheStats()
-                val imageBytes = MainActivity.imageLoader.diskCache?.size ?: 0L
+                val pageStats = PresentationAccess.client.pageCacheStats()
+                val imageBytes = PresentationAccess.imageLoader.diskCache?.size ?: 0L
                 mutableState.value = mutableState.value.copy(
                     cacheStats = LocalCacheStats(pageStats.sizeBytes, pageStats.entryCount, imageBytes),
                     cacheStatsError = false
@@ -59,13 +57,13 @@ class SettingsPageModel : StateScreenModel<SettingsPageModel.State>(State()) {
     }
 
     fun clearPageCache() {
-        clear(Operation.PAGES) { EsjzoneClient.clearPageCache() }
+        clear(Operation.PAGES) { PresentationAccess.client.clearPageCache() }
     }
 
     fun clearImageCache() {
         clear(Operation.IMAGES) {
-            MainActivity.imageLoader.memoryCache?.clear()
-            MainActivity.imageLoader.diskCache?.clear()
+            PresentationAccess.imageLoader.memoryCache?.clear()
+            PresentationAccess.imageLoader.diskCache?.clear()
         }
     }
 
@@ -99,16 +97,16 @@ class SettingsPageModel : StateScreenModel<SettingsPageModel.State>(State()) {
             var cancelled = false
             try {
                 try {
-                    EsjzoneClient.logout(authorization)
+                    PresentationAccess.client.logout(authorization)
                 } catch (e: CancellationException) {
                     throw e
                 } catch (e: Exception) {
                     AppLogger.w("SettingsPageModel", "Server logout failed; clearing local session", e)
                 }
-                EsjzoneClient.clearSession(
-                    authorization.domain.ifBlank { GlobalSettings.domain.value }
+                PresentationAccess.client.clearSession(
+                    authorization.domain.ifBlank { PresentationAccess.settings.domain.value }
                 )
-                val dao = MainActivity.database.cacheDao()
+                val dao = PresentationAccess.database.cacheDao()
                 dao.deleteByKey("ews_key")
                 dao.deleteByKey("ews_token")
                 dao.deleteByKey("session_domain")

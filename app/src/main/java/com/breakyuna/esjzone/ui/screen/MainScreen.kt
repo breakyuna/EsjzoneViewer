@@ -1,4 +1,5 @@
 package com.breakyuna.esjzone.ui.screen
+import com.breakyuna.esjzone.app.PresentationAccess
 
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Arrangement
@@ -34,14 +35,12 @@ import cafe.adriel.voyager.core.screen.ScreenKey
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import com.breakyuna.esjzone.GlobalSettings
 import com.breakyuna.esjzone.R
 import cafe.adriel.voyager.navigator.Navigator
 import cafe.adriel.voyager.navigator.tab.CurrentTab
 import cafe.adriel.voyager.navigator.tab.TabNavigator
 import com.breakyuna.esjzone.network.Authorization
 import com.breakyuna.esjzone.network.LocalAuthorization
-import com.breakyuna.esjzone.network.EsjzoneClient
 import com.breakyuna.esjzone.network.features.AuthorizationCheckResult
 import com.breakyuna.esjzone.network.features.checkAuthorization
 import com.breakyuna.esjzone.ui.navigation.CoverTransition
@@ -62,7 +61,7 @@ class MainScreen(val authorization: Authorization) : Screen {
     @Composable
     override fun Content() {
         val appNavigator = LocalAppNavigator.current
-        val activeDomain = GlobalSettings.domain.value
+        val activeDomain = PresentationAccess.settings.domain.value
         var authorizationCheckResult by remember(authorization) {
             mutableStateOf<AuthorizationCheckResult?>(null)
         }
@@ -76,7 +75,7 @@ class MainScreen(val authorization: Authorization) : Screen {
 
             val result = try {
                 withContext(Dispatchers.IO) {
-                    EsjzoneClient.checkAuthorization(authorization)
+                    PresentationAccess.client.checkAuthorization(authorization)
                 }
             } catch (e: CancellationException) {
                 throw e
@@ -87,8 +86,8 @@ class MainScreen(val authorization: Authorization) : Screen {
             // The selected mirror is mutable while this request is in flight.
             // A result for a previous domain must never prompt or alter the new UI.
             val isStillActive = withContext(Dispatchers.IO) {
-                GlobalSettings.domain.value == sessionDomain &&
-                    EsjzoneClient.restoreAuthorization(sessionDomain) == authorization
+                PresentationAccess.settings.domain.value == sessionDomain &&
+                    PresentationAccess.client.restoreAuthorization(sessionDomain) == authorization
             }
             if (isStillActive) {
                 authorizationCheckResult = result

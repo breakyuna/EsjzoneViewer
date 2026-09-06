@@ -1,6 +1,6 @@
 package com.breakyuna.esjzone.database
 
-import com.breakyuna.esjzone.MainActivity
+import com.breakyuna.esjzone.EsjzoneApplication
 import com.breakyuna.esjzone.database.entity.LocalReadingActivity
 import com.breakyuna.esjzone.util.AppLogger
 import kotlinx.coroutines.CoroutineScope
@@ -23,7 +23,7 @@ object LocalReadingHistoryRecorder {
     fun upsert(activity: LocalReadingActivity): Job = scope.launch {
         writeMutex.withLock {
             try {
-                MainActivity.database.localReadingActivityDao().upsertLatest(activity)
+                EsjzoneApplication.container.database.localReadingActivityDao().upsertLatest(activity)
             } catch (e: Exception) {
                 AppLogger.e(
                     "LocalReadingHistory",

@@ -1,4 +1,5 @@
 package com.breakyuna.esjzone.ui.page
+import com.breakyuna.esjzone.app.PresentationAccess
 
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -32,10 +33,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
-import com.breakyuna.esjzone.GlobalSettings
 import com.breakyuna.esjzone.R
 import com.breakyuna.esjzone.network.Authorization
-import com.breakyuna.esjzone.network.EsjzoneClient
 import com.breakyuna.esjzone.network.LocalAuthorization
 import com.breakyuna.esjzone.network.LoadFailureKind
 import com.breakyuna.esjzone.network.loadFailureKind
@@ -90,7 +89,7 @@ class CategoryPage(private val category: Category) : Screen {
                     val detailLoader = rememberScreenModel { NovelDetailLoader(authorization) }
 
                     val adult by remember {
-                        GlobalSettings.adult
+                        PresentationAccess.settings.adult
                     }
 
                     val unresolvedDetails = novels.count { novel ->
@@ -219,7 +218,7 @@ class CategoryPageModel(
         loadJob = screenModelScope.launch(Dispatchers.IO) {
             mutableState.value = State.Loading
             try {
-                val novels = EsjzoneClient.listNovels(authorization, category)
+                val novels = PresentationAccess.client.listNovels(authorization, category)
                 ensureActive()
                 mutableState.value = State.Result(novels)
             } catch (e: CancellationException) {

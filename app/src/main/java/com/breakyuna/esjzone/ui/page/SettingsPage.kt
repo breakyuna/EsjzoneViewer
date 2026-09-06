@@ -1,4 +1,5 @@
 package com.breakyuna.esjzone.ui.page
+import com.breakyuna.esjzone.app.PresentationAccess
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -63,7 +64,6 @@ import androidx.compose.ui.unit.dp
 import cafe.adriel.voyager.core.screen.Screen
 import cafe.adriel.voyager.core.model.rememberScreenModel
 import com.breakyuna.esjzone.AppLanguage
-import com.breakyuna.esjzone.GlobalSettings
 import com.breakyuna.esjzone.R
 import com.breakyuna.esjzone.network.LocalAuthorization
 import com.breakyuna.esjzone.ui.navigation.LocalAppNavigator
@@ -87,10 +87,10 @@ object SettingsPage : Screen {
         val context = LocalContext.current
         val settingsModel = rememberScreenModel { SettingsPageModel() }
         val settingsState by settingsModel.state.collectAsState()
-        val adult by GlobalSettings.adult
-        val theme by GlobalSettings.theme
-        val domain by GlobalSettings.domain
-        val language by GlobalSettings.language
+        val adult by PresentationAccess.settings.adult
+        val theme by PresentationAccess.settings.theme
+        val domain by PresentationAccess.settings.domain
+        val language by PresentationAccess.settings.language
         var showLogoutConfirmation by remember { mutableStateOf(false) }
         val crashReport by AppLogger.crashReportFlow.collectAsState()
 
@@ -115,13 +115,13 @@ object SettingsPage : Screen {
             ) {
                 SettingsSection(Icons.Filled.Dns, stringResource(R.string.settings_network_section)) {
                     SettingsLabel(stringResource(R.string.settings_active_mirror))
-                    GlobalSettings.DOMAINS.forEach { candidate ->
+                    PresentationAccess.settings.DOMAINS.forEach { candidate ->
                         MirrorRow(
                             domain = candidate,
                             selected = candidate == domain,
-                            backup = candidate != GlobalSettings.DOMAINS.first(),
+                            backup = candidate != PresentationAccess.settings.DOMAINS.first(),
                             onClick = {
-                                GlobalSettings.setDomain(candidate)
+                                PresentationAccess.settings.setDomain(candidate)
                                 settingsModel.clearPageCache()
                                 settingsModel.persist("domain", candidate)
                             }
@@ -142,19 +142,19 @@ object SettingsPage : Screen {
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     ThemeFamily(stringResource(R.string.settings_theme_frappe), CatppuccinThemeType.frappes(), theme) {
-                        GlobalSettings.setTheme(it)
+                        PresentationAccess.settings.setTheme(it)
                         settingsModel.persist("theme", it.name)
                     }
                     ThemeFamily(stringResource(R.string.settings_theme_latte), CatppuccinThemeType.lattes(), theme) {
-                        GlobalSettings.setTheme(it)
+                        PresentationAccess.settings.setTheme(it)
                         settingsModel.persist("theme", it.name)
                     }
                     ThemeFamily(stringResource(R.string.settings_theme_macchiato), CatppuccinThemeType.macchiatos(), theme) {
-                        GlobalSettings.setTheme(it)
+                        PresentationAccess.settings.setTheme(it)
                         settingsModel.persist("theme", it.name)
                     }
                     ThemeFamily(stringResource(R.string.settings_theme_mocha), CatppuccinThemeType.mochas(), theme) {
-                        GlobalSettings.setTheme(it)
+                        PresentationAccess.settings.setTheme(it)
                         settingsModel.persist("theme", it.name)
                     }
                 }
@@ -171,7 +171,7 @@ object SettingsPage : Screen {
                             description = stringResource(candidate.subtitleRes),
                             selected = candidate == language,
                             onClick = {
-                                GlobalSettings.setLanguage(candidate)
+                                PresentationAccess.settings.setLanguage(candidate)
                                 LocaleHelper.syncSystemLocale(context, candidate)
                                 settingsModel.persist("language", candidate.code)
                             }
@@ -186,7 +186,7 @@ object SettingsPage : Screen {
                         badge = stringResource(R.string.adult_badge),
                         checked = adult,
                         onCheckedChange = {
-                            GlobalSettings.setAdult(it)
+                            PresentationAccess.settings.setAdult(it)
                             settingsModel.persist("show_adult", it.toString())
                         }
                     )

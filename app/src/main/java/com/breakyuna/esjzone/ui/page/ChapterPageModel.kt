@@ -1,20 +1,18 @@
 package com.breakyuna.esjzone.ui.page
+import com.breakyuna.esjzone.app.PresentationAccess
 
 import androidx.compose.runtime.MutableState
 import cafe.adriel.voyager.core.model.StateScreenModel
 import cafe.adriel.voyager.core.model.screenModelScope
-import com.breakyuna.esjzone.GlobalSettings
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import com.breakyuna.esjzone.network.Authorization
-import com.breakyuna.esjzone.network.EsjzoneClient
 import com.breakyuna.esjzone.network.EsjzoneUrls
 import com.breakyuna.esjzone.network.LoadFailureKind
 import com.breakyuna.esjzone.network.loadFailureKind
 import com.breakyuna.esjzone.network.features.getChapterDetail
-import com.breakyuna.esjzone.offline.NovelDownloadStore
 import com.breakyuna.esjzone.network.features.getNovelDetail
 import com.breakyuna.esjzone.novellibrary.novel.Chapter
 import com.breakyuna.esjzone.novellibrary.novel.DetailedChapter
@@ -359,7 +357,7 @@ class ChapterPageModel(
         }
 
         val detail = try {
-            EsjzoneClient.getChapterDetail(authorization, chapter)
+            PresentationAccess.client.getChapterDetail(authorization, chapter)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -376,13 +374,13 @@ class ChapterPageModel(
 
     /** Saves successfully loaded reader content without delaying UI publication. */
     private fun persistLoadedChapter(chapter: Chapter, detail: DetailedChapter) {
-        if (!GlobalSettings.readerAutoSaveFlow.value) return
+        if (!PresentationAccess.settings.readerAutoSaveFlow.value) return
         val targetNovelUrl = novelUrl.trim().ifBlank {
             if (novelId.isBlank()) "" else "${EsjzoneUrls.Base}/detail/$novelId.html"
         }
         if (targetNovelUrl.isBlank()) return
         runCatching {
-            NovelDownloadStore.saveChapter(
+            PresentationAccess.downloads.saveChapter(
                 novelName = novelName,
                 novelUrl = targetNovelUrl,
                 coverUrl = novelCoverUrl,
@@ -414,7 +412,7 @@ class ChapterPageModel(
             }
             prefetchJobs[key] = screenModelScope.launch(Dispatchers.IO) {
                 val detail = try {
-                    EsjzoneClient.getChapterDetail(authorization, chapter)
+                    PresentationAccess.client.getChapterDetail(authorization, chapter)
                 } catch (e: CancellationException) {
                     synchronized(lock) {
                         prefetchJobs.remove(key)
@@ -451,7 +449,7 @@ class ChapterPageModel(
             url = "${EsjzoneUrls.Base}/detail/$novelId.html"
         )
         val fetchedOrder = try {
-            EsjzoneClient.getNovelDetail(authorization, source)
+            PresentationAccess.client.getNovelDetail(authorization, source)
                 .chapterList
                 .orderedChapters
         } catch (e: CancellationException) {

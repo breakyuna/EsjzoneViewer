@@ -1,4 +1,5 @@
 package com.breakyuna.esjzone.ui.tab
+import com.breakyuna.esjzone.app.PresentationAccess
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -14,7 +15,6 @@ import cafe.adriel.voyager.navigator.tab.TabOptions
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import com.breakyuna.esjzone.MainActivity
 import com.breakyuna.esjzone.R
 import com.breakyuna.esjzone.database.entity.LocalReadingActivity
 import com.breakyuna.esjzone.novellibrary.novel.Chapter
@@ -65,7 +65,7 @@ object HistoryTab : Tab {
             if (!claimOpenLastReadingRequest(request)) return@LaunchedEffect
             try {
                 val latest = withContext(Dispatchers.IO) {
-                    MainActivity.database.localReadingActivityDao().getLatest()
+                    PresentationAccess.database.localReadingActivityDao().getLatest()
                 }
                 if (latest != null) {
                     openLocalActivity(navigator, latest)

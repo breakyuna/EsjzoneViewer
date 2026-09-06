@@ -372,6 +372,8 @@ object LineThroughTextStyle : TextStyle {
 
 class ColorTextStyle(private val color: Color) : TextStyle {
 
+    fun color(): Color = color
+
     override fun apply(spanStyle: SpanStyle): SpanStyle {
         return spanStyle.merge(
             SpanStyle(
@@ -384,6 +386,8 @@ class ColorTextStyle(private val color: Color) : TextStyle {
 
 class BackgroundColorTextStyle(private val color: Color) : TextStyle {
 
+    fun color(): Color = color
+
     override fun apply(spanStyle: SpanStyle): SpanStyle {
         return spanStyle.merge(
             SpanStyle(
@@ -395,6 +399,8 @@ class BackgroundColorTextStyle(private val color: Color) : TextStyle {
 }
 
 class FontSizeTextStyle(private val size: Int) : TextStyle {
+
+    fun size(): Int = size
 
     override fun apply(spanStyle: SpanStyle): SpanStyle {
         return spanStyle.merge(
@@ -415,6 +421,8 @@ class FuriganaTextStyle(text: TextComponent) : TextStyle {
     init {
         this.text = safer(text)
     }
+
+    fun readingText(): TextComponent = text
 
     private fun safer(text: TextComponent): TextComponent {
         val newOne = TextComponent(text.text)

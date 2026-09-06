@@ -1,4 +1,5 @@
 package com.breakyuna.esjzone.ui.page
+import com.breakyuna.esjzone.app.PresentationAccess
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
@@ -74,7 +75,6 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import cafe.adriel.voyager.core.model.rememberScreenModel
 import cafe.adriel.voyager.core.screen.Screen
-import com.breakyuna.esjzone.GlobalSettings
 import com.breakyuna.esjzone.R
 import com.breakyuna.esjzone.database.BookshelfRepository
 import com.breakyuna.esjzone.database.entity.BookshelfEntry
@@ -111,7 +111,7 @@ object FavoritePage : Screen {
         val deleteState by model.deleteState.collectAsState()
         val snackbar = remember { SnackbarHostState() }
         val gridState = rememberLazyGridState()
-        val adult by remember { GlobalSettings.adult }
+        val adult by remember { PresentationAccess.settings.adult }
         val syncAddedText = stringResource(R.string.bookshelf_sync_added)
         val syncDoneText = stringResource(R.string.bookshelf_sync_done)
         val syncFailedText = stringResource(R.string.bookshelf_sync_failed)

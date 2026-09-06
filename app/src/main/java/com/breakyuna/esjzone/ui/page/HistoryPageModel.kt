@@ -1,9 +1,9 @@
 package com.breakyuna.esjzone.ui.page
+import com.breakyuna.esjzone.app.PresentationAccess
 
 import cafe.adriel.voyager.core.model.StateScreenModel
 import cafe.adriel.voyager.core.model.screenModelScope
 import com.breakyuna.esjzone.network.Authorization
-import com.breakyuna.esjzone.network.EsjzoneClient
 import com.breakyuna.esjzone.network.LoadFailureKind
 import com.breakyuna.esjzone.network.features.getHistories
 import com.breakyuna.esjzone.network.features.removeHistory
@@ -42,7 +42,7 @@ class HistoryPageModel(
         loadJob = screenModelScope.launch(Dispatchers.IO) {
             mutableState.value = State.Loading
             try {
-                val histories = EsjzoneClient.getHistories(
+                val histories = PresentationAccess.client.getHistories(
                     authorization,
                     forceRefresh = forceRefresh
                 )
@@ -66,7 +66,7 @@ class HistoryPageModel(
     fun deleteHistory(vid: String, name: String) {
         screenModelScope.launch(Dispatchers.IO) {
             try {
-                EsjzoneClient.removeHistory(authorization, vid)
+                PresentationAccess.client.removeHistory(authorization, vid)
                 _deletedIds.value = _deletedIds.value + vid
             } catch (e: CancellationException) {
                 throw e

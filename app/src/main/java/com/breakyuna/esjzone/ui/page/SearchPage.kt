@@ -1,4 +1,5 @@
 package com.breakyuna.esjzone.ui.page
+import com.breakyuna.esjzone.app.PresentationAccess
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -45,10 +46,8 @@ import cafe.adriel.voyager.core.model.rememberScreenModel
 import cafe.adriel.voyager.core.model.screenModelScope
 import cafe.adriel.voyager.core.screen.Screen
 import cafe.adriel.voyager.core.screen.ScreenKey
-import com.breakyuna.esjzone.GlobalSettings
 import com.breakyuna.esjzone.R
 import com.breakyuna.esjzone.network.Authorization
-import com.breakyuna.esjzone.network.EsjzoneClient
 import com.breakyuna.esjzone.network.LocalAuthorization
 import com.breakyuna.esjzone.network.LoadFailureKind
 import com.breakyuna.esjzone.network.loadFailureKind
@@ -395,7 +394,7 @@ class SearchPageModel(
 ) : StateScreenModel<SearchPageModel.State>(State.Loading) {
     private val pageItems = mutableStateListOf<CoveredNovel>()
     val visibleItems: List<CoveredNovel> by derivedStateOf {
-        pageItems.filter { !it.isAdult || GlobalSettings.adult.value }
+        pageItems.filter { !it.isAdult || PresentationAccess.settings.adult.value }
             .distinctBy { it.url.ifBlank { it.name } }
     }
     var currentPage by mutableIntStateOf(2)
@@ -445,7 +444,7 @@ class SearchPageModel(
         requestJob = screenModelScope.launch {
             try {
                 val (requester, novels) = withContext(Dispatchers.IO) {
-                    EsjzoneClient.search(
+                    PresentationAccess.client.search(
                         authorization = authorization,
                         keyword = normalizedKeyword,
                         category = category,

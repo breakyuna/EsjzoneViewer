@@ -1,4 +1,5 @@
 package com.breakyuna.esjzone.ui.page
+import com.breakyuna.esjzone.app.PresentationAccess
 
 import androidx.compose.runtime.mutableStateMapOf
 import cafe.adriel.voyager.core.model.StateScreenModel
@@ -10,7 +11,6 @@ import kotlinx.coroutines.withContext
 import kotlin.coroutines.coroutineContext
 import kotlinx.coroutines.launch
 import com.breakyuna.esjzone.network.Authorization
-import com.breakyuna.esjzone.network.EsjzoneClient
 import com.breakyuna.esjzone.network.LoadFailureKind
 import com.breakyuna.esjzone.network.loadFailureKind
 import com.breakyuna.esjzone.network.features.getNovelDetail
@@ -35,7 +35,7 @@ class NovelDetailLoader(private val authorization: Authorization) : StateScreenM
             val thisJob = coroutineContext[Job]
             try {
                 val detail = withContext(Dispatchers.IO) {
-                    EsjzoneClient.getNovelDetail(authorization, novel)
+                    PresentationAccess.client.getNovelDetail(authorization, novel)
                 }
                 details[key] = detail
             } catch (e: CancellationException) {

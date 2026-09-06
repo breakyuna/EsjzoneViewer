@@ -1,4 +1,5 @@
 package com.breakyuna.esjzone.ui.page
+import com.breakyuna.esjzone.app.PresentationAccess
 
 import cafe.adriel.voyager.core.model.StateScreenModel
 import cafe.adriel.voyager.core.model.screenModelScope
@@ -9,7 +10,6 @@ import com.breakyuna.esjzone.network.Authorization
 import com.breakyuna.esjzone.network.LoadFailureKind
 import com.breakyuna.esjzone.network.loadFailureKind
 import com.breakyuna.esjzone.network.EsjzoneUrls
-import com.breakyuna.esjzone.offline.NovelDownloadStore
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -27,7 +27,7 @@ class FavoritePageModel(private val authorization: Authorization) :
     /** Refreshes the local-download index without blocking bookshelf composition. */
     fun refreshDownloaded() {
         screenModelScope.launch(Dispatchers.IO) {
-            _downloadedBookKeys.value = NovelDownloadStore.listDownloadedNovels()
+            _downloadedBookKeys.value = PresentationAccess.downloads.listDownloadedNovels()
                 .mapTo(LinkedHashSet()) { summary ->
                     BookshelfRepository.keyFor(summary.novelUrl)
                         .ifBlank { EsjzoneUrls.canonicalPageKey(summary.novelUrl) }

@@ -36,7 +36,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.res.painterResource
-import coil.ImageLoader
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -45,7 +44,6 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.CoroutineScope
-import com.breakyuna.esjzone.database.GeneralDatabase
 import com.breakyuna.esjzone.database.dao.put
 import com.breakyuna.esjzone.ui.app.App
 import com.breakyuna.esjzone.ui.theme.catppuccin.CatppuccinDynamicTheme
@@ -62,9 +60,6 @@ class MainActivity : ComponentActivity() {
 
     companion object {
 
-        lateinit var database: GeneralDatabase
-        lateinit var imageLoader: ImageLoader
-
         private val startupState = MutableStateFlow<StartupState>(StartupState.Starting)
         val startup = startupState.asStateFlow()
         private val initMutex = Mutex()
@@ -77,10 +72,8 @@ class MainActivity : ComponentActivity() {
                 AppLogger.init(appContext)
                 CrashHandler.init(appContext)
                 val container = (appContext as EsjzoneApplication).container
-                if (!::imageLoader.isInitialized) imageLoader = container.imageLoader
-                if (!::database.isInitialized) database = container.database
                 AppLogger.i("MainActivity", "Initializing Room database...")
-                val dao = database.cacheDao()
+                val dao = container.database.cacheDao()
                 if (dao.findByKey("theme") == null) dao.put("theme", GlobalSettings.theme.value.name)
                 if (dao.findByKey("domain") == null) dao.put("domain", GlobalSettings.domain.value)
                 if (dao.findByKey(GlobalSettings.READER_AUTO_SAVE_KEY) == null) {

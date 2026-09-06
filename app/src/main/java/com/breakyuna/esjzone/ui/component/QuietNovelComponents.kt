@@ -1,4 +1,5 @@
 package com.breakyuna.esjzone.ui.component
+import com.breakyuna.esjzone.app.PresentationAccess
 
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -34,7 +35,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.SubcomposeAsyncImage
 import coil.request.ImageRequest
-import com.breakyuna.esjzone.MainActivity
 import com.breakyuna.esjzone.R
 import com.breakyuna.esjzone.network.EsjzoneUrls
 import com.breakyuna.esjzone.novellibrary.novel.CoveredNovel
@@ -83,7 +83,7 @@ fun QuietNovelCover(
                 .crossfade(true)
                 .build(),
             contentDescription = title,
-            imageLoader = MainActivity.imageLoader,
+            imageLoader = PresentationAccess.imageLoader,
             loading = {
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)

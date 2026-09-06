@@ -1,4 +1,5 @@
 package com.breakyuna.esjzone.ui.page
+import com.breakyuna.esjzone.app.PresentationAccess
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -38,7 +39,6 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
-import com.breakyuna.esjzone.MainActivity
 import com.breakyuna.esjzone.R
 import com.breakyuna.esjzone.database.entity.Bookmark as LocalBookmark
 import com.breakyuna.esjzone.novellibrary.novel.Chapter
@@ -199,7 +199,7 @@ private class BookmarksPageModel : StateScreenModel<BookmarksPageModel.State>(St
         loadStarted = true
         screenModelScope.launch(Dispatchers.IO) {
             try {
-                MainActivity.database.bookmarkDao().observeAll().collect { bookmarks ->
+                PresentationAccess.database.bookmarkDao().observeAll().collect { bookmarks ->
                     mutableState.value = State.Result(bookmarks)
                 }
             } catch (e: CancellationException) {
@@ -221,7 +221,7 @@ private class BookmarksPageModel : StateScreenModel<BookmarksPageModel.State>(St
         )
         screenModelScope.launch(Dispatchers.IO) {
             try {
-                MainActivity.database.bookmarkDao().delete(bookmark)
+                PresentationAccess.database.bookmarkDao().delete(bookmark)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {

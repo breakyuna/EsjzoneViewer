@@ -1,8 +1,8 @@
 package com.breakyuna.esjzone.ui.tab
+import com.breakyuna.esjzone.app.PresentationAccess
 
 import cafe.adriel.voyager.core.model.StateScreenModel
 import cafe.adriel.voyager.core.model.screenModelScope
-import com.breakyuna.esjzone.MainActivity
 import com.breakyuna.esjzone.database.entity.SearchHistory
 import com.breakyuna.esjzone.util.AppLogger
 import com.breakyuna.esjzone.util.currentDateString
@@ -21,7 +21,7 @@ class SearchHistoryModel : StateScreenModel<SearchHistoryModel.State>(State()) {
     fun load() {
         screenModelScope.launch(Dispatchers.IO) {
             try {
-                val histories = MainActivity.database.searchHistoryDao().getAll()
+                val histories = PresentationAccess.database.searchHistoryDao().getAll()
                 mutableState.value = State(histories = histories, loading = false)
             } catch (e: CancellationException) {
                 throw e
@@ -35,7 +35,7 @@ class SearchHistoryModel : StateScreenModel<SearchHistoryModel.State>(State()) {
     fun save(keyword: String) {
         screenModelScope.launch(Dispatchers.IO) {
             try {
-                val dao = MainActivity.database.searchHistoryDao()
+                val dao = PresentationAccess.database.searchHistoryDao()
                 val history = dao.findByKeyword(keyword)
                     ?: SearchHistory(keyword = keyword, time = currentDateString())
                 history.time = currentDateString()
@@ -55,7 +55,7 @@ class SearchHistoryModel : StateScreenModel<SearchHistoryModel.State>(State()) {
         )
         screenModelScope.launch(Dispatchers.IO) {
             try {
-                MainActivity.database.searchHistoryDao().delete(history)
+                PresentationAccess.database.searchHistoryDao().delete(history)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -69,7 +69,7 @@ class SearchHistoryModel : StateScreenModel<SearchHistoryModel.State>(State()) {
         mutableState.value = mutableState.value.copy(histories = emptyList())
         screenModelScope.launch(Dispatchers.IO) {
             try {
-                val dao = MainActivity.database.searchHistoryDao()
+                val dao = PresentationAccess.database.searchHistoryDao()
                 items.forEach { dao.delete(it) }
             } catch (e: CancellationException) {
                 throw e

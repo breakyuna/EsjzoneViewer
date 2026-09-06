@@ -1,4 +1,5 @@
 package com.breakyuna.esjzone.ui.page
+import com.breakyuna.esjzone.app.PresentationAccess
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.BorderStroke
@@ -67,12 +68,9 @@ import cafe.adriel.voyager.core.screen.Screen
 import cafe.adriel.voyager.core.screen.ScreenKey
 import coil.compose.SubcomposeAsyncImage
 import coil.request.ImageRequest
-import com.breakyuna.esjzone.GlobalSettings
-import com.breakyuna.esjzone.MainActivity
 import com.breakyuna.esjzone.R
 import com.breakyuna.esjzone.database.dao.put
 import com.breakyuna.esjzone.offline.DownloadedNovelSummary
-import com.breakyuna.esjzone.offline.NovelDownloadStore
 import com.breakyuna.esjzone.ui.component.QuietBackHeader
 import com.breakyuna.esjzone.ui.component.QuietEmptyState
 import com.breakyuna.esjzone.ui.component.QuietNovelCover
@@ -96,7 +94,7 @@ object DownloadPage : Screen {
         val navigator = LocalBaseNavigator.current
         val model = rememberScreenModel { DownloadPageModel() }
         val state by model.state.collectAsState()
-        val autoSave by GlobalSettings.readerAutoSave
+        val autoSave by PresentationAccess.settings.readerAutoSave
         var editing by rememberSaveable { mutableStateOf(false) }
         var selectedUrls by remember { mutableStateOf<Set<String>>(emptySet()) }
         var pendingDeleteUrls by remember { mutableStateOf<List<String>>(emptyList()) }
@@ -505,7 +503,7 @@ private class DownloadPageModel : StateScreenModel<DownloadPageModel.State>(Stat
     fun refresh() {
         screenModelScope.launch(Dispatchers.IO) {
             try {
-                mutableState.value = State.Content(NovelDownloadStore.listDownloadedNovels())
+                mutableState.value = State.Content(PresentationAccess.downloads.listDownloadedNovels())
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -526,7 +524,7 @@ private class DownloadPageModel : StateScreenModel<DownloadPageModel.State>(Stat
         mutableState.value = current?.copy(deleting = true) ?: State.Content(emptyList(), true)
         screenModelScope.launch(Dispatchers.IO) {
             try {
-                NovelDownloadStore.deleteAll(targets)
+                PresentationAccess.downloads.deleteAll(targets)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -537,7 +535,7 @@ private class DownloadPageModel : StateScreenModel<DownloadPageModel.State>(Stat
                 )
             }
             try {
-                mutableState.value = State.Content(NovelDownloadStore.listDownloadedNovels())
+                mutableState.value = State.Content(PresentationAccess.downloads.listDownloadedNovels())
             } catch (e: Exception) {
                 com.breakyuna.esjzone.util.AppLogger.e(
                     "DownloadPageModel",
@@ -550,11 +548,11 @@ private class DownloadPageModel : StateScreenModel<DownloadPageModel.State>(Stat
     }
 
     fun setAutoSave(enabled: Boolean) {
-        GlobalSettings.setReaderAutoSave(enabled)
+        PresentationAccess.settings.setReaderAutoSave(enabled)
         screenModelScope.launch(Dispatchers.IO) {
             try {
-                MainActivity.database.cacheDao().put(
-                    GlobalSettings.READER_AUTO_SAVE_KEY,
+                PresentationAccess.database.cacheDao().put(
+                    PresentationAccess.settings.READER_AUTO_SAVE_KEY,
                     enabled.toString()
                 )
             } catch (e: CancellationException) {

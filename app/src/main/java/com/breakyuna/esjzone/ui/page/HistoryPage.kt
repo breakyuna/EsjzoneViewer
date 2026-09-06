@@ -1,4 +1,5 @@
 package com.breakyuna.esjzone.ui.page
+import com.breakyuna.esjzone.app.PresentationAccess
 
 import android.text.format.DateUtils
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -77,12 +78,9 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
-import com.breakyuna.esjzone.GlobalSettings
-import com.breakyuna.esjzone.MainActivity
 import com.breakyuna.esjzone.R
 import com.breakyuna.esjzone.database.entity.LocalReadingActivity
 import com.breakyuna.esjzone.network.Authorization
-import com.breakyuna.esjzone.network.EsjzoneClient
 import com.breakyuna.esjzone.network.EsjzoneUrls
 import com.breakyuna.esjzone.network.LocalAuthorization
 import com.breakyuna.esjzone.network.LoadFailureKind
@@ -223,7 +221,7 @@ object HistoryPage : Screen {
                             val detailLoader = rememberScreenModel { NovelDetailLoader(authorization) }
 
                             val adult by remember {
-                                GlobalSettings.adult
+                                PresentationAccess.settings.adult
                             }
 
                             if (novels.isEmpty()) {
@@ -354,7 +352,7 @@ object HistoryPage : Screen {
                                                                 .crossfade(true)
                                                                 .build(),
                                                             contentDescription = historyNovel.name,
-                                                            imageLoader = MainActivity.imageLoader,
+                                                            imageLoader = PresentationAccess.imageLoader,
                                                             loading = {
                                                                 CircularProgressIndicator(strokeWidth = 2.dp)
                                                             },
@@ -817,7 +815,7 @@ private fun LocalHistoryRow(
                         .crossfade(true)
                         .build(),
                     contentDescription = activity.novelName,
-                    imageLoader = MainActivity.imageLoader,
+                    imageLoader = PresentationAccess.imageLoader,
                     loading = {
                         CircularProgressIndicator(strokeWidth = 2.dp)
                     },
@@ -953,7 +951,7 @@ class LocalHistoryPageModel(
         screenModelScope.launch(Dispatchers.IO) {
             try {
                 val cover = EsjzoneUrls.coverOrEmpty(
-                    EsjzoneClient.getNovelDetail(
+                    PresentationAccess.client.getNovelDetail(
                         authorization,
                         FavoriteNovel(
                             name = activity.novelName,
@@ -966,7 +964,7 @@ class LocalHistoryPageModel(
                         resolvedCoverUrls.value = resolvedCoverUrls.value + (key to cover)
                     }
                     runCatching {
-                        MainActivity.database.localReadingActivityDao().updateCover(
+                        PresentationAccess.database.localReadingActivityDao().updateCover(
                             activity.activityId,
                             cover
                         )
@@ -1007,7 +1005,7 @@ class LocalHistoryPageModel(
         observeJob?.cancel()
         observeJob = screenModelScope.launch(Dispatchers.IO) {
             try {
-                MainActivity.database.localReadingActivityDao().observeAll().collect { activities ->
+                PresentationAccess.database.localReadingActivityDao().observeAll().collect { activities ->
                     mutableState.value = State.Result(activities)
                 }
             } catch (e: CancellationException) {
@@ -1027,7 +1025,7 @@ class LocalHistoryPageModel(
     fun delete(activityId: String) {
         screenModelScope.launch(Dispatchers.IO) {
             try {
-                MainActivity.database.localReadingActivityDao().deleteById(activityId)
+                PresentationAccess.database.localReadingActivityDao().deleteById(activityId)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -1043,7 +1041,7 @@ class LocalHistoryPageModel(
     fun clear() {
         screenModelScope.launch(Dispatchers.IO) {
             try {
-                MainActivity.database.localReadingActivityDao().deleteAll()
+                PresentationAccess.database.localReadingActivityDao().deleteAll()
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {

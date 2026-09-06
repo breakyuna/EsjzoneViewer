@@ -20,6 +20,12 @@ interface LocalReadingActivityDao {
     )
     fun getLatest(): LocalReadingActivity?
 
+    @Query(
+        "SELECT * FROM local_reading_history WHERE novel_id = :novelId " +
+            "ORDER BY last_read_at DESC, started_at DESC LIMIT 1"
+    )
+    fun getLatestForNovel(novelId: String): LocalReadingActivity?
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     fun upsert(activity: LocalReadingActivity)
 

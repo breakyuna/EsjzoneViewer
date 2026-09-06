@@ -1,4 +1,5 @@
 package com.breakyuna.esjzone.ui.page
+import com.breakyuna.esjzone.app.PresentationAccess
 
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Arrangement
@@ -45,10 +46,8 @@ import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.distinctUntilChanged
-import com.breakyuna.esjzone.GlobalSettings
 import com.breakyuna.esjzone.R
 import com.breakyuna.esjzone.network.Authorization
-import com.breakyuna.esjzone.network.EsjzoneClient
 import com.breakyuna.esjzone.network.LocalAuthorization
 import com.breakyuna.esjzone.network.PageableRequester
 import com.breakyuna.esjzone.network.LoadFailureKind
@@ -125,7 +124,7 @@ class NovelListPage(
         val state by novelListModel.state.collectAsState()
 
         val adult by remember {
-            GlobalSettings.adult
+            PresentationAccess.settings.adult
         }
 
         Column(modifier = Modifier.fillMaxSize()) {
@@ -392,7 +391,7 @@ class NovelListPageModel(
 
         screenModelScope.launch(Dispatchers.IO) {
             try {
-                val detail = EsjzoneClient.getNovelDetail(authorization, novel)
+                val detail = PresentationAccess.client.getNovelDetail(authorization, novel)
                 val preview = detail.description.preview()
                 if (preview.isBlank()) {
                     synchronized(summaryLock) {
@@ -427,7 +426,7 @@ class NovelListPageModel(
         requestJob = screenModelScope.launch(Dispatchers.IO) {
             mutableState.value = State.Loading
             try {
-                val (requester, novels) = EsjzoneClient.novels(
+                val (requester, novels) = PresentationAccess.client.novels(
                     authorization,
                     novelType.intValue,
                     sortType.intValue,

@@ -1,4 +1,5 @@
 package com.breakyuna.esjzone.ui.screen
+import com.breakyuna.esjzone.app.PresentationAccess
 
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -53,12 +54,9 @@ import androidx.compose.ui.unit.dp
 import cafe.adriel.voyager.core.screen.Screen
 import cafe.adriel.voyager.navigator.LocalNavigator
 import cafe.adriel.voyager.navigator.currentOrThrow
-import com.breakyuna.esjzone.GlobalSettings
-import com.breakyuna.esjzone.MainActivity
 import com.breakyuna.esjzone.R
 import com.breakyuna.esjzone.database.BookshelfRepository
 import com.breakyuna.esjzone.database.dao.put
-import com.breakyuna.esjzone.network.EsjzoneClient
 import com.breakyuna.esjzone.network.features.login
 import com.breakyuna.esjzone.ui.theme.QuietEditorial
 import com.breakyuna.esjzone.ui.component.QuietGroup
@@ -76,7 +74,7 @@ object LoginScreen : Screen {
     override fun Content() {
         val navigator = LocalNavigator.currentOrThrow
         val scope = rememberCoroutineScope()
-        val currentDomain by GlobalSettings.domain
+        val currentDomain by PresentationAccess.settings.domain
         var email by remember { mutableStateOf("") }
         var password by remember { mutableStateOf("") }
         var passwordVisible by remember { mutableStateOf(false) }
@@ -95,10 +93,10 @@ object LoginScreen : Screen {
             scope.launch {
                 try {
                     val authorization = withContext(Dispatchers.IO) {
-                        val result = EsjzoneClient.login(email.trim(), password)
+                        val result = PresentationAccess.client.login(email.trim(), password)
                         if (result != null) {
-                            MainActivity.database.runInTransaction {
-                                val dao = MainActivity.database.cacheDao()
+                            PresentationAccess.database.runInTransaction {
+                                val dao = PresentationAccess.database.cacheDao()
                                 dao.put("domain", selectedDomain)
                             }
                         }
@@ -167,14 +165,14 @@ object LoginScreen : Screen {
                             .padding(horizontal = 16.dp, vertical = 12.dp),
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        GlobalSettings.DOMAINS.forEach { domain ->
+                        PresentationAccess.settings.DOMAINS.forEach { domain ->
                             FilterChip(
                                 selected = currentDomain == domain,
                                 onClick = {
-                                    GlobalSettings.setDomain(domain)
+                                    PresentationAccess.settings.setDomain(domain)
                                     scope.launch(Dispatchers.IO) {
                                         runCatching {
-                                            MainActivity.database.cacheDao().put("domain", domain)
+                                            PresentationAccess.database.cacheDao().put("domain", domain)
                                         }.onFailure {
                                             AppLogger.e("LoginScreen", "Failed to persist selected domain", it)
                                         }

@@ -1,4 +1,5 @@
 package com.breakyuna.esjzone.ui.page
+import com.breakyuna.esjzone.app.PresentationAccess
 
 import android.content.ActivityNotFoundException
 import android.content.Context
@@ -93,7 +94,6 @@ import com.breakyuna.esjzone.offline.DownloadProgress
 import com.breakyuna.esjzone.offline.DownloadedChapterRecord
 import com.breakyuna.esjzone.offline.DownloadedNovelManifest
 import com.breakyuna.esjzone.offline.NovelDownloadManager
-import com.breakyuna.esjzone.offline.NovelDownloadStore
 import com.breakyuna.esjzone.offline.NovelExporter
 import com.breakyuna.esjzone.ui.component.ChapterListRow
 import com.breakyuna.esjzone.ui.component.Description
@@ -747,14 +747,14 @@ private suspend fun exportNovel(
     format: NovelExportFormat
 ) {
     withContext(Dispatchers.IO) {
-        val manifest = NovelDownloadStore.manifest(novel.url)
+        val manifest = PresentationAccess.downloads.manifest(novel.url)
             ?.takeIf { it.complete }
             ?: error("Novel download is incomplete")
         val output = context.contentResolver.openOutputStream(uri, "w")
             ?: error("Unable to open the selected file")
         output.use { stream ->
             val loader = { record: DownloadedChapterRecord ->
-                NovelDownloadStore.chapterContent(novel.url, record)
+                PresentationAccess.downloads.chapterContent(novel.url, record)
             }
             when (format) {
                 NovelExportFormat.TXT -> NovelExporter.exportTxt(manifest, loader, stream)
@@ -763,7 +763,7 @@ private suspend fun exportNovel(
                     chapterLoader = loader,
                     output = stream,
                     imageLoader = { component ->
-                        NovelDownloadStore.imageFile(novel.url, component)
+                        PresentationAccess.downloads.imageFile(novel.url, component)
                     }
                 )
             }
@@ -792,7 +792,7 @@ private fun NovelDownloadActions(
     val downloadScope = rememberCoroutineScope()
 
     LaunchedEffect(novel.url) {
-        downloaded = withContext(Dispatchers.IO) { NovelDownloadStore.manifest(novel.url) }
+        downloaded = withContext(Dispatchers.IO) { PresentationAccess.downloads.manifest(novel.url) }
     }
 
     LaunchedEffect(novel.url, requestedWorkId) {
@@ -813,7 +813,7 @@ private fun NovelDownloadActions(
             // status is still the source of truth for this page.
             if (status?.finished == true && requestedWorkId != null) {
                 downloaded = withContext(Dispatchers.IO) {
-                    NovelDownloadStore.manifest(novel.url)
+                    PresentationAccess.downloads.manifest(novel.url)
                 }
                 Toast.makeText(
                     context,
@@ -859,7 +859,7 @@ private fun NovelDownloadActions(
         deletingDownload = true
         downloadScope.launch {
             val deleted = withContext(Dispatchers.IO) {
-                NovelDownloadStore.delete(novel.url)
+                PresentationAccess.downloads.delete(novel.url)
             }
             downloaded = null
             deletingDownload = false

@@ -1,4 +1,5 @@
 package com.breakyuna.esjzone.ui.tab
+import com.breakyuna.esjzone.app.PresentationAccess
 
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -27,10 +28,8 @@ import cafe.adriel.voyager.core.model.rememberScreenModel
 import cafe.adriel.voyager.core.model.screenModelScope
 import cafe.adriel.voyager.navigator.tab.Tab
 import cafe.adriel.voyager.navigator.tab.TabOptions
-import com.breakyuna.esjzone.GlobalSettings
 import com.breakyuna.esjzone.R
 import com.breakyuna.esjzone.network.Authorization
-import com.breakyuna.esjzone.network.EsjzoneClient
 import com.breakyuna.esjzone.network.LoadFailureKind
 import com.breakyuna.esjzone.network.LocalAuthorization
 import com.breakyuna.esjzone.network.features.getHomeData
@@ -71,7 +70,7 @@ object HomeTab : Tab {
         val authorization = LocalAuthorization.current
         val model = rememberScreenModel { HomeTabModel(authorization) }
         val state by model.state.collectAsState()
-        val adult by GlobalSettings.adult
+        val adult by PresentationAccess.settings.adult
 
         Box(
             modifier = Modifier.fillMaxSize(),
@@ -85,7 +84,7 @@ object HomeTab : Tab {
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 QuietHomeHeader(
-                    domain = GlobalSettings.domain.value,
+                    domain = PresentationAccess.settings.domain.value,
                     onSearch = { navigator?.pushIfNotCurrent(SearchTab) },
                     onCategories = { navigator?.pushIfNotCurrent(CategoryBrowserPage()) },
                     onForum = { navigator?.pushIfNotCurrent(ForumPage) },
@@ -167,7 +166,7 @@ private fun HomeCollection(
     featured: Boolean = false,
     onMore: (() -> Unit)?
 ) {
-    val adult by GlobalSettings.adult
+    val adult by PresentationAccess.settings.adult
     val visible = remember(novels, adult) {
         novels
             .asSequence()
@@ -219,7 +218,7 @@ class HomeTabModel(
         screenModelScope.launch(Dispatchers.IO) {
             mutableState.value = State.Loading
             try {
-                val data = EsjzoneClient.getHomeData(authorization)
+                val data = PresentationAccess.client.getHomeData(authorization)
                 ensureActive()
                 mutableState.value = State.Result(data)
             } catch (e: CancellationException) {

@@ -1,4 +1,5 @@
 package com.breakyuna.esjzone.ui.page
+import com.breakyuna.esjzone.app.PresentationAccess
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -71,10 +72,8 @@ import cafe.adriel.voyager.core.model.StateScreenModel
 import cafe.adriel.voyager.core.model.screenModelScope
 import coil.compose.SubcomposeAsyncImage
 import coil.request.ImageRequest
-import com.breakyuna.esjzone.MainActivity
 import com.breakyuna.esjzone.R
 import com.breakyuna.esjzone.network.Authorization
-import com.breakyuna.esjzone.network.EsjzoneClient
 import com.breakyuna.esjzone.network.EsjzoneUrls
 import com.breakyuna.esjzone.network.LoadFailureKind
 import com.breakyuna.esjzone.network.loadFailureKind
@@ -788,7 +787,7 @@ private fun CommentAvatar(comment: Comment) {
                     .crossfade(true)
                     .build(),
                 contentDescription = comment.authorName,
-                imageLoader = MainActivity.imageLoader,
+                imageLoader = PresentationAccess.imageLoader,
                 loading = {
                     CircularProgressIndicator(
                         modifier = Modifier.size(18.dp),
@@ -831,7 +830,7 @@ internal class CommentPageModel(
         loadJob?.cancel()
         loadJob = screenModelScope.launch(Dispatchers.IO) {
             try {
-                val comments = EsjzoneClient.getPageComments(
+                val comments = PresentationAccess.client.getPageComments(
                     authorization,
                     pageUrl,
                     forceRefresh = forceRefresh
@@ -864,7 +863,7 @@ internal class CommentPageModel(
         submitError.value = null
         screenModelScope.launch(Dispatchers.IO) {
             try {
-                val submission = EsjzoneClient.submitForumComment(
+                val submission = PresentationAccess.client.submitForumComment(
                     authorization = authorization,
                     pageUrl = pageUrl,
                     content = submitted,

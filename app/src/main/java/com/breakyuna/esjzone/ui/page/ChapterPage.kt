@@ -1,4 +1,5 @@
 package com.breakyuna.esjzone.ui.page
+import com.breakyuna.esjzone.app.PresentationAccess
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
@@ -102,7 +103,6 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlin.math.max
 import kotlin.math.roundToInt
-import com.breakyuna.esjzone.MainActivity
 import com.breakyuna.esjzone.R
 import com.breakyuna.esjzone.database.LocalReadingHistoryRecorder
 import com.breakyuna.esjzone.database.entity.LocalReadingActivity
@@ -285,7 +285,7 @@ class ChapterPage(
         LaunchedEffect(bookmarkChapterUrl) {
             isBookmarked = withContext(Dispatchers.IO) {
                 runCatching {
-                    MainActivity.database.bookmarkDao().findByChapterUrl(bookmarkChapterUrl) != null
+                    PresentationAccess.database.bookmarkDao().findByChapterUrl(bookmarkChapterUrl) != null
                 }.getOrElse { error ->
                     AppLogger.w("ChapterPage", "Failed to load local bookmark state", error)
                     false
@@ -300,7 +300,7 @@ class ChapterPage(
             isBookmarked = !wasBookmarked
             scope.launch(Dispatchers.IO) {
                 try {
-                    val dao = MainActivity.database.bookmarkDao()
+                    val dao = PresentationAccess.database.bookmarkDao()
                     if (wasBookmarked) {
                         dao.deleteByChapterUrl(bookmarkChapterUrl)
                     } else {
@@ -1497,7 +1497,7 @@ private fun ChapterContent(
                     .crossfade(true)
                     .build(),
                 contentDescription = null,
-                imageLoader = MainActivity.imageLoader,
+                imageLoader = PresentationAccess.imageLoader,
                 loading = {
                     Box(
                         modifier = Modifier

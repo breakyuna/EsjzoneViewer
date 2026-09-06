@@ -1,4 +1,5 @@
 package com.breakyuna.esjzone.ui.page
+import com.breakyuna.esjzone.app.PresentationAccess
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -43,7 +44,6 @@ import cafe.adriel.voyager.core.screen.Screen
 import cafe.adriel.voyager.core.screen.ScreenKey
 import com.breakyuna.esjzone.R
 import com.breakyuna.esjzone.network.Authorization
-import com.breakyuna.esjzone.network.EsjzoneClient
 import com.breakyuna.esjzone.network.EsjzoneUrls
 import com.breakyuna.esjzone.network.LocalAuthorization
 import com.breakyuna.esjzone.network.loadFailureKind
@@ -655,7 +655,7 @@ private class ForumPageModel(
         loadStarted = true
         screenModelScope.launch(Dispatchers.IO) {
             mutableState.value = try {
-                EsjzoneClient.getForumCategories(authorization).toCommunityState()
+                PresentationAccess.client.getForumCategories(authorization).toCommunityState()
             } catch (error: CancellationException) {
                 throw error
             } catch (error: Exception) {
@@ -680,7 +680,7 @@ private class ForumCategoryPageModel(
         loadStarted = true
         screenModelScope.launch(Dispatchers.IO) {
             mutableState.value = try {
-                EsjzoneClient.getForumThreads(authorization, category).toCommunityState()
+                PresentationAccess.client.getForumThreads(authorization, category).toCommunityState()
             } catch (error: CancellationException) {
                 throw error
             } catch (error: Exception) {
@@ -711,7 +711,7 @@ private class ForumBoardPageModel(
         loadStarted = true
         screenModelScope.launch(Dispatchers.IO) {
             mutableState.value = try {
-                CommunityState.Result(EsjzoneClient.getForumBoard(authorization, thread))
+                CommunityState.Result(PresentationAccess.client.getForumBoard(authorization, thread))
             } catch (error: CancellationException) {
                 throw error
             } catch (error: Exception) {
@@ -740,7 +740,7 @@ private class ForumPostPageModel(
         loadStarted = true
         screenModelScope.launch(Dispatchers.IO) {
             mutableState.value = try {
-                CommunityState.Result(EsjzoneClient.getForumPost(authorization, topic))
+                CommunityState.Result(PresentationAccess.client.getForumPost(authorization, topic))
             } catch (error: CancellationException) {
                 throw error
             } catch (error: Exception) {

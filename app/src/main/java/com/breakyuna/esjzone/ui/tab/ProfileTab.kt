@@ -1,4 +1,5 @@
 package com.breakyuna.esjzone.ui.tab
+import com.breakyuna.esjzone.app.PresentationAccess
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -59,10 +60,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.nio.charset.StandardCharsets
 import java.security.MessageDigest
-import com.breakyuna.esjzone.MainActivity
 import com.breakyuna.esjzone.R
 import com.breakyuna.esjzone.database.dao.put
-import com.breakyuna.esjzone.network.EsjzoneClient
 import com.breakyuna.esjzone.network.EsjzoneUrls
 import com.breakyuna.esjzone.network.LocalAuthorization
 import com.breakyuna.esjzone.network.features.getUserProfile
@@ -91,7 +90,7 @@ object ProfileTab : Tab {
     override fun Content() {
         val navigator = LocalBaseNavigator.current
         val authorization = LocalAuthorization.current
-        val sessionDomain = authorization.domain.ifBlank { com.breakyuna.esjzone.GlobalSettings.domain.value }
+        val sessionDomain = authorization.domain.ifBlank { PresentationAccess.settings.domain.value }
         // Keep the small profile snapshot in the saved-state registry so a
         // configuration change does not flash an empty profile while the
         // network request is being repeated. The Room cache extends that
@@ -161,7 +160,7 @@ object ProfileTab : Tab {
             val cachePrefix = profileCachePrefix(authorization, sessionDomain)
             try {
                 val cached = withContext(Dispatchers.IO) {
-                    val dao = MainActivity.database.cacheDao()
+                    val dao = PresentationAccess.database.cacheDao()
                     val name = dao.findByKey("${cachePrefix}name")?.value
                     val avatar = dao.findByKey("${cachePrefix}avatar")?.value.orEmpty()
                     name?.takeIf { it.isNotBlank() }?.let { it to avatar }
@@ -181,12 +180,12 @@ object ProfileTab : Tab {
             }
             try {
                 val profile = withContext(Dispatchers.IO) {
-                    EsjzoneClient.getUserProfile(authorization)
+                    PresentationAccess.client.getUserProfile(authorization)
                 }
                 profileName = profile.name
                 profileAvatarUrl = profile.avatarUrl
                 withContext(Dispatchers.IO) {
-                    val dao = MainActivity.database.cacheDao()
+                    val dao = PresentationAccess.database.cacheDao()
                     dao.put("${cachePrefix}name", profile.name)
                     dao.put("${cachePrefix}avatar", profile.avatarUrl)
                 }
@@ -277,7 +276,7 @@ private fun ProfileAvatar(data: UserProfile?, domain: String) {
                     .crossfade(true)
                     .build(),
                 contentDescription = data.name,
-                imageLoader = MainActivity.imageLoader,
+                imageLoader = PresentationAccess.imageLoader,
                 loading = {
                     CircularProgressIndicator(modifier = Modifier.size(22.dp), strokeWidth = 2.dp)
                 },
