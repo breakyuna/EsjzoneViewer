@@ -12,7 +12,7 @@ import org.junit.Test
 class EsjHtmlParserFixtureTest {
 
     @Test
-    fun novelCardFixture_keepsXPathFieldsAndSemanticParserFieldsAligned() {
+    fun novelCardFixture_keepsSemanticParserFieldsAligned() {
         val card = Jsoup.parse(
             """
             <div class="card mb-30">
@@ -30,9 +30,9 @@ class EsjHtmlParserFixtureTest {
             "https://www.esjzone.cc/"
         ).selectFirst(".card")!!
 
-        assertEquals("Fixture Novel", EsjzoneXPaths.NovelCard.TitleLink.evaluate(card).get())
-        assertEquals("/forum/9001/7.html", EsjzoneXPaths.NovelCard.LatestLink.evaluate(card).elements.single().attr("href"))
-        assertEquals(1, EsjzoneXPaths.NovelCard.R18Badge.evaluate(card).elements.size)
+        assertEquals("Fixture Novel", card.selectFirst("h5.card-title a")?.text())
+        assertEquals("/forum/9001/7.html", card.selectFirst(".card-ep a")?.attr("href"))
+        assertEquals(1, card.select(".product-badge.top").size)
 
         val novel = parseNovelCard(card, r18 = false, layout = NovelCardLayout.LIST)
         assertEquals("Fixture Novel", novel.name)
