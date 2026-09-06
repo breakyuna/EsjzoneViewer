@@ -13,7 +13,7 @@ val app_version = project.properties["app_version"].toString()
 
 android {
     namespace = "com.breakyuna.esjzone"
-    compileSdk = 36
+    compileSdk = 37
 
     defaultConfig {
         applicationId = "com.breakyuna.esjzone"
