@@ -80,6 +80,9 @@ object LogsPage : AppDestination {
     override fun Content() {
         val navigator = LocalBaseNavigator.current
         val context = LocalContext.current
+        val copiedToast = stringResource(R.string.logs_copied_toast)
+        val clearedToast = stringResource(R.string.logs_cleared_toast)
+        val shareLabel = stringResource(R.string.logs_share)
         val logs by AppLogger.logsFlow.collectAsState()
         val crashReport by AppLogger.crashReportFlow.collectAsState()
         var filter by remember { mutableStateOf<LogLevel?>(null) }
@@ -101,10 +104,10 @@ object LogsPage : AppDestination {
                     navigationIcon = { BackIconButton { navigator?.pop() } },
                     actions = {
                         if (crashReport != null) IconButton(onClick = { crashDialog = true }) { Icon(Icons.Filled.BugReport, stringResource(R.string.logs_crash_report_btn), tint = MaterialTheme.colorScheme.error) }
-                        IconButton(onClick = { copyText(context, AppLogger.exportLogsText()); Toast.makeText(context, context.getString(R.string.logs_copied_toast), Toast.LENGTH_SHORT).show() }) { Icon(Icons.Filled.ContentCopy, stringResource(R.string.logs_copy_all)) }
+                        IconButton(onClick = { copyText(context, AppLogger.exportLogsText()); Toast.makeText(context, copiedToast, Toast.LENGTH_SHORT).show() }) { Icon(Icons.Filled.ContentCopy, stringResource(R.string.logs_copy_all)) }
                         IconButton(onClick = {
                             val intent = Intent(Intent.ACTION_SEND).apply { type = "text/plain"; putExtra(Intent.EXTRA_TEXT, AppLogger.exportLogsText()); putExtra(Intent.EXTRA_SUBJECT, "Esjzone System Logs") }
-                            context.startActivity(Intent.createChooser(intent, context.getString(R.string.logs_share)))
+                            context.startActivity(Intent.createChooser(intent, shareLabel))
                         }) { Icon(Icons.Filled.Share, stringResource(R.string.logs_share)) }
                         IconButton(onClick = { clearDialog = true }) { Icon(Icons.Filled.Delete, stringResource(R.string.logs_clear)) }
                     }
@@ -148,14 +151,14 @@ object LogsPage : AppDestination {
             onDismissRequest = { clearDialog = false },
             title = { Text(stringResource(R.string.logs_clear_title)) },
             text = { Text(stringResource(R.string.logs_clear_message)) },
-            confirmButton = { TextButton(onClick = { AppLogger.clearLogs(); clearDialog = false; Toast.makeText(context, context.getString(R.string.logs_cleared_toast), Toast.LENGTH_SHORT).show() }) { Text(stringResource(R.string.logs_clear), color = MaterialTheme.colorScheme.error) } },
+            confirmButton = { TextButton(onClick = { AppLogger.clearLogs(); clearDialog = false; Toast.makeText(context, clearedToast, Toast.LENGTH_SHORT).show() }) { Text(stringResource(R.string.logs_clear), color = MaterialTheme.colorScheme.error) } },
             dismissButton = { TextButton(onClick = { clearDialog = false }) { Text(stringResource(android.R.string.cancel)) } }
         )
         if (crashDialog && crashReport != null) AlertDialog(
             onDismissRequest = { crashDialog = false },
             title = { Text(stringResource(R.string.logs_last_crash_title)) },
             text = { Text(crashReport.orEmpty(), fontFamily = FontFamily.Monospace, fontSize = 11.sp, modifier = Modifier.heightIn(max = 360.dp).verticalScroll(rememberScrollState())) },
-            confirmButton = { TextButton(onClick = { copyText(context, crashReport.orEmpty()); Toast.makeText(context, context.getString(R.string.logs_copied_toast), Toast.LENGTH_SHORT).show() }) { Text(stringResource(R.string.logs_copy_report)) } },
+            confirmButton = { TextButton(onClick = { copyText(context, crashReport.orEmpty()); Toast.makeText(context, copiedToast, Toast.LENGTH_SHORT).show() }) { Text(stringResource(R.string.logs_copy_report)) } },
             dismissButton = { TextButton(onClick = { crashDialog = false }) { Text(stringResource(android.R.string.ok)) } }
         )
     }
@@ -168,6 +171,7 @@ private fun LogFilter(level: LogLevel?, label: String, count: Int, selected: Boo
 
 @Composable
 private fun LogItem(entry: LogEntry, context: Context) {
+    val copiedToast = stringResource(R.string.logs_copied_toast)
     var expanded by remember { mutableStateOf(false) }
     val label = when (entry.level) {
         LogLevel.CRASH -> stringResource(R.string.logs_filter_crash)
@@ -196,7 +200,7 @@ private fun LogItem(entry: LogEntry, context: Context) {
                         Icon(if (expanded) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore, null)
                         Text(if (expanded) stringResource(R.string.logs_hide_stacktrace) else stringResource(R.string.logs_show_stacktrace))
                     }
-                    IconButton(onClick = { copyText(context, stack); Toast.makeText(context, context.getString(R.string.logs_copied_toast), Toast.LENGTH_SHORT).show() }) { Icon(Icons.Filled.ContentCopy, stringResource(R.string.logs_copy_stacktrace)) }
+                    IconButton(onClick = { copyText(context, stack); Toast.makeText(context, copiedToast, Toast.LENGTH_SHORT).show() }) { Icon(Icons.Filled.ContentCopy, stringResource(R.string.logs_copy_stacktrace)) }
                 }
                 AnimatedVisibility(expanded) {
                     Surface(shape = AppShapes.compact, color = MaterialTheme.colorScheme.surfaceContainerHighest) {
