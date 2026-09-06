@@ -36,11 +36,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.res.painterResource
-import androidx.room.Room
 import coil.ImageLoader
-import coil.decode.ImageDecoderDecoder
-import coil.disk.DiskCache
-import coil.memory.MemoryCache
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -50,10 +46,7 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.CoroutineScope
 import com.breakyuna.esjzone.database.GeneralDatabase
-import com.breakyuna.esjzone.database.BookshelfRepository
 import com.breakyuna.esjzone.database.dao.put
-import com.breakyuna.esjzone.network.EsjzoneClient
-import com.breakyuna.esjzone.offline.NovelDownloadStore
 import com.breakyuna.esjzone.ui.app.App
 import com.breakyuna.esjzone.ui.theme.catppuccin.CatppuccinDynamicTheme
 import com.breakyuna.esjzone.ui.theme.catppuccin.CatppuccinThemeType
@@ -83,23 +76,10 @@ class MainActivity : ComponentActivity() {
             try {
                 AppLogger.init(appContext)
                 CrashHandler.init(appContext)
-                EsjzoneClient.initialize(appContext)
-                NovelDownloadStore.initialize(appContext)
-                if (!::imageLoader.isInitialized) imageLoader = ImageLoader.Builder(appContext)
-                    .components { add(ImageDecoderDecoder.Factory()) }
-                    .memoryCache { MemoryCache.Builder(appContext).maxSizePercent(0.15).build() }
-                    .diskCache {
-                    DiskCache.Builder().directory(appContext.filesDir.resolve("image_cache"))
-                            .maxSizePercent(0.05).build()
-                    }.respectCacheHeaders(false).build()
+                val container = (appContext as EsjzoneApplication).container
+                if (!::imageLoader.isInitialized) imageLoader = container.imageLoader
+                if (!::database.isInitialized) database = container.database
                 AppLogger.i("MainActivity", "Initializing Room database...")
-                if (!::database.isInitialized) {
-                    database = Room.databaseBuilder(appContext, GeneralDatabase::class.java, "general")
-                        .addMigrations(GeneralDatabase.MIGRATION_1_2, GeneralDatabase.MIGRATION_2_3,
-                            GeneralDatabase.MIGRATION_3_4, GeneralDatabase.MIGRATION_4_5,
-                            GeneralDatabase.MIGRATION_5_6).build()
-                    BookshelfRepository.initialize(database)
-                }
                 val dao = database.cacheDao()
                 if (dao.findByKey("theme") == null) dao.put("theme", GlobalSettings.theme.value.name)
                 if (dao.findByKey("domain") == null) dao.put("domain", GlobalSettings.domain.value)
