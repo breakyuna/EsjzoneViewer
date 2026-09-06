@@ -23,7 +23,7 @@ object LocalReadingHistoryRecorder {
     fun upsert(activity: LocalReadingActivity): Job = scope.launch {
         writeMutex.withLock {
             try {
-                EsjzoneApplication.container.database.localReadingActivityDao().upsertLatest(activity)
+                EsjzoneApplication.instance.container.database.localReadingActivityDao().upsertLatest(activity)
             } catch (e: Exception) {
                 AppLogger.e(
                     "LocalReadingHistory",

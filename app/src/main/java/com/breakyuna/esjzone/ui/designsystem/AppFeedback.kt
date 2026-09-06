@@ -75,7 +75,7 @@ fun AppBottomSheet(
     content: @Composable () -> Unit
 ) {
     if (visible) {
-        ModalBottomSheet(onDismissRequest = onDismissRequest, content = content)
+        ModalBottomSheet(onDismissRequest = onDismissRequest, content = { content() })
     }
 }
 

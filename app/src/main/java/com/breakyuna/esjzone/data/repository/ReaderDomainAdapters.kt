@@ -107,8 +107,12 @@ private fun TextStyle.toReaderStyle(): ReaderTextStyle? = when {
     this === UnderlineTextStyle -> ReaderTextStyle.Underline
     this === LineThroughTextStyle -> ReaderTextStyle.StrikeThrough
     this is FontSizeTextStyle -> ReaderTextStyle.FontSizePx(size())
-    this is ColorTextStyle -> color().toReaderColor(::ReaderTextStyle.ForegroundColor)
-    this is BackgroundColorTextStyle -> color().toReaderColor(::ReaderTextStyle.BackgroundColor)
+    this is ColorTextStyle -> color().toReaderColor { red, green, blue ->
+        ReaderTextStyle.ForegroundColor(red, green, blue)
+    }
+    this is BackgroundColorTextStyle -> color().toReaderColor { red, green, blue ->
+        ReaderTextStyle.BackgroundColor(red, green, blue)
+    }
     this is FuriganaTextStyle -> null
     else -> null
 }

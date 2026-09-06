@@ -21,7 +21,7 @@ import kotlinx.coroutines.flow.StateFlow
  */
 object PresentationAccess {
     private val container: AppContainer
-        get() = EsjzoneApplication.container
+        get() = EsjzoneApplication.instance.container
 
     val database: GeneralDatabase
         get() = container.database
