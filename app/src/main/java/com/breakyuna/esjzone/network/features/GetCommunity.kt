@@ -763,9 +763,9 @@ private fun resolveCommentTimestamp(element: Element): String? {
     var firstNonBlank: String? = null
     for (candidate in candidates) {
         for (raw in sequenceOf(
-            candidate.text(),
             candidate.attr("datetime"),
-            candidate.attr("data-time")
+            candidate.attr("data-time"),
+            candidate.text()
         ).map(String::trim).filter { it.isNotBlank() }) {
             if (firstNonBlank == null) firstNonBlank = raw
             COMMENT_TIMESTAMP.find(raw)?.value?.let { return it }

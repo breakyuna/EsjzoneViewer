@@ -36,7 +36,7 @@ internal fun parseHistoryNovels(document: Document): List<HistoryNovel> {
 
     for (element in historySelector.select(document, "table.table tr, tr.view-log")) {
         val idAttr = element.attr("id")
-        val vid = if (idAttr.length > 5) idAttr.substring(5) else idAttr
+        val vid = idAttr.removePrefix("novel-")
         val novelData = historySelector.first(
             element,
             ".view-log h5 a[href^='/detail/'], h5 a[href^='/detail/']"

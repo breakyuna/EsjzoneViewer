@@ -19,7 +19,11 @@ private fun parseChapterItems(element: Element): List<Item> = buildList {
                         else -> emptyList()
                     }
                 }
-                add(ChapterListItem(TextComponent(title), chapters, children, child.hasAttr("open")))
+                // Empty volume containers are presentation-only placeholders and
+                // must not become selectable groups in the chapter contract.
+                if (children.isNotEmpty()) {
+                    add(ChapterListItem(TextComponent(title), chapters, children, child.hasAttr("open")))
+                }
             }
             child.nameIs("a") -> {
                 val href = child.attr("href")
