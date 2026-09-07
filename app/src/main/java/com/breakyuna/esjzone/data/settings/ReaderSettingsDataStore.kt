@@ -12,6 +12,7 @@ import com.breakyuna.esjzone.ui.reader.ReaderBackground
 import com.breakyuna.esjzone.ui.reader.ReaderFont
 import com.breakyuna.esjzone.ui.reader.ReaderScript
 import com.breakyuna.esjzone.ui.reader.ReaderSettings
+import com.breakyuna.esjzone.ui.reader.ReaderSettingsStore
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -59,7 +60,7 @@ class ReaderSettingsDataStore(
     suspend fun migrateFromLegacy(context: Context) {
         val current = dataStore.data.first()
         if (current[MIGRATION_COMPLETE] == true) return
-        if (current.keys.none { it.name != MIGRATION_COMPLETE.name }) {
+        if (current.asMap().keys.none { it.name != MIGRATION_COMPLETE.name }) {
             save(ReaderSettingsStore.load(context))
         }
         dataStore.edit { it[MIGRATION_COMPLETE] = true }

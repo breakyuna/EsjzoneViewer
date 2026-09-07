@@ -77,7 +77,7 @@ class SettingsDataStore(
     }
 
     private fun write(update: suspend (androidx.datastore.preferences.core.MutablePreferences) -> Unit) {
-        scope.launch { dataStore.edit { update(this) } }
+        scope.launch { dataStore.edit { preferences -> update(preferences) } }
     }
 
     private data class SettingsValues(

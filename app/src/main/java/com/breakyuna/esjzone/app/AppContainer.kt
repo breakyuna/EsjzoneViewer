@@ -30,6 +30,7 @@ import com.breakyuna.esjzone.domain.repository.SessionRepository
 import com.breakyuna.esjzone.domain.repository.SettingsRepository
 import com.breakyuna.esjzone.network.EsjzoneClient
 import com.breakyuna.esjzone.offline.NovelDownloadStore
+import okio.Path.Companion.toOkioPath
 
 /**
  * Application-scoped ownership of infrastructure and repository adapters.
@@ -53,14 +54,17 @@ class AppContainer(context: Context) {
     ).build()
 
     val imageLoader: ImageLoader = ImageLoader.Builder(appContext)
-        .memoryCache { MemoryCache.Builder(appContext).maxSizePercent(0.15).build() }
+        .memoryCache {
+            MemoryCache.Builder()
+                .maxSizePercent(appContext, 0.15)
+                .build()
+        }
         .diskCache {
             DiskCache.Builder()
-                .directory(appContext.filesDir.resolve("image_cache"))
+                .directory(appContext.filesDir.resolve("image_cache").toOkioPath())
                 .maxSizePercent(0.05)
                 .build()
         }
-        .respectCacheHeaders(false)
         .build()
 
     val session: SessionRepository = NetworkSessionRepository()
