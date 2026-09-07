@@ -4,14 +4,14 @@ import com.breakyuna.esjzone.novellibrary.novel.Chapter
 import org.jsoup.nodes.Element
 
 /** Walk each DOM node once so groups and loose chapters retain their original order. */
-fun analyseItems(element: Element): List<Item> = parseChapterItems(element)
+fun analyseItems(element: Element): List<Item> = parseChapterItems(element, depth = 0)
 
-private fun parseChapterItems(element: Element): List<Item> = buildList {
+private fun parseChapterItems(element: Element, depth: Int): List<Item> = buildList {
     for (child in element.children()) {
         when {
             child.nameIs("details") -> {
                 val title = child.children().firstOrNull { it.nameIs("summary") }?.text().orEmpty()
-                val children = parseChapterItems(child)
+                val children = parseChapterItems(child, depth + 1)
                 val chapters = children.flatMap {
                     when (it) {
                         is ChapterItem -> listOf(it.chapter)
@@ -19,9 +19,9 @@ private fun parseChapterItems(element: Element): List<Item> = buildList {
                         else -> emptyList()
                     }
                 }
-                // Empty volume containers are presentation-only placeholders and
-                // must not become selectable groups in the chapter contract.
-                if (children.isNotEmpty()) {
+                // A direct empty volume is a page-level placeholder.  Preserve
+                // nested empty groups because they are part of the source TOC.
+                if (children.isNotEmpty() || depth > 0) {
                     add(ChapterListItem(TextComponent(title), chapters, children, child.hasAttr("open")))
                 }
             }
@@ -40,7 +40,7 @@ private fun parseChapterItems(element: Element): List<Item> = buildList {
                     add(TextItem(component))
                 }
             }
-            else -> addAll(parseChapterItems(child))
+            else -> addAll(parseChapterItems(child, depth + 1))
         }
     }
 }

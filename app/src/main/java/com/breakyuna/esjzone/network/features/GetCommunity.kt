@@ -762,11 +762,22 @@ private fun resolveCommentTimestamp(element: Element): String? {
     )
     var firstNonBlank: String? = null
     for (candidate in candidates) {
-        for (raw in sequenceOf(
+        val attributeValues = sequenceOf(
             candidate.attr("datetime"),
-            candidate.attr("data-time"),
-            candidate.text()
-        ).map(String::trim).filter { it.isNotBlank() }) {
+            candidate.attr("data-time")
+        ).map(String::trim).filter { it.isNotBlank() }.toList()
+        val visibleText = candidate.text().trim()
+        // When a machine-generated datetime contains seconds that are not
+        // shown by the site, retain the visible date rather than inventing
+        // precision the user never saw.
+        val prefersVisibleText = attributeValues.any { it.matches(Regex(".*[T ]\\d{1,2}:\\d{2}:\\d{2}.*")) } &&
+            visibleText.matches(Regex("\\d{4}[-/.]\\d{1,2}[-/.]\\d{1,2}"))
+        val rawValues = if (prefersVisibleText) {
+            sequenceOf(visibleText) + attributeValues.asSequence()
+        } else {
+            attributeValues.asSequence() + sequenceOf(visibleText)
+        }
+        for (raw in rawValues.filter { it.isNotBlank() }) {
             if (firstNonBlank == null) firstNonBlank = raw
             COMMENT_TIMESTAMP.find(raw)?.value?.let { return it }
         }
