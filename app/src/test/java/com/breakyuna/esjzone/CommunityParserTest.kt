@@ -7,6 +7,7 @@ import com.breakyuna.esjzone.network.features.parseForumPost
 import com.breakyuna.esjzone.network.features.parseForumThreads
 import com.breakyuna.esjzone.network.features.parseForumTopicRows
 import com.breakyuna.esjzone.network.features.parseForumTopics
+import com.breakyuna.esjzone.network.features.parseForumReplyResponse
 import com.breakyuna.esjzone.network.features.requireForumAuthToken
 import com.breakyuna.esjzone.network.features.validateForumTableResponse
 import com.breakyuna.esjzone.novellibrary.community.ForumTopic
@@ -17,6 +18,23 @@ import org.junit.Assert.assertThrows
 import org.junit.Test
 
 class CommunityParserTest {
+
+    @Test
+    fun parseForumReplyResponse_readsSuccessAndBusinessFailures() {
+        val success = parseForumReplyResponse(
+            """{"status":200,"msg":"經驗值 +104","reload":1,"anchor":"#comment-3261580","exp":104}"""
+        )
+        assertEquals(200, success.status)
+        assertEquals("經驗值 +104", success.msg)
+        assertEquals("#comment-3261580", success.anchor)
+        assertEquals(104, success.exp)
+
+        val dailyLimit = parseForumReplyResponse(
+            """{"status":214,"msg":"每日留言次數已超過限制！","reload":0}"""
+        )
+        assertEquals(214, dailyLimit.status)
+        assertEquals("每日留言次數已超過限制！", dailyLimit.msg)
+    }
 
     @Test
     fun parseComments_assignsFixedPageAndPreservesReplyCapability() {
