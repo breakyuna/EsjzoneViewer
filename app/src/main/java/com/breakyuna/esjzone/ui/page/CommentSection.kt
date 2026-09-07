@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
@@ -455,7 +456,9 @@ private fun CommentComposer(
     modifier: Modifier = Modifier
 ) {
     Surface(
-        modifier = modifier.fillMaxWidth(),
+        modifier = modifier
+            .fillMaxWidth()
+            .wrapContentHeight(),
         color = appStateColors().containerRaised,
         tonalElevation = 0.dp,
         shadowElevation = 0.dp,
@@ -464,6 +467,7 @@ private fun CommentComposer(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
+                .wrapContentHeight()
                 .navigationBarsPadding()
                 .imePadding()
                 .padding(horizontal = 16.dp, vertical = 8.dp)
@@ -511,15 +515,18 @@ private fun CommentComposer(
                 Spacer(modifier = Modifier.height(6.dp))
             }
             Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = AppTouchTarget.minimum),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 BasicTextField(
                     value = draft,
                     onValueChange = onDraftChange,
                     modifier = Modifier
                         .weight(1f)
-                        .heightIn(min = AppTouchTarget.minimum),
+                        .height(AppTouchTarget.minimum),
                     enabled = !isSubmitting,
                     singleLine = true,
                     textStyle = AppTypography.bodyMedium.copy(
@@ -528,7 +535,8 @@ private fun CommentComposer(
                     decorationBox = { innerTextField ->
                         Box(
                             modifier = Modifier
-                                .fillMaxSize()
+                                .fillMaxWidth()
+                                .height(AppTouchTarget.minimum)
                                 .clip(AppShapes.standard)
                                 .background(MaterialTheme.colorScheme.surface)
                                 .padding(horizontal = AppSpacing.md),

@@ -427,11 +427,6 @@ private fun NovelDetailContent(
         )
     }
 
-    val density = LocalDensity.current
-    var composerHeightPx by remember { mutableStateOf(0) }
-    val composerBottomPadding = with(density) { composerHeightPx.toDp() }
-        .coerceAtLeast(24.dp)
-
     Column(modifier = modifier.fillMaxWidth()) {
         LazyColumn(
             modifier = Modifier
@@ -442,7 +437,7 @@ private fun NovelDetailContent(
             contentPadding = PaddingValues(
                 start = metrics.horizontalPadding,
                 end = metrics.horizontalPadding,
-                bottom = composerBottomPadding
+                bottom = AppSpacing.lg
             ),
             verticalArrangement = Arrangement.spacedBy(AppSpacing.sm)
         ) {
@@ -750,10 +745,7 @@ private fun NovelDetailContent(
                 }
             }
         }
-        CommentComposerHost(
-            model = commentModel,
-            onHeightChanged = { composerHeightPx = it }
-        )
+        CommentComposerHost(model = commentModel)
     }
 }
 

@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.calculateStartPadding
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -47,7 +48,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.semantics.Role
+import com.breakyuna.esjzone.ui.navigation.LocalFloatingNavPadding
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
@@ -139,7 +142,7 @@ object HistoryPage : AppDestination {
                 )
             }
         ) { padding ->
-            Column(Modifier.fillMaxSize().padding(padding)) {
+            Column(Modifier.fillMaxSize().padding(top = padding.calculateTopPadding())) {
                 if (searchOpen) {
                     OutlinedTextField(
                         value = query,
@@ -189,7 +192,18 @@ private fun LocalHistoryContent(
                     modifier = Modifier.fillMaxSize()
                 )
             } else {
-                LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(AppSpacing.lg), verticalArrangement = Arrangement.spacedBy(AppSpacing.md)) {
+                val navPadding = LocalFloatingNavPadding.current
+                val layoutDirection = LocalLayoutDirection.current
+                LazyColumn(
+                    Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(
+                        start = AppSpacing.lg + navPadding.calculateStartPadding(layoutDirection),
+                        end = AppSpacing.lg,
+                        top = AppSpacing.lg,
+                        bottom = AppSpacing.lg + navPadding.calculateBottomPadding()
+                    ),
+                    verticalArrangement = Arrangement.spacedBy(AppSpacing.md)
+                ) {
                     items(rows, key = { it.activityId }, contentType = { "history" }) { activity ->
                         LocalHistoryCard(
                             activity = activity,
@@ -278,7 +292,18 @@ private fun CloudHistoryContent(
             if (rows.isEmpty()) {
                 EmptyState(stringResource(if (query.isBlank()) R.string.history_cloud_empty else R.string.history_search_empty), stringResource(R.string.history_cloud_separate), Modifier.fillMaxSize())
             } else {
-                LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(AppSpacing.lg), verticalArrangement = Arrangement.spacedBy(AppSpacing.md)) {
+                val navPadding = LocalFloatingNavPadding.current
+                val layoutDirection = LocalLayoutDirection.current
+                LazyColumn(
+                    Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(
+                        start = AppSpacing.lg + navPadding.calculateStartPadding(layoutDirection),
+                        end = AppSpacing.lg,
+                        top = AppSpacing.lg,
+                        bottom = AppSpacing.lg + navPadding.calculateBottomPadding()
+                    ),
+                    verticalArrangement = Arrangement.spacedBy(AppSpacing.md)
+                ) {
                     items(rows, key = { "cloud-history:${detailLoader.key(it)}" }, contentType = { "history" }) { history ->
                         val key = detailLoader.key(history)
                         val detail = detailLoader.details[key]

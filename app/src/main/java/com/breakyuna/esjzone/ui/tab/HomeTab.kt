@@ -42,6 +42,8 @@ import com.breakyuna.esjzone.ui.discovery.DiscoveryEmptyState
 import com.breakyuna.esjzone.ui.discovery.DiscoveryErrorState
 import com.breakyuna.esjzone.ui.discovery.DiscoveryLoadingState
 import com.breakyuna.esjzone.ui.discovery.DiscoveryNovelCard
+import androidx.compose.foundation.layout.calculateStartPadding
+import androidx.compose.ui.platform.LocalLayoutDirection
 import com.breakyuna.esjzone.ui.discovery.DiscoveryOfflineBanner
 import com.breakyuna.esjzone.ui.discovery.DiscoveryScaffold
 import com.breakyuna.esjzone.ui.navigation.AppNavigator
@@ -49,6 +51,7 @@ import com.breakyuna.esjzone.ui.navigation.AppStateViewModel
 import com.breakyuna.esjzone.ui.navigation.AppTab
 import com.breakyuna.esjzone.ui.navigation.AppTabOptions
 import com.breakyuna.esjzone.ui.navigation.LocalBaseNavigator
+import com.breakyuna.esjzone.ui.navigation.LocalFloatingNavPadding
 import com.breakyuna.esjzone.ui.navigation.rememberAppViewModel
 import com.breakyuna.esjzone.ui.page.ForumPage
 import com.breakyuna.esjzone.ui.page.GuestbookPage
@@ -87,13 +90,23 @@ object HomeTab : AppTab {
         val emptyCollectionTitle = stringResource(R.string.home_collection_empty_title)
         val emptyCollectionMessage = stringResource(R.string.home_collection_empty_message)
 
+        val navPadding = LocalFloatingNavPadding.current
+        val layoutDirection = LocalLayoutDirection.current
+
         DiscoveryScaffold(
             title = stringResource(R.string.home_discover),
             onRefresh = model::reload
         ) { padding ->
             LazyColumn(
-                modifier = Modifier.fillMaxSize().padding(padding),
-                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(top = padding.calculateTopPadding()),
+                contentPadding = PaddingValues(
+                    start = 16.dp + navPadding.calculateStartPadding(layoutDirection),
+                    end = 16.dp,
+                    top = 12.dp,
+                    bottom = 12.dp + navPadding.calculateBottomPadding()
+                ),
                 verticalArrangement = Arrangement.spacedBy(20.dp)
             ) {
                 item(key = "home-actions", contentType = "home-actions") {

@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.calculateStartPadding
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -39,6 +40,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -48,6 +50,7 @@ import com.breakyuna.esjzone.database.dao.put
 import com.breakyuna.esjzone.novellibrary.user.UserProfile
 import com.breakyuna.esjzone.network.EsjzoneUrls
 import com.breakyuna.esjzone.network.LocalAuthorization
+import com.breakyuna.esjzone.ui.navigation.LocalFloatingNavPadding
 import com.breakyuna.esjzone.network.features.getUserProfile
 import com.breakyuna.esjzone.ui.designsystem.AppAvatarImage
 import com.breakyuna.esjzone.ui.designsystem.AppShapes
@@ -114,7 +117,20 @@ object ProfileTab : AppTab {
         }
 
         Scaffold(topBar = { TopAppBar(title = { Text(stringResource(R.string.navigation_profile), style = AppTypography.titleLarge) }) }) { padding ->
-            LazyColumn(Modifier.fillMaxSize().padding(padding), contentPadding = PaddingValues(AppSpacing.lg), verticalArrangement = Arrangement.spacedBy(AppSpacing.md)) {
+            val navPadding = LocalFloatingNavPadding.current
+            val layoutDirection = LocalLayoutDirection.current
+            LazyColumn(
+                Modifier
+                    .fillMaxSize()
+                    .padding(top = padding.calculateTopPadding()),
+                contentPadding = PaddingValues(
+                    start = AppSpacing.lg + navPadding.calculateStartPadding(layoutDirection),
+                    end = AppSpacing.lg,
+                    top = AppSpacing.lg,
+                    bottom = AppSpacing.lg + navPadding.calculateBottomPadding()
+                ),
+                verticalArrangement = Arrangement.spacedBy(AppSpacing.md)
+            ) {
                 item(key = "profile-hero") { ProfileHero(profile, domain) }
                 item(key = "profile-menu-title") { Text(stringResource(R.string.profile_signed_in), style = AppTypography.titleMedium, color = MaterialTheme.colorScheme.onSurfaceVariant) }
                 items(menuItems, key = { it.id }, contentType = { "profile_action" }) { item ->

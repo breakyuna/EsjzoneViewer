@@ -1,42 +1,62 @@
 package com.breakyuna.esjzone.ui.navigation
 
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxHeight
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.navigationBars
-import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.WindowInsetsSides
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.only
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.layout.wrapContentHeight
+import androidx.compose.foundation.layout.wrapContentSize
+import androidx.compose.foundation.layout.wrapContentWidth
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AutoStories
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.outlined.AutoStories
+import androidx.compose.material.icons.outlined.History
+import androidx.compose.material.icons.outlined.Home
+import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material3.Icon
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
-import androidx.compose.material3.NavigationRail
-import androidx.compose.material3.NavigationRailItem
-import androidx.compose.material3.NavigationDrawerItem
-import androidx.compose.material3.Text
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.remember
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
 import androidx.compose.material3.adaptive.currentWindowAdaptiveInfoV2
@@ -56,19 +76,28 @@ import com.breakyuna.esjzone.ui.tab.ProfileTab
 import com.breakyuna.esjzone.ui.designsystem.glass.AppGlassSpec
 import com.breakyuna.esjzone.ui.designsystem.glass.AppGlassSurface
 
-private enum class AppTabId(val route: AppNavKey, val icon: ImageVector) {
-    HOME(AppNavKey.HomeTab, Icons.Filled.Home),
-    HISTORY(AppNavKey.HistoryTab, Icons.Filled.History),
-    BOOKSHELF(AppNavKey.BookshelfTab, Icons.Filled.AutoStories),
-    PROFILE(AppNavKey.ProfileTab, Icons.Filled.Person)
+/**
+ * Bottom / side insets compensation for pages whose content scrolls underneath
+ * floating frosted-glass islands so terminal list items are never blocked.
+ */
+val LocalFloatingNavPadding = compositionLocalOf { PaddingValues(0.dp) }
+
+private enum class AppTabId(
+    val route: AppNavKey,
+    val filledIcon: ImageVector,
+    val outlinedIcon: ImageVector
+) {
+    HOME(AppNavKey.HomeTab, Icons.Filled.Home, Icons.Outlined.Home),
+    HISTORY(AppNavKey.HistoryTab, Icons.Filled.History, Icons.Outlined.History),
+    BOOKSHELF(AppNavKey.BookshelfTab, Icons.Filled.AutoStories, Icons.Outlined.AutoStories),
+    PROFILE(AppNavKey.ProfileTab, Icons.Filled.Person, Icons.Outlined.Person)
 }
 
 /**
  * The application shell keeps one Navigation 3 back stack per top-level tab.
- * Compact windows use a NavigationBar. Medium windows use a compact rail and
- * expanded windows use a permanent, labelled drawer rail. Each stack has its
- * own saveable state and entry ViewModel store, so switching tabs never
- * recreates the feature presentation.
+ * Compact windows display a bottom floating frosted-glass capsule island hovering
+ * over the page content. Medium and Expanded windows display a side vertical
+ * floating frosted-glass capsule island.
  */
 @Composable
 fun AdaptiveAppShell(
@@ -82,9 +111,6 @@ fun AdaptiveAppShell(
     val bookshelfStack: MutableList<NavKey> = rememberNavBackStack(AppNavKey.BookshelfTab)
     val profileStack: MutableList<NavKey> = rememberNavBackStack(AppNavKey.ProfileTab)
     var selectedTab by rememberSaveable { mutableStateOf(AppTabId.HOME.name) }
-    // WindowWidthSizeClass is the stable 1.3.0 API. The breakpoint helpers and
-    // constants on WindowSizeClass were added by WindowManager 1.4 and must
-    // not leak into this stage's locked Adaptive 1.3.0 dependency set.
     val widthSizeClass = currentWindowAdaptiveInfoV2().windowSizeClass.windowWidthSizeClass
     val tab = AppTabId.valueOf(selectedTab)
     val homeNavigator = remember(homeStack, rootNavigator) { rootNavigator.child(homeStack) }
@@ -96,15 +122,19 @@ fun AdaptiveAppShell(
         rootNavigator.child(profileStack)
     }
 
+    val floatingNavPadding = when (widthSizeClass) {
+        WindowWidthSizeClass.COMPACT -> PaddingValues(bottom = 96.dp)
+        WindowWidthSizeClass.MEDIUM, WindowWidthSizeClass.EXPANDED -> PaddingValues(start = 84.dp)
+        else -> PaddingValues(bottom = 96.dp)
+    }
+
     CompositionLocalProvider(
-        LocalAuthorization provides authorization
+        LocalAuthorization provides authorization,
+        LocalFloatingNavPadding provides floatingNavPadding
     ) {
         when (widthSizeClass) {
             WindowWidthSizeClass.COMPACT -> {
-                // NavigationBar owns the bottom gesture inset. The content
-                // only receives top and horizontal safe insets, preventing
-                // a second bottom padding in legacy LazyColumns.
-                Column(
+                Box(
                     modifier = modifier.windowInsetsPadding(
                         shellSafeDrawing(top = !topInsetConsumed, bottom = false)
                     )
@@ -119,50 +149,27 @@ fun AdaptiveAppShell(
                         bookshelfNavigator = bookshelfNavigator,
                         profileStack = profileStack,
                         profileNavigator = profileNavigator,
-                        modifier = Modifier.weight(1f)
+                        modifier = Modifier.fillMaxSize()
                     )
                     AppNavigationBar(
                         selected = tab,
-                        onSelected = { selectedTab = it.name }
+                        onSelected = { selectedTab = it.name },
+                        modifier = Modifier
+                            .align(Alignment.BottomCenter)
+                            .windowInsetsPadding(WindowInsets.navigationBars)
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 12.dp)
                     )
                 }
             }
 
-            WindowWidthSizeClass.MEDIUM -> {
-                Row(
-                    modifier = modifier.windowInsetsPadding(
-                        shellSafeDrawing(top = !topInsetConsumed, bottom = true)
-                    )
-                ) {
-                    AppNavigationRail(
-                        selected = tab,
-                        onSelected = { selectedTab = it.name }
-                    )
-                    TabStacksDisplay(
-                        selected = tab,
-                        homeStack = homeStack,
-                        homeNavigator = homeNavigator,
-                        historyStack = historyStack,
-                        historyNavigator = historyNavigator,
-                        bookshelfStack = bookshelfStack,
-                        bookshelfNavigator = bookshelfNavigator,
-                        profileStack = profileStack,
-                        profileNavigator = profileNavigator,
-                        modifier = Modifier.weight(1f)
-                    )
-                }
-            }
-
+            WindowWidthSizeClass.MEDIUM,
             WindowWidthSizeClass.EXPANDED -> {
-                Row(
+                Box(
                     modifier = modifier.windowInsetsPadding(
                         shellSafeDrawing(top = !topInsetConsumed, bottom = true)
                     )
                 ) {
-                    AppExpandedNavigationRail(
-                        selected = tab,
-                        onSelected = { selectedTab = it.name }
-                    )
                     TabStacksDisplay(
                         selected = tab,
                         homeStack = homeStack,
@@ -173,7 +180,15 @@ fun AdaptiveAppShell(
                         bookshelfNavigator = bookshelfNavigator,
                         profileStack = profileStack,
                         profileNavigator = profileNavigator,
-                        modifier = Modifier.weight(1f)
+                        modifier = Modifier.fillMaxSize()
+                    )
+                    AppSideNavigationBar(
+                        selected = tab,
+                        onSelected = { selectedTab = it.name },
+                        modifier = Modifier
+                            .align(Alignment.CenterStart)
+                            .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Start))
+                            .padding(start = 16.dp)
                     )
                 }
             }
@@ -279,25 +294,41 @@ private fun TabStackDisplay(
 @Composable
 private fun AppNavigationBar(
     selected: AppTabId,
-    onSelected: (AppTabId) -> Unit
+    onSelected: (AppTabId) -> Unit,
+    modifier: Modifier = Modifier
 ) {
+    val capsuleShape = RoundedCornerShape(percent = 50)
     AppGlassSurface(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
-            .padding(horizontal = 8.dp, vertical = 4.dp),
-        spec = AppGlassSpec(shape = RoundedCornerShape(26.dp), alpha = 0.84f)
+            .shadow(
+                elevation = 12.dp,
+                shape = capsuleShape,
+                spotColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.28f),
+                ambientColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.10f)
+            ),
+        spec = AppGlassSpec(
+            shape = capsuleShape,
+            alpha = 0.82f,
+            borderAlpha = 0.18f
+        )
     ) {
-        NavigationBar(
-            containerColor = Color.Transparent,
-            tonalElevation = 0.dp,
-            windowInsets = WindowInsets.navigationBars
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(60.dp)
+                .padding(horizontal = 6.dp, vertical = 4.dp),
+            horizontalArrangement = Arrangement.SpaceEvenly,
+            verticalAlignment = Alignment.CenterVertically
         ) {
             AppTabId.entries.forEach { tab ->
-                NavigationBarItem(
+                FloatingNavHorizontalItem(
                     selected = selected == tab,
                     onClick = { onSelected(tab) },
-                    icon = { Icon(tab.icon, contentDescription = null) },
-                    label = { Text(tabLabel(tab)) }
+                    selectedIcon = tab.filledIcon,
+                    unselectedIcon = tab.outlinedIcon,
+                    contentDescription = tabLabel(tab),
+                    modifier = Modifier.weight(1f)
                 )
             }
         }
@@ -305,65 +336,150 @@ private fun AppNavigationBar(
 }
 
 @Composable
-private fun AppNavigationRail(
+private fun AppSideNavigationBar(
     selected: AppTabId,
-    onSelected: (AppTabId) -> Unit
+    onSelected: (AppTabId) -> Unit,
+    modifier: Modifier = Modifier
 ) {
+    val capsuleShape = RoundedCornerShape(percent = 50)
     AppGlassSurface(
-        modifier = Modifier
-            .fillMaxHeight()
-            .padding(horizontal = 8.dp, vertical = 12.dp),
-        spec = AppGlassSpec(shape = RoundedCornerShape(26.dp), alpha = 0.84f)
-    ) {
-        NavigationRail(
-            modifier = Modifier.fillMaxHeight(),
-            containerColor = Color.Transparent,
-            windowInsets = WindowInsets(0, 0, 0, 0)
-        ) {
-            AppTabId.entries.forEach { tab ->
-                NavigationRailItem(
-                    selected = selected == tab,
-                    onClick = { onSelected(tab) },
-                    icon = { Icon(tab.icon, contentDescription = null) },
-                    label = { Text(tabLabel(tab)) },
-                    alwaysShowLabel = false
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun AppExpandedNavigationRail(
-    selected: AppTabId,
-    onSelected: (AppTabId) -> Unit
-) {
-    // NavigationRail has a fixed compact width. Expanded windows get a
-    // permanent labelled drawer so the shell scales without introducing a
-    // second navigation graph or a modal drawer state.
-    AppGlassSurface(
-        modifier = Modifier
-            .fillMaxHeight()
-            .width(232.dp)
-            .padding(horizontal = 8.dp, vertical = 12.dp),
-        spec = AppGlassSpec(shape = RoundedCornerShape(26.dp), alpha = 0.84f)
+        modifier = modifier
+            .wrapContentSize()
+            .shadow(
+                elevation = 12.dp,
+                shape = capsuleShape,
+                spotColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.28f),
+                ambientColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.10f)
+            ),
+        spec = AppGlassSpec(
+            shape = capsuleShape,
+            alpha = 0.82f,
+            borderAlpha = 0.18f
+        )
     ) {
         Column(
             modifier = Modifier
-                .fillMaxSize()
-                .padding(horizontal = 12.dp, vertical = 16.dp),
-            verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(6.dp)
+                .width(58.dp)
+                .wrapContentHeight()
+                .padding(horizontal = 4.dp, vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterVertically),
+            horizontalAlignment = Alignment.CenterHorizontally
         ) {
             AppTabId.entries.forEach { tab ->
-                NavigationDrawerItem(
+                FloatingNavVerticalItem(
                     selected = selected == tab,
                     onClick = { onSelected(tab) },
-                    icon = { Icon(tab.icon, contentDescription = null) },
-                    label = { Text(tabLabel(tab)) },
-                    modifier = Modifier.fillMaxWidth()
+                    selectedIcon = tab.filledIcon,
+                    unselectedIcon = tab.outlinedIcon,
+                    contentDescription = tabLabel(tab)
                 )
             }
         }
+    }
+}
+
+@Composable
+private fun FloatingNavHorizontalItem(
+    selected: Boolean,
+    onClick: () -> Unit,
+    selectedIcon: ImageVector,
+    unselectedIcon: ImageVector,
+    contentDescription: String,
+    modifier: Modifier = Modifier
+) {
+    val containerColor by animateColorAsState(
+        targetValue = if (selected) {
+            MaterialTheme.colorScheme.primaryContainer
+        } else {
+            Color.Transparent
+        },
+        animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
+        label = "nav_item_bg"
+    )
+    val contentColor by animateColorAsState(
+        targetValue = if (selected) {
+            MaterialTheme.colorScheme.onPrimaryContainer
+        } else {
+            MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.85f)
+        },
+        animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
+        label = "nav_item_color"
+    )
+
+    Box(
+        modifier = modifier
+            .fillMaxHeight()
+            .clip(RoundedCornerShape(percent = 50))
+            .clickable(
+                onClick = onClick,
+                role = Role.Tab
+            ),
+        contentAlignment = Alignment.Center
+    ) {
+        Box(
+            modifier = Modifier
+                .width(64.dp)
+                .height(38.dp)
+                .clip(RoundedCornerShape(percent = 50))
+                .background(containerColor),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                imageVector = if (selected) selectedIcon else unselectedIcon,
+                contentDescription = contentDescription,
+                tint = contentColor,
+                modifier = Modifier.size(24.dp)
+            )
+        }
+    }
+}
+
+@Composable
+private fun FloatingNavVerticalItem(
+    selected: Boolean,
+    onClick: () -> Unit,
+    selectedIcon: ImageVector,
+    unselectedIcon: ImageVector,
+    contentDescription: String,
+    modifier: Modifier = Modifier
+) {
+    val containerColor by animateColorAsState(
+        targetValue = if (selected) {
+            MaterialTheme.colorScheme.primaryContainer
+        } else {
+            Color.Transparent
+        },
+        animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
+        label = "nav_item_bg"
+    )
+    val contentColor by animateColorAsState(
+        targetValue = if (selected) {
+            MaterialTheme.colorScheme.onPrimaryContainer
+        } else {
+            MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.85f)
+        },
+        animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
+        label = "nav_item_color"
+    )
+
+    Box(
+        modifier = modifier
+            .minimumInteractiveComponentSize()
+            .clip(CircleShape)
+            .background(containerColor)
+            .clickable(
+                onClick = onClick,
+                role = Role.Tab
+            )
+            .padding(horizontal = 14.dp, vertical = 10.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Icon(
+            imageVector = if (selected) selectedIcon else unselectedIcon,
+            contentDescription = contentDescription,
+            tint = contentColor,
+            modifier = Modifier.size(24.dp)
+        )
     }
 }
 

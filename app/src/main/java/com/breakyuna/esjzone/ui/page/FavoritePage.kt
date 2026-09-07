@@ -58,9 +58,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChange
+import androidx.compose.foundation.layout.calculateStartPadding
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.breakyuna.esjzone.ui.navigation.LocalFloatingNavPadding
 import com.breakyuna.esjzone.R
 import com.breakyuna.esjzone.app.PresentationAccess
 import com.breakyuna.esjzone.database.BookshelfRepository
@@ -220,11 +223,24 @@ object FavoritePage : AppDestination {
                 }
             }
         ) { padding ->
+            val navPadding = LocalFloatingNavPadding.current
+            val layoutDirection = LocalLayoutDirection.current
             LazyVerticalGrid(
                 columns = GridCells.Adaptive(minSize = 112.dp),
                 state = gridState,
-                modifier = Modifier.fillMaxSize().padding(padding).topPullToSync(gridState, !syncing && !editing) { model.sync() },
-                contentPadding = PaddingValues(AppSpacing.lg),
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(
+                        top = padding.calculateTopPadding(),
+                        bottom = if (editing) padding.calculateBottomPadding() else 0.dp
+                    )
+                    .topPullToSync(gridState, !syncing && !editing) { model.sync() },
+                contentPadding = PaddingValues(
+                    start = AppSpacing.lg + navPadding.calculateStartPadding(layoutDirection),
+                    end = AppSpacing.lg,
+                    top = AppSpacing.lg,
+                    bottom = AppSpacing.lg + (if (editing) 0.dp else navPadding.calculateBottomPadding())
+                ),
                 horizontalArrangement = Arrangement.spacedBy(AppSpacing.md),
                 verticalArrangement = Arrangement.spacedBy(AppSpacing.lg)
             ) {
