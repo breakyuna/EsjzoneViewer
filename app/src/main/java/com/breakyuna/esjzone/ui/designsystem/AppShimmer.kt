@@ -8,10 +8,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.shape.Shape
 import com.valentinilk.shimmer.shimmer
 
 /**
@@ -70,7 +70,7 @@ fun AppShimmerPlaceholder(
         .background(color)
         .then(
             description?.let { value ->
-                Modifier.semantics { contentDescription = value }
+                Modifier.semantics { this.contentDescription = value }
             } ?: Modifier
         )
     Box(modifier = placeholderModifier)
