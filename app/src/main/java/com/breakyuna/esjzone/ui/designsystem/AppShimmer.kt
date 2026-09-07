@@ -19,7 +19,7 @@ import com.valentinilk.shimmer.shimmer
  *
  * This is intentionally a small, static snapshot for loading placeholders:
  * when Android's "remove animations" setting is active, placeholders remain a
- * quiet surface instead of starting an independent shimmer animation.
+ * static surface instead of starting an independent shimmer animation.
  */
 @Composable
 fun appReducedMotion(): Boolean {
