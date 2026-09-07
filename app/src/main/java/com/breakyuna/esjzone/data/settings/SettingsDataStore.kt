@@ -38,6 +38,7 @@ class SettingsDataStore(
     private val dataStoreFileName: String = FILE_NAME
 ) : SettingsRepository {
     private val dataStore: DataStore<Preferences> = PreferenceDataStoreFactory.create(
+        scope = scope,
         produceFile = { context.applicationContext.preferencesDataStoreFile(dataStoreFileName) }
     )
 

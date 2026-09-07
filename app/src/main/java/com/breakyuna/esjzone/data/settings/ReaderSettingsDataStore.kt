@@ -35,6 +35,7 @@ class ReaderSettingsDataStore(
     private val dataStoreFileName: String = FILE_NAME
 ) {
     private val dataStore: DataStore<Preferences> = PreferenceDataStoreFactory.create(
+        scope = scope,
         produceFile = { context.applicationContext.preferencesDataStoreFile(dataStoreFileName) }
     )
 
