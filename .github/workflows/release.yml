@@ -82,7 +82,7 @@ jobs:
         uses: android-actions/setup-android@v4
 
       - name: Install Android 37 platform
-        run: sdkmanager "platforms;android-37"
+        run: sdkmanager "platforms;android-37.0"
 
       - name: Grant Gradle permission
         run: chmod +x ./gradlew
@@ -112,7 +112,7 @@ jobs:
         uses: android-actions/setup-android@v4
 
       - name: Install Android 37 platform
-        run: sdkmanager "platforms;android-37"
+        run: sdkmanager "platforms;android-37.0"
 
       - name: Grant Gradle permission
         run: chmod +x ./gradlew
@@ -147,10 +147,10 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v4
 
-      # 5. 安装项目需要的 Android 37 platform 与 37 Build Tools
+      # 5. 安装项目需要的 Android 37 platform 与 AGP 默认 Build Tools
       - name: Install Android build tools
         run: |
-          sdkmanager "platforms;android-37" "build-tools;37.0.0"
+          sdkmanager "platforms;android-37.0" "build-tools;36.0.0"
 
       # 7. Gradle Wrapper 权限
       - name: Grant Gradle permission
