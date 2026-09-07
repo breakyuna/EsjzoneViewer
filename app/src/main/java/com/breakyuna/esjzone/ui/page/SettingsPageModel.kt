@@ -51,7 +51,7 @@ class SettingsPageModel : AppStateViewModel<SettingsPageModel.State>(State()) {
         screenModelScope.launch(Dispatchers.IO) {
             try {
                 val pageStats = PresentationAccess.client.pageCacheStats()
-                val imageBytes = PresentationAccess.imageLoader.diskCache?.size ?: 0L
+                val imageBytes = PresentationAccess.imageCacheSizeBytes()
                 mutableState.value = mutableState.value.copy(
                     cacheStats = LocalCacheStats(pageStats.sizeBytes, pageStats.entryCount, imageBytes),
                     cacheStatsError = false
@@ -71,8 +71,7 @@ class SettingsPageModel : AppStateViewModel<SettingsPageModel.State>(State()) {
 
     fun clearImageCache() {
         clear(Operation.IMAGES) {
-            PresentationAccess.imageLoader.memoryCache?.clear()
-            PresentationAccess.imageLoader.diskCache?.clear()
+            PresentationAccess.clearImageCaches()
         }
     }
 

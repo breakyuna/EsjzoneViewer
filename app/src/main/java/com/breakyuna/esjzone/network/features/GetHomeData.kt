@@ -3,7 +3,6 @@ package com.breakyuna.esjzone.network.features
 import com.breakyuna.esjzone.network.Authorization
 import com.breakyuna.esjzone.network.EsjzoneClient
 import com.breakyuna.esjzone.network.EsjzoneUrls
-import com.breakyuna.esjzone.network.EsjzoneXPaths
 import com.breakyuna.esjzone.network.PageCacheTtl
 import com.breakyuna.esjzone.network.PageKind
 import com.breakyuna.esjzone.novellibrary.data.HomeData
@@ -31,7 +30,7 @@ fun EsjzoneClient.getHomeData(authorization: Authorization): HomeData {
     val recommendationNovels = mutableListOf<CoveredNovel>()
 
     try {
-        for (recentlyUpdateTranslatedData in EsjzoneXPaths.Home.RecentlyUpdateTranslated.All.evaluate(document).elements) {
+        for (recentlyUpdateTranslatedData in selectHomeSectionCards(document, HomeSection.TRANSLATED)) {
             recentlyUpdateTranslatedNovels.add(
                 parseNovelCard(recentlyUpdateTranslatedData, false, NovelCardLayout.HOME)
             )
@@ -41,7 +40,7 @@ fun EsjzoneClient.getHomeData(authorization: Authorization): HomeData {
     }
 
     try {
-        for (recentlyUpdateOriginalData in EsjzoneXPaths.Home.RecentlyUpdateOriginal.All.evaluate(document).elements) {
+        for (recentlyUpdateOriginalData in selectHomeSectionCards(document, HomeSection.ORIGINAL)) {
             recentlyUpdateOriginalNovels.add(
                 parseNovelCard(recentlyUpdateOriginalData, false, NovelCardLayout.HOME)
             )
@@ -51,7 +50,7 @@ fun EsjzoneClient.getHomeData(authorization: Authorization): HomeData {
     }
 
     try {
-        for (recentlyUpdateTranslatedR18Data in EsjzoneXPaths.Home.RecentlyUpdateTranslatedR18.All.evaluate(document).elements) {
+        for (recentlyUpdateTranslatedR18Data in selectHomeSectionCards(document, HomeSection.TRANSLATED_R18)) {
             recentlyUpdateTranslatedR18Novels.add(
                 parseNovelCard(recentlyUpdateTranslatedR18Data, true, NovelCardLayout.HOME)
             )
@@ -61,7 +60,7 @@ fun EsjzoneClient.getHomeData(authorization: Authorization): HomeData {
     }
 
     try {
-        for (recentlyUpdateOriginalR18Data in EsjzoneXPaths.Home.RecentlyUpdateOriginalR18.All.evaluate(document).elements) {
+        for (recentlyUpdateOriginalR18Data in selectHomeSectionCards(document, HomeSection.ORIGINAL_R18)) {
             recentlyUpdateOriginalR18Novels.add(
                 parseNovelCard(recentlyUpdateOriginalR18Data, true, NovelCardLayout.HOME)
             )
@@ -71,12 +70,11 @@ fun EsjzoneClient.getHomeData(authorization: Authorization): HomeData {
     }
 
     try {
-        for (recommendationData in EsjzoneXPaths.Home.Recommendation.All.evaluate(document).elements) {
-            val r18BadgeElements = EsjzoneXPaths.Home.Novel.R18Badge.evaluate(recommendationData).elements
-            val isR18 = r18BadgeElements.firstOrNull()?.attr("class")?.contains("badge") == true
-
+        for (recommendationData in selectHomeSectionCards(document, HomeSection.RECOMMENDATION)) {
             recommendationNovels.add(
-                parseNovelCard(recommendationData, isR18, NovelCardLayout.HOME)
+                // parseNovelCard performs the same R18 badge check for every
+                // recommendation card while retaining the original ordering.
+                parseNovelCard(recommendationData, false, NovelCardLayout.HOME)
             )
         }
     } catch (e: Exception) {

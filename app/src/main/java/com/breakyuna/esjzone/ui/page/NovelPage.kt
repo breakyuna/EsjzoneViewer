@@ -112,6 +112,8 @@ import com.breakyuna.esjzone.offline.NovelDownloadManager
 import com.breakyuna.esjzone.offline.NovelExporter
 import com.breakyuna.esjzone.ui.component.Description
 import com.breakyuna.esjzone.ui.designsystem.AppShapes
+import com.breakyuna.esjzone.ui.designsystem.AppLottieAsset
+import com.breakyuna.esjzone.ui.designsystem.AppLottieState
 import com.breakyuna.esjzone.ui.designsystem.AppSpacing
 import com.breakyuna.esjzone.ui.designsystem.AppTypography
 import com.breakyuna.esjzone.ui.designsystem.AppTouchTarget
@@ -1324,6 +1326,12 @@ private fun NovelDownloadSheet(
                         }
                         manifest?.complete == true -> {
                             Row(verticalAlignment = Alignment.CenterVertically) {
+                                AppLottieState(
+                                    asset = AppLottieAsset.Completion,
+                                    modifier = Modifier.size(36.dp),
+                                    contentDescription = stringResource(R.string.novel_local_copy_complete, completed, actualTotal)
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
                                 Icon(
                                     imageVector = Icons.Filled.CheckCircle,
                                     contentDescription = null,

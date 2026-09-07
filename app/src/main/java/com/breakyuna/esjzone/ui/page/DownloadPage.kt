@@ -55,7 +55,7 @@ import androidx.compose.ui.unit.dp
 import com.breakyuna.esjzone.R
 import com.breakyuna.esjzone.app.PresentationAccess
 import com.breakyuna.esjzone.offline.DownloadedNovelSummary
-import com.breakyuna.esjzone.ui.designsystem.AppImage
+import com.breakyuna.esjzone.ui.component.AppNovelCover
 import com.breakyuna.esjzone.ui.designsystem.AppShapes
 import com.breakyuna.esjzone.ui.designsystem.AppSpacing
 import com.breakyuna.esjzone.ui.designsystem.AppTypography
@@ -229,7 +229,11 @@ private fun DownloadCard(
     ) {
         Row(Modifier.fillMaxWidth().padding(AppSpacing.md), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(AppSpacing.md)) {
             if (editing) Checkbox(checked = selected, onCheckedChange = { onToggle() }, enabled = !deleting)
-            AppImage(summary.coverUrl.takeIf(String::isNotBlank) ?: R.drawable.missing_cover, summary.novelName, Modifier.size(width = 64.dp, height = 88.dp))
+            AppNovelCover(
+                coverUrl = summary.coverUrl,
+                title = summary.novelName,
+                modifier = Modifier.size(width = 64.dp, height = 88.dp)
+            )
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(AppSpacing.xs)) {
                 Text(summary.novelName.ifBlank { stringResource(R.string.download_unknown_novel) }, style = AppTypography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 Text(stringResource(R.string.download_chapters_count, summary.downloadedChapterCount), style = AppTypography.bodyMedium, color = MaterialTheme.colorScheme.primary)

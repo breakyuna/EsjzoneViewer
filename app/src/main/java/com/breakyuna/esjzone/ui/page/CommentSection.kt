@@ -78,7 +78,7 @@ import com.breakyuna.esjzone.network.features.submitForumComment
 import com.breakyuna.esjzone.novellibrary.novel.COMMENT_PAGE_SIZE
 import com.breakyuna.esjzone.novellibrary.novel.Comment
 import com.breakyuna.esjzone.ui.navigation.LocalBaseNavigator
-import com.breakyuna.esjzone.ui.designsystem.AppImage
+import com.breakyuna.esjzone.ui.designsystem.AppAvatarImage
 import com.breakyuna.esjzone.ui.designsystem.AppShapes
 import com.breakyuna.esjzone.ui.designsystem.AppSpacing
 import com.breakyuna.esjzone.ui.designsystem.AppTouchTarget
@@ -816,7 +816,7 @@ private fun CommentAvatar(comment: Comment) {
                 tint = MaterialTheme.colorScheme.onSecondaryContainer
             )
         } else {
-            AppImage(
+            AppAvatarImage(
                 model = avatarUrl,
                 contentDescription = comment.authorName,
                 modifier = Modifier.fillMaxSize()

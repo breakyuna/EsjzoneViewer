@@ -125,7 +125,7 @@ jobs:
       # 5. 安装项目需要的 Android 37 platform 与 AGP 默认 Build Tools
       - name: Install Android build tools
         run: |
-          sdkmanager "platforms;android-37.0" "build-tools;36.0.0"
+          sdkmanager "platforms;android-37.0" "build-tools;37.0.0"
 
       # 7. Gradle Wrapper 权限
       - name: Grant Gradle permission

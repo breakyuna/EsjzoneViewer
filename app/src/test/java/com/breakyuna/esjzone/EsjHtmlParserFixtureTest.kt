@@ -1,6 +1,5 @@
 package com.breakyuna.esjzone
 
-import com.breakyuna.esjzone.network.EsjzoneXPaths
 import com.breakyuna.esjzone.network.features.parseNovelCard
 import com.breakyuna.esjzone.network.features.NovelCardLayout
 import org.jsoup.Jsoup
@@ -8,7 +7,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/** Small, checked-in ESJ HTML samples that exercise the XPath/parser boundary. */
+/** Small, checked-in ESJ HTML samples that exercise the CSS parser boundary. */
 class EsjHtmlParserFixtureTest {
 
     @Test
@@ -58,7 +57,7 @@ class EsjHtmlParserFixtureTest {
             "https://www.esjzone.cc/detail/9001.html"
         )
 
-        val integration = EsjzoneXPaths.Detail.ChapterList.evaluate(document).elements
+        val integration = document.select("#integration")
         assertEquals(1, integration.size)
         assertEquals("integration", integration.single().id())
         assertEquals("Chapter 1", integration.single().text())

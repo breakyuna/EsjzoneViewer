@@ -29,7 +29,7 @@ internal data class PageValidation(
 /**
  * Classifies HTML before it reaches a parser or the disk cache.
  *
- * This deliberately uses a small set of site-wide signals instead of one brittle XPath:
+ * This deliberately uses a small set of site-wide signals instead of one brittle positional selector:
  * ESJ has several templates and deployments.  Page-family checks are only used to reject
  * obvious HTML shells which contain no ESJ structure at all.
  */

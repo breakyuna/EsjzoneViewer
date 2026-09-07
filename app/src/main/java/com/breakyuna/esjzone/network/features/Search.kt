@@ -3,14 +3,11 @@ package com.breakyuna.esjzone.network.features
 import com.breakyuna.esjzone.network.Authorization
 import com.breakyuna.esjzone.network.EsjzoneClient
 import com.breakyuna.esjzone.network.EsjzoneUrls
-import com.breakyuna.esjzone.network.EsjzoneXPaths
 import com.breakyuna.esjzone.network.PageCacheTtl
 import com.breakyuna.esjzone.network.PageKind
 import com.breakyuna.esjzone.network.PageableRequester
 import com.breakyuna.esjzone.novellibrary.novel.CoveredNovel
 import org.jsoup.Jsoup
-
-internal val pagesRegex = "total: ([0-9]+)".toRegex()
 
 fun EsjzoneClient.search(
     authorization: Authorization,
@@ -32,14 +29,11 @@ fun EsjzoneClient.search(
 
     val document = Jsoup.parse(responseBody)
 
-    val pagesRaw = EsjzoneXPaths.Tags.Pages.evaluate(document).get()
-    val pages = if (pagesRaw != null) {
-        pagesRegex.find(pagesRaw)?.groupValues?.getOrNull(1)?.toIntOrNull() ?: 1
-    } else 1
+    val pages = pageCount(document)
 
     val novels = mutableListOf<CoveredNovel>()
 
-    for (novelData in EsjzoneXPaths.Tags.Novel.All.evaluate(document).elements) {
+    for (novelData in selectNovelCards(document)) {
         novels.add(
             parseNovelCard(novelData, false, NovelCardLayout.LIST)
         )
@@ -85,7 +79,7 @@ private class SearchNovelRequester(
 
         val novels = mutableListOf<CoveredNovel>()
 
-        for (novelData in EsjzoneXPaths.Tags.Novel.All.evaluate(document).elements) {
+        for (novelData in selectNovelCards(document)) {
             novels.add(parseNovelCard(novelData, false, NovelCardLayout.LIST))
         }
 

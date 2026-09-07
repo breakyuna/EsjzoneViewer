@@ -9,7 +9,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.WindowInsetsSides
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
@@ -34,8 +33,10 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
 import androidx.compose.material3.adaptive.currentWindowAdaptiveInfoV2
@@ -52,6 +53,8 @@ import com.breakyuna.esjzone.ui.tab.FavoriteTab
 import com.breakyuna.esjzone.ui.tab.HistoryTab
 import com.breakyuna.esjzone.ui.tab.HomeTab
 import com.breakyuna.esjzone.ui.tab.ProfileTab
+import com.breakyuna.esjzone.ui.designsystem.glass.AppGlassSpec
+import com.breakyuna.esjzone.ui.designsystem.glass.AppGlassSurface
 
 private enum class AppTabId(val route: AppNavKey, val icon: ImageVector) {
     HOME(AppNavKey.HomeTab, Icons.Filled.Home),
@@ -278,14 +281,25 @@ private fun AppNavigationBar(
     selected: AppTabId,
     onSelected: (AppTabId) -> Unit
 ) {
-    NavigationBar(windowInsets = WindowInsets.navigationBars) {
-        AppTabId.entries.forEach { tab ->
-            NavigationBarItem(
-                selected = selected == tab,
-                onClick = { onSelected(tab) },
-                icon = { Icon(tab.icon, contentDescription = null) },
-                label = { Text(tabLabel(tab)) }
-            )
+    AppGlassSurface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 8.dp, vertical = 4.dp),
+        spec = AppGlassSpec(shape = RoundedCornerShape(26.dp), alpha = 0.84f)
+    ) {
+        NavigationBar(
+            containerColor = Color.Transparent,
+            tonalElevation = 0.dp,
+            windowInsets = WindowInsets.navigationBars
+        ) {
+            AppTabId.entries.forEach { tab ->
+                NavigationBarItem(
+                    selected = selected == tab,
+                    onClick = { onSelected(tab) },
+                    icon = { Icon(tab.icon, contentDescription = null) },
+                    label = { Text(tabLabel(tab)) }
+                )
+            }
         }
     }
 }
@@ -295,15 +309,26 @@ private fun AppNavigationRail(
     selected: AppTabId,
     onSelected: (AppTabId) -> Unit
 ) {
-    NavigationRail(windowInsets = WindowInsets(0, 0, 0, 0)) {
-        AppTabId.entries.forEach { tab ->
-            NavigationRailItem(
-                selected = selected == tab,
-                onClick = { onSelected(tab) },
-                icon = { Icon(tab.icon, contentDescription = null) },
-                label = { Text(tabLabel(tab)) },
-                alwaysShowLabel = false
-            )
+    AppGlassSurface(
+        modifier = Modifier
+            .fillMaxHeight()
+            .padding(horizontal = 8.dp, vertical = 12.dp),
+        spec = AppGlassSpec(shape = RoundedCornerShape(26.dp), alpha = 0.84f)
+    ) {
+        NavigationRail(
+            modifier = Modifier.fillMaxHeight(),
+            containerColor = Color.Transparent,
+            windowInsets = WindowInsets(0, 0, 0, 0)
+        ) {
+            AppTabId.entries.forEach { tab ->
+                NavigationRailItem(
+                    selected = selected == tab,
+                    onClick = { onSelected(tab) },
+                    icon = { Icon(tab.icon, contentDescription = null) },
+                    label = { Text(tabLabel(tab)) },
+                    alwaysShowLabel = false
+                )
+            }
         }
     }
 }
@@ -316,22 +341,28 @@ private fun AppExpandedNavigationRail(
     // NavigationRail has a fixed compact width. Expanded windows get a
     // permanent labelled drawer so the shell scales without introducing a
     // second navigation graph or a modal drawer state.
-    Column(
+    AppGlassSurface(
         modifier = Modifier
             .fillMaxHeight()
             .width(232.dp)
-            .background(androidx.compose.material3.MaterialTheme.colorScheme.surface)
-            .padding(horizontal = 12.dp, vertical = 16.dp),
-        verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(6.dp)
+            .padding(horizontal = 8.dp, vertical = 12.dp),
+        spec = AppGlassSpec(shape = RoundedCornerShape(26.dp), alpha = 0.84f)
     ) {
-        AppTabId.entries.forEach { tab ->
-            NavigationDrawerItem(
-                selected = selected == tab,
-                onClick = { onSelected(tab) },
-                icon = { Icon(tab.icon, contentDescription = null) },
-                label = { Text(tabLabel(tab)) },
-                modifier = Modifier.fillMaxWidth()
-            )
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = 12.dp, vertical = 16.dp),
+            verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(6.dp)
+        ) {
+            AppTabId.entries.forEach { tab ->
+                NavigationDrawerItem(
+                    selected = selected == tab,
+                    onClick = { onSelected(tab) },
+                    icon = { Icon(tab.icon, contentDescription = null) },
+                    label = { Text(tabLabel(tab)) },
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
         }
     }
 }

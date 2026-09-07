@@ -3,7 +3,8 @@ package com.breakyuna.esjzone.network.features
 import com.breakyuna.esjzone.network.Authorization
 import com.breakyuna.esjzone.network.EsjzoneClient
 import com.breakyuna.esjzone.network.EsjzoneUrls
-import com.breakyuna.esjzone.network.EsjzoneXPaths
+import com.breakyuna.esjzone.network.HtmlSelector
+import com.breakyuna.esjzone.network.JsoupHtmlSelector
 import com.breakyuna.esjzone.network.PageCacheTtl
 import com.breakyuna.esjzone.network.PageKind
 import com.breakyuna.esjzone.network.NovelDetailCache
@@ -16,6 +17,7 @@ import com.breakyuna.esjzone.novellibrary.novel.analyseDescription
 import com.breakyuna.esjzone.util.AppLogger
 import org.jsoup.Jsoup
 
+private val detailSelector: HtmlSelector = JsoupHtmlSelector
 
 fun EsjzoneClient.getNovelDetail(
     authorization: Authorization,
@@ -43,42 +45,47 @@ fun EsjzoneClient.getNovelDetail(
     val document = Jsoup.parse(responseBody, targetUrl)
 
     val coverUrl = EsjzoneUrls.coverUrlFromImage(
-        document.selectFirst(".product-gallery img")
-    ).ifBlank {
-        EsjzoneUrls.coverOrEmpty(EsjzoneXPaths.Detail.Cover.evaluate(document).get())
-    }
+        detailSelector.first(document, ".product-gallery img, .book-detail img")
+    ).ifBlank { EsjzoneUrls.EmptyCover }
 
-    val viewsStr = document.selectFirst("#vtimes")?.text()
-        ?: EsjzoneXPaths.Detail.Views.evaluate(document).get()
-        ?: "0"
+    val viewsStr = detailSelector.first(
+        document,
+        "#vtimes, .book-detail [data-field='views'], .book-detail .book-views"
+    )?.text() ?: "0"
     val views = viewsStr.replace(Regex("[^0-9]"), "").toIntOrNull() ?: 0
 
-    val likesStr = document.selectFirst("#favorite")?.text()
-        ?: EsjzoneXPaths.Detail.Likes.evaluate(document).get()
-        ?: "0"
+    val likesStr = detailSelector.first(
+        document,
+        "#favorite, .book-detail [data-field='likes'], .book-detail .book-likes"
+    )?.text() ?: "0"
     val likes = likesStr.replace(Regex("[^0-9]"), "").toIntOrNull() ?: 0
 
-    val wordsStr = document.selectFirst("#txt")?.text()
-        ?: EsjzoneXPaths.Detail.Words.evaluate(document).get()
-        ?: "0"
+    val wordsStr = detailSelector.first(
+        document,
+        "#txt, .book-detail [data-field='words'], .book-detail .book-words"
+    )?.text() ?: "0"
     val words = wordsStr.replace(",", "").replace(Regex("[^0-9]"), "").toIntOrNull() ?: 0
 
     val detailInfo = document.selectFirst(".book-detail")
-    val type = detailInfo?.select("ul li")?.firstOrNull()?.text()
+    val type = detailInfo?.let {
+        detailSelector.first(it, "ul li[data-field='type'], ul li")?.text()
+    }
         ?.let(::stripDetailLabel)
         ?.takeIf { it.isNotBlank() }
-        ?: EsjzoneXPaths.Detail.Type.evaluate(document).get()?.let(::stripDetailLabel)
         ?: ""
-    val author = detailInfo?.select("ul li a[href^='/tags/']")?.firstOrNull()?.text()?.trim()
+    val author = detailInfo?.let {
+        detailSelector.first(it, "ul li a[href^='/tags/'], a[href^='/tags/']")?.text()?.trim()
+    }
         ?.takeIf { it.isNotBlank() }
-        ?: EsjzoneXPaths.Detail.Author.evaluate(document).get()
         ?: ""
 
-    val forumUrl = document.selectFirst("a.btn-forum")?.let { link ->
+    val forumUrl = detailSelector.first(
+        document,
+        ".book-detail a.btn-forum, a.btn-forum, .book-detail a[href*='/forum/'][href$='/']"
+    )?.let { link ->
         link.absUrl("href").ifBlank { link.attr("href") }
     }
         ?.takeIf { it.isNotBlank() }
-        ?: EsjzoneXPaths.Detail.ForumUrl.evaluate(document).get()
         ?: ""
 
     val sourceLinks = detailInfo?.select("a[href]").orEmpty()
@@ -92,20 +99,20 @@ fun EsjzoneClient.getNovelDetail(
 
     val updatedAt = extractUpdatedAt(detailInfo ?: document)
 
-    val tags = EsjzoneXPaths.Detail.Tags.evaluate(document)
-        .list()
-        .map(String::trim)
+    val tags = detailSelector.select(
+        document,
+        ".book-detail .tags a, .book-tags a, .tags a, [data-tags] a"
+    ).map { it.text().trim() }
         .filter(String::isNotBlank)
         .distinct()
 
-    val favorite = document.selectFirst("button.btn-favorite")?.text()?.trim()
-        ?: EsjzoneXPaths.Detail.FavoriteText.evaluate(document).get()
-        ?: ""
+    val favorite = detailSelector.first(document, "button.btn-favorite")?.text()?.trim().orEmpty()
 
-    val descriptionElements = EsjzoneXPaths.Detail.Description.evaluate(document).elements
-    val chapterListElements = document.select("#integration").ifEmpty {
-        EsjzoneXPaths.Detail.ChapterList.evaluate(document).elements
-    }
+    val descriptionElements = detailSelector.select(
+        document,
+        ".book-description, #description, .description, [data-description]"
+    )
+    val chapterListElements = detailSelector.select(document, "#integration")
 
     val description = descriptionElements.firstOrNull()
         ?.let(::analyseDescription)

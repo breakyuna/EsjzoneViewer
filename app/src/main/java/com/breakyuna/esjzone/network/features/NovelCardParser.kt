@@ -1,7 +1,6 @@
 package com.breakyuna.esjzone.network.features
 
 import com.breakyuna.esjzone.network.EsjzoneUrls
-import com.breakyuna.esjzone.network.EsjzoneXPaths
 import com.breakyuna.esjzone.network.HtmlSelector
 import com.breakyuna.esjzone.network.JsoupHtmlSelector
 import com.breakyuna.esjzone.novellibrary.novel.CoveredNovel
@@ -53,7 +52,7 @@ internal fun parseNovelCard(
         url = url.trim(),
         views = parseCardCount(views),
         likes = parseCardCount(likes),
-        isAdult = r18 || selector.select(card, EsjzoneXPaths.NovelCard.R18BadgeSelector).isNotEmpty(),
+        isAdult = r18 || selector.select(card, NovelCardSelectors.R18_BADGE).isNotEmpty(),
         latestTitle = latestTitle.cleanCardText(),
         latestUrl = latestUrl.cleanCardUrl(),
         author = author.cleanCardText(),
@@ -81,14 +80,14 @@ internal fun parseNovelCard(
     layout: NovelCardLayout,
     selector: HtmlSelector = JsoupHtmlSelector
 ): CoveredNovel {
-    val titleLink = selector.first(card, EsjzoneXPaths.NovelCard.TitleLinkSelector)
+    val titleLink = selector.first(card, NovelCardSelectors.TITLE_LINK)
     val imageLink = selector.first(card, ".card-img-tiles[href], a[href*='/detail/']")
     // A list card can split its statistics across several `.card-other`
     // blocks (commonly words, views/favorites, then articles/discussions).
     // Keep every block so semantic icon lookup cannot stop at the first one.
-    val stats = selector.select(card, EsjzoneXPaths.NovelCard.StatsSelector)
-    val latestLink = selector.first(card, EsjzoneXPaths.NovelCard.LatestLinkSelector)
-    val authorLink = selector.first(card, EsjzoneXPaths.NovelCard.AuthorLinkSelector)
+    val stats = selector.select(card, NovelCardSelectors.STATS)
+    val latestLink = selector.first(card, NovelCardSelectors.LATEST_LINK)
+    val authorLink = selector.first(card, NovelCardSelectors.AUTHOR_LINK)
 
     val views = statCount(stats, StatKind.VIEWS, selector)
     val likes = statCount(stats, StatKind.LIKES, selector)

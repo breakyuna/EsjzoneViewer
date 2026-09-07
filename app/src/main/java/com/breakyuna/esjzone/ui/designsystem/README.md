@@ -8,7 +8,10 @@ This package is the only presentation entry point for the rebuilt visual system.
 - `AppSpacing`, `AppShapes`, `AppTypography`, `AppElevation`, and `AppTouchTarget`: geometry and text tokens.
 - `AppMotion`: duration, easing, and animation specs.
 - `rememberAppAdaptiveMetrics`: compact, medium, and expanded layout metrics.
-- `AppImage`: image loading seam; feature code must not import a concrete image loader.
+- `AppImage`, `AppCoverImage`, `AppAvatarImage`, and `AppReaderImage`: image loading seams;
+  feature code must not import a concrete image loader. All four use the application-scoped
+  loader owned by `AppContainer`, so covers, avatars, reader images, and downloaded covers share
+  the same memory/disk cache.
 - `AppFeedback`, `AppLoadingState`, `AppEmptyState`, `AppErrorState`, `AppOfflineState`, `AppDialog`, `AppBottomSheet`, and `AppSnackbarHost`: feedback primitives.
 - `glass.AppGlassSurface`: the only feature-facing glass surface.
 

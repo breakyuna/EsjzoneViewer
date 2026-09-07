@@ -3,12 +3,16 @@ package com.breakyuna.esjzone.network.features
 import com.breakyuna.esjzone.network.Authorization
 import com.breakyuna.esjzone.network.EsjzoneClient
 import com.breakyuna.esjzone.network.EsjzoneUrls
-import com.breakyuna.esjzone.network.EsjzoneXPaths
+import com.breakyuna.esjzone.network.HtmlSelector
+import com.breakyuna.esjzone.network.JsoupHtmlSelector
 import com.breakyuna.esjzone.network.PageCacheTtl
 import com.breakyuna.esjzone.network.PageKind
 import com.breakyuna.esjzone.network.PageableRequester
 import com.breakyuna.esjzone.novellibrary.novel.FavoriteNovel
 import org.jsoup.Jsoup
+import org.jsoup.nodes.Document
+
+private val favoriteSelector: HtmlSelector = JsoupHtmlSelector
 
 fun EsjzoneClient.getFavorites(
     authorization: Authorization,
@@ -30,9 +34,7 @@ fun EsjzoneClient.getFavorites(
 
     val document = Jsoup.parse(responseBody, firstPageUrl)
 
-    val pagesRaw = EsjzoneXPaths.Profile.Favorite.Pages.evaluate(document).get()
-    val matcher = if (pagesRaw != null) pagesRegex.find(pagesRaw) else null
-    val pages = matcher?.groupValues?.getOrNull(1)?.toIntOrNull() ?: 1
+    val pages = pageCount(document)
 
     val novels = parseFavoriteNovels(document)
 
@@ -58,8 +60,7 @@ fun EsjzoneClient.getAllFavorites(
         allowStaleOnError = false
     )
     val firstDocument = Jsoup.parse(firstBody, firstPageUrl)
-    val pagesRaw = EsjzoneXPaths.Profile.Favorite.Pages.evaluate(firstDocument).get()
-    val pages = (pagesRegex.find(pagesRaw.orEmpty())?.groupValues?.getOrNull(1)?.toIntOrNull() ?: 1)
+    val pages = pageCount(firstDocument)
         .coerceIn(1, 200)
     val all = LinkedHashMap<String, FavoriteNovel>()
     fun addPage(document: org.jsoup.nodes.Document) {
@@ -74,7 +75,7 @@ fun EsjzoneClient.getAllFavorites(
         // the local merge state machine.
         val hasFavoriteMarker = body.contains("/my/favorite", ignoreCase = true) ||
             body.contains("my/favorite", ignoreCase = true)
-        val hasFavoriteTable = document.select("table").isNotEmpty()
+        val hasFavoriteTable = favoriteSelector.select(document, "table").isNotEmpty()
         if (parseFavoriteNovels(document).isEmpty() &&
             (!hasFavoriteMarker || !hasFavoriteTable)
         ) {
@@ -99,8 +100,8 @@ fun EsjzoneClient.getAllFavorites(
     return all.values.toList()
 }
 
-private fun parseFavoriteNovels(document: org.jsoup.nodes.Document): List<FavoriteNovel> =
-    EsjzoneXPaths.Profile.Favorite.Novel.evaluate(document).elements.mapNotNull { element ->
+internal fun parseFavoriteNovels(document: Document): List<FavoriteNovel> =
+    favoriteSelector.select(document, "table.table tr h5 a[href^='/detail/']").mapNotNull { element ->
         val url = element.attr("href").trim()
         val title = element.text().trim()
         if (url.isBlank() || title.isBlank()) null else FavoriteNovel(title, url)

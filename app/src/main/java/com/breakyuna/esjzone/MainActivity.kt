@@ -45,6 +45,7 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.CoroutineScope
 import com.breakyuna.esjzone.ui.app.App
+import com.breakyuna.esjzone.app.PresentationAccess
 import com.breakyuna.esjzone.ui.designsystem.AppTheme
 import com.breakyuna.esjzone.ui.designsystem.AppTypography
 import com.breakyuna.esjzone.util.AppLogger
@@ -74,11 +75,6 @@ class MainActivity : ComponentActivity() {
                 val settings = container.settingsDataStore
                 settings.migrateFromLegacy(container.database)
                 container.readerSettingsDataStore.migrateFromLegacy(appContext)
-                GlobalSettings.setAdult(settings.adult.value)
-                GlobalSettings.setDomain(settings.domain.value)
-                GlobalSettings.setTheme(settings.theme.value)
-                GlobalSettings.setLanguage(settings.language.value)
-                GlobalSettings.setReaderAutoSave(settings.readerAutoSave.value)
                 startupState.value = StartupState.Ready
             } catch (e: Exception) {
                 AppLogger.e("MainActivity", "Failed to initialize database or settings", e)
@@ -95,8 +91,8 @@ class MainActivity : ComponentActivity() {
         val appContext = applicationContext
         setContent {
             val state by startup.collectAsState()
-            val appLanguage by GlobalSettings.languageFlow.collectAsState()
-            val appTheme by GlobalSettings.themeFlow.collectAsState()
+            val appLanguage by PresentationAccess.settings.language
+            val appTheme by PresentationAccess.settings.theme
             val baseContext = LocalContext.current
             val currentConfiguration = LocalConfiguration.current
 

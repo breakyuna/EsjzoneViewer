@@ -3,7 +3,8 @@ package com.breakyuna.esjzone.network.features
 import com.breakyuna.esjzone.network.Authorization
 import com.breakyuna.esjzone.network.EsjzoneClient
 import com.breakyuna.esjzone.network.EsjzoneUrls
-import com.breakyuna.esjzone.network.EsjzoneXPaths
+import com.breakyuna.esjzone.network.HtmlSelector
+import com.breakyuna.esjzone.network.JsoupHtmlSelector
 import com.breakyuna.esjzone.network.PageCacheTtl
 import com.breakyuna.esjzone.network.PageKind
 import com.breakyuna.esjzone.offline.NovelDownloadStore
@@ -13,6 +14,7 @@ import com.breakyuna.esjzone.novellibrary.novel.DetailedChapter
 import com.breakyuna.esjzone.util.AppLogger
 import org.jsoup.Jsoup
 
+private val chapterSelector: HtmlSelector = JsoupHtmlSelector
 
 fun EsjzoneClient.getChapterDetail(
     authorization: Authorization,
@@ -54,9 +56,7 @@ fun EsjzoneClient.getChapterDetail(
 
     val document = Jsoup.parse(responseBody, targetUrl)
 
-    val contentElement = document.selectFirst(".forum-content.mt-3")
-        ?: document.selectFirst(".forum-content")
-        ?: EsjzoneXPaths.Forum.Content.evaluate(document).elements.firstOrNull()
+    val contentElement = chapterSelector.first(document, ".forum-content.mt-3, .forum-content")
     val components = if (contentElement != null) {
         analyseComponents(contentElement)
     } else {
@@ -64,10 +64,14 @@ fun EsjzoneClient.getChapterDetail(
         listOf()
     }
 
-    val previousChapter = document.selectFirst("a.btn-prev")
-        ?: EsjzoneXPaths.Forum.PreviousChapter.evaluate(document).elements.firstOrNull()
-    val nextChapter = document.selectFirst("a.btn-next")
-        ?: EsjzoneXPaths.Forum.NextChapter.evaluate(document).elements.firstOrNull()
+    val previousChapter = chapterSelector.first(
+        document,
+        "a.btn-prev, a[rel='prev'], a[data-direction='previous']"
+    )
+    val nextChapter = chapterSelector.first(
+        document,
+        "a.btn-next, a[rel='next'], a[data-direction='next']"
+    )
 
     val previous = if (previousChapter != null) {
         Chapter(

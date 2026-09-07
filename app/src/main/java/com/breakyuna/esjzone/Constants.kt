@@ -42,12 +42,6 @@ object Constants {
             "jsoup",
             "jsoup: the Java HTML parser, built for HTML editing, cleaning, scraping, and XSS safety."
         ),
-        GithubRepo(
-            "https://github.com/code4craft/xsoup",
-            "Yihua Huang",
-            "xsoup",
-            "When jsoup meets XPath."
-        ),
     )
 
 }

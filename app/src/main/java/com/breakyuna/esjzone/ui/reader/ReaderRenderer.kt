@@ -42,9 +42,11 @@ import androidx.compose.ui.window.DialogProperties
 import com.breakyuna.esjzone.R
 import com.breakyuna.esjzone.domain.reader.ReaderBlock
 import com.breakyuna.esjzone.domain.reader.ReaderChapterDocument
-import com.breakyuna.esjzone.ui.designsystem.AppImage
+import com.breakyuna.esjzone.ui.designsystem.AppReaderImage
+import com.breakyuna.esjzone.ui.designsystem.AppReaderZoomableImage
 import com.breakyuna.esjzone.ui.designsystem.AppShapes
 import com.breakyuna.esjzone.ui.designsystem.AppSpacing
+import com.breakyuna.esjzone.ui.designsystem.rememberReaderReducedMotion
 
 /**
  * Domain-AST renderer. The renderer has no dependency on legacy Component
@@ -137,6 +139,7 @@ private fun ReaderImage(
     modifier: Modifier = Modifier
 ) {
     var expanded by rememberSaveable(url) { mutableStateOf(false) }
+    val reducedMotion = rememberReaderReducedMotion()
     Box(
         modifier = modifier
             .fillMaxWidth()
@@ -146,7 +149,7 @@ private fun ReaderImage(
             .semantics { this.contentDescription = contentDescription },
         contentAlignment = Alignment.Center
     ) {
-        AppImage(
+        AppReaderImage(
             model = url,
             contentDescription = contentDescription,
             contentScale = ContentScale.FillWidth,
@@ -161,14 +164,31 @@ private fun ReaderImage(
         ) {
             Surface(modifier = Modifier.fillMaxSize(), color = Color.Black) {
                 Box(modifier = Modifier.fillMaxSize()) {
-                    AppImage(
-                        model = url,
-                        contentDescription = contentDescription,
-                        contentScale = ContentScale.Fit,
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .clickable { expanded = false }
-                    )
+                    if (reducedMotion) {
+                        // Keep a deterministic, non-animated static viewer for
+                        // users who disable system animations. It still uses
+                        // the shared Coil facade and closes on a single tap.
+                        AppReaderImage(
+                            model = url,
+                            contentDescription = contentDescription,
+                            contentScale = ContentScale.Fit,
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .clickable { expanded = false }
+                        )
+                    } else {
+                        // Telephoto handles double-tap zoom, pinch zoom,
+                        // one-finger panning and high-resolution sub-sampling.
+                        // Its onClick callback is used because Telephoto
+                        // consumes ordinary clickable gestures internally.
+                        AppReaderZoomableImage(
+                            model = url,
+                            contentDescription = contentDescription,
+                            contentScale = ContentScale.Fit,
+                            modifier = Modifier.fillMaxSize(),
+                            onClick = { expanded = false }
+                        )
+                    }
                     IconButton(
                         onClick = { expanded = false },
                         modifier = Modifier

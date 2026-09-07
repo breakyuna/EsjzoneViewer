@@ -114,7 +114,6 @@ import com.breakyuna.esjzone.ui.reader.ReaderFont
 import com.breakyuna.esjzone.ui.reader.ReaderScript
 import com.breakyuna.esjzone.ui.reader.ReaderScriptConverter
 import com.breakyuna.esjzone.ui.reader.ReaderSettings
-import com.breakyuna.esjzone.ui.reader.ReaderSettingsStore
 import com.breakyuna.esjzone.ui.reader.ReaderChapterHeading
 import com.breakyuna.esjzone.ui.reader.ReaderRenderer
 import com.breakyuna.esjzone.ui.reader.ReaderShell
@@ -156,8 +155,9 @@ class ChapterPage(
         val context = LocalContext.current
         val historyState = history.state()
 
-        var readerSettings by remember(context) {
-            mutableStateOf(ReaderSettingsStore.load(context))
+        val storedReaderSettings by PresentationAccess.readerSettings.settings.collectAsState()
+        var readerSettings by remember(storedReaderSettings) {
+            mutableStateOf(storedReaderSettings)
         }
         var showReaderSettings by rememberSaveable {
             mutableStateOf(false)
@@ -179,12 +179,11 @@ class ChapterPage(
             readerSettings = settings
         }
 
-        // Coalesce rapid slider updates into one preference write after the
-        // user pauses dragging, rather than calling SharedPreferences.apply()
-        // for every pointer event.
+        // Coalesce rapid slider updates into one DataStore write after the
+        // user pauses dragging, rather than writing for every pointer event.
         LaunchedEffect(readerSettings) {
             delay(250)
-            ReaderSettingsStore.save(context, readerSettings)
+            PresentationAccess.readerSettings.saveInBackground(readerSettings)
         }
 
         val requestedChapter = rememberSaveable {

@@ -3,7 +3,6 @@ package com.breakyuna.esjzone.network.features
 import com.breakyuna.esjzone.network.Authorization
 import com.breakyuna.esjzone.network.EsjzoneClient
 import com.breakyuna.esjzone.network.EsjzoneUrls
-import com.breakyuna.esjzone.network.EsjzoneXPaths
 import com.breakyuna.esjzone.network.PageResponsePolicy
 import com.breakyuna.esjzone.network.hasCredentials
 import com.breakyuna.esjzone.util.AppLogger
@@ -99,10 +98,7 @@ private fun EsjzoneClient.checkAuthorizationOnce(
         val responseBody = response.bodyStringOrEmpty()
 
         val document = Jsoup.parse(responseBody)
-        val hasProfileMarker = EsjzoneXPaths.Profile.Username.evaluate(document)
-            .get()
-            ?.trim()
-            ?.isNotEmpty() == true
+        val profileMarkerPresent = hasProfileMarker(document)
         val redirectedToLogin = finalPath.contains("/my/login") ||
             LOGIN_REDIRECT_PATTERN.containsMatchIn(responseBody)
         val hasLoginForm = document.select("form.login-box").isNotEmpty() ||
@@ -129,7 +125,7 @@ private fun EsjzoneClient.checkAuthorizationOnce(
             responseBody.isBlank() ||
                 PageResponsePolicy.looksLikeBlockedOrLoginPage(responseBody, finalPath) ->
                 AuthorizationProbe(AuthorizationCheckResult.UNKNOWN)
-            hasProfileMarker ->
+            profileMarkerPresent ->
                 AuthorizationProbe(AuthorizationCheckResult.AUTHORIZED)
             else ->
                 AuthorizationProbe(AuthorizationCheckResult.UNKNOWN)

@@ -6,6 +6,7 @@ plugins {
     alias(libs.plugins.google.ksp)
     alias(libs.plugins.compose.compiler)
     alias(libs.plugins.jetbrains.kotlin.serialization)
+    alias(libs.plugins.androidx.room)
 }
 
 val app_version_index = project.properties["app_version_index"].toString().toInt()
@@ -18,7 +19,7 @@ android {
     defaultConfig {
         applicationId = "com.breakyuna.esjzone"
         minSdk = 29
-        targetSdk = 36
+        targetSdk = 37
         versionCode = app_version_index
         versionName = app_version
 
@@ -77,6 +78,9 @@ android {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
         }
     }
+    room {
+        schemaDirectory("$projectDir/schemas")
+    }
 }
 
 dependencies {
@@ -86,6 +90,8 @@ dependencies {
     implementation(libs.coil.compose)
     implementation(libs.coil.gif)
     implementation(libs.coil.network.okhttp)
+    implementation(libs.compose.shimmer)
+    implementation(libs.lottie.compose)
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.androidx.navigation3.runtime)
     implementation(libs.androidx.navigation3.ui)
@@ -96,7 +102,9 @@ dependencies {
     implementation(libs.androidx.compose.adaptive.navigation3)
     implementation(libs.gson)
     implementation(libs.jsoup)
-    implementation(libs.xsoup)
+    implementation(libs.haze)
+    implementation(libs.haze.glass)
+    implementation(libs.telephoto.zoomable.image.coil3)
 
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)

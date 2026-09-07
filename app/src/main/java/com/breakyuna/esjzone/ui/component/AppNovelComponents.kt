@@ -45,7 +45,7 @@ import com.breakyuna.esjzone.R
 import com.breakyuna.esjzone.network.EsjzoneUrls
 import com.breakyuna.esjzone.novellibrary.novel.CoveredNovel
 import com.breakyuna.esjzone.ui.designsystem.AppContentType
-import com.breakyuna.esjzone.ui.designsystem.AppImage
+import com.breakyuna.esjzone.ui.designsystem.AppCoverImage
 import com.breakyuna.esjzone.ui.designsystem.AppImageLoading
 import com.breakyuna.esjzone.ui.designsystem.AppLayout
 import com.breakyuna.esjzone.ui.designsystem.AppShapes
@@ -83,7 +83,7 @@ fun AppTag(
 
 /**
  * Cover image facade. URL normalization stays in the component boundary while
- * the actual loader and state handling remain inside [AppImage].
+ * the actual loader and state handling remain inside [AppCoverImage].
  */
 @Composable
 fun AppNovelCover(
@@ -97,7 +97,7 @@ fun AppNovelCover(
             .clip(AppShapes.compact)
             .background(MaterialTheme.colorScheme.surfaceContainerHighest)
     ) {
-        AppImage(
+        AppCoverImage(
             model = EsjzoneUrls.coverOrEmpty(coverUrl).takeIf(String::isNotBlank)
                 ?: R.drawable.missing_cover,
             contentDescription = title,

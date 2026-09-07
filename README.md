@@ -95,7 +95,7 @@
 - **AndroidX Navigation 3**：类型化页面与 Tab 导航
 - **Room**：本地书架、历史、书签和状态存储
 - **OkHttp**：网络请求与会话处理
-- **Jsoup / Xsoup**：HTML 与 XPath 解析
+- **Jsoup**：HTML 与 CSS 选择器解析
 - **Coil**：封面、头像和插图加载
 - **Gson**：JSON 数据处理
 
@@ -121,7 +121,7 @@ ESJ Zone 的网络请求、登录认证、页面结构与 HTML 解析相关说�
 
 感谢原作者 [DeeChael](https://github.com/DeeChael) 提供项目基础，感谢所有参与开发、测试和反馈的贡献者。
 
-同时感谢 Jetpack Compose、Material 3、Room、AndroidX Navigation 3、[OkHttp](https://github.com/square/okhttp)、[Coil](https://github.com/coil-kt/coil)、[Gson](https://github.com/google/gson)、[Jsoup](https://github.com/jhy/jsoup) 和 [Xsoup](https://github.com/code4craft/xsoup) 等开源项目。
+同时感谢 Jetpack Compose、Material 3、Room、AndroidX Navigation 3、[OkHttp](https://github.com/square/okhttp)、[Coil](https://github.com/coil-kt/coil)、[Gson](https://github.com/google/gson) 和 [Jsoup](https://github.com/jhy/jsoup) 等开源项目。
 
 ## 📄 许可证
 

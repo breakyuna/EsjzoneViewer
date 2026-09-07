@@ -18,7 +18,7 @@ import com.breakyuna.esjzone.database.entity.SearchHistory
 @Database(
     entities = [Cache::class, SearchHistory::class, Bookmark::class, LocalReadingActivity::class, BookshelfEntry::class],
     version = 6,
-    exportSchema = false
+    exportSchema = true
 )
 abstract class GeneralDatabase : RoomDatabase() {
 

@@ -4,7 +4,9 @@ import android.content.Context
 import android.os.Build
 import android.util.Log
 import com.breakyuna.esjzone.BuildConfig
-import com.breakyuna.esjzone.GlobalSettings
+import com.breakyuna.esjzone.EsjzoneApplication
+import com.breakyuna.esjzone.data.settings.SettingsDefaults
+import com.breakyuna.esjzone.ui.designsystem.AppThemeVariant
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import java.io.File
@@ -131,8 +133,8 @@ object AppLogger {
             appendLine("Export Time: ${Date()}")
             appendLine("App Version: ${BuildConfig.VERSION_NAME}-${BuildConfig.APP_VERSION}")
             appendLine("Device: ${Build.MANUFACTURER} ${Build.MODEL}, Android ${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT})")
-            appendLine("Domain: ${runCatching { GlobalSettings.domain.value }.getOrDefault("unknown")}")
-            appendLine("Adult Content Enabled: ${runCatching { GlobalSettings.adult.value }.getOrDefault("unknown")}")
+            appendLine("Domain: ${currentDomain()}")
+            appendLine("Adult Content Enabled: ${currentAdultContentEnabled()}")
             appendLine("Total Entries: ${logList.size}")
             logList.forEach { appendLine(it.toFormattedString()) }
         }.let(::sanitize)
@@ -172,9 +174,9 @@ object AppLogger {
             appendLine("App Version: ${BuildConfig.VERSION_NAME} (${BuildConfig.APP_VERSION})")
             appendLine("Device: ${Build.MANUFACTURER} ${Build.MODEL} (${Build.DEVICE})")
             appendLine("Android OS: ${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT})")
-            appendLine("Current Domain: ${runCatching { GlobalSettings.domain.value }.getOrDefault("unknown")}")
-            appendLine("Current Theme: ${runCatching { GlobalSettings.theme.value.name }.getOrDefault("unknown")}")
-            appendLine("Adult Content Enabled: ${runCatching { GlobalSettings.adult.value }.getOrDefault("unknown")}")
+            appendLine("Current Domain: ${currentDomain()}")
+            appendLine("Current Theme: ${currentThemeName()}")
+            appendLine("Adult Content Enabled: ${currentAdultContentEnabled()}")
             val runtime = Runtime.getRuntime()
             appendLine("Memory Usage: ${(runtime.totalMemory() - runtime.freeMemory()) / 1024 / 1024}MB / ${runtime.maxMemory() / 1024 / 1024}MB")
             appendLine("Thread: ${entry.threadName}")
@@ -190,6 +192,18 @@ object AppLogger {
         logFile?.let { rotateIfNeeded(it, safeReport.toByteArray(StandardCharsets.UTF_8).size.toLong() + 1); it.appendText(safeReport + "\n") }
         _crashReportFlow.value = safeReport
     } catch (e: Exception) { Log.e("AppLogger", "Failed to write crash report: ${sanitize(e.message.orEmpty())}") }
+
+    private fun currentDomain(): String = runCatching {
+        EsjzoneApplication.instance.container.settings.domain.value
+    }.getOrDefault(SettingsDefaults.DOMAINS.first())
+
+    private fun currentAdultContentEnabled(): Boolean = runCatching {
+        EsjzoneApplication.instance.container.settings.adult.value
+    }.getOrDefault(true)
+
+    private fun currentThemeName(): String = runCatching {
+        EsjzoneApplication.instance.container.settings.theme.value.name
+    }.getOrDefault(AppThemeVariant.DEFAULT.name)
 
     private fun stackTrace(throwable: Throwable): String {
         val writer = StringWriter(); throwable.printStackTrace(PrintWriter(writer)); return sanitize(writer.toString())

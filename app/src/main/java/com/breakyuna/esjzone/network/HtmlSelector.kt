@@ -5,7 +5,7 @@ import org.jsoup.nodes.Element
 /**
  * Small boundary around CSS selection so parser callers do not own the
  * concrete selector engine. The current implementation intentionally stays
- * Jsoup-backed; a future XPath replacement can implement this contract
+ * Jsoup-backed; another selector implementation can satisfy this contract
  * without changing parser-facing field extraction.
  */
 interface HtmlSelector {

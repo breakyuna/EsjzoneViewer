@@ -23,7 +23,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
-import com.breakyuna.esjzone.ui.designsystem.AppImage
+import com.breakyuna.esjzone.ui.designsystem.AppCoverImage
 import com.breakyuna.esjzone.ui.designsystem.AppShapes
 import com.breakyuna.esjzone.ui.designsystem.AppSpacing
 import com.breakyuna.esjzone.ui.designsystem.AppTheme
@@ -56,7 +56,7 @@ fun DownloadItem(
         colors = CardDefaults.cardColors(containerColor = appStateColors().containerRaised)
     ) {
         Row(Modifier.padding(AppSpacing.md), horizontalArrangement = Arrangement.spacedBy(AppSpacing.md), verticalAlignment = Alignment.CenterVertically) {
-            AppImage(item.cover.model, item.cover.contentDescription, Modifier.size(width = 64.dp, height = 88.dp))
+            AppCoverImage(item.cover.model, item.cover.contentDescription, Modifier.size(width = 64.dp, height = 88.dp))
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(AppSpacing.xs)) {
                 Text(item.title, style = AppTypography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 Text(item.chapterLabel, style = AppTypography.bodyMedium)
@@ -88,7 +88,7 @@ fun HistoryItem(item: HistoryItemModel, modifier: Modifier = Modifier, onClick: 
         colors = CardDefaults.cardColors(containerColor = appStateColors().containerRaised)
     ) {
         Row(Modifier.padding(AppSpacing.md), horizontalArrangement = Arrangement.spacedBy(AppSpacing.md), verticalAlignment = Alignment.CenterVertically) {
-            AppImage(item.cover.model, item.cover.contentDescription, Modifier.size(width = 64.dp, height = 88.dp))
+            AppCoverImage(item.cover.model, item.cover.contentDescription, Modifier.size(width = 64.dp, height = 88.dp))
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(AppSpacing.xs)) {
                 Text(item.title, style = AppTypography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 Text(item.chapterLabel, style = AppTypography.bodyMedium)

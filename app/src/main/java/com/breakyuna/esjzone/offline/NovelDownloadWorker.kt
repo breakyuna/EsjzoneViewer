@@ -21,8 +21,9 @@ import androidx.work.WorkInfo
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import androidx.work.workDataOf
-import com.breakyuna.esjzone.GlobalSettings
+import com.breakyuna.esjzone.EsjzoneApplication
 import com.breakyuna.esjzone.R
+import com.breakyuna.esjzone.data.settings.SettingsDefaults
 import com.breakyuna.esjzone.network.Authorization
 import com.breakyuna.esjzone.network.EsjzoneClient
 import com.breakyuna.esjzone.network.EsjzoneUrls
@@ -50,7 +51,13 @@ object NovelDownloadManager {
         authorization: Authorization,
         novel: DetailedNovel
     ): UUID {
-        val domain = authorization.domain.trim().ifBlank { GlobalSettings.domain.value }
+        // A session's domain is authoritative for queued work.  The DataStore
+        // value is only the fallback for sessions that predate domain capture.
+        val domain = authorization.domain.trim().ifBlank {
+            runCatching {
+                EsjzoneApplication.instance.container.settings.domain.value
+            }.getOrDefault(SettingsDefaults.DOMAINS.first())
+        }
         val request = OneTimeWorkRequestBuilder<NovelDownloadWorker>()
             .setConstraints(
                 Constraints.Builder()

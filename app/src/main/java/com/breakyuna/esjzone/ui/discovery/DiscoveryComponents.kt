@@ -28,7 +28,6 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
@@ -58,6 +57,7 @@ import com.breakyuna.esjzone.ui.designsystem.AppShapes
 import com.breakyuna.esjzone.ui.designsystem.AppSpacing
 import com.breakyuna.esjzone.ui.designsystem.AppTypography
 import com.breakyuna.esjzone.ui.component.AppNovelPreviewCard
+import com.breakyuna.esjzone.ui.designsystem.AppShimmerPlaceholder
 
 /** Shared top-level chrome for Discovery destinations. */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -306,13 +306,28 @@ fun DiscoveryLoadingState(modifier: Modifier = Modifier) {
     ) {
         repeat(3) { index ->
             Surface(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(if (index == 0) 124.dp else 104.dp),
+                modifier = Modifier.fillMaxWidth(),
                 shape = AppShapes.standard,
-                color = MaterialTheme.colorScheme.surfaceContainerHighest
-            ) {}
-            if (index == 0) LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                color = MaterialTheme.colorScheme.surfaceContainer
+            ) {
+                Row(
+                    modifier = Modifier.padding(AppSpacing.md),
+                    horizontalArrangement = Arrangement.spacedBy(AppSpacing.md),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    AppShimmerPlaceholder(
+                        modifier = Modifier.size(width = 76.dp, height = if (index == 0) 108.dp else 96.dp)
+                    )
+                    Column(
+                        modifier = Modifier.weight(1f),
+                        verticalArrangement = Arrangement.spacedBy(AppSpacing.sm)
+                    ) {
+                        AppShimmerPlaceholder(Modifier.fillMaxWidth(0.88f).height(20.dp), shape = AppShapes.compact)
+                        AppShimmerPlaceholder(Modifier.fillMaxWidth(0.62f).height(14.dp), shape = AppShapes.compact)
+                        AppShimmerPlaceholder(Modifier.fillMaxWidth(0.74f).height(14.dp), shape = AppShapes.compact)
+                    }
+                }
+            }
         }
     }
 }

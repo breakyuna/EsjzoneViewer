@@ -31,7 +31,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
-import com.breakyuna.esjzone.ui.designsystem.AppImage
+import com.breakyuna.esjzone.ui.designsystem.AppCoverImage
 import com.breakyuna.esjzone.ui.designsystem.AppShapes
 import com.breakyuna.esjzone.ui.designsystem.AppSpacing
 import com.breakyuna.esjzone.ui.designsystem.AppTheme
@@ -43,7 +43,7 @@ data class NovelCoverModel(val model: Any?, val contentDescription: String, val 
 
 @Composable
 fun NovelCover(model: NovelCoverModel, modifier: Modifier = Modifier) {
-    AppImage(
+    AppCoverImage(
         model = model.model,
         contentDescription = model.contentDescription,
         modifier = modifier.aspectRatio(model.aspectRatio).clip(AppShapes.standard)

@@ -3,31 +3,58 @@ package com.breakyuna.esjzone.ui.product
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.size
 import androidx.compose.material3.Button
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.progressBarRangeInfo
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.semantics.ProgressBarRangeInfo
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.tooling.preview.Preview
 import com.breakyuna.esjzone.ui.designsystem.AppFeedback
+import com.breakyuna.esjzone.ui.designsystem.AppLottieAsset
+import com.breakyuna.esjzone.ui.designsystem.AppLottieState
+import com.breakyuna.esjzone.ui.designsystem.AppShapes
+import com.breakyuna.esjzone.ui.designsystem.AppShimmerPlaceholder
 import com.breakyuna.esjzone.ui.designsystem.AppSpacing
 import com.breakyuna.esjzone.ui.designsystem.AppTheme
 import com.breakyuna.esjzone.ui.designsystem.AppTypography
 
 @Composable
 fun LoadingSkeleton(modifier: Modifier = Modifier, label: String = "正在加载") {
-    LinearProgressIndicator(
-        modifier = modifier.fillMaxWidth().semantics {
-            contentDescription = label
-            progressBarRangeInfo = ProgressBarRangeInfo.Indeterminate
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(horizontal = AppSpacing.lg, vertical = AppSpacing.xl)
+            .semantics { contentDescription = label },
+        verticalArrangement = Arrangement.spacedBy(AppSpacing.md)
+    ) {
+        AppShimmerPlaceholder(
+            modifier = Modifier.fillMaxWidth().height(136.dp),
+            shape = AppShapes.standard
+        )
+        repeat(2) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(AppSpacing.md),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                AppShimmerPlaceholder(Modifier.size(width = 72.dp, height = 96.dp))
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(AppSpacing.sm)
+                ) {
+                    AppShimmerPlaceholder(Modifier.fillMaxWidth(0.82f).height(18.dp), shape = AppShapes.compact)
+                    AppShimmerPlaceholder(Modifier.fillMaxWidth(0.58f).height(14.dp), shape = AppShapes.compact)
+                }
+            }
         }
-    )
+    }
 }
 
 @Composable
@@ -43,6 +70,10 @@ fun EmptyState(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(AppSpacing.md)
     ) {
+        AppLottieState(
+            asset = AppLottieAsset.EmptyState,
+            contentDescription = title
+        )
         Text(title, style = AppTypography.titleMedium)
         message?.let { Text(it, style = AppTypography.bodyMedium) }
         if (actionLabel != null && onAction != null) Button(onClick = onAction) { Text(actionLabel) }

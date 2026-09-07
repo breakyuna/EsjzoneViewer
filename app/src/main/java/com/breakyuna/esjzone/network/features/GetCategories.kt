@@ -3,7 +3,6 @@ package com.breakyuna.esjzone.network.features
 import com.breakyuna.esjzone.network.Authorization
 import com.breakyuna.esjzone.network.EsjzoneClient
 import com.breakyuna.esjzone.network.EsjzoneUrls
-import com.breakyuna.esjzone.network.EsjzoneXPaths
 import com.breakyuna.esjzone.network.PageCacheTtl
 import com.breakyuna.esjzone.network.PageKind
 import com.breakyuna.esjzone.novellibrary.novel.Category
@@ -22,7 +21,7 @@ fun EsjzoneClient.getCategories(authorization: Authorization): List<Category> {
 
     val categories = mutableListOf<Category>()
 
-    for (element in EsjzoneXPaths.Forum.Category.evaluate(document).elements) {
+    for (element in selectForumCategories(document)) {
         val name = element.text()
         categories.add(
             Category(

@@ -1,7 +1,8 @@
 package com.breakyuna.esjzone.network
 
 import java.net.URI
-import com.breakyuna.esjzone.GlobalSettings
+import com.breakyuna.esjzone.EsjzoneApplication
+import com.breakyuna.esjzone.data.settings.SettingsDefaults
 import org.jsoup.nodes.Element
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
@@ -128,7 +129,9 @@ object EsjzoneUrls {
             ?.let { "/detail/$it.html" }
 
     val BaseWithoutProtocol: String
-        get() = GlobalSettings.domain.value
+        get() = runCatching {
+            EsjzoneApplication.instance.container.settings.domain.value
+        }.getOrDefault(SettingsDefaults.DOMAINS.first())
 
     val Base: String
         get() = "https://$BaseWithoutProtocol"

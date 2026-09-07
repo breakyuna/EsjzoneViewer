@@ -3,7 +3,8 @@ package com.breakyuna.esjzone.network.features
 import com.breakyuna.esjzone.network.Authorization
 import com.breakyuna.esjzone.network.EsjzoneClient
 import com.breakyuna.esjzone.network.EsjzoneUrls
-import com.breakyuna.esjzone.network.EsjzoneXPaths
+import com.breakyuna.esjzone.network.HtmlSelector
+import com.breakyuna.esjzone.network.JsoupHtmlSelector
 import com.breakyuna.esjzone.network.PageCacheTtl
 import com.breakyuna.esjzone.network.PageKind
 import com.breakyuna.esjzone.network.NetworkRequestException
@@ -44,6 +45,7 @@ private val CSS_IMAGE_URL = Regex(
     """url\(\s*['"]?([^'")]+)['"]?\s*\)""",
     RegexOption.IGNORE_CASE
 )
+private val communitySelector: HtmlSelector = JsoupHtmlSelector
 
 data class CommentSubmission(
     val comments: List<Comment>,
@@ -649,17 +651,13 @@ private fun EsjzoneClient.getForumTableData(
 
 internal fun parseComments(document: Document, parentPostId: String): List<Comment> {
     val comments = mutableListOf<Comment>()
-    val sections = document.select(".comments-section").ifEmpty {
-        // A few templates omit the shared marker but keep the pager class.
-        document.select("[class*=comments-page-]")
-    }.ifEmpty {
-        // The novel detail template has also been observed with a generic
-        // section element but without either shared class.
-        EsjzoneXPaths.Detail.Comment.Pages.evaluate(document).elements
-    }
+    val sections = communitySelector.select(
+        document,
+        ".comments-section, [class*=comments-page-], section.comment-list, #comments"
+    )
     val commentElements = sections
-        .flatMap { it.select(".comment") }
-        .ifEmpty { document.select(".comment") }
+        .flatMap { communitySelector.select(it, ".comment") }
+        .ifEmpty { communitySelector.select(document, ".comment") }
         .distinctBy { it.id().ifBlank { it.outerHtml().hashCode().toString() } }
 
     for (element in commentElements) {

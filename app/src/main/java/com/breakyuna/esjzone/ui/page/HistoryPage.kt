@@ -67,7 +67,7 @@ import com.breakyuna.esjzone.network.loadFailureKind
 import com.breakyuna.esjzone.novellibrary.novel.Chapter
 import com.breakyuna.esjzone.novellibrary.novel.FavoriteNovel
 import com.breakyuna.esjzone.novellibrary.novel.HistoryNovel
-import com.breakyuna.esjzone.ui.designsystem.AppImage
+import com.breakyuna.esjzone.ui.component.AppNovelCover
 import com.breakyuna.esjzone.ui.designsystem.AppShapes
 import com.breakyuna.esjzone.ui.designsystem.AppSpacing
 import com.breakyuna.esjzone.ui.designsystem.AppTypography
@@ -231,7 +231,11 @@ private fun LocalHistoryCard(
     val relative = DateUtils.getRelativeTimeSpanString(activity.lastReadAt, System.currentTimeMillis(), DateUtils.MINUTE_IN_MILLIS)
     Card(onClick = onOpen, modifier = Modifier.fillMaxWidth().semantics { role = Role.Button }, shape = AppShapes.standard, colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)) {
         Row(Modifier.fillMaxWidth().padding(AppSpacing.md), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(AppSpacing.md)) {
-            AppImage(EsjzoneUrls.coverOrEmpty(coverUrl).takeIf(String::isNotBlank) ?: R.drawable.missing_cover, activity.novelName, Modifier.size(width = 64.dp, height = 88.dp))
+            AppNovelCover(
+                coverUrl = coverUrl,
+                title = activity.novelName,
+                modifier = Modifier.size(width = 64.dp, height = 88.dp)
+            )
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(AppSpacing.xs)) {
                 Text(activity.novelName.ifBlank { activity.novelId }, style = AppTypography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 Text(activity.chapterName, style = AppTypography.bodySmall, color = MaterialTheme.colorScheme.primary, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -317,7 +321,11 @@ private fun CloudHistoryCard(
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)
     ) {
         Row(Modifier.fillMaxWidth().padding(AppSpacing.md), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(AppSpacing.md)) {
-            AppImage(EsjzoneUrls.coverOrEmpty(coverUrl).takeIf(String::isNotBlank) ?: R.drawable.missing_cover, history.name, Modifier.size(width = 64.dp, height = 88.dp))
+            AppNovelCover(
+                coverUrl = coverUrl,
+                title = history.name,
+                modifier = Modifier.size(width = 64.dp, height = 88.dp)
+            )
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(AppSpacing.xs)) {
                 Text(history.name, style = AppTypography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 Text(history.chapter.name, style = AppTypography.bodyMedium, color = MaterialTheme.colorScheme.primary, maxLines = 2, overflow = TextOverflow.Ellipsis)

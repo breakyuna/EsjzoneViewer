@@ -68,7 +68,7 @@ import com.breakyuna.esjzone.database.entity.BookshelfEntry
 import com.breakyuna.esjzone.network.LocalAuthorization
 import com.breakyuna.esjzone.network.LoadFailureKind
 import com.breakyuna.esjzone.novellibrary.novel.CoveredNovelImpl
-import com.breakyuna.esjzone.ui.designsystem.AppImage
+import com.breakyuna.esjzone.ui.component.AppNovelCover
 import com.breakyuna.esjzone.ui.designsystem.AppShapes
 import com.breakyuna.esjzone.ui.designsystem.AppSpacing
 import com.breakyuna.esjzone.ui.designsystem.AppTypography
@@ -396,9 +396,9 @@ private fun ShelfCard(
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Box(Modifier.fillMaxWidth().aspectRatio(0.7f)) {
-            AppImage(
-                model = entry.coverUrl.takeIf { it.isNotBlank() } ?: R.drawable.missing_cover,
-                contentDescription = entry.title,
+            AppNovelCover(
+                coverUrl = entry.coverUrl,
+                title = entry.title,
                 modifier = Modifier.fillMaxSize().clip(shape)
             )
             if (editing) {

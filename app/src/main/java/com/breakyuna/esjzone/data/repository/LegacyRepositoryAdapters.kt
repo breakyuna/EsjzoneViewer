@@ -1,10 +1,7 @@
 package com.breakyuna.esjzone.data.repository
 
-import com.breakyuna.esjzone.AppLanguage
-import com.breakyuna.esjzone.GlobalSettings
 import com.breakyuna.esjzone.database.BookshelfRepository as LegacyBookshelfRepository
 import com.breakyuna.esjzone.database.GeneralDatabase
-import com.breakyuna.esjzone.database.dao.put
 import com.breakyuna.esjzone.database.entity.Bookmark
 import com.breakyuna.esjzone.database.entity.BookshelfEntry
 import com.breakyuna.esjzone.database.entity.LocalReadingActivity
@@ -46,10 +43,7 @@ import com.breakyuna.esjzone.domain.repository.NovelRepository
 import com.breakyuna.esjzone.domain.repository.ReaderRepository
 import com.breakyuna.esjzone.domain.repository.SearchRepository
 import com.breakyuna.esjzone.domain.repository.SessionRepository
-import com.breakyuna.esjzone.domain.repository.SettingsRepository
-import com.breakyuna.esjzone.ui.designsystem.AppThemeVariant
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.StateFlow
 
 class NetworkSessionRepository : SessionRepository {
     override fun restore(host: String): Authorization? = EsjzoneClient.restoreAuthorization(host)
@@ -58,40 +52,6 @@ class NetworkSessionRepository : SessionRepository {
         EsjzoneClient.checkAuthorization(authorization)
     override fun logout(authorization: Authorization) = EsjzoneClient.logout(authorization)
     override fun clear(host: String?) = EsjzoneClient.clearSession(host)
-}
-
-class CacheSettingsRepository(private val database: GeneralDatabase) : SettingsRepository {
-    override val adult: StateFlow<Boolean> = GlobalSettings.adultFlow
-    override val theme: StateFlow<AppThemeVariant> = GlobalSettings.themeFlow
-    override val domain: StateFlow<String> = GlobalSettings.domainFlow
-    override val language: StateFlow<AppLanguage> = GlobalSettings.languageFlow
-    override val readerAutoSave: StateFlow<Boolean> = GlobalSettings.readerAutoSaveFlow
-
-    override fun setAdult(value: Boolean) {
-        GlobalSettings.setAdult(value)
-        database.cacheDao().put("adult", value.toString())
-    }
-
-    override fun setTheme(value: AppThemeVariant) {
-        GlobalSettings.setTheme(value)
-        database.cacheDao().put("theme", value.name)
-    }
-
-    override fun setDomain(value: String) {
-        require(value in GlobalSettings.DOMAINS) { "Unsupported ESJ domain" }
-        GlobalSettings.setDomain(value)
-        database.cacheDao().put("domain", value)
-    }
-
-    override fun setLanguage(value: AppLanguage) {
-        GlobalSettings.setLanguage(value)
-        database.cacheDao().put("language", value.code)
-    }
-
-    override fun setReaderAutoSave(value: Boolean) {
-        GlobalSettings.setReaderAutoSave(value)
-        database.cacheDao().put(GlobalSettings.READER_AUTO_SAVE_KEY, value.toString())
-    }
 }
 
 class NetworkNovelRepository : NovelRepository, ReaderRepository {

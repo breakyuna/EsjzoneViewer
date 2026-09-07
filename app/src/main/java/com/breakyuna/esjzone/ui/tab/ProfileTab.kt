@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
@@ -20,7 +21,6 @@ import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -49,8 +49,9 @@ import com.breakyuna.esjzone.novellibrary.user.UserProfile
 import com.breakyuna.esjzone.network.EsjzoneUrls
 import com.breakyuna.esjzone.network.LocalAuthorization
 import com.breakyuna.esjzone.network.features.getUserProfile
-import com.breakyuna.esjzone.ui.designsystem.AppImage
+import com.breakyuna.esjzone.ui.designsystem.AppAvatarImage
 import com.breakyuna.esjzone.ui.designsystem.AppShapes
+import com.breakyuna.esjzone.ui.designsystem.AppShimmerPlaceholder
 import com.breakyuna.esjzone.ui.designsystem.AppSpacing
 import com.breakyuna.esjzone.ui.designsystem.AppTypography
 import com.breakyuna.esjzone.ui.navigation.AppTab
@@ -139,13 +140,30 @@ private fun ProfileHero(profile: UserProfile?, domain: String) {
     Card(shape = AppShapes.prominent, colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)) {
         Row(Modifier.fillMaxWidth().padding(AppSpacing.lg), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(AppSpacing.lg)) {
             if (profile == null) {
-                Box(Modifier.size(72.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator(Modifier.size(28.dp)) }
+                AppShimmerPlaceholder(
+                    modifier = Modifier.size(72.dp),
+                    shape = CircleShape,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.14f)
+                )
             } else {
-                AppImage(EsjzoneUrls.resolve(profile.avatarUrl, EsjzoneUrls.baseForDomain(domain)).takeIf(String::isNotBlank) ?: R.drawable.missing_cover, profile.name, Modifier.size(72.dp).clip(CircleShape), ContentScale.Crop)
+                AppAvatarImage(EsjzoneUrls.resolve(profile.avatarUrl, EsjzoneUrls.baseForDomain(domain)).takeIf(String::isNotBlank) ?: R.drawable.missing_cover, profile.name, Modifier.size(72.dp).clip(CircleShape), ContentScale.Crop)
             }
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(AppSpacing.xs)) {
-                Text(profile?.name ?: "…", style = AppTypography.displayMedium, maxLines = 1, overflow = TextOverflow.Ellipsis, color = MaterialTheme.colorScheme.onPrimaryContainer)
-                Text(stringResource(R.string.profile_signed_in), style = AppTypography.bodyMedium, color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.76f))
+                if (profile == null) {
+                    AppShimmerPlaceholder(
+                        modifier = Modifier.fillMaxWidth(0.68f).height(28.dp),
+                        shape = AppShapes.compact,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.14f)
+                    )
+                    AppShimmerPlaceholder(
+                        modifier = Modifier.fillMaxWidth(0.44f).height(16.dp),
+                        shape = AppShapes.compact,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.11f)
+                    )
+                } else {
+                    Text(profile.name, style = AppTypography.displayMedium, maxLines = 1, overflow = TextOverflow.Ellipsis, color = MaterialTheme.colorScheme.onPrimaryContainer)
+                    Text(stringResource(R.string.profile_signed_in), style = AppTypography.bodyMedium, color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.76f))
+                }
                 Text(domain, style = AppTypography.bodySmall, color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f))
             }
         }
