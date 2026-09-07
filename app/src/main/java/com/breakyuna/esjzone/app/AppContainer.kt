@@ -2,11 +2,11 @@ package com.breakyuna.esjzone.app
 
 import android.content.Context
 import androidx.room.Room
-import coil.ImageLoader
-import coil.decode.ImageDecoderDecoder
-import coil.disk.DiskCache
-import coil.memory.MemoryCache
-import com.breakyuna.esjzone.data.repository.CacheSettingsRepository
+import coil3.ImageLoader
+import coil3.disk.DiskCache
+import coil3.memory.MemoryCache
+import com.breakyuna.esjzone.data.settings.SettingsDataStore
+import com.breakyuna.esjzone.data.settings.ReaderSettingsDataStore
 import com.breakyuna.esjzone.data.repository.DatabaseBookmarkRepository
 import com.breakyuna.esjzone.data.repository.DatabaseBookshelfRepository
 import com.breakyuna.esjzone.data.repository.DatabaseHistoryRepository
@@ -53,7 +53,6 @@ class AppContainer(context: Context) {
     ).build()
 
     val imageLoader: ImageLoader = ImageLoader.Builder(appContext)
-        .components { add(ImageDecoderDecoder.Factory()) }
         .memoryCache { MemoryCache.Builder(appContext).maxSizePercent(0.15).build() }
         .diskCache {
             DiskCache.Builder()
@@ -65,7 +64,9 @@ class AppContainer(context: Context) {
         .build()
 
     val session: SessionRepository = NetworkSessionRepository()
-    val settings: SettingsRepository = CacheSettingsRepository(database)
+    val settingsDataStore = SettingsDataStore(appContext)
+    val readerSettingsDataStore = ReaderSettingsDataStore(appContext)
+    val settings: SettingsRepository = settingsDataStore
     val novel: NovelRepository = NetworkNovelRepository()
     val search: SearchRepository = NetworkSearchRepository()
     val bookshelf: BookshelfRepository = DatabaseBookshelfRepository(database)

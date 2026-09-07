@@ -44,10 +44,8 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.CoroutineScope
-import com.breakyuna.esjzone.database.dao.put
 import com.breakyuna.esjzone.ui.app.App
 import com.breakyuna.esjzone.ui.designsystem.AppTheme
-import com.breakyuna.esjzone.ui.designsystem.AppThemeVariant
 import com.breakyuna.esjzone.ui.designsystem.AppTypography
 import com.breakyuna.esjzone.util.AppLogger
 import com.breakyuna.esjzone.util.CrashHandler
@@ -72,25 +70,15 @@ class MainActivity : ComponentActivity() {
                 AppLogger.init(appContext)
                 CrashHandler.init(appContext)
                 val container = (appContext as EsjzoneApplication).container
-                AppLogger.i("MainActivity", "Initializing Room database...")
-                val dao = container.database.cacheDao()
-                if (dao.findByKey("theme") == null) dao.put("theme", GlobalSettings.theme.value.name)
-                if (dao.findByKey("domain") == null) dao.put("domain", GlobalSettings.domain.value)
-                if (dao.findByKey(GlobalSettings.READER_AUTO_SAVE_KEY) == null) {
-                    dao.put(GlobalSettings.READER_AUTO_SAVE_KEY, "false")
-                }
-                val savedTheme = dao.findByKey("theme")?.value ?: GlobalSettings.theme.value.name
-                val savedDomain = dao.findByKey("domain")?.value?.takeIf { it in GlobalSettings.DOMAINS }
-                    ?: GlobalSettings.domain.value
-                val savedLanguage = dao.findByKey("language")?.value
-                val savedReaderAutoSave = dao.findByKey(GlobalSettings.READER_AUTO_SAVE_KEY)
-                    ?.value
-                    ?.toBooleanStrictOrNull()
-                    ?: false
-                GlobalSettings.setDomain(savedDomain)
-                GlobalSettings.setTheme(AppThemeVariant.fromPersistedName(savedTheme))
-                GlobalSettings.setLanguage(AppLanguage.fromCode(savedLanguage))
-                GlobalSettings.setReaderAutoSave(savedReaderAutoSave)
+                AppLogger.i("MainActivity", "Initializing settings and Room database...")
+                val settings = container.settingsDataStore
+                settings.migrateFromLegacy(container.database)
+                container.readerSettingsDataStore.migrateFromLegacy(appContext)
+                GlobalSettings.setAdult(settings.adult.value)
+                GlobalSettings.setDomain(settings.domain.value)
+                GlobalSettings.setTheme(settings.theme.value)
+                GlobalSettings.setLanguage(settings.language.value)
+                GlobalSettings.setReaderAutoSave(settings.readerAutoSave.value)
                 startupState.value = StartupState.Ready
             } catch (e: Exception) {
                 AppLogger.e("MainActivity", "Failed to initialize database or settings", e)

@@ -2,6 +2,8 @@ package com.breakyuna.esjzone.ui.page
 import com.breakyuna.esjzone.app.PresentationAccess
 
 import com.breakyuna.esjzone.ui.navigation.AppStateViewModel
+import com.breakyuna.esjzone.AppLanguage
+import com.breakyuna.esjzone.ui.designsystem.AppThemeVariant
 import com.breakyuna.esjzone.database.dao.put
 import com.breakyuna.esjzone.network.Authorization
 import com.breakyuna.esjzone.network.features.logout
@@ -27,7 +29,15 @@ class SettingsPageModel : AppStateViewModel<SettingsPageModel.State>(State()) {
     fun persist(key: String, value: String) {
         screenModelScope.launch(Dispatchers.IO) {
             try {
-                PresentationAccess.database.cacheDao().put(key, value)
+                when (key) {
+                    "adult", "show_adult" -> PresentationAccess.settings.setAdult(value.toBooleanStrictOrNull() ?: return@launch)
+                    "theme" -> PresentationAccess.settings.setTheme(AppThemeVariant.fromPersistedName(value))
+                    "domain" -> PresentationAccess.settings.setDomain(value)
+                    "language" -> PresentationAccess.settings.setLanguage(AppLanguage.fromCode(value))
+                    PresentationAccess.settings.READER_AUTO_SAVE_KEY ->
+                        PresentationAccess.settings.setReaderAutoSave(value.toBooleanStrictOrNull() ?: return@launch)
+                    else -> PresentationAccess.database.cacheDao().put(key, value)
+                }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {

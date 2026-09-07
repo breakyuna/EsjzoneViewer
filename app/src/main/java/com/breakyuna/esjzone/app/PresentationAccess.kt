@@ -1,7 +1,7 @@
 package com.breakyuna.esjzone.app
 
 import androidx.compose.runtime.State
-import coil.ImageLoader
+import coil3.ImageLoader
 import com.breakyuna.esjzone.AppLanguage
 import com.breakyuna.esjzone.EsjzoneApplication
 import com.breakyuna.esjzone.GlobalSettings

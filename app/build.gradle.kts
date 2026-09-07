@@ -13,7 +13,7 @@ val app_version = project.properties["app_version"].toString()
 
 android {
     namespace = "com.breakyuna.esjzone"
-    compileSdk = 36
+    compileSdk = 37
 
     defaultConfig {
         applicationId = "com.breakyuna.esjzone"
@@ -85,6 +85,7 @@ dependencies {
     implementation(libs.coil.core)
     implementation(libs.coil.compose)
     implementation(libs.coil.gif)
+    implementation(libs.coil.network.okhttp)
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.androidx.navigation3.runtime)
     implementation(libs.androidx.navigation3.ui)
@@ -92,6 +93,7 @@ dependencies {
     implementation(libs.androidx.lifecycle.viewmodel.compose)
     implementation(libs.androidx.compose.adaptive)
     implementation(libs.androidx.compose.adaptive.layout)
+    implementation(libs.androidx.compose.adaptive.navigation3)
     implementation(libs.gson)
     implementation(libs.jsoup)
     implementation(libs.xsoup)
@@ -109,6 +111,7 @@ dependencies {
     implementation(libs.androidx.room.ktx)
     implementation(libs.androidx.work.runtime.ktx)
     implementation(libs.androidx.security.crypto)
+    implementation(libs.androidx.datastore.preferences)
 
     ksp(libs.androidx.room.compiler)
 

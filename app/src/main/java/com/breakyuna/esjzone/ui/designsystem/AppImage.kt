@@ -12,7 +12,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
-import coil.compose.SubcomposeAsyncImage
+import com.breakyuna.esjzone.app.PresentationAccess
+import coil3.compose.SubcomposeAsyncImage
 
 /**
  * Image loading seam; feature code must not depend on a concrete image-loader API.
@@ -34,6 +35,7 @@ fun AppImage(
 ) {
     SubcomposeAsyncImage(
         model = model,
+        imageLoader = PresentationAccess.imageLoader,
         contentDescription = contentDescription,
         modifier = modifier,
         contentScale = contentScale,

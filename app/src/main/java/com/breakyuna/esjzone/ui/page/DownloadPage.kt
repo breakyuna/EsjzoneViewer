@@ -54,7 +54,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.breakyuna.esjzone.R
 import com.breakyuna.esjzone.app.PresentationAccess
-import com.breakyuna.esjzone.database.dao.put
 import com.breakyuna.esjzone.offline.DownloadedNovelSummary
 import com.breakyuna.esjzone.ui.designsystem.AppImage
 import com.breakyuna.esjzone.ui.designsystem.AppShapes
@@ -276,10 +275,9 @@ private class DownloadPageModel : AppStateViewModel<DownloadPageModel.State>(Sta
     }
 
     fun setAutoSave(enabled: Boolean) {
-        PresentationAccess.settings.setReaderAutoSave(enabled)
         screenModelScope.launch(Dispatchers.IO) {
             try {
-                PresentationAccess.database.cacheDao().put(PresentationAccess.settings.READER_AUTO_SAVE_KEY, enabled.toString())
+                PresentationAccess.settings.setReaderAutoSave(enabled)
             } catch (e: CancellationException) { throw e }
             catch (e: Exception) { AppLogger.e("DownloadPageModel", "Failed to persist reader auto-save preference", e) }
         }
