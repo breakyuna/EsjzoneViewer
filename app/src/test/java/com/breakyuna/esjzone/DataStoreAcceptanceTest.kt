@@ -1,7 +1,6 @@
 package com.breakyuna.esjzone
 
 import android.content.Context
-import androidx.test.core.app.ApplicationProvider
 import com.breakyuna.esjzone.data.settings.ReaderSettingsDataStore
 import com.breakyuna.esjzone.data.settings.SettingsDataStore
 import com.breakyuna.esjzone.ui.designsystem.AppThemeVariant
@@ -21,6 +20,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
 
 /** Acceptance coverage for the preference boundaries used during startup. */
@@ -29,7 +29,7 @@ import org.robolectric.annotation.Config
 class DataStoreAcceptanceTest {
 
     private val context: Context
-        get() = ApplicationProvider.getApplicationContext()
+        get() = RuntimeEnvironment.getApplication()
 
     @Test
     fun settings_defaults_areStableOnFreshStore() = runBlocking {
