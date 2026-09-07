@@ -1,5 +1,7 @@
 package com.breakyuna.esjzone.ui.page
 
+import androidx.lifecycle.viewModelScope
+
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -253,7 +255,7 @@ private class DownloadPageModel : AppStateViewModel<DownloadPageModel.State>(Sta
 
     fun refresh() {
         mutableState.value = State.Loading
-        screenModelScope.launch(Dispatchers.IO) {
+        viewModelScope.launch(Dispatchers.IO) {
             try {
                 mutableState.value = State.Content(PresentationAccess.downloads.listDownloadedNovels())
             } catch (e: CancellationException) {
@@ -270,7 +272,7 @@ private class DownloadPageModel : AppStateViewModel<DownloadPageModel.State>(Sta
         if (targets.isEmpty()) return
         val current = mutableState.value as? State.Content
         mutableState.value = current?.copy(deleting = true) ?: State.Content(emptyList(), true)
-        screenModelScope.launch(Dispatchers.IO) {
+        viewModelScope.launch(Dispatchers.IO) {
             try { PresentationAccess.downloads.deleteAll(targets) }
             catch (e: CancellationException) { throw e }
             catch (e: Exception) { AppLogger.e("DownloadPageModel", "Failed to delete downloaded novels", e) }
@@ -279,7 +281,7 @@ private class DownloadPageModel : AppStateViewModel<DownloadPageModel.State>(Sta
     }
 
     fun setAutoSave(enabled: Boolean) {
-        screenModelScope.launch(Dispatchers.IO) {
+        viewModelScope.launch(Dispatchers.IO) {
             try {
                 PresentationAccess.settings.setReaderAutoSave(enabled)
             } catch (e: CancellationException) { throw e }

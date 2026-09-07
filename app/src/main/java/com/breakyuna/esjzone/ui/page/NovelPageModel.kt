@@ -1,4 +1,6 @@
 package com.breakyuna.esjzone.ui.page
+
+import androidx.lifecycle.viewModelScope
 import com.breakyuna.esjzone.app.PresentationAccess
 
 import com.breakyuna.esjzone.ui.navigation.AppStateViewModel
@@ -35,7 +37,7 @@ class NovelPageModel(
             if (detailLoadStarted) return
             detailLoadStarted = true
         }
-        screenModelScope.launch(Dispatchers.IO) {
+        viewModelScope.launch(Dispatchers.IO) {
             mutableState.value = State.Loading
             try {
                 val fetchedDetail = PresentationAccess.client.getNovelDetail(
@@ -71,7 +73,7 @@ class NovelPageModel(
     }
 
     fun persistFavorite(desired: Boolean) {
-        screenModelScope.launch(Dispatchers.IO) {
+        viewModelScope.launch(Dispatchers.IO) {
             try {
                 BookshelfRepository.setFavorite(
                     authorization = authorization,
@@ -91,7 +93,7 @@ class NovelPageModel(
     }
 
     fun seedFavoriteMetadata(author: String, coverUrl: String, isAdult: Boolean) {
-        screenModelScope.launch(Dispatchers.IO) {
+        viewModelScope.launch(Dispatchers.IO) {
             try {
                 BookshelfRepository.seedRemoteFavorite(
                     authorization = authorization,

@@ -7,6 +7,7 @@ plugins {
     alias(libs.plugins.compose.compiler)
     alias(libs.plugins.jetbrains.kotlin.serialization)
     alias(libs.plugins.androidx.room)
+    id("androidx.baselineprofile")
 }
 
 val app_version_index = project.properties["app_version_index"].toString().toInt()
@@ -53,7 +54,8 @@ android {
             signingConfig = signingConfigs.getByName("debugConfig")
         }
         release {
-            isMinifyEnabled = false
+            isMinifyEnabled = true
+            isShrinkResources = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
@@ -84,6 +86,8 @@ android {
 }
 
 dependencies {
+    baselineProfile(project(":baselineprofile"))
+
     implementation(libs.okhttp)
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.coil.core)
@@ -120,6 +124,7 @@ dependencies {
     implementation(libs.androidx.work.runtime.ktx)
     implementation(libs.androidx.security.crypto)
     implementation(libs.androidx.datastore.preferences)
+    implementation("androidx.profileinstaller:profileinstaller:1.4.1")
 
     ksp(libs.androidx.room.compiler)
 

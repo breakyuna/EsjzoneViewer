@@ -1,4 +1,6 @@
 package com.breakyuna.esjzone.ui.page
+
+import androidx.lifecycle.viewModelScope
 import com.breakyuna.esjzone.app.PresentationAccess
 
 import androidx.compose.foundation.background
@@ -853,7 +855,7 @@ internal class CommentPageModel(
         if (!forceRefresh && loadStarted) return
         loadStarted = true
         loadJob?.cancel()
-        loadJob = screenModelScope.launch(Dispatchers.IO) {
+        loadJob = viewModelScope.launch(Dispatchers.IO) {
             try {
                 val comments = PresentationAccess.client.getPageComments(
                     authorization,
@@ -886,7 +888,7 @@ internal class CommentPageModel(
 
         isSubmitting.value = true
         submitError.value = null
-        screenModelScope.launch(Dispatchers.IO) {
+        viewModelScope.launch(Dispatchers.IO) {
             try {
                 val submission = PresentationAccess.client.submitForumComment(
                     authorization = authorization,

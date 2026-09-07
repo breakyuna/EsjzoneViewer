@@ -1,4 +1,6 @@
 package com.breakyuna.esjzone.ui.page
+
+import androidx.lifecycle.viewModelScope
 import com.breakyuna.esjzone.app.PresentationAccess
 
 import com.breakyuna.esjzone.ui.navigation.AppStateViewModel
@@ -38,7 +40,7 @@ class HistoryPageModel(
         if (loadStarted) return
         loadStarted = true
         loadJob?.cancel()
-        loadJob = screenModelScope.launch(Dispatchers.IO) {
+        loadJob = viewModelScope.launch(Dispatchers.IO) {
             mutableState.value = State.Loading
             try {
                 val histories = PresentationAccess.client.getHistories(
@@ -63,7 +65,7 @@ class HistoryPageModel(
     }
 
     fun deleteHistory(vid: String, name: String) {
-        screenModelScope.launch(Dispatchers.IO) {
+        viewModelScope.launch(Dispatchers.IO) {
             try {
                 PresentationAccess.client.removeHistory(authorization, vid)
                 _deletedIds.value = _deletedIds.value + vid

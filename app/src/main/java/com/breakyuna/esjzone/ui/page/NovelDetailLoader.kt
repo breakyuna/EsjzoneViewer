@@ -1,4 +1,6 @@
 package com.breakyuna.esjzone.ui.page
+
+import androidx.lifecycle.viewModelScope
 import com.breakyuna.esjzone.app.PresentationAccess
 
 import androidx.compose.runtime.mutableStateMapOf
@@ -30,7 +32,7 @@ class NovelDetailLoader(private val authorization: Authorization) : AppStateView
         if (!retry && jobs[key]?.isActive == true) return
         jobs[key]?.cancel()
         failures.remove(key)
-        jobs[key] = screenModelScope.launch {
+        jobs[key] = viewModelScope.launch {
             val thisJob = coroutineContext[Job]
             try {
                 val detail = withContext(Dispatchers.IO) {

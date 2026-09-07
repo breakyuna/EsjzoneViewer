@@ -1,4 +1,6 @@
 package com.breakyuna.esjzone.ui.page
+
+import androidx.lifecycle.viewModelScope
 import com.breakyuna.esjzone.app.PresentationAccess
 
 import com.breakyuna.esjzone.ui.navigation.AppStateViewModel
@@ -27,7 +29,7 @@ class SettingsPageModel : AppStateViewModel<SettingsPageModel.State>(State()) {
     enum class Operation { PAGES, IMAGES }
 
     fun persist(key: String, value: String) {
-        screenModelScope.launch(Dispatchers.IO) {
+        viewModelScope.launch(Dispatchers.IO) {
             try {
                 when (key) {
                     "adult", "show_adult" -> PresentationAccess.settings.setAdult(value.toBooleanStrictOrNull() ?: return@launch)
@@ -48,7 +50,7 @@ class SettingsPageModel : AppStateViewModel<SettingsPageModel.State>(State()) {
 
     fun refreshCacheStats() {
         mutableState.value = mutableState.value.copy(cacheStatsError = false)
-        screenModelScope.launch(Dispatchers.IO) {
+        viewModelScope.launch(Dispatchers.IO) {
             try {
                 val pageStats = PresentationAccess.client.pageCacheStats()
                 val imageBytes = PresentationAccess.imageCacheSizeBytes()
@@ -80,7 +82,7 @@ class SettingsPageModel : AppStateViewModel<SettingsPageModel.State>(State()) {
             cacheOperation = operation,
             cacheClearError = false
         )
-        screenModelScope.launch(Dispatchers.IO) {
+        viewModelScope.launch(Dispatchers.IO) {
             var failed = false
             try {
                 action()
@@ -101,7 +103,7 @@ class SettingsPageModel : AppStateViewModel<SettingsPageModel.State>(State()) {
     fun logout(authorization: Authorization) {
         if (mutableState.value.logoutInProgress) return
         mutableState.value = mutableState.value.copy(logoutInProgress = true)
-        screenModelScope.launch(Dispatchers.IO) {
+        viewModelScope.launch(Dispatchers.IO) {
             var cancelled = false
             try {
                 try {

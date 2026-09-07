@@ -1,4 +1,6 @@
 package com.breakyuna.esjzone.ui.page
+
+import androidx.lifecycle.viewModelScope
 import com.breakyuna.esjzone.app.PresentationAccess
 
 import androidx.compose.runtime.MutableState
@@ -135,7 +137,7 @@ class ChapterPageModel(
         jobsToCancel.forEach(Job::cancel)
         mutableState.value = State.Loading
 
-        initialJob = screenModelScope.launch(Dispatchers.IO) {
+        initialJob = viewModelScope.launch(Dispatchers.IO) {
             val detail = try {
                 loadDetail(chapter)
             } catch (error: CancellationException) {
@@ -210,7 +212,7 @@ class ChapterPageModel(
         val session = currentSession ?: return
         publish(session)
 
-        appendJob = screenModelScope.launch(Dispatchers.IO) {
+        appendJob = viewModelScope.launch(Dispatchers.IO) {
             try {
                 val detail = loadDetail(chapterToLoad)
                 if (detail != null && isCurrentSession(session)) {
@@ -277,7 +279,7 @@ class ChapterPageModel(
         val session = currentSession ?: return
         publish(session)
 
-        prependJob = screenModelScope.launch(Dispatchers.IO) {
+        prependJob = viewModelScope.launch(Dispatchers.IO) {
             try {
                 val detail = loadDetail(chapterToLoad)
                 if (detail != null && isCurrentSession(session)) {
@@ -330,7 +332,7 @@ class ChapterPageModel(
             orderLoading = true
             orderRequestId += 1
             requestId = orderRequestId
-            orderJob = screenModelScope.launch(Dispatchers.IO) {
+            orderJob = viewModelScope.launch(Dispatchers.IO) {
                 try {
                     ensureChapterOrder()
                     if (!isCurrentSession(currentSession)) return@launch
@@ -455,7 +457,7 @@ class ChapterPageModel(
             ) {
                 return
             }
-            prefetchJobs[key] = screenModelScope.launch(Dispatchers.IO) {
+            prefetchJobs[key] = viewModelScope.launch(Dispatchers.IO) {
                 val detail = try {
                     PresentationAccess.client.getChapterDetail(authorization, chapter)
                 } catch (e: CancellationException) {

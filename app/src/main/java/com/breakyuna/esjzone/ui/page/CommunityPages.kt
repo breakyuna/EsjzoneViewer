@@ -1,4 +1,6 @@
 package com.breakyuna.esjzone.ui.page
+
+import androidx.lifecycle.viewModelScope
 import com.breakyuna.esjzone.app.PresentationAccess
 
 import androidx.compose.foundation.layout.Arrangement
@@ -715,7 +717,7 @@ private class ForumPageModel(
     fun load() {
         if (loadStarted) return
         loadStarted = true
-        screenModelScope.launch(Dispatchers.IO) {
+        viewModelScope.launch(Dispatchers.IO) {
             mutableState.value = try {
                 PresentationAccess.client.getForumCategories(authorization).toCommunityState()
             } catch (error: CancellationException) {
@@ -740,7 +742,7 @@ private class ForumCategoryPageModel(
     fun load() {
         if (loadStarted) return
         loadStarted = true
-        screenModelScope.launch(Dispatchers.IO) {
+        viewModelScope.launch(Dispatchers.IO) {
             mutableState.value = try {
                 PresentationAccess.client.getForumThreads(authorization, category).toCommunityState()
             } catch (error: CancellationException) {
@@ -771,7 +773,7 @@ private class ForumBoardPageModel(
     fun load() {
         if (loadStarted) return
         loadStarted = true
-        screenModelScope.launch(Dispatchers.IO) {
+        viewModelScope.launch(Dispatchers.IO) {
             mutableState.value = try {
                 CommunityState.Result(PresentationAccess.client.getForumBoard(authorization, thread))
             } catch (error: CancellationException) {
@@ -800,7 +802,7 @@ private class ForumPostPageModel(
     fun load() {
         if (loadStarted) return
         loadStarted = true
-        screenModelScope.launch(Dispatchers.IO) {
+        viewModelScope.launch(Dispatchers.IO) {
             mutableState.value = try {
                 CommunityState.Result(PresentationAccess.client.getForumPost(authorization, topic))
             } catch (error: CancellationException) {

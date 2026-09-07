@@ -1,5 +1,7 @@
 package com.breakyuna.esjzone.ui.page
 
+import androidx.lifecycle.viewModelScope
+
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -127,7 +129,7 @@ class CategoryPageModel(
     fun getNovels() {
         if (loadStarted) return
         loadStarted = true
-        screenModelScope.launch(Dispatchers.IO) {
+        viewModelScope.launch(Dispatchers.IO) {
             mutableState.value = State.Loading
             try {
                 val novels = PresentationAccess.client.listNovels(authorization, category)

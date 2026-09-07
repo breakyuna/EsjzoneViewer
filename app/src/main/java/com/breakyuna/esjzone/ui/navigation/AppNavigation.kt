@@ -19,7 +19,6 @@ import androidx.compose.ui.Modifier
 import androidx.lifecycle.viewmodel.compose.LocalViewModelStoreOwner
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
-import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.navigation3.rememberViewModelStoreNavEntryDecorator
 import androidx.navigation3.runtime.NavKey
@@ -61,7 +60,6 @@ import com.breakyuna.esjzone.ui.tab.SearchTab
 import com.breakyuna.esjzone.ui.screen.LoadingScreen
 import com.breakyuna.esjzone.ui.screen.LoginScreen
 import com.breakyuna.esjzone.ui.screen.MainScreen
-import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -227,16 +225,12 @@ interface AppTab : AppDestination {
 
 /**
  * Small state model base replacing the previous third-party screen model.
- * ViewModel lifetime is supplied by Navigation 3's ViewModel entry decorator;
- * [screenModelScope] is retained as a source-compatible name for existing
- * feature logic while the implementation is now AndroidX lifecycle scoped.
+ * ViewModel lifetime is supplied by Navigation 3's ViewModel entry decorator.
  */
 open class AppStateViewModel<S>(initialState: S) : ViewModel() {
     private val stateFlow = MutableStateFlow(initialState)
     val state: StateFlow<S> = stateFlow.asStateFlow()
     protected val mutableState: MutableStateFlow<S> = stateFlow
-    protected val screenModelScope: CoroutineScope
-        get() = viewModelScope
 }
 
 /** Creates arbitrary-argument feature ViewModels in the current NavEntry scope. */

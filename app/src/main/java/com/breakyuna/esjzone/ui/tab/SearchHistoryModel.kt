@@ -1,4 +1,6 @@
 package com.breakyuna.esjzone.ui.tab
+
+import androidx.lifecycle.viewModelScope
 import com.breakyuna.esjzone.app.PresentationAccess
 
 import com.breakyuna.esjzone.ui.navigation.AppStateViewModel
@@ -18,7 +20,7 @@ class SearchHistoryModel : AppStateViewModel<SearchHistoryModel.State>(State()) 
     )
 
     fun load() {
-        screenModelScope.launch(Dispatchers.IO) {
+        viewModelScope.launch(Dispatchers.IO) {
             try {
                 val histories = PresentationAccess.database.searchHistoryDao().getAll()
                 mutableState.value = State(histories = histories, loading = false)
@@ -32,7 +34,7 @@ class SearchHistoryModel : AppStateViewModel<SearchHistoryModel.State>(State()) 
     }
 
     fun save(keyword: String) {
-        screenModelScope.launch(Dispatchers.IO) {
+        viewModelScope.launch(Dispatchers.IO) {
             try {
                 val dao = PresentationAccess.database.searchHistoryDao()
                 val history = dao.findByKeyword(keyword)
@@ -52,7 +54,7 @@ class SearchHistoryModel : AppStateViewModel<SearchHistoryModel.State>(State()) 
         mutableState.value = mutableState.value.copy(
             histories = mutableState.value.histories.filterNot { it.index == history.index }
         )
-        screenModelScope.launch(Dispatchers.IO) {
+        viewModelScope.launch(Dispatchers.IO) {
             try {
                 PresentationAccess.database.searchHistoryDao().delete(history)
             } catch (e: CancellationException) {
@@ -66,7 +68,7 @@ class SearchHistoryModel : AppStateViewModel<SearchHistoryModel.State>(State()) 
     fun clear() {
         val items = mutableState.value.histories
         mutableState.value = mutableState.value.copy(histories = emptyList())
-        screenModelScope.launch(Dispatchers.IO) {
+        viewModelScope.launch(Dispatchers.IO) {
             try {
                 val dao = PresentationAccess.database.searchHistoryDao()
                 items.forEach { dao.delete(it) }

@@ -1,5 +1,7 @@
 package com.breakyuna.esjzone.ui.page
 
+import androidx.lifecycle.viewModelScope
+
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -320,7 +322,7 @@ class NovelListPageModel(
         if (!forceRefresh && initialRequestStarted) return
         initialRequestStarted = true
         requestJob?.cancel()
-        requestJob = screenModelScope.launch(Dispatchers.IO) {
+        requestJob = viewModelScope.launch(Dispatchers.IO) {
             mutableState.value = State.Loading
             try {
                 val (requester, firstPage) = PresentationAccess.client.novels(

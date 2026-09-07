@@ -1,5 +1,7 @@
 package com.breakyuna.esjzone.ui.page
 
+import androidx.lifecycle.viewModelScope
+
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -339,7 +341,7 @@ class SearchPageModel(
         moreFailed = false
         moreFailure = null
         mutableState.value = State.Loading
-        requestJob = screenModelScope.launch {
+        requestJob = viewModelScope.launch {
             try {
                 val (requester, novels) = withContext(Dispatchers.IO) {
                     PresentationAccess.client.search(authorization, normalizedKeyword, category, sort)
@@ -371,7 +373,7 @@ class SearchPageModel(
         loadingMore = true
         moreFailed = false
         moreFailure = null
-        moreJob = screenModelScope.launch {
+        moreJob = viewModelScope.launch {
             try {
                 val loaded = withContext(Dispatchers.IO) { requester.more(page) }
                 ensureActive()

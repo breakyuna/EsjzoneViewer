@@ -1,5 +1,7 @@
 package com.breakyuna.esjzone.ui.page
 
+import androidx.lifecycle.viewModelScope
+
 import android.text.format.DateUtils
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.layout.Arrangement
@@ -389,7 +391,7 @@ class LocalHistoryPageModel(private val authorization: Authorization) : AppState
         if (observeStarted) return
         observeStarted = true
         observeJob?.cancel()
-        observeJob = screenModelScope.launch(Dispatchers.IO) {
+        observeJob = viewModelScope.launch(Dispatchers.IO) {
             try {
                 PresentationAccess.database.localReadingActivityDao().observeAll().collect { mutableState.value = State.Result(it) }
             } catch (e: CancellationException) { throw e }
@@ -399,8 +401,8 @@ class LocalHistoryPageModel(private val authorization: Authorization) : AppState
 
     fun retry() { observeStarted = false; mutableState.value = State.Loading; observe() }
 
-    fun delete(activityId: String) { screenModelScope.launch(Dispatchers.IO) { runCatching { PresentationAccess.database.localReadingActivityDao().deleteById(activityId) }.onFailure { AppLogger.e("LocalHistoryPageModel", "Failed to delete local reading activity", it) } } }
-    fun clear() { screenModelScope.launch(Dispatchers.IO) { runCatching { PresentationAccess.database.localReadingActivityDao().deleteAll() }.onFailure { AppLogger.e("LocalHistoryPageModel", "Failed to clear local history", it) } } }
+    fun delete(activityId: String) { viewModelScope.launch(Dispatchers.IO) { runCatching { PresentationAccess.database.localReadingActivityDao().deleteById(activityId) }.onFailure { AppLogger.e("LocalHistoryPageModel", "Failed to delete local reading activity", it) } } }
+    fun clear() { viewModelScope.launch(Dispatchers.IO) { runCatching { PresentationAccess.database.localReadingActivityDao().deleteAll() }.onFailure { AppLogger.e("LocalHistoryPageModel", "Failed to clear local history", it) } } }
 
     fun coverUrlFor(activity: LocalReadingActivity): String {
         val stored = EsjzoneUrls.coverOrEmpty(activity.novelCoverUrl)
@@ -413,7 +415,7 @@ class LocalHistoryPageModel(private val authorization: Authorization) : AppState
         val target = coverLookupUrl(activity)
         val key = coverKey(target)
         if (key.isBlank() || !synchronized(coverLock) { requestedCovers.add(key) }) return
-        screenModelScope.launch(Dispatchers.IO) {
+        viewModelScope.launch(Dispatchers.IO) {
             try {
                 val cover = EsjzoneUrls.coverOrEmpty(PresentationAccess.client.getNovelDetail(authorization, FavoriteNovel(activity.novelName, target)).coverUrl)
                 if (cover.isNotBlank()) {

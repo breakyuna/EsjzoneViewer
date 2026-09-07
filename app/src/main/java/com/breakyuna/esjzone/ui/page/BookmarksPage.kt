@@ -1,5 +1,7 @@
 package com.breakyuna.esjzone.ui.page
 
+import androidx.lifecycle.viewModelScope
+
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -169,7 +171,7 @@ private class BookmarksPageModel : AppStateViewModel<BookmarksPageModel.State>(S
     fun load() {
         if (loadStarted) return
         loadStarted = true
-        screenModelScope.launch(Dispatchers.IO) {
+        viewModelScope.launch(Dispatchers.IO) {
             try {
                 PresentationAccess.database.bookmarkDao().observeAll().collect { mutableState.value = State.Result(it) }
             } catch (e: CancellationException) {
@@ -191,7 +193,7 @@ private class BookmarksPageModel : AppStateViewModel<BookmarksPageModel.State>(S
     fun delete(bookmark: LocalBookmark) {
         val current = mutableState.value as? State.Result ?: return
         mutableState.value = State.Result(current.bookmarks.filterNot { it.chapterUrl == bookmark.chapterUrl })
-        screenModelScope.launch(Dispatchers.IO) {
+        viewModelScope.launch(Dispatchers.IO) {
             try {
                 PresentationAccess.database.bookmarkDao().delete(bookmark)
             } catch (e: CancellationException) {

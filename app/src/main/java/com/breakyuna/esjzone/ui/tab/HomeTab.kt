@@ -1,5 +1,7 @@
 package com.breakyuna.esjzone.ui.tab
 
+import androidx.lifecycle.viewModelScope
+
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -291,7 +293,7 @@ class HomeTabModel(
     fun getHomeData() {
         if (loadStarted) return
         loadStarted = true
-        screenModelScope.launch(Dispatchers.IO) {
+        viewModelScope.launch(Dispatchers.IO) {
             mutableState.value = State.Loading
             try {
                 val data = PresentationAccess.client.getHomeData(authorization)

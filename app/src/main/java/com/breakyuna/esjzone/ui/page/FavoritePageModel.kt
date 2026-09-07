@@ -1,4 +1,6 @@
 package com.breakyuna.esjzone.ui.page
+
+import androidx.lifecycle.viewModelScope
 import com.breakyuna.esjzone.app.PresentationAccess
 
 import com.breakyuna.esjzone.ui.navigation.AppStateViewModel
@@ -25,7 +27,7 @@ class FavoritePageModel(private val authorization: Authorization) :
 
     /** Refreshes the local-download index without blocking bookshelf composition. */
     fun refreshDownloaded() {
-        screenModelScope.launch(Dispatchers.IO) {
+        viewModelScope.launch(Dispatchers.IO) {
             _downloadedBookKeys.value = PresentationAccess.downloads.listDownloadedNovels()
                 .mapTo(LinkedHashSet()) { summary ->
                     BookshelfRepository.keyFor(summary.novelUrl)
@@ -52,7 +54,7 @@ class FavoritePageModel(private val authorization: Authorization) :
     val deleteState: StateFlow<DeleteState> = _deleteState
 
     fun sync() {
-        screenModelScope.launch(Dispatchers.IO) {
+        viewModelScope.launch(Dispatchers.IO) {
             mutableState.value = State.Syncing
             try {
                 val result = BookshelfRepository.sync(authorization)
@@ -76,7 +78,7 @@ class FavoritePageModel(private val authorization: Authorization) :
     fun delete(entries: List<BookshelfEntry>) {
         if (entries.isEmpty() || _deleteState.value is DeleteState.Deleting) return
         _deleteState.value = DeleteState.Deleting
-        screenModelScope.launch(Dispatchers.IO) {
+        viewModelScope.launch(Dispatchers.IO) {
             try {
                 val count = BookshelfRepository.removeBatch(authorization, entries)
                 _deleteState.value = DeleteState.Completed(count)

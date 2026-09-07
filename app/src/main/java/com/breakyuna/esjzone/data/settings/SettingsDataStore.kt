@@ -33,10 +33,12 @@ object SettingsDefaults {
 /** Preferences-backed settings boundary; callers can migrate independently of legacy storage. */
 class SettingsDataStore(
     context: Context,
-    private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.IO),
+    /** Allows isolated stores in tests; the production default is stable for migration compatibility. */
+    private val dataStoreFileName: String = FILE_NAME
 ) : SettingsRepository {
     private val dataStore: DataStore<Preferences> = PreferenceDataStoreFactory.create(
-        produceFile = { context.applicationContext.preferencesDataStoreFile(FILE_NAME) }
+        produceFile = { context.applicationContext.preferencesDataStoreFile(dataStoreFileName) }
     )
 
     private val defaults = SettingsValues()
