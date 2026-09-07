@@ -9,7 +9,8 @@ plugins {
     alias(libs.plugins.androidx.room) apply false
 
     id("com.android.test") version "9.1.1" apply false
-    id("androidx.baselineprofile") version "1.4.1" apply false
+    // 1.5 adds AGP 9 compatible Baseline Profile support.
+    id("androidx.baselineprofile") version "1.5.0-rc02" apply false
 }
 
 subprojects {
