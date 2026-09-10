@@ -108,10 +108,10 @@ object HomeTab : AppTab {
                 contentPadding = PaddingValues(
                     start = 16.dp + navPadding.calculateStartPadding(layoutDirection),
                     end = 16.dp,
-                    top = 12.dp,
-                    bottom = 12.dp + navPadding.calculateBottomPadding()
+                    top = AppSpacing.sm,
+                    bottom = AppSpacing.sm + navPadding.calculateBottomPadding()
                 ),
-                verticalArrangement = Arrangement.spacedBy(20.dp)
+                verticalArrangement = Arrangement.spacedBy(AppSpacing.md)
             ) {
                 item(key = "home-actions", contentType = "home-actions") {
                     HomeActions(
@@ -238,7 +238,7 @@ private fun LazyListScope.homeCollection(
         .asSequence()
         .filter { adult || !it.isAdult }
         .distinctBy { it.url.trim().ifBlank { it.name.trim() } }
-        .take(4)
+        .take(8)
         .toList()
 
     item(key = "home-section-$title", contentType = "home-section") {

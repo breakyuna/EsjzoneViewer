@@ -427,8 +427,11 @@ private fun CommentSection(
                 },
                 onLast = { selectedPageIndex = pages.lastIndex }
             )
-            pages[safePageIndex].forEach { comment ->
-                key(stableProductKey(comment.id, ProductComponentContentTypes.Comment)) {
+            pages[safePageIndex].forEachIndexed { index, comment ->
+                // A malformed or legacy page can contain blank/repeated DOM
+                // ids. Include the page-local position so every rendered item
+                // still has a non-blank, deterministic Compose identity.
+                key(commentRenderKey(comment, index)) {
                     CommentCard(
                         comment = comment,
                         onReply = if (!comment.replyToken.isNullOrBlank()) {
@@ -443,6 +446,17 @@ private fun CommentSection(
 
         Spacer(modifier = Modifier.height(12.dp))
     }
+}
+
+/**
+ * Produces a page-local key for comment rendering. The server id is preferred,
+ * while parent id and index protect against blank or duplicated ids observed in
+ * legacy/community markup.
+ */
+internal fun commentRenderKey(comment: Comment, index: Int): String {
+    val parent = comment.parentPostId.trim().ifBlank { "unknown-parent" }
+    val id = comment.id.trim().ifBlank { "unknown-comment" }
+    return stableProductKey("$parent:$id:$index", ProductComponentContentTypes.Comment)
 }
 
 @Composable

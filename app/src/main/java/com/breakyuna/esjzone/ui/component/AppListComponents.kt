@@ -104,7 +104,7 @@ fun AppDownloadItem(
     AppListSurface(modifier = modifier, onClick = onClick, selected = selected) {
         if (cover != null) Box(Modifier.size(56.dp), contentAlignment = Alignment.Center) { cover() }
         Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(AppSpacing.xs)) {
-            Text(title, style = AppTypography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            Text(title, style = AppTypography.labelLarge, maxLines = 2, overflow = TextOverflow.Ellipsis)
             Text(chapterSummary, style = AppTypography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
             Text(sizeLabel, style = AppTypography.labelMedium, color = MaterialTheme.colorScheme.primary, maxLines = 1)
         }
@@ -143,7 +143,7 @@ fun AppHistoryItem(
     AppListSurface(modifier = modifier, onClick = onClick) {
         if (cover != null) Box(Modifier.size(56.dp), contentAlignment = Alignment.Center) { cover() }
         Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(AppSpacing.xs)) {
-            Text(title, style = AppTypography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            Text(title, style = AppTypography.labelLarge, maxLines = 2, overflow = TextOverflow.Ellipsis)
             Text(chapterTitle, style = AppTypography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
             metadata?.takeIf(String::isNotBlank)?.let {
                 Text(it, style = AppTypography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
@@ -170,7 +170,7 @@ fun AppBookshelfItem(
     AppListSurface(modifier = modifier, onClick = onClick, selected = selected) {
         if (cover != null) Box(Modifier.size(64.dp), contentAlignment = Alignment.Center) { cover() }
         Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(AppSpacing.xs)) {
-            Text(title, style = AppTypography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            Text(title, style = AppTypography.labelLarge, maxLines = 2, overflow = TextOverflow.Ellipsis)
             supportingText?.takeIf(String::isNotBlank)?.let {
                 Text(it, style = AppTypography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
             }

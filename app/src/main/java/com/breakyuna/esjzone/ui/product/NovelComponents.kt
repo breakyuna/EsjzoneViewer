@@ -147,7 +147,7 @@ fun NovelCard(
         Row(modifier = Modifier.padding(AppSpacing.md), horizontalArrangement = Arrangement.spacedBy(AppSpacing.md)) {
             NovelCover(novel.cover, Modifier.width(96.dp))
             Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(AppSpacing.xs)) {
-                Text(novel.title, style = AppTypography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                Text(novel.title, style = AppTypography.labelLarge, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 NovelMetadata(novel.metadata, modifier = Modifier.fillMaxWidth())
                 novel.progressLabel?.let {
                     Spacer(Modifier.height(AppSpacing.xs))

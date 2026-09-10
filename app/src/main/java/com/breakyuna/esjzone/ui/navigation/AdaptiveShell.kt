@@ -40,6 +40,7 @@ import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
 import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -57,6 +58,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
 import androidx.compose.material3.adaptive.currentWindowAdaptiveInfoV2
@@ -310,30 +314,30 @@ private fun AppNavigationBar(
     onSelected: (AppTabId) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val capsuleShape = RoundedCornerShape(percent = 50)
+    val capsuleShape = RoundedCornerShape(34.dp)
     AppGlassSurface(
         modifier = modifier
             .fillMaxWidth()
             .shadow(
-                elevation = 12.dp,
+                elevation = 16.dp,
                 shape = capsuleShape,
-                spotColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.28f),
-                ambientColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.10f)
+                spotColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.18f),
+                ambientColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f)
             ),
         spec = AppGlassSpec(
             shape = capsuleShape,
-            alpha = 0.66f,
-            borderAlpha = 0.30f,
-            tintAlpha = 0.10f,
-            edgeSoftness = 3.dp,
-            specularIntensity = 0.30f
+            alpha = 0.54f,
+            borderAlpha = 0.42f,
+            tintAlpha = 0.20f,
+            edgeSoftness = 2.dp,
+            specularIntensity = 0.52f
         )
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(60.dp)
-                .padding(horizontal = 6.dp, vertical = 4.dp),
+                .height(68.dp)
+                .padding(horizontal = 4.dp, vertical = 6.dp),
             horizontalArrangement = Arrangement.SpaceEvenly,
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -417,9 +421,9 @@ private fun FloatingNavHorizontalItem(
     )
     val contentColor by animateColorAsState(
         targetValue = if (selected) {
-            MaterialTheme.colorScheme.onSurface
+            MaterialTheme.colorScheme.primary
         } else {
-            MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.94f)
+            MaterialTheme.colorScheme.onSurface.copy(alpha = 0.78f)
         },
         animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
         label = "nav_item_color"
@@ -429,6 +433,7 @@ private fun FloatingNavHorizontalItem(
         modifier = modifier
             .fillMaxHeight()
             .clip(RoundedCornerShape(percent = 50))
+            .semantics { contentDescription = contentDescription }
             .clickable(
                 onClick = onClick,
                 role = Role.Tab
@@ -437,18 +442,30 @@ private fun FloatingNavHorizontalItem(
     ) {
         Box(
             modifier = Modifier
-                .width(64.dp)
-                .height(38.dp)
-                .clip(RoundedCornerShape(percent = 50))
+                .width(72.dp)
+                .height(56.dp)
+                .clip(RoundedCornerShape(28.dp))
                 .background(containerColor),
             contentAlignment = Alignment.Center
         ) {
-            Icon(
-                imageVector = if (selected) selectedIcon else unselectedIcon,
-                contentDescription = contentDescription,
-                tint = contentColor,
-                modifier = Modifier.size(24.dp)
-            )
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(1.dp)
+            ) {
+                Icon(
+                    imageVector = if (selected) selectedIcon else unselectedIcon,
+                    contentDescription = null,
+                    tint = contentColor,
+                    modifier = Modifier.size(22.dp)
+                )
+                Text(
+                    text = contentDescription,
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
+                    color = contentColor,
+                    maxLines = 1
+                )
+            }
         }
     }
 }

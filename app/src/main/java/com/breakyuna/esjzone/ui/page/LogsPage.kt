@@ -75,6 +75,10 @@ import com.breakyuna.esjzone.util.LogLevel
 object LogsPage : AppDestination {
     private fun readResolve(): Any = LogsPage
 
+    // Keep the persisted Navigation 3 route independent of Kotlin's generated
+    // object class name so Settings -> System Logs can always be restored.
+    override val key: String = "LogsPage"
+
     @OptIn(ExperimentalMaterial3Api::class)
     @Composable
     override fun Content() {

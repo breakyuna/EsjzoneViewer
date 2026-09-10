@@ -145,7 +145,7 @@ private fun BookmarkCard(bookmark: LocalBookmark, onOpen: () -> Unit, onDelete: 
     ) {
         Icon(Icons.Filled.Bookmark, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(28.dp))
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(AppSpacing.xs)) {
-            Text(bookmark.novelName.ifBlank { bookmark.novelId }, style = AppTypography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(bookmark.novelName.ifBlank { bookmark.novelId }, style = AppTypography.labelLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text(bookmark.chapterName, style = AppTypography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
         }
         IconButton(onClick = onDelete) {

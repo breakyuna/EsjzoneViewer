@@ -173,7 +173,7 @@ fun AppHomeNovelTile(
         )
         Text(
             text = novel.name,
-            style = AppTypography.titleMedium,
+            style = AppTypography.labelLarge,
             color = MaterialTheme.colorScheme.onBackground,
             maxLines = 2,
             overflow = TextOverflow.Ellipsis,
@@ -212,7 +212,7 @@ fun AppFeaturedNovelCard(
             ) {
                 Text(
                     text = novel.name,
-                    style = AppTypography.titleMedium,
+                    style = AppTypography.labelLarge,
                     color = MaterialTheme.colorScheme.onBackground,
                     maxLines = 4,
                     overflow = TextOverflow.Ellipsis
@@ -278,7 +278,7 @@ fun AppNovelListItem(
             ) {
                 Text(
                     text = novel.name,
-                    style = if (compact) AppTypography.titleMedium else AppTypography.titleLarge,
+                    style = AppTypography.labelLarge,
                     color = MaterialTheme.colorScheme.onSurface,
                     maxLines = if (compact) 3 else if (summary.isNullOrBlank()) 4 else 2,
                     overflow = TextOverflow.Ellipsis
@@ -343,7 +343,7 @@ fun AppNovelPreviewCard(
             ) {
                 Text(
                     text = novel.name,
-                    style = AppTypography.titleMedium,
+                    style = AppTypography.labelLarge,
                     color = MaterialTheme.colorScheme.onSurface,
                     maxLines = if (compact) 2 else 3,
                     overflow = TextOverflow.Ellipsis

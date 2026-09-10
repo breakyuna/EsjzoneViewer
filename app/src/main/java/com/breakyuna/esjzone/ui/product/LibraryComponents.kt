@@ -58,7 +58,7 @@ fun DownloadItem(
         Row(Modifier.padding(AppSpacing.md), horizontalArrangement = Arrangement.spacedBy(AppSpacing.md), verticalAlignment = Alignment.CenterVertically) {
             AppCoverImage(item.cover.model, item.cover.contentDescription, Modifier.size(width = 64.dp, height = 88.dp))
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(AppSpacing.xs)) {
-                Text(item.title, style = AppTypography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                Text(item.title, style = AppTypography.labelLarge, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 Text(item.chapterLabel, style = AppTypography.bodyMedium)
                 Text(item.sizeLabel, style = AppTypography.bodySmall, color = appStateColors().contentMuted)
                 item.statusLabel?.let { Text(it, style = AppTypography.labelMedium, color = MaterialTheme.colorScheme.primary) }
@@ -90,7 +90,7 @@ fun HistoryItem(item: HistoryItemModel, modifier: Modifier = Modifier, onClick: 
         Row(Modifier.padding(AppSpacing.md), horizontalArrangement = Arrangement.spacedBy(AppSpacing.md), verticalAlignment = Alignment.CenterVertically) {
             AppCoverImage(item.cover.model, item.cover.contentDescription, Modifier.size(width = 64.dp, height = 88.dp))
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(AppSpacing.xs)) {
-                Text(item.title, style = AppTypography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                Text(item.title, style = AppTypography.labelLarge, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 Text(item.chapterLabel, style = AppTypography.bodyMedium)
                 item.progressLabel?.let { Text(it, style = AppTypography.labelMedium, color = MaterialTheme.colorScheme.primary) }
                 Text(item.timeLabel, style = AppTypography.bodySmall, color = appStateColors().contentMuted)
@@ -127,7 +127,7 @@ fun BookshelfItem(
         Column {
             NovelCover(item.cover, Modifier.fillMaxWidth())
             Column(Modifier.padding(AppSpacing.md), verticalArrangement = Arrangement.spacedBy(AppSpacing.xs)) {
-                Text(item.title, style = AppTypography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                Text(item.title, style = AppTypography.labelLarge, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 item.author?.let { Text(it, style = AppTypography.bodySmall, color = appStateColors().contentMuted) }
                 item.progressLabel?.let { Text(it, style = AppTypography.labelMedium, color = MaterialTheme.colorScheme.primary) }
                 if (onSelectionChange != null) {

@@ -155,7 +155,7 @@ fun DiscoveryCategoryNovelCard(
         }
         Text(
             text = novel.name,
-            style = AppTypography.titleMedium,
+            style = AppTypography.labelLarge,
             modifier = Modifier.weight(1f),
             maxLines = 2,
             overflow = TextOverflow.Ellipsis
