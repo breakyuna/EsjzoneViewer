@@ -40,10 +40,28 @@ data class AppGlassSpec(
     val borderAlpha: Float = 0.14f,
     val tintAlpha: Float = 0.16f,
     val edgeSoftness: Dp = 2.dp,
-    val specularIntensity: Float = 0.4f
+    val specularIntensity: Float = 0.4f,
+    val material: AppGlassMaterial = AppGlassMaterial.REGULAR
 )
 
+enum class AppGlassMaterial {
+    REGULAR,
+    CLEAR
+}
+
+/** A dedicated capture scene for an overlay that must sample only its backdrop siblings. */
+@Immutable
+class AppGlassScene internal constructor(internal val hazeState: HazeState)
+
 private val LocalAppHazeState = compositionLocalOf<HazeState?> { null }
+
+@Composable
+fun rememberAppGlassScene(): AppGlassScene {
+    val hazeState = rememberHazeState()
+    return remember(hazeState) { AppGlassScene(hazeState) }
+}
+
+fun Modifier.appGlassSource(scene: AppGlassScene): Modifier = hazeSource(scene.hazeState)
 
 /** Installs one source-backed Haze 2 scene for the application shell. */
 @Composable
@@ -72,9 +90,10 @@ fun AppGlassHost(content: @Composable () -> Unit) {
 fun AppGlassSurface(
     modifier: Modifier = Modifier,
     spec: AppGlassSpec = AppGlassSpec(),
+    scene: AppGlassScene? = null,
     content: @Composable BoxScope.() -> Unit
 ) {
-    val hazeState = LocalAppHazeState.current
+    val hazeState = scene?.hazeState ?: LocalAppHazeState.current
     val reducedMotion = rememberSystemReducedMotion()
     val base = spec.tint ?: MaterialTheme.colorScheme.surface
 
@@ -84,7 +103,11 @@ fun AppGlassSurface(
     }
 
     val glassStyle = remember(spec, reducedMotion, base) {
-        GlassStyle.regular.then {
+        val materialStyle = when (spec.material) {
+            AppGlassMaterial.REGULAR -> GlassStyle.regular
+            AppGlassMaterial.CLEAR -> GlassStyle.clear
+        }
+        materialStyle.then {
             backgroundColor(base.copy(alpha = spec.alpha.coerceIn(0f, 1f)))
             tint((spec.tint ?: base).copy(alpha = spec.tintAlpha.coerceIn(0f, 1f)))
             shape(spec.shape)

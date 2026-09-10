@@ -78,7 +78,11 @@ import com.breakyuna.esjzone.ui.tab.HistoryTab
 import com.breakyuna.esjzone.ui.tab.HomeTab
 import com.breakyuna.esjzone.ui.tab.ProfileTab
 import com.breakyuna.esjzone.ui.designsystem.glass.AppGlassSpec
+import com.breakyuna.esjzone.ui.designsystem.glass.AppGlassMaterial
+import com.breakyuna.esjzone.ui.designsystem.glass.AppGlassScene
 import com.breakyuna.esjzone.ui.designsystem.glass.AppGlassSurface
+import com.breakyuna.esjzone.ui.designsystem.glass.appGlassSource
+import com.breakyuna.esjzone.ui.designsystem.glass.rememberAppGlassScene
 
 /**
  * Bottom / side insets compensation for pages whose content scrolls underneath
@@ -116,6 +120,7 @@ fun AdaptiveAppShell(
     val profileStack: MutableList<NavKey> = rememberNavBackStack(AppNavKey.ProfileTab)
     var selectedTab by rememberSaveable { mutableStateOf(AppTabId.HOME.name) }
     val widthSizeClass = currentWindowAdaptiveInfoV2().windowSizeClass.windowWidthSizeClass
+    val navigationGlassScene = rememberAppGlassScene()
     val tab = AppTabId.valueOf(selectedTab)
     val homeNavigator = remember(homeStack, rootNavigator) { rootNavigator.child(homeStack) }
     val historyNavigator = remember(historyStack, rootNavigator) { rootNavigator.child(historyStack) }
@@ -162,12 +167,15 @@ fun AdaptiveAppShell(
                         bookshelfNavigator = bookshelfNavigator,
                         profileStack = profileStack,
                         profileNavigator = profileNavigator,
-                        modifier = Modifier.fillMaxSize()
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .appGlassSource(navigationGlassScene)
                     )
                     if (showFloatingNavigation) {
                         AppNavigationBar(
                             selected = tab,
                             onSelected = { selectedTab = it.name },
+                            glassScene = navigationGlassScene,
                             modifier = Modifier
                                 .align(Alignment.BottomCenter)
                                 .windowInsetsPadding(WindowInsets.navigationBars)
@@ -195,12 +203,15 @@ fun AdaptiveAppShell(
                         bookshelfNavigator = bookshelfNavigator,
                         profileStack = profileStack,
                         profileNavigator = profileNavigator,
-                        modifier = Modifier.fillMaxSize()
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .appGlassSource(navigationGlassScene)
                     )
                     if (showFloatingNavigation) {
                         AppSideNavigationBar(
                             selected = tab,
                             onSelected = { selectedTab = it.name },
+                            glassScene = navigationGlassScene,
                             modifier = Modifier
                                 .align(Alignment.CenterStart)
                                 .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Start))
@@ -312,6 +323,7 @@ private fun TabStackDisplay(
 private fun AppNavigationBar(
     selected: AppTabId,
     onSelected: (AppTabId) -> Unit,
+    glassScene: AppGlassScene,
     modifier: Modifier = Modifier
 ) {
     val capsuleShape = RoundedCornerShape(34.dp)
@@ -326,12 +338,14 @@ private fun AppNavigationBar(
             ),
         spec = AppGlassSpec(
             shape = capsuleShape,
-            alpha = 0.54f,
-            borderAlpha = 0.42f,
-            tintAlpha = 0.20f,
-            edgeSoftness = 2.dp,
-            specularIntensity = 0.52f
-        )
+            alpha = 0.16f,
+            borderAlpha = 0.34f,
+            tintAlpha = 0.08f,
+            edgeSoftness = 6.dp,
+            specularIntensity = 0.72f,
+            material = AppGlassMaterial.CLEAR
+        ),
+        scene = glassScene
     ) {
         Row(
             modifier = Modifier
@@ -359,6 +373,7 @@ private fun AppNavigationBar(
 private fun AppSideNavigationBar(
     selected: AppTabId,
     onSelected: (AppTabId) -> Unit,
+    glassScene: AppGlassScene,
     modifier: Modifier = Modifier
 ) {
     val capsuleShape = RoundedCornerShape(percent = 50)
@@ -373,12 +388,14 @@ private fun AppSideNavigationBar(
             ),
         spec = AppGlassSpec(
             shape = capsuleShape,
-            alpha = 0.62f,
+            alpha = 0.18f,
             borderAlpha = 0.28f,
-            tintAlpha = 0.12f,
-            edgeSoftness = 3.dp,
-            specularIntensity = 0.28f
-        )
+            tintAlpha = 0.08f,
+            edgeSoftness = 6.dp,
+            specularIntensity = 0.62f,
+            material = AppGlassMaterial.CLEAR
+        ),
+        scene = glassScene
     ) {
         Column(
             modifier = Modifier
