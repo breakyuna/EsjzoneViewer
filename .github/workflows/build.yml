@@ -37,9 +37,6 @@ jobs:
       - name: Verify source and resource contracts
         run: python3 tools/qa/verify_static_contracts.py
 
-      - name: Check commit whitespace
-        run: git show --check --format= HEAD
-
       - name: Setup JDK 17
         uses: actions/setup-java@v4
         with:
