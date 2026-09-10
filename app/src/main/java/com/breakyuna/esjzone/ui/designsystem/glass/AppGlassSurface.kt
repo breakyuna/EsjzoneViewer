@@ -18,6 +18,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.breakyuna.esjzone.ui.designsystem.AppShapes
 import dev.chrisbanes.haze.ExperimentalHazeApi
@@ -33,14 +34,18 @@ import dev.chrisbanes.haze.rememberHazeState
 @Immutable
 data class AppGlassSpec(
     val tint: Color? = null,
+    /** Backdrop surface opacity. Navigation supplies a lower value for a more transparent island. */
     val alpha: Float = 0.92f,
     val shape: RoundedCornerShape = AppShapes.standard,
-    val borderAlpha: Float = 0.14f
+    val borderAlpha: Float = 0.14f,
+    val tintAlpha: Float = 0.16f,
+    val edgeSoftness: Dp = 2.dp,
+    val specularIntensity: Float = 0.4f
 )
 
 private val LocalAppHazeState = compositionLocalOf<HazeState?> { null }
 
-/** Installs one source-backed Haze scene for the application shell. */
+/** Installs one source-backed Haze 2 scene for the application shell. */
 @Composable
 fun AppGlassHost(content: @Composable () -> Unit) {
     val hazeState = rememberHazeState()
@@ -58,8 +63,9 @@ fun AppGlassHost(content: @Composable () -> Unit) {
 
 /**
  * Draws a source-backed glass surface with a Material fallback when no host is installed.
- * Haze's reduced-motion policy disables interaction transforms when Android's animator scale is
- * zero while retaining the backdrop effect itself.
+ * Haze 2's reduced-motion policy disables interaction transforms when Android's animator scale is
+ * zero while retaining the backdrop effect itself. When no host is present, the same geometry and
+ * alpha are rendered through a Material surface fallback.
  */
 @OptIn(ExperimentalHazeApi::class)
 @Composable
@@ -80,10 +86,16 @@ fun AppGlassSurface(
     val glassStyle = remember(spec, reducedMotion, base) {
         GlassStyle.regular.then {
             backgroundColor(base.copy(alpha = spec.alpha.coerceIn(0f, 1f)))
-            tint((spec.tint ?: base).copy(alpha = 0.16f))
+            tint((spec.tint ?: base).copy(alpha = spec.tintAlpha.coerceIn(0f, 1f)))
             shape(spec.shape)
-            edgeSoftness(if (reducedMotion) 1.dp else 2.dp)
-            specularIntensity(if (reducedMotion) 0.18f else 0.4f)
+            edgeSoftness(if (reducedMotion) 1.dp else spec.edgeSoftness)
+            specularIntensity(
+                if (reducedMotion) {
+                    (spec.specularIntensity * 0.45f).coerceIn(0f, 1f)
+                } else {
+                    spec.specularIntensity.coerceIn(0f, 1f)
+                }
+            )
         }
     }
     val motionPolicy = if (reducedMotion) {

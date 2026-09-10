@@ -145,67 +145,98 @@ fun AppMetric(
     }
 }
 
-/** Featured card for a horizontal discovery rail. */
+/**
+ * Borderless portrait tile used by the home discovery rails.
+ *
+ * This intentionally stays separate from list/detail previews: home content is a visual
+ * cover shelf with a short title, not a compressed metadata card.
+ */
+@Composable
+fun AppHomeNovelTile(
+    novel: CoveredNovel,
+    modifier: Modifier = Modifier,
+    onClick: (() -> Unit)? = null
+) {
+    Column(
+        modifier = modifier
+            .widthIn(min = AppLayout.homeTileWidth, max = AppLayout.homeTileWidth)
+            .then(novelClickModifier(onClick)),
+        verticalArrangement = Arrangement.spacedBy(AppSpacing.sm)
+    ) {
+        AppNovelCover(
+            coverUrl = novel.coverUrl,
+            title = novel.name,
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(AppLayout.homeTileCoverHeight),
+            isAdult = novel.isAdult
+        )
+        Text(
+            text = novel.name,
+            style = AppTypography.titleMedium,
+            color = MaterialTheme.colorScheme.onBackground,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.fillMaxWidth()
+        )
+    }
+}
+
+/** Borderless featured composition for a horizontal discovery rail. */
 @Composable
 fun AppFeaturedNovelCard(
     novel: CoveredNovel,
     modifier: Modifier = Modifier,
     onClick: (() -> Unit)? = null
 ) {
-    Surface(
+    Column(
         modifier = modifier
             .widthIn(min = AppLayout.featureCoverWidth + 160.dp, max = 320.dp)
-            .then(novelClickModifier(onClick)),
-        shape = AppShapes.prominent,
-        color = MaterialTheme.colorScheme.surfaceContainer
+            .then(novelClickModifier(onClick))
     ) {
-        Column(modifier = Modifier.padding(AppSpacing.md)) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(AppSpacing.md)
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(AppSpacing.md)
+        ) {
+            AppNovelCover(
+                coverUrl = novel.coverUrl,
+                title = novel.name,
+                modifier = Modifier.size(AppLayout.featureCoverWidth, AppLayout.featureCoverHeight),
+                isAdult = novel.isAdult
+            )
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .height(AppLayout.featureCoverHeight),
+                verticalArrangement = Arrangement.SpaceBetween
             ) {
-                AppNovelCover(
-                    coverUrl = novel.coverUrl,
-                    title = novel.name,
-                    modifier = Modifier.size(AppLayout.featureCoverWidth, AppLayout.featureCoverHeight),
-                    isAdult = novel.isAdult
+                Text(
+                    text = novel.name,
+                    style = AppTypography.titleMedium,
+                    color = MaterialTheme.colorScheme.onBackground,
+                    maxLines = 4,
+                    overflow = TextOverflow.Ellipsis
                 )
-                Column(
-                    modifier = Modifier
-                        .weight(1f)
-                        .height(AppLayout.featureCoverHeight),
-                    verticalArrangement = Arrangement.SpaceBetween
-                ) {
+                novel.author?.trim()?.takeIf(String::isNotBlank)?.let {
                     Text(
-                        text = novel.name,
-                        style = AppTypography.titleMedium,
-                        color = MaterialTheme.colorScheme.onSurface,
-                        maxLines = 4,
+                        text = it,
+                        style = AppTypography.labelMedium,
+                        color = MaterialTheme.colorScheme.primary,
+                        maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
-                    novel.author?.trim()?.takeIf(String::isNotBlank)?.let {
-                        Text(
-                            text = it,
-                            style = AppTypography.labelMedium,
-                            color = MaterialTheme.colorScheme.primary,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                    }
                 }
             }
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = AppSpacing.md)
-                    .background(MaterialTheme.colorScheme.surfaceContainerLow, AppShapes.compact)
-                    .padding(horizontal = AppSpacing.sm, vertical = AppSpacing.sm),
-                horizontalArrangement = Arrangement.spacedBy(AppSpacing.lg),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                AppMetric(Icons.Filled.RemoveRedEye, formatNovelCount(novel.views), tint = MaterialTheme.colorScheme.primary)
-                AppMetric(Icons.Filled.ThumbUp, formatNovelCount(novel.likes), tint = MaterialTheme.colorScheme.tertiary)
-            }
+        }
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = AppSpacing.md),
+            horizontalArrangement = Arrangement.spacedBy(AppSpacing.lg),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            AppMetric(Icons.Filled.RemoveRedEye, formatNovelCount(novel.views), tint = MaterialTheme.colorScheme.primary)
+            AppMetric(Icons.Filled.ThumbUp, formatNovelCount(novel.likes), tint = MaterialTheme.colorScheme.tertiary)
         }
     }
 }
@@ -221,15 +252,15 @@ fun AppNovelListItem(
 ) {
     val coverWidth = if (compact) AppLayout.listCoverWidth - 4.dp else AppLayout.listCoverWidth + 8.dp
     val coverHeight = if (compact) AppLayout.listCoverHeight - 4.dp else AppLayout.listCoverHeight + 12.dp
-    Surface(
+    Column(
         modifier = modifier
             .fillMaxWidth()
-            .then(novelClickModifier(onClick)),
-        shape = AppShapes.standard,
-        color = MaterialTheme.colorScheme.surfaceContainer
+            .then(novelClickModifier(onClick))
     ) {
         Row(
-            modifier = Modifier.padding(if (compact) AppSpacing.sm else AppSpacing.md),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = if (compact) AppSpacing.sm else AppSpacing.md),
             horizontalArrangement = Arrangement.spacedBy(AppSpacing.md),
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -286,15 +317,15 @@ fun AppNovelPreviewCard(
 ) {
     val coverWidth = if (compact) 76.dp else 88.dp
     val coverHeight = if (compact) 96.dp else 120.dp
-    Surface(
+    Column(
         modifier = modifier
             .fillMaxWidth()
-            .then(novelClickModifier(onClick)),
-        shape = AppShapes.standard,
-        color = MaterialTheme.colorScheme.surfaceContainer
+            .then(novelClickModifier(onClick))
     ) {
         Row(
-            modifier = Modifier.padding(if (compact) AppSpacing.sm else AppSpacing.md),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = if (compact) AppSpacing.sm else AppSpacing.md),
             horizontalArrangement = Arrangement.spacedBy(AppSpacing.md),
             verticalAlignment = Alignment.Top
         ) {

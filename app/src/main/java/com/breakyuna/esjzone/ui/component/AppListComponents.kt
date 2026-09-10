@@ -1,6 +1,8 @@
 package com.breakyuna.esjzone.ui.component
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -196,27 +198,33 @@ private fun AppListSurface(
     selected: Boolean = false,
     content: @Composable RowScope.() -> Unit
 ) {
-    Surface(
+    val selectionShape = AppShapes.standard
+    Row(
         modifier = modifier
             .fillMaxWidth()
+            .then(
+                if (selected) {
+                    Modifier
+                        .background(
+                            MaterialTheme.colorScheme.primary.copy(alpha = 0.08f),
+                            selectionShape
+                        )
+                        .border(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.62f), selectionShape)
+                } else {
+                    Modifier
+                }
+            )
             .then(
                 if (onClick != null) {
                     Modifier.semantics { role = Role.Button }.clickable(onClick = onClick)
                 } else Modifier
-            ),
-        shape = AppShapes.standard,
-        color = if (selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainer
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .heightIn(min = 72.dp)
-                .padding(AppSpacing.md),
-            horizontalArrangement = Arrangement.spacedBy(AppSpacing.md),
-            verticalAlignment = Alignment.CenterVertically,
-            content = content
-        )
-    }
+            )
+            .heightIn(min = 72.dp)
+            .padding(AppSpacing.md),
+        horizontalArrangement = Arrangement.spacedBy(AppSpacing.md),
+        verticalAlignment = Alignment.CenterVertically,
+        content = content
+    )
 }
 
 /** Stable caller-provided key for list items. Blank IDs are rejected early. */

@@ -237,49 +237,42 @@ fun NovelDetailStats(
         }
     }
     if (stats.isEmpty()) return
-    Surface(
+    Row(
         modifier = modifier
-            .fillMaxWidth(),
-        shape = AppShapes.standard,
-        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.34f)
+            .fillMaxWidth()
+            .padding(vertical = 4.dp),
+        horizontalArrangement = Arrangement.spacedBy(2.dp),
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(4.dp),
-            horizontalArrangement = Arrangement.spacedBy(2.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            stats.forEach { stat ->
-                Column(
-                    modifier = Modifier
-                        .weight(1f)
-                        .padding(horizontal = 4.dp, vertical = 7.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(2.dp)
-                ) {
-                    Icon(
-                        imageVector = stat.icon,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.78f),
-                        modifier = Modifier.size(15.dp)
-                    )
-                    Text(
-                        text = stat.value,
-                        style = AppTypography.titleMedium,
-                        color = MaterialTheme.colorScheme.onSurface,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                    Text(
-                        text = stat.label,
-                        style = AppTypography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
+        stats.forEach { stat ->
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(horizontal = 4.dp, vertical = 7.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(2.dp)
+            ) {
+                Icon(
+                    imageVector = stat.icon,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.78f),
+                    modifier = Modifier.size(15.dp)
+                )
+                Text(
+                    text = stat.value,
+                    style = AppTypography.titleMedium,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    text = stat.label,
+                    style = AppTypography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
                 }
-            }
         }
     }
 }

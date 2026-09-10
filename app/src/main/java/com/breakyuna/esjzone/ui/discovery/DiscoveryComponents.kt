@@ -21,7 +21,6 @@ import androidx.compose.material.icons.filled.AutoStories
 import androidx.compose.material.icons.filled.Category
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
-import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -135,37 +134,32 @@ fun DiscoveryCategoryNovelCard(
     modifier: Modifier = Modifier,
     onClick: () -> Unit
 ) {
-    Card(
-        onClick = onClick,
+    Row(
         modifier = modifier
             .fillMaxWidth()
-            .semantics { role = Role.Button },
-        shape = AppShapes.standard,
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)
+            .clickable(onClick = onClick)
+            .semantics { role = Role.Button }
+            .padding(vertical = AppSpacing.md),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(AppSpacing.md)
     ) {
-        Row(
-            modifier = Modifier.padding(AppSpacing.md),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(AppSpacing.md)
+        Surface(
+            modifier = Modifier.size(44.dp),
+            shape = CircleShape,
+            color = MaterialTheme.colorScheme.secondaryContainer
         ) {
-            Surface(
-                modifier = Modifier.size(44.dp),
-                shape = CircleShape,
-                color = MaterialTheme.colorScheme.secondaryContainer
-            ) {
-                Box(contentAlignment = Alignment.Center) {
-                    Icon(Icons.Filled.AutoStories, contentDescription = null)
-                }
+            Box(contentAlignment = Alignment.Center) {
+                Icon(Icons.Filled.AutoStories, contentDescription = null)
             }
-            Text(
-                text = novel.name,
-                style = AppTypography.titleMedium,
-                modifier = Modifier.weight(1f),
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis
-            )
-            Icon(Icons.Filled.ArrowForward, contentDescription = androidx.compose.ui.res.stringResource(R.string.forum_open_novel))
         }
+        Text(
+            text = novel.name,
+            style = AppTypography.titleMedium,
+            modifier = Modifier.weight(1f),
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis
+        )
+        Icon(Icons.Filled.ArrowForward, contentDescription = androidx.compose.ui.res.stringResource(R.string.forum_open_novel))
     }
 }
 
@@ -306,27 +300,21 @@ fun DiscoveryLoadingState(modifier: Modifier = Modifier) {
         verticalArrangement = Arrangement.spacedBy(AppSpacing.md)
     ) {
         repeat(3) { index ->
-            Surface(
-                modifier = Modifier.fillMaxWidth(),
-                shape = AppShapes.standard,
-                color = MaterialTheme.colorScheme.surfaceContainer
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(vertical = AppSpacing.md),
+                horizontalArrangement = Arrangement.spacedBy(AppSpacing.md),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Row(
-                    modifier = Modifier.padding(AppSpacing.md),
-                    horizontalArrangement = Arrangement.spacedBy(AppSpacing.md),
-                    verticalAlignment = Alignment.CenterVertically
+                AppShimmerPlaceholder(
+                    modifier = Modifier.size(width = 76.dp, height = if (index == 0) 108.dp else 96.dp)
+                )
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(AppSpacing.sm)
                 ) {
-                    AppShimmerPlaceholder(
-                        modifier = Modifier.size(width = 76.dp, height = if (index == 0) 108.dp else 96.dp)
-                    )
-                    Column(
-                        modifier = Modifier.weight(1f),
-                        verticalArrangement = Arrangement.spacedBy(AppSpacing.sm)
-                    ) {
-                        AppShimmerPlaceholder(Modifier.fillMaxWidth(0.88f).height(20.dp), shape = AppShapes.compact)
-                        AppShimmerPlaceholder(Modifier.fillMaxWidth(0.62f).height(14.dp), shape = AppShapes.compact)
-                        AppShimmerPlaceholder(Modifier.fillMaxWidth(0.74f).height(14.dp), shape = AppShapes.compact)
-                    }
+                    AppShimmerPlaceholder(Modifier.fillMaxWidth(0.88f).height(20.dp), shape = AppShapes.compact)
+                    AppShimmerPlaceholder(Modifier.fillMaxWidth(0.62f).height(14.dp), shape = AppShapes.compact)
+                    AppShimmerPlaceholder(Modifier.fillMaxWidth(0.74f).height(14.dp), shape = AppShapes.compact)
                 }
             }
         }

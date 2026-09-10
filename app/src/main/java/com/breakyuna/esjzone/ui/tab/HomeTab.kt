@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Category
@@ -40,10 +41,11 @@ import com.breakyuna.esjzone.network.features.getHomeData
 import com.breakyuna.esjzone.network.loadFailureKind
 import com.breakyuna.esjzone.novellibrary.data.HomeData
 import com.breakyuna.esjzone.novellibrary.novel.CoveredNovel
+import com.breakyuna.esjzone.ui.component.AppHomeNovelTile
+import com.breakyuna.esjzone.ui.designsystem.AppSpacing
 import com.breakyuna.esjzone.ui.discovery.DiscoveryEmptyState
 import com.breakyuna.esjzone.ui.discovery.DiscoveryErrorState
 import com.breakyuna.esjzone.ui.discovery.DiscoveryLoadingState
-import com.breakyuna.esjzone.ui.discovery.DiscoveryNovelCard
 import androidx.compose.foundation.layout.calculateStartPadding
 import androidx.compose.ui.platform.LocalLayoutDirection
 import com.breakyuna.esjzone.ui.discovery.DiscoveryOfflineBanner
@@ -258,17 +260,27 @@ private fun LazyListScope.homeCollection(
             )
         }
     } else {
-        items(
-            items = visible,
-            key = { novel -> "home-novel-${novel.url.trim().ifBlank { novel.name.trim() }}" },
-            contentType = { "novel" }
-        ) { novel ->
-            DiscoveryNovelCard(
-                novel = novel,
-                compact = true,
-                modifier = Modifier.fillMaxWidth(),
-                onClick = { navigator?.pushIfNotCurrent(NovelPage(novel)) }
-            )
+        item(key = "home-rail-$title", contentType = "home-rail") {
+            LazyRow(
+                contentPadding = PaddingValues(end = AppSpacing.lg),
+                horizontalArrangement = Arrangement.spacedBy(AppSpacing.md),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .semantics {
+                        contentDescription = title
+                    }
+            ) {
+                items(
+                    items = visible,
+                    key = { novel -> "home-novel-${novel.url.trim().ifBlank { novel.name.trim() }}" },
+                    contentType = { "home-portrait-novel" }
+                ) { novel ->
+                    AppHomeNovelTile(
+                        novel = novel,
+                        onClick = { navigator?.pushIfNotCurrent(NovelPage(novel)) }
+                    )
+                }
+            }
         }
     }
 }

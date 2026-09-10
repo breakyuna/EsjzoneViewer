@@ -1,5 +1,6 @@
 package com.breakyuna.esjzone.update
 
+import android.content.Context
 import com.breakyuna.esjzone.BuildConfig
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
@@ -24,10 +25,29 @@ internal object ReleaseUpdateChecker {
     private val pending = MutableStateFlow<ReleaseUpdate?>(null)
     val update = pending.asStateFlow()
 
-    fun checkOnce() {
+    /**
+     * Performs at most one release lookup per device every 24 hours.
+     *
+     * The in-memory guard avoids duplicate requests caused by Activity recreation, while the
+     * preference timestamp prevents the same release from prompting again on every app launch.
+     */
+    fun checkOnce(context: Context) {
         if (!started.compareAndSet(false, true)) return
         scope.launch {
             try {
+                val now = System.currentTimeMillis()
+                val preferences = context.applicationContext.getSharedPreferences(
+                    PREFERENCES_NAME,
+                    Context.MODE_PRIVATE
+                )
+                val lastCheckAt = preferences.getLong(LAST_CHECK_AT_KEY, 0L)
+                if (lastCheckAt <= now && now - lastCheckAt < CHECK_INTERVAL_MILLIS) {
+                    return@launch
+                }
+                // Record the attempt before the request so a slow/offline network cannot cause a
+                // repeated startup lookup. The next scheduled daily check can retry normally.
+                preferences.edit().putLong(LAST_CHECK_AT_KEY, now).apply()
+
                 // Independent client: never send ESJ cookies or change its network/session state.
                 val client = OkHttpClient.Builder()
                     .connectTimeout(5, TimeUnit.SECONDS)
@@ -65,4 +85,8 @@ internal object ReleaseUpdateChecker {
     fun dismiss() {
         pending.value = null
     }
+
+    private const val PREFERENCES_NAME = "release_update_checker"
+    private const val LAST_CHECK_AT_KEY = "last_check_at"
+    private const val CHECK_INTERVAL_MILLIS = 24L * 60L * 60L * 1000L
 }

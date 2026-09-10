@@ -315,11 +315,18 @@ class ForumPostPage(private val topic: ForumTopic) : AppDestination {
 object GuestbookPage : AppDestination {
     private fun readResolve(): Any = GuestbookPage
 
+    // Keep this static route stable across process recreation. Relying on the object class name
+    // made the saved Navigation 3 key dependent on Kotlin's generated object name.
+    override val key: String = "GuestbookPage"
+
     @Composable
     override fun Content() {
         val authorization = LocalAuthorization.current
+        // Resolve the page once while this NavEntry is alive. The explicit relative route avoids
+        // a partially restored domain value producing a different ViewModel identity mid-compose.
+        val pageUrl = EsjzoneUrls.resolve("/guestbook/")
         val model = rememberAppViewModel {
-            CommentPageModel(authorization, EsjzoneUrls.Guestbook)
+            CommentPageModel(authorization, pageUrl)
         }
         CommentListPage(
             title = stringResource(id = R.string.guestbook),

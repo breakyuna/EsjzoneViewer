@@ -3,6 +3,7 @@ package com.breakyuna.esjzone.ui.page
 import androidx.lifecycle.viewModelScope
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -15,8 +16,6 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.DeleteOutline
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -40,7 +39,6 @@ import com.breakyuna.esjzone.R
 import com.breakyuna.esjzone.app.PresentationAccess
 import com.breakyuna.esjzone.database.entity.Bookmark as LocalBookmark
 import com.breakyuna.esjzone.novellibrary.novel.Chapter
-import com.breakyuna.esjzone.ui.designsystem.AppShapes
 import com.breakyuna.esjzone.ui.designsystem.AppSpacing
 import com.breakyuna.esjzone.ui.designsystem.AppTypography
 import com.breakyuna.esjzone.ui.navigation.AppDestination
@@ -136,25 +134,22 @@ object BookmarksPage : AppDestination {
 
 @Composable
 private fun BookmarkCard(bookmark: LocalBookmark, onOpen: () -> Unit, onDelete: () -> Unit) {
-    Card(
-        onClick = onOpen,
-        modifier = Modifier.fillMaxWidth().semantics { role = Role.Button },
-        shape = AppShapes.standard,
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onOpen)
+            .semantics { role = Role.Button }
+            .padding(vertical = AppSpacing.md),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(AppSpacing.md)
     ) {
-        Row(
-            Modifier.fillMaxWidth().padding(AppSpacing.md),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(AppSpacing.md)
-        ) {
-            Icon(Icons.Filled.Bookmark, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(28.dp))
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(AppSpacing.xs)) {
-                Text(bookmark.novelName.ifBlank { bookmark.novelId }, style = AppTypography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text(bookmark.chapterName, style = AppTypography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
-            }
-            IconButton(onClick = onDelete) {
-                Icon(Icons.Filled.DeleteOutline, contentDescription = stringResource(R.string.bookmark_remove))
-            }
+        Icon(Icons.Filled.Bookmark, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(28.dp))
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(AppSpacing.xs)) {
+            Text(bookmark.novelName.ifBlank { bookmark.novelId }, style = AppTypography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(bookmark.chapterName, style = AppTypography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
+        }
+        IconButton(onClick = onDelete) {
+            Icon(Icons.Filled.DeleteOutline, contentDescription = stringResource(R.string.bookmark_remove))
         }
     }
 }

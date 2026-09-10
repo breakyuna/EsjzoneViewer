@@ -121,6 +121,15 @@ fun AdaptiveAppShell(
     val profileNavigator = remember(profileStack, rootNavigator) {
         rootNavigator.child(profileStack)
     }
+    val selectedStack = when (tab) {
+        AppTabId.HOME -> homeStack
+        AppTabId.HISTORY -> historyStack
+        AppTabId.BOOKSHELF -> bookshelfStack
+        AppTabId.PROFILE -> profileStack
+    }
+    // A tab bar is a root-level control, not a child-page overlay. Keeping it off a pushed
+    // destination prevents a second navigation hierarchy from appearing above detail pages.
+    val showFloatingNavigation = selectedStack.lastOrNull() == tab.route
 
     val floatingNavPadding = when (widthSizeClass) {
         WindowWidthSizeClass.COMPACT -> PaddingValues(bottom = 96.dp)
@@ -130,7 +139,7 @@ fun AdaptiveAppShell(
 
     CompositionLocalProvider(
         LocalAuthorization provides authorization,
-        LocalFloatingNavPadding provides floatingNavPadding
+        LocalFloatingNavPadding provides if (showFloatingNavigation) floatingNavPadding else PaddingValues(0.dp)
     ) {
         when (widthSizeClass) {
             WindowWidthSizeClass.COMPACT -> {
@@ -151,15 +160,17 @@ fun AdaptiveAppShell(
                         profileNavigator = profileNavigator,
                         modifier = Modifier.fillMaxSize()
                     )
-                    AppNavigationBar(
-                        selected = tab,
-                        onSelected = { selectedTab = it.name },
-                        modifier = Modifier
-                            .align(Alignment.BottomCenter)
-                            .windowInsetsPadding(WindowInsets.navigationBars)
-                            .fillMaxWidth()
-                            .padding(horizontal = 16.dp, vertical = 12.dp)
-                    )
+                    if (showFloatingNavigation) {
+                        AppNavigationBar(
+                            selected = tab,
+                            onSelected = { selectedTab = it.name },
+                            modifier = Modifier
+                                .align(Alignment.BottomCenter)
+                                .windowInsetsPadding(WindowInsets.navigationBars)
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp, vertical = 12.dp)
+                        )
+                    }
                 }
             }
 
@@ -182,14 +193,16 @@ fun AdaptiveAppShell(
                         profileNavigator = profileNavigator,
                         modifier = Modifier.fillMaxSize()
                     )
-                    AppSideNavigationBar(
-                        selected = tab,
-                        onSelected = { selectedTab = it.name },
-                        modifier = Modifier
-                            .align(Alignment.CenterStart)
-                            .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Start))
-                            .padding(start = 16.dp)
-                    )
+                    if (showFloatingNavigation) {
+                        AppSideNavigationBar(
+                            selected = tab,
+                            onSelected = { selectedTab = it.name },
+                            modifier = Modifier
+                                .align(Alignment.CenterStart)
+                                .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Start))
+                                .padding(start = 16.dp)
+                        )
+                    }
                 }
             }
         }
@@ -309,8 +322,11 @@ private fun AppNavigationBar(
             ),
         spec = AppGlassSpec(
             shape = capsuleShape,
-            alpha = 0.82f,
-            borderAlpha = 0.18f
+            alpha = 0.66f,
+            borderAlpha = 0.30f,
+            tintAlpha = 0.10f,
+            edgeSoftness = 3.dp,
+            specularIntensity = 0.30f
         )
     ) {
         Row(
@@ -353,8 +369,11 @@ private fun AppSideNavigationBar(
             ),
         spec = AppGlassSpec(
             shape = capsuleShape,
-            alpha = 0.82f,
-            borderAlpha = 0.18f
+            alpha = 0.62f,
+            borderAlpha = 0.28f,
+            tintAlpha = 0.12f,
+            edgeSoftness = 3.dp,
+            specularIntensity = 0.28f
         )
     ) {
         Column(
@@ -389,7 +408,7 @@ private fun FloatingNavHorizontalItem(
 ) {
     val containerColor by animateColorAsState(
         targetValue = if (selected) {
-            MaterialTheme.colorScheme.primaryContainer
+            MaterialTheme.colorScheme.primary.copy(alpha = 0.16f)
         } else {
             Color.Transparent
         },
@@ -398,9 +417,9 @@ private fun FloatingNavHorizontalItem(
     )
     val contentColor by animateColorAsState(
         targetValue = if (selected) {
-            MaterialTheme.colorScheme.onPrimaryContainer
+            MaterialTheme.colorScheme.onSurface
         } else {
-            MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.85f)
+            MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.94f)
         },
         animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
         label = "nav_item_color"
@@ -445,7 +464,7 @@ private fun FloatingNavVerticalItem(
 ) {
     val containerColor by animateColorAsState(
         targetValue = if (selected) {
-            MaterialTheme.colorScheme.primaryContainer
+            MaterialTheme.colorScheme.primary.copy(alpha = 0.16f)
         } else {
             Color.Transparent
         },
@@ -454,9 +473,9 @@ private fun FloatingNavVerticalItem(
     )
     val contentColor by animateColorAsState(
         targetValue = if (selected) {
-            MaterialTheme.colorScheme.onPrimaryContainer
+            MaterialTheme.colorScheme.onSurface
         } else {
-            MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.85f)
+            MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.94f)
         },
         animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
         label = "nav_item_color"

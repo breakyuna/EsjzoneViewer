@@ -4,6 +4,9 @@ import androidx.lifecycle.viewModelScope
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -33,7 +36,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -222,27 +224,34 @@ private fun DownloadCard(
     onToggle: () -> Unit,
     onDelete: () -> Unit
 ) {
-    Surface(
-        onClick = { if (editing) onToggle() },
-        enabled = editing && !deleting,
-        modifier = Modifier.fillMaxWidth().semantics { if (editing) role = Role.Button },
-        shape = AppShapes.standard,
-        color = if (selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainer
-    ) {
-        Row(Modifier.fillMaxWidth().padding(AppSpacing.md), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(AppSpacing.md)) {
-            if (editing) Checkbox(checked = selected, onCheckedChange = { onToggle() }, enabled = !deleting)
-            AppNovelCover(
-                coverUrl = summary.coverUrl,
-                title = summary.novelName,
-                modifier = Modifier.size(width = 64.dp, height = 88.dp)
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .then(
+                if (selected) {
+                    Modifier
+                        .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.08f), AppShapes.standard)
+                        .border(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.62f), AppShapes.standard)
+                } else Modifier
             )
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(AppSpacing.xs)) {
-                Text(summary.novelName.ifBlank { stringResource(R.string.download_unknown_novel) }, style = AppTypography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                Text(stringResource(R.string.download_chapters_count, summary.downloadedChapterCount), style = AppTypography.bodyMedium, color = MaterialTheme.colorScheme.primary)
-                Text(formatStorageSize(summary.storageBytes), style = AppTypography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-            IconButton(onClick = onDelete, enabled = !deleting) { Icon(Icons.Filled.DeleteOutline, stringResource(R.string.download_delete), tint = MaterialTheme.colorScheme.error) }
+            .then(if (editing && !deleting) Modifier.clickable { onToggle() } else Modifier)
+            .semantics { if (editing) role = Role.Button }
+            .padding(AppSpacing.md),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(AppSpacing.md)
+    ) {
+        if (editing) Checkbox(checked = selected, onCheckedChange = { onToggle() }, enabled = !deleting)
+        AppNovelCover(
+            coverUrl = summary.coverUrl,
+            title = summary.novelName,
+            modifier = Modifier.size(width = 64.dp, height = 88.dp)
+        )
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(AppSpacing.xs)) {
+            Text(summary.novelName.ifBlank { stringResource(R.string.download_unknown_novel) }, style = AppTypography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            Text(stringResource(R.string.download_chapters_count, summary.downloadedChapterCount), style = AppTypography.bodyMedium, color = MaterialTheme.colorScheme.primary)
+            Text(formatStorageSize(summary.storageBytes), style = AppTypography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
+        IconButton(onClick = onDelete, enabled = !deleting) { Icon(Icons.Filled.DeleteOutline, stringResource(R.string.download_delete), tint = MaterialTheme.colorScheme.error) }
     }
 }
 

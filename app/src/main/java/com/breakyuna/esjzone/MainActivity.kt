@@ -119,7 +119,7 @@ class MainActivity : ComponentActivity() {
             }
         }
         initScope.launch { initializeOnce(appContext) }
-        ReleaseUpdateChecker.checkOnce()
+        ReleaseUpdateChecker.checkOnce(appContext)
     }
 
 }

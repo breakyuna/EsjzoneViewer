@@ -4,6 +4,7 @@ import androidx.lifecycle.viewModelScope
 
 import android.text.format.DateUtils
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -17,7 +18,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AutoStories
 import androidx.compose.material.icons.filled.CloudSync
@@ -25,8 +25,6 @@ import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -73,7 +71,6 @@ import com.breakyuna.esjzone.novellibrary.novel.Chapter
 import com.breakyuna.esjzone.novellibrary.novel.FavoriteNovel
 import com.breakyuna.esjzone.novellibrary.novel.HistoryNovel
 import com.breakyuna.esjzone.ui.component.AppNovelCover
-import com.breakyuna.esjzone.ui.designsystem.AppShapes
 import com.breakyuna.esjzone.ui.designsystem.AppSpacing
 import com.breakyuna.esjzone.ui.designsystem.AppTypography
 import com.breakyuna.esjzone.ui.navigation.AppDestination
@@ -245,7 +242,12 @@ private fun LocalHistoryCard(
         stringResource(R.string.history_local_position, activity.chapterIndex + 1, activity.totalChapters, progress)
     } else stringResource(R.string.history_local_percent, progress)
     val relative = DateUtils.getRelativeTimeSpanString(activity.lastReadAt, System.currentTimeMillis(), DateUtils.MINUTE_IN_MILLIS)
-    Card(onClick = onOpen, modifier = Modifier.fillMaxWidth().semantics { role = Role.Button }, shape = AppShapes.standard, colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onOpen)
+            .semantics { role = Role.Button }
+    ) {
         Row(Modifier.fillMaxWidth().padding(AppSpacing.md), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(AppSpacing.md)) {
             AppNovelCover(
                 coverUrl = coverUrl,
@@ -341,24 +343,25 @@ private fun CloudHistoryCard(
     onOpen: () -> Unit,
     onDelete: () -> Unit
 ) {
-    Card(
-        onClick = onOpen,
-        modifier = Modifier.fillMaxWidth().semantics { role = Role.Button },
-        shape = AppShapes.standard,
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onOpen)
+            .semantics { role = Role.Button }
+            .padding(vertical = AppSpacing.md),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(AppSpacing.md)
     ) {
-        Row(Modifier.fillMaxWidth().padding(AppSpacing.md), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(AppSpacing.md)) {
-            AppNovelCover(
-                coverUrl = coverUrl,
-                title = history.name,
-                modifier = Modifier.size(width = 64.dp, height = 88.dp)
-            )
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(AppSpacing.xs)) {
-                Text(history.name, style = AppTypography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                Text(history.chapter.name, style = AppTypography.bodyMedium, color = MaterialTheme.colorScheme.primary, maxLines = 2, overflow = TextOverflow.Ellipsis)
-            }
-            IconButton(onClick = onDelete) { Icon(Icons.Filled.DeleteOutline, stringResource(R.string.delete_history)) }
+        AppNovelCover(
+            coverUrl = coverUrl,
+            title = history.name,
+            modifier = Modifier.size(width = 64.dp, height = 88.dp)
+        )
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(AppSpacing.xs)) {
+            Text(history.name, style = AppTypography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            Text(history.chapter.name, style = AppTypography.bodyMedium, color = MaterialTheme.colorScheme.primary, maxLines = 2, overflow = TextOverflow.Ellipsis)
         }
+        IconButton(onClick = onDelete) { Icon(Icons.Filled.DeleteOutline, stringResource(R.string.delete_history)) }
     }
 }
 
