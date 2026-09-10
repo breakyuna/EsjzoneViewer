@@ -347,7 +347,7 @@ private fun AppNavigationBar(
                     onClick = { onSelected(tab) },
                     selectedIcon = tab.filledIcon,
                     unselectedIcon = tab.outlinedIcon,
-                    contentDescription = tabLabel(tab),
+                    label = tabLabel(tab),
                     modifier = Modifier.weight(1f)
                 )
             }
@@ -407,7 +407,7 @@ private fun FloatingNavHorizontalItem(
     onClick: () -> Unit,
     selectedIcon: ImageVector,
     unselectedIcon: ImageVector,
-    contentDescription: String,
+    label: String,
     modifier: Modifier = Modifier
 ) {
     val containerColor by animateColorAsState(
@@ -433,7 +433,7 @@ private fun FloatingNavHorizontalItem(
         modifier = modifier
             .fillMaxHeight()
             .clip(RoundedCornerShape(percent = 50))
-            .semantics { contentDescription = contentDescription }
+            .semantics { contentDescription = label }
             .clickable(
                 onClick = onClick,
                 role = Role.Tab
@@ -459,7 +459,7 @@ private fun FloatingNavHorizontalItem(
                     modifier = Modifier.size(22.dp)
                 )
                 Text(
-                    text = contentDescription,
+                    text = label,
                     style = MaterialTheme.typography.labelMedium,
                     fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
                     color = contentColor,
