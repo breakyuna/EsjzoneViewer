@@ -25,8 +25,11 @@ import com.breakyuna.esjzone.ui.designsystem.AppShapes
 import dev.chrisbanes.haze.ExperimentalHazeApi
 import dev.chrisbanes.haze.HazeInput
 import dev.chrisbanes.haze.HazeState
+import dev.chrisbanes.haze.glass.ChromaticAberrationMode
+import dev.chrisbanes.haze.glass.GlassOptics
 import dev.chrisbanes.haze.glass.GlassReducedMotionPolicy
 import dev.chrisbanes.haze.glass.GlassStyle
+import dev.chrisbanes.haze.glass.SurfaceProfile
 import dev.chrisbanes.haze.glass.hazeGlass
 import dev.chrisbanes.haze.hazeSource
 import dev.chrisbanes.haze.rememberHazeState
@@ -43,12 +46,23 @@ data class AppGlassSpec(
     val edgeSoftness: Dp = 2.dp,
     val specularIntensity: Float = 0.4f,
     val material: AppGlassMaterial = AppGlassMaterial.REGULAR,
-    val borderBrush: Brush? = null
+    val borderBrush: Brush? = null,
+    val borderWidth: Dp = 1.dp,
+    val blurRadius: Dp? = null,
+    val refractionStrength: Float? = null,
+    val refractionDisplacement: Dp? = null,
+    val refractionHeightFraction: Float? = null,
+    val ambientResponse: Float? = null,
+    val specularExponent: Float? = null,
+    val fresnelExponent: Float? = null,
+    val surfaceProfile: SurfaceProfile? = null,
+    val chromaticAberrationStrength: Float? = null
 )
 
 enum class AppGlassMaterial {
     REGULAR,
-    CLEAR
+    CLEAR,
+    LENS
 }
 
 /** A dedicated capture scene for an overlay that must sample only its backdrop siblings. */
@@ -108,6 +122,36 @@ fun AppGlassSurface(
         val materialStyle = when (spec.material) {
             AppGlassMaterial.REGULAR -> GlassStyle.regular
             AppGlassMaterial.CLEAR -> GlassStyle.clear
+            AppGlassMaterial.LENS -> GlassStyle {
+                optics(
+                    GlassOptics.Fixed(
+                        refractionStrength = if (reducedMotion) 0f else (spec.refractionStrength ?: 0.65f),
+                        refractionHeightFraction = spec.refractionHeightFraction ?: 0.28f,
+                        refractionDisplacement = if (reducedMotion) 0.dp else (spec.refractionDisplacement ?: 16.dp),
+                        depth = 0.08f,
+                        blurRadius = spec.blurRadius ?: 0.dp,
+                        refractionFoldStrength = 0f
+                    )
+                )
+                specularIntensity(
+                    if (reducedMotion) {
+                        (spec.specularIntensity * 0.45f).coerceIn(0f, 1f)
+                    } else {
+                        spec.specularIntensity.coerceIn(0f, 1f)
+                    }
+                )
+                ambientResponse(spec.ambientResponse ?: 0.75f)
+                edgeSoftness(if (reducedMotion) 1.dp else spec.edgeSoftness)
+                chromaticAberrationStrength(if (reducedMotion) 0f else (spec.chromaticAberrationStrength ?: 0.06f))
+                surfaceProfile(spec.surfaceProfile ?: SurfaceProfile.Circle)
+                chromaticAberrationMode(ChromaticAberrationMode.Simple)
+                contrast(0.06f)
+                whitePoint(0.04f)
+                chromaMultiplier(1.05f)
+                contentNormalBlend(0.08f)
+                specularExponent(spec.specularExponent ?: 16f)
+                fresnelExponent(spec.fresnelExponent ?: 1.9f)
+            }
         }
         materialStyle.then {
             backgroundColor(base.copy(alpha = spec.alpha.coerceIn(0f, 1f)))
@@ -121,6 +165,23 @@ fun AppGlassSurface(
                     spec.specularIntensity.coerceIn(0f, 1f)
                 }
             )
+            spec.ambientResponse?.let { ambientResponse(it) }
+            spec.specularExponent?.let { specularExponent(it) }
+            spec.fresnelExponent?.let { fresnelExponent(it) }
+            spec.surfaceProfile?.let { surfaceProfile(it) }
+            spec.chromaticAberrationStrength?.let { chromaticAberrationStrength(it) }
+            if (spec.material != AppGlassMaterial.LENS && spec.blurRadius != null) {
+                optics(
+                    GlassOptics.Fixed(
+                        refractionStrength = if (reducedMotion) 0f else (spec.refractionStrength ?: 0.65f),
+                        refractionHeightFraction = spec.refractionHeightFraction ?: 0.28f,
+                        refractionDisplacement = if (reducedMotion) 0.dp else (spec.refractionDisplacement ?: 16.dp),
+                        depth = 0.08f,
+                        blurRadius = spec.blurRadius,
+                        refractionFoldStrength = 0f
+                    )
+                )
+            }
         }
     }
     val motionPolicy = if (reducedMotion) {
@@ -130,10 +191,10 @@ fun AppGlassSurface(
     }
 
     val borderStroke = if (spec.borderBrush != null) {
-        BorderStroke(1.dp, spec.borderBrush)
+        BorderStroke(spec.borderWidth, spec.borderBrush)
     } else {
         BorderStroke(
-            1.dp,
+            spec.borderWidth,
             MaterialTheme.colorScheme.outline.copy(
                 alpha = spec.borderAlpha.coerceIn(0f, 1f)
             )
@@ -164,10 +225,10 @@ private fun MaterialFallbackSurface(
 ) {
     val base = spec.tint ?: MaterialTheme.colorScheme.surface
     val borderStroke = if (spec.borderBrush != null) {
-        BorderStroke(1.dp, spec.borderBrush)
+        BorderStroke(spec.borderWidth, spec.borderBrush)
     } else {
         BorderStroke(
-            1.dp,
+            spec.borderWidth,
             MaterialTheme.colorScheme.outline.copy(alpha = spec.borderAlpha.coerceIn(0f, 1f))
         )
     }
