@@ -108,7 +108,7 @@ class NavigationGlassContract(unittest.TestCase):
         self.assertEqual(scalar(self.policy, "contentNormalBlend"), 0)
         self.assertLessEqual(max(theme_pair(self.policy, "specularIntensity")), 0.55)
         self.assertIn("lightPosition = Alignment.TopStart", self.policy)
-        self.assertIn("Modifier.matchParentSize().background(sheen)", self.policy)
+        self.assertIn("Modifier.fillMaxSize().background(sheen)", self.policy)
         self.assertNotIn("Color.White.copy(alpha = 0.35f)", self.shell)
         self.assertNotIn(".height(34.dp)", self.shell)
 
