@@ -55,11 +55,15 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shadow
+import androidx.compose.ui.graphics.drawscope.scale
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -85,7 +89,7 @@ import com.breakyuna.esjzone.ui.designsystem.glass.rememberAppGlassScene
 
 /**
  * Bottom / side insets compensation for pages whose content scrolls underneath
- * floating frosted-glass islands so terminal list items are never blocked.
+ * floating glass islands so terminal list items are never blocked.
  */
 val LocalFloatingNavPadding = compositionLocalOf { PaddingValues(0.dp) }
 
@@ -102,9 +106,9 @@ private enum class AppTabId(
 
 /**
  * The application shell keeps one Navigation 3 back stack per top-level tab.
- * Compact windows display a bottom floating frosted-glass capsule island hovering
+ * Compact windows display a bottom floating crystal-glass capsule island hovering
  * over the page content. Medium and Expanded windows display a side vertical
- * floating frosted-glass capsule island.
+ * floating crystal-glass capsule island.
  */
 @Composable
 fun AdaptiveAppShell(
@@ -389,7 +393,8 @@ private fun AppSideNavigationBar(
 private data class NavigationItemColors(
     val background: Brush,
     val border: Brush,
-    val content: Color
+    val content: Color,
+    val halo: Color
 )
 
 /** The same readable selection treatment for the bottom and side capsules. */
@@ -399,27 +404,27 @@ private fun navigationItemColors(selected: Boolean): NavigationItemColors {
     val dark = colors.surface.luminance() < 0.5f
     val backgroundTop by animateColorAsState(
         targetValue = if (selected) {
-            colors.primaryContainer.copy(alpha = if (dark) 0.84f else 0.78f)
+            colors.primaryContainer.copy(alpha = if (dark) 0.22f else 0.28f)
         } else Color.Transparent,
         animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
         label = "nav_selection_top"
     )
     val backgroundBottom by animateColorAsState(
         targetValue = if (selected) {
-            colors.primaryContainer.copy(alpha = if (dark) 0.72f else 0.64f)
+            colors.primaryContainer.copy(alpha = if (dark) 0.10f else 0.14f)
         } else Color.Transparent,
         animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
         label = "nav_selection_bottom"
     )
     val borderTop by animateColorAsState(
         targetValue = if (selected) {
-            if (dark) Color.White.copy(alpha = 0.20f) else colors.primary.copy(alpha = 0.16f)
+            if (dark) Color.White.copy(alpha = 0.42f) else colors.primary.copy(alpha = 0.30f)
         } else Color.Transparent,
         animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
         label = "nav_selection_border_top"
     )
     val borderBottom by animateColorAsState(
-        targetValue = if (selected) colors.primary.copy(alpha = 0.08f) else Color.Transparent,
+        targetValue = if (selected) colors.primary.copy(alpha = 0.14f) else Color.Transparent,
         animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
         label = "nav_selection_border_bottom"
     )
@@ -431,8 +436,27 @@ private fun navigationItemColors(selected: Boolean): NavigationItemColors {
     return NavigationItemColors(
         background = Brush.verticalGradient(listOf(backgroundTop, backgroundBottom)),
         border = Brush.verticalGradient(listOf(borderTop, borderBottom)),
-        content = contentColor
+        content = contentColor,
+        halo = colors.surface.copy(alpha = if (dark) 0.76f else 0.70f)
     )
+}
+
+/** Small feathered backing behind glyphs; leaves the pane and selection edges transparent. */
+private fun Modifier.navigationContentHalo(color: Color): Modifier = drawWithCache {
+    val radius = (size.height * 0.5f).coerceAtLeast(1f)
+    val horizontalScale = size.width / (radius * 2f)
+    val brush = Brush.radialGradient(
+        0f to color,
+        0.55f to color.copy(alpha = color.alpha * 0.90f),
+        1f to color.copy(alpha = 0f),
+        radius = radius
+    )
+    onDrawBehind {
+        // Fit an ellipse inside the content bounds; never cut a halo into a hard rectangle.
+        scale(scaleX = horizontalScale, scaleY = 1f) {
+            drawCircle(brush = brush, radius = radius)
+        }
+    }
 }
 
 @Composable
@@ -446,6 +470,7 @@ private fun FloatingNavHorizontalItem(
 ) {
     val colors = navigationItemColors(selected)
     val pillShape = RoundedCornerShape(28.dp)
+    val labelHaloRadius = with(LocalDensity.current) { 2.dp.toPx() }
     Box(
         modifier = modifier.fillMaxHeight(),
         contentAlignment = Alignment.Center
@@ -463,6 +488,9 @@ private fun FloatingNavHorizontalItem(
             contentAlignment = Alignment.Center
         ) {
             Column(
+                modifier = Modifier
+                    .navigationContentHalo(colors.halo)
+                    .padding(horizontal = 4.dp, vertical = 3.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(1.dp)
             ) {
@@ -474,7 +502,12 @@ private fun FloatingNavHorizontalItem(
                 )
                 Text(
                     text = label,
-                    style = MaterialTheme.typography.labelMedium,
+                    style = MaterialTheme.typography.labelMedium.copy(
+                        shadow = Shadow(
+                            color = colors.halo.copy(alpha = 0.95f),
+                            blurRadius = labelHaloRadius
+                        )
+                    ),
                     fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
                     color = colors.content,
                     maxLines = 1
@@ -504,12 +537,17 @@ private fun FloatingNavVerticalItem(
             .selectable(selected = selected, onClick = onClick, role = Role.Tab),
         contentAlignment = Alignment.Center
     ) {
-        Icon(
-            imageVector = if (selected) selectedIcon else unselectedIcon,
-            contentDescription = contentDescription,
-            tint = colors.content,
-            modifier = Modifier.size(24.dp)
-        )
+        Box(
+            modifier = Modifier.size(36.dp).navigationContentHalo(colors.halo),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                imageVector = if (selected) selectedIcon else unselectedIcon,
+                contentDescription = contentDescription,
+                tint = colors.content,
+                modifier = Modifier.size(24.dp)
+            )
+        }
     }
 }
 

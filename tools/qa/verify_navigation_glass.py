@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Source contracts and a conservative palette model, NOT a rendered UI/compile test.
+"""Crystal-glass source contracts and a halo-center model, NOT a UI/compile test.
 
 Run with Python only; no Gradle, Android SDK, emulator, or network is required.
 """
@@ -81,20 +81,23 @@ class NavigationGlassContract(unittest.TestCase):
         self.assertIn("scene?.hazeState ?: LocalAppHazeState.current", self.surface)
         self.assertIn("input = HazeInput.Sources(hazeState)", self.surface)
 
-    def test_blur_is_real_and_does_not_mix_sharp_content_back(self):
-        self.assertGreaterEqual(scalar(self.policy, "blurRadius"), 10)
-        self.assertLessEqual(scalar(self.policy, "blurRadius"), 20)
-        self.assertEqual(scalar(self.policy, "depth"), 1)
+    def test_clear_optics_preserve_background_detail(self):
+        self.assertIn("material = AppGlassMaterial.CLEAR", self.policy)
+        self.assertGreaterEqual(scalar(self.policy, "blurRadius"), 2)
+        self.assertLessEqual(scalar(self.policy, "blurRadius"), 6)
+        self.assertGreater(scalar(self.policy, "depth"), 0)
+        self.assertLessEqual(scalar(self.policy, "depth"), 0.35)
         self.assertEqual(scalar(self.policy, "alpha"), 1)
         self.assertIn("depth = spec.depth ?: 0.08f", self.surface)
         self.assertIn("blurRadius = spec.blurRadius ?: 0.dp", self.surface)
+        self.assertIn("spec.material != AppGlassMaterial.LENS && spec.blurRadius != null", self.surface)
         self.assertNotIn(".blur(", self.policy + self.shell)
 
-    def test_tint_not_source_fill_controls_legibility(self):
+    def test_clear_pane_tint_is_independent_of_opaque_fallback(self):
         dark, light = theme_pair(self.policy, "tintAlpha")
         for value in (dark, light):
-            self.assertGreaterEqual(value, 0.55)
-            self.assertLessEqual(value, 0.85)
+            self.assertGreaterEqual(value, 0.06)
+            self.assertLessEqual(value, 0.20)
         self.assertNotEqual(dark, light)
         self.assertGreaterEqual(scalar(self.policy, "fallbackAlpha"), 0.90)
         self.assertIn("spec.fallbackAlpha ?: spec.alpha", self.surface)
@@ -104,13 +107,23 @@ class NavigationGlassContract(unittest.TestCase):
             self.assertGreaterEqual(scalar(self.policy, name), 0)
             self.assertLessEqual(scalar(self.policy, name), 1)
         self.assertLessEqual(scalar(self.policy, "borderWidth"), 1)
-        self.assertEqual(scalar(self.policy, "chromaticAberrationStrength"), 0)
+        self.assertGreaterEqual(scalar(self.policy, "chromaticAberrationStrength"), 0)
+        self.assertLessEqual(scalar(self.policy, "chromaticAberrationStrength"), 0.04)
         self.assertEqual(scalar(self.policy, "contentNormalBlend"), 0)
-        self.assertLessEqual(max(theme_pair(self.policy, "specularIntensity")), 0.55)
+        self.assertGreaterEqual(min(theme_pair(self.policy, "specularIntensity")), 0.55)
+        self.assertLessEqual(max(theme_pair(self.policy, "specularIntensity")), 0.75)
+        self.assertGreaterEqual(scalar(self.policy, "specularExponent"), 28)
+        self.assertGreaterEqual(scalar(self.policy, "fresnelExponent"), 3)
         self.assertIn("lightPosition = Alignment.TopStart", self.policy)
-        self.assertIn("Modifier.fillMaxSize().background(sheen)", self.policy)
         self.assertNotIn("Color.White.copy(alpha = 0.35f)", self.shell)
         self.assertNotIn(".height(34.dp)", self.shell)
+
+    def test_decoration_cannot_expand_wrap_content_navigation(self):
+        self.assertIn("Modifier.matchParentSize().background(sheen)", self.policy)
+        # matchParentSize is a BoxScope member, NOT an importable package extension.
+        self.assertNotIn("import androidx.compose.foundation.layout.matchParentSize", self.policy)
+        self.assertNotIn("fillMaxSize", self.policy)
+        self.assertIn("content: @Composable BoxScope.() -> Unit", self.surface)
 
     def test_reduced_motion_retains_blur_and_does_not_restore_dispersion(self):
         self.assertIn("chromaticAberrationStrength(if (reducedMotion) 0f else it)", self.surface)
@@ -128,17 +141,28 @@ class NavigationGlassContract(unittest.TestCase):
         self.assertIn(".size(48.dp)", self.shell)
         self.assertIn("selectedStack.lastOrNull() == tab.route", self.shell)
 
-    def test_palette_model_on_uniform_black_and_white_backdrops(self):
-        # Conservative analytic check: no screenshots are generated or claimed here.
-        # Black/white bound neutral input after blur. Include maximum ambient lift;
-        # actual shaped highlights, GPU optics and moving photos still need device QA.
+    def test_readability_support_is_local_not_another_opaque_pill(self):
+        self.assertEqual(self.shell.count(".navigationContentHalo(colors.halo)"), 2)
+        self.assertIn("Brush.radialGradient(", self.shell)
+        self.assertIn("1f to color.copy(alpha = 0f)", self.shell)
+        self.assertIn("scale(scaleX = horizontalScale, scaleY = 1f)", self.shell)
+        self.assertIn("drawCircle(brush = brush, radius = radius)", self.shell)
+        self.assertIn("shadow = Shadow(", self.shell)
+        for field in ("backgroundTop", "backgroundBottom"):
+            for alpha in theme_pair(self.shell.split(f"val {field} by", 1)[1], "alpha"):
+                self.assertLessEqual(alpha, 0.30)
+
+    def test_halo_center_model_on_uniform_black_and_white_backdrops(self):
+        # Only the halo CENTER is modelled: feathered edges deliberately stay clear.
+        # This is not whole-label WCAG validation. Photos, glyph edges, dynamic palette
+        # transitions and GPU lighting must be checked on-device, including fallback.
         source = (UI / "designsystem/AppTheme.kt").read_text()
         schemes = re.findall(r"AppThemeVariant\.(\w+) -> build(Light|Dark)Scheme\((.*?)\n    \)", source, re.S)
         self.assertEqual(len(schemes), 8)
         tint_dark, tint_light = theme_pair(self.policy, "tintAlpha")
         ambient_dark, ambient_light = theme_pair(self.policy, "ambientResponse")
         selection_dark, selection_light = theme_pair(self.shell.split("val backgroundBottom by", 1)[1], "alpha")
-        sheen_dark, sheen_light = theme_pair(self.policy.split("val sheen =", 1)[1], "alpha")
+        halo_dark, halo_light = theme_pair(self.shell.split("halo = colors.surface.copy", 1)[1], "alpha")
         contrast_adjustment = scalar(self.policy, "contrast")
         self.assertEqual(scalar(self.policy, "whitePoint"), 0)
         for name, mode, body in schemes:
@@ -152,12 +176,6 @@ class NavigationGlassContract(unittest.TestCase):
                 # Include both no edge lift and its maximum, not just the center.
                 for lift in (1.0, 1.0 + ambient):
                     background = tuple(min(1.0, c * lift) for c in base)
-                    # Top sheen is the more demanding dark case; lower shadow is the
-                    # more demanding light case. Both overestimate the label's overlay.
-                    if dark:
-                        background = blend((1.0,) * 3, background, sheen_dark)
-                    else:
-                        background = blend((0.0,) * 3, background, 0.015)
                     for selected in (False, True):
                         if selected:
                             # Bottom is the weakest selected fill in each theme.
@@ -166,8 +184,21 @@ class NavigationGlassContract(unittest.TestCase):
                         else:
                             background_item = background
                             foreground = colors["onSurface"]
+                        background_item = blend(colors["surface"], background_item, halo_dark if dark else halo_light)
                         with self.subTest(theme=name, mode=mode, source=source_value, lift=lift, selected=selected):
                             self.assertGreaterEqual(contrast(foreground, background_item), 4.5)
+
+    def test_pane_preserves_color_separation_away_from_items(self):
+        # In a uniform region refraction/blur cannot change the source; low tint must
+        # preserve >=80% of the source difference. No glow/halo at the clear center.
+        for tint in theme_pair(self.policy, "tintAlpha"):
+            black = blend((0.5,) * 3, (0.0,) * 3, tint)
+            white = blend((0.5,) * 3, (1.0,) * 3, tint)
+            self.assertGreaterEqual(white[0] - black[0], 0.80)
+        self.assertEqual(scalar(self.policy, "contrast"), 0)
+        self.assertEqual(scalar(self.policy, "chromaMultiplier"), 1)
+        self.assertIn("0.36f to Color.Transparent", self.policy)
+        self.assertIn("0.80f to Color.Transparent", self.policy)
 
 
 if __name__ == "__main__":
