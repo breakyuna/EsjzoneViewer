@@ -59,11 +59,11 @@ import java.util.Locale
 
 class MainActivity : ComponentActivity() {
 
-    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
-        if (event.action == KeyEvent.ACTION_UP && ReaderVolumeKeyDispatcher.dispatch(event.keyCode)) {
+    override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
+        if (event?.repeatCount == 0 && ReaderVolumeKeyDispatcher.dispatch(keyCode)) {
             return true
         }
-        return super.dispatchKeyEvent(event)
+        return super.onKeyDown(keyCode, event)
     }
 
     companion object {
