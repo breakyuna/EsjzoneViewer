@@ -1,8 +1,8 @@
 package com.breakyuna.esjzone
 
 import com.breakyuna.esjzone.ui.page.fullBookProgress
-import kotlin.test.Test
-import kotlin.test.assertEquals
+import org.junit.Assert.assertEquals
+import org.junit.Test
 
 /** Pure boundary coverage for the local history book-progress projection. */
 class HistoryProgressTest {
