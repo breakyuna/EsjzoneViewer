@@ -64,7 +64,7 @@ internal object ReleaseUpdateChecker {
                 client.newCall(request).execute().use { response ->
                     // Includes no published Release (404), rate limiting and server errors.
                     if (!response.isSuccessful) return@launch
-                    val release = JSONObject(response.body?.string() ?: return@launch)
+                    val release = JSONObject(response.body.string())
                     if (release.optBoolean("draft", true) || release.optBoolean("prerelease", true)) return@launch
                     val tag = release.optString("tag_name")
                     if (!ReleaseVersion.isNewerStableRelease(tag, BuildConfig.VERSION_NAME)) return@launch

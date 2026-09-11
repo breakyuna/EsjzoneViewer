@@ -40,13 +40,25 @@ RESOURCE_LOCALES = (
 
 
 def tracked_files() -> list[Path]:
-    result = subprocess.run(
-        ["git", "ls-files", "-z"],
-        cwd=ROOT,
-        check=True,
-        stdout=subprocess.PIPE,
-    )
-    return [ROOT / name for name in result.stdout.decode().split("\0") if name]
+    try:
+        result = subprocess.run(
+            ["git", "ls-files", "-z"],
+            cwd=ROOT,
+            check=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+        )
+        return [ROOT / name for name in result.stdout.decode().split("\0") if name]
+    except Exception:
+        files: list[Path] = []
+        for root in SOURCE_ROOTS:
+            if root.is_file():
+                files.append(root)
+            elif root.is_dir():
+                for p in root.rglob("*"):
+                    if p.is_file() and not any(part.startswith(".") or part == "build" for part in p.parts):
+                        files.append(p)
+        return files
 
 
 def under_source_root(path: Path) -> bool:
