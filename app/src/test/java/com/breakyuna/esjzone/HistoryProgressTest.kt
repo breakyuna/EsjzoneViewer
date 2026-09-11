@@ -16,7 +16,7 @@ class HistoryProgressTest {
     @Test
     fun clampsInvalidFractionsAndFallsBackWhenBookPositionUnknown() {
         assertEquals(0.2f, fullBookProgress(chapterIndex = 2, totalChapters = 10, chapterProgress = Float.NaN))
-        assertEquals(1f, fullBookProgress(chapterIndex = 2, totalChapters = 10, chapterProgress = 4f))
+        assertEquals(0.3f, fullBookProgress(chapterIndex = 2, totalChapters = 10, chapterProgress = 4f))
         assertEquals(0.4f, fullBookProgress(chapterIndex = -1, totalChapters = 0, chapterProgress = 0.4f))
     }
 }
