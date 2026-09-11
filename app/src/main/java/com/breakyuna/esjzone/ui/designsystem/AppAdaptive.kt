@@ -34,21 +34,21 @@ fun rememberAppAdaptiveMetrics(): AppAdaptiveMetrics {
         when {
             width < 600.dp -> AppAdaptiveMetrics(
                 AppWindowSizeClass.Compact,
-                AppSpacing.lg,
-                width - AppSpacing.lg * 2,
+                AppSpacing.md,
+                width - AppSpacing.md * 2,
                 AppSpacing.md,
                 contentColumns = 1
             )
             width < 840.dp -> AppAdaptiveMetrics(
                 AppWindowSizeClass.Medium,
-                AppSpacing.xl,
+                AppSpacing.lg,
                 720.dp,
                 AppSpacing.lg,
                 contentColumns = 2
             )
             else -> AppAdaptiveMetrics(
                 AppWindowSizeClass.Expanded,
-                AppSpacing.xxl,
+                AppSpacing.xl,
                 960.dp,
                 AppSpacing.xl,
                 contentColumns = 3

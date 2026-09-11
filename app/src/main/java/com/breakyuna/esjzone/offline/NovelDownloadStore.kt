@@ -22,8 +22,18 @@ import java.nio.charset.StandardCharsets
 import java.nio.file.Files
 import java.nio.file.StandardCopyOption
 import java.security.MessageDigest
+import java.util.concurrent.ConcurrentLinkedQueue
+import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicLong
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.supervisorScope
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import okhttp3.Request
 import org.jsoup.Jsoup
 
@@ -99,6 +109,9 @@ object NovelDownloadStore {
     private const val MANIFEST_FILE = "manifest.json"
     private const val TEXT_COMPONENT = "text"
     private const val IMAGE_COMPONENT = "image"
+    const val DEFAULT_DOWNLOAD_CONCURRENCY = 5
+    private const val CHAPTER_MAX_ATTEMPTS = 2
+    private const val PROGRESS_THROTTLE_MS = 150L
 
     private val gson = Gson()
     private val ioLock = Any()
@@ -268,6 +281,7 @@ object NovelDownloadStore {
         authorization: Authorization,
         novel: DetailedNovel,
         baseUrl: String? = null,
+        concurrency: Int = DEFAULT_DOWNLOAD_CONCURRENCY,
         onProgress: (DownloadProgress) -> Unit = {}
     ): DownloadedNovelManifest {
         val orderedChapters = novel.chapterList.orderedChapters
@@ -281,7 +295,7 @@ object NovelDownloadStore {
             .orEmpty()
             .associateBy { chapterKey(it.url) }
 
-        var records = orderedChapters.mapIndexed { index, chapter ->
+        val records = orderedChapters.mapIndexed { index, chapter ->
             val previous = previousByUrl[chapterKey(chapter.url)]
             val fileName = previous?.fileName ?: chapterFileName(chapter.url)
             val chapterFile = File(directory, fileName)
@@ -294,80 +308,157 @@ object NovelDownloadStore {
             )
         }
 
+        val currentRecords = records.toMutableList()
         var currentManifest = manifestFrom(
             novel = novel,
-            records = records,
+            records = currentRecords.toList(),
             downloadedAt = previousManifest?.downloadedAt ?: 0L,
-            complete = records.all { it.downloaded }
+            complete = currentRecords.all { it.downloaded }
         )
         synchronized(ioLock) { writeManifest(directory, currentManifest) }
 
-        var completed = records.count { it.downloaded }
-        onProgress(DownloadProgress(completed, records.size, ""))
+        val totalCount = currentRecords.size
+        val completedCounter = AtomicInteger(currentRecords.count { it.downloaded })
+        val lastProgressTime = AtomicLong(0L)
 
-        for ((index, record) in records.withIndex()) {
-            currentCoroutineContext().ensureActive()
-            if (record.downloaded) continue
-
-            onProgress(DownloadProgress(completed, records.size, record.name))
-            val detail = EsjzoneClient.getChapterDetail(
-                authorization = authorization,
-                chapter = Chapter(record.name, record.url, false),
-                preferDownloaded = false,
-                forceRefresh = false,
-                baseUrl = baseUrl
-            )
-            val storedChapter = DownloadedChapterContent(
-                name = detail.name.ifBlank { record.name },
-                url = record.url,
-                components = detail.content.mapNotNull { component ->
-                    when (component) {
-                        is TextComponent -> DownloadedComponent(
-                            type = TEXT_COMPONENT,
-                            value = component.plainText()
-                        )
-
-                        is ImageComponent -> DownloadedComponent(
-                            type = IMAGE_COMPONENT,
-                            value = component.url
-                        ).withDownloadedImage(
-                            downloadImage(authorization, directory, component.url, detail.sourceUrl ?: baseUrl)
-                        )
-
-                        else -> null
-                    }
-                },
-                contentHtml = detail.contentHtml,
-                baseUrl = detail.sourceUrl ?: EsjzoneUrls.resolve(record.url, baseUrl ?: EsjzoneUrls.Base)
-            )
-            synchronized(ioLock) {
-                writeJson(File(directory, record.fileName), storedChapter)
+        fun reportProgress(chapterName: String, force: Boolean = false) {
+            val count = completedCounter.get()
+            val now = System.currentTimeMillis()
+            val prev = lastProgressTime.get()
+            if (force || count == totalCount || now - prev >= PROGRESS_THROTTLE_MS) {
+                lastProgressTime.set(now)
+                onProgress(DownloadProgress(count, totalCount, chapterName))
             }
-
-            records = records.toMutableList().also { mutable ->
-                mutable[index] = record.copy(downloaded = true)
-            }
-            completed += 1
-            currentManifest = manifestFrom(
-                novel = novel,
-                records = records,
-                downloadedAt = System.currentTimeMillis(),
-                complete = completed == records.size
-            )
-            synchronized(ioLock) { writeManifest(directory, currentManifest) }
-            onProgress(DownloadProgress(completed, records.size, record.name))
         }
+
+        reportProgress("", force = true)
+
+        val pendingChapters = currentRecords.filter { !it.downloaded }
+        if (pendingChapters.isNotEmpty()) {
+            val semaphore = Semaphore(concurrency.coerceAtLeast(1))
+            val failedErrors = ConcurrentLinkedQueue<Throwable>()
+
+            supervisorScope {
+                pendingChapters.forEach { record ->
+                    launch(Dispatchers.IO) {
+                        semaphore.withPermit {
+                            currentCoroutineContext().ensureActive()
+                            reportProgress(record.name)
+
+                            var attempt = 0
+                            var success = false
+                            var lastError: Throwable? = null
+
+                            while (attempt < CHAPTER_MAX_ATTEMPTS && !success) {
+                                currentCoroutineContext().ensureActive()
+                                attempt++
+                                try {
+                                    downloadSingleChapter(
+                                        authorization = authorization,
+                                        record = record,
+                                        directory = directory,
+                                        baseUrl = baseUrl
+                                    )
+                                    success = true
+                                } catch (ce: CancellationException) {
+                                    throw ce
+                                } catch (error: Throwable) {
+                                    lastError = error
+                                    if (attempt < CHAPTER_MAX_ATTEMPTS) {
+                                        delay(500L * attempt)
+                                    }
+                                }
+                            }
+
+                            if (success) {
+                                val finished = completedCounter.incrementAndGet()
+                                synchronized(ioLock) {
+                                    currentRecords[record.index] = record.copy(downloaded = true)
+                                    currentManifest = manifestFrom(
+                                        novel = novel,
+                                        records = currentRecords.toList(),
+                                        downloadedAt = System.currentTimeMillis(),
+                                        complete = finished == totalCount
+                                    )
+                                    writeManifest(directory, currentManifest)
+                                }
+                                reportProgress(record.name)
+                            } else {
+                                AppLogger.w(
+                                    "NovelDownloadStore",
+                                    "Chapter download failed after $attempt attempts: ${record.name} (${record.url})",
+                                    lastError
+                                )
+                                lastError?.let { failedErrors.add(it) }
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (failedErrors.isNotEmpty()) {
+                val firstError = failedErrors.peek()
+                throw IllegalStateException(
+                    "Failed to download ${failedErrors.size} chapter(s) for novel: ${novel.name}",
+                    firstError
+                )
+            }
+        }
+
+        reportProgress("", force = true)
 
         if (!currentManifest.complete) {
-            currentManifest = manifestFrom(
-                novel = novel,
-                records = records,
-                downloadedAt = System.currentTimeMillis(),
-                complete = true
-            )
-            synchronized(ioLock) { writeManifest(directory, currentManifest) }
+            synchronized(ioLock) {
+                currentManifest = manifestFrom(
+                    novel = novel,
+                    records = currentRecords.toList(),
+                    downloadedAt = System.currentTimeMillis(),
+                    complete = true
+                )
+                writeManifest(directory, currentManifest)
+            }
         }
         return currentManifest
+    }
+
+    private suspend fun downloadSingleChapter(
+        authorization: Authorization,
+        record: DownloadedChapterRecord,
+        directory: File,
+        baseUrl: String?
+    ): DownloadedChapterContent {
+        val detail = EsjzoneClient.getChapterDetail(
+            authorization = authorization,
+            chapter = Chapter(record.name, record.url, false),
+            preferDownloaded = false,
+            forceRefresh = false,
+            baseUrl = baseUrl
+        )
+        val storedChapter = DownloadedChapterContent(
+            name = detail.name.ifBlank { record.name },
+            url = record.url,
+            components = detail.content.mapNotNull { component ->
+                when (component) {
+                    is TextComponent -> DownloadedComponent(
+                        type = TEXT_COMPONENT,
+                        value = component.plainText()
+                    )
+
+                    is ImageComponent -> DownloadedComponent(
+                        type = IMAGE_COMPONENT,
+                        value = component.url
+                    ).withDownloadedImage(
+                        downloadImage(authorization, directory, component.url, detail.sourceUrl ?: baseUrl)
+                    )
+
+                    else -> null
+                }
+            },
+            contentHtml = detail.contentHtml,
+            baseUrl = detail.sourceUrl ?: EsjzoneUrls.resolve(record.url, baseUrl ?: EsjzoneUrls.Base)
+        )
+        writeJson(File(directory, record.fileName), storedChapter)
+        return storedChapter
     }
 
     /** Returns a downloaded chapter without touching the network. */

@@ -194,7 +194,7 @@ private fun LocalHistoryContent(
                         top = AppSpacing.lg,
                         bottom = AppSpacing.lg + navPadding.calculateBottomPadding()
                     ),
-                    verticalArrangement = Arrangement.spacedBy(AppSpacing.md)
+                    verticalArrangement = Arrangement.spacedBy(AppSpacing.sm)
                 ) {
                     items(rows, key = { it.activityId }, contentType = { "history" }) { activity ->
                         LocalHistoryCard(
@@ -295,7 +295,7 @@ private fun CloudHistoryContent(
                         top = AppSpacing.lg,
                         bottom = AppSpacing.lg + navPadding.calculateBottomPadding()
                     ),
-                    verticalArrangement = Arrangement.spacedBy(AppSpacing.md)
+                    verticalArrangement = Arrangement.spacedBy(AppSpacing.sm)
                 ) {
                     items(rows, key = { "cloud-history:${detailLoader.key(it)}" }, contentType = { "history" }) { history ->
                         val key = detailLoader.key(history)

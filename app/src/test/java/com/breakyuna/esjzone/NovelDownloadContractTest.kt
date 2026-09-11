@@ -3,6 +3,7 @@ package com.breakyuna.esjzone
 import com.breakyuna.esjzone.offline.DownloadedChapterRecord
 import com.breakyuna.esjzone.offline.DownloadedNovelManifest
 import com.breakyuna.esjzone.offline.NovelDownloadManager
+import com.breakyuna.esjzone.offline.NovelDownloadStore
 import com.google.gson.Gson
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
@@ -71,5 +72,10 @@ class NovelDownloadContractTest {
         assertEquals("chapter-a.json", restored.chapters.first().fileName)
         assertTrue(restored.chapters.first().downloaded)
         assertTrue(!restored.complete)
+    }
+
+    @Test
+    fun downloadConcurrency_defaultsToFive() {
+        assertEquals(5, NovelDownloadStore.DEFAULT_DOWNLOAD_CONCURRENCY)
     }
 }

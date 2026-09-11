@@ -235,7 +235,7 @@
     <string name="adult_badge">18+</string>
     <string name="home_discover">发现</string>
     <string name="home_site_status">主节点 · %1$s</string>
-    <string name="home_editor_picks">编辑强推</string>
+    <string name="home_editor_picks">热门推荐</string>
     <string name="home_recommendation_label">值得一读</string>
     <string name="home_browse_more">查看更多</string>
     <string name="home_collection_empty_title">这里暂时没有内容</string>

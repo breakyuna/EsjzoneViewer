@@ -249,7 +249,7 @@ object FavoritePage : AppDestination {
                     bottom = AppSpacing.lg + (if (editing) 0.dp else navPadding.calculateBottomPadding())
                 ),
                 horizontalArrangement = Arrangement.spacedBy(AppSpacing.md),
-                verticalArrangement = Arrangement.spacedBy(AppSpacing.lg)
+                verticalArrangement = Arrangement.spacedBy(if (listView && !editing) AppSpacing.sm else AppSpacing.lg)
             ) {
                 item(span = { GridItemSpan(maxLineSpan) }) {
                     Column(verticalArrangement = Arrangement.spacedBy(AppSpacing.sm)) {
@@ -475,7 +475,7 @@ private fun ShelfCard(
 @Composable
 private fun ShelfListItem(entry: BookshelfEntry, enabled: Boolean, onClick: () -> Unit) {
     Row(
-        Modifier.fillMaxWidth().clickable(enabled = enabled, onClick = onClick).padding(vertical = AppSpacing.sm),
+        Modifier.fillMaxWidth().clickable(enabled = enabled, onClick = onClick).padding(vertical = AppSpacing.xs),
         horizontalArrangement = Arrangement.spacedBy(AppSpacing.md), verticalAlignment = Alignment.CenterVertically
     ) {
         Box(Modifier.size(width = 76.dp, height = 106.dp)) {

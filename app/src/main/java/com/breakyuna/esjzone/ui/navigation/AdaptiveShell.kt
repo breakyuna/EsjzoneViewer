@@ -55,8 +55,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.shadow
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
@@ -81,16 +79,10 @@ import com.breakyuna.esjzone.ui.tab.FavoriteTab
 import com.breakyuna.esjzone.ui.tab.HistoryTab
 import com.breakyuna.esjzone.ui.tab.HomeTab
 import com.breakyuna.esjzone.ui.tab.ProfileTab
-import com.breakyuna.esjzone.ui.designsystem.glass.AppGlassSpec
-import com.breakyuna.esjzone.ui.designsystem.glass.AppGlassMaterial
-import com.breakyuna.esjzone.ui.designsystem.glass.AppGlassScene
-import com.breakyuna.esjzone.ui.designsystem.glass.AppGlassSurface
-import com.breakyuna.esjzone.ui.designsystem.glass.appGlassSource
-import com.breakyuna.esjzone.ui.designsystem.glass.rememberAppGlassScene
 
 /**
  * Bottom / side insets compensation for pages whose content scrolls underneath
- * floating frosted-glass islands so terminal list items are never blocked.
+ * floating navigation bars so terminal list items are never blocked.
  */
 val LocalFloatingNavPadding = compositionLocalOf { PaddingValues(0.dp) }
 
@@ -107,9 +99,9 @@ private enum class AppTabId(
 
 /**
  * The application shell keeps one Navigation 3 back stack per top-level tab.
- * Compact windows display a bottom floating frosted-glass capsule island hovering
+ * Compact windows display a bottom floating transparent navigation bar hovering
  * over the page content. Medium and Expanded windows display a side vertical
- * floating frosted-glass capsule island.
+ * floating transparent navigation bar.
  */
 @Composable
 fun AdaptiveAppShell(
@@ -124,7 +116,6 @@ fun AdaptiveAppShell(
     val profileStack: MutableList<NavKey> = rememberNavBackStack(AppNavKey.ProfileTab)
     var selectedTab by rememberSaveable { mutableStateOf(AppTabId.HOME.name) }
     val widthSizeClass = currentWindowAdaptiveInfoV2().windowSizeClass.windowWidthSizeClass
-    val navigationGlassScene = rememberAppGlassScene()
     val tab = AppTabId.valueOf(selectedTab)
     val homeNavigator = remember(homeStack, rootNavigator) { rootNavigator.child(homeStack) }
     val historyNavigator = remember(historyStack, rootNavigator) { rootNavigator.child(historyStack) }
@@ -171,15 +162,12 @@ fun AdaptiveAppShell(
                         bookshelfNavigator = bookshelfNavigator,
                         profileStack = profileStack,
                         profileNavigator = profileNavigator,
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .appGlassSource(navigationGlassScene)
+                        modifier = Modifier.fillMaxSize()
                     )
                     if (showFloatingNavigation) {
                         AppNavigationBar(
                             selected = tab,
                             onSelected = { selectedTab = it.name },
-                            glassScene = navigationGlassScene,
                             modifier = Modifier
                                 .align(Alignment.BottomCenter)
                                 .windowInsetsPadding(WindowInsets.navigationBars)
@@ -207,15 +195,12 @@ fun AdaptiveAppShell(
                         bookshelfNavigator = bookshelfNavigator,
                         profileStack = profileStack,
                         profileNavigator = profileNavigator,
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .appGlassSource(navigationGlassScene)
+                        modifier = Modifier.fillMaxSize()
                     )
                     if (showFloatingNavigation) {
                         AppSideNavigationBar(
                             selected = tab,
                             onSelected = { selectedTab = it.name },
-                            glassScene = navigationGlassScene,
                             modifier = Modifier
                                 .align(Alignment.CenterStart)
                                 .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Start))
@@ -327,71 +312,25 @@ private fun TabStackDisplay(
 private fun AppNavigationBar(
     selected: AppTabId,
     onSelected: (AppTabId) -> Unit,
-    glassScene: AppGlassScene,
     modifier: Modifier = Modifier
 ) {
-    val capsuleShape = RoundedCornerShape(34.dp)
-    val rimBrush = Brush.verticalGradient(
-        colors = listOf(
-            Color.White.copy(alpha = 0.45f),
-            MaterialTheme.colorScheme.outline.copy(alpha = 0.22f),
-            MaterialTheme.colorScheme.outline.copy(alpha = 0.08f)
-        )
-    )
-    AppGlassSurface(
+    Row(
         modifier = modifier
             .fillMaxWidth()
-            .shadow(
-                elevation = 16.dp,
-                shape = capsuleShape,
-                spotColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.18f),
-                ambientColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.08f)
-            ),
-        spec = AppGlassSpec(
-            shape = capsuleShape,
-            alpha = 0.24f,
-            borderAlpha = 0.34f,
-            tintAlpha = 0.12f,
-            edgeSoftness = 8.dp,
-            specularIntensity = 0.82f,
-            material = AppGlassMaterial.REGULAR,
-            borderBrush = rimBrush
-        ),
-        scene = glassScene
+            .height(68.dp)
+            .padding(horizontal = 4.dp, vertical = 6.dp),
+        horizontalArrangement = Arrangement.SpaceEvenly,
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(34.dp)
-                .align(Alignment.TopCenter)
-                .clip(RoundedCornerShape(topStart = 34.dp, topEnd = 34.dp))
-                .background(
-                    Brush.verticalGradient(
-                        colors = listOf(
-                            Color.White.copy(alpha = 0.09f),
-                            Color.Transparent
-                        )
-                    )
-                )
-        )
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(68.dp)
-                .padding(horizontal = 4.dp, vertical = 6.dp),
-            horizontalArrangement = Arrangement.SpaceEvenly,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            AppTabId.entries.forEach { tab ->
-                FloatingNavHorizontalItem(
-                    selected = selected == tab,
-                    onClick = { onSelected(tab) },
-                    selectedIcon = tab.filledIcon,
-                    unselectedIcon = tab.outlinedIcon,
-                    label = tabLabel(tab),
-                    modifier = Modifier.weight(1f)
-                )
-            }
+        AppTabId.entries.forEach { tab ->
+            FloatingNavHorizontalItem(
+                selected = selected == tab,
+                onClick = { onSelected(tab) },
+                selectedIcon = tab.filledIcon,
+                unselectedIcon = tab.outlinedIcon,
+                label = tabLabel(tab),
+                modifier = Modifier.weight(1f)
+            )
         }
     }
 }
@@ -400,57 +339,24 @@ private fun AppNavigationBar(
 private fun AppSideNavigationBar(
     selected: AppTabId,
     onSelected: (AppTabId) -> Unit,
-    glassScene: AppGlassScene,
     modifier: Modifier = Modifier
 ) {
-    val capsuleShape = RoundedCornerShape(percent = 50)
-    val rimBrush = Brush.linearGradient(
-        colors = listOf(
-            Color.White.copy(alpha = 0.40f),
-            MaterialTheme.colorScheme.outline.copy(alpha = 0.20f),
-            MaterialTheme.colorScheme.outline.copy(alpha = 0.08f)
-        ),
-        start = Offset.Zero,
-        end = Offset(100f, 300f)
-    )
-    AppGlassSurface(
+    Column(
         modifier = modifier
-            .wrapContentSize()
-            .shadow(
-                elevation = 12.dp,
-                shape = capsuleShape,
-                spotColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.24f),
-                ambientColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.10f)
-            ),
-        spec = AppGlassSpec(
-            shape = capsuleShape,
-            alpha = 0.24f,
-            borderAlpha = 0.28f,
-            tintAlpha = 0.12f,
-            edgeSoftness = 8.dp,
-            specularIntensity = 0.76f,
-            material = AppGlassMaterial.REGULAR,
-            borderBrush = rimBrush
-        ),
-        scene = glassScene
+            .width(58.dp)
+            .wrapContentHeight()
+            .padding(horizontal = 4.dp, vertical = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterVertically),
+        horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Column(
-            modifier = Modifier
-                .width(58.dp)
-                .wrapContentHeight()
-                .padding(horizontal = 4.dp, vertical = 8.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterVertically),
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            AppTabId.entries.forEach { tab ->
-                FloatingNavVerticalItem(
-                    selected = selected == tab,
-                    onClick = { onSelected(tab) },
-                    selectedIcon = tab.filledIcon,
-                    unselectedIcon = tab.outlinedIcon,
-                    contentDescription = tabLabel(tab)
-                )
-            }
+        AppTabId.entries.forEach { tab ->
+            FloatingNavVerticalItem(
+                selected = selected == tab,
+                onClick = { onSelected(tab) },
+                selectedIcon = tab.filledIcon,
+                unselectedIcon = tab.outlinedIcon,
+                contentDescription = tabLabel(tab)
+            )
         }
     }
 }

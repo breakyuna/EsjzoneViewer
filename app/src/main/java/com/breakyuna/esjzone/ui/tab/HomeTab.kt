@@ -111,7 +111,7 @@ object HomeTab : AppTab {
                     top = AppSpacing.sm,
                     bottom = AppSpacing.sm + navPadding.calculateBottomPadding()
                 ),
-                verticalArrangement = Arrangement.spacedBy(AppSpacing.md)
+                verticalArrangement = Arrangement.spacedBy(AppSpacing.sm)
             ) {
                 item(key = "home-actions", contentType = "home-actions") {
                     HomeActions(
@@ -224,6 +224,8 @@ private fun HomeAction(
     }
 }
 
+private const val HOME_COLLECTION_MAX_ITEMS = 16
+
 private fun LazyListScope.homeCollection(
     title: String,
     novels: List<CoveredNovel>,
@@ -238,7 +240,7 @@ private fun LazyListScope.homeCollection(
         .asSequence()
         .filter { adult || !it.isAdult }
         .distinctBy { it.url.trim().ifBlank { it.name.trim() } }
-        .take(8)
+        .take(HOME_COLLECTION_MAX_ITEMS)
         .toList()
 
     item(key = "home-section-$title", contentType = "home-section") {
