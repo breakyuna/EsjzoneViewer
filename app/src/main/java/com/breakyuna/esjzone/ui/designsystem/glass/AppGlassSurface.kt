@@ -1,3 +1,5 @@
+@file:OptIn(dev.chrisbanes.haze.ExperimentalHazeApi::class)
+
 package com.breakyuna.esjzone.ui.designsystem.glass
 
 import android.provider.Settings
@@ -13,6 +15,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.remember
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
@@ -38,7 +41,7 @@ import dev.chrisbanes.haze.rememberHazeState
 @Immutable
 data class AppGlassSpec(
     val tint: Color? = null,
-    /** Backdrop surface opacity. Navigation supplies a lower value for a more transparent island. */
+    /** Alpha of the color BEHIND captured pixels, not overall material opacity. */
     val alpha: Float = 0.92f,
     val shape: RoundedCornerShape = AppShapes.standard,
     val borderAlpha: Float = 0.14f,
@@ -56,7 +59,17 @@ data class AppGlassSpec(
     val specularExponent: Float? = null,
     val fresnelExponent: Float? = null,
     val surfaceProfile: SurfaceProfile? = null,
-    val chromaticAberrationStrength: Float? = null
+    val chromaticAberrationStrength: Float? = null,
+    /** 1 uses the blurred input; values below 1 mix the sharp source back in. */
+    val depth: Float? = null,
+    val refractionFoldStrength: Float = 0f,
+    val lightPosition: Alignment? = null,
+    val contrast: Float? = null,
+    val whitePoint: Float? = null,
+    val chromaMultiplier: Float? = null,
+    val contentNormalBlend: Float? = null,
+    /** Readable no-host fallback independent of the source-fill alpha. */
+    val fallbackAlpha: Float? = null
 )
 
 enum class AppGlassMaterial {
@@ -98,8 +111,9 @@ fun AppGlassHost(content: @Composable () -> Unit) {
 /**
  * Draws a source-backed glass surface with a Material fallback when no host is installed.
  * Haze 2's reduced-motion policy disables interaction transforms when Android's animator scale is
- * zero while retaining the backdrop effect itself. When no host is present, the same geometry and
- * alpha are rendered through a Material surface fallback.
+ * zero while retaining the backdrop effect itself. When no host is present, the same
+ * geometry is rendered through a Material surface fallback; callers can give that fallback
+ * its own alpha so readability does not depend on source capture being available.
  */
 @OptIn(ExperimentalHazeApi::class)
 @Composable
@@ -128,9 +142,9 @@ fun AppGlassSurface(
                         refractionStrength = if (reducedMotion) 0f else (spec.refractionStrength ?: 0.65f),
                         refractionHeightFraction = spec.refractionHeightFraction ?: 0.28f,
                         refractionDisplacement = if (reducedMotion) 0.dp else (spec.refractionDisplacement ?: 16.dp),
-                        depth = 0.08f,
+                        depth = spec.depth ?: 0.08f,
                         blurRadius = spec.blurRadius ?: 0.dp,
-                        refractionFoldStrength = 0f
+                        refractionFoldStrength = if (reducedMotion) 0f else spec.refractionFoldStrength
                     )
                 )
                 specularIntensity(
@@ -169,16 +183,23 @@ fun AppGlassSurface(
             spec.specularExponent?.let { specularExponent(it) }
             spec.fresnelExponent?.let { fresnelExponent(it) }
             spec.surfaceProfile?.let { surfaceProfile(it) }
-            spec.chromaticAberrationStrength?.let { chromaticAberrationStrength(it) }
+            spec.chromaticAberrationStrength?.let {
+                chromaticAberrationStrength(if (reducedMotion) 0f else it)
+            }
+            spec.lightPosition?.let { lightPosition(it) }
+            spec.contrast?.let { contrast(it) }
+            spec.whitePoint?.let { whitePoint(it) }
+            spec.chromaMultiplier?.let { chromaMultiplier(it) }
+            spec.contentNormalBlend?.let { contentNormalBlend(it) }
             if (spec.material != AppGlassMaterial.LENS && spec.blurRadius != null) {
                 optics(
                     GlassOptics.Fixed(
                         refractionStrength = if (reducedMotion) 0f else (spec.refractionStrength ?: 0.65f),
                         refractionHeightFraction = spec.refractionHeightFraction ?: 0.28f,
                         refractionDisplacement = if (reducedMotion) 0.dp else (spec.refractionDisplacement ?: 16.dp),
-                        depth = 0.08f,
+                        depth = spec.depth ?: 0.08f,
                         blurRadius = spec.blurRadius,
-                        refractionFoldStrength = 0f
+                        refractionFoldStrength = if (reducedMotion) 0f else spec.refractionFoldStrength
                     )
                 )
             }
@@ -235,7 +256,7 @@ private fun MaterialFallbackSurface(
     Surface(
         modifier = modifier,
         shape = spec.shape,
-        color = base.copy(alpha = spec.alpha.coerceIn(0f, 1f)),
+        color = base.copy(alpha = (spec.fallbackAlpha ?: spec.alpha).coerceIn(0f, 1f)),
         border = borderStroke
     ) {
         Box(content = content)

@@ -6,7 +6,6 @@ import androidx.compose.animation.core.spring
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -28,7 +27,8 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.layout.wrapContentSize
-import androidx.compose.foundation.layout.wrapContentWidth
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -55,15 +55,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.shadow
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
@@ -81,10 +78,8 @@ import com.breakyuna.esjzone.ui.tab.FavoriteTab
 import com.breakyuna.esjzone.ui.tab.HistoryTab
 import com.breakyuna.esjzone.ui.tab.HomeTab
 import com.breakyuna.esjzone.ui.tab.ProfileTab
-import com.breakyuna.esjzone.ui.designsystem.glass.AppGlassSpec
-import com.breakyuna.esjzone.ui.designsystem.glass.AppGlassMaterial
 import com.breakyuna.esjzone.ui.designsystem.glass.AppGlassScene
-import com.breakyuna.esjzone.ui.designsystem.glass.AppGlassSurface
+import com.breakyuna.esjzone.ui.designsystem.glass.AppNavigationGlassSurface
 import com.breakyuna.esjzone.ui.designsystem.glass.appGlassSource
 import com.breakyuna.esjzone.ui.designsystem.glass.rememberAppGlassScene
 
@@ -330,54 +325,16 @@ private fun AppNavigationBar(
     glassScene: AppGlassScene,
     modifier: Modifier = Modifier
 ) {
-    val capsuleShape = RoundedCornerShape(34.dp)
-    val rimBrush = Brush.verticalGradient(
-        0.0f to Color.White.copy(alpha = 0.90f),
-        0.28f to Color.White.copy(alpha = 0.50f),
-        0.65f to MaterialTheme.colorScheme.primary.copy(alpha = 0.28f),
-        1.0f to Color.White.copy(alpha = 0.20f)
-    )
-    AppGlassSurface(
-        modifier = modifier
-            .fillMaxWidth()
-            .shadow(
-                elevation = 16.dp,
-                shape = capsuleShape,
-                spotColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.16f),
-                ambientColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.08f)
-            ),
-        spec = AppGlassSpec(
-            shape = capsuleShape,
-            alpha = 0.06f,
-            borderAlpha = 0.50f,
-            tintAlpha = 0.02f,
-            edgeSoftness = 1.dp,
-            specularIntensity = 0.96f,
-            material = AppGlassMaterial.LENS,
-            borderBrush = rimBrush,
-            borderWidth = 1.2.dp
-        ),
-        scene = glassScene
+    AppNavigationGlassSurface(
+        scene = glassScene,
+        modifier = modifier.fillMaxWidth()
     ) {
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(34.dp)
-                .align(Alignment.TopCenter)
-                .clip(RoundedCornerShape(topStart = 34.dp, topEnd = 34.dp))
-                .background(
-                    Brush.verticalGradient(
-                        0.0f to Color.White.copy(alpha = 0.35f),
-                        0.45f to Color.White.copy(alpha = 0.10f),
-                        1.0f to Color.Transparent
-                    )
-                )
-        )
         Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .height(68.dp)
-                .padding(horizontal = 4.dp, vertical = 6.dp),
+                .padding(horizontal = 4.dp, vertical = 6.dp)
+                .selectableGroup(),
             horizontalArrangement = Arrangement.SpaceEvenly,
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -402,58 +359,17 @@ private fun AppSideNavigationBar(
     glassScene: AppGlassScene,
     modifier: Modifier = Modifier
 ) {
-    val capsuleShape = RoundedCornerShape(percent = 50)
-    val rimBrush = Brush.linearGradient(
-        0.0f to Color.White.copy(alpha = 0.90f),
-        0.28f to Color.White.copy(alpha = 0.50f),
-        0.65f to MaterialTheme.colorScheme.primary.copy(alpha = 0.28f),
-        1.0f to Color.White.copy(alpha = 0.20f),
-        start = Offset.Zero,
-        end = Offset(80f, 260f)
-    )
-    AppGlassSurface(
-        modifier = modifier
-            .wrapContentSize()
-            .shadow(
-                elevation = 12.dp,
-                shape = capsuleShape,
-                spotColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.20f),
-                ambientColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f)
-            ),
-        spec = AppGlassSpec(
-            shape = capsuleShape,
-            alpha = 0.06f,
-            borderAlpha = 0.50f,
-            tintAlpha = 0.02f,
-            edgeSoftness = 1.dp,
-            specularIntensity = 0.96f,
-            material = AppGlassMaterial.LENS,
-            borderBrush = rimBrush,
-            borderWidth = 1.2.dp,
-            refractionDisplacement = 14.dp,
-            refractionHeightFraction = 0.30f
-        ),
-        scene = glassScene
+    AppNavigationGlassSurface(
+        scene = glassScene,
+        modifier = modifier.wrapContentSize(),
+        vertical = true
     ) {
-        Box(
-            modifier = Modifier
-                .width(58.dp)
-                .height(30.dp)
-                .align(Alignment.TopCenter)
-                .clip(RoundedCornerShape(topStart = 29.dp, topEnd = 29.dp))
-                .background(
-                    Brush.verticalGradient(
-                        0.0f to Color.White.copy(alpha = 0.35f),
-                        0.45f to Color.White.copy(alpha = 0.10f),
-                        1.0f to Color.Transparent
-                    )
-                )
-        )
         Column(
             modifier = Modifier
                 .width(58.dp)
                 .wrapContentHeight()
-                .padding(horizontal = 4.dp, vertical = 8.dp),
+                .padding(horizontal = 4.dp, vertical = 8.dp)
+                .selectableGroup(),
             verticalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterVertically),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
@@ -470,6 +386,55 @@ private fun AppSideNavigationBar(
     }
 }
 
+private data class NavigationItemColors(
+    val background: Brush,
+    val border: Brush,
+    val content: Color
+)
+
+/** The same readable selection treatment for the bottom and side capsules. */
+@Composable
+private fun navigationItemColors(selected: Boolean): NavigationItemColors {
+    val colors = MaterialTheme.colorScheme
+    val dark = colors.surface.luminance() < 0.5f
+    val backgroundTop by animateColorAsState(
+        targetValue = if (selected) {
+            colors.primaryContainer.copy(alpha = if (dark) 0.84f else 0.78f)
+        } else Color.Transparent,
+        animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
+        label = "nav_selection_top"
+    )
+    val backgroundBottom by animateColorAsState(
+        targetValue = if (selected) {
+            colors.primaryContainer.copy(alpha = if (dark) 0.72f else 0.64f)
+        } else Color.Transparent,
+        animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
+        label = "nav_selection_bottom"
+    )
+    val borderTop by animateColorAsState(
+        targetValue = if (selected) {
+            if (dark) Color.White.copy(alpha = 0.20f) else colors.primary.copy(alpha = 0.16f)
+        } else Color.Transparent,
+        animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
+        label = "nav_selection_border_top"
+    )
+    val borderBottom by animateColorAsState(
+        targetValue = if (selected) colors.primary.copy(alpha = 0.08f) else Color.Transparent,
+        animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
+        label = "nav_selection_border_bottom"
+    )
+    val contentColor by animateColorAsState(
+        targetValue = if (selected) colors.onPrimaryContainer else colors.onSurface,
+        animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
+        label = "nav_content"
+    )
+    return NavigationItemColors(
+        background = Brush.verticalGradient(listOf(backgroundTop, backgroundBottom)),
+        border = Brush.verticalGradient(listOf(borderTop, borderBottom)),
+        content = contentColor
+    )
+}
+
 @Composable
 private fun FloatingNavHorizontalItem(
     selected: Boolean,
@@ -479,66 +444,22 @@ private fun FloatingNavHorizontalItem(
     label: String,
     modifier: Modifier = Modifier
 ) {
-    val primaryColor = MaterialTheme.colorScheme.primary
-    val activeBgTop by animateColorAsState(
-        targetValue = if (selected) primaryColor.copy(alpha = 0.22f) else Color.Transparent,
-        animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
-        label = "nav_item_bg_top"
-    )
-    val activeBgBottom by animateColorAsState(
-        targetValue = if (selected) primaryColor.copy(alpha = 0.10f) else Color.Transparent,
-        animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
-        label = "nav_item_bg_bottom"
-    )
-    val activeBorderTop by animateColorAsState(
-        targetValue = if (selected) primaryColor.copy(alpha = 0.38f) else Color.Transparent,
-        animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
-        label = "nav_item_border_top"
-    )
-    val activeBorderBottom by animateColorAsState(
-        targetValue = if (selected) primaryColor.copy(alpha = 0.13f) else Color.Transparent,
-        animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
-        label = "nav_item_border_bottom"
-    )
-    val contentColor by animateColorAsState(
-        targetValue = if (selected) {
-            primaryColor
-        } else {
-            MaterialTheme.colorScheme.onSurface.copy(alpha = 0.78f)
-        },
-        animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
-        label = "nav_item_color"
-    )
-
+    val colors = navigationItemColors(selected)
     val pillShape = RoundedCornerShape(28.dp)
-    val pillBgBrush = Brush.verticalGradient(
-        colors = listOf(activeBgTop, activeBgBottom)
-    )
-    val pillBorderBrush = Brush.verticalGradient(
-        colors = listOf(activeBorderTop, activeBorderBottom)
-    )
-
     Box(
-        modifier = modifier
-            .fillMaxHeight()
-            .clip(RoundedCornerShape(percent = 50))
-            .semantics { contentDescription = label }
-            .clickable(
-                onClick = onClick,
-                role = Role.Tab
-            ),
+        modifier = modifier.fillMaxHeight(),
         contentAlignment = Alignment.Center
     ) {
         Box(
             modifier = Modifier
-                .width(72.dp)
+                .widthIn(max = 72.dp)
+                .fillMaxWidth()
                 .height(56.dp)
                 .clip(pillShape)
-                .background(pillBgBrush)
-                .border(
-                    BorderStroke(1.dp, pillBorderBrush),
-                    shape = pillShape
-                ),
+                .background(colors.background)
+                .border(BorderStroke(0.75.dp, colors.border), shape = pillShape)
+                // Keep the ripple inside the visible pill, not a second oversized oval.
+                .selectable(selected = selected, onClick = onClick, role = Role.Tab),
             contentAlignment = Alignment.Center
         ) {
             Column(
@@ -548,14 +469,14 @@ private fun FloatingNavHorizontalItem(
                 Icon(
                     imageVector = if (selected) selectedIcon else unselectedIcon,
                     contentDescription = null,
-                    tint = contentColor,
+                    tint = colors.content,
                     modifier = Modifier.size(22.dp)
                 )
                 Text(
                     text = label,
                     style = MaterialTheme.typography.labelMedium,
                     fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
-                    color = contentColor,
+                    color = colors.content,
                     maxLines = 1
                 )
             }
@@ -572,64 +493,21 @@ private fun FloatingNavVerticalItem(
     contentDescription: String,
     modifier: Modifier = Modifier
 ) {
-    val primaryColor = MaterialTheme.colorScheme.primary
-    val activeBgTop by animateColorAsState(
-        targetValue = if (selected) primaryColor.copy(alpha = 0.22f) else Color.Transparent,
-        animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
-        label = "nav_v_item_bg_top"
-    )
-    val activeBgBottom by animateColorAsState(
-        targetValue = if (selected) primaryColor.copy(alpha = 0.10f) else Color.Transparent,
-        animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
-        label = "nav_v_item_bg_bottom"
-    )
-    val activeBorderTop by animateColorAsState(
-        targetValue = if (selected) primaryColor.copy(alpha = 0.36f) else Color.Transparent,
-        animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
-        label = "nav_v_item_border_top"
-    )
-    val activeBorderBottom by animateColorAsState(
-        targetValue = if (selected) primaryColor.copy(alpha = 0.12f) else Color.Transparent,
-        animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
-        label = "nav_v_item_border_bottom"
-    )
-    val contentColor by animateColorAsState(
-        targetValue = if (selected) {
-            MaterialTheme.colorScheme.onSurface
-        } else {
-            MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.94f)
-        },
-        animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
-        label = "nav_item_color"
-    )
-
-    val circleBgBrush = Brush.verticalGradient(
-        colors = listOf(activeBgTop, activeBgBottom)
-    )
-    val circleBorderBrush = Brush.verticalGradient(
-        colors = listOf(activeBorderTop, activeBorderBottom)
-    )
-
+    val colors = navigationItemColors(selected)
     Box(
         modifier = modifier
             .minimumInteractiveComponentSize()
+            .size(48.dp)
             .clip(CircleShape)
-            .background(circleBgBrush)
-            .border(
-                BorderStroke(1.dp, circleBorderBrush),
-                shape = CircleShape
-            )
-            .clickable(
-                onClick = onClick,
-                role = Role.Tab
-            )
-            .padding(horizontal = 14.dp, vertical = 10.dp),
+            .background(colors.background)
+            .border(BorderStroke(0.75.dp, colors.border), shape = CircleShape)
+            .selectable(selected = selected, onClick = onClick, role = Role.Tab),
         contentAlignment = Alignment.Center
     ) {
         Icon(
             imageVector = if (selected) selectedIcon else unselectedIcon,
             contentDescription = contentDescription,
-            tint = contentColor,
+            tint = colors.content,
             modifier = Modifier.size(24.dp)
         )
     }
