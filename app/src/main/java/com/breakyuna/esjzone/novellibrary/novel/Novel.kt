@@ -45,6 +45,10 @@ data class HistoryNovel(
 data class FavoriteNovel(
     override val name: String,
     override val url: String,
+    val latestTitle: String? = null,
+    val latestUrl: String? = null,
+    val remoteLastViewedTitle: String? = null,
+    val remoteUpdatedAt: String? = null,
 ) : Novel
 
 data class CategoryNovel(

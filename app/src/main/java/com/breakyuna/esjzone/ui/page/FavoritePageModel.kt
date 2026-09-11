@@ -71,6 +71,16 @@ class FavoritePageModel(private val authorization: Authorization) :
         }
     }
 
+    fun autoCheck() {
+        val scope = BookshelfRepository.scopeFor(authorization)
+        val now = System.currentTimeMillis()
+        synchronized(autoCheckTimes) {
+            if (now - (autoCheckTimes[scope] ?: 0L) < AUTO_CHECK_COOLDOWN_MILLIS) return
+            autoCheckTimes[scope] = now
+        }
+        sync()
+    }
+
     fun scheduleMetadataSupplement() {
         BookshelfRepository.scheduleMetadataSupplement(authorization)
     }
@@ -88,5 +98,10 @@ class FavoritePageModel(private val authorization: Authorization) :
                 _deleteState.value = DeleteState.Failed
             }
         }
+    }
+
+    private companion object {
+        const val AUTO_CHECK_COOLDOWN_MILLIS = 30 * 60 * 1000L
+        val autoCheckTimes = mutableMapOf<String, Long>()
     }
 }

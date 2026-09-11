@@ -372,7 +372,16 @@ internal fun CommentComposerHost(
             model.load(forceRefresh = true)
         },
         onSubmit = { model.submit(draft, model.replyToken.value) },
-        modifier = modifier.onSizeChanged { onHeightChanged?.invoke(it.height) }
+        // Keep system insets outside the painted composer surface.  Applying
+        // IME padding to the inner column makes the surface's measured content
+        // grow by the keyboard height, which can make the input panel appear
+        // abnormally tall when the keyboard opens.  The host is shared by
+        // detail, comment, and community pages, so this keeps all three paths
+        // consistent without touching draft/reply state or submission logic.
+        modifier = modifier
+            .navigationBarsPadding()
+            .imePadding()
+            .onSizeChanged { onHeightChanged?.invoke(it.height) }
     )
 }
 
@@ -498,8 +507,6 @@ private fun CommentComposer(
             modifier = Modifier
                 .fillMaxWidth()
                 .wrapContentHeight()
-                .navigationBarsPadding()
-                .imePadding()
                 .padding(horizontal = 16.dp, vertical = 8.dp)
         ) {
             if (replyAuthor != null) {

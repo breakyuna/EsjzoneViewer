@@ -24,6 +24,7 @@ object LocalReadingHistoryRecorder {
         writeMutex.withLock {
             try {
                 EsjzoneApplication.instance.container.database.localReadingActivityDao().upsertLatest(activity)
+                BookshelfRepository.markLatestRead(activity.chapterUrl)
             } catch (e: Exception) {
                 AppLogger.e(
                     "LocalReadingHistory",

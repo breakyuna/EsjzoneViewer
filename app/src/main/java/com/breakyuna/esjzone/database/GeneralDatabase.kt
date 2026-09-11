@@ -17,7 +17,7 @@ import com.breakyuna.esjzone.database.entity.SearchHistory
 
 @Database(
     entities = [Cache::class, SearchHistory::class, Bookmark::class, LocalReadingActivity::class, BookshelfEntry::class],
-    version = 6,
+    version = 7,
     exportSchema = true
 )
 abstract class GeneralDatabase : RoomDatabase() {
@@ -150,6 +150,17 @@ abstract class GeneralDatabase : RoomDatabase() {
                     "CREATE INDEX IF NOT EXISTS index_bookshelf_scope_visible_added_at " +
                         "ON bookshelf(scope, visible, added_at)"
                 )
+            }
+        }
+
+        val MIGRATION_6_7: Migration = object : Migration(6, 7) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL("ALTER TABLE bookshelf ADD COLUMN latest_chapter_title TEXT NOT NULL DEFAULT ''")
+                database.execSQL("ALTER TABLE bookshelf ADD COLUMN latest_chapter_url TEXT NOT NULL DEFAULT ''")
+                database.execSQL("ALTER TABLE bookshelf ADD COLUMN remote_last_viewed_title TEXT NOT NULL DEFAULT ''")
+                database.execSQL("ALTER TABLE bookshelf ADD COLUMN remote_updated_at TEXT NOT NULL DEFAULT ''")
+                database.execSQL("ALTER TABLE bookshelf ADD COLUMN latest_fingerprint TEXT NOT NULL DEFAULT ''")
+                database.execSQL("ALTER TABLE bookshelf ADD COLUMN has_update INTEGER NOT NULL DEFAULT 0")
             }
         }
     }

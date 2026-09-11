@@ -79,6 +79,26 @@ interface BookshelfDao {
         isAdult: Boolean
     )
 
+    @Query(
+        "UPDATE bookshelf SET latest_chapter_title = :latestTitle, latest_chapter_url = :latestUrl, " +
+            "remote_last_viewed_title = :lastViewed, remote_updated_at = :updatedAt, " +
+            "latest_fingerprint = :fingerprint, has_update = :hasUpdate " +
+            "WHERE scope = :scope AND book_key = :bookKey AND sync_state != 'PENDING_REMOVE'"
+    )
+    suspend fun updateRemoteStatus(
+        scope: String,
+        bookKey: String,
+        latestTitle: String,
+        latestUrl: String,
+        lastViewed: String,
+        updatedAt: String,
+        fingerprint: String,
+        hasUpdate: Boolean
+    ): Int
+
+    @Query("UPDATE bookshelf SET has_update = 0 WHERE latest_fingerprint = :fingerprint")
+    suspend fun clearUpdateForFingerprint(fingerprint: String): Int
+
     @Query("DELETE FROM bookshelf WHERE scope = :scope AND book_key = :bookKey AND operation_version = :version")
     suspend fun deleteIfVersion(scope: String, bookKey: String, version: Long): Int
 }

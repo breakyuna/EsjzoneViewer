@@ -50,7 +50,8 @@ class AppContainer(context: Context) {
         GeneralDatabase.MIGRATION_2_3,
         GeneralDatabase.MIGRATION_3_4,
         GeneralDatabase.MIGRATION_4_5,
-        GeneralDatabase.MIGRATION_5_6
+        GeneralDatabase.MIGRATION_5_6,
+        GeneralDatabase.MIGRATION_6_7
     ).build()
 
     val imageLoader: ImageLoader = ImageLoader.Builder(appContext)

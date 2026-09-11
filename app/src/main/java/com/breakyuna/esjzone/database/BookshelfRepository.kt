@@ -90,6 +90,12 @@ object BookshelfRepository {
             ?.getOrNull(1)
             .orEmpty()
 
+    /** Clears the dot only when the reader actually opens the known latest chapter. */
+    suspend fun markLatestRead(chapterUrl: String) {
+        val fingerprint = EsjzoneUrls.canonicalPageKey(chapterUrl).ifBlank { chapterUrl.substringBefore('#') }
+        if (fingerprint.isNotBlank()) requireDao().clearUpdateForFingerprint(fingerprint)
+    }
+
     fun observe(authorization: Authorization): Flow<List<BookshelfEntry>> = combine(
         requireDao().observeVisible(scopeFor(authorization)),
         localReadingDao.observeAll()
@@ -419,6 +425,25 @@ object BookshelfRepository {
                     added += 1
                 }
             }
+        }
+        // The favorite page itself exposes the latest chapter and update time;
+        // persist that snapshot without touching local favorite/remove intent.
+        remoteByKey.values.forEach { remoteNovel ->
+            val key = keyFor(remoteNovel.url)
+            val current = dao.find(scope, key) ?: return@forEach
+            val latestUrl = remoteNovel.latestUrl.orEmpty()
+            val fingerprint = EsjzoneUrls.canonicalPageKey(latestUrl).ifBlank {
+                listOf(remoteNovel.latestTitle.orEmpty(), remoteNovel.remoteUpdatedAt.orEmpty())
+                    .joinToString("|").takeIf { it != "|" }.orEmpty()
+            }
+            val effectiveFingerprint = fingerprint.ifBlank { current.latestFingerprint }
+            val changed = current.latestFingerprint.isNotBlank() && fingerprint.isNotBlank() &&
+                current.latestFingerprint != fingerprint
+            dao.updateRemoteStatus(
+                scope, key, remoteNovel.latestTitle.orEmpty(), latestUrl,
+                remoteNovel.remoteLastViewedTitle.orEmpty(), remoteNovel.remoteUpdatedAt.orEmpty(),
+                effectiveFingerprint, current.hasUpdate || changed
+            )
         }
         scheduleMetadataSupplement(authorization)
         BookshelfSyncResult(success = !operationFailed, added = added)

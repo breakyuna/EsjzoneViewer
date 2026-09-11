@@ -47,7 +47,7 @@ fun EsjzoneClient.getFavorites(
  */
 fun EsjzoneClient.getAllFavorites(
     authorization: Authorization,
-    sort: String = "new",
+    sort: String = "udate",
     forceRefresh: Boolean = true
 ): List<FavoriteNovel> {
     val firstPageUrl = favoritePageUrl(sort, 1)
@@ -101,10 +101,26 @@ fun EsjzoneClient.getAllFavorites(
 }
 
 internal fun parseFavoriteNovels(document: Document): List<FavoriteNovel> =
-    favoriteSelector.select(document, "table.table tr h5 a[href^='/detail/']").mapNotNull { element ->
+    favoriteSelector.select(document, "table.table tr").mapNotNull { row ->
+        val element = favoriteSelector.first(row, ".product-title > a, h5 a[href^='/detail/']") ?: return@mapNotNull null
         val url = element.attr("href").trim()
         val title = element.text().trim()
         if (url.isBlank() || title.isBlank()) null else FavoriteNovel(title, url)
+            .let { novel ->
+                val episodes = favoriteSelector.select(row, ".book-ep > div")
+                val latest = episodes.getOrNull(0)
+                val watched = episodes.getOrNull(1)
+                novel.copy(
+                    latestTitle = latest?.text()?.removePrefix("最新：")?.trim()?.ifBlank { null },
+                    latestUrl = latest?.let { favoriteSelector.first(it, "a") }?.attr("href")
+                        ?.trim()?.ifBlank { null },
+                    remoteLastViewedTitle = watched?.text()
+                        ?.removePrefix("最後觀看：")?.removePrefix("最后观看：")
+                        ?.trim()?.ifBlank { null },
+                    remoteUpdatedAt = favoriteSelector.first(row, ".book-update")?.text()
+                        ?.removePrefix("更新日期：")?.trim()?.ifBlank { null }
+                )
+            }
     }
 
 

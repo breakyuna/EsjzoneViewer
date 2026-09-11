@@ -30,6 +30,8 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Done
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.GridView
+import androidx.compose.material.icons.filled.ViewList
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -104,13 +106,15 @@ object FavoritePage : AppDestination {
         val gridState = rememberLazyGridState()
         var editing by rememberSaveable { mutableStateOf(false) }
         var downloadedOnly by rememberSaveable { mutableStateOf(false) }
+        var listView by rememberSaveable { mutableStateOf(false) }
+        var updatesOnly by rememberSaveable { mutableStateOf(false) }
         var selected by remember { mutableStateOf<Set<String>>(emptySet()) }
         var pendingDelete by remember { mutableStateOf<List<BookshelfEntry>>(emptyList()) }
         var showDeleteDialog by remember { mutableStateOf(false) }
 
         val visible = remember(entries, adult) { entries.filter { adult || !it.isAdult } }
-        val shown = remember(visible, downloaded, downloadedOnly) {
-            if (downloadedOnly) visible.filter { it.bookKey in downloaded } else visible
+        val shown = remember(visible, downloaded, downloadedOnly, updatesOnly) {
+            visible.filter { (!downloadedOnly || it.bookKey in downloaded) && (!updatesOnly || it.hasUpdate) }
         }
         val visibleKeys = remember(shown) { shown.mapTo(LinkedHashSet()) { it.bookKey } }
         val syncing = syncState is FavoritePageModel.State.Syncing
@@ -138,6 +142,7 @@ object FavoritePage : AppDestination {
         LaunchedEffect(Unit) {
             model.scheduleMetadataSupplement()
             model.refreshDownloaded()
+            model.autoCheck()
         }
         LaunchedEffect(entries) { model.refreshDownloaded() }
         LaunchedEffect(visibleKeys) { selected = selected.intersect(visibleKeys) }
@@ -184,6 +189,8 @@ object FavoritePage : AppDestination {
                     deleting = deleting,
                     onBack = { if (editing) exitEdit() else navigator?.pop() },
                     onRefresh = { if (!syncing) model.sync() },
+                    listView = listView,
+                    onToggleView = { listView = !listView },
                     onEdit = { editing = true; selected = emptySet() },
                     onDone = ::exitEdit,
                     onSelectAll = { selected = if (selected == visibleKeys) emptySet() else visibleKeys },
@@ -259,6 +266,12 @@ object FavoritePage : AppDestination {
                                 onClick = { downloadedOnly = !downloadedOnly },
                                 label = { Text(stringResource(R.string.bookshelf_filter_downloaded)) }
                             )
+                            FilterChip(
+                                selected = updatesOnly,
+                                onClick = { updatesOnly = !updatesOnly },
+                                label = { Text("有更新") },
+                                modifier = Modifier.padding(start = AppSpacing.sm)
+                            )
                         }
                         if (syncing) LoadingSkeleton(label = stringResource(R.string.bookshelf_sync_running_short))
                         if (syncState is FavoritePageModel.State.Failed && shown.isNotEmpty()) {
@@ -300,8 +313,16 @@ object FavoritePage : AppDestination {
                         )
                     }
                 } else {
-                    items(shown, key = { it.bookKey }, contentType = { "bookshelf" }) { entry ->
-                        ShelfCard(
+                    items(
+                        shown,
+                        key = { it.bookKey },
+                        span = { if (listView && !editing) GridItemSpan(maxLineSpan) else GridItemSpan(1) },
+                        contentType = { "bookshelf" }
+                    ) { entry ->
+                        if (listView && !editing) ShelfListItem(
+                            entry = entry, enabled = !deleting,
+                            onClick = { navigator?.pushIfNotCurrent(NovelPage(entry.asCoveredNovel(), favorite = BooleanStateHolder(true))) }
+                        ) else ShelfCard(
                             entry = entry,
                             selected = entry.bookKey in selected,
                             editing = editing,
@@ -349,6 +370,8 @@ private fun BookshelfTopBar(
     selectedCount: Int,
     totalCount: Int,
     syncing: Boolean,
+    listView: Boolean,
+    onToggleView: () -> Unit,
     deleting: Boolean,
     onBack: () -> Unit,
     onRefresh: () -> Unit,
@@ -390,6 +413,9 @@ private fun BookshelfTopBar(
                     if (syncing) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
                     else Icon(Icons.Filled.Refresh, stringResource(R.string.sync_bookshelf))
                 }
+                IconButton(onClick = onToggleView) {
+                    Icon(if (listView) Icons.Filled.GridView else Icons.Filled.ViewList, "切换书架展示方式")
+                }
                 IconButton(onClick = onEdit, enabled = totalCount > 0) { Icon(Icons.Filled.Edit, stringResource(R.string.bookshelf_edit)) }
             }
         }
@@ -417,6 +443,10 @@ private fun ShelfCard(
                 title = entry.title,
                 modifier = Modifier.fillMaxSize().clip(shape)
             )
+            if (entry.hasUpdate) Surface(
+                modifier = Modifier.align(Alignment.TopEnd).padding(AppSpacing.xs),
+                shape = CircleShape, color = androidx.compose.ui.graphics.Color(0xFF4CAF50)
+            ) { Box(Modifier.size(10.dp)) }
             if (editing) {
                 Surface(
                     modifier = Modifier.padding(AppSpacing.sm),
@@ -439,6 +469,25 @@ private fun ShelfCard(
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier.fillMaxWidth().padding(top = AppSpacing.sm, start = AppSpacing.xs, end = AppSpacing.xs)
         )
+    }
+}
+
+@Composable
+private fun ShelfListItem(entry: BookshelfEntry, enabled: Boolean, onClick: () -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().clickable(enabled = enabled, onClick = onClick).padding(vertical = AppSpacing.sm),
+        horizontalArrangement = Arrangement.spacedBy(AppSpacing.md), verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(Modifier.size(width = 76.dp, height = 106.dp)) {
+            AppNovelCover(entry.coverUrl, entry.title, Modifier.fillMaxSize().clip(AppShapes.standard))
+            if (entry.hasUpdate) Surface(Modifier.align(Alignment.TopEnd).padding(AppSpacing.xs), CircleShape, color = androidx.compose.ui.graphics.Color(0xFF4CAF50)) { Box(Modifier.size(10.dp)) }
+        }
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(AppSpacing.xs)) {
+            Text(entry.title, style = AppTypography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            entry.latestChapterTitle.takeIf { it.isNotBlank() }?.let { Text("最新：$it", style = AppTypography.bodyMedium, maxLines = 2, overflow = TextOverflow.Ellipsis) }
+            entry.remoteUpdatedAt.takeIf { it.isNotBlank() }?.let { Text("更新日期：$it", style = AppTypography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+            entry.remoteLastViewedTitle.takeIf { it.isNotBlank() }?.let { Text("最后观看：$it", style = AppTypography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+        }
     }
 }
 
