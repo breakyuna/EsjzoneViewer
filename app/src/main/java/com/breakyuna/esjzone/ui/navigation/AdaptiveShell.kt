@@ -3,7 +3,9 @@ package com.breakyuna.esjzone.ui.navigation
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -54,6 +56,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -327,6 +331,13 @@ private fun AppNavigationBar(
     modifier: Modifier = Modifier
 ) {
     val capsuleShape = RoundedCornerShape(34.dp)
+    val rimBrush = Brush.verticalGradient(
+        colors = listOf(
+            Color.White.copy(alpha = 0.45f),
+            MaterialTheme.colorScheme.outline.copy(alpha = 0.22f),
+            MaterialTheme.colorScheme.outline.copy(alpha = 0.08f)
+        )
+    )
     AppGlassSurface(
         modifier = modifier
             .fillMaxWidth()
@@ -334,19 +345,35 @@ private fun AppNavigationBar(
                 elevation = 16.dp,
                 shape = capsuleShape,
                 spotColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.18f),
-                ambientColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f)
+                ambientColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.08f)
             ),
         spec = AppGlassSpec(
             shape = capsuleShape,
-            alpha = 0.16f,
+            alpha = 0.24f,
             borderAlpha = 0.34f,
-            tintAlpha = 0.08f,
-            edgeSoftness = 6.dp,
-            specularIntensity = 0.72f,
-            material = AppGlassMaterial.CLEAR
+            tintAlpha = 0.12f,
+            edgeSoftness = 8.dp,
+            specularIntensity = 0.82f,
+            material = AppGlassMaterial.REGULAR,
+            borderBrush = rimBrush
         ),
         scene = glassScene
     ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(34.dp)
+                .align(Alignment.TopCenter)
+                .clip(RoundedCornerShape(topStart = 34.dp, topEnd = 34.dp))
+                .background(
+                    Brush.verticalGradient(
+                        colors = listOf(
+                            Color.White.copy(alpha = 0.09f),
+                            Color.Transparent
+                        )
+                    )
+                )
+        )
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -377,23 +404,33 @@ private fun AppSideNavigationBar(
     modifier: Modifier = Modifier
 ) {
     val capsuleShape = RoundedCornerShape(percent = 50)
+    val rimBrush = Brush.linearGradient(
+        colors = listOf(
+            Color.White.copy(alpha = 0.40f),
+            MaterialTheme.colorScheme.outline.copy(alpha = 0.20f),
+            MaterialTheme.colorScheme.outline.copy(alpha = 0.08f)
+        ),
+        start = Offset.Zero,
+        end = Offset(100f, 300f)
+    )
     AppGlassSurface(
         modifier = modifier
             .wrapContentSize()
             .shadow(
                 elevation = 12.dp,
                 shape = capsuleShape,
-                spotColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.28f),
+                spotColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.24f),
                 ambientColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.10f)
             ),
         spec = AppGlassSpec(
             shape = capsuleShape,
-            alpha = 0.18f,
+            alpha = 0.24f,
             borderAlpha = 0.28f,
-            tintAlpha = 0.08f,
-            edgeSoftness = 6.dp,
-            specularIntensity = 0.62f,
-            material = AppGlassMaterial.CLEAR
+            tintAlpha = 0.12f,
+            edgeSoftness = 8.dp,
+            specularIntensity = 0.76f,
+            material = AppGlassMaterial.REGULAR,
+            borderBrush = rimBrush
         ),
         scene = glassScene
     ) {
@@ -427,14 +464,20 @@ private fun FloatingNavHorizontalItem(
     label: String,
     modifier: Modifier = Modifier
 ) {
-    val containerColor by animateColorAsState(
-        targetValue = if (selected) {
-            MaterialTheme.colorScheme.primary.copy(alpha = 0.16f)
-        } else {
-            Color.Transparent
-        },
+    val activeBorderAlpha by animateColorAsState(
+        targetValue = if (selected) 0.38f else 0f,
         animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
-        label = "nav_item_bg"
+        label = "nav_item_border"
+    )
+    val activeBgAlphaTop by animateColorAsState(
+        targetValue = if (selected) 0.22f else 0f,
+        animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
+        label = "nav_item_bg_top"
+    )
+    val activeBgAlphaBottom by animateColorAsState(
+        targetValue = if (selected) 0.10f else 0f,
+        animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
+        label = "nav_item_bg_bottom"
     )
     val contentColor by animateColorAsState(
         targetValue = if (selected) {
@@ -445,6 +488,25 @@ private fun FloatingNavHorizontalItem(
         animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
         label = "nav_item_color"
     )
+
+    val pillShape = RoundedCornerShape(28.dp)
+    val primaryColor = MaterialTheme.colorScheme.primary
+    val pillBgBrush = remember(primaryColor, activeBgAlphaTop, activeBgAlphaBottom) {
+        Brush.verticalGradient(
+            colors = listOf(
+                primaryColor.copy(alpha = activeBgAlphaTop),
+                primaryColor.copy(alpha = activeBgAlphaBottom)
+            )
+        )
+    }
+    val pillBorderBrush = remember(primaryColor, activeBorderAlpha) {
+        Brush.verticalGradient(
+            colors = listOf(
+                primaryColor.copy(alpha = activeBorderAlpha),
+                primaryColor.copy(alpha = activeBorderAlpha * 0.35f)
+            )
+        )
+    }
 
     Box(
         modifier = modifier
@@ -461,8 +523,12 @@ private fun FloatingNavHorizontalItem(
             modifier = Modifier
                 .width(72.dp)
                 .height(56.dp)
-                .clip(RoundedCornerShape(28.dp))
-                .background(containerColor),
+                .clip(pillShape)
+                .background(pillBgBrush)
+                .border(
+                    BorderStroke(1.dp, pillBorderBrush),
+                    shape = pillShape
+                ),
             contentAlignment = Alignment.Center
         ) {
             Column(
@@ -496,14 +562,20 @@ private fun FloatingNavVerticalItem(
     contentDescription: String,
     modifier: Modifier = Modifier
 ) {
-    val containerColor by animateColorAsState(
-        targetValue = if (selected) {
-            MaterialTheme.colorScheme.primary.copy(alpha = 0.16f)
-        } else {
-            Color.Transparent
-        },
+    val activeBorderAlpha by animateColorAsState(
+        targetValue = if (selected) 0.36f else 0f,
         animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
-        label = "nav_item_bg"
+        label = "nav_v_item_border"
+    )
+    val activeBgAlphaTop by animateColorAsState(
+        targetValue = if (selected) 0.22f else 0f,
+        animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
+        label = "nav_v_item_bg_top"
+    )
+    val activeBgAlphaBottom by animateColorAsState(
+        targetValue = if (selected) 0.10f else 0f,
+        animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
+        label = "nav_v_item_bg_bottom"
     )
     val contentColor by animateColorAsState(
         targetValue = if (selected) {
@@ -515,11 +587,33 @@ private fun FloatingNavVerticalItem(
         label = "nav_item_color"
     )
 
+    val primaryColor = MaterialTheme.colorScheme.primary
+    val circleBgBrush = remember(primaryColor, activeBgAlphaTop, activeBgAlphaBottom) {
+        Brush.verticalGradient(
+            colors = listOf(
+                primaryColor.copy(alpha = activeBgAlphaTop),
+                primaryColor.copy(alpha = activeBgAlphaBottom)
+            )
+        )
+    }
+    val circleBorderBrush = remember(primaryColor, activeBorderAlpha) {
+        Brush.verticalGradient(
+            colors = listOf(
+                primaryColor.copy(alpha = activeBorderAlpha),
+                primaryColor.copy(alpha = activeBorderAlpha * 0.35f)
+            )
+        )
+    }
+
     Box(
         modifier = modifier
             .minimumInteractiveComponentSize()
             .clip(CircleShape)
-            .background(containerColor)
+            .background(circleBgBrush)
+            .border(
+                BorderStroke(1.dp, circleBorderBrush),
+                shape = CircleShape
+            )
             .clickable(
                 onClick = onClick,
                 role = Role.Tab

@@ -15,6 +15,7 @@ import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
@@ -41,7 +42,8 @@ data class AppGlassSpec(
     val tintAlpha: Float = 0.16f,
     val edgeSoftness: Dp = 2.dp,
     val specularIntensity: Float = 0.4f,
-    val material: AppGlassMaterial = AppGlassMaterial.REGULAR
+    val material: AppGlassMaterial = AppGlassMaterial.REGULAR,
+    val borderBrush: Brush? = null
 )
 
 enum class AppGlassMaterial {
@@ -127,6 +129,17 @@ fun AppGlassSurface(
         GlassReducedMotionPolicy.System
     }
 
+    val borderStroke = if (spec.borderBrush != null) {
+        BorderStroke(1.dp, spec.borderBrush)
+    } else {
+        BorderStroke(
+            1.dp,
+            MaterialTheme.colorScheme.outline.copy(
+                alpha = spec.borderAlpha.coerceIn(0f, 1f)
+            )
+        )
+    }
+
     Box(
         modifier = modifier
             .clip(spec.shape)
@@ -136,12 +149,7 @@ fun AppGlassSurface(
                 interactionReducedMotionPolicy = motionPolicy
             )
             .border(
-                BorderStroke(
-                    1.dp,
-                    MaterialTheme.colorScheme.outline.copy(
-                        alpha = spec.borderAlpha.coerceIn(0f, 1f)
-                    )
-                ),
+                borderStroke,
                 shape = spec.shape
             ),
         content = content
@@ -155,14 +163,19 @@ private fun MaterialFallbackSurface(
     content: @Composable BoxScope.() -> Unit
 ) {
     val base = spec.tint ?: MaterialTheme.colorScheme.surface
+    val borderStroke = if (spec.borderBrush != null) {
+        BorderStroke(1.dp, spec.borderBrush)
+    } else {
+        BorderStroke(
+            1.dp,
+            MaterialTheme.colorScheme.outline.copy(alpha = spec.borderAlpha.coerceIn(0f, 1f))
+        )
+    }
     Surface(
         modifier = modifier,
         shape = spec.shape,
         color = base.copy(alpha = spec.alpha.coerceIn(0f, 1f)),
-        border = BorderStroke(
-            1.dp,
-            MaterialTheme.colorScheme.outline.copy(alpha = spec.borderAlpha.coerceIn(0f, 1f))
-        )
+        border = borderStroke
     ) {
         Box(content = content)
     }
