@@ -408,7 +408,9 @@ private fun CommentSection(
     }
 
     LaunchedEffect(safePageIndex) {
-        scrollState?.animateScrollTo(0)
+        if (scrollState != null && scrollState.value != 0) {
+            scrollState.animateScrollTo(0)
+        }
     }
 
     Column(modifier = modifier) {
