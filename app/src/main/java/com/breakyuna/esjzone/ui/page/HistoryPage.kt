@@ -21,7 +21,6 @@ import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AutoStories
 import androidx.compose.material.icons.filled.CloudSync
-import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Close
@@ -63,9 +62,7 @@ import com.breakyuna.esjzone.network.Authorization
 import com.breakyuna.esjzone.network.EsjzoneUrls
 import com.breakyuna.esjzone.network.LoadFailureKind
 import com.breakyuna.esjzone.network.LocalAuthorization
-import com.breakyuna.esjzone.network.features.getHistories
 import com.breakyuna.esjzone.network.features.getNovelDetail
-import com.breakyuna.esjzone.network.features.removeHistory
 import com.breakyuna.esjzone.network.loadFailureKind
 import com.breakyuna.esjzone.novellibrary.novel.Chapter
 import com.breakyuna.esjzone.novellibrary.novel.FavoriteNovel
@@ -83,14 +80,11 @@ import com.breakyuna.esjzone.ui.product.ErrorState
 import com.breakyuna.esjzone.ui.product.LoadingSkeleton
 import com.breakyuna.esjzone.ui.product.OfflineState
 import com.breakyuna.esjzone.util.AppLogger
-import java.util.concurrent.TimeUnit
 import kotlin.math.roundToInt
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.ensureActive
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -112,7 +106,6 @@ object HistoryPage : AppDestination {
         val cloudModel = rememberAppViewModel { HistoryPageModel(authorization) }
         val localState by localModel.state.collectAsState()
         val cloudState by cloudModel.state.collectAsState()
-        val deletedIds by cloudModel.deletedIds.collectAsState()
         var selectedPage by rememberSaveable { mutableIntStateOf(0) }
         var searchOpen by rememberSaveable { mutableStateOf(false) }
         var query by rememberSaveable { mutableStateOf("") }
@@ -160,7 +153,7 @@ object HistoryPage : AppDestination {
                     if (page == 0) {
                         LocalHistoryContent(localState, query, localModel, navigator)
                     } else {
-                        CloudHistoryContent(cloudState, deletedIds, query, cloudModel, authorization, navigator)
+                        CloudHistoryContent(cloudState, query, cloudModel, authorization, navigator)
                     }
                 }
             }
@@ -218,7 +211,6 @@ private fun LocalHistoryContent(
                                     novelCoverUrl = activity.novelCoverUrl
                                 ))
                             },
-                            onDelete = { model.delete(activity.activityId) },
                             onCoverNeeded = { model.loadCover(activity) }
                         )
                     }
@@ -233,11 +225,10 @@ private fun LocalHistoryCard(
     activity: LocalReadingActivity,
     coverUrl: String,
     onOpen: () -> Unit,
-    onDelete: () -> Unit,
     onCoverNeeded: () -> Unit
 ) {
     if (coverUrl.isBlank()) LaunchedEffect(activity.activityId) { onCoverNeeded() }
-    val progress = (activity.chapterProgress.coerceIn(0f, 1f) * 100).roundToInt()
+    val progress = (fullBookProgress(activity.chapterIndex, activity.totalChapters, activity.chapterProgress) * 100).roundToInt()
     val position = if (activity.chapterIndex >= 0 && activity.totalChapters > 0) {
         stringResource(R.string.history_local_position, activity.chapterIndex + 1, activity.totalChapters, progress)
     } else stringResource(R.string.history_local_percent, progress)
@@ -257,11 +248,10 @@ private fun LocalHistoryCard(
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(AppSpacing.xs)) {
                 Text(activity.novelName.ifBlank { activity.novelId }, style = AppTypography.labelLarge, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 Text(activity.chapterName, style = AppTypography.bodySmall, color = MaterialTheme.colorScheme.primary, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                androidx.compose.material3.LinearProgressIndicator(progress = activity.chapterProgress.coerceIn(0f, 1f), modifier = Modifier.fillMaxWidth())
+                androidx.compose.material3.LinearProgressIndicator(progress = fullBookProgress(activity.chapterIndex, activity.totalChapters, activity.chapterProgress), modifier = Modifier.fillMaxWidth())
                 Text(position, style = AppTypography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Text(stringResource(R.string.history_local_meta, relative, localDurationText(activity.durationMs)), style = AppTypography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
             }
-            IconButton(onClick = onDelete) { Icon(Icons.Filled.DeleteOutline, stringResource(R.string.history_local_delete)) }
         }
     }
 }
@@ -269,7 +259,6 @@ private fun LocalHistoryCard(
 @Composable
 private fun CloudHistoryContent(
     state: HistoryPageModel.State,
-    deletedIds: Set<String>,
     query: String,
     model: HistoryPageModel,
     authorization: Authorization,
@@ -291,7 +280,7 @@ private fun CloudHistoryContent(
             modifier = Modifier.fillMaxSize()
         )
         is HistoryPageModel.State.Result -> {
-            val rows = state.historyNovels.distinctBy { it.url.ifBlank { it.name } }.filter { it.vid !in deletedIds }.filter { it.name.contains(query, true) || it.chapter.name.contains(query, true) || query.isBlank() }
+            val rows = state.historyNovels.distinctBy { it.url.ifBlank { it.name } }.filter { it.name.contains(query, true) || it.chapter.name.contains(query, true) || query.isBlank() }
             val detailLoader = rememberAppViewModel { NovelDetailLoader(authorization) }
             if (rows.isEmpty()) {
                 EmptyState(stringResource(if (query.isBlank()) R.string.history_cloud_empty else R.string.history_search_empty), stringResource(R.string.history_cloud_separate), Modifier.fillMaxSize())
@@ -325,8 +314,11 @@ private fun CloudHistoryContent(
                             CloudHistoryCard(
                                 history = history,
                                 coverUrl = detail.coverUrl,
-                                onOpen = { navigator?.pushIfNotCurrent(NovelPage(history, history = ChapterStateHolder(history.chapter))) },
-                                onDelete = { model.deleteHistory(history.vid, history.name) }
+                                chapterIndex = detail.chapterList.orderedChapters.indexOfFirst {
+                                    EsjzoneUrls.canonicalPageKey(it.url) == EsjzoneUrls.canonicalPageKey(history.chapter.url)
+                                },
+                                totalChapters = detail.chapterList.orderedChapters.size,
+                                onOpen = { navigator?.pushIfNotCurrent(NovelPage(history, history = ChapterStateHolder(history.chapter))) }
                             )
                         }
                     }
@@ -340,9 +332,17 @@ private fun CloudHistoryContent(
 private fun CloudHistoryCard(
     history: HistoryNovel,
     coverUrl: String,
-    onOpen: () -> Unit,
-    onDelete: () -> Unit
+    chapterIndex: Int,
+    totalChapters: Int,
+    onOpen: () -> Unit
 ) {
+    val progress = fullBookProgress(chapterIndex, totalChapters, 1f)
+    val progressPercent = (progress * 100).roundToInt()
+    val position = if (chapterIndex >= 0 && totalChapters > 0) {
+        stringResource(R.string.history_local_position, chapterIndex + 1, totalChapters, progressPercent)
+    } else {
+        stringResource(R.string.history_local_percent, progressPercent)
+    }
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -360,9 +360,17 @@ private fun CloudHistoryCard(
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(AppSpacing.xs)) {
             Text(history.name, style = AppTypography.labelLarge, maxLines = 2, overflow = TextOverflow.Ellipsis)
             Text(history.chapter.name, style = AppTypography.bodyMedium, color = MaterialTheme.colorScheme.primary, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            androidx.compose.material3.LinearProgressIndicator(progress = progress, modifier = Modifier.fillMaxWidth())
+            Text(position, style = AppTypography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
-        IconButton(onClick = onDelete) { Icon(Icons.Filled.DeleteOutline, stringResource(R.string.delete_history)) }
     }
+}
+
+/** Maps a chapter-local fraction to the fraction of the complete book. */
+internal fun fullBookProgress(chapterIndex: Int, totalChapters: Int, chapterProgress: Float): Float {
+    val fraction = chapterProgress.takeIf { it.isFinite() }?.coerceIn(0f, 1f) ?: 0f
+    if (chapterIndex < 0 || totalChapters <= 0) return fraction
+    return ((chapterIndex + fraction) / totalChapters.toFloat()).coerceIn(0f, 1f)
 }
 
 private fun List<HistoryNovel>.filterByHistoryQuery(query: String): List<HistoryNovel> = filter { query.isBlank() || it.name.contains(query, true) || it.chapter.name.contains(query, true) }
@@ -404,7 +412,6 @@ class LocalHistoryPageModel(private val authorization: Authorization) : AppState
 
     fun retry() { observeStarted = false; mutableState.value = State.Loading; observe() }
 
-    fun delete(activityId: String) { viewModelScope.launch(Dispatchers.IO) { runCatching { PresentationAccess.database.localReadingActivityDao().deleteById(activityId) }.onFailure { AppLogger.e("LocalHistoryPageModel", "Failed to delete local reading activity", it) } } }
     fun clear() { viewModelScope.launch(Dispatchers.IO) { runCatching { PresentationAccess.database.localReadingActivityDao().deleteAll() }.onFailure { AppLogger.e("LocalHistoryPageModel", "Failed to clear local history", it) } } }
 
     fun coverUrlFor(activity: LocalReadingActivity): String {

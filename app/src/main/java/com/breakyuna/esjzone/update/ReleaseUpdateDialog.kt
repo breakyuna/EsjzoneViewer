@@ -25,7 +25,12 @@ internal fun ReleaseUpdateDialog() {
         onDismissRequest = ReleaseUpdateChecker::dismiss,
         shape = AppShapes.prominent,
         title = { Text(stringResource(R.string.update_available_title)) },
-        text = { Text(stringResource(R.string.update_available_message, BuildConfig.VERSION_NAME, release.version)) },
+        text = {
+            Text(
+                stringResource(R.string.update_available_message, BuildConfig.VERSION_NAME, release.version) +
+                    if (release.description.isBlank()) "" else "\n\n" + stringResource(R.string.update_release_notes, release.description)
+            )
+        },
         confirmButton = {
             TextButton(onClick = {
                 try {

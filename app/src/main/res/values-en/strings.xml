@@ -2,6 +2,7 @@
 <resources>
     <string name="update_available_title">New version available</string>
     <string name="update_available_message">Current version: %1$s\nNew version: %2$s\n\nOpen GitHub Releases to download the update.</string>
+    <string name="update_release_notes">Release notes:\n%1$s</string>
     <string name="update_download">Go to download</string>
     <string name="update_later">Later</string>
     <string name="update_browser_unavailable">No app available to open the release page</string>
@@ -251,6 +252,13 @@
     <string name="load_client_error">Client error. Please contact the developer.</string>
     <string name="compile_information">Version</string>
     <string name="build_version">Build Version</string>
+    <string name="update_auto_check">Check for updates automatically</string>
+    <string name="update_auto_check_description">Check GitHub Releases for a newer version when the app starts</string>
+    <string name="update_check_tap_version">Tap the version to check manually</string>
+    <string name="update_checking">Checking for updates…</string>
+    <string name="update_up_to_date">You are up to date</string>
+    <string name="update_check_error">Could not check for updates. Try again later.</string>
+    <string name="update_available_status">New version %1$s available</string>
     <string name="build_date">Build Date</string>
     <string name="commit_id">Commit Id</string>
     <string name="settings_category_network">Network &amp; Domain</string>
@@ -272,6 +280,9 @@
     <string name="settings_language_en">English</string>
     <string name="settings_language_en_description">English</string>
     <string name="settings_content_section">Content &amp; filtering</string>
+    <string name="settings_reader_section">Reading</string>
+    <string name="settings_volume_key_paging">Volume key paging</string>
+    <string name="settings_volume_key_paging_description">Use the volume keys to move one page up or down while reading</string>
     <string name="settings_adult_description">Show restricted works on Home, Categories and the catalog.</string>
     <string name="settings_storage_section">Local storage &amp; cache</string>
     <string name="settings_page_cache">Page parsing cache</string>

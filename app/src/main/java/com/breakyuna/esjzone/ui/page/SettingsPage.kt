@@ -23,6 +23,7 @@ import androidx.compose.material.icons.filled.ColorLens
 import androidx.compose.material.icons.filled.Dns
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Language
+import androidx.compose.material.icons.filled.MenuBook
 import androidx.compose.material.icons.filled.NoAdultContent
 import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material3.AlertDialog
@@ -86,6 +87,7 @@ object SettingsPage : AppDestination {
         val theme by PresentationAccess.settings.theme
         val domain by PresentationAccess.settings.domain
         val language by PresentationAccess.settings.language
+        val readerSettings by PresentationAccess.readerSettings.settings.collectAsState()
         val crashReport by AppLogger.crashReportFlow.collectAsState()
         var showLogout by remember { mutableStateOf(false) }
         LaunchedEffect(Unit) { model.refreshCacheStats(); AppLogger.refreshCrashReport() }
@@ -134,6 +136,18 @@ object SettingsPage : AppDestination {
 
                 SettingsSection(Icons.Filled.NoAdultContent, stringResource(R.string.settings_content_section)) {
                     ToggleRow(stringResource(R.string.settings_showadultcontent), stringResource(R.string.settings_adult_description), adult) { PresentationAccess.settings.setAdult(it); model.persist("show_adult", it.toString()) }
+                }
+
+                SettingsSection(Icons.Filled.MenuBook, stringResource(R.string.settings_reader_section)) {
+                    ToggleRow(
+                        stringResource(R.string.settings_volume_key_paging),
+                        stringResource(R.string.settings_volume_key_paging_description),
+                        readerSettings.volumeKeyPaging
+                    ) { enabled ->
+                        PresentationAccess.readerSettings.saveInBackground(
+                            readerSettings.copy(volumeKeyPaging = enabled)
+                        )
+                    }
                 }
 
                 SettingsSection(Icons.Filled.Storage, stringResource(R.string.settings_storage_section)) {

@@ -6,6 +6,7 @@ import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.floatPreferencesKey
+import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStoreFile
 import androidx.datastore.preferences.core.PreferenceDataStoreFactory
@@ -70,7 +71,8 @@ class ReaderSettingsDataStore(
                 PARAGRAPH_SPACING,
                 PAGE_SPACING,
                 HORIZONTAL_PADDING,
-                SCRIPT
+                SCRIPT,
+                VOLUME_KEY_PAGING
             ).any { current.contains(it) }
             if (!hasCurrentSettings) {
                 dataStore.edit { preferences ->
@@ -93,7 +95,8 @@ class ReaderSettingsDataStore(
             paragraphSpacingDp = preferences.readFloat(LEGACY_PARAGRAPH_SPACING, defaults.paragraphSpacingDp, 0f, 32f),
             pageSpacingDp = preferences.readFloat(LEGACY_PAGE_SPACING, defaults.pageSpacingDp, 16f, 80f),
             horizontalPaddingDp = preferences.readFloat(LEGACY_HORIZONTAL_PADDING, defaults.horizontalPaddingDp, 12f, 48f),
-            script = enumOrDefault(preferences.readString(LEGACY_SCRIPT), defaults.script)
+            script = enumOrDefault(preferences.readString(LEGACY_SCRIPT), defaults.script),
+            volumeKeyPaging = defaults.volumeKeyPaging
         )
     }
 
@@ -108,7 +111,8 @@ class ReaderSettingsDataStore(
             paragraphSpacingDp = this[PARAGRAPH_SPACING].safeValue(defaults.paragraphSpacingDp, 0f, 32f),
             pageSpacingDp = this[PAGE_SPACING].safeValue(defaults.pageSpacingDp, 16f, 80f),
             horizontalPaddingDp = this[HORIZONTAL_PADDING].safeValue(defaults.horizontalPaddingDp, 12f, 48f),
-            script = enumOrDefault(this[SCRIPT], defaults.script)
+            script = enumOrDefault(this[SCRIPT], defaults.script),
+            volumeKeyPaging = this[VOLUME_KEY_PAGING] ?: defaults.volumeKeyPaging
         )
     }
 
@@ -131,6 +135,7 @@ class ReaderSettingsDataStore(
         preferences[PAGE_SPACING] = pageSpacingDp
         preferences[HORIZONTAL_PADDING] = horizontalPaddingDp
         preferences[SCRIPT] = script.name
+        preferences[VOLUME_KEY_PAGING] = volumeKeyPaging
     }
 
     private fun SharedPreferences.readString(key: String): String? =
@@ -174,6 +179,7 @@ class ReaderSettingsDataStore(
         val PAGE_SPACING = floatPreferencesKey("page_spacing")
         val HORIZONTAL_PADDING = floatPreferencesKey("horizontal_padding")
         val SCRIPT = stringPreferencesKey("script")
+        val VOLUME_KEY_PAGING = booleanPreferencesKey("volume_key_paging")
         val MIGRATION_COMPLETE = androidx.datastore.preferences.core.booleanPreferencesKey(
             "legacy_reader_settings_migration_complete"
         )

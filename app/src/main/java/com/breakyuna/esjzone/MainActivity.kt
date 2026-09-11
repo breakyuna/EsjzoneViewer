@@ -5,6 +5,7 @@ import android.content.res.Configuration
 import android.content.res.Resources
 import android.os.Build
 import android.os.Bundle
+import android.view.KeyEvent
 import android.os.LocaleList
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.LocalActivityResultRegistryOwner
@@ -52,10 +53,18 @@ import com.breakyuna.esjzone.util.AppLogger
 import com.breakyuna.esjzone.util.CrashHandler
 import com.breakyuna.esjzone.update.ReleaseUpdateChecker
 import com.breakyuna.esjzone.update.ReleaseUpdateDialog
+import com.breakyuna.esjzone.ui.reader.ReaderVolumeKeyDispatcher
 import com.breakyuna.esjzone.util.LocaleHelper
 import java.util.Locale
 
 class MainActivity : ComponentActivity() {
+
+    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        if (event.action == KeyEvent.ACTION_UP && ReaderVolumeKeyDispatcher.dispatch(event.keyCode)) {
+            return true
+        }
+        return super.dispatchKeyEvent(event)
+    }
 
     companion object {
 

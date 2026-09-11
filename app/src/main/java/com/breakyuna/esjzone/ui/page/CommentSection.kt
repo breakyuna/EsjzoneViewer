@@ -283,23 +283,29 @@ internal fun CommentSectionContent(
             )
         }
 
-        is CommunityState.Empty -> CommentSection(
-            comments = emptyList(),
-            lastCreatedCommentId = lastCreatedCommentId,
-            showHeader = showHeader,
-            modifier = modifier,
-            onReply = ::selectReply,
-            scrollState = scrollState,
-        )
+        is CommunityState.Empty -> key("comment-list", model.pageUrl) {
+            CommentSection(
+                pageUrl = model.pageUrl,
+                comments = emptyList(),
+                lastCreatedCommentId = lastCreatedCommentId,
+                showHeader = showHeader,
+                modifier = modifier,
+                onReply = ::selectReply,
+                scrollState = scrollState,
+            )
+        }
 
-        is CommunityState.Result -> CommentSection(
-            comments = snapshot.data,
-            lastCreatedCommentId = lastCreatedCommentId,
-            showHeader = showHeader,
-            modifier = modifier,
-            onReply = ::selectReply,
-            scrollState = scrollState,
-        )
+        is CommunityState.Result -> key("comment-list", model.pageUrl) {
+            CommentSection(
+                pageUrl = model.pageUrl,
+                comments = snapshot.data,
+                lastCreatedCommentId = lastCreatedCommentId,
+                showHeader = showHeader,
+                modifier = modifier,
+                onReply = ::selectReply,
+                scrollState = scrollState,
+            )
+        }
     }
 
     LaunchedEffect(model) { model.load() }
@@ -372,6 +378,7 @@ internal fun CommentComposerHost(
 
 @Composable
 private fun CommentSection(
+    pageUrl: String,
     comments: List<Comment>,
     lastCreatedCommentId: String?,
     showHeader: Boolean,
@@ -380,7 +387,12 @@ private fun CommentSection(
     scrollState: androidx.compose.foundation.ScrollState? = null
 ) {
     val pages = remember(comments) { comments.chunked(COMMENT_PAGE_SIZE) }
-    var selectedPageIndex by rememberSaveable { mutableIntStateOf(0) }
+    // LoadingSkeleton owns animated Float state. Keep pagination in an explicit
+    // keyed group and registry entry so a Loading -> Result recomposition can
+    // never restore that animation state as MutableIntState.
+    var selectedPageIndex by rememberSaveable("comment-page-index:$pageUrl") {
+        mutableIntStateOf(0)
+    }
     val safePageIndex = selectedPageIndex.coerceIn(
         0,
         (pages.size - 1).coerceAtLeast(0)
@@ -542,9 +554,14 @@ private fun CommentComposer(
                     onValueChange = onDraftChange,
                     modifier = Modifier
                         .weight(1f)
-                        .height(AppTouchTarget.minimum),
+                        .heightIn(
+                            min = AppTouchTarget.minimum,
+                            max = AppTouchTarget.minimum
+                        ),
                     enabled = !isSubmitting,
                     singleLine = true,
+                    minLines = 1,
+                    maxLines = 1,
                     textStyle = AppTypography.bodyMedium.copy(
                         color = MaterialTheme.colorScheme.onSurface
                     ),
@@ -552,7 +569,10 @@ private fun CommentComposer(
                         Box(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .height(AppTouchTarget.minimum)
+                                .heightIn(
+                                    min = AppTouchTarget.minimum,
+                                    max = AppTouchTarget.minimum
+                                )
                                 .clip(AppShapes.standard)
                                 .background(MaterialTheme.colorScheme.surface)
                                 .padding(horizontal = AppSpacing.md),

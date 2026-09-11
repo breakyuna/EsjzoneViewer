@@ -8,6 +8,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.gestures.animateScrollBy
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -117,6 +118,7 @@ import com.breakyuna.esjzone.ui.reader.ReaderSettings
 import com.breakyuna.esjzone.ui.reader.ReaderChapterHeading
 import com.breakyuna.esjzone.ui.reader.ReaderRenderer
 import com.breakyuna.esjzone.ui.reader.ReaderShell
+import com.breakyuna.esjzone.ui.reader.ReaderVolumeKeyDispatcher
 import com.breakyuna.esjzone.ui.designsystem.AppBottomSheet
 import com.breakyuna.esjzone.ui.designsystem.AppFeedback
 import com.breakyuna.esjzone.ui.designsystem.AppShapes
@@ -571,6 +573,25 @@ class ChapterPage(
                 } finally {
                     isProgrammaticScroll = false
                 }
+            }
+        }
+
+        DisposableEffect(readerSettings.volumeKeyPaging, currentReadingChapter.url, result) {
+            if (!readerSettings.volumeKeyPaging) {
+                onDispose { }
+            } else {
+                val registration = ReaderVolumeKeyDispatcher.register { keyCode ->
+                    val pageSize = scrollState.layoutInfo.viewportSize.height.toFloat()
+                    if (pageSize <= 0f) return@register false
+                    val offset = when (keyCode) {
+                        android.view.KeyEvent.KEYCODE_VOLUME_UP -> -pageSize
+                        android.view.KeyEvent.KEYCODE_VOLUME_DOWN -> pageSize
+                        else -> return@register false
+                    }
+                    scope.launch { scrollState.animateScrollBy(offset) }
+                    true
+                }
+                onDispose { ReaderVolumeKeyDispatcher.unregister(registration) }
             }
         }
 
