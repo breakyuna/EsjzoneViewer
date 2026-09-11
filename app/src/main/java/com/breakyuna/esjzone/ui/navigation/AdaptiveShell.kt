@@ -464,24 +464,30 @@ private fun FloatingNavHorizontalItem(
     label: String,
     modifier: Modifier = Modifier
 ) {
-    val activeBorderAlpha by animateColorAsState(
-        targetValue = if (selected) 0.38f else 0f,
-        animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
-        label = "nav_item_border"
-    )
-    val activeBgAlphaTop by animateColorAsState(
-        targetValue = if (selected) 0.22f else 0f,
+    val primaryColor = MaterialTheme.colorScheme.primary
+    val activeBgTop by animateColorAsState(
+        targetValue = if (selected) primaryColor.copy(alpha = 0.22f) else Color.Transparent,
         animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
         label = "nav_item_bg_top"
     )
-    val activeBgAlphaBottom by animateColorAsState(
-        targetValue = if (selected) 0.10f else 0f,
+    val activeBgBottom by animateColorAsState(
+        targetValue = if (selected) primaryColor.copy(alpha = 0.10f) else Color.Transparent,
         animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
         label = "nav_item_bg_bottom"
     )
+    val activeBorderTop by animateColorAsState(
+        targetValue = if (selected) primaryColor.copy(alpha = 0.38f) else Color.Transparent,
+        animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
+        label = "nav_item_border_top"
+    )
+    val activeBorderBottom by animateColorAsState(
+        targetValue = if (selected) primaryColor.copy(alpha = 0.13f) else Color.Transparent,
+        animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
+        label = "nav_item_border_bottom"
+    )
     val contentColor by animateColorAsState(
         targetValue = if (selected) {
-            MaterialTheme.colorScheme.primary
+            primaryColor
         } else {
             MaterialTheme.colorScheme.onSurface.copy(alpha = 0.78f)
         },
@@ -490,23 +496,12 @@ private fun FloatingNavHorizontalItem(
     )
 
     val pillShape = RoundedCornerShape(28.dp)
-    val primaryColor = MaterialTheme.colorScheme.primary
-    val pillBgBrush = remember(primaryColor, activeBgAlphaTop, activeBgAlphaBottom) {
-        Brush.verticalGradient(
-            colors = listOf(
-                primaryColor.copy(alpha = activeBgAlphaTop),
-                primaryColor.copy(alpha = activeBgAlphaBottom)
-            )
-        )
-    }
-    val pillBorderBrush = remember(primaryColor, activeBorderAlpha) {
-        Brush.verticalGradient(
-            colors = listOf(
-                primaryColor.copy(alpha = activeBorderAlpha),
-                primaryColor.copy(alpha = activeBorderAlpha * 0.35f)
-            )
-        )
-    }
+    val pillBgBrush = Brush.verticalGradient(
+        colors = listOf(activeBgTop, activeBgBottom)
+    )
+    val pillBorderBrush = Brush.verticalGradient(
+        colors = listOf(activeBorderTop, activeBorderBottom)
+    )
 
     Box(
         modifier = modifier
@@ -562,20 +557,26 @@ private fun FloatingNavVerticalItem(
     contentDescription: String,
     modifier: Modifier = Modifier
 ) {
-    val activeBorderAlpha by animateColorAsState(
-        targetValue = if (selected) 0.36f else 0f,
-        animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
-        label = "nav_v_item_border"
-    )
-    val activeBgAlphaTop by animateColorAsState(
-        targetValue = if (selected) 0.22f else 0f,
+    val primaryColor = MaterialTheme.colorScheme.primary
+    val activeBgTop by animateColorAsState(
+        targetValue = if (selected) primaryColor.copy(alpha = 0.22f) else Color.Transparent,
         animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
         label = "nav_v_item_bg_top"
     )
-    val activeBgAlphaBottom by animateColorAsState(
-        targetValue = if (selected) 0.10f else 0f,
+    val activeBgBottom by animateColorAsState(
+        targetValue = if (selected) primaryColor.copy(alpha = 0.10f) else Color.Transparent,
         animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
         label = "nav_v_item_bg_bottom"
+    )
+    val activeBorderTop by animateColorAsState(
+        targetValue = if (selected) primaryColor.copy(alpha = 0.36f) else Color.Transparent,
+        animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
+        label = "nav_v_item_border_top"
+    )
+    val activeBorderBottom by animateColorAsState(
+        targetValue = if (selected) primaryColor.copy(alpha = 0.12f) else Color.Transparent,
+        animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
+        label = "nav_v_item_border_bottom"
     )
     val contentColor by animateColorAsState(
         targetValue = if (selected) {
@@ -587,23 +588,12 @@ private fun FloatingNavVerticalItem(
         label = "nav_item_color"
     )
 
-    val primaryColor = MaterialTheme.colorScheme.primary
-    val circleBgBrush = remember(primaryColor, activeBgAlphaTop, activeBgAlphaBottom) {
-        Brush.verticalGradient(
-            colors = listOf(
-                primaryColor.copy(alpha = activeBgAlphaTop),
-                primaryColor.copy(alpha = activeBgAlphaBottom)
-            )
-        )
-    }
-    val circleBorderBrush = remember(primaryColor, activeBorderAlpha) {
-        Brush.verticalGradient(
-            colors = listOf(
-                primaryColor.copy(alpha = activeBorderAlpha),
-                primaryColor.copy(alpha = activeBorderAlpha * 0.35f)
-            )
-        )
-    }
+    val circleBgBrush = Brush.verticalGradient(
+        colors = listOf(activeBgTop, activeBgBottom)
+    )
+    val circleBorderBrush = Brush.verticalGradient(
+        colors = listOf(activeBorderTop, activeBorderBottom)
+    )
 
     Box(
         modifier = modifier
