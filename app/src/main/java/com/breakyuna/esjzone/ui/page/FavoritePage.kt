@@ -82,7 +82,6 @@ import com.breakyuna.esjzone.ui.navigation.BooleanStateHolder
 import com.breakyuna.esjzone.ui.navigation.LocalBaseNavigator
 import com.breakyuna.esjzone.ui.navigation.rememberAppViewModel
 import com.breakyuna.esjzone.ui.product.EmptyState
-import com.breakyuna.esjzone.ui.product.LoadingSkeleton
 import com.breakyuna.esjzone.ui.product.OfflineState
 
 /** Local-first bookshelf. Room is the only rendered source; sync is additive. */
@@ -273,7 +272,6 @@ object FavoritePage : AppDestination {
                                 modifier = Modifier.padding(start = AppSpacing.sm)
                             )
                         }
-                        if (syncing) LoadingSkeleton(label = stringResource(R.string.bookshelf_sync_running_short))
                         if (syncState is FavoritePageModel.State.Failed && shown.isNotEmpty()) {
                             Text(
                                 stringResource(R.string.bookshelf_sync_failed),
