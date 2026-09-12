@@ -19,7 +19,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.Download
-import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Card
@@ -67,7 +66,6 @@ import com.breakyuna.esjzone.ui.designsystem.AppTypography
 import com.breakyuna.esjzone.ui.navigation.AppTab
 import com.breakyuna.esjzone.ui.navigation.AppTabOptions
 import com.breakyuna.esjzone.ui.navigation.LocalBaseNavigator
-import com.breakyuna.esjzone.ui.page.AboutPage
 import com.breakyuna.esjzone.ui.page.BookmarksPage
 import com.breakyuna.esjzone.ui.page.DownloadPage
 import com.breakyuna.esjzone.ui.page.SettingsPage
@@ -156,8 +154,7 @@ private data class ProfileMenuItem(val id: String, val icon: ImageVector, val ti
 private fun profileMenuItems(): List<ProfileMenuItem> = listOf(
     ProfileMenuItem("bookmarks", Icons.Filled.Bookmark, stringResource(R.string.bookmarks), stringResource(R.string.bookmarks_description), BookmarksPage),
     ProfileMenuItem("downloads", Icons.Filled.Download, stringResource(R.string.downloads), stringResource(R.string.profile_downloads_description), DownloadPage),
-    ProfileMenuItem("settings", Icons.Filled.Settings, stringResource(R.string.settings), stringResource(R.string.profile_settings_description), SettingsPage),
-    ProfileMenuItem("about", Icons.Filled.Info, stringResource(R.string.about), stringResource(R.string.profile_about_description), AboutPage)
+    ProfileMenuItem("settings", Icons.Filled.Settings, stringResource(R.string.settings), stringResource(R.string.profile_settings_description), SettingsPage)
 )
 
 @Composable

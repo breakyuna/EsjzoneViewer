@@ -24,6 +24,7 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.layout.wrapContentSize
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.CircleShape
@@ -487,7 +488,13 @@ private fun FloatingNavHorizontalItem(
                 .height(NavigationGlassMetrics.bottomItemHeight)
                 .clip(pillShape)
                 // Fixed hit targets stay above the moving decorative lens.
-                .selectable(selected = selected, onClick = onClick, role = Role.Tab),
+                .selectable(
+                    selected = selected,
+                    onClick = onClick,
+                    role = Role.Tab,
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null
+                ),
             contentAlignment = Alignment.Center
         ) {
             Column(
@@ -535,7 +542,13 @@ private fun FloatingNavVerticalItem(
             .minimumInteractiveComponentSize()
             .size(NavigationGlassMetrics.railItemSize)
             .clip(CircleShape)
-            .selectable(selected = selected, onClick = onClick, role = Role.Tab),
+            .selectable(
+                selected = selected,
+                onClick = onClick,
+                role = Role.Tab,
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null
+            ),
         contentAlignment = Alignment.Center
     ) {
         Box(

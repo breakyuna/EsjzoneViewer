@@ -1,6 +1,7 @@
 package com.breakyuna.esjzone
 
 object Constants {
+    const val ORIGINAL_AUTHOR = "DeeChael"
 
     val MAINTAINERS = listOf(
         "breakyuna"

@@ -37,7 +37,6 @@ import com.breakyuna.esjzone.novellibrary.community.ForumTopic
 import com.breakyuna.esjzone.novellibrary.novel.Category
 import com.breakyuna.esjzone.novellibrary.novel.Chapter
 import com.breakyuna.esjzone.novellibrary.novel.FavoriteNovel
-import com.breakyuna.esjzone.ui.page.AboutPage
 import com.breakyuna.esjzone.ui.page.BookmarksPage
 import com.breakyuna.esjzone.ui.page.CategoryPage
 import com.breakyuna.esjzone.ui.page.ChapterCommentsPage
@@ -399,7 +398,6 @@ private fun ReaderRoute.restore(): AppDestination = ChapterPage(
 
 private fun LegacyRoute.restore(): AppDestination? = when (this) {
     is LegacyRoute.Static -> when {
-        token == AboutPage.key || token.endsWith(".AboutPage") -> AboutPage
         token == BookmarksPage.key || token.endsWith(".BookmarksPage") -> BookmarksPage
         token == DownloadPage.key || token.endsWith(".DownloadPage") -> DownloadPage
         token == FavoritePage.key || token.endsWith(".FavoritePage") -> FavoritePage

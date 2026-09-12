@@ -1,5 +1,6 @@
 package com.breakyuna.esjzone.ui.page
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -58,6 +59,10 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.breakyuna.esjzone.AppLanguage
+import com.breakyuna.esjzone.BuildConfig
+import com.breakyuna.esjzone.Constants
+import com.breakyuna.esjzone.update.ReleaseCheckState
+import com.breakyuna.esjzone.update.ReleaseUpdateChecker
 import com.breakyuna.esjzone.ui.designsystem.AccountIconBadge
 import com.breakyuna.esjzone.ui.designsystem.accountContentWidth
 import com.breakyuna.esjzone.R
@@ -92,8 +97,14 @@ object SettingsPage : AppDestination {
         val autoSave by PresentationAccess.settings.readerAutoSave
         val readerSettings by PresentationAccess.readerSettings.settings.collectAsState()
         val crashReport by AppLogger.crashReportFlow.collectAsState()
+        val checkState by ReleaseUpdateChecker.status.collectAsState()
+        val autoCheck by ReleaseUpdateChecker.autoCheck.collectAsState()
         var showLogout by remember { mutableStateOf(false) }
-        LaunchedEffect(Unit) { model.refreshCacheStats(); AppLogger.refreshCrashReport() }
+        LaunchedEffect(Unit) {
+            model.refreshCacheStats()
+            AppLogger.refreshCrashReport()
+            ReleaseUpdateChecker.initialize(context)
+        }
         LaunchedEffect(state.logoutCompleted) { if (state.logoutCompleted) rootNavigator?.replaceAll(LoginScreen) }
 
         Scaffold(
@@ -177,8 +188,70 @@ object SettingsPage : AppDestination {
                     LinkRow(Icons.Filled.BugReport, stringResource(R.string.system_logs), stringResource(R.string.settings_logs_description)) { navigator?.pushIfNotCurrent(LogsPage) }
                     LinkRow(Icons.Filled.Info, stringResource(R.string.logs_last_crash_title), if (crashReport == null) stringResource(R.string.settings_crash_none) else stringResource(R.string.settings_crash_available), enabled = crashReport != null) { navigator?.pushIfNotCurrent(LogsPage) }
                 }
-                SettingsSection(Icons.Filled.Info, stringResource(R.string.settings_about_section)) {
-                    LinkRow(Icons.Filled.Info, stringResource(R.string.about), stringResource(R.string.profile_about_description)) { navigator?.pushIfNotCurrent(AboutPage) }
+                SettingsSection(Icons.Filled.Info, stringResource(R.string.about)) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { ReleaseUpdateChecker.checkNow(context) }
+                            .padding(com.breakyuna.esjzone.ui.designsystem.AppSpacing.sm),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(stringResource(R.string.build_version), style = com.breakyuna.esjzone.ui.designsystem.AppTypography.labelLarge)
+                            Text(
+                                text = when (val s = checkState) {
+                                    ReleaseCheckState.Checking -> stringResource(R.string.update_checking)
+                                    ReleaseCheckState.UpToDate -> stringResource(R.string.update_up_to_date)
+                                    ReleaseCheckState.Error -> stringResource(R.string.update_check_error)
+                                    is ReleaseCheckState.Available -> stringResource(R.string.update_available_status, s.version)
+                                    ReleaseCheckState.Idle -> stringResource(R.string.update_check_tap_version)
+                                },
+                                style = com.breakyuna.esjzone.ui.designsystem.AppTypography.bodySmall,
+                                color = if (checkState is ReleaseCheckState.Error) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Text(
+                            text = BuildConfig.VERSION_NAME,
+                            style = com.breakyuna.esjzone.ui.designsystem.AppTypography.titleMedium,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                    ToggleRow(
+                        title = stringResource(R.string.update_auto_check),
+                        subtitle = stringResource(R.string.update_auto_check_description),
+                        checked = autoCheck,
+                        onCheckedChange = { ReleaseUpdateChecker.setAutoCheck(context, it) }
+                    )
+                    HorizontalDivider(modifier = Modifier.padding(vertical = com.breakyuna.esjzone.ui.designsystem.AppSpacing.xs))
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(com.breakyuna.esjzone.ui.designsystem.AppSpacing.sm),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(stringResource(R.string.original_author), style = com.breakyuna.esjzone.ui.designsystem.AppTypography.labelLarge)
+                        Text(
+                            text = Constants.ORIGINAL_AUTHOR,
+                            style = com.breakyuna.esjzone.ui.designsystem.AppTypography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(com.breakyuna.esjzone.ui.designsystem.AppSpacing.sm),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(stringResource(R.string.maintainers), style = com.breakyuna.esjzone.ui.designsystem.AppTypography.labelLarge)
+                        Text(
+                            text = Constants.MAINTAINERS.joinToString(", "),
+                            style = com.breakyuna.esjzone.ui.designsystem.AppTypography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                 }
                 Surface(color = MaterialTheme.colorScheme.errorContainer, shape = com.breakyuna.esjzone.ui.designsystem.AppShapes.standard) {
                     LinkRow(Icons.AutoMirrored.Filled.Logout, stringResource(R.string.settings_logout_title), stringResource(R.string.logout_consequence), destructive = true) { if (!state.logoutInProgress) showLogout = true }
