@@ -99,8 +99,10 @@ URL：/detail/{novelId}.html
 | 书籍论坛 | a.btn-forum |
 | 章节 tab | #integration |
 | 章节排序按钮 | #integration button 中的 正序/倒序 文案 |
+| 内容标签 | .widget-tags a, .widget-tags a.tag, a.tag[href*="/tags/"] |
 
 详情样本的 button.btn-favorite 文案为 已收藏，类名含 btn-danger；这是当前用户状态，不是通用默认值。
+内容标签容器为 .widget.widget-tags（页面分别在移动端 .widget-tags.hidden-lg-up 与桌面侧栏呈现相同标签），每个标签链接为 a.tag[href^="/tags/"]；解析器去重后得到完整标签列表。包含 R18 标签时作为小说成人内容标识。
 
 ### 5.2 章节目录
 

@@ -101,7 +101,7 @@ fun EsjzoneClient.getNovelDetail(
 
     val tags = detailSelector.select(
         document,
-        ".book-detail .tags a, .book-tags a, .tags a, [data-tags] a"
+        ".widget-tags a, .widget-tags a.tag, a.tag[href*='/tags/'], .book-detail .tags a, .book-tags a, .tags a, [data-tags] a"
     ).map { it.text().trim() }
         .filter(String::isNotBlank)
         .distinct()

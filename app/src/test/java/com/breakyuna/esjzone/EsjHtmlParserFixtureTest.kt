@@ -62,4 +62,29 @@ class EsjHtmlParserFixtureTest {
         assertEquals("integration", integration.single().id())
         assertEquals("Chapter 1", integration.single().text())
     }
+
+    @Test
+    fun detailFixture_parsesContentTagsFromWidgetAndFallback() {
+        val html = """
+            <html><body>
+              <section class="widget widget-tags hidden-lg-up mt-30">
+                <h3 class="widget-title">內容標籤</h3>
+                <a class="tag" href="/tags/R18/">R18</a>
+                <a class="tag" href="/tags/%E6%A0%A1%E5%9C%92/">校園</a>
+                <a class="tag" href="/tags/%E6%88%80%E6%84%9B/">戀愛</a>
+              </section>
+              <div class="hidden-xs hidden-sm col-xl-3 col-lg-4">
+                <section class="widget widget-tags m-t-20">
+                  <h3 class="widget-title">內容標籤</h3>
+                  <a class="tag" href="/tags/R18/">R18</a>
+                  <a class="tag" href="/tags/%E6%A0%A1%E5%9C%92/">校園</a>
+                </section>
+              </div>
+            </body></html>
+        """.trimIndent()
+        val document = Jsoup.parse(html, "https://www.esjzone.cc/detail/9001.html")
+        val selector = ".widget-tags a, .widget-tags a.tag, a.tag[href*='/tags/'], .book-detail .tags a, .book-tags a, .tags a, [data-tags] a"
+        val tags = document.select(selector).map { it.text().trim() }.filter { it.isNotBlank() }.distinct()
+        assertEquals(listOf("R18", "校園", "戀愛"), tags)
+    }
 }
