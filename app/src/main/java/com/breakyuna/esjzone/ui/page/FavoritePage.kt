@@ -278,16 +278,6 @@ object FavoritePage : AppDestination {
                     // the header after Room loads would preserve the header anchor and hide it.
                     item(key = "bookshelf_collection_header", contentType = "bookshelf_header") {
                         Column(verticalArrangement = Arrangement.spacedBy(AppSpacing.sm)) {
-                            if (!editing && recentReads.isNotEmpty()) {
-                                AppBookshelfRecentReads(
-                                    books = recentReads,
-                                    modifier = Modifier.padding(bottom = AppSpacing.md),
-                                    onBookClick = { entry ->
-                                        openBook(entry)
-                                    }
-                                )
-                            }
-                            Text(stringResource(R.string.bookshelf_collection), style = AppTypography.displayMedium)
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Text(
                                     stringResource(R.string.bookshelf_count, visible.size),
@@ -314,6 +304,16 @@ object FavoritePage : AppDestination {
                                     color = MaterialTheme.colorScheme.error
                                 )
                             }
+                            if (!editing && recentReads.isNotEmpty()) {
+                                AppBookshelfRecentReads(
+                                    books = recentReads,
+                                    modifier = Modifier.padding(bottom = AppSpacing.md),
+                                    onBookClick = { entry ->
+                                        openBook(entry)
+                                    }
+                                )
+                            }
+                            Text(stringResource(R.string.bookshelf_collection), style = AppTypography.displayMedium)
                         }
                     }
                     if (shown.isEmpty()) {
