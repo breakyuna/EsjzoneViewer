@@ -432,4 +432,5 @@
     <string name="login_description">Sign in to keep your personal reading tools available.</string>
     <string name="login_site_title">Choose a site</string>
     <string name="login_account_title">Account</string>
+    <string name="bookshelf_recent_rank">Recently read: number %1$d</string>
 </resources>

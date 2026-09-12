@@ -74,6 +74,7 @@ import com.breakyuna.esjzone.network.LocalAuthorization
 import com.breakyuna.esjzone.network.LoadFailureKind
 import com.breakyuna.esjzone.novellibrary.novel.CoveredNovelImpl
 import com.breakyuna.esjzone.ui.component.AppNovelCover
+import com.breakyuna.esjzone.ui.component.AppBookshelfRecentReads
 import com.breakyuna.esjzone.ui.designsystem.AppShapes
 import com.breakyuna.esjzone.ui.designsystem.AppSpacing
 import com.breakyuna.esjzone.ui.designsystem.AppTypography
@@ -97,6 +98,7 @@ object FavoritePage : AppDestination {
         val authorization = LocalAuthorization.current
         val model = rememberAppViewModel { FavoritePageModel(authorization) }
         val entries by model.entries.collectAsState(initial = emptyList())
+        val readingIndex by model.readingIndex.collectAsState(initial = FavoritePageModel.ReadingIndex())
         val downloaded by model.downloadedBookKeys.collectAsState()
         val syncState by model.state.collectAsState()
         val deleteState by model.deleteState.collectAsState()
@@ -116,6 +118,10 @@ object FavoritePage : AppDestination {
             visible.filter { (!downloadedOnly || it.bookKey in downloaded) && (!updatesOnly || it.hasUpdate) }
         }
         val visibleKeys = remember(shown) { shown.mapTo(LinkedHashSet()) { it.bookKey } }
+        // Filter before taking four so hidden/adult/filtered books do not leave empty slots.
+        val recentReads = remember(shown, readingIndex) {
+            shown.asSequence().filter { it in readingIndex }.take(4).toList()
+        }
         val syncing = syncState is FavoritePageModel.State.Syncing
         val deleting = deleteState is FavoritePageModel.DeleteState.Deleting
         val syncAddedMessage = stringResource(R.string.bookshelf_sync_added)
@@ -250,8 +256,21 @@ object FavoritePage : AppDestination {
                 horizontalArrangement = Arrangement.spacedBy(AppSpacing.md),
                 verticalArrangement = Arrangement.spacedBy(if (listView && !editing) AppSpacing.sm else AppSpacing.lg)
             ) {
-                item(span = { GridItemSpan(maxLineSpan) }) {
+                // Keep the showcase inside the first stable item. Inserting a new item above
+                // the header after Room loads would preserve the header anchor and hide it.
+                item(key = "bookshelf_collection_header", span = { GridItemSpan(maxLineSpan) }) {
                     Column(verticalArrangement = Arrangement.spacedBy(AppSpacing.sm)) {
+                        if (!editing && recentReads.isNotEmpty()) {
+                            AppBookshelfRecentReads(
+                                books = recentReads,
+                                modifier = Modifier.padding(bottom = AppSpacing.md),
+                                onBookClick = { entry ->
+                                    navigator?.pushIfNotCurrent(
+                                        NovelPage(entry.asCoveredNovel(), favorite = BooleanStateHolder(true))
+                                    )
+                                }
+                            )
+                        }
                         Text(stringResource(R.string.bookshelf_collection), style = AppTypography.displayMedium)
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(

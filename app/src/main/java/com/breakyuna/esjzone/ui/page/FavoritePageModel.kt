@@ -15,12 +15,39 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 
 /** Owns bookshelf synchronization and deletion jobs for the page. */
 class FavoritePageModel(private val authorization: Authorization) :
     AppStateViewModel<FavoritePageModel.State>(State.Idle) {
     val entries = BookshelfRepository.observe(authorization)
+
+    /** Presence only: entries already reactively sort by lastReadAt in BookshelfRepository. */
+    data class ReadingIndex(
+        val novelIds: Set<String> = emptySet(),
+        val bookKeys: Set<String> = emptySet()
+    ) {
+        operator fun contains(entry: BookshelfEntry): Boolean =
+            entry.novelId in novelIds || entry.bookKey in bookKeys ||
+                (entry.url.isNotBlank() && BookshelfRepository.keyFor(entry.url) in bookKeys)
+    }
+
+    // Exclude unread recent additions from the showcase; no remote history or extra requests.
+    val readingIndex = PresentationAccess.database.localReadingActivityDao().observeAll()
+        .map { activities ->
+            ReadingIndex(
+                novelIds = activities.mapNotNullTo(HashSet()) { it.novelId.takeIf(String::isNotBlank) },
+                bookKeys = activities.mapNotNullTo(HashSet()) { activity ->
+                    activity.novelUrl.takeIf(String::isNotBlank)
+                        ?.let(BookshelfRepository::keyFor)?.takeIf(String::isNotBlank)
+                }
+            )
+        }
+        .distinctUntilChanged()
+        .flowOn(Dispatchers.Default)
 
     private val _downloadedBookKeys = MutableStateFlow<Set<String>>(emptySet())
     val downloadedBookKeys: StateFlow<Set<String>> = _downloadedBookKeys

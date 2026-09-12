@@ -3,9 +3,6 @@ package com.breakyuna.esjzone.ui.navigation
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
-import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -83,6 +80,7 @@ import com.breakyuna.esjzone.ui.tab.HistoryTab
 import com.breakyuna.esjzone.ui.tab.HomeTab
 import com.breakyuna.esjzone.ui.tab.ProfileTab
 import com.breakyuna.esjzone.ui.designsystem.glass.AppGlassScene
+import com.breakyuna.esjzone.ui.designsystem.glass.NavigationGlassMetrics
 import com.breakyuna.esjzone.ui.designsystem.glass.AppNavigationGlassSurface
 import com.breakyuna.esjzone.ui.designsystem.glass.appGlassSource
 import com.breakyuna.esjzone.ui.designsystem.glass.rememberAppGlassScene
@@ -331,13 +329,18 @@ private fun AppNavigationBar(
 ) {
     AppNavigationGlassSurface(
         scene = glassScene,
+        selectedFraction = (selected.ordinal + 0.5f) / AppTabId.entries.size,
+        itemCount = AppTabId.entries.size,
         modifier = modifier.fillMaxWidth()
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(68.dp)
-                .padding(horizontal = 4.dp, vertical = 6.dp)
+                .height(NavigationGlassMetrics.bottomHeight)
+                .padding(
+                    horizontal = NavigationGlassMetrics.horizontalPadding,
+                    vertical = NavigationGlassMetrics.bottomVerticalPadding
+                )
                 .selectableGroup(),
             horizontalArrangement = Arrangement.SpaceEvenly,
             verticalAlignment = Alignment.CenterVertically
@@ -365,16 +368,21 @@ private fun AppSideNavigationBar(
 ) {
     AppNavigationGlassSurface(
         scene = glassScene,
+        selectedFraction = (selected.ordinal + 0.5f) / AppTabId.entries.size,
+        itemCount = AppTabId.entries.size,
         modifier = modifier.wrapContentSize(),
         vertical = true
     ) {
         Column(
             modifier = Modifier
-                .width(58.dp)
+                .width(NavigationGlassMetrics.railWidth)
                 .wrapContentHeight()
-                .padding(horizontal = 4.dp, vertical = 8.dp)
+                .padding(
+                    horizontal = NavigationGlassMetrics.horizontalPadding,
+                    vertical = NavigationGlassMetrics.railVerticalPadding
+                )
                 .selectableGroup(),
-            verticalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterVertically),
+            verticalArrangement = Arrangement.spacedBy(NavigationGlassMetrics.railItemGap, Alignment.CenterVertically),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             AppTabId.entries.forEach { tab ->
@@ -391,8 +399,6 @@ private fun AppSideNavigationBar(
 }
 
 private data class NavigationItemColors(
-    val background: Brush,
-    val border: Brush,
     val content: Color,
     val halo: Color
 )
@@ -402,40 +408,12 @@ private data class NavigationItemColors(
 private fun navigationItemColors(selected: Boolean): NavigationItemColors {
     val colors = MaterialTheme.colorScheme
     val dark = colors.surface.luminance() < 0.5f
-    val backgroundTop by animateColorAsState(
-        targetValue = if (selected) {
-            colors.primaryContainer.copy(alpha = if (dark) 0.22f else 0.28f)
-        } else Color.Transparent,
-        animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
-        label = "nav_selection_top"
-    )
-    val backgroundBottom by animateColorAsState(
-        targetValue = if (selected) {
-            colors.primaryContainer.copy(alpha = if (dark) 0.10f else 0.14f)
-        } else Color.Transparent,
-        animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
-        label = "nav_selection_bottom"
-    )
-    val borderTop by animateColorAsState(
-        targetValue = if (selected) {
-            if (dark) Color.White.copy(alpha = 0.42f) else colors.primary.copy(alpha = 0.30f)
-        } else Color.Transparent,
-        animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
-        label = "nav_selection_border_top"
-    )
-    val borderBottom by animateColorAsState(
-        targetValue = if (selected) colors.primary.copy(alpha = 0.14f) else Color.Transparent,
-        animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
-        label = "nav_selection_border_bottom"
-    )
     val contentColor by animateColorAsState(
         targetValue = if (selected) colors.onPrimaryContainer else colors.onSurface,
         animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
         label = "nav_content"
     )
     return NavigationItemColors(
-        background = Brush.verticalGradient(listOf(backgroundTop, backgroundBottom)),
-        border = Brush.verticalGradient(listOf(borderTop, borderBottom)),
         content = contentColor,
         halo = colors.surface.copy(alpha = if (dark) 0.76f else 0.70f)
     )
@@ -469,7 +447,7 @@ private fun FloatingNavHorizontalItem(
     modifier: Modifier = Modifier
 ) {
     val colors = navigationItemColors(selected)
-    val pillShape = RoundedCornerShape(28.dp)
+    val pillShape = RoundedCornerShape(percent = 50)
     val labelHaloRadius = with(LocalDensity.current) { 2.dp.toPx() }
     Box(
         modifier = modifier.fillMaxHeight(),
@@ -477,13 +455,11 @@ private fun FloatingNavHorizontalItem(
     ) {
         Box(
             modifier = Modifier
-                .widthIn(max = 72.dp)
+                .widthIn(max = NavigationGlassMetrics.bottomItemMaxWidth)
                 .fillMaxWidth()
-                .height(56.dp)
+                .height(NavigationGlassMetrics.bottomItemHeight)
                 .clip(pillShape)
-                .background(colors.background)
-                .border(BorderStroke(0.75.dp, colors.border), shape = pillShape)
-                // Keep the ripple inside the visible pill, not a second oversized oval.
+                // Fixed hit targets stay above the moving decorative lens.
                 .selectable(selected = selected, onClick = onClick, role = Role.Tab),
             contentAlignment = Alignment.Center
         ) {
@@ -530,10 +506,8 @@ private fun FloatingNavVerticalItem(
     Box(
         modifier = modifier
             .minimumInteractiveComponentSize()
-            .size(48.dp)
+            .size(NavigationGlassMetrics.railItemSize)
             .clip(CircleShape)
-            .background(colors.background)
-            .border(BorderStroke(0.75.dp, colors.border), shape = CircleShape)
             .selectable(selected = selected, onClick = onClick, role = Role.Tab),
         contentAlignment = Alignment.Center
     ) {
