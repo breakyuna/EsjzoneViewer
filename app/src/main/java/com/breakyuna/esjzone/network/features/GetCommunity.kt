@@ -1,5 +1,6 @@
 package com.breakyuna.esjzone.network.features
 
+import com.breakyuna.esjzone.network.readTextBounded
 import com.breakyuna.esjzone.network.Authorization
 import com.breakyuna.esjzone.network.EsjzoneClient
 import com.breakyuna.esjzone.network.EsjzoneUrls
@@ -184,7 +185,7 @@ fun EsjzoneClient.submitForumComment(
     val responseCode = response.code
     val responseUrl = response.request.url.toString()
     val responseBody = try {
-        response.use { it.body?.string().orEmpty() }
+        response.use { it.body?.readTextBounded().orEmpty() }
     } catch (error: IOException) {
         invalidatePage(authorization, targetUrl)
         val recoveredComments = runCatching {
@@ -636,7 +637,7 @@ private fun EsjzoneClient.getForumTableData(
     }
     val responseCode = response.code
     val body = try {
-        response.use { it.body?.string().orEmpty() }
+        response.use { it.body?.readTextBounded().orEmpty() }
     } catch (error: IOException) {
         throw NetworkRequestException(url, error)
     }

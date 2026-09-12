@@ -1,5 +1,6 @@
 package com.breakyuna.esjzone.network.features
 
+import com.breakyuna.esjzone.network.readTextBounded
 import com.breakyuna.esjzone.network.Authorization
 import com.breakyuna.esjzone.network.EsjzoneClient
 import com.breakyuna.esjzone.util.AppLogger
@@ -23,7 +24,7 @@ fun EsjzoneClient.requestAuthToken(authorization: Authorization, url: String): S
             if (!response.isSuccessful) {
                 ""
             } else {
-                parseAuthorizationToken(response.body?.string().orEmpty()).orEmpty()
+                parseAuthorizationToken(response.body?.readTextBounded().orEmpty()).orEmpty()
             }
         }
     } catch (e: CancellationException) {

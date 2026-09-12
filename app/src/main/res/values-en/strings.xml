@@ -433,4 +433,5 @@
     <string name="login_site_title">Choose a site</string>
     <string name="login_account_title">Account</string>
     <string name="bookshelf_recent_rank">Recently read: number %1$d</string>
+    <string name="profile_tools">Your library &amp; preferences</string>
 </resources>

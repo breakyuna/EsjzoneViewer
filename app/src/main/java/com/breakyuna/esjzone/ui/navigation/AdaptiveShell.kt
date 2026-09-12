@@ -72,7 +72,14 @@ import androidx.navigation3.runtime.entryProvider
 import androidx.navigation3.runtime.NavKey
 import androidx.navigation3.runtime.rememberNavBackStack
 import androidx.navigation3.runtime.rememberSaveableStateHolderNavEntryDecorator
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.compose.rememberLifecycleOwner
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.navigation3.ui.NavDisplay
+import androidx.navigationevent.compose.LocalNavigationEventDispatcherOwner
+import androidx.navigationevent.compose.rememberNavigationEventDispatcherOwner
 import com.breakyuna.esjzone.network.Authorization
 import com.breakyuna.esjzone.network.LocalAuthorization
 import com.breakyuna.esjzone.ui.tab.FavoriteTab
@@ -123,6 +130,7 @@ fun AdaptiveAppShell(
     val widthSizeClass = currentWindowAdaptiveInfoV2().windowSizeClass.windowWidthSizeClass
     val navigationGlassScene = rememberAppGlassScene()
     val tab = AppTabId.valueOf(selectedTab)
+    val focusManager = LocalFocusManager.current
     val homeNavigator = remember(homeStack, rootNavigator) { rootNavigator.child(homeStack) }
     val historyNavigator = remember(historyStack, rootNavigator) { rootNavigator.child(historyStack) }
     val bookshelfNavigator = remember(bookshelfStack, rootNavigator) {
@@ -175,7 +183,7 @@ fun AdaptiveAppShell(
                     if (showFloatingNavigation) {
                         AppNavigationBar(
                             selected = tab,
-                            onSelected = { selectedTab = it.name },
+                            onSelected = { focusManager.clearFocus(force = true); selectedTab = it.name },
                             glassScene = navigationGlassScene,
                             modifier = Modifier
                                 .align(Alignment.BottomCenter)
@@ -211,7 +219,7 @@ fun AdaptiveAppShell(
                     if (showFloatingNavigation) {
                         AppSideNavigationBar(
                             selected = tab,
-                            onSelected = { selectedTab = it.name },
+                            onSelected = { focusManager.clearFocus(force = true); selectedTab = it.name },
                             glassScene = navigationGlassScene,
                             modifier = Modifier
                                 .align(Alignment.CenterStart)
@@ -256,35 +264,43 @@ private fun TabStacksDisplay(
     androidx.compose.foundation.layout.Box(modifier) {
         TabStackDisplay(
             stack = homeStack,
+            active = selected == AppTabId.HOME,
             navigator = homeNavigator,
             modifier = Modifier
                 .fillMaxSize()
                 .zIndex(if (selected == AppTabId.HOME) 1f else -1f)
                 .graphicsLayer { alpha = if (selected == AppTabId.HOME) 1f else 0f }
+                .then(if (selected != AppTabId.HOME) Modifier.clearAndSetSemantics { } else Modifier)
         )
         TabStackDisplay(
             stack = historyStack,
+            active = selected == AppTabId.HISTORY,
             navigator = historyNavigator,
             modifier = Modifier
                 .fillMaxSize()
                 .zIndex(if (selected == AppTabId.HISTORY) 1f else -1f)
                 .graphicsLayer { alpha = if (selected == AppTabId.HISTORY) 1f else 0f }
+                .then(if (selected != AppTabId.HISTORY) Modifier.clearAndSetSemantics { } else Modifier)
         )
         TabStackDisplay(
             stack = bookshelfStack,
+            active = selected == AppTabId.BOOKSHELF,
             navigator = bookshelfNavigator,
             modifier = Modifier
                 .fillMaxSize()
                 .zIndex(if (selected == AppTabId.BOOKSHELF) 1f else -1f)
                 .graphicsLayer { alpha = if (selected == AppTabId.BOOKSHELF) 1f else 0f }
+                .then(if (selected != AppTabId.BOOKSHELF) Modifier.clearAndSetSemantics { } else Modifier)
         )
         TabStackDisplay(
             stack = profileStack,
+            active = selected == AppTabId.PROFILE,
             navigator = profileNavigator,
             modifier = Modifier
                 .fillMaxSize()
                 .zIndex(if (selected == AppTabId.PROFILE) 1f else -1f)
                 .graphicsLayer { alpha = if (selected == AppTabId.PROFILE) 1f else 0f }
+                .then(if (selected != AppTabId.PROFILE) Modifier.clearAndSetSemantics { } else Modifier)
         )
     }
 }
@@ -292,10 +308,21 @@ private fun TabStacksDisplay(
 @Composable
 private fun TabStackDisplay(
     stack: MutableList<NavKey>,
+    active: Boolean,
     navigator: AppNavigator,
     modifier: Modifier = Modifier
 ) {
-    CompositionLocalProvider(LocalBaseNavigator provides navigator) {
+    // Alpha alone does not disable hidden pages' lifecycle-bound back handlers.
+    // Keep state owners mounted but suspend off-screen entries below STARTED.
+    val lifecycleOwner = rememberLifecycleOwner(
+        maxLifecycle = if (active) Lifecycle.State.RESUMED else Lifecycle.State.CREATED
+    )
+    val dispatcherOwner = rememberNavigationEventDispatcherOwner(enabled = active)
+    CompositionLocalProvider(
+        LocalBaseNavigator provides navigator,
+        LocalLifecycleOwner provides lifecycleOwner,
+        LocalNavigationEventDispatcherOwner provides dispatcherOwner
+    ) {
         NavDisplay(
             backStack = stack,
             modifier = modifier,

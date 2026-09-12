@@ -2,6 +2,9 @@ package com.breakyuna.esjzone.ui.page
 
 import androidx.lifecycle.viewModelScope
 
+import androidx.compose.foundation.background
+import androidx.compose.ui.draw.clip
+import com.breakyuna.esjzone.ui.designsystem.AppShapes
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
@@ -35,6 +38,9 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.res.stringResource
+import com.breakyuna.esjzone.ui.designsystem.AccountIconBadge
+import com.breakyuna.esjzone.ui.designsystem.AccountSummary
+import com.breakyuna.esjzone.ui.designsystem.accountContentWidth
 import com.breakyuna.esjzone.R
 import com.breakyuna.esjzone.app.PresentationAccess
 import com.breakyuna.esjzone.database.entity.Bookmark as LocalBookmark
@@ -82,26 +88,25 @@ object BookmarksPage : AppDestination {
                     title = stringResource(R.string.load_client_error),
                     message = stringResource(R.string.history_local_load_failed),
                     onRetry = model::retry,
-                    modifier = Modifier.fillMaxSize().padding(padding)
+                    modifier = Modifier.fillMaxSize().accountContentWidth().padding(padding)
                 )
                 is BookmarksPageModel.State.Result -> if (current.bookmarks.isEmpty()) {
                     EmptyState(
                         title = stringResource(R.string.bookmarks_empty),
                         message = stringResource(R.string.bookmarks_description),
-                        modifier = Modifier.fillMaxSize().padding(padding)
+                        modifier = Modifier.fillMaxSize().accountContentWidth().padding(padding)
                     )
                 } else {
                     LazyColumn(
-                        modifier = Modifier.fillMaxSize().padding(padding),
+                        modifier = Modifier.fillMaxSize().accountContentWidth().padding(padding),
                         contentPadding = PaddingValues(AppSpacing.lg),
                         verticalArrangement = Arrangement.spacedBy(AppSpacing.md)
                     ) {
                         item(key = "bookmark-header") {
-                            Text(
-                                stringResource(R.string.bookmarks_description),
-                                style = AppTypography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.padding(bottom = AppSpacing.sm)
+                            AccountSummary(
+                                Icons.Filled.Bookmark,
+                                stringResource(R.string.bookmarks),
+                                stringResource(R.string.bookmarks_description)
                             )
                         }
                         items(
@@ -137,13 +142,15 @@ private fun BookmarkCard(bookmark: LocalBookmark, onOpen: () -> Unit, onDelete: 
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .clip(AppShapes.standard)
+            .background(MaterialTheme.colorScheme.surfaceContainerLow)
             .clickable(onClick = onOpen)
             .semantics { role = Role.Button }
-            .padding(vertical = AppSpacing.md),
+            .padding(AppSpacing.md),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(AppSpacing.md)
     ) {
-        Icon(Icons.Filled.Bookmark, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(28.dp))
+        AccountIconBadge(Icons.Filled.Bookmark)
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(AppSpacing.xs)) {
             Text(bookmark.novelName.ifBlank { bookmark.novelId }, style = AppTypography.labelLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text(bookmark.chapterName, style = AppTypography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
@@ -186,8 +193,6 @@ private class BookmarksPageModel : AppStateViewModel<BookmarksPageModel.State>(S
     }
 
     fun delete(bookmark: LocalBookmark) {
-        val current = mutableState.value as? State.Result ?: return
-        mutableState.value = State.Result(current.bookmarks.filterNot { it.chapterUrl == bookmark.chapterUrl })
         viewModelScope.launch(Dispatchers.IO) {
             try {
                 PresentationAccess.database.bookmarkDao().delete(bookmark)

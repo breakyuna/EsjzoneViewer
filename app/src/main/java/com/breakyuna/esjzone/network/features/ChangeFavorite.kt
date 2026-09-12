@@ -1,5 +1,6 @@
 package com.breakyuna.esjzone.network.features
 
+import com.breakyuna.esjzone.network.readTextBounded
 import com.breakyuna.esjzone.network.Authorization
 import com.breakyuna.esjzone.network.EsjzoneClient
 import com.breakyuna.esjzone.network.EsjzoneUrls
@@ -31,7 +32,7 @@ fun EsjzoneClient.toggleFavorite(authorization: Authorization, novel: Novel): Bo
             ).execute().use { response ->
                 if (!response.isSuccessful) return@use false
                 val finalUrl = response.request.url.toString()
-                val body = response.body?.string().orEmpty()
+                val body = response.body?.readTextBounded().orEmpty()
                 // The endpoint is documented as returning a short marker, not
                 // a page. A 200 login/WAF HTML response must stay pending.
                 if (PageResponsePolicy.looksLikeBlockedOrLoginPage(body, finalUrl)) {

@@ -1,5 +1,6 @@
 package com.breakyuna.esjzone.network.features
 
+import com.breakyuna.esjzone.network.readTextBounded
 import com.breakyuna.esjzone.network.Authorization
 import com.breakyuna.esjzone.network.EsjzoneClient
 import com.breakyuna.esjzone.network.EsjzoneUrls
@@ -40,7 +41,7 @@ fun EsjzoneClient.login(email: String, password: String): Authorization? {
             if (!response.isSuccessful) {
                 null
             } else {
-                parseAuthorizationToken(response.body?.string().orEmpty())
+                parseAuthorizationToken(response.body?.readTextBounded().orEmpty())
             }
         }
 
@@ -67,7 +68,7 @@ fun EsjzoneClient.login(email: String, password: String): Authorization? {
             if (!response.isSuccessful) {
                 null
             } else {
-                parseLoginStatus(response.body?.string().orEmpty())
+                parseLoginStatus(response.body?.readTextBounded().orEmpty())
             }
         }
 

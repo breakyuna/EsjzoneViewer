@@ -48,6 +48,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
@@ -56,6 +57,8 @@ import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.breakyuna.esjzone.ui.designsystem.AccountSummary
+import com.breakyuna.esjzone.ui.designsystem.accountContentWidth
 import com.breakyuna.esjzone.R
 import com.breakyuna.esjzone.app.PresentationAccess
 import com.breakyuna.esjzone.offline.DownloadedNovelSummary
@@ -149,13 +152,13 @@ object DownloadPage : AppDestination {
                     message = current.message.ifBlank { stringResource(R.string.load_client_error) },
                     retryLabel = stringResource(R.string.retry),
                     onRetry = model::refresh,
-                    modifier = Modifier.fillMaxSize().padding(padding)
+                    modifier = Modifier.fillMaxSize().accountContentWidth().padding(padding)
                 )
                 is DownloadPageModel.State.Content -> if (current.novels.isEmpty()) {
                     EmptyState(
                         title = stringResource(R.string.download_empty),
                         message = stringResource(R.string.download_empty_hint),
-                        modifier = Modifier.fillMaxSize().padding(padding)
+                        modifier = Modifier.fillMaxSize().accountContentWidth().padding(padding)
                     )
                 } else {
                     DownloadList(
@@ -165,7 +168,7 @@ object DownloadPage : AppDestination {
                         deleting = deleting,
                         onToggle = { url -> selected = if (url in selected) selected - url else selected + url },
                         onDelete = { requestDelete(listOf(it)) },
-                        modifier = Modifier.fillMaxSize().padding(padding)
+                        modifier = Modifier.fillMaxSize().accountContentWidth().padding(padding)
                     )
                 }
             }
@@ -177,7 +180,7 @@ object DownloadPage : AppDestination {
                 title = { Text(stringResource(R.string.download_delete_title, pendingDelete.size)) },
                 text = { Text(stringResource(R.string.download_delete_confirm)) },
                 confirmButton = {
-                    TextButton(onClick = { model.delete(pendingDelete) }, enabled = !deleting) {
+                    TextButton(onClick = { model.delete(pendingDelete); showDelete = false; pendingDelete = emptyList() }, enabled = !deleting) {
                         Text(stringResource(R.string.download_delete_confirm_action), color = MaterialTheme.colorScheme.error)
                     }
                 },
@@ -204,10 +207,11 @@ private fun DownloadList(
         verticalArrangement = Arrangement.spacedBy(AppSpacing.md)
     ) {
         item(key = "download-summary") {
-            Column(verticalArrangement = Arrangement.spacedBy(AppSpacing.xs)) {
-                Text(stringResource(R.string.download_library), style = AppTypography.displayMedium)
-                Text(stringResource(R.string.download_total_summary, novels.size, formatStorageSize(totalBytes)), style = AppTypography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
+            AccountSummary(
+                Icons.Filled.Download,
+                stringResource(R.string.download_library),
+                stringResource(R.string.download_total_summary, novels.size, formatStorageSize(totalBytes))
+            )
         }
         items(novels, key = { it.novelUrl }, contentType = { "download" }) { summary ->
             DownloadCard(summary, editing, summary.novelUrl in selected, deleting, { onToggle(summary.novelUrl) }, { onDelete(summary.novelUrl) })
@@ -227,6 +231,8 @@ private fun DownloadCard(
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .clip(AppShapes.standard)
+            .background(MaterialTheme.colorScheme.surfaceContainerLow)
             .then(
                 if (selected) {
                     Modifier
@@ -279,12 +285,11 @@ private class DownloadPageModel : AppStateViewModel<DownloadPageModel.State>(Sta
     fun delete(urls: Iterable<String>) {
         val targets = urls.distinct().filter(String::isNotBlank)
         if (targets.isEmpty()) return
-        val current = mutableState.value as? State.Content
-        mutableState.value = current?.copy(deleting = true) ?: State.Content(emptyList(), true)
+        val current = mutableState.value as? State.Content ?: return
+        if (current.deleting) return
+        mutableState.value = current.copy(deleting = true)
         viewModelScope.launch(Dispatchers.IO) {
-            try { PresentationAccess.downloads.deleteAll(targets) }
-            catch (e: CancellationException) { throw e }
-            catch (e: Exception) { AppLogger.e("DownloadPageModel", "Failed to delete downloaded novels", e) }
+            try { PresentationAccess.downloads.deleteAll(targets) } catch (e: CancellationException) { throw e } catch (e: Exception) { AppLogger.e("DownloadPageModel", "Failed to delete downloaded novels", e) }
             refresh()
         }
     }
@@ -293,8 +298,7 @@ private class DownloadPageModel : AppStateViewModel<DownloadPageModel.State>(Sta
         viewModelScope.launch(Dispatchers.IO) {
             try {
                 PresentationAccess.settings.setReaderAutoSave(enabled)
-            } catch (e: CancellationException) { throw e }
-            catch (e: Exception) { AppLogger.e("DownloadPageModel", "Failed to persist reader auto-save preference", e) }
+            } catch (e: CancellationException) { throw e } catch (e: Exception) { AppLogger.e("DownloadPageModel", "Failed to persist reader auto-save preference", e) }
         }
     }
 }

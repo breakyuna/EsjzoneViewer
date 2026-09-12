@@ -1,5 +1,6 @@
 package com.breakyuna.esjzone.ui.page
 
+import android.widget.Toast
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -12,6 +13,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.material.icons.filled.MenuBook
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material3.Card
@@ -37,6 +39,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.breakyuna.esjzone.BuildConfig
 import com.breakyuna.esjzone.Constants
+import com.breakyuna.esjzone.ui.designsystem.AccountSummary
+import com.breakyuna.esjzone.ui.designsystem.accountContentWidth
 import com.breakyuna.esjzone.R
 import com.breakyuna.esjzone.ui.designsystem.AppShapes
 import com.breakyuna.esjzone.ui.designsystem.AppSpacing
@@ -68,10 +72,17 @@ object AboutPage : AppDestination {
             }
         ) { padding ->
             LazyColumn(
-                modifier = Modifier.fillMaxSize().padding(padding),
+                modifier = Modifier.fillMaxSize().accountContentWidth().padding(padding),
                 contentPadding = androidx.compose.foundation.layout.PaddingValues(AppSpacing.lg),
                 verticalArrangement = Arrangement.spacedBy(AppSpacing.lg)
             ) {
+                item(key = "about-identity") {
+                    AccountSummary(
+                        Icons.Filled.MenuBook,
+                        stringResource(R.string.app_name),
+                        stringResource(R.string.profile_about_description)
+                    )
+                }
                 item(key = "about-version") {
                     AboutSection(title = stringResource(R.string.compile_information)) {
                         AboutRow(
@@ -112,9 +123,19 @@ object AboutPage : AppDestination {
                 item(key = "about-libraries-title") { Text(stringResource(R.string.open_source_libraries), style = AppTypography.titleMedium) }
                 items(Constants.OPEN_SOURCE_LIBRARIES, key = { "license:${it.name}" }, contentType = { "license" }) { library ->
                     Card(
-                        onClick = { uriHandler.openUri(library.url) },
+                        onClick = {
+                            try {
+                                uriHandler.openUri(library.url)
+                            } catch (_: IllegalArgumentException) {
+                                Toast.makeText(context, R.string.update_browser_unavailable, Toast.LENGTH_SHORT).show()
+                            } catch (_: android.content.ActivityNotFoundException) {
+                                Toast.makeText(context, R.string.update_browser_unavailable, Toast.LENGTH_SHORT).show()
+                            } catch (_: SecurityException) {
+                                Toast.makeText(context, R.string.update_browser_unavailable, Toast.LENGTH_SHORT).show()
+                            }
+                        },
                         shape = AppShapes.standard,
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)
                     ) {
                         Row(Modifier.fillMaxWidth().padding(AppSpacing.md), verticalAlignment = Alignment.CenterVertically) {
                             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(AppSpacing.xs)) {
@@ -142,7 +163,7 @@ object AboutPage : AppDestination {
 private fun AboutSection(title: String, content: @Composable () -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(AppSpacing.sm)) {
         Text(title, style = AppTypography.titleMedium, color = MaterialTheme.colorScheme.primary)
-        Card(shape = AppShapes.standard, colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)) {
+        Card(shape = AppShapes.standard, colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)) {
             Column(Modifier.fillMaxWidth().padding(AppSpacing.lg), verticalArrangement = Arrangement.spacedBy(AppSpacing.sm)) { content() }
         }
     }
@@ -150,8 +171,8 @@ private fun AboutSection(title: String, content: @Composable () -> Unit) {
 
 @Composable
 private fun AboutRow(label: String, value: String, onClick: (() -> Unit)? = null) {
-    Row(Modifier.fillMaxWidth().then(onClick?.let { Modifier.clickable(onClick = it) } ?: Modifier), horizontalArrangement = Arrangement.spacedBy(AppSpacing.lg)) {
+    Row(Modifier.fillMaxWidth().then(onClick?.let { Modifier.clickable(onClick = it) } ?: Modifier).padding(vertical = AppSpacing.md), horizontalArrangement = Arrangement.spacedBy(AppSpacing.lg)) {
         Text(label, style = AppTypography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(0.4f))
-        Text(value, style = AppTypography.bodyLarge, modifier = Modifier.weight(0.6f))
+        Text(value, style = AppTypography.titleMedium, modifier = Modifier.weight(0.6f))
     }
 }

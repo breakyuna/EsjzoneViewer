@@ -5,6 +5,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -15,12 +17,10 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.GridItemSpan
-import androidx.compose.foundation.lazy.grid.LazyGridState
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
-import androidx.compose.foundation.lazy.grid.rememberLazyGridState
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -50,6 +50,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.key
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -61,6 +62,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.foundation.layout.calculateStartPadding
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
@@ -95,6 +97,7 @@ object FavoritePage : AppDestination {
     @Composable
     fun Content(showBack: Boolean) {
         val navigator = LocalBaseNavigator.current
+        val focusManager = LocalFocusManager.current
         val authorization = LocalAuthorization.current
         val model = rememberAppViewModel { FavoritePageModel(authorization) }
         val entries by model.entries.collectAsState(initial = emptyList())
@@ -104,7 +107,7 @@ object FavoritePage : AppDestination {
         val deleteState by model.deleteState.collectAsState()
         val adult by PresentationAccess.settings.adult
         val snackbar = remember { SnackbarHostState() }
-        val gridState = rememberLazyGridState()
+        val listState = rememberLazyListState()
         var editing by rememberSaveable { mutableStateOf(false) }
         var downloadedOnly by rememberSaveable { mutableStateOf(false) }
         var listView by rememberSaveable { mutableStateOf(false) }
@@ -130,6 +133,12 @@ object FavoritePage : AppDestination {
         val syncFailedMessage = stringResource(R.string.bookshelf_sync_failed)
         val deleteDoneMessage = stringResource(R.string.bookshelf_delete_done)
         val deleteFailedMessage = stringResource(R.string.bookshelf_delete_failed)
+
+        fun openBook(entry: BookshelfEntry) {
+            // Release any focus-pinned lazy item before beginning a page transition.
+            focusManager.clearFocus(force = true)
+            navigator?.pushIfNotCurrent(NovelPage(entry.asCoveredNovel(), favorite = BooleanStateHolder(true)))
+        }
 
         fun requestDelete() {
             pendingDelete = shown.filter { it.bookKey in selected }
@@ -195,7 +204,7 @@ object FavoritePage : AppDestination {
                     onBack = { if (editing) exitEdit() else navigator?.pop() },
                     onRefresh = { if (!syncing) model.sync() },
                     listView = listView,
-                    onToggleView = { listView = !listView },
+                    onToggleView = { focusManager.clearFocus(force = true); listView = !listView },
                     onEdit = { editing = true; selected = emptySet() },
                     onDone = ::exitEdit,
                     onSelectAll = { selected = if (selected == visibleKeys) emptySet() else visibleKeys },
@@ -237,123 +246,140 @@ object FavoritePage : AppDestination {
         ) { padding ->
             val navPadding = LocalFloatingNavPadding.current
             val layoutDirection = LocalLayoutDirection.current
-            LazyVerticalGrid(
-                columns = GridCells.Adaptive(minSize = 112.dp),
-                state = gridState,
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(
-                        top = padding.calculateTopPadding(),
-                        bottom = if (editing) padding.calculateBottomPadding() else 0.dp
-                    )
-                    .topPullToSync(gridState, !syncing && !editing) { model.sync() },
-                contentPadding = PaddingValues(
-                    start = AppSpacing.lg + navPadding.calculateStartPadding(layoutDirection),
-                    end = AppSpacing.lg,
-                    top = AppSpacing.lg,
-                    bottom = AppSpacing.lg + (if (editing) 0.dp else navPadding.calculateBottomPadding())
-                ),
-                horizontalArrangement = Arrangement.spacedBy(AppSpacing.md),
-                verticalArrangement = Arrangement.spacedBy(if (listView && !editing) AppSpacing.sm else AppSpacing.lg)
-            ) {
-                // Keep the showcase inside the first stable item. Inserting a new item above
-                // the header after Room loads would preserve the header anchor and hide it.
-                item(key = "bookshelf_collection_header", span = { GridItemSpan(maxLineSpan) }) {
-                    Column(verticalArrangement = Arrangement.spacedBy(AppSpacing.sm)) {
-                        if (!editing && recentReads.isNotEmpty()) {
-                            AppBookshelfRecentReads(
-                                books = recentReads,
-                                modifier = Modifier.padding(bottom = AppSpacing.md),
-                                onBookClick = { entry ->
-                                    navigator?.pushIfNotCurrent(
-                                        NovelPage(entry.asCoveredNovel(), favorite = BooleanStateHolder(true))
-                                    )
-                                }
-                            )
-                        }
-                        Text(stringResource(R.string.bookshelf_collection), style = AppTypography.displayMedium)
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(
-                                stringResource(R.string.bookshelf_count, visible.size),
-                                style = AppTypography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.weight(1f)
-                            )
-                            FilterChip(
-                                selected = downloadedOnly,
-                                onClick = { downloadedOnly = !downloadedOnly },
-                                label = { Text(stringResource(R.string.bookshelf_filter_downloaded)) }
-                            )
-                            FilterChip(
-                                selected = updatesOnly,
-                                onClick = { updatesOnly = !updatesOnly },
-                                label = { Text("有更新") },
-                                modifier = Modifier.padding(start = AppSpacing.sm)
-                            )
-                        }
-                        if (syncState is FavoritePageModel.State.Failed && shown.isNotEmpty()) {
-                            Text(
-                                stringResource(R.string.bookshelf_sync_failed),
-                                style = AppTypography.bodySmall,
-                                color = MaterialTheme.colorScheme.error
-                            )
+            // Use one lazy axis. Dynamic full-span headers and per-item spans in a
+            // LazyGrid can place pinned items twice during navigation/lookahead.
+            // Each visible row owns its covers; the 2-1-3-4 showcase stays in the header.
+            BoxWithConstraints(Modifier.fillMaxSize()) {
+                val startPadding = AppSpacing.lg + navPadding.calculateStartPadding(layoutDirection)
+                val endPadding = AppSpacing.lg
+                val columns = if (listView && !editing) 1 else bookshelfColumnCount(
+                    (maxWidth - startPadding - endPadding).value,
+                    AppSpacing.md.value
+                )
+                val rows = remember(shown, columns) { shown.chunked(columns) }
+                LazyColumn(
+                    state = listState,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(
+                            top = padding.calculateTopPadding(),
+                            bottom = if (editing) padding.calculateBottomPadding() else 0.dp
+                        )
+                        .topPullToSync(listState, !syncing && !editing) { model.sync() },
+                    contentPadding = PaddingValues(
+                        start = startPadding,
+                        end = AppSpacing.lg,
+                        top = AppSpacing.lg,
+                        bottom = AppSpacing.lg + (if (editing) 0.dp else navPadding.calculateBottomPadding())
+                    ),
+                    verticalArrangement = Arrangement.spacedBy(if (listView && !editing) AppSpacing.sm else AppSpacing.lg)
+                ) {
+                    // Keep the showcase inside the first stable item. Inserting a new item above
+                    // the header after Room loads would preserve the header anchor and hide it.
+                    item(key = "bookshelf_collection_header", contentType = "bookshelf_header") {
+                        Column(verticalArrangement = Arrangement.spacedBy(AppSpacing.sm)) {
+                            if (!editing && recentReads.isNotEmpty()) {
+                                AppBookshelfRecentReads(
+                                    books = recentReads,
+                                    modifier = Modifier.padding(bottom = AppSpacing.md),
+                                    onBookClick = { entry ->
+                                        openBook(entry)
+                                    }
+                                )
+                            }
+                            Text(stringResource(R.string.bookshelf_collection), style = AppTypography.displayMedium)
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    stringResource(R.string.bookshelf_count, visible.size),
+                                    style = AppTypography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                FilterChip(
+                                    selected = downloadedOnly,
+                                    onClick = { downloadedOnly = !downloadedOnly },
+                                    label = { Text(stringResource(R.string.bookshelf_filter_downloaded)) }
+                                )
+                                FilterChip(
+                                    selected = updatesOnly,
+                                    onClick = { updatesOnly = !updatesOnly },
+                                    label = { Text("有更新") },
+                                    modifier = Modifier.padding(start = AppSpacing.sm)
+                                )
+                            }
+                            if (syncState is FavoritePageModel.State.Failed && shown.isNotEmpty()) {
+                                Text(
+                                    stringResource(R.string.bookshelf_sync_failed),
+                                    style = AppTypography.bodySmall,
+                                    color = MaterialTheme.colorScheme.error
+                                )
+                            }
                         }
                     }
-                }
-                if (shown.isEmpty()) {
-                    item(span = { GridItemSpan(maxLineSpan) }) {
-                        if (syncState is FavoritePageModel.State.Failed && entries.isEmpty()) {
-                            OfflineState(
-                                title = stringResource(R.string.bookshelf_sync_failed),
-                                message = stringResource(R.string.bookshelf_sync_failed),
-                                onRetry = { if (!syncing) model.sync() },
+                    if (shown.isEmpty()) {
+                        item(key = "bookshelf_empty", contentType = "bookshelf_empty") {
+                            if (syncState is FavoritePageModel.State.Failed && entries.isEmpty()) {
+                                OfflineState(
+                                    title = stringResource(R.string.bookshelf_sync_failed),
+                                    message = stringResource(R.string.bookshelf_sync_failed),
+                                    onRetry = { if (!syncing) model.sync() },
+                                    modifier = Modifier.fillMaxWidth().padding(vertical = AppSpacing.xxxl)
+                                )
+                            } else EmptyState(
+                                title = stringResource(
+                                    when {
+                                        downloadedOnly -> R.string.bookshelf_empty_filtered
+                                        visible.isEmpty() && entries.isNotEmpty() -> R.string.bookshelf_empty_filtered
+                                        else -> R.string.bookshelf_empty
+                                    }
+                                ),
+                                message = stringResource(
+                                    when {
+                                        downloadedOnly -> R.string.download_empty_hint
+                                        visible.isEmpty() && entries.isNotEmpty() -> R.string.bookshelf_empty_filtered_hint
+                                        else -> R.string.bookshelf_empty_hint
+                                    }
+                                ),
+                                actionLabel = stringResource(R.string.sync_bookshelf),
+                                onAction = { if (!syncing) model.sync() },
                                 modifier = Modifier.fillMaxWidth().padding(vertical = AppSpacing.xxxl)
                             )
-                        } else EmptyState(
-                            title = stringResource(
-                                when {
-                                    downloadedOnly -> R.string.bookshelf_empty_filtered
-                                    visible.isEmpty() && entries.isNotEmpty() -> R.string.bookshelf_empty_filtered
-                                    else -> R.string.bookshelf_empty
+                        }
+                    } else {
+                        items(
+                            rows,
+                            key = { "bookshelf_row:${it.first().bookKey}" },
+                            contentType = { if (listView && !editing) "bookshelf_list" else "bookshelf_row:$columns" }
+                        ) { row ->
+                            Row(
+                                Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(AppSpacing.md)
+                            ) {
+                                row.forEach { entry ->
+                                    key(entry.bookKey) {
+                                        Box(Modifier.weight(1f)) {
+                                            if (listView && !editing) ShelfListItem(
+                                                entry = entry, enabled = !deleting,
+                                                onClick = { openBook(entry) }
+                                            ) else ShelfCard(
+                                                entry = entry,
+                                                selected = entry.bookKey in selected,
+                                                editing = editing,
+                                                enabled = !deleting,
+                                                onClick = {
+                                                    if (editing) {
+                                                        selected = if (entry.bookKey in selected) selected - entry.bookKey else selected + entry.bookKey
+                                                    } else {
+                                                        openBook(entry)
+                                                    }
+                                                }
+                                            )
+                                        }
+                                    }
                                 }
-                            ),
-                            message = stringResource(
-                                when {
-                                    downloadedOnly -> R.string.download_empty_hint
-                                    visible.isEmpty() && entries.isNotEmpty() -> R.string.bookshelf_empty_filtered_hint
-                                    else -> R.string.bookshelf_empty_hint
-                                }
-                            ),
-                            actionLabel = stringResource(R.string.sync_bookshelf),
-                            onAction = { if (!syncing) model.sync() },
-                            modifier = Modifier.fillMaxWidth().padding(vertical = AppSpacing.xxxl)
-                        )
-                    }
-                } else {
-                    items(
-                        shown,
-                        key = { it.bookKey },
-                        span = { if (listView && !editing) GridItemSpan(maxLineSpan) else GridItemSpan(1) },
-                        contentType = { "bookshelf" }
-                    ) { entry ->
-                        if (listView && !editing) ShelfListItem(
-                            entry = entry, enabled = !deleting,
-                            onClick = { navigator?.pushIfNotCurrent(NovelPage(entry.asCoveredNovel(), favorite = BooleanStateHolder(true))) }
-                        ) else ShelfCard(
-                            entry = entry,
-                            selected = entry.bookKey in selected,
-                            editing = editing,
-                            enabled = !deleting,
-                            onClick = {
-                                if (editing) {
-                                    selected = if (entry.bookKey in selected) selected - entry.bookKey else selected + entry.bookKey
-                                } else {
-                                    navigator?.pushIfNotCurrent(
-                                        NovelPage(entry.asCoveredNovel(), favorite = BooleanStateHolder(true))
-                                    )
-                                }
+                                repeat(columns - row.size) { Spacer(Modifier.weight(1f)) }
                             }
-                        )
+                        }
                     }
                 }
             }
@@ -518,7 +544,7 @@ private fun BookshelfEntry.asCoveredNovel() = CoveredNovelImpl(
 )
 
 private fun Modifier.topPullToSync(
-    gridState: LazyGridState,
+    listState: LazyListState,
     enabled: Boolean,
     onRefresh: () -> Unit
 ): Modifier = pointerInput(enabled) {
@@ -526,11 +552,11 @@ private fun Modifier.topPullToSync(
         var distance = 0f
         while (true) {
             val change = awaitPointerEvent().changes.firstOrNull() ?: continue
-            if (gridState.firstVisibleItemIndex != 0 || gridState.firstVisibleItemScrollOffset != 0) distance = 0f
+            if (listState.firstVisibleItemIndex != 0 || listState.firstVisibleItemScrollOffset != 0) distance = 0f
             if (!change.pressed) {
-                if (enabled && gridState.firstVisibleItemIndex == 0 && distance > 72f) onRefresh()
+                if (enabled && listState.firstVisibleItemIndex == 0 && distance > 72f) onRefresh()
                 distance = 0f
-            } else if (enabled && gridState.firstVisibleItemIndex == 0) {
+            } else if (enabled && listState.firstVisibleItemIndex == 0) {
                 distance += change.positionChange().y.coerceAtLeast(0f)
             }
         }

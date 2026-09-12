@@ -14,6 +14,8 @@ import org.jsoup.Jsoup
 import org.jsoup.nodes.Document
 import org.jsoup.nodes.Entities
 import org.jsoup.nodes.TextNode
+import org.jsoup.safety.Cleaner
+import org.jsoup.safety.Safelist
 
 object NovelExporter {
 
@@ -60,15 +62,20 @@ object NovelExporter {
         output: OutputStream,
         imageLoader: (DownloadedComponent) -> File? = { null }
     ) {
-        val chapters = manifest.chapters
-            .filter { it.downloaded }
-            .mapNotNull { record -> chapterLoader(record)?.let { record to it } }
-        require(chapters.isNotEmpty()) { "No downloaded chapters are available for export" }
+        // Keep only the TOC and image references in memory, never every chapter body.
+        val chapters = mutableListOf<Pair<DownloadedChapterRecord, String>>()
         val images = linkedMapOf<String, EpubImage>()
-        chapters.forEach { (_, chapter) ->
+        manifest.chapters.filter { it.downloaded }.forEach { record ->
+            val chapter = chapterLoader(record) ?: return@forEach
+            chapters += record to chapter.name.ifBlank { record.name }
             chapter.components.filter { it.type == "image" }.forEach imageLoop@{ component ->
                 val key = component.imageKey()
                 val file = imageLoader(component)?.takeIf(File::isFile) ?: return@imageLoop
+                // SVG is active XML; do not copy unsanitized remote documents into an EPUB.
+                if (file.extension.equals("svg", ignoreCase = true) ||
+                    component.mediaType?.substringBefore(';')?.trim().equals("image/svg+xml", ignoreCase = true)) {
+                    return@imageLoop
+                }
                 if (!images.containsKey(key)) {
                     val extension = file.extension.takeIf { it.matches(Regex("[A-Za-z0-9]{1,5}")) }
                         ?.lowercase(Locale.ROOT)
@@ -84,12 +91,15 @@ object NovelExporter {
             }
         }
 
+        require(chapters.isNotEmpty()) { "No downloaded chapters are available for export" }
         ZipOutputStream(output.buffered()).use { zip ->
             addStoredEntry(zip, "mimetype", "application/epub+zip")
             addTextEntry(zip, "META-INF/container.xml", containerXml())
             addTextEntry(zip, "OEBPS/content.opf", contentOpf(manifest, chapters.size, images.values))
             addTextEntry(zip, "OEBPS/nav.xhtml", navigationXhtml(manifest, chapters))
-            chapters.forEachIndexed { index, (_, chapter) ->
+            chapters.forEachIndexed { index, (record, _) ->
+                val chapter = chapterLoader(record)
+                    ?: error("A downloaded chapter disappeared during export")
                 addTextEntry(
                     zip,
                     "OEBPS/chapter-${index + 1}.xhtml",
@@ -150,10 +160,10 @@ object NovelExporter {
 
     private fun navigationXhtml(
         manifest: DownloadedNovelManifest,
-        chapters: List<Pair<DownloadedChapterRecord, DownloadedChapterContent>>
+        chapters: List<Pair<DownloadedChapterRecord, String>>
     ): String {
-        val links = chapters.mapIndexed { index, (record, chapter) ->
-            "        <li><a href=\"chapter-${index + 1}.xhtml\">${xml(chapter.name.ifBlank { record.name })}</a></li>"
+        val links = chapters.mapIndexed { index, (_, title) ->
+            "        <li><a href=\"chapter-${index + 1}.xhtml\">${xml(title)}</a></li>"
         }.joinToString("\n")
         return """<?xml version="1.0" encoding="UTF-8"?>
             <!DOCTYPE html>
@@ -249,7 +259,7 @@ object NovelExporter {
             .escapeMode(Entities.EscapeMode.xhtml)
             .prettyPrint(false)
         document.select(
-            "script, iframe, object, embed, form, input, button, video, audio, source"
+            "script, style, link, meta, base, svg, math, iframe, object, embed, form, input, button, video, audio, source"
         ).remove()
         document.allElements.forEach { element ->
             element.attributes().asList()
@@ -276,7 +286,16 @@ object NovelExporter {
                 image.replaceWith(TextNode("[图片：$original]"))
             }
         }
-        return document.body().html()
+        // A blocklist alone misses javascript: links, CSS imports/URLs and new HTML features.
+        // Keep typography, ruby and tables, but permit only inert attributes and HTTPS links.
+        val safe = Safelist.relaxed()
+            .addTags("ruby", "rt", "rp", "rb")
+            .removeProtocols("a", "href", "ftp", "http", "mailto")
+            .addProtocols("a", "href", "https")
+            .preserveRelativeLinks(true)
+        return Cleaner(safe).clean(document)
+            .outputSettings(document.outputSettings())
+            .body().html()
     }
 
     private data class EpubImage(

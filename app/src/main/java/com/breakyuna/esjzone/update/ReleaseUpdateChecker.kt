@@ -1,5 +1,6 @@
 package com.breakyuna.esjzone.update
 
+import com.breakyuna.esjzone.network.readTextBounded
 import android.content.Context
 import com.breakyuna.esjzone.BuildConfig
 import java.util.concurrent.TimeUnit
@@ -50,7 +51,7 @@ internal object ReleaseUpdateChecker {
         val now = System.currentTimeMillis()
         val lastCheckAt = preferences.getLong(LAST_CHECK_AT_KEY, 0L)
         if (lastCheckAt <= now && now - lastCheckAt < CHECK_INTERVAL_MILLIS) return
-        check(context, manual = false)
+        check(context)
     }
 
     fun initialize(context: Context) {
@@ -65,10 +66,10 @@ internal object ReleaseUpdateChecker {
     }
 
     fun checkNow(context: Context) {
-        check(context, manual = true)
+        check(context)
     }
 
-    private fun check(context: Context, manual: Boolean) {
+    private fun check(context: Context) {
         if (!checking.compareAndSet(false, true)) return
         _status.value = ReleaseCheckState.Checking
         scope.launch {
@@ -98,27 +99,27 @@ internal object ReleaseUpdateChecker {
                 client.newCall(request).execute().use { response ->
                     // Includes no published Release (404), rate limiting and server errors.
                     if (!response.isSuccessful) {
-                        if (manual) _status.value = ReleaseCheckState.Error
+                        _status.value = ReleaseCheckState.Error
                         return@launch
                     }
-                    val release = JSONObject(response.body.string())
+                    val release = JSONObject(response.body.readTextBounded())
                     if (release.optBoolean("draft", true) || release.optBoolean("prerelease", true)) {
-                        if (manual) _status.value = ReleaseCheckState.UpToDate
+                        _status.value = ReleaseCheckState.UpToDate
                         return@launch
                     }
                     val tag = release.optString("tag_name")
                     if (!ReleaseVersion.isNewerStableRelease(tag, BuildConfig.VERSION_NAME)) {
-                        if (manual) _status.value = ReleaseCheckState.UpToDate
+                        _status.value = ReleaseCheckState.UpToDate
                         return@launch
                     }
                     val url = release.optString("html_url").toHttpUrlOrNull() ?: run {
-                        if (manual) _status.value = ReleaseCheckState.Error
+                        _status.value = ReleaseCheckState.Error
                         return@launch
                     }
                     if (url.scheme != "https" || url.host != "github.com" || url.port != 443 ||
                         url.username.isNotEmpty() || url.password.isNotEmpty() ||
                         !url.encodedPath.startsWith("/breakyuna/EsjzoneViewer/releases/tag/")) {
-                        if (manual) _status.value = ReleaseCheckState.Error
+                        _status.value = ReleaseCheckState.Error
                         return@launch
                     }
                     pending.value = ReleaseUpdate(tag, url.toString(), release.optString("body").trim())
@@ -128,7 +129,7 @@ internal object ReleaseUpdateChecker {
                 throw e
             } catch (_: Exception) {
                 // Startup checks are best effort: offline, timeout and malformed data stay silent.
-                if (manual) _status.value = ReleaseCheckState.Error
+                _status.value = ReleaseCheckState.Error
             } finally {
                 checking.set(false)
             }

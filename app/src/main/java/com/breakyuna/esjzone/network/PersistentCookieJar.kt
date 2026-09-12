@@ -32,23 +32,33 @@ internal class PersistentCookieJar(context: Context) : CookieJar {
     private val gson = Gson()
     private val lock = Any()
     private val cookies = mutableListOf<StoredCookie>()
+    private var epoch = 0L
+
+    fun sessionEpoch(): Long = synchronized(lock) { epoch }
 
     init {
         migrateLegacyCookies()
         cookies += loadCookies()
     }
 
-    override fun loadForRequest(url: HttpUrl): List<Cookie> {
+    override fun loadForRequest(url: HttpUrl): List<Cookie> = loadForRequest(url, expectedEpoch = null)
+
+    fun loadForRequest(url: HttpUrl, expectedEpoch: Long?): List<Cookie> {
         synchronized(lock) {
+            if (expectedEpoch != null && expectedEpoch != epoch) return emptyList()
             val changed = removeExpiredCookies()
             if (changed) persistLocked()
             return cookies.mapNotNull { it.toCookie() }.filter { it.matches(url) }
         }
     }
 
-    override fun saveFromResponse(url: HttpUrl, responseCookies: List<Cookie>) {
+    override fun saveFromResponse(url: HttpUrl, cookies: List<Cookie>) =
+        saveFromResponse(url, cookies, expectedEpoch = null)
+
+    fun saveFromResponse(url: HttpUrl, responseCookies: List<Cookie>, expectedEpoch: Long?) {
         if (responseCookies.isEmpty()) return
         synchronized(lock) {
+            if (expectedEpoch != null && expectedEpoch != epoch) return
             removeExpiredCookies()
             for (cookie in responseCookies) {
                 val index = cookies.indexOfFirst { it.sameIdentity(cookie) }
@@ -103,6 +113,7 @@ internal class PersistentCookieJar(context: Context) : CookieJar {
 
     /** Starts a new cache namespace when an explicit login changes account state. */
     fun rotateCacheScope(host: String) = synchronized(lock) {
+        epoch++
         preferences.edit()
             .putString(cacheScopeKey(host), UUID.randomUUID().toString())
             .commit()
@@ -150,6 +161,7 @@ internal class PersistentCookieJar(context: Context) : CookieJar {
 
     fun clear(host: String? = null) {
         synchronized(lock) {
+            epoch++
             if (host.isNullOrBlank()) {
                 cookies.clear()
                 val editor = preferences.edit()

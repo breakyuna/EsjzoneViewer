@@ -77,6 +77,54 @@ class NovelExporterTest {
         assertEquals("书_名_.epub", NovelExporter.suggestedFileName("书/名?", "EPUB"))
     }
 
+    @Test
+    fun epubExport_removesActiveMarkupButKeepsRubyAndSafeLinks() {
+        val output = ByteArrayOutputStream()
+        NovelExporter.exportEpub(
+            manifest(),
+            { record -> chapter(record).copy(contentHtml = """
+                <p style="background:url(https://invalid.example/pixel)">
+                    <strong>safe text</strong><ruby>漢<rt>かん</rt></ruby>
+                    <a href="javascript:alert(1)" onclick="alert(1)">unsafe link</a>
+                    <a href="https://example.com/reference">reference</a>
+                </p>
+                <style>@import 'https://invalid.example/style';</style>
+                <svg><a href="javascript:alert(1)">svg link</a></svg>
+                <iframe src="https://invalid.example/"></iframe>
+            """.trimIndent()) },
+            output
+        )
+        val html = epubChapter(output)
+        assertTrue(html.contains("<strong>safe text</strong>"))
+        assertTrue(html.contains("<ruby>"))
+        assertTrue(html.contains("https://example.com/reference"))
+        listOf("javascript:", "onclick", "background:", "@import", "<svg", "<iframe", "invalid.example")
+            .forEach { assertTrue("Unexpected active content: $it", !html.contains(it)) }
+    }
+
+    @Test
+    fun epubExport_rejectsEmbeddedSvgAssets() {
+        val output = ByteArrayOutputStream()
+        val svg = File.createTempFile("novel-active-image", ".svg")
+        try {
+            svg.writeText("<svg xmlns='http://www.w3.org/2000/svg'><script>alert(1)</script></svg>")
+            NovelExporter.exportEpub(manifest(), ::chapter, output, imageLoader = { svg })
+            assertTrue(!epubChapter(output).contains("<img"))
+        } finally { svg.delete() }
+    }
+
+    private fun epubChapter(output: ByteArrayOutputStream): String =
+        ZipInputStream(ByteArrayInputStream(output.toByteArray())).use { zip ->
+            var entry = zip.nextEntry
+            while (entry != null) {
+                if (entry.name == "OEBPS/chapter-1.xhtml") {
+                    return@use zip.readBytes().toString(StandardCharsets.UTF_8)
+                }
+                entry = zip.nextEntry
+            }
+            error("Exported chapter missing")
+        }
+
     private fun manifest() = DownloadedNovelManifest(
         name = "测试小说",
         url = "https://www.esjzone.cc/detail/1.html",

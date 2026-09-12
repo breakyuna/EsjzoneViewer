@@ -15,6 +15,15 @@ import org.junit.Test
 class AuthorizationCookieJarTest {
 
     @Test
+    fun cleartextRequestsNeverReceiveSessionCookies() {
+        val jar = AuthorizationCookieJar(
+            Authorization("key-fixture", "token-fixture", "www.esjzone.cc"),
+            persistResponses = false
+        )
+        assertTrue(jar.loadForRequest("http://www.esjzone.cc/".toHttpUrl()).isEmpty())
+    }
+
+    @Test
     fun credentialsAreSentOnlyToTheIssuingDomain() {
         val jar = AuthorizationCookieJar(
             Authorization("key-fixture", "token-fixture", "www.esjzone.cc"),

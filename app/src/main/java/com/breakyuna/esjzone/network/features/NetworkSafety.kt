@@ -1,5 +1,6 @@
 package com.breakyuna.esjzone.network.features
 
+import com.breakyuna.esjzone.network.readTextBounded
 import com.breakyuna.esjzone.util.AppLogger
 import kotlinx.coroutines.CancellationException
 import okhttp3.Response
@@ -9,7 +10,7 @@ import okhttp3.Response
  * The response is always closed after the body has been consumed.
  */
 internal fun Response.bodyStringOrEmpty(): String = use {
-    body?.string().orEmpty()
+    body?.readTextBounded().orEmpty()
 }
 
 /**

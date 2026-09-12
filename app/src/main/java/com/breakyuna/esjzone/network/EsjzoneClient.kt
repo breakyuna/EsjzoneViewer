@@ -222,7 +222,7 @@ object EsjzoneClient {
                 }
                 try {
                     response.use {
-                        val body = it.body?.string().orEmpty()
+                        val body = it.body?.readTextBounded().orEmpty()
                         PageResponseData(
                             statusCode = it.code,
                             body = body,
