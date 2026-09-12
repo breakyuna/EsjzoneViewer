@@ -87,6 +87,7 @@ object SettingsPage : AppDestination {
         val theme by PresentationAccess.settings.theme
         val domain by PresentationAccess.settings.domain
         val language by PresentationAccess.settings.language
+        val autoSave by PresentationAccess.settings.readerAutoSave
         val readerSettings by PresentationAccess.readerSettings.settings.collectAsState()
         val crashReport by AppLogger.crashReportFlow.collectAsState()
         var showLogout by remember { mutableStateOf(false) }
@@ -147,6 +148,15 @@ object SettingsPage : AppDestination {
                         PresentationAccess.readerSettings.saveInBackground(
                             readerSettings.copy(volumeKeyPaging = enabled)
                         )
+                    }
+                    HorizontalDivider(modifier = Modifier.padding(vertical = com.breakyuna.esjzone.ui.designsystem.AppSpacing.xs))
+                    ToggleRow(
+                        stringResource(R.string.download_auto_save),
+                        stringResource(R.string.download_auto_save_description),
+                        autoSave
+                    ) { enabled ->
+                        PresentationAccess.settings.setReaderAutoSave(enabled)
+                        model.persist(PresentationAccess.settings.READER_AUTO_SAVE_KEY, enabled.toString())
                     }
                 }
 

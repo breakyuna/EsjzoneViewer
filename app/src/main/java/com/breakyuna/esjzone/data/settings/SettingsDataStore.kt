@@ -107,7 +107,7 @@ class SettingsDataStore(
         val theme: AppThemeVariant = AppThemeVariant.DEFAULT,
         val domain: String = SettingsDefaults.DOMAINS.first(),
         val language: AppLanguage = AppLanguage.SYSTEM,
-        val readerAutoSave: Boolean = false
+        val readerAutoSave: Boolean = true
     )
 
     private fun Preferences.toSettingsValues(): SettingsValues = SettingsValues(

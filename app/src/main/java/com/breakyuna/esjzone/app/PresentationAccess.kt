@@ -74,7 +74,7 @@ object SettingsStateBoundary {
     private val _theme = mutableStateOf(AppThemeVariant.DEFAULT)
     private val _domain = mutableStateOf(SettingsDefaults.DOMAINS.first())
     private val _language = mutableStateOf(AppLanguage.SYSTEM)
-    private val _readerAutoSave = mutableStateOf(false)
+    private val _readerAutoSave = mutableStateOf(true)
 
     private fun repository(): SettingsRepository {
         val repository = EsjzoneApplication.instance.container.settings

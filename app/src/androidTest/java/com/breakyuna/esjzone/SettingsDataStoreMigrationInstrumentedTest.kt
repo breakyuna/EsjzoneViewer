@@ -93,7 +93,7 @@ class SettingsDataStoreMigrationInstrumentedTest {
             assertEquals(AppThemeVariant.DEFAULT, settings.theme.first())
             assertEquals("www.esjzone.cc", settings.domain.first())
             assertEquals(AppLanguage.SYSTEM, settings.language.first())
-            assertFalse(settings.readerAutoSave.first())
+            assertTrue(settings.readerAutoSave.first())
         } finally {
             scope.cancel()
             database.close()

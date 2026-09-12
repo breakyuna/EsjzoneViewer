@@ -35,7 +35,7 @@ class DataStoreAcceptanceInstrumentedTest {
             assertEquals(AppThemeVariant.DEFAULT, settings.theme.first())
             assertEquals("www.esjzone.cc", settings.domain.first())
             assertEquals(AppLanguage.SYSTEM, settings.language.first())
-            assertFalse(settings.readerAutoSave.first())
+            assertTrue(settings.readerAutoSave.first())
         } finally {
             scope.cancel()
         }
@@ -51,7 +51,7 @@ class DataStoreAcceptanceInstrumentedTest {
             first.setTheme(AppThemeVariant.SUNSET)
             first.setDomain("www.esjzone.one")
             first.setLanguage(AppLanguage.SIMPLIFIED_CHINESE)
-            first.setReaderAutoSave(true)
+            first.setReaderAutoSave(false)
             assertEquals(AppThemeVariant.SUNSET, first.theme.first { it == AppThemeVariant.SUNSET })
             assertFalse(first.adult.first { !it })
         } finally {
@@ -65,7 +65,7 @@ class DataStoreAcceptanceInstrumentedTest {
             assertEquals(AppThemeVariant.SUNSET, second.theme.first())
             assertEquals("www.esjzone.one", second.domain.first())
             assertEquals(AppLanguage.SIMPLIFIED_CHINESE, second.language.first())
-            assertTrue(second.readerAutoSave.first())
+            assertFalse(second.readerAutoSave.first())
         } finally {
             secondScope.cancel()
         }
