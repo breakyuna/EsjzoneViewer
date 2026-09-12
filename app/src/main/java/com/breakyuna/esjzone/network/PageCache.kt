@@ -14,6 +14,7 @@ import kotlinx.coroutines.flow.update
 internal object PageCacheTtl {
     const val PROFILE = 24L * 60L * 60L * 1000L
     const val HOME = 15L * 60L * 1000L
+    const val WEEKLY_UPDATE = 15L * 60L * 1000L
     const val CATEGORIES = 24L * 60L * 60L * 1000L
     const val DETAIL = 6L * 60L * 60L * 1000L
     const val CHAPTER = 30L * 24L * 60L * 60L * 1000L

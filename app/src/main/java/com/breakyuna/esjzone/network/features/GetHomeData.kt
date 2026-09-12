@@ -28,6 +28,9 @@ fun EsjzoneClient.getHomeData(authorization: Authorization): HomeData {
     val recentlyUpdateTranslatedR18Novels = mutableListOf<CoveredNovel>()
     val recentlyUpdateOriginalR18Novels = mutableListOf<CoveredNovel>()
     val recommendationNovels = mutableListOf<CoveredNovel>()
+    val weeklyUpdates = runCatching { getWeeklyUpdates(authorization) }
+        .onFailure { AppLogger.w("GetHomeData", "Error parsing weekly updates", it) }
+        .getOrDefault(emptyList())
 
     try {
         for (recentlyUpdateTranslatedData in selectHomeSectionCards(document, HomeSection.TRANSLATED)) {
@@ -99,6 +102,7 @@ fun EsjzoneClient.getHomeData(authorization: Authorization): HomeData {
         recentlyUpdateOriginalNovels,
         recentlyUpdateTranslatedR18Novels,
         recentlyUpdateOriginalR18Novels,
-        recommendationNovels
+        recommendationNovels,
+        weeklyUpdates
     )
 }

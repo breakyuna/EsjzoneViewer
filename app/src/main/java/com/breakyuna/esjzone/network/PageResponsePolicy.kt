@@ -17,6 +17,7 @@ enum class PageKind {
     DETAIL,
     CHAPTER,
     LIST,
+    WEEKLY_UPDATE,
     SEARCH,
     COMMUNITY
 }
@@ -109,7 +110,7 @@ internal object PageResponsePolicy {
             PageKind.CHAPTER -> (lowerRequestedUrl.contains("/forum/") || lower.contains("/forum/")) &&
                 (lower.contains("<article") || lower.contains("<section") || lower.contains("<div") ||
                     lower.contains("comment") || lower.contains("chapter"))
-            PageKind.LIST, PageKind.SEARCH ->
+            PageKind.LIST, PageKind.WEEKLY_UPDATE, PageKind.SEARCH ->
                 lower.contains("/detail/") || lower.contains("<table") ||
                     lower.contains("<section") || lower.contains("<main") || lower.contains("<div")
         }

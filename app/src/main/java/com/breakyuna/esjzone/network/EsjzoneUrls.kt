@@ -184,6 +184,7 @@ object EsjzoneUrls {
         return card.select(COVER_SOURCE_SELECTOR)
             .asSequence()
             .flatMap(::imageUrlCandidatesFrom)
+            .plus(card.select("[style*='background-image']").asSequence().flatMap(::styleBackgroundCandidatesFrom))
             .map(::coverOrEmpty)
             .firstOrNull { it.isNotBlank() }
             ?: EmptyCover
@@ -211,14 +212,27 @@ object EsjzoneUrls {
             }
     }
 
+    /** The weekly-update template sometimes uses a lazy background element instead of an img tag. */
+    private fun styleBackgroundCandidatesFrom(element: Element?): Sequence<String> {
+        val style = element?.attr("style").orEmpty()
+        val match = Regex("""background-image\s*:\s*url\(\s*['\"]?([^'\")]+)""", RegexOption.IGNORE_CASE)
+            .find(style)
+            ?.groupValues
+            ?.getOrNull(1)
+            ?.trim()
+            .orEmpty()
+        return match.takeIf { it.isNotBlank() }?.let(::sequenceOf) ?: emptySequence()
+    }
+
     private const val COVER_SOURCE_SELECTOR =
-        "img, [data-src], [data-original], [data-lazy-src], [data-original-src]"
+        "img, [data-src], [data-original], [data-lazy-src], [data-original-src], [data-background-image]"
 
     private val IMAGE_URL_ATTRIBUTES = listOf(
         "data-src",
         "data-original",
         "data-lazy-src",
         "data-original-src",
+        "data-background-image",
         "src"
     )
 
@@ -279,6 +293,8 @@ object EsjzoneUrls {
         get() = "$Base/forum"
     val Guestbook: String
         get() = "$Base/guestbook/"
+    val WeeklyUpdate: String
+        get() = "$Base/update/"
     val Tags: String
         get() = "$Base/tags"
 

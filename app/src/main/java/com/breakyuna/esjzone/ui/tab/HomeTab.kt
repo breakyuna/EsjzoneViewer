@@ -2,10 +2,13 @@ package com.breakyuna.esjzone.ui.tab
 
 import androidx.lifecycle.viewModelScope
 
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -21,16 +24,22 @@ import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Tab
+import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.breakyuna.esjzone.R
 import com.breakyuna.esjzone.app.PresentationAccess
@@ -40,8 +49,10 @@ import com.breakyuna.esjzone.network.LocalAuthorization
 import com.breakyuna.esjzone.network.features.getHomeData
 import com.breakyuna.esjzone.network.loadFailureKind
 import com.breakyuna.esjzone.novellibrary.data.HomeData
+import com.breakyuna.esjzone.novellibrary.data.WeeklyUpdateDay
 import com.breakyuna.esjzone.novellibrary.novel.CoveredNovel
 import com.breakyuna.esjzone.ui.component.AppHomeNovelTile
+import com.breakyuna.esjzone.ui.component.AppNovelCover
 import com.breakyuna.esjzone.ui.designsystem.AppSpacing
 import com.breakyuna.esjzone.ui.discovery.DiscoveryEmptyState
 import com.breakyuna.esjzone.ui.discovery.DiscoveryErrorState
@@ -65,6 +76,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
+import java.time.DayOfWeek
 
 object HomeTab : AppTab {
 
@@ -189,6 +201,11 @@ object HomeTab : AppTab {
                                 emptyMessage = emptyCollectionMessage
                             )
                         }
+                        weeklyUpdatesCollection(
+                            days = snapshot.homeData.weeklyUpdates,
+                            adult = adult,
+                            navigator = navigator
+                        )
                     }
                 }
             }
@@ -197,6 +214,136 @@ object HomeTab : AppTab {
         LaunchedEffect(Unit) { model.getHomeData() }
     }
 }
+
+private const val WEEKLY_UPDATE_MAX_ITEMS = 18
+
+private fun LazyListScope.weeklyUpdatesCollection(
+    days: List<WeeklyUpdateDay>,
+    adult: Boolean,
+    navigator: AppNavigator?
+) {
+    if (days.isEmpty()) return
+    item(key = "home-weekly-updates", contentType = "home-weekly-updates") {
+        WeeklyUpdatesSection(days = days, adult = adult, navigator = navigator)
+    }
+}
+
+/** A non-scrolling three-column preview of one of the site's Monday-to-today update tabs. */
+@Composable
+private fun WeeklyUpdatesSection(
+    days: List<WeeklyUpdateDay>,
+    adult: Boolean,
+    navigator: AppNavigator?
+) {
+    val orderedDays = days.sortedByDescending { it.date }
+    val dayKeys = orderedDays.map { it.date.toString() }
+    var selectedDate by rememberSaveable(dayKeys) { mutableStateOf(dayKeys.firstOrNull().orEmpty()) }
+    val selectedIndex = orderedDays.indexOfFirst { it.date.toString() == selectedDate }
+        .takeIf { it >= 0 } ?: 0
+    val selectedDay = orderedDays.getOrNull(selectedIndex) ?: return
+    val novels = selectedDay.novels
+        .asSequence()
+        .filter { adult || !it.isAdult }
+        .distinctBy { it.url.trim().ifBlank { it.name.trim() } }
+        .take(WEEKLY_UPDATE_MAX_ITEMS)
+        .toList()
+
+    Column(
+        modifier = Modifier.fillMaxWidth().padding(top = AppSpacing.md),
+        verticalArrangement = Arrangement.spacedBy(AppSpacing.md)
+    ) {
+        Text(
+            text = stringResource(R.string.home_weekly_updates),
+            style = MaterialTheme.typography.titleLarge
+        )
+        TabRow(selectedTabIndex = selectedIndex) {
+            orderedDays.forEachIndexed { index, day ->
+                Tab(
+                    selected = index == selectedIndex,
+                    onClick = { selectedDate = day.date.toString() },
+                    text = {
+                        Text(
+                            text = weeklyDayLabel(day.date.dayOfWeek),
+                            maxLines = 1,
+                            overflow = TextOverflow.Clip
+                        )
+                    }
+                )
+            }
+        }
+        if (novels.isEmpty()) {
+            DiscoveryEmptyState(
+                title = stringResource(R.string.home_collection_empty_title),
+                message = stringResource(R.string.home_weekly_update_empty)
+            )
+        } else {
+            Column(verticalArrangement = Arrangement.spacedBy(AppSpacing.lg)) {
+                novels.chunked(3).forEach { row ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(AppSpacing.md)
+                    ) {
+                        row.forEach { novel ->
+                            WeeklyUpdateNovelTile(
+                                novel = novel,
+                                onClick = { navigator?.pushIfNotCurrent(NovelPage(novel)) },
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
+                        repeat(3 - row.size) { Spacer(Modifier.weight(1f)) }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun WeeklyUpdateNovelTile(
+    novel: CoveredNovel,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Column(
+        modifier = modifier.clickable(onClick = onClick),
+        verticalArrangement = Arrangement.spacedBy(AppSpacing.xs)
+    ) {
+        AppNovelCover(
+            coverUrl = novel.coverUrl,
+            title = novel.name,
+            isAdult = novel.isAdult,
+            modifier = Modifier.fillMaxWidth().aspectRatio(2f / 3f)
+        )
+        Text(
+            text = novel.name,
+            style = MaterialTheme.typography.labelLarge,
+            color = MaterialTheme.colorScheme.onBackground,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis
+        )
+        Text(
+            text = novel.latestTitle?.trim().takeUnless { it.isNullOrBlank() }
+                ?: stringResource(R.string.home_weekly_update_no_chapter),
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.primary,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis
+        )
+    }
+}
+
+@Composable
+private fun weeklyDayLabel(day: DayOfWeek): String = stringResource(
+    when (day) {
+        DayOfWeek.MONDAY -> R.string.home_weekday_monday
+        DayOfWeek.TUESDAY -> R.string.home_weekday_tuesday
+        DayOfWeek.WEDNESDAY -> R.string.home_weekday_wednesday
+        DayOfWeek.THURSDAY -> R.string.home_weekday_thursday
+        DayOfWeek.FRIDAY -> R.string.home_weekday_friday
+        DayOfWeek.SATURDAY -> R.string.home_weekday_saturday
+        DayOfWeek.SUNDAY -> R.string.home_weekday_sunday
+    }
+)
 
 @Composable
 private fun HomeActions(

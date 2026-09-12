@@ -87,6 +87,8 @@ internal fun parseNovelCard(
     // Keep every block so semantic icon lookup cannot stop at the first one.
     val stats = selector.select(card, NovelCardSelectors.STATS)
     val latestLink = selector.first(card, NovelCardSelectors.LATEST_LINK)
+    val latestText = latestLink?.text()
+        ?: selector.first(card, NovelCardSelectors.LATEST_EPISODE)?.text()
     val authorLink = selector.first(card, NovelCardSelectors.AUTHOR_LINK)
 
     val views = statCount(stats, StatKind.VIEWS, selector)
@@ -103,7 +105,7 @@ internal fun parseNovelCard(
         views = views?.toString(),
         likes = likes?.toString(),
         r18 = r18,
-        latestTitle = latestLink?.text(),
+        latestTitle = latestText,
         latestUrl = latestLink?.attr("href"),
         author = authorLink?.text().takeIf { isList },
         authorUrl = authorLink?.attr("href").takeIf { isList },

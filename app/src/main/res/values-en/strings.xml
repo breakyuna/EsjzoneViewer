@@ -238,6 +238,16 @@
     <string name="home_editor_picks">Popular recommendations</string>
     <string name="home_recommendation_label">Recommended reading</string>
     <string name="home_browse_more">Browse more</string>
+    <string name="home_weekly_updates">Weekly updates</string>
+    <string name="home_weekly_update_empty">There are no visible updates for this day.</string>
+    <string name="home_weekly_update_no_chapter">No update today</string>
+    <string name="home_weekday_monday">Mon</string>
+    <string name="home_weekday_tuesday">Tue</string>
+    <string name="home_weekday_wednesday">Wed</string>
+    <string name="home_weekday_thursday">Thu</string>
+    <string name="home_weekday_friday">Fri</string>
+    <string name="home_weekday_saturday">Sat</string>
+    <string name="home_weekday_sunday">Sun</string>
     <string name="home_collection_empty_title">Nothing here yet</string>
     <string name="home_collection_empty_message">This collection has no visible novels at the moment.</string>
     <string name="home_adult_hidden">Adult and restricted works are hidden by your current preference.</string>
