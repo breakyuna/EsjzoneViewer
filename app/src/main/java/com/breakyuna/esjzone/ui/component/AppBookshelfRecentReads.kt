@@ -117,7 +117,8 @@ fun AppBookshelfRecentReads(
         val overlap = (primaryWidth * OVERLAP_FRACTION).roundToInt()
         val groupWidth = covers.sumOf { it.width } - overlap * (covers.size - 1)
         val groupHeight = covers.maxOf { it.height }
-        val height = constraints.constrainHeight(topGutter + groupHeight + bottomGutter)
+        val height = (topGutter + groupHeight + bottomGutter)
+            .coerceIn(constraints.minHeight, constraints.maxHeight)
         val baseline = height - bottomGutter
         val shelf = measurables.first().measure(
             Constraints.fixed(
