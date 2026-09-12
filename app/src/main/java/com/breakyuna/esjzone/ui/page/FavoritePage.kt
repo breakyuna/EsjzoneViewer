@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
@@ -36,6 +37,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -64,7 +66,9 @@ import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.foundation.layout.calculateStartPadding
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.breakyuna.esjzone.ui.navigation.LocalFloatingNavPadding
@@ -115,6 +119,8 @@ object FavoritePage : AppDestination {
         var selected by remember { mutableStateOf<Set<String>>(emptySet()) }
         var pendingDelete by remember { mutableStateOf<List<BookshelfEntry>>(emptyList()) }
         var showDeleteDialog by remember { mutableStateOf(false) }
+        var lastSyncFailed by rememberSaveable { mutableStateOf(false) }
+        var showSyncStatusMenu by remember { mutableStateOf(false) }
 
         val visible = remember(entries, adult) { entries.filter { adult || !it.isAdult } }
         val shown = remember(visible, downloaded, downloadedOnly, updatesOnly) {
@@ -127,6 +133,8 @@ object FavoritePage : AppDestination {
         }
         val syncing = syncState is FavoritePageModel.State.Syncing
         val deleting = deleteState is FavoritePageModel.DeleteState.Deleting
+        val isSyncFailed = syncState is FavoritePageModel.State.Failed || (lastSyncFailed && syncState !is FavoritePageModel.State.Completed)
+        val indicatorColor = if (isSyncFailed) Color(0xFF9E9E9E) else Color(0xFF4CAF50)
         val syncAddedMessage = stringResource(R.string.bookshelf_sync_added)
         val syncDoneMessage = stringResource(R.string.bookshelf_sync_done)
         val networkErrorMessage = stringResource(R.string.load_network_error)
@@ -162,16 +170,22 @@ object FavoritePage : AppDestination {
         LaunchedEffect(visibleKeys) { selected = selected.intersect(visibleKeys) }
         LaunchedEffect(syncState) {
             when (val state = syncState) {
-                is FavoritePageModel.State.Completed -> snackbar.showSnackbar(
-                    if (state.result.added > 0) syncAddedMessage.format(state.result.added)
-                    else syncDoneMessage
-                )
-                is FavoritePageModel.State.Failed -> snackbar.showSnackbar(
-                    when (state.failure) {
-                        LoadFailureKind.NETWORK -> networkErrorMessage
-                        else -> syncFailedMessage
-                    }
-                )
+                is FavoritePageModel.State.Completed -> {
+                    lastSyncFailed = false
+                    snackbar.showSnackbar(
+                        if (state.result.added > 0) syncAddedMessage.format(state.result.added)
+                        else syncDoneMessage
+                    )
+                }
+                is FavoritePageModel.State.Failed -> {
+                    lastSyncFailed = true
+                    snackbar.showSnackbar(
+                        when (state.failure) {
+                            LoadFailureKind.NETWORK -> networkErrorMessage
+                            else -> syncFailedMessage
+                        }
+                    )
+                }
                 else -> Unit
             }
         }
@@ -279,12 +293,97 @@ object FavoritePage : AppDestination {
                     item(key = "bookshelf_collection_header", contentType = "bookshelf_header") {
                         Column(verticalArrangement = Arrangement.spacedBy(AppSpacing.sm)) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text(
-                                    stringResource(R.string.bookshelf_count, visible.size),
-                                    style = AppTypography.bodyMedium,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.weight(1f)
-                                )
+                                Row(
+                                    modifier = Modifier.weight(1f),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(AppSpacing.xs)
+                                ) {
+                                    Text(
+                                        stringResource(R.string.bookshelf_count, visible.size),
+                                        style = AppTypography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                    Box {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(AppSpacing.xl)
+                                                .clip(CircleShape)
+                                                .clickable(
+                                                    onClickLabel = stringResource(
+                                                        if (isSyncFailed) R.string.bookshelf_sync_status_failed
+                                                        else R.string.bookshelf_sync_status_success
+                                                    )
+                                                ) {
+                                                    showSyncStatusMenu = true
+                                                },
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Surface(
+                                                modifier = Modifier.size(AppSpacing.sm),
+                                                shape = CircleShape,
+                                                color = indicatorColor
+                                            ) {}
+                                        }
+                                        DropdownMenu(
+                                            expanded = showSyncStatusMenu,
+                                            onDismissRequest = { showSyncStatusMenu = false },
+                                            modifier = Modifier.widthIn(min = 200.dp, max = 280.dp)
+                                        ) {
+                                            Column(
+                                                modifier = Modifier.padding(horizontal = AppSpacing.lg, vertical = AppSpacing.md),
+                                                verticalArrangement = Arrangement.spacedBy(AppSpacing.sm)
+                                            ) {
+                                                Row(
+                                                    verticalAlignment = Alignment.CenterVertically,
+                                                    horizontalArrangement = Arrangement.spacedBy(AppSpacing.sm)
+                                                ) {
+                                                    Surface(
+                                                        modifier = Modifier.size(AppSpacing.sm),
+                                                        shape = CircleShape,
+                                                        color = indicatorColor
+                                                    ) {}
+                                                    Text(
+                                                        text = stringResource(
+                                                            when {
+                                                                syncing -> R.string.bookshelf_sync_running_short
+                                                                isSyncFailed -> R.string.bookshelf_sync_status_failed
+                                                                else -> R.string.bookshelf_sync_status_success
+                                                            }
+                                                        ),
+                                                        style = AppTypography.titleSmall,
+                                                        fontWeight = FontWeight.Bold
+                                                    )
+                                                }
+                                                Text(
+                                                    text = stringResource(
+                                                        when {
+                                                            syncing -> R.string.bookshelf_sync_running_short
+                                                            isSyncFailed -> R.string.bookshelf_sync_failed
+                                                            else -> R.string.bookshelf_sync_done
+                                                        }
+                                                    ),
+                                                    style = AppTypography.bodySmall,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                )
+                                                if (isSyncFailed && !syncing) {
+                                                    Row(
+                                                        modifier = Modifier.fillMaxWidth(),
+                                                        horizontalArrangement = Arrangement.End
+                                                    ) {
+                                                        TextButton(
+                                                            onClick = {
+                                                                showSyncStatusMenu = false
+                                                                model.sync()
+                                                            }
+                                                        ) {
+                                                            Text(stringResource(R.string.retry))
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
                                 FilterChip(
                                     selected = downloadedOnly,
                                     onClick = { downloadedOnly = !downloadedOnly },
@@ -295,13 +394,6 @@ object FavoritePage : AppDestination {
                                     onClick = { updatesOnly = !updatesOnly },
                                     label = { Text("有更新") },
                                     modifier = Modifier.padding(start = AppSpacing.sm)
-                                )
-                            }
-                            if (syncState is FavoritePageModel.State.Failed && shown.isNotEmpty()) {
-                                Text(
-                                    stringResource(R.string.bookshelf_sync_failed),
-                                    style = AppTypography.bodySmall,
-                                    color = MaterialTheme.colorScheme.error
                                 )
                             }
                             if (!editing && recentReads.isNotEmpty()) {

@@ -107,6 +107,8 @@
     <string name="bookshelf_sync_added">新增 %1$d 本收藏</string>
     <string name="bookshelf_sync_failed">同步失败，当前显示本地书架</string>
     <string name="bookshelf_sync_running_short">同步中</string>
+    <string name="bookshelf_sync_status_success">同步成功</string>
+    <string name="bookshelf_sync_status_failed">同步失败</string>
     <string name="description">作品简介</string>
     <string name="novel_type">类型</string>
     <string name="novel_source">Web 生肉</string>

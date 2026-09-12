@@ -107,6 +107,8 @@
     <string name="bookshelf_sync_added">Added %1$d favorite(s)</string>
     <string name="bookshelf_sync_failed">Sync failed; showing local bookshelf</string>
     <string name="bookshelf_sync_running_short">Syncing</string>
+    <string name="bookshelf_sync_status_success">Sync succeeded</string>
+    <string name="bookshelf_sync_status_failed">Sync failed</string>
     <string name="description">Description</string>
     <string name="novel_type">Type</string>
     <string name="novel_source">Web source</string>
