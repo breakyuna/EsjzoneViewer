@@ -537,7 +537,7 @@ private fun NovelDetailContent(
                     }
                     Row(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        horizontalArrangement = Arrangement.spacedBy(AppSpacing.sm)
                     ) {
                         NovelDownloadActions(
                             novel = detailed,
@@ -1119,7 +1119,7 @@ private fun NovelDownloadActions(
 
     OutlinedButton(
         onClick = { showSheet = true },
-        modifier = modifier.heightIn(min = 54.dp),
+        modifier = modifier.heightIn(min = AppTouchTarget.minimum),
         shape = AppShapes.standard,
         contentPadding = PaddingValues(horizontal = AppSpacing.sm, vertical = AppSpacing.sm)
     ) {
