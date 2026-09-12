@@ -350,7 +350,7 @@ object FavoritePage : AppDestination {
                                                                 else -> R.string.bookshelf_sync_status_success
                                                             }
                                                         ),
-                                                        style = AppTypography.titleSmall,
+                                                        style = AppTypography.labelLarge,
                                                         fontWeight = FontWeight.Bold
                                                     )
                                                 }
