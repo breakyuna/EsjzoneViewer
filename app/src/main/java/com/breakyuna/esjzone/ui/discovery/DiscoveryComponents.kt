@@ -7,6 +7,8 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -19,6 +21,7 @@ import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.ArrowForward
 import androidx.compose.material.icons.filled.AutoStories
 import androidx.compose.material.icons.filled.Category
+import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.Card
@@ -44,10 +47,18 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onKeyEvent
+import androidx.compose.ui.input.key.type
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.res.stringResource
@@ -266,9 +277,19 @@ fun DiscoverySearchField(
     onSearch: () -> Unit,
     onClear: () -> Unit,
     modifier: Modifier = Modifier,
-    placeholder: String = androidx.compose.ui.res.stringResource(R.string.search_placeholder)
+    placeholder: String = androidx.compose.ui.res.stringResource(R.string.search_placeholder),
+    leadingIcon: @Composable (() -> Unit)? = null
 ) {
     val accessibilityLabel = stringResource(R.string.search_placeholder)
+    val keyboardController = LocalSoftwareKeyboardController.current
+    val focusManager = LocalFocusManager.current
+    val submitSearch = {
+        if (value.isNotBlank()) {
+            keyboardController?.hide()
+            focusManager.clearFocus()
+            onSearch()
+        }
+    }
     OutlinedTextField(
         value = value,
         onValueChange = onValueChange,
@@ -276,18 +297,39 @@ fun DiscoverySearchField(
             .fillMaxWidth()
             .semantics {
                 contentDescription = accessibilityLabel
+            }
+            .onKeyEvent { event ->
+                if ((event.key == Key.Enter || event.key == Key.NumPadEnter) && event.type == KeyEventType.KeyDown) {
+                    submitSearch()
+                    true
+                } else {
+                    false
+                }
             },
         singleLine = true,
-        leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
+        leadingIcon = leadingIcon,
         trailingIcon = {
-            Row {
+            Row(verticalAlignment = Alignment.CenterVertically) {
                 if (value.isNotEmpty()) {
-                    TextButton(onClick = onClear) { Text(androidx.compose.ui.res.stringResource(R.string.clear)) }
+                    IconButton(onClick = onClear) {
+                        Icon(
+                            imageVector = Icons.Filled.Clear,
+                            contentDescription = stringResource(R.string.clear)
+                        )
+                    }
                 }
-                TextButton(onClick = onSearch, enabled = value.isNotBlank()) { Text(androidx.compose.ui.res.stringResource(R.string.search_action)) }
+                IconButton(onClick = submitSearch, enabled = value.isNotBlank()) {
+                    Icon(
+                        imageVector = Icons.Filled.Search,
+                        contentDescription = stringResource(R.string.search_action),
+                        tint = if (value.isNotBlank()) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.38f)
+                    )
+                }
             }
         },
         placeholder = { Text(placeholder) },
+        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+        keyboardActions = KeyboardActions(onSearch = { submitSearch() }),
         shape = AppShapes.standard
     )
 }

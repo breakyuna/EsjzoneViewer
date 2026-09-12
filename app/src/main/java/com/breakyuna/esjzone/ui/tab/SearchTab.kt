@@ -78,7 +78,11 @@ object SearchTab : AppTab {
         fun submit(value: String) {
             value.trim().takeIf { it.isNotBlank() }?.let {
                 query = it
-                activeKeyword = it
+                if (activeKeyword == it) {
+                    searchModel.search(it, category, sort)
+                } else {
+                    activeKeyword = it
+                }
                 historyModel.save(it)
             }
         }

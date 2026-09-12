@@ -107,7 +107,16 @@ class SearchPage(private val keyword: String) : AppDestination {
                 DiscoverySearchField(
                     value = query,
                     onValueChange = { query = it },
-                    onSearch = { query.trim().takeIf { it.isNotBlank() }?.let { activeQuery = it } },
+                    onSearch = {
+                        val trimmed = query.trim()
+                        if (trimmed.isNotBlank()) {
+                            if (activeQuery == trimmed) {
+                                model.search(trimmed, category, sort)
+                            } else {
+                                activeQuery = trimmed
+                            }
+                        }
+                    },
                     onClear = { query = "" },
                     modifier = Modifier.padding(horizontal = 16.dp)
                 )
@@ -151,19 +160,6 @@ fun DiscoverySearchResults(
         modifier = modifier,
         contentPadding = PaddingValues(horizontal = 16.dp, vertical = 6.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)
-    ) {
-        item(key = "search-results-heading", contentType = "heading") {
-            Column(modifier = Modifier.fillMaxWidth()) {
-                Text(stringResource(R.string.search_result), style = MaterialTheme.typography.titleLarge)
-                if (keyword.isNotBlank()) {
-                    Text(
-                        text = stringResource(R.string.search_results_for, keyword),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            }
-        }
         item(key = "search-filters", contentType = "filters") {
             SearchFilters(
                 category = category,
