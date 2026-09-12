@@ -117,6 +117,7 @@
 | quoted_content_text | string/null | 回复正文前 blockquote 的引用文本 |
 | page_group | integer/null | 客户端固定每 15 条计算的页码 |
 | is_visible_initially | boolean | 首屏显隐状态 |
+| reply_token | string/null | `.forum_reply[data-comment]` 原样读取；格式为 `{commentId}-{authorUserId}`，回复提交时直接作为 `reply` 字段 |
 
 评论分页是客户端固定每页 15 条的本地分页，不代表服务器 page API；评论区 UI 统一提供首页、上一页、下一页和末页操作。
 

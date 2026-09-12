@@ -120,7 +120,7 @@
 | 头像 .user-info | 当前 /my/profile | GET | upfile | 表单属性 Observed；实际上传流程 UNKNOWN |
 | 章节举报 #forumReport | 当前章节 URL | GET | category、rid、data、memo | 表单属性 Observed，未提交 |
 | 留言举报 #forumReport | /guestbook/ | GET | category、rid、memo | 表单属性 Observed，未提交 |
-| 章节评论 .commentEditor | 当前章节 URL | POST | content、data=forum、forum_id=章节 post id | 表单与页面脚本 Observed；客户端实现，未提交 |
+| 论坛主题 / 章节评论 .commentEditor | `/inc/forum_reply.php` | POST | `content`、`data=forum`、`forum_id=主题/章节 post id`；回复增加 `reply={commentId}-{authorUserId}` | Network confirmed；提交前必须先向当前页面 POST `plxf=getAuthToken`，将 `<JinJing>` token 写入 `authorization` Header |
 | 详情评论 .commentEditor | 当前详情 URL | POST | content、data=books、forum_id=0 | 表单与页面脚本 Observed；客户端实现，未提交 |
 | 留言板 .gbEditor | /guestbook/ | POST | content | 表单属性 Observed；客户端实现，未提交 |
 | 新建小说 #createBook | 当前页面 | POST | 仅看到按钮；其余控件可能由模态内容提供 | 表单属性 Observed，未提交 |
@@ -133,7 +133,7 @@
 | 项目 | 结论 |
 |---|---|
 | Cookie | 必须保留浏览器会话 Cookie；具体名称和值未读取，UNKNOWN / NOT VERIFIED |
-| authorization | 仅在已观察的两个内联 AJAX 中出现，由 getAuthToken() 运行时回调提供 |
+| authorization | 由当前页面 `plxf=getAuthToken` 返回的 `<JinJing>` token 提供；论坛/章节评论每次提交前重新获取，并立即用于 `/inc/forum_reply.php` |
 | CSRF hidden field | 在已检查的登录、资料、评论、留言表单中没有观察到明确 CSRF 字段；是否由 Cookie/脚本承担，UNKNOWN / NOT VERIFIED |
 | Referer、Origin、User-Agent | 浏览器会自动管理，但本次未从网络层确认是否由服务端校验 |
 | Content-Type | 表单提交大概率为 URL-encoded；动态 JSON 结果由 dataType:'json' 指定，实际请求头未确认 |
@@ -141,7 +141,7 @@
 ## 6. 未观察到或不应猜测的接口
 
 - 收藏新增/取消接口：当前按钮已是“已收藏”，未点击；逻辑位于被云浏览器拦截的 modifyDetail.js?v=204，UNKNOWN / NOT VERIFIED。
-- 评论提交、留言提交、举报提交、资料更新、工单创建、工单回复：只有表单目标被观察，真实服务端响应未验证。
+- 留言提交、举报提交、资料更新、工单创建、工单回复：只有表单目标被观察，真实服务端响应未验证。
 - 其他会员页面 Bootstrap Table 的实际请求参数和返回字段仍未逐项通过网络面板确认，不应与论坛子板块端点混用。
 - 章节正文、评论、TOC：当前均直接出现在 HTML 中，没有证据表明需要额外 JSON API。
 
@@ -151,3 +151,10 @@
 2. 对所有写操作设置显式确认开关，默认禁用。
 3. API 错误解析不能假定固定 HTTP 状态码或 JSON 字段，遇到未验证响应应保留原始响应摘要并返回 UNKNOWN。
 4. 不在日志中输出 Cookie、授权值、密码或完整私讯 HTML。
+
+### 7.1 论坛与章节评论响应
+
+- 先 POST 当前论坛主题或章节页面，Body 为 `plxf=getAuthToken`；从 `<JinJing>...</JinJing>` 提取动态 token。
+- 再 POST `/inc/forum_reply.php`，携带同一 CookieJar、`authorization: {token}`、`X-Requested-With: XMLHttpRequest`、`Origin: https://www.esjzone.cc` 与 URL-encoded form。
+- HTTP 2xx 不代表写入成功；解析 JSON `status`。`status=200` 成功，其他状态直接展示非空 `msg`。实测 `status=214`、`msg=每日留言次數已超過限制！` 为当日次数上限。
+- 成功响应可带 `anchor="#comment-{commentId}"`，用于定位新评论。业务失败不得刷新或假装评论已发送。

@@ -65,6 +65,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -75,6 +76,7 @@ import com.breakyuna.esjzone.network.EsjzoneUrls
 import com.breakyuna.esjzone.network.LoadFailureKind
 import com.breakyuna.esjzone.network.loadFailureKind
 import com.breakyuna.esjzone.network.features.CommentSubmissionNotVerifiedException
+import com.breakyuna.esjzone.network.features.ForumReplyBusinessException
 import com.breakyuna.esjzone.network.features.getPageComments
 import com.breakyuna.esjzone.network.features.submitForumComment
 import com.breakyuna.esjzone.novellibrary.novel.COMMENT_PAGE_SIZE
@@ -642,7 +644,7 @@ private fun CommentComposer(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = stringResource(id = it.messageResource),
+                        text = it.message(context = LocalContext.current),
                         style = AppTypography.bodySmall,
                         color = MaterialTheme.colorScheme.error,
                         modifier = Modifier
@@ -949,6 +951,10 @@ internal class CommentPageModel(
                 mutableState.value = CommunityState.Result(error.comments)
                 submitError.value = CommentSubmitError.NOT_VERIFIED
                 AppLogger.w("CommentPageModel", "Comment write completed but was not verified")
+            } catch (error: ForumReplyBusinessException) {
+                // ESJ returns HTTP 200 for business failures such as the daily
+                // posting limit. Preserve the server message and leave the list intact.
+                submitError.value = CommentSubmitError.Server(error.serverMessage)
             } catch (error: Exception) {
                 submitError.value = CommentSubmitError.FAILED
                 AppLogger.e("CommentPageModel", "Failed to submit comment", error)
@@ -959,10 +965,18 @@ internal class CommentPageModel(
     }
 }
 
-internal enum class CommentSubmitError(val messageResource: Int) {
-    EMPTY(R.string.comment_empty_error),
-    FAILED(R.string.comment_submit_failed),
-    NOT_VERIFIED(R.string.comment_submit_unverified)
+internal sealed class CommentSubmitError {
+    data object EMPTY : CommentSubmitError()
+    data object FAILED : CommentSubmitError()
+    data object NOT_VERIFIED : CommentSubmitError()
+    data class Server(val serverMessage: String) : CommentSubmitError()
+
+    fun message(context: android.content.Context): String = when (this) {
+        EMPTY -> context.getString(R.string.comment_empty_error)
+        FAILED -> context.getString(R.string.comment_submit_failed)
+        NOT_VERIFIED -> context.getString(R.string.comment_submit_unverified)
+        is Server -> serverMessage.ifBlank { context.getString(R.string.comment_submit_failed) }
+    }
 }
 
 private fun <T> List<T>.toCommunityState(): CommunityState<List<T>> =
