@@ -45,7 +45,11 @@ import org.jsoup.nodes.Document
 import org.jsoup.nodes.Element
 
 @Composable
-fun Description(description: NovelDescription, modifier: Modifier = Modifier) {
+fun Description(
+    description: NovelDescription,
+    modifier: Modifier = Modifier,
+    showHeader: Boolean = true
+) {
     val textMeasurer = rememberTextMeasurer()
     val textStyle = LocalTextStyle.current
     val density = LocalDensity.current
@@ -60,14 +64,16 @@ fun Description(description: NovelDescription, modifier: Modifier = Modifier) {
         Column(
             modifier = Modifier.padding(AppSpacing.lg)
         ) {
-            Text(
-                text = stringResource(id = R.string.description),
-                style = AppTypography.titleMedium.copy(
-                    fontWeight = FontWeight.Bold
-                ),
-                color = MaterialTheme.colorScheme.primary
-            )
-            Spacer(modifier = Modifier.height(AppSpacing.sm))
+            if (showHeader) {
+                Text(
+                    text = stringResource(id = R.string.description),
+                    style = AppTypography.titleMedium.copy(
+                        fontWeight = FontWeight.Bold
+                    ),
+                    color = MaterialTheme.colorScheme.primary
+                )
+                Spacer(modifier = Modifier.height(AppSpacing.sm))
+            }
             for (component in description.components) {
                 if (component is TextComponent) {
                     val (str, inlines) = component.toInlineAnnotatedString(

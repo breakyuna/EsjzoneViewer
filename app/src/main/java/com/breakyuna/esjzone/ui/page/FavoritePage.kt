@@ -476,7 +476,7 @@ private fun ShelfListItem(entry: BookshelfEntry, enabled: Boolean, onClick: () -
         Modifier.fillMaxWidth().clickable(enabled = enabled, onClick = onClick).padding(vertical = AppSpacing.xs),
         horizontalArrangement = Arrangement.spacedBy(AppSpacing.md), verticalAlignment = Alignment.CenterVertically
     ) {
-        Box(Modifier.size(width = 76.dp, height = 106.dp)) {
+        Box(Modifier.size(width = 100.dp, height = 140.dp)) {
             AppNovelCover(entry.coverUrl, entry.title, Modifier.fillMaxSize().clip(AppShapes.standard))
             if (entry.hasUpdate) Surface(Modifier.align(Alignment.TopEnd).padding(AppSpacing.xs), CircleShape, color = androidx.compose.ui.graphics.Color(0xFF4CAF50)) { Box(Modifier.size(10.dp)) }
         }

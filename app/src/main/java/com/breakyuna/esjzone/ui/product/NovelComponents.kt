@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -80,7 +81,7 @@ data class NovelMetricModel(val label: String, val value: String)
 @Composable
 fun NovelMetric(metric: NovelMetricModel, modifier: Modifier = Modifier) {
     Column(modifier = modifier, horizontalAlignment = Alignment.CenterHorizontally) {
-        Text(metric.value, style = AppTypography.labelLarge, maxLines = 1)
+        Text(metric.value, style = AppTypography.labelLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
         Text(metric.label, style = AppTypography.bodySmall, color = appStateColors().contentMuted, maxLines = 1)
     }
 }
@@ -97,6 +98,7 @@ data class NovelMetadataModel(
 fun NovelMetadata(
     metadata: NovelMetadataModel,
     modifier: Modifier = Modifier,
+    showMetrics: Boolean = true,
     onTagClick: ((NovelTagModel) -> Unit)? = null
 ) {
     Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(AppSpacing.sm)) {
@@ -114,8 +116,11 @@ fun NovelMetadata(
                 metadata.tags.forEach { tag -> NovelTag(tag, onClick = onTagClick?.let { callback -> { callback(tag) } }) }
             }
         }
-        if (metadata.metrics.isNotEmpty()) {
-            Row(horizontalArrangement = Arrangement.spacedBy(AppSpacing.lg)) {
+        if (showMetrics && metadata.metrics.isNotEmpty()) {
+            Row(
+                modifier = Modifier.horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(AppSpacing.md)
+            ) {
                 metadata.metrics.forEach { NovelMetric(it) }
             }
         }
@@ -168,11 +173,30 @@ fun NovelHero(
     Surface(modifier = modifier.fillMaxWidth(), shape = AppShapes.prominent, tonalElevation = 2.dp) {
         Row(modifier = Modifier.padding(AppSpacing.lg), horizontalArrangement = Arrangement.spacedBy(AppSpacing.lg)) {
             NovelCover(novel.cover, Modifier.width(132.dp))
-            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(AppSpacing.sm)) {
-                Text(novel.title, style = AppTypography.displayMedium, maxLines = 3, overflow = TextOverflow.Ellipsis)
-                NovelMetadata(novel.metadata)
-                if (actionLabel != null && onAction != null) {
-                    androidx.compose.material3.TextButton(onClick = onAction) { Text(actionLabel) }
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .heightIn(min = 188.dp),
+                verticalArrangement = Arrangement.SpaceBetween
+            ) {
+                Column(verticalArrangement = Arrangement.spacedBy(AppSpacing.xs)) {
+                    Text(novel.title, style = AppTypography.displayMedium, maxLines = 3, overflow = TextOverflow.Ellipsis)
+                    NovelMetadata(novel.metadata, showMetrics = false)
+                }
+                if (novel.metadata.metrics.isNotEmpty() || (actionLabel != null && onAction != null)) {
+                    Column(verticalArrangement = Arrangement.spacedBy(AppSpacing.xs)) {
+                        if (novel.metadata.metrics.isNotEmpty()) {
+                            Row(
+                                modifier = Modifier.horizontalScroll(rememberScrollState()),
+                                horizontalArrangement = Arrangement.spacedBy(AppSpacing.md)
+                            ) {
+                                novel.metadata.metrics.forEach { NovelMetric(it) }
+                            }
+                        }
+                        if (actionLabel != null && onAction != null) {
+                            androidx.compose.material3.TextButton(onClick = onAction) { Text(actionLabel) }
+                        }
+                    }
                 }
             }
         }

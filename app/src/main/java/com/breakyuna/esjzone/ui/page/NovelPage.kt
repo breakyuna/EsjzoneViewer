@@ -9,6 +9,7 @@ import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -118,12 +119,14 @@ import com.breakyuna.esjzone.ui.designsystem.AppSpacing
 import com.breakyuna.esjzone.ui.designsystem.AppTypography
 import com.breakyuna.esjzone.ui.designsystem.AppTouchTarget
 import com.breakyuna.esjzone.ui.designsystem.appStateColors
+import com.breakyuna.esjzone.ui.designsystem.appSurfaceColors
 import com.breakyuna.esjzone.ui.designsystem.AppAdaptiveMetrics
 import com.breakyuna.esjzone.ui.designsystem.AppWindowSizeClass
 import com.breakyuna.esjzone.ui.designsystem.rememberAppAdaptiveMetrics
 import com.breakyuna.esjzone.ui.product.NovelCoverModel
 import com.breakyuna.esjzone.ui.product.NovelHero
 import com.breakyuna.esjzone.ui.product.NovelMetadataModel
+import com.breakyuna.esjzone.ui.product.NovelMetricModel
 import com.breakyuna.esjzone.ui.product.NovelTag
 import com.breakyuna.esjzone.ui.product.NovelTagModel
 import com.breakyuna.esjzone.ui.product.LoadingSkeleton
@@ -393,8 +396,8 @@ private fun NovelDetailContent(
     val orderedChapters = detailed.chapterList.orderedChapters
     val targetChapter = historyState.value ?: detailed.chapterList.toRead
     val metrics = rememberAppAdaptiveMetrics()
-    val descriptionPreview = remember(detailed.description) {
-        detailed.description.preview(360)
+    var hasVisualOverflow by remember(detailed.description) {
+        mutableStateOf(false)
     }
     val descriptionText = remember(detailed.description) {
         detailed.description.preview(Int.MAX_VALUE)
@@ -402,8 +405,12 @@ private fun NovelDetailContent(
     val hasRichDescription = remember(detailed.description) {
         detailed.description.components.any { it !is TextComponent }
     }
-    val showDescriptionToggle = descriptionText != descriptionPreview ||
-        (hasRichDescription && descriptionPreview.isNotBlank())
+    val isExpandable = hasRichDescription ||
+        detailed.description.components.size > 1 ||
+        descriptionText.length > 120 ||
+        hasVisualOverflow
+    val isExpanded = descriptionExpanded || !isExpandable
+    val showDescriptionToggle = isExpandable
     val previewChapters = remember(detailed.chapterList, targetChapter) {
         buildList {
             targetChapter?.let(::add)
@@ -443,10 +450,6 @@ private fun NovelDetailContent(
         ) {
             item(key = "detail-hero", contentType = "novel-hero") {
                 RebuiltNovelHero(detailed, metrics)
-            }
-
-            item(key = "detail-stats", contentType = "novel-stats") {
-                RebuiltNovelStats(detailed)
             }
 
             if (detailed.tags.isNotEmpty()) {
@@ -578,26 +581,54 @@ private fun NovelDetailContent(
                 }
             }
 
-            if (descriptionPreview.isNotBlank() || detailed.description.components.isNotEmpty()) {
+            if (descriptionText.isNotBlank() || detailed.description.components.isNotEmpty()) {
                 item(key = "detail-description", contentType = "novel-description") {
                     Column(
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         RebuiltSectionHeading(title = stringResource(R.string.description))
                         Spacer(modifier = Modifier.height(AppSpacing.sm))
-                        if (descriptionExpanded || descriptionPreview.isBlank()) {
+                        if (isExpanded || descriptionText.isBlank()) {
                             Description(
                                 description = detailed.description,
+                                showHeader = false,
                                 modifier = Modifier.fillMaxWidth()
                             )
-                        } else if (descriptionPreview.isNotBlank()) {
-                            Text(
-                                text = descriptionPreview,
-                                style = AppTypography.bodyMedium,
-                                color = appStateColors().contentMuted,
-                                maxLines = 5,
-                                overflow = TextOverflow.Ellipsis
-                            )
+                        } else {
+                            Card(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .then(
+                                        if (showDescriptionToggle) {
+                                            Modifier.clickable { onDescriptionExpandedChange(true) }
+                                        } else {
+                                            Modifier
+                                        }
+                                    ),
+                                shape = AppShapes.standard,
+                                colors = CardDefaults.cardColors(
+                                    containerColor = appSurfaceColors().subtle
+                                )
+                            ) {
+                                Column(
+                                    modifier = Modifier.padding(AppSpacing.lg)
+                                ) {
+                                    Text(
+                                        text = descriptionText,
+                                        style = AppTypography.bodyMedium.copy(
+                                            lineHeight = 22.sp
+                                        ),
+                                        color = MaterialTheme.colorScheme.onSurface,
+                                        maxLines = 5,
+                                        overflow = TextOverflow.Ellipsis,
+                                        onTextLayout = { result ->
+                                            if (result.hasVisualOverflow) {
+                                                hasVisualOverflow = true
+                                            }
+                                        }
+                                    )
+                                }
+                            }
                         }
                         if (showDescriptionToggle) {
                             TextButton(
@@ -606,9 +637,15 @@ private fun NovelDetailContent(
                                 },
                                 modifier = Modifier.align(Alignment.End)
                             ) {
+                                Icon(
+                                    imageVector = if (isExpanded) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
                                 Text(
                                     text = stringResource(
-                                        if (descriptionExpanded) {
+                                        if (isExpanded) {
                                             R.string.novel_description_collapse
                                         } else {
                                             R.string.novel_description_expand
@@ -758,6 +795,26 @@ private fun RebuiltNovelHero(novel: DetailedNovel, metrics: AppAdaptiveMetrics) 
         novel.type.trim().takeIf(String::isNotBlank),
         novel.updatedAt?.trim()?.takeIf(String::isNotBlank)
     ).joinToString(" · ").takeIf(String::isNotBlank)
+    val stats = listOfNotNull(
+        novel.views.takeIf { it > 0 }?.let {
+            NovelMetricModel(
+                label = stringResource(R.string.novel_views_label),
+                value = it.toString()
+            )
+        },
+        novel.likes.takeIf { it > 0 }?.let {
+            NovelMetricModel(
+                label = stringResource(R.string.novel_likes_label),
+                value = it.toString()
+            )
+        },
+        novel.words.takeIf { it > 0 }?.let {
+            NovelMetricModel(
+                label = stringResource(R.string.novel_words_label),
+                value = it.toString()
+            )
+        }
+    )
     NovelHero(
         novel = com.breakyuna.esjzone.ui.product.NovelCardModel(
             id = novel.id().ifBlank { novel.url },
@@ -774,7 +831,7 @@ private fun RebuiltNovelHero(novel: DetailedNovel, metrics: AppAdaptiveMetrics) 
                 tags = listOfNotNull(
                     adultLabel.takeIf { novel.isAdult }?.let { NovelTagModel(it) }
                 ),
-                metrics = emptyList()
+                metrics = stats
             )
         ),
         modifier = Modifier
@@ -829,35 +886,6 @@ private fun RebuiltDetailTopBar(
             containerColor = MaterialTheme.colorScheme.surface
         )
     )
-}
-
-@Composable
-private fun RebuiltNovelStats(novel: DetailedNovel) {
-    val stats = listOfNotNull(
-        novel.views.takeIf { it > 0 }?.let { stringResource(R.string.novel_views_label) to it.toString() },
-        novel.likes.takeIf { it > 0 }?.let { stringResource(R.string.novel_likes_label) to it.toString() },
-        novel.words.takeIf { it > 0 }?.let { stringResource(R.string.novel_words_label) to it.toString() }
-    )
-    if (stats.isEmpty()) return
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = AppShapes.standard,
-        colors = CardDefaults.cardColors(containerColor = appStateColors().containerRaised)
-    ) {
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(AppSpacing.md),
-            horizontalArrangement = Arrangement.SpaceEvenly
-        ) {
-            stats.forEach { (label, value) ->
-                key("novel-stat:$label") {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text(value, style = AppTypography.titleMedium)
-                        Text(label, style = AppTypography.bodySmall, color = appStateColors().contentMuted)
-                    }
-                }
-            }
-        }
-    }
 }
 
 @Composable
