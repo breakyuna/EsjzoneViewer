@@ -75,9 +75,10 @@ import com.breakyuna.esjzone.ui.navigation.AppStateViewModel
 import com.breakyuna.esjzone.ui.navigation.ChapterStateHolder
 import com.breakyuna.esjzone.ui.navigation.LocalBaseNavigator
 import com.breakyuna.esjzone.ui.navigation.rememberAppViewModel
+import com.breakyuna.esjzone.ui.designsystem.AppShapes
+import com.breakyuna.esjzone.ui.designsystem.AppShimmerPlaceholder
 import com.breakyuna.esjzone.ui.product.EmptyState
 import com.breakyuna.esjzone.ui.product.ErrorState
-import com.breakyuna.esjzone.ui.product.LoadingSkeleton
 import com.breakyuna.esjzone.ui.product.OfflineState
 import com.breakyuna.esjzone.util.AppLogger
 import kotlin.math.roundToInt
@@ -169,7 +170,7 @@ private fun LocalHistoryContent(
     navigator: com.breakyuna.esjzone.ui.navigation.AppNavigator?
 ) {
     when (val current = state) {
-        LocalHistoryPageModel.State.Loading -> LoadingSkeleton(Modifier.fillMaxWidth().padding(AppSpacing.lg), stringResource(R.string.history_local))
+        LocalHistoryPageModel.State.Loading -> HistoryListSkeleton()
         is LocalHistoryPageModel.State.Error -> ErrorState(
             title = stringResource(R.string.load_client_error),
             message = stringResource(R.string.history_local_load_failed),
@@ -265,7 +266,7 @@ private fun CloudHistoryContent(
     navigator: com.breakyuna.esjzone.ui.navigation.AppNavigator?
 ) {
     when (state) {
-        HistoryPageModel.State.Loading -> LoadingSkeleton(Modifier.fillMaxWidth().padding(AppSpacing.lg), stringResource(R.string.history_cloud))
+        HistoryPageModel.State.Loading -> HistoryListSkeleton()
         is HistoryPageModel.State.Error -> if (state.failure == LoadFailureKind.NETWORK) {
             OfflineState(
                 title = stringResource(R.string.load_network_error),
@@ -309,7 +310,7 @@ private fun CloudHistoryContent(
                                     onRetry = { detailLoader.retry(history) },
                                     modifier = Modifier.fillMaxWidth()
                                 )
-                            } else LoadingSkeleton(Modifier.fillMaxWidth(), history.name)
+                            } else HistoryItemSkeleton()
                         } else if (PresentationAccess.settings.adult.value || !detail.isAdult) {
                             CloudHistoryCard(
                                 history = history,
@@ -362,6 +363,64 @@ private fun CloudHistoryCard(
             Text(history.chapter.name, style = AppTypography.bodyMedium, color = MaterialTheme.colorScheme.primary, maxLines = 2, overflow = TextOverflow.Ellipsis)
             androidx.compose.material3.LinearProgressIndicator(progress = progress, modifier = Modifier.fillMaxWidth())
             Text(position, style = AppTypography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+}
+
+@Composable
+private fun HistoryListSkeleton(modifier: Modifier = Modifier) {
+    val navPadding = LocalFloatingNavPadding.current
+    val layoutDirection = LocalLayoutDirection.current
+    LazyColumn(
+        modifier = modifier.fillMaxSize(),
+        contentPadding = PaddingValues(
+            start = AppSpacing.lg + navPadding.calculateStartPadding(layoutDirection),
+            end = AppSpacing.lg,
+            top = AppSpacing.lg,
+            bottom = AppSpacing.lg + navPadding.calculateBottomPadding()
+        ),
+        verticalArrangement = Arrangement.spacedBy(AppSpacing.sm),
+        userScrollEnabled = false
+    ) {
+        items(6) {
+            HistoryItemSkeleton()
+        }
+    }
+}
+
+@Composable
+private fun HistoryItemSkeleton(modifier: Modifier = Modifier) {
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(vertical = AppSpacing.md),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(AppSpacing.md)
+    ) {
+        AppShimmerPlaceholder(
+            modifier = Modifier.size(width = 64.dp, height = 88.dp),
+            shape = AppShapes.compact
+        )
+        Column(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(AppSpacing.xs)
+        ) {
+            AppShimmerPlaceholder(
+                modifier = Modifier.fillMaxWidth(0.72f).height(18.dp),
+                shape = AppShapes.compact
+            )
+            AppShimmerPlaceholder(
+                modifier = Modifier.fillMaxWidth(0.48f).height(14.dp),
+                shape = AppShapes.compact
+            )
+            AppShimmerPlaceholder(
+                modifier = Modifier.fillMaxWidth().height(4.dp),
+                shape = AppShapes.compact
+            )
+            AppShimmerPlaceholder(
+                modifier = Modifier.fillMaxWidth(0.32f).height(12.dp),
+                shape = AppShapes.compact
+            )
         }
     }
 }

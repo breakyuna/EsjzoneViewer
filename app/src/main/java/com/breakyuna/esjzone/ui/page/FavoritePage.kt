@@ -313,7 +313,6 @@ object FavoritePage : AppDestination {
                                     }
                                 )
                             }
-                            Text(stringResource(R.string.bookshelf_collection), style = AppTypography.displayMedium)
                         }
                     }
                     if (shown.isEmpty()) {

@@ -3,6 +3,7 @@ package com.breakyuna.esjzone.ui.page
 import androidx.lifecycle.viewModelScope
 import com.breakyuna.esjzone.app.PresentationAccess
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -88,7 +89,11 @@ object ForumPage : AppDestination {
         val state by model.state.collectAsState()
         val metrics = rememberAppAdaptiveMetrics()
 
-        Column(modifier = Modifier.fillMaxSize()) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(MaterialTheme.colorScheme.background)
+        ) {
             CommunityTopBar(
                 title = stringResource(id = R.string.forum),
                 onBack = { navigator?.pop() }
@@ -156,7 +161,11 @@ class ForumCategoryPage(private val category: ForumCategory) : AppDestination {
         val state by model.state.collectAsState()
         val metrics = rememberAppAdaptiveMetrics()
 
-        Column(modifier = Modifier.fillMaxSize()) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(MaterialTheme.colorScheme.background)
+        ) {
             CommunityTopBar(title = category.name, onBack = { navigator?.pop() })
             CommunityStateContent(
                 state = state,
@@ -207,7 +216,11 @@ class ForumBoardPage(private val thread: ForumThread) : AppDestination {
         val model = rememberAppViewModel { ForumBoardPageModel(authorization, thread) }
         val state by model.state.collectAsState()
 
-        Column(modifier = Modifier.fillMaxSize()) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(MaterialTheme.colorScheme.background)
+        ) {
             CommunityTopBar(title = thread.title, onBack = { navigator?.pop() })
             CommunityStateContent(
                 state = state,
@@ -267,7 +280,11 @@ class ForumPostPage(private val topic: ForumTopic) : AppDestination {
         val postScrollState = rememberScrollState()
         val metrics = rememberAppAdaptiveMetrics()
 
-        Column(modifier = Modifier.fillMaxSize()) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(MaterialTheme.colorScheme.background)
+        ) {
             CommunityTopBar(title = topic.title, onBack = { navigator?.pop() })
             when (val snapshot = state) {
                 is CommunityState.Loading -> LoadingSkeleton(modifier = Modifier.fillMaxWidth())

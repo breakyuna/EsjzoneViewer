@@ -198,7 +198,11 @@ internal fun CommentListPage(
 ) {
     val navigator = LocalBaseNavigator.current
 
-    Column(modifier = Modifier.fillMaxSize()) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background)
+    ) {
         CommunityTopBar(
             title = title,
             onBack = { navigator?.pop() }
