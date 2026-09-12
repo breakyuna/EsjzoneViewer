@@ -160,6 +160,7 @@ fun DiscoverySearchResults(
         modifier = modifier,
         contentPadding = PaddingValues(horizontal = 16.dp, vertical = 6.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
         item(key = "search-filters", contentType = "filters") {
             SearchFilters(
                 category = category,
