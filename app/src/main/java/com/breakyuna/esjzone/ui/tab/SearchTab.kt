@@ -2,29 +2,28 @@ package com.breakyuna.esjzone.ui.tab
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Search
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.SuggestionChip
+import androidx.compose.material3.SuggestionChipDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -39,6 +38,8 @@ import androidx.compose.ui.unit.dp
 import com.breakyuna.esjzone.R
 import com.breakyuna.esjzone.database.entity.SearchHistory
 import com.breakyuna.esjzone.network.LocalAuthorization
+import com.breakyuna.esjzone.ui.designsystem.AppShapes
+import com.breakyuna.esjzone.ui.designsystem.AppSpacing
 import com.breakyuna.esjzone.ui.discovery.DiscoveryEmptyState
 import com.breakyuna.esjzone.ui.discovery.DiscoveryLoadingState
 import com.breakyuna.esjzone.ui.discovery.DiscoverySearchField
@@ -124,7 +125,6 @@ object SearchTab : AppTab {
                     state = historyState,
                     onClear = historyModel::clear,
                     onSelect = ::submit,
-                    onDelete = historyModel::delete,
                     modifier = Modifier.fillMaxWidth().weight(1f)
                 )
             }
@@ -142,7 +142,6 @@ private fun SearchHistoryList(
     state: SearchHistoryModel.State,
     onClear: () -> Unit,
     onSelect: (String) -> Unit,
-    onDelete: (SearchHistory) -> Unit,
     modifier: Modifier
 ) {
     if (state.loading) {
@@ -151,8 +150,8 @@ private fun SearchHistoryList(
     }
     LazyColumn(
         modifier = modifier,
-        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 6.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp)
+        contentPadding = PaddingValues(horizontal = AppSpacing.lg, vertical = 6.dp),
+        verticalArrangement = Arrangement.spacedBy(AppSpacing.sm)
     ) {
         item(key = "history-heading", contentType = "heading") {
             Row(
@@ -163,7 +162,7 @@ private fun SearchHistoryList(
                 Text(
                     text = stringResource(R.string.search_local_history),
                     style = MaterialTheme.typography.titleMedium,
-                    modifier = Modifier.weight(1f).padding(start = 8.dp)
+                    modifier = Modifier.weight(1f).padding(start = AppSpacing.sm)
                 )
                 if (state.histories.isNotEmpty()) {
                     TextButton(onClick = onClear) {
@@ -181,41 +180,51 @@ private fun SearchHistoryList(
                 )
             }
         } else {
-            items(
-                items = state.histories.sortedByDescending { it.time.formattedDate() },
-                key = { history -> "history:${history.index}" },
-                contentType = { "search-history" }
-            ) { history ->
-                SearchHistoryRow(
-                    history = history,
-                    onSelect = { onSelect(history.keyword) },
-                    onDelete = { onDelete(history) }
-                )
+            item(key = "history-chips", contentType = "chips") {
+                FlowRow(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(AppSpacing.sm),
+                    verticalArrangement = Arrangement.spacedBy(AppSpacing.sm)
+                ) {
+                    val sortedHistories = state.histories.sortedByDescending { it.time.formattedDate() }
+                    sortedHistories.forEach { history ->
+                        key("history:${history.index}") {
+                            SearchHistoryChip(
+                                keyword = history.keyword,
+                                onSelect = { onSelect(history.keyword) }
+                            )
+                        }
+                    }
+                }
             }
         }
     }
 }
 
 @Composable
-private fun SearchHistoryRow(history: SearchHistory, onSelect: () -> Unit, onDelete: () -> Unit) {
-    Card(
+private fun SearchHistoryChip(
+    keyword: String,
+    onSelect: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    SuggestionChip(
         onClick = onSelect,
-        modifier = Modifier
-            .fillMaxWidth()
-            .semantics { contentDescription = "搜索历史：${history.keyword}" },
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)
-    ) {
-        Row(
-            modifier = Modifier.padding(start = 16.dp, end = 4.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(history.keyword, style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text(history.time, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-            IconButton(onClick = onDelete) {
-                Icon(Icons.Filled.Close, contentDescription = stringResource(R.string.remove))
-            }
+        label = {
+            Text(
+                text = keyword,
+                style = MaterialTheme.typography.labelLarge,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        },
+        shape = AppShapes.pill,
+        colors = SuggestionChipDefaults.suggestionChipColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+            labelColor = MaterialTheme.colorScheme.onSurface
+        ),
+        border = null,
+        modifier = modifier.semantics {
+            contentDescription = "搜索历史：$keyword"
         }
-    }
+    )
 }

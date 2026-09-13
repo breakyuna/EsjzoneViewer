@@ -203,7 +203,7 @@
     <string name="profile_history_description">从上次读到的位置继续阅读</string>
     <string name="downloads">下载</string>
     <string name="profile_downloads_description">管理已下载的小说和离线章节</string>
-    <string name="profile_settings_description">主题、内容偏好与镜像站点</string>
+    <string name="profile_settings_description">主题、内容偏好与网络站点</string>
     <string name="profile_about_description">版本信息、贡献者与开源许可</string>
     <string name="about">关于</string>
     <string name="about_powered_by">由 </string>
@@ -278,11 +278,11 @@
     <string name="settings_category_network">网络与站点</string>
     <string name="settings_screen_title">应用设置</string>
     <string name="settings_network_section">站点与服务连接</string>
-    <string name="settings_active_mirror">活动镜像站点</string>
+    <string name="settings_active_mirror">活动站点</string>
     <string name="settings_primary_description">主站点 · 当前访问源</string>
-    <string name="settings_backup_mirror">备用镜像</string>
-    <string name="settings_backup_description">备用访问源 · 遇到解析受阻时切换</string>
-    <string name="settings_mirror_note">切换活动镜像站点将自动清理页面缓存，但不会删除已下载的小说、阅读记录、书签或书架数据。</string>
+    <string name="settings_backup_mirror">国内站点</string>
+    <string name="settings_backup_description">国内站点 · 遇到解析受阻时切换</string>
+    <string name="settings_mirror_note">切换活动站点将自动清理页面缓存，但不会删除已下载的小说、阅读记录、书签或书架数据。</string>
     <string name="settings_appearance_section">外观</string>
     <string name="settings_theme_description">主题家族与强调色，明暗配色跟随 Android 系统。</string>
     <string name="settings_language_section">界面语言</string>
@@ -309,7 +309,7 @@
     <string name="settings_about_section">关于与开源协议</string>
     <string name="settings_logout_title">退出当前登录</string>
     <string name="settings_domain">定向网址</string>
-    <string name="settings_domain_description">在可用的 ESJ Zone 镜像站之间切换</string>
+    <string name="settings_domain_description">在可用的 ESJ Zone 站点之间切换</string>
     <string name="system_logs">系统日志</string>
     <string name="logs_copy_all">复制全部</string>
     <string name="logs_share">分享日志</string>

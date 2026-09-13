@@ -203,7 +203,7 @@
     <string name="profile_history_description">Pick up where you left off reading</string>
     <string name="downloads">Downloads</string>
     <string name="profile_downloads_description">Manage downloaded novels and offline chapters</string>
-    <string name="profile_settings_description">Theme, content preferences and mirrors</string>
+    <string name="profile_settings_description">Theme, content preferences and site connection</string>
     <string name="profile_about_description">Version, contributors and open source licenses</string>
     <string name="about">About</string>
     <string name="about_powered_by">Powered by </string>
@@ -278,11 +278,11 @@
     <string name="settings_category_network">Network &amp; Domain</string>
     <string name="settings_screen_title">App settings</string>
     <string name="settings_network_section">Site &amp; service connection</string>
-    <string name="settings_active_mirror">Active mirror</string>
+    <string name="settings_active_mirror">Active site</string>
     <string name="settings_primary_description">Primary site · current access source</string>
-    <string name="settings_backup_mirror">Backup mirror</string>
-    <string name="settings_backup_description">Fallback source · switch when parsing is limited</string>
-    <string name="settings_mirror_note">Changing the active mirror clears page cache. Downloads, bookmarks, history and bookshelf data stay on this device.</string>
+    <string name="settings_backup_mirror">Domestic site</string>
+    <string name="settings_backup_description">Domestic site · switch when parsing is limited</string>
+    <string name="settings_mirror_note">Changing the active site clears page cache. Downloads, bookmarks, history and bookshelf data stay on this device.</string>
     <string name="settings_appearance_section">Appearance</string>
     <string name="settings_theme_description">Theme family and accent variant. Light or dark colors follow the Android system.</string>
     <string name="settings_language_section">Language</string>
@@ -309,7 +309,7 @@
     <string name="settings_about_section">About &amp; open source</string>
     <string name="settings_logout_title">Log out of this session</string>
     <string name="settings_domain">Target Domain</string>
-    <string name="settings_domain_description">Switch between available ESJ Zone mirrors</string>
+    <string name="settings_domain_description">Switch between available ESJ Zone sites</string>
     <string name="system_logs">System Logs</string>
     <string name="logs_copy_all">Copy All</string>
     <string name="logs_share">Share Logs</string>

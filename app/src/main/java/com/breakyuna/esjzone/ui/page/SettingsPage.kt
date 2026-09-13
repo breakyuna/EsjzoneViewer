@@ -121,7 +121,7 @@ object SettingsPage : AppDestination {
                     PresentationAccess.settings.DOMAINS.forEach { candidate ->
                         ChoiceRow(
                             title = candidate,
-                            subtitle = stringResource(if (candidate == PresentationAccess.settings.DOMAINS.first()) R.string.settings_primary_description else R.string.settings_backup_description),
+                            subtitle = stringResource(if (candidate.contains(".one")) R.string.settings_backup_description else R.string.settings_primary_description),
                             selected = candidate == domain,
                             onClick = { PresentationAccess.settings.setDomain(candidate); model.clearPageCache(); model.persist("domain", candidate) }
                         )
