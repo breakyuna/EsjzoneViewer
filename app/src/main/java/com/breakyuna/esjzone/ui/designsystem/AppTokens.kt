@@ -36,8 +36,8 @@ object AppLayout {
     val compactCardWidth = 148.dp
     val compactCardHeight = 196.dp
     /** Fixed home-rail tile geometry: the cover itself is a strict 2:3 portrait. */
-    val homeTileWidth = 96.dp
-    val homeTileCoverHeight = 144.dp
+    val homeTileWidth = 108.dp
+    val homeTileCoverHeight = 162.dp
     val listCoverWidth = 88.dp
     val listCoverHeight = 120.dp
     val featureCoverWidth = 104.dp
