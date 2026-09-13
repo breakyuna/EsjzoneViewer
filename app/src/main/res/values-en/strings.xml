@@ -73,6 +73,7 @@
     <string name="bookshelf_collection">Saved novels</string>
     <string name="bookshelf_filter_all">All</string>
     <string name="bookshelf_filter_downloaded">Downloaded</string>
+    <string name="bookshelf_filter_updates">Updates</string>
     <string name="bookshelf_order_automatic">Automatic order</string>
     <string name="bookshelf_selected_header">%1$d selected</string>
     <string name="bookshelf_total_header">/ %1$d total</string>

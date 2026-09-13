@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.layout.fillMaxSize
@@ -78,6 +79,7 @@ fun DiscoveryTopBar(
     title: String,
     onBack: (() -> Unit)? = null,
     onRefresh: (() -> Unit)? = null,
+    actions: @Composable RowScope.() -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     TopAppBar(
@@ -90,6 +92,7 @@ fun DiscoveryTopBar(
             }
         },
         actions = {
+            actions()
             if (onRefresh != null) {
                 IconButton(onClick = onRefresh) {
                     Icon(Icons.Filled.Refresh, contentDescription = androidx.compose.ui.res.stringResource(R.string.comment_refresh))
@@ -108,11 +111,12 @@ fun DiscoveryScaffold(
     title: String,
     onBack: (() -> Unit)? = null,
     onRefresh: (() -> Unit)? = null,
+    actions: @Composable RowScope.() -> Unit = {},
     content: @Composable (PaddingValues) -> Unit
 ) {
     Scaffold(
         topBar = {
-            DiscoveryTopBar(title = title, onBack = onBack, onRefresh = onRefresh)
+            DiscoveryTopBar(title = title, onBack = onBack, onRefresh = onRefresh, actions = actions)
         },
         containerColor = MaterialTheme.colorScheme.background,
         content = content

@@ -91,6 +91,12 @@ import com.breakyuna.esjzone.ui.navigation.rememberAppViewModel
 import com.breakyuna.esjzone.ui.product.EmptyState
 import com.breakyuna.esjzone.ui.product.OfflineState
 
+private enum class BookshelfFilter {
+    ALL,
+    DOWNLOADED,
+    UPDATES
+}
+
 /** Local-first bookshelf. Room is the only rendered source; sync is additive. */
 object FavoritePage : AppDestination {
     private fun readResolve(): Any = FavoritePage
@@ -113,9 +119,8 @@ object FavoritePage : AppDestination {
         val snackbar = remember { SnackbarHostState() }
         val listState = rememberLazyListState()
         var editing by rememberSaveable { mutableStateOf(false) }
-        var downloadedOnly by rememberSaveable { mutableStateOf(false) }
+        var activeFilter by rememberSaveable { mutableStateOf(BookshelfFilter.ALL) }
         var listView by rememberSaveable { mutableStateOf(false) }
-        var updatesOnly by rememberSaveable { mutableStateOf(false) }
         var selected by remember { mutableStateOf<Set<String>>(emptySet()) }
         var pendingDelete by remember { mutableStateOf<List<BookshelfEntry>>(emptyList()) }
         var showDeleteDialog by remember { mutableStateOf(false) }
@@ -123,8 +128,12 @@ object FavoritePage : AppDestination {
         var showSyncStatusMenu by remember { mutableStateOf(false) }
 
         val visible = remember(entries, adult) { entries.filter { adult || !it.isAdult } }
-        val shown = remember(visible, downloaded, downloadedOnly, updatesOnly) {
-            visible.filter { (!downloadedOnly || it.bookKey in downloaded) && (!updatesOnly || it.hasUpdate) }
+        val shown = remember(visible, downloaded, activeFilter) {
+            when (activeFilter) {
+                BookshelfFilter.ALL -> visible
+                BookshelfFilter.DOWNLOADED -> visible.filter { it.bookKey in downloaded }
+                BookshelfFilter.UPDATES -> visible.filter { it.hasUpdate }
+            }
         }
         val visibleKeys = remember(shown) { shown.mapTo(LinkedHashSet()) { it.bookKey } }
         // Filter before taking four so hidden/adult/filtered books do not leave empty slots.
@@ -385,14 +394,26 @@ object FavoritePage : AppDestination {
                                     }
                                 }
                                 FilterChip(
-                                    selected = downloadedOnly,
-                                    onClick = { downloadedOnly = !downloadedOnly },
+                                    selected = activeFilter == BookshelfFilter.DOWNLOADED,
+                                    onClick = {
+                                        activeFilter = if (activeFilter == BookshelfFilter.DOWNLOADED) {
+                                            BookshelfFilter.ALL
+                                        } else {
+                                            BookshelfFilter.DOWNLOADED
+                                        }
+                                    },
                                     label = { Text(stringResource(R.string.bookshelf_filter_downloaded)) }
                                 )
                                 FilterChip(
-                                    selected = updatesOnly,
-                                    onClick = { updatesOnly = !updatesOnly },
-                                    label = { Text("有更新") },
+                                    selected = activeFilter == BookshelfFilter.UPDATES,
+                                    onClick = {
+                                        activeFilter = if (activeFilter == BookshelfFilter.UPDATES) {
+                                            BookshelfFilter.ALL
+                                        } else {
+                                            BookshelfFilter.UPDATES
+                                        }
+                                    },
+                                    label = { Text(stringResource(R.string.bookshelf_filter_updates)) },
                                     modifier = Modifier.padding(start = AppSpacing.sm)
                                 )
                             }
@@ -419,14 +440,15 @@ object FavoritePage : AppDestination {
                             } else EmptyState(
                                 title = stringResource(
                                     when {
-                                        downloadedOnly -> R.string.bookshelf_empty_filtered
+                                        activeFilter != BookshelfFilter.ALL -> R.string.bookshelf_empty_filtered
                                         visible.isEmpty() && entries.isNotEmpty() -> R.string.bookshelf_empty_filtered
                                         else -> R.string.bookshelf_empty
                                     }
                                 ),
                                 message = stringResource(
                                     when {
-                                        downloadedOnly -> R.string.download_empty_hint
+                                        activeFilter == BookshelfFilter.DOWNLOADED -> R.string.download_empty_hint
+                                        activeFilter == BookshelfFilter.UPDATES -> R.string.bookshelf_empty_filtered_hint
                                         visible.isEmpty() && entries.isNotEmpty() -> R.string.bookshelf_empty_filtered_hint
                                         else -> R.string.bookshelf_empty_hint
                                     }

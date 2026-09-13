@@ -108,10 +108,18 @@ object HomeTab : AppTab {
 
         val navPadding = LocalFloatingNavPadding.current
         val layoutDirection = LocalLayoutDirection.current
+        val searchActionLabel = stringResource(R.string.search_action)
 
         DiscoveryScaffold(
             title = stringResource(R.string.home_discover),
-            onRefresh = model::reload
+            onRefresh = model::reload,
+            actions = {
+                HomeAction(
+                    label = searchActionLabel,
+                    icon = Icons.Filled.Search,
+                    onClick = { navigator?.pushIfNotCurrent(SearchTab) }
+                )
+            }
         ) { padding ->
             LazyColumn(
                 modifier = Modifier
@@ -127,7 +135,6 @@ object HomeTab : AppTab {
             ) {
                 item(key = "home-actions", contentType = "home-actions") {
                     HomeActions(
-                        onSearch = { navigator?.pushIfNotCurrent(SearchTab) },
                         onCategories = { navigator?.pushIfNotCurrent(CategoryBrowserPage()) },
                         onForum = { navigator?.pushIfNotCurrent(ForumPage) },
                         onGuestbook = { navigator?.pushIfNotCurrent(GuestbookPage) }
@@ -347,13 +354,11 @@ private fun weeklyDayLabel(day: DayOfWeek): String = stringResource(
 
 @Composable
 private fun HomeActions(
-    onSearch: () -> Unit,
     onCategories: () -> Unit,
     onForum: () -> Unit,
     onGuestbook: () -> Unit
 ) {
     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-        HomeAction(stringResource(R.string.search_action), Icons.Filled.Search, onSearch)
         HomeAction(stringResource(R.string.categories), Icons.Filled.Category, onCategories)
         HomeAction(stringResource(R.string.forum), Icons.Filled.Forum, onForum)
         HomeAction(stringResource(R.string.guestbook), Icons.Filled.Forum, onGuestbook)

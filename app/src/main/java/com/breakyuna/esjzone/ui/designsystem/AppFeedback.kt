@@ -1,13 +1,23 @@
 package com.breakyuna.esjzone.ui.designsystem
 
+import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -30,7 +40,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.ProgressBarRangeInfo
 import androidx.compose.ui.semantics.liveRegion
@@ -39,6 +51,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.zIndex
 
 /** A compact feedback block for inline validation and one-off messages. */
 @Composable
@@ -244,6 +257,78 @@ fun AppBottomSheet(
 ) {
     if (visible) {
         ModalBottomSheet(onDismissRequest = onDismissRequest) { content() }
+    }
+}
+
+enum class AppSideSheetEdge {
+    START,
+    END
+}
+
+@Composable
+fun AppSideSheet(
+    visible: Boolean,
+    onDismissRequest: () -> Unit,
+    modifier: Modifier = Modifier,
+    edge: AppSideSheetEdge = AppSideSheetEdge.START,
+    shape: Shape = if (edge == AppSideSheetEdge.START) {
+        RoundedCornerShape(topEnd = 24.dp, bottomEnd = 24.dp)
+    } else {
+        RoundedCornerShape(topStart = 24.dp, bottomStart = 24.dp)
+    },
+    containerColor: Color = MaterialTheme.colorScheme.surface,
+    contentColor: Color = MaterialTheme.colorScheme.onSurface,
+    tonalElevation: Dp = 2.dp,
+    shadowElevation: Dp = 8.dp,
+    content: @Composable () -> Unit
+) {
+    AnimatedVisibility(
+        visible = visible,
+        enter = fadeIn(AppMotion.standardSpec()),
+        exit = fadeOut(AppMotion.standardSpec()),
+        modifier = modifier
+            .fillMaxSize()
+            .zIndex(10f)
+    ) {
+        BackHandler(onBack = onDismissRequest)
+        Box(modifier = Modifier.fillMaxSize()) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black.copy(alpha = 0.45f))
+                    .pointerInput(onDismissRequest) {
+                        detectTapGestures { onDismissRequest() }
+                    }
+            )
+
+            Surface(
+                modifier = Modifier
+                    .align(if (edge == AppSideSheetEdge.START) Alignment.CenterStart else Alignment.CenterEnd)
+                    .fillMaxHeight()
+                    .fillMaxWidth(0.82f)
+                    .widthIn(min = 280.dp, max = 340.dp)
+                    .animateEnterExit(
+                        enter = slideInHorizontally(
+                            animationSpec = AppMotion.expressiveSpec(),
+                            initialOffsetX = { fullWidth -> if (edge == AppSideSheetEdge.START) -fullWidth else fullWidth }
+                        ),
+                        exit = slideOutHorizontally(
+                            animationSpec = AppMotion.standardSpec(),
+                            targetOffsetX = { fullWidth -> if (edge == AppSideSheetEdge.START) -fullWidth else fullWidth }
+                        )
+                    )
+                    .pointerInput(Unit) {
+                        detectTapGestures { }
+                    },
+                shape = shape,
+                color = containerColor,
+                contentColor = contentColor,
+                tonalElevation = tonalElevation,
+                shadowElevation = shadowElevation
+            ) {
+                content()
+            }
+        }
     }
 }
 

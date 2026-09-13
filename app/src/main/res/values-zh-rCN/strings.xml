@@ -73,6 +73,7 @@
     <string name="bookshelf_collection">收藏作品</string>
     <string name="bookshelf_filter_all">全部</string>
     <string name="bookshelf_filter_downloaded">已下载</string>
+    <string name="bookshelf_filter_updates">有更新</string>
     <string name="bookshelf_order_automatic">自动按阅读顺序</string>
     <string name="bookshelf_selected_header">已选择 %1$d 本</string>
     <string name="bookshelf_total_header">/ 共 %1$d 本</string>

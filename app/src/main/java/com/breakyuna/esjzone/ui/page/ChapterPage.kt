@@ -119,7 +119,8 @@ import com.breakyuna.esjzone.ui.reader.ReaderChapterHeading
 import com.breakyuna.esjzone.ui.reader.ReaderRenderer
 import com.breakyuna.esjzone.ui.reader.ReaderShell
 import com.breakyuna.esjzone.ui.reader.ReaderVolumeKeyDispatcher
-import com.breakyuna.esjzone.ui.designsystem.AppBottomSheet
+import com.breakyuna.esjzone.ui.designsystem.AppSideSheet
+import com.breakyuna.esjzone.ui.designsystem.AppSideSheetEdge
 import com.breakyuna.esjzone.ui.designsystem.AppFeedback
 import com.breakyuna.esjzone.ui.designsystem.AppShapes
 import com.breakyuna.esjzone.ui.designsystem.AppSpacing
@@ -1059,6 +1060,33 @@ class ChapterPage(
                     }
                 }
             }
+
+            val readerChapters = result?.chapterOrder.orEmpty()
+                .ifEmpty { chapterOrder }
+                .ifEmpty { result?.chapters?.map { it.chapter }.orEmpty() }
+            ReaderContentsSheet(
+                visible = showReaderContents,
+                chapters = readerChapters,
+                currentChapter = currentReadingChapter,
+                onChapterSelected = { selectedChapter ->
+                    showReaderContents = false
+                    dismissProgressPreview()
+                    openTargetChapter(selectedChapter)
+                },
+                onDismiss = { showReaderContents = false }
+            )
+            ReaderSettingsSheet(
+                visible = showReaderSettings,
+                settings = readerSettings,
+                previewText = activeChapter?.document?.blocks
+                    ?.filterIsInstance<ReaderBlock.Text>()
+                    ?.firstOrNull()
+                    ?.value
+                    ?.let(readerTextTransform)
+                    .orEmpty(),
+                onSettingsChange = { updated -> updateReaderSettings(updated) },
+                onDismiss = { showReaderSettings = false }
+            )
         }
 
         LaunchedEffect(Unit) {
@@ -1128,33 +1156,6 @@ class ChapterPage(
                 }
             }
         }
-
-        val readerChapters = result?.chapterOrder.orEmpty()
-            .ifEmpty { chapterOrder }
-            .ifEmpty { result?.chapters?.map { it.chapter }.orEmpty() }
-        ReaderContentsSheet(
-            visible = showReaderContents,
-            chapters = readerChapters,
-            currentChapter = currentReadingChapter,
-            onChapterSelected = { selectedChapter ->
-                showReaderContents = false
-                dismissProgressPreview()
-                openTargetChapter(selectedChapter)
-            },
-            onDismiss = { showReaderContents = false }
-        )
-        ReaderSettingsSheet(
-            visible = showReaderSettings,
-            settings = readerSettings,
-            previewText = activeChapter?.document?.blocks
-                ?.filterIsInstance<ReaderBlock.Text>()
-                ?.firstOrNull()
-                ?.value
-                ?.let(readerTextTransform)
-                .orEmpty(),
-            onSettingsChange = { updated -> updateReaderSettings(updated) },
-            onDismiss = { showReaderSettings = false }
-        )
     }
 
 }
@@ -1584,12 +1585,17 @@ private fun ReaderContentsSheet(
         }
     }
 
-    AppBottomSheet(visible = visible, onDismissRequest = onDismiss) {
+    AppSideSheet(
+        visible = visible,
+        edge = AppSideSheetEdge.START,
+        onDismissRequest = onDismiss
+    ) {
         Column(
             modifier = Modifier
-                .fillMaxWidth()
-                .heightIn(min = 240.dp, max = 680.dp)
-                .padding(horizontal = AppSpacing.lg, vertical = AppSpacing.sm)
+                .fillMaxSize()
+                .statusBarsPadding()
+                .navigationBarsPadding()
+                .padding(horizontal = AppSpacing.md, vertical = AppSpacing.sm)
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -1680,13 +1686,18 @@ private fun ReaderSettingsSheet(
     onSettingsChange: (ReaderSettings) -> Unit,
     onDismiss: () -> Unit
 ) {
-    AppBottomSheet(visible = visible, onDismissRequest = onDismiss) {
+    AppSideSheet(
+        visible = visible,
+        edge = AppSideSheetEdge.END,
+        onDismissRequest = onDismiss
+    ) {
         Column(
             modifier = Modifier
-                .fillMaxWidth()
-                .heightIn(max = 760.dp)
+                .fillMaxSize()
+                .statusBarsPadding()
+                .navigationBarsPadding()
                 .verticalScroll(rememberScrollState())
-                .padding(horizontal = AppSpacing.lg, vertical = AppSpacing.sm)
+                .padding(horizontal = AppSpacing.md, vertical = AppSpacing.sm)
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -1721,7 +1732,7 @@ private fun ReaderSettingsSheet(
             ) {
                 Column(
                     modifier = Modifier.padding(
-                        horizontal = AppSpacing.lg,
+                        horizontal = AppSpacing.md,
                         vertical = AppSpacing.md
                     )
                 ) {
