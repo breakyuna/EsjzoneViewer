@@ -3,13 +3,13 @@ package com.breakyuna.esjzone.ui.navigation
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -26,9 +26,11 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.layout.wrapContentSize
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.InteractionSource
+import androidx.compose.foundation.interaction.collectIsFocusedAsState
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.CircleShape
@@ -48,6 +50,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.key
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.getValue
@@ -66,12 +69,19 @@ import com.breakyuna.esjzone.app.PresentationAccess
 import com.breakyuna.esjzone.ui.discovery.DiscoveryScaffold
 import com.breakyuna.esjzone.ui.product.EmptyState
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shadow
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.scale
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -99,6 +109,8 @@ import com.breakyuna.esjzone.ui.tab.HomeTab
 import com.breakyuna.esjzone.ui.tab.ProfileTab
 import com.breakyuna.esjzone.ui.designsystem.glass.AppGlassScene
 import com.breakyuna.esjzone.ui.designsystem.glass.NavigationGlassMetrics
+import com.breakyuna.esjzone.ui.designsystem.glass.LocalNavigationAdaptiveBackdrop
+import com.breakyuna.esjzone.ui.designsystem.glass.rememberNavigationItemInteraction
 import com.breakyuna.esjzone.ui.designsystem.glass.AppNavigationGlassSurface
 import com.breakyuna.esjzone.ui.designsystem.glass.appGlassSource
 import com.breakyuna.esjzone.ui.designsystem.glass.rememberAppGlassScene
@@ -230,25 +242,6 @@ fun AdaptiveAppShell(
                             .appGlassSource(navigationGlassScene)
                     )
                     if (showFloatingNavigation) {
-                        val isDarkTheme = MaterialTheme.colorScheme.surface.luminance() < 0.5f
-                        val bottomInset = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
-                        // Faint ambient shadow layer starting slightly above the top of the floating navigation bar
-                        val ambientShadowHeight = bottomInset + NavigationGlassMetrics.bottomHeight + 32.dp
-                        Box(
-                            modifier = Modifier
-                                .align(Alignment.BottomCenter)
-                                .fillMaxWidth()
-                                .height(ambientShadowHeight)
-                                .background(
-                                    Brush.verticalGradient(
-                                        0f to Color.Transparent,
-                                        0.20f to Color.Black.copy(alpha = if (isDarkTheme) 0.025f else 0.014f),
-                                        0.50f to Color.Black.copy(alpha = if (isDarkTheme) 0.06f else 0.032f),
-                                        0.75f to Color.Black.copy(alpha = if (isDarkTheme) 0.10f else 0.052f),
-                                        1f to Color.Black.copy(alpha = if (isDarkTheme) 0.13f else 0.068f)
-                                    )
-                                )
-                        )
                         AppNavigationBar(
                             selected = tab,
                             onSelected = onTabSelected,
@@ -260,7 +253,6 @@ fun AdaptiveAppShell(
                                 // page-owned overlays (which reserve higher levels).
                                 .zIndex(1f)
                                 .windowInsetsPadding(WindowInsets.navigationBars)
-                                .fillMaxWidth()
                                 .padding(horizontal = 16.dp, vertical = 12.dp)
                         )
                     }
@@ -480,7 +472,7 @@ private fun AppNavigationBar(
         selectedFraction = ((tabs.indexOf(selected).coerceAtLeast(0)) + 0.5f) / tabs.size,
         itemCount = tabs.size,
         shape = navShape,
-        modifier = modifier.fillMaxWidth()
+        modifier = modifier.widthIn(max = NavigationGlassMetrics.bottomMaxWidth).fillMaxWidth()
     ) {
         Row(
             modifier = Modifier
@@ -500,14 +492,16 @@ private fun AppNavigationBar(
             verticalAlignment = Alignment.CenterVertically
         ) {
             tabs.forEach { tab ->
-                FloatingNavHorizontalItem(
-                    selected = selected == tab,
-                    onClick = { onSelected(tab) },
-                    selectedIcon = tab.filledIcon,
-                    unselectedIcon = tab.outlinedIcon,
-                    label = tabLabel(tab),
-                    modifier = Modifier.weight(1f)
-                )
+                key(tab) {
+                    FloatingNavHorizontalItem(
+                        selected = selected == tab,
+                        onClick = { onSelected(tab) },
+                        selectedIcon = tab.filledIcon,
+                        unselectedIcon = tab.outlinedIcon,
+                        label = tabLabel(tab),
+                        modifier = Modifier.weight(1f)
+                    )
+                }
             }
         }
     }
@@ -546,13 +540,15 @@ private fun AppSideNavigationBar(
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             tabs.forEach { tab ->
-                FloatingNavVerticalItem(
-                    selected = selected == tab,
-                    onClick = { onSelected(tab) },
-                    selectedIcon = tab.filledIcon,
-                    unselectedIcon = tab.outlinedIcon,
-                    contentDescription = tabLabel(tab)
-                )
+                key(tab) {
+                    FloatingNavVerticalItem(
+                        selected = selected == tab,
+                        onClick = { onSelected(tab) },
+                        selectedIcon = tab.filledIcon,
+                        unselectedIcon = tab.outlinedIcon,
+                        contentDescription = tabLabel(tab)
+                    )
+                }
             }
         }
     }
@@ -560,21 +556,27 @@ private fun AppSideNavigationBar(
 
 private data class NavigationItemColors(
     val content: Color,
-    val halo: Color
+    val halo: Color,
+    val labelShadow: Color
 )
 
 /** The same readable selection treatment for the bottom and side capsules. */
 @Composable
 private fun navigationItemColors(selected: Boolean): NavigationItemColors {
     val colors = MaterialTheme.colorScheme
+    val dark = colors.surface.luminance() < 0.5f
+    val adaptive = LocalNavigationAdaptiveBackdrop.current
     val contentColor by animateColorAsState(
-        targetValue = if (selected) colors.primary else colors.onSurfaceVariant,
+        targetValue = if (selected) colors.onPrimaryContainer else colors.onSurface,
         animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
         label = "nav_content"
     )
     return NavigationItemColors(
         content = contentColor,
-        halo = Color.Transparent
+        // A supported GPU pass adapts the backdrop itself; avoid another fixed halo on top.
+        halo = if (adaptive) Color.Transparent else
+            colors.surface.copy(alpha = if (dark) 0.68f else 0.60f),
+        labelShadow = colors.surface.copy(alpha = if (adaptive) 0.28f else 0.75f)
     )
 }
 
@@ -600,6 +602,44 @@ private fun Modifier.navigationContentHalo(color: Color): Modifier = drawWithCac
     }
 }
 
+/** Finite local feedback also works when the platform cannot render the glass shader. */
+@Composable
+private fun Modifier.navigationItemFeedback(source: InteractionSource, color: Color): Modifier {
+    val pressed by source.collectIsPressedAsState()
+    val focused by source.collectIsFocusedAsState()
+    val press = animateFloatAsState(
+        targetValue = if (pressed) 1f else 0f,
+        animationSpec = spring(dampingRatio = 1f, stiffness = 900f),
+        label = "navigation_item_press"
+    )
+    val focus = animateFloatAsState(
+        targetValue = if (focused) 1f else 0f,
+        animationSpec = spring(dampingRatio = 1f, stiffness = 900f),
+        label = "navigation_item_focus"
+    )
+    return drawWithCache {
+        val inset = NavigationGlassMetrics.selectionHorizontalInset.toPx()
+        val bounds = Size((size.width - inset * 2).coerceAtLeast(0f), (size.height - inset * 2).coerceAtLeast(0f))
+        val radius = CornerRadius(bounds.minDimension / 2f)
+        val outline = Stroke(1.dp.toPx())
+        onDrawBehind {
+            drawRoundRect(
+                color = color.copy(alpha = 0.05f * press.value),
+                topLeft = Offset(inset, inset),
+                size = bounds,
+                cornerRadius = radius
+            )
+            drawRoundRect(
+                color = color.copy(alpha = 0.60f * focus.value),
+                topLeft = Offset(inset, inset),
+                size = bounds,
+                cornerRadius = radius,
+                style = outline
+            )
+        }
+    }
+}
+
 @Composable
 private fun FloatingNavHorizontalItem(
     selected: Boolean,
@@ -610,25 +650,27 @@ private fun FloatingNavHorizontalItem(
     modifier: Modifier = Modifier
 ) {
     val colors = navigationItemColors(selected)
-    val pillShape = RoundedCornerShape(percent = 50)
+    val interaction = rememberNavigationItemInteraction()
+    val labelShadowRadius = with(LocalDensity.current) { 2.dp.toPx() }
     Box(
-        modifier = modifier.fillMaxHeight(),
+        // The entire weighted slot is actionable, including space beside the label.
+        modifier = modifier
+            .fillMaxHeight()
+            .onGloballyPositioned(interaction::onPlaced)
+            .selectable(
+                selected = selected,
+                onClick = onClick,
+                role = Role.Tab,
+                interactionSource = interaction.source,
+                indication = null
+            )
+            .navigationItemFeedback(interaction.source, colors.content),
         contentAlignment = Alignment.Center
     ) {
         Box(
             modifier = Modifier
-                .widthIn(max = NavigationGlassMetrics.bottomItemMaxWidth)
                 .fillMaxWidth()
-                .height(NavigationGlassMetrics.bottomItemHeight)
-                .clip(pillShape)
-                // Fixed hit targets stay above the moving decorative lens.
-                .selectable(
-                    selected = selected,
-                    onClick = onClick,
-                    role = Role.Tab,
-                    interactionSource = remember { MutableInteractionSource() },
-                    indication = null
-                ),
+                .height(NavigationGlassMetrics.bottomItemHeight),
             contentAlignment = Alignment.Center
         ) {
             Column(
@@ -646,7 +688,12 @@ private fun FloatingNavHorizontalItem(
                 )
                 Text(
                     text = label,
-                    style = MaterialTheme.typography.labelMedium,
+                    style = MaterialTheme.typography.labelMedium.copy(
+                        shadow = Shadow(
+                            color = colors.labelShadow,
+                            blurRadius = labelShadowRadius
+                        )
+                    ),
                     fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
                     color = colors.content,
                     maxLines = 1
@@ -666,18 +713,21 @@ private fun FloatingNavVerticalItem(
     modifier: Modifier = Modifier
 ) {
     val colors = navigationItemColors(selected)
+    val interaction = rememberNavigationItemInteraction()
     Box(
         modifier = modifier
             .minimumInteractiveComponentSize()
             .size(NavigationGlassMetrics.railItemSize)
             .clip(CircleShape)
+            .onGloballyPositioned(interaction::onPlaced)
             .selectable(
                 selected = selected,
                 onClick = onClick,
                 role = Role.Tab,
-                interactionSource = remember { MutableInteractionSource() },
+                interactionSource = interaction.source,
                 indication = null
-            ),
+            )
+            .navigationItemFeedback(interaction.source, colors.content),
         contentAlignment = Alignment.Center
     ) {
         Box(

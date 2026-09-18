@@ -4,6 +4,8 @@ package com.breakyuna.esjzone.ui.designsystem.glass
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.border
+import androidx.compose.foundation.interaction.InteractionSource
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.fillMaxSize
@@ -67,7 +69,9 @@ data class AppGlassSpec(
     val chromaMultiplier: Float? = null,
     val contentNormalBlend: Float? = null,
     /** Readable no-host fallback independent of the source-fill alpha. */
-    val fallbackAlpha: Float? = null
+    val fallbackAlpha: Float? = null,
+    /** Opt-in material feedback; behavior and coordinates remain owned by the caller. */
+    val interactive: Boolean = false
 )
 
 enum class AppGlassMaterial {
@@ -119,6 +123,7 @@ fun AppGlassSurface(
     modifier: Modifier = Modifier,
     spec: AppGlassSpec = AppGlassSpec(),
     scene: AppGlassScene? = null,
+    interactionSource: InteractionSource? = null,
     content: @Composable BoxScope.() -> Unit
 ) {
     val hazeState = scene?.hazeState ?: LocalAppHazeState.current
@@ -166,6 +171,20 @@ fun AppGlassSurface(
             }
         }
         materialStyle.then {
+            if (spec.interactive) {
+                focused { lightingIntensity(0.22f) }
+                pressed {
+                    animate(
+                        toSpec = spring(dampingRatio = 1f, stiffness = 900f),
+                        fromSpec = spring(dampingRatio = 1f, stiffness = 350f)
+                    ) {
+                        lightingIntensity(0.55f)
+                        refractionMultiplier(if (reducedMotion) 1f else 1.06f)
+                        whitePointDelta(0.015f)
+                    }
+                }
+                interactionLightRadiusFraction(0.30f)
+            }
             backgroundColor(base.copy(alpha = spec.alpha.coerceIn(0f, 1f)))
             tint((spec.tint ?: base).copy(alpha = spec.tintAlpha.coerceIn(0f, 1f)))
             shape(spec.shape)
@@ -226,6 +245,7 @@ fun AppGlassSurface(
             .hazeGlass(
                 input = HazeInput.Sources(hazeState),
                 style = glassStyle,
+                interactionSource = interactionSource,
                 interactionReducedMotionPolicy = motionPolicy
             )
             .border(

@@ -36,76 +36,73 @@ surface fallback. Essential information must remain readable without refraction 
 
 ### Navigation glass
 
-The shell captures only its page-content sibling into a dedicated `AppGlassScene` and passes
-that same scene to the overlay. Do not put the navigation overlay inside its own capture source.
-`NavigationGlass.kt` owns both orientations' material and lighting; reader surface defaults
-remain independent.
+The shell captures only its page-content sibling into a dedicated `AppGlassScene`.
+`NavigationGlass.kt` renders ONE source-backed material for either the bottom dock or
+side rail. Decorations, the selection overlay, and selectable items are siblings above
+that material. The navigation overlay must never become its own capture source.
+Reader glass settings remain independent.
 
-- Use explicit fixed clear optics with **zero blur and zero depth mixing**. Haze's built-in
-  CLEAR preset still contains blur, so both overrides are required. Keep neutral contrast,
-  white point and chroma, and no content-derived normals to preserve the source colors.
-- Source-fill alpha is `1f` behind captured content. Whole-pane tint is only 3.5% in light
-  mode and 5% in dark mode. The no-host fallback remains readable at 96% opacity.
-- Refraction is concentrated in the outer 18% of the short axis: displacement is `18.dp`
-  for the bottom capsule and `14.dp` for the side rail, strength `0.90f`, fold `0.38f`.
-  Dispersion is modest (`0.035f`, Simple); reduced motion disables optical displacement.
-- Pure-color input has no detail to refract. A separate Canvas bevel supplies reflected
-  surroundings: a `5.5.dp` curved intensity band, a sharp outer rim, an inverted inner rim,
-  and an edge-local strip reflection. Dark reflections reveal thickness over white;
-  bright reflections reveal it over black. These are authored lighting cues, not a sampled
-  environment map or a claim of physically accurate caustics.
-- The main bevel light runs across the short axis, keeping the long edges coherent in
-  either orientation. The outer rim adds diagonal lighting; start/end mirror in RTL.
-  The interior remains clear, with no whole-pane sheen, noise, or white wash.
-- The strip reflection follows the selected tab with a finite spring, honoring Compose's
-  system animation duration scale. Its state is read in the draw phase: cached brushes and
-  the Haze style are not rebuilt on every animation frame. There is no idle animation.
-- Decoration uses **BoxScope's** `matchParentSize()` without a package-level import and
-  cannot size the wrap-content rail. The outer surface clips the decoration to the same
-  50%-rounded capsule as the optics. Shadows remain outside that clip.
-- Selection is ONE persistent transparent lens in `NavigationSelectionLens.kt`, drawn after
-  the outer bevel and before the tab Row/Column. It shares the page scene with the outer
-  material and never samples the navigation itself. Zero blur/depth, 4.5–6% theme tint,
-  a `2.75.dp` convex bevel, local shadow and `10.dp` edge displacement provide a raised
-  water-drop appearance. The per-item background/border fades have been removed.
-- The lens and outer strip light share one position spring. A slower follower produces
-  at most 12% stretch along travel, with reciprocal compression across travel; it settles
-  to the original shape and retargets from its current state on rapid taps. State is read
-  in placement/layer scopes, not composition. System duration scale 0 snaps both springs.
-- Lens measurement shares `NavigationGlassMetrics` with the actual items. The horizontal
-  lens fits a weighted slot up to `72.dp` wide and `56.dp` high; the rail lens is `48.dp`.
-  Placement clamps end positions and mirrors horizontally with `placeRelativeWithLayer`.
-  The match-parent overlay cannot enlarge the wrap-content rail.
-- Readability support remains local to icon/label groups, with theme-aware halos and text
-  shadows. Glyphs and fixed selectable hit targets are sibling content ABOVE the lens;
-  they do not stretch, refract or move. Selected semantics update immediately even while
-  the lens travels. Existing insets and page-stack behavior are retained.
-- Haze remains the single captured-background renderer. The bevel uses ordinary cached
-  Compose drawing and remains available when older renderers omit refraction. There is no
-  extra capture source, new dependency, or second blur layer. There is one additional small
-  Haze effect for the moving lens; assess its GPU cost on-device, including during scrolling.
+| Property | Dock material |
+| --- | --- |
+| Fixed refraction strength / displacement | 0.34 / 12.dp |
+| Edge height fraction | 0.26 |
+| Blur radius / depth mixing | 16.dp / 0.10 |
+| Specular intensity / ambient response | 0.42 / 0.48 |
+| Tint alpha, dark / light | 14% / 18% |
+| Chromatic aberration | 0.02 |
 
-Official pinned references: [Glass guide](https://github.com/chrisbanes/haze/blob/2.0.0-beta02/docs/effects/glass.md)
-and [fixed optics contract](https://github.com/chrisbanes/haze/blob/2.0.0-beta02/haze-glass/src/commonMain/kotlin/dev/chrisbanes/haze/glass/GlassOptics.kt).
+- Fixed optics use `SurfaceProfile.Circle`; fold and content-derived normals are disabled.
+  Contrast, white point, and chroma stay neutral. The small depth mix softens fine detail
+  while keeping most of the sharp source. Source-fill alpha `1f` is BEHIND captured pixels,
+  not whole-pane opacity. The no-host fallback is independently readable at 96% opacity;
+  Haze chooses its platform rendering backend.
+- Two cached directional strokes (2.dp band and 0.45.dp rim) and one local 6.dp shadow
+  describe the dock on plain backgrounds. There is no inner duplicate rim, moving edge
+  glint, selection shadow, or full-width bottom gradient. Logical light direction mirrors
+  in RTL; it crosses the short axis of the side rail.
+- `NavigationSelectionLens.kt` is a thin fill, not another Haze surface. Resting fill alpha
+  is 8% dark / 7% light. A head/follower spring gives at most 8% travel stretch, reciprocal
+  compression, and continuous fill/sheens; no moving/settled boolean switches optical styles.
+  Animated values are read in placement/drawing. Reduced motion removes stretch and travel
+  sheen; Compose's duration scale controls the finite springs. No idle animation is added.
+- The dock is capped at 392.dp wide and is 60.dp high. Every weighted horizontal slot is
+  selectable across its full width and 52.dp content height. The selection is inset 2.dp
+  from its slot sides. The rail retains 48.dp items. Decorative `BoxScope.matchParentSize()`
+  layers cannot expand the wrap-content rail. Glyphs and hit targets never stretch.
+- Each keyed tab owns its interaction source. `NavigationGlassInteraction.kt` forwards
+  presses with item-to-dock coordinate translation and forwards release, cancel, and focus
+  events. Disposal cancels outstanding interactions. Haze gives the ONE dock localized
+  press lighting; items also provide finite press fill and a keyboard-focus outline on
+  all platforms. Selecting the active tab still produces feedback.
+- On hardware-accelerated API 33+, `NavigationBackdrop.kt` applies a small GPU-only pass
+  to the material BEFORE decorations/glyphs. Five local background samples estimate
+  brightness and detail, adjusting theme-colored backing near each icon/label group.
+  The perimeter and pixel alpha are preserved. Text stays in the monochrome theme color;
+  this is background adaptation, not foreground color switching. No window screenshot,
+  CPU readback, extra capture source, polling, or frame-driven Compose state is used.
+- On older platforms, non-accelerated views, or shader creation failure, items retain a
+  feathered local halo. A density-aware label shadow is present on both paths. Selection
+  also uses filled icons and bold labels. Backing is independent of the traveling selection.
+- Existing custom order, tab stacks, root-only visibility, modal suppression, padding tap
+  interception, and system insets remain. No dependency or scroll-collapse behavior is added.
+  Removing the second Haze node saves its capture/blur work, but the added small GPU pass
+  has a cost; performance improvement is not established without device profiling.
+
+References: [Apple Liquid Glass](https://developer.apple.com/videos/play/wwdc2025/219/),
+[Haze pinned guide](https://github.com/chrisbanes/haze/blob/2.0.0-beta02/docs/effects/glass.md),
+and [Android AGSL](https://developer.android.com/develop/ui/views/graphics/agsl/using-agsl).
 
 Static checks: `python3 tools/qa/verify_navigation_glass.py` and
-`python3 tools/qa/verify_static_contracts.py`. These do **not** compile Kotlin or render Haze.
-The palette model checks **halo centers only** across the monochrome light and dark schemes against
-uniform black/white inputs, both with and without the moving lens under each glyph group.
-It does not prove whole-label contrast: feathered edges deliberately
-stay transparent, and high-detail photography still requires visual acceptance on-device.
-Source checks cover tint/blur budgets, unchanged capture ownership, reduced motion, selection
-semantics and the decoration sizing regression; none substitute for compilation or GPU testing.
+`python3 tools/qa/verify_static_contracts.py`. These do **not** compile Kotlin, validate
+AGSL on a device, or render Haze. The simplified palette model checks backing CENTERS
+against uniform grayscale inputs in both themes, including selection/press overlays.
+It does not establish whole-label contrast on covers or at feathered edges.
 
-Device acceptance: scroll contrasting covers behind the capsule in light and dark mode;
-expect sharp moving covers through the center and bending near the rounded edge. Confirm
-that the inset rim and edge reflections read as clear glass on white, black and theme surfaces. Check icon/label readability
-against bright, dark and high-frequency covers, including non-default themes and large text.
-Check a plain/empty page (the bevel must supply thickness without source texture), both orientations,
-selection/focus feedback, tab state retention, child-page hiding, and system animations disabled.
-Tap across all four tabs rapidly and reverse direction mid-animation; confirm one continuous
-lens, correct final alignment, fixed glyphs/hit targets, and both end positions in LTR/RTL.
-Finally check the supported older-platform fallback and frame pacing on a release-like build.
+Device acceptance: scroll bright, dark, and busy covers in both themes; inspect plain
+white/black pages, press/release/cancel and keyboard focus, rapid tab reversal, customized
+order, LTR/RTL, narrow windows, side rail, large text, disabled animations, root/child pages,
+modals, and older-platform fallback. Verify frame pacing and the shader on a release-like
+build. Those runtime results remain unverified by static checks.
 
 ## Ownership rules
 
