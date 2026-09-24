@@ -26,7 +26,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.CompositionLocalProvider
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.Composable
@@ -121,7 +121,7 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         val appContext = applicationContext
         setContent {
-            val state by startup.collectAsState()
+            val state by startup.collectAsStateWithLifecycle()
             val appLanguage by PresentationAccess.settings.language
             val baseContext = LocalContext.current
             val currentConfiguration = LocalConfiguration.current
