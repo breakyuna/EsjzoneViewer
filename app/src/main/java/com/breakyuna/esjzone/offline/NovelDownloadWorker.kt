@@ -110,7 +110,7 @@ object NovelDownloadManager {
             .build()
         WorkManager.getInstance(context.applicationContext).enqueueUniqueWork(
             uniqueWorkName(novel.url),
-            ExistingWorkPolicy.KEEP,
+            ExistingWorkPolicy.APPEND_OR_REPLACE,
             request
         )
         return request.id
@@ -283,14 +283,14 @@ class NovelDownloadWorker(
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
             ContextCompat.checkSelfPermission(applicationContext, Manifest.permission.POST_NOTIFICATIONS) !=
             android.content.pm.PackageManager.PERMISSION_GRANTED) return
-        ensureNotificationChannel()
+        ensureActionNotificationChannel()
         val intent = Intent(applicationContext, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
             putExtra(MainActivity.EXTRA_NOVEL_URL, novelUrl)
         }
         val pending = PendingIntent.getActivity(applicationContext, notificationId() + 2, intent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
-        NotificationCompat.Builder(applicationContext, CHANNEL_ID)
+        NotificationCompat.Builder(applicationContext, ACTION_CHANNEL_ID)
             .setSmallIcon(android.R.drawable.stat_sys_warning)
             .setContentTitle(applicationContext.getString(R.string.wenku_download_verification_title))
             .setContentText(novelName)
@@ -361,6 +361,17 @@ class NovelDownloadWorker(
             )
     }
 
+    private fun ensureActionNotificationChannel() {
+        applicationContext.getSystemService(NotificationManager::class.java)
+            .createNotificationChannel(
+                NotificationChannel(
+                    ACTION_CHANNEL_ID,
+                    applicationContext.getString(R.string.novel_download_action_channel),
+                    NotificationManager.IMPORTANCE_DEFAULT
+                )
+            )
+    }
+
     private fun notificationId(): Int =
         (id.hashCode() and Int.MAX_VALUE).coerceAtLeast(1)
 
@@ -377,7 +388,7 @@ class NovelDownloadWorker(
         ) return
 
         val notificationManager = applicationContext.getSystemService(NotificationManager::class.java)
-        ensureNotificationChannel()
+        ensureActionNotificationChannel()
 
         val intent = Intent(applicationContext, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
@@ -390,7 +401,7 @@ class NovelDownloadWorker(
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
-        val notification = NotificationCompat.Builder(applicationContext, CHANNEL_ID)
+        val notification = NotificationCompat.Builder(applicationContext, ACTION_CHANNEL_ID)
             .setSmallIcon(android.R.drawable.stat_sys_download_done)
             .setContentTitle(
                 applicationContext.getString(
@@ -422,5 +433,6 @@ class NovelDownloadWorker(
         internal const val KEY_CHAPTER = "chapter"
         private const val MAX_RETRIES = 3
         private const val CHANNEL_ID = "novel_downloads"
+        private const val ACTION_CHANNEL_ID = "novel_download_actions"
     }
 }

@@ -5,6 +5,7 @@ package com.breakyuna.esjzone.ui.page
 import androidx.activity.compose.BackHandler
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.lifecycle.viewModelScope
+import androidx.lifecycle.repeatOnLifecycle
 
 import android.text.format.DateUtils
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -163,9 +164,12 @@ object HistoryPage : AppDestination {
 
         // This destination's ViewModels outlive recompositions. Start the one
         // cloud refresh when the screen enters, rather than from page content.
-        LaunchedEffect(Unit) {
-            localModel.observe()
-            cloudModel.getNovels(forceRefresh = true)
+        val historyLifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+        LaunchedEffect(historyLifecycleOwner, localModel, cloudModel) {
+            historyLifecycleOwner.repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.RESUMED) {
+                localModel.observe()
+                cloudModel.getNovels(forceRefresh = true)
+            }
         }
         LaunchedEffect(selectedPage) {
             if (pager.currentPage != selectedPage) pager.animateScrollToPage(selectedPage)

@@ -118,6 +118,7 @@ object SettingsStateBoundary {
     val adultFlow: StateFlow<Boolean> get() = repository().adult
     val domain: State<String> get() { repository(); return _domain }
     val domainFlow: StateFlow<String> get() = repository().domain
+    fun refreshDomain() { _domain.value = repository().domain.value }
     val language: State<AppLanguage> get() { repository(); return _language }
     val languageFlow: StateFlow<AppLanguage> get() = repository().language
     val readerAutoSave: State<Boolean> get() { repository(); return _readerAutoSave }
@@ -134,7 +135,13 @@ object SettingsStateBoundary {
     val startTabFlow: StateFlow<String> get() = repository().startTab
 
     fun setAdult(value: Boolean) = repository().setAdult(value)
-    fun setDomain(value: String) = repository().setDomain(value)
+    fun setDomain(value: String) {
+        if (repository().domain.value != value) {
+            com.breakyuna.esjzone.network.EsjzoneClient.invalidateActiveSession()
+            _domain.value = value
+        }
+        repository().setDomain(value)
+    }
     fun setLanguage(value: AppLanguage) = repository().setLanguage(value)
     fun setReaderAutoSave(value: Boolean) = repository().setReaderAutoSave(value)
     fun setDownloadConcurrency(value: Int) = repository().setDownloadConcurrency(value)

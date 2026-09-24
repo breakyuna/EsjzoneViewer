@@ -3,9 +3,10 @@ package com.breakyuna.esjzone.network.features
 import com.breakyuna.esjzone.app.PresentationAccess
 import com.breakyuna.esjzone.network.Authorization
 import com.breakyuna.esjzone.network.EsjzoneUrls
+import com.breakyuna.esjzone.network.EsjzoneClient
 import com.breakyuna.esjzone.novellibrary.community.ForumTopic
 import com.breakyuna.esjzone.util.AppLogger
-import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.ConcurrentHashMap
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -22,7 +23,7 @@ import kotlinx.coroutines.launch
 object CommunitySyncManager {
 
     private val workerScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-    private val isSyncing = AtomicBoolean(false)
+    private val syncingGenerations = ConcurrentHashMap.newKeySet<Long>()
 
     val waterCoolerTopic: ForumTopic
         get() = ForumTopic(
@@ -38,13 +39,16 @@ object CommunitySyncManager {
         )
 
     fun schedulePreSync(authorization: Authorization, delayMillis: Long = 0L) {
-        if (!isSyncing.compareAndSet(false, true)) return
+        val generation = EsjzoneClient.sessionGeneration()
+        if (!syncingGenerations.add(generation)) return
         workerScope.launch {
             try {
                 if (delayMillis > 0L) delay(delayMillis)
+                if (!EsjzoneClient.isCurrentSession(authorization, generation)) return@launch
                 AppLogger.i("CommunitySyncManager", "Starting background pre-sync for guestbook and water cooler")
                 val guestbookJob = launch {
                     try {
+                        if (!EsjzoneClient.isCurrentSession(authorization, generation)) return@launch
                         PresentationAccess.client.getPageComments(
                             authorization = authorization,
                             pageUrl = EsjzoneUrls.Guestbook,
@@ -58,6 +62,7 @@ object CommunitySyncManager {
                 }
                 val waterCoolerJob = launch {
                     try {
+                        if (!EsjzoneClient.isCurrentSession(authorization, generation)) return@launch
                         PresentationAccess.client.getForumPost(
                             authorization = authorization,
                             topic = waterCoolerTopic,
@@ -72,7 +77,7 @@ object CommunitySyncManager {
                 joinAll(guestbookJob, waterCoolerJob)
                 AppLogger.i("CommunitySyncManager", "Background pre-sync completed")
             } finally {
-                isSyncing.set(false)
+                syncingGenerations.remove(generation)
             }
         }
     }

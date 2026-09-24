@@ -266,6 +266,7 @@ table.table
 ~~~
 
 删除按钮的 data-id 是观看记录 ID，不一定是小说 ID；从 data-id 读取并发送给 /inc/mem_view_del.php。
+客户端仅在删除响应 JSON 的 `status=200` 时使观看记录缓存失效；HTTP 成功本身不代表删除成功。
 
 ### 8.4 资料表单
 

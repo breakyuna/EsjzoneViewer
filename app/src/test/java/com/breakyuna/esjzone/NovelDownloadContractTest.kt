@@ -15,6 +15,20 @@ import org.junit.Test
 class NovelDownloadContractTest {
 
     @Test
+    fun manifestJson_doesNotPersistCommonPassword() {
+        val manifest = DownloadedNovelManifest(
+            name = "Fixture", url = "/detail/1.html", coverUrl = "", views = 0,
+            likes = 0, words = 0, type = "", author = "", forumUrl = "",
+            tags = emptyList(), isAdult = false, description = "", sourceUrl = null,
+            updatedAt = null, chapters = emptyList(), downloadedAt = 0L,
+            complete = false, commonPassword = "example-only"
+        )
+        val json = Gson().toJson(manifest)
+        assertTrue(!json.contains("commonPassword"))
+        assertTrue(!json.contains("example-only"))
+    }
+
+    @Test
     fun chapterSelection_survivesCompactWorkerInputForLargeTableOfContents() {
         val urls = (1..782).map { "/forum/9001/$it.html" }.toSet()
         val encoded = ChapterSelectionCodec.encode(urls)
@@ -191,7 +205,7 @@ class NovelDownloadContractTest {
     }
 
     @Test
-    fun manifestRoundTrip_preservesCommonPassword() {
+    fun manifestRoundTrip_discardsCommonPassword() {
         val manifest = DownloadedNovelManifest(
             name = "Fixture novel",
             url = "https://www.esjzone.cc/detail/9001.html",
@@ -223,8 +237,8 @@ class NovelDownloadContractTest {
         )
 
         val restored = Gson().fromJson(Gson().toJson(manifest), DownloadedNovelManifest::class.java)
-        assertEquals(manifest, restored)
-        assertEquals("test_common_secret", restored.commonPassword)
+        assertEquals(manifest.copy(commonPassword = null), restored)
+        assertEquals(null, restored.commonPassword)
     }
 
     @Test

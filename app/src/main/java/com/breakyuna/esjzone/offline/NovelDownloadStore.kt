@@ -71,7 +71,7 @@ data class DownloadedNovelManifest(
     val chapters: List<DownloadedChapterRecord>,
     val downloadedAt: Long,
     val complete: Boolean,
-    val commonPassword: String? = null
+    @Transient val commonPassword: String? = null
 ) {
     val pendingPasswordChapters: List<DownloadedChapterRecord>
         get() = chapters.filter { it.requiresPassword && !it.downloaded }
@@ -524,7 +524,7 @@ object NovelDownloadStore {
         val targetIndex = records.indexOfFirst { chapterKey(it.url) == targetKey }
         if (targetIndex < 0) return null
         val target = records[targetIndex]
-        val targetFile = File(directory, target.fileName)
+        val targetFile = resolveLocalFile(directory, target.fileName) ?: return null
         if (!target.downloaded || !isChapterFullyDownloaded(directory, targetFile)) {
             val storedComponents = detail.content.mapNotNull { component ->
                 when (component) {
@@ -604,7 +604,8 @@ object NovelDownloadStore {
         val records = orderedChapters.mapIndexed { index, chapter ->
             val previous = previousByUrl[chapterKey(chapter.url)]
             val fileName = previous?.fileName ?: chapterFileName(chapter.url)
-            val chapterFile = File(directory, fileName)
+            val chapterFile = resolveLocalFile(directory, fileName)
+                ?: throw IOException("Invalid downloaded chapter path")
             val isDownloaded = isChapterFullyDownloaded(directory, chapterFile)
             DownloadedChapterRecord(
                 index = index,
@@ -848,7 +849,9 @@ object NovelDownloadStore {
             contentHtml = detail.contentHtml,
             baseUrl = detail.sourceUrl ?: EsjzoneUrls.resolve(record.url, baseUrl ?: EsjzoneUrls.Base)
         )
-        writeJson(File(directory, record.fileName), storedChapter, writeGuard)
+        val target = resolveLocalFile(directory, record.fileName)
+            ?: throw IOException("Invalid downloaded chapter path")
+        writeJson(target, storedChapter, writeGuard)
         return storedChapter
     }
 
@@ -1083,7 +1086,15 @@ object NovelDownloadStore {
 
     private fun readManifest(directory: File?): DownloadedNovelManifest? {
         if (directory == null) return null
-        return readJson(File(directory, MANIFEST_FILE), DownloadedNovelManifest::class.java)
+        val file = File(directory, MANIFEST_FILE)
+        val manifest = readJson(file, DownloadedNovelManifest::class.java) ?: return null
+        // Older versions wrote this field in plain JSON. Gson ignores the
+        // transient field; rewrite once to remove it from existing downloads.
+        if (runCatching { file.readText(StandardCharsets.UTF_8).contains("\"commonPassword\"") }
+                .getOrDefault(false)) {
+            writeJson(file, manifest)
+        }
+        return manifest
     }
 
     private fun writeManifest(

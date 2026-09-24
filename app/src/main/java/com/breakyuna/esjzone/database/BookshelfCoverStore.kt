@@ -6,6 +6,7 @@ import com.breakyuna.esjzone.data.settings.SettingsDefaults
 import com.breakyuna.esjzone.database.entity.BookshelfEntry
 import com.breakyuna.esjzone.network.EsjzoneUrls
 import com.breakyuna.esjzone.util.AppLogger
+import androidx.compose.runtime.mutableStateMapOf
 import coil3.request.CachePolicy
 import coil3.request.ImageRequest
 import java.io.File
@@ -37,6 +38,7 @@ object BookshelfCoverStore {
     private const val BATCH_COOLDOWN_MILLIS = 300L
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val activeKeys = ConcurrentHashMap.newKeySet<String>()
+    private val localCoverUrls = mutableStateMapOf<String, String>()
     private val downloadSemaphore = Semaphore(2)
 
     private val directory: File
@@ -103,18 +105,21 @@ object BookshelfCoverStore {
     /** Returns a durable local URI when present, otherwise the original URL. */
     fun localOrRemote(entry: BookshelfEntry): String {
         if (entry.coverUrl.isBlank()) return ""
-        val local = fileFor(entry)
-        return if (local.isFile && local.length() > 0L) local.toURI().toString() else entry.coverUrl
+        return localCoverUrls[fileName(entry)] ?: entry.coverUrl
     }
 
     /** Schedules a throttled, best-effort persistence pass without blocking shelf UI. */
     fun schedulePersist(entries: List<BookshelfEntry>) {
-        val pending = entries.filter { entry ->
-            entry.visible && EsjzoneUrls.coverOrEmpty(entry.coverUrl).isNotBlank() &&
-                !fileFor(entry).isFile && activeKeys.add(fileName(entry))
-        }
-        if (pending.isEmpty()) return
         scope.launch {
+            val pending = entries.filter { entry ->
+                if (!entry.visible || EsjzoneUrls.coverOrEmpty(entry.coverUrl).isBlank()) return@filter false
+                val local = fileFor(entry)
+                if (local.isFile && local.length() > 0L) {
+                    localCoverUrls[fileName(entry)] = local.toURI().toString()
+                    false
+                } else activeKeys.add(fileName(entry))
+            }
+            if (pending.isEmpty()) return@launch
             try {
                 pending.chunked(BATCH_SIZE).forEachIndexed { index, batch ->
                     coroutineScope {
@@ -134,14 +139,20 @@ object BookshelfCoverStore {
 
     private suspend fun persist(entry: BookshelfEntry) = withContext(Dispatchers.IO) {
         val target = fileFor(entry)
-        if (target.isFile && target.length() > 0L) return@withContext
+        if (target.isFile && target.length() > 0L) {
+            localCoverUrls[fileName(entry)] = target.toURI().toString()
+            return@withContext
+        }
         val source = EsjzoneUrls.coverOrEmpty(entry.coverUrl)
         if (source.isBlank()) return@withContext
 
         // First use an already-downloaded Coil source.  This avoids duplicate
         // transfers for the covers visible while the shelf is opened.
         val cached = BookmarkCoverStore.findCoilCachedCover(source)
-        if (cached != null && copyAtomically(cached, target)) return@withContext
+        if (cached != null && copyAtomically(cached, target)) {
+            localCoverUrls[fileName(entry)] = target.toURI().toString()
+            return@withContext
+        }
 
         // A cold shelf still needs to become fully offline-capable.  Loading via
         // the app-scoped Coil loader keeps this request in the same cache and
@@ -155,6 +166,9 @@ object BookshelfCoverStore {
                 .build()
             PresentationAccess.imageLoader.execute(request)
             BookmarkCoverStore.findCoilCachedCover(source)?.let { copyAtomically(it, target) }
+            if (target.isFile && target.length() > 0L) {
+                localCoverUrls[fileName(entry)] = target.toURI().toString()
+            }
         } catch (error: Exception) {
             AppLogger.w("BookshelfCoverStore", "Unable to persist cover for ${entry.bookKey}", error)
         }

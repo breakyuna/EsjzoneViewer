@@ -37,7 +37,7 @@ class FavoriteHistoryCssAdapterTest {
             document.select("tr[id^='novel-']").map { it.id().removePrefix("novel-") }
         )
         assertEquals(
-            listOf("9060", "9061"),
+            listOf("log-1", "log-2"),
             histories.map { it.vid }
         )
         assertEquals(

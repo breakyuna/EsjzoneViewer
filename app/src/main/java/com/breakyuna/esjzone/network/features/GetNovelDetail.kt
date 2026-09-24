@@ -16,6 +16,7 @@ import com.breakyuna.esjzone.novellibrary.novel.analyseChapterList
 import com.breakyuna.esjzone.novellibrary.novel.analyseDescription
 import com.breakyuna.esjzone.util.AppLogger
 import org.jsoup.Jsoup
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 
 private val detailSelector: HtmlSelector = JsoupHtmlSelector
 
@@ -26,8 +27,10 @@ fun EsjzoneClient.getNovelDetail(
     forceRefresh: Boolean = false,
     baseUrl: String? = null
 ): DetailedNovel {
-    val targetUrl = baseUrl?.let { EsjzoneUrls.resolve(novel.url, it) }
-        ?: EsjzoneUrls.resolve(novel.url)
+    val domain = baseUrl?.toHttpUrlOrNull()?.host
+        ?: authorization.domain.ifBlank { EsjzoneUrls.BaseWithoutProtocol }
+    val targetUrl = EsjzoneUrls.trustedDetailUrl(novel.url, domain)
+        ?: throw IllegalArgumentException("Invalid novel detail URL")
     val detailCacheKey = novelDetailCacheKey(authorization, targetUrl)
     if (!includeComments && !forceRefresh) {
         NovelDetailCache.read(detailCacheKey)?.takeIf { cached ->

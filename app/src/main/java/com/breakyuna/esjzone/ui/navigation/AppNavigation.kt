@@ -122,7 +122,11 @@ sealed interface LegacyRoute {
     @Serializable data class Static(val token: String) : LegacyRoute
     @Serializable data class Search(val keyword: String) : LegacyRoute
     @Serializable data class Novel(val identity: String) : LegacyRoute
-    @Serializable data class Category(val identity: String, val name: String = "") : LegacyRoute
+    @Serializable data class Category(
+        val identity: String,
+        val name: String = "",
+        val isAdult: Boolean = false
+    ) : LegacyRoute
     @Serializable data class NovelList(
         val novelType: Int,
         val sortType: Int,
@@ -148,7 +152,8 @@ private fun LegacyRoute.token(): String = when (this) {
     is LegacyRoute.Static -> token
     is LegacyRoute.Search -> "SearchPage:$keyword"
     is LegacyRoute.Novel -> "NovelPage:$identity"
-    is LegacyRoute.Category -> if (name.isNotBlank()) "CategoryPage:$identity:$name" else "CategoryPage:$identity"
+    is LegacyRoute.Category ->
+        "CategoryPage:${encodeRouteTokenPart(identity)}:${encodeRouteTokenPart(name)}:$isAdult"
     is LegacyRoute.NovelList -> "NovelListPage:$novelType:$sortType:$adultOnly"
     is LegacyRoute.ChapterComments -> "ChapterCommentsPage:$identity"
     is LegacyRoute.ForumCategory -> "ForumCategoryPage:$id:${encodeRouteTokenPart(url)}" +
@@ -164,10 +169,11 @@ private fun routeFromToken(token: String): LegacyRoute {
         "SearchPage" -> LegacyRoute.Search(argument)
         "NovelPage" -> LegacyRoute.Novel(argument)
         "CategoryPage" -> {
-            val parts = argument.split(':', limit = 2)
+            val parts = argument.split(':', limit = 3)
             LegacyRoute.Category(
-                identity = parts.getOrNull(0).orEmpty(),
-                name = parts.getOrNull(1).orEmpty()
+                identity = decodeRouteTokenPart(parts.getOrNull(0).orEmpty()),
+                name = decodeRouteTokenPart(parts.getOrNull(1).orEmpty()),
+                isAdult = parts.getOrNull(2)?.toBooleanStrictOrNull() ?: false
             )
         }
         "NovelListPage" -> {
@@ -273,7 +279,7 @@ class AppNavigator internal constructor(
     private val backStack: MutableList<NavKey>,
     private val registry: MutableMap<String, AppDestination>,
     private val rootNavigator: AppNavigator? = null,
-    private val setAuthorization: ((Authorization) -> Unit)? = null
+    private val setAuthorization: ((Authorization?) -> Unit)? = null
 ) {
     val items: List<AppDestination>
         get() = backStack.mapNotNull { key ->
@@ -339,6 +345,8 @@ class AppNavigator internal constructor(
             }
             LoginScreen -> {
                 register(destination)
+                root.setAuthorization?.invoke(null)
+                com.breakyuna.esjzone.MainActivity.setPendingNovelUrl(null)
                 replaceTop(AppNavKey.Login)
             }
             is MainScreen -> {
@@ -362,6 +370,8 @@ class AppNavigator internal constructor(
         when (destination) {
             LoginScreen -> {
                 register(destination)
+                root.setAuthorization?.invoke(null)
+                com.breakyuna.esjzone.MainActivity.setPendingNovelUrl(null)
                 backStack.clear()
                 backStack.add(AppNavKey.Login)
             }
@@ -411,13 +421,13 @@ class AppNavigator internal constructor(
     }
 
     internal fun child(stack: MutableList<NavKey>): AppNavigator =
-        AppNavigator(stack, registry, root, setAuthorization)
+        AppNavigator(stack, mutableMapOf(), root, setAuthorization)
 
     internal fun destination(route: LegacyRoute): AppDestination? =
-        registry[route.token()] ?: route.restore()
+        registry[route.token()] ?: route.restore()?.also { registry[route.token()] = it }
 
     internal fun readerDestination(route: ReaderRoute): AppDestination? =
-        registry[readerToken(route)] ?: route.restore()
+        registry[readerToken(route)] ?: route.restore().also { registry[readerToken(route)] = it }
 
     private fun openReader(destination: AppDestination) {
         register(destination)
@@ -472,7 +482,7 @@ private fun LegacyRoute.restore(): AppDestination? = when (this) {
     is LegacyRoute.Search -> SearchPage(keyword)
     is LegacyRoute.Novel -> NovelPage(FavoriteNovel(name = "", url = identity))
     is LegacyRoute.Category -> CategoryPage(
-        Category(name = name, url = identity, isAdult = false)
+        Category(name = name, url = identity, isAdult = isAdult)
     )
     is LegacyRoute.NovelList -> NovelListPage(novelType, sortType, adultOnly)
     is LegacyRoute.ChapterComments -> ChapterCommentsPage("", identity)
@@ -533,26 +543,21 @@ internal val predictivePopTransition:
 @Composable
 fun AppNavigation() {
     val backStack: MutableList<NavKey> = rememberNavBackStack(AppNavKey.Loading)
-    val registry = remember {
-        object : java.util.LinkedHashMap<String, AppDestination>(32, 0.75f, true) {
-            override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, AppDestination>?): Boolean =
-                size > 32
-        }
-    }
+    val registry = remember { mutableMapOf<String, AppDestination>() }
     // A restored Reader can be the first visible root entry, so it cannot rely
     // on MainScreen's CompositionLocal scope. Read the process-persisted
     // cookie session before composing the root NavDisplay; LoadingScreen still
     // owns the legacy Room import for the normal Loading route.
     val currentDomain by PresentationAccess.settings.domain
-    var authorization by remember(currentDomain) {
-        mutableStateOf(
-            PresentationAccess.client.restoreAuthorization(
-                currentDomain
-            )
-        )
+    val authorizationState = remember {
+        mutableStateOf(PresentationAccess.client.restoreAuthorization(currentDomain))
+    }
+    val authorization = authorizationState.value?.takeIf { it.domain == currentDomain }
+    LaunchedEffect(currentDomain) {
+        authorizationState.value = PresentationAccess.client.restoreAuthorization(currentDomain)
     }
     val navigator = remember(backStack, registry) {
-        AppNavigator(backStack, registry, setAuthorization = { authorization = it })
+        AppNavigator(backStack, registry, setAuthorization = { authorizationState.value = it })
     }
 
     LaunchedEffect(Unit) {
@@ -565,7 +570,9 @@ fun AppNavigation() {
         val target = pendingNovelUrl
         if (!target.isNullOrBlank() && authorization != null) {
             com.breakyuna.esjzone.MainActivity.setPendingNovelUrl(null)
-            navigator.pushIfNotCurrent(NovelPage(FavoriteNovel(name = "", url = target)))
+            EsjzoneUrls.trustedDetailUrl(target, authorization.domain)?.let { safeUrl ->
+                navigator.pushIfNotCurrent(NovelPage(FavoriteNovel(name = "", url = safeUrl)))
+            }
         }
     }
 

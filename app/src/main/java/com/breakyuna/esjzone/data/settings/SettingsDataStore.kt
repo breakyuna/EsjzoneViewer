@@ -80,6 +80,12 @@ class SettingsDataStore(
     override val startTab: StateFlow<String> = values.map { it.startTab }
         .stateIn(scope, SharingStarted.Eagerly, defaults.startTab)
 
+    /** Wait until the Compose-facing domain mirrors the persisted first value. */
+    suspend fun awaitInitialDomain() {
+        val persistedDomain = dataStore.data.first().toSettingsValues().domain
+        domain.first { it == persistedDomain }
+    }
+
     override fun setAdult(value: Boolean) = write { it[ADULT] = value }
     override fun setDomain(value: String) {
         write { it[DOMAIN] = value.takeIf { candidate -> candidate in SettingsDefaults.DOMAINS } ?: defaults.domain }

@@ -46,6 +46,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.CoroutineScope
 import com.breakyuna.esjzone.ui.app.App
 import com.breakyuna.esjzone.app.PresentationAccess
+import com.breakyuna.esjzone.network.EsjzoneUrls
 import com.breakyuna.esjzone.ui.designsystem.AppTheme
 import com.breakyuna.esjzone.ui.designsystem.AppTypography
 import com.breakyuna.esjzone.util.AppLogger
@@ -103,6 +104,10 @@ class MainActivity : ComponentActivity() {
                 container.initializeAsync()
                 val settings = container.settingsDataStore
                 settings.migrateFromLegacy(container.database)
+                settings.awaitInitialDomain()
+                kotlinx.coroutines.withContext(Dispatchers.Main) {
+                    PresentationAccess.settings.refreshDomain()
+                }
                 container.readerSettingsDataStore.migrateFromLegacy(appContext)
             }
         }
@@ -160,7 +165,7 @@ class MainActivity : ComponentActivity() {
     private fun handleNovelIntent(intent: Intent?) {
         val novelUrl = intent?.getStringExtra(EXTRA_NOVEL_URL)
         if (!novelUrl.isNullOrBlank()) {
-            setPendingNovelUrl(novelUrl)
+            EsjzoneUrls.trustedDetailUrl(novelUrl)?.let(::setPendingNovelUrl)
         }
     }
 

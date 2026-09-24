@@ -4,7 +4,7 @@
 
 ## 1. 访问与证据边界
 
-站点主体是传统服务端渲染 HTML。首页、列表、搜索、详情、章节、会员页和论坛页均可从 DOM 直接读取内容；本次没有获得浏览器网络层的 XHR/fetch 列表，也没有读取静态 JS 文件正文。外部脚本 modifyDetail.js?v=204 在云浏览器中直接打开时被客户端拦截，因此收藏等逻辑不做未经证实的 API 猜测。
+站点主体是传统服务端渲染 HTML。首页、列表、搜索、详情、章节、会员页和论坛页均可从 DOM 直接读取内容；本次没有获得浏览器网络层的 XHR/fetch 列表，也没有读取静态 JS 文件正文。外部脚本 modifyDetail.js?v=204 在云浏览器中直接打开时被客户端拦截。收藏切换另由项目维护者实际验证可用，见第 6 节；其他动态写入仍不做未经证实的 API 猜测。
 
 所有需要登录的请求都应复用浏览器登录会话，不能把会话 Cookie 或授权值写入配置文件。
 
@@ -103,7 +103,7 @@
 | 页面 | `/forum/{categoryId}/{boardId}/` |
 | DOM 壳 | `#dataTable[data-url]`、`data-side-pagination="server"`、`data-page-size="20"`、`data-sort-name="last_reply"`、`data-sort-order="desc"` |
 | data-url 样例 | `/inc/forum_list_data.php?totalRows=3`、`/inc/forum_list_data.php?totalRows=142` |
-| 客户端请求 | 先向当前板块页 POST `plxf=getAuthToken`，再使用 data-url 作为端点并补充 `limit=20&offset=0&sort=last_reply&order=desc`；GET 请求携带响应令牌到 `Authorization` 请求头；业务状态 `301` 时重新获取令牌并最多重试一次 |
+| 客户端请求 | 先向当前板块页 POST `plxf=getAuthToken`；只接受当前站点 `/inc/forum_list_data.php` 作为 data-url，按页补充 `limit=20&offset={offset}&sort=last_reply&order=desc`；GET 请求携带响应令牌到 `Authorization` 请求头且不跟随重定向；业务状态 `301` 时重新获取令牌并最多重试一次 |
 | 返回形态 | JSON；观察到 Bootstrap Table 的 `total` 与 `rows` 字段，主题链接位于 `rows[].subject` HTML 中 |
 | 初始占位 | HTML 首次解析可见 `no-records-found`，但脚本加载后非空板块会填充主题行 |
 | 空板块判定 | 仅当 `totalRows=0` 或动态 JSON 确认总数为 0 时返回空列表 |
@@ -138,9 +138,9 @@
 | Referer、Origin、User-Agent | 浏览器会自动管理，但本次未从网络层确认是否由服务端校验 |
 | Content-Type | 表单提交大概率为 URL-encoded；动态 JSON 结果由 dataType:'json' 指定，实际请求头未确认 |
 
-## 6. 未观察到或不应猜测的接口
+## 6. 收藏写入与未观察到的接口
 
-- 收藏新增/取消接口：当前按钮已是“已收藏”，未点击；逻辑位于被云浏览器拦截的 modifyDetail.js?v=204，UNKNOWN / NOT VERIFIED。
+- 收藏新增/取消：项目维护者已在实际使用中验证远端切换可用，早先的云浏览器采样未覆盖该操作。客户端向 `/inc/mem_favorite.php` 发送携带当前页面授权 token 的 POST，请求前读取远端收藏列表以确定是否需要切换；失败时保留本地待同步意图。具体响应样例尚未记录，客户端目前以成功 HTTP 状态且响应不含登录页、拦截页或错误标记作为请求成功条件。
 - 留言提交、举报提交、资料更新、工单创建、工单回复：只有表单目标被观察，真实服务端响应未验证。
 - 其他会员页面 Bootstrap Table 的实际请求参数和返回字段仍未逐项通过网络面板确认，不应与论坛子板块端点混用。
 - 章节正文、评论、TOC：当前均直接出现在 HTML 中，没有证据表明需要额外 JSON API。
@@ -148,9 +148,10 @@
 ## 7. 客户端实现约束
 
 1. 只把第 3 节中有内联脚本或 data-url 证据的路径实现为动态接口。
-2. 对所有写操作设置显式确认开关，默认禁用。
+2. 未验证的写操作默认不启用；已由项目维护者验证的收藏切换可以执行，失败时保留本地待同步意图。
 3. API 错误解析不能假定固定 HTTP 状态码或 JSON 字段，遇到未验证响应应保留原始响应摘要并返回 UNKNOWN。
 4. 不在日志中输出 Cookie、授权值、密码或完整私讯 HTML。
+5. 外部 Intent 的小说链接与详情请求只接受当前站点的 `/detail/{novelId}.html`；详情请求不跟随重定向。
 
 ### 7.1 论坛与章节评论响应
 

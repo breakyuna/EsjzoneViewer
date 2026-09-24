@@ -36,6 +36,9 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.mutableStateOf
@@ -101,8 +104,10 @@ object ProfileTab : AppTab {
         var retry by remember { mutableStateOf(0) }
         val profile = profileName?.let { UserProfile(it, profileAvatar, profileExp, profileLevel) }
         val menuItems = profileMenuItems()
+        val profileLifecycleOwner = LocalLifecycleOwner.current
 
-        LaunchedEffect(domain, authorization.ewsKey, authorization.ewsToken, retry) {
+        LaunchedEffect(domain, authorization.ewsKey, authorization.ewsToken, retry, profileLifecycleOwner) {
+            profileLifecycleOwner.repeatOnLifecycle(Lifecycle.State.RESUMED) {
             loading = true
             val prefix = profileCachePrefix(authorization, domain)
             try {
@@ -134,6 +139,7 @@ object ProfileTab : AppTab {
                 profileLevel = fresh.level
                 withContext(Dispatchers.IO) { cacheUserProfile(authorization, domain, fresh) }
             } catch (e: CancellationException) { throw e } catch (e: Exception) { AppLogger.w("ProfileTab", "Profile unavailable; using local snapshot", e) } finally { loading = false }
+            }
         }
 
         Scaffold(

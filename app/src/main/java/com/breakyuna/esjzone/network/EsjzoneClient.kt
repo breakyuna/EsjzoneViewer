@@ -75,6 +75,7 @@ object EsjzoneClient {
     private val refreshScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val inFlightPages = ConcurrentHashMap<String, CompletableFuture<String>>()
     private val cacheEpoch = AtomicLong(0L)
+    private val activeSessionGeneration = AtomicLong(0L)
     private val networkPermits = Semaphore(6, true)
 
     @Volatile
@@ -258,7 +259,12 @@ object EsjzoneClient {
             val cancellation = pageRequestCancellation.get()
             val responseData = try {
                 val response = try {
-                    val call = authenticatedClient(authorization).newCall(
+                    val requestClient = authenticatedClient(authorization).let { client ->
+                        if (pageKind == PageKind.DETAIL) client.newBuilder()
+                            .followRedirects(false).followSslRedirects(false).build()
+                        else client
+                    }
+                    val call = requestClient.newCall(
                         Request.Builder()
                             .url(url)
                             .get()
@@ -403,7 +409,22 @@ object EsjzoneClient {
     }
 
     internal fun rotatePageCacheScope(host: String) {
+        activeSessionGeneration.incrementAndGet()
         persistentCookieJar?.rotateCacheScope(host)
+    }
+
+    fun sessionGeneration(): Long = activeSessionGeneration.get()
+
+    fun invalidateActiveSession() {
+        activeSessionGeneration.incrementAndGet()
+    }
+
+    fun isCurrentSession(authorization: Authorization, generation: Long): Boolean {
+        if (generation != activeSessionGeneration.get()) return false
+        val domain = authorization.domain.ifBlank { EsjzoneUrls.BaseWithoutProtocol }
+        if (EsjzoneUrls.BaseWithoutProtocol != domain) return false
+        val current = restoreAuthorization(domain) ?: return false
+        return accountScope(current) == accountScope(authorization)
     }
 
     internal fun activateAccountScope(host: String, email: String, ewsKey: String) {
@@ -452,6 +473,7 @@ object EsjzoneClient {
 
     /** Clears only the selected site's session; a null host clears every persisted session. */
     fun clearSession(host: String? = null) {
+        activeSessionGeneration.incrementAndGet()
         // Prevent an old in-flight response from repopulating a cache namespace after
         // logout. The account-scoped files themselves remain safely inaccessible and can
         // still be reclaimed by the normal cache size policy.

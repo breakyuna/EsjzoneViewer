@@ -36,8 +36,8 @@ internal fun parseHistoryNovels(document: Document): List<HistoryNovel> {
     val novels = mutableListOf<HistoryNovel>()
 
     for (element in historySelector.select(document, "table.table tr, tr.view-log")) {
-        val idAttr = element.attr("id")
-        val vid = idAttr.removePrefix("novel-")
+        val vid = historySelector.first(element, ".view-del[data-id]")
+            ?.attr("data-id")?.trim().orEmpty()
         val novelData = historySelector.first(
             element,
             ".view-log h5 a[href^='/detail/'], h5 a[href^='/detail/']"
@@ -46,7 +46,7 @@ internal fun parseHistoryNovels(document: Document): List<HistoryNovel> {
             element,
             ".book-ep a[href*='/forum/'], a[href*='/forum/']"
         )
-        if (novelData != null && chapterData != null) {
+        if (vid.isNotBlank() && novelData != null && chapterData != null) {
             val chapterHref = chapterData.attr("href")
             val fullChapterUrl = EsjzoneUrls.resolve(chapterHref)
             novels.add(

@@ -219,6 +219,7 @@ private fun SearchHistoryChip(
     onSelect: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val historyDescription = stringResource(R.string.search_history_item_description, keyword)
     SuggestionChip(
         onClick = onSelect,
         label = {
@@ -236,7 +237,7 @@ private fun SearchHistoryChip(
         ),
         border = null,
         modifier = modifier.semantics {
-            contentDescription = "搜索历史：$keyword"
+            contentDescription = historyDescription
         }
     )
 }

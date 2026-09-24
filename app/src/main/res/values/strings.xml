@@ -159,6 +159,7 @@
     <string name="novel_download_success">下载任务已完成</string>
     <string name="novel_download_failed">下载失败，已完成的章节会保留</string>
     <string name="novel_download_channel">小说下载</string>
+    <string name="novel_download_action_channel">下载需要处理</string>
     <string name="novel_download_notification_title">正在下载《%1$s》</string>
     <string name="novel_download_notification_waiting">正在准备下载…</string>
     <string name="novel_download_completed_with_passwords">下载完成，有 %1$d 个加密章节已跳过</string>
@@ -170,9 +171,9 @@
     <string name="novel_download_unlock_failed">解锁失败：%1$s</string>
     <string name="chapter_password_required_badge">需密码</string>
     <string name="novel_download_common_password_title">本书通用密码</string>
-    <string name="novel_download_common_password_hint">仅对当前小说生效，后台下载与批量解锁时将自动尝试</string>
-    <string name="novel_download_common_password_active">本书通用密码：已设置</string>
-    <string name="novel_download_set_common_password">设置通用密码</string>
+    <string name="novel_download_common_password_hint">仅用于当前页面的批量解锁，退出后不保留</string>
+    <string name="novel_download_common_password_active">本次密码：已输入</string>
+    <string name="novel_download_set_common_password">输入批量解锁密码</string>
     <string name="novel_download_clear_common_password">清除密码</string>
     <string name="novel_download_common_password_cleared">已清除本书通用密码</string>
     <string name="novel_download_batch_unlock_action">使用通用密码解锁全部 (%1$d)</string>
@@ -180,9 +181,9 @@
     <string name="novel_download_batch_unlock_success">已成功解锁全部 %1$d 个加密章节</string>
     <string name="novel_download_batch_unlock_partial">已解锁 %1$d 个章节，剩余 %2$d 个章节密码不匹配</string>
     <string name="novel_download_batch_unlock_failed">通用密码解锁失败，所有加密章节密码均不匹配</string>
-    <string name="novel_download_save_as_common_password">同时保存为此书通用密码</string>
+    <string name="novel_download_save_as_common_password">本次批量解锁使用此密码</string>
     <string name="novel_download_use_common_password">填入本书通用密码</string>
-    <string name="novel_download_save_and_unlock">保存并解锁</string>
+    <string name="novel_download_save_and_unlock">开始解锁</string>
     <string name="novel_export_txt">导出 TXT</string>
     <string name="novel_export_epub">导出 EPUB</string>
     <string name="novel_export_success">导出完成</string>
@@ -375,6 +376,11 @@
     <string name="settings_navigation_section">导航与启动</string>
     <string name="settings_navigation_description">调整导航项目的显示顺序，底部导航栏与侧边导航栏会同步更新。</string>
     <string name="settings_navigation_reset">恢复默认顺序</string>
+    <string name="settings_navigation_move_earlier">前移</string>
+    <string name="settings_navigation_move_later">后移</string>
+    <string name="novel_list_toggle_view">切换小说列表展示方式</string>
+    <string name="search_history_item_description">搜索历史：%1$s</string>
+    <string name="home_row_description">%1$s，第 %2$d 行</string>
     <string name="settings_startup_page_title">启动默认页</string>
     <string name="settings_startup_page_description">选择应用打开并加载完成后默认进入的页面。</string>
     <string name="settings_startup_follow_nav">跟随导航栏首项</string>

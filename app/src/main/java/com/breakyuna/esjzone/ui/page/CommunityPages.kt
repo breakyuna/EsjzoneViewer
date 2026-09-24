@@ -299,6 +299,8 @@ class ForumBoardPage(private val thread: ForumThread) : AppDestination {
                                 ForumNovelBoardContent(
                                     board = board,
                                     thread = thread,
+                                    loadingMore = model.loadingMore.value,
+                                    onLoadMore = model::loadMore,
                                     onOpenNovel = {
                                         navigator?.pushIfNotCurrent(
                                             NovelPage(
@@ -318,9 +320,15 @@ class ForumBoardPage(private val thread: ForumThread) : AppDestination {
                         }
 
                         is ForumBoardResult.Topics -> {
-                            ForumTopicsContent(board.items) { topic ->
-                                navigator?.pushIfNotCurrent(ForumPostPage(topic))
-                            }
+                            ForumTopicsContent(
+                                topics = board.items,
+                                totalCount = board.totalCount,
+                                loadingMore = model.loadingMore.value,
+                                onLoadMore = model::loadMore,
+                                onTopicClick = { topic ->
+                                    navigator?.pushIfNotCurrent(ForumPostPage(topic))
+                                }
+                            )
                         }
                     }
                 }
@@ -690,6 +698,9 @@ private fun ForumThreadCard(thread: ForumThread, onClick: () -> Unit) {
 @Composable
 private fun ForumTopicsContent(
     topics: List<ForumTopic>,
+    totalCount: Int?,
+    loadingMore: Boolean,
+    onLoadMore: () -> Unit,
     onTopicClick: (ForumTopic) -> Unit
 ) {
     val metrics = rememberAppAdaptiveMetrics()
@@ -714,8 +725,12 @@ private fun ForumTopicsContent(
             ) { topic ->
                 ForumTopicCard(topic) { onTopicClick(topic) }
             }
-            item(key = "forum-topics-footer", contentType = "spacer") {
-                Spacer(modifier = Modifier.height(AppSpacing.xxl))
+            if (totalCount?.let { topics.size < it } ?: (topics.size % 20 == 0)) {
+                item(key = "forum-topics-more", contentType = "button") {
+                    OutlinedButton(onClick = onLoadMore, enabled = !loadingMore) {
+                        Text(stringResource(R.string.search_load_more))
+                    }
+                }
             }
         }
     }
@@ -725,6 +740,8 @@ private fun ForumTopicsContent(
 private fun ForumNovelBoardContent(
     board: ForumBoardResult.Novel,
     thread: ForumThread,
+    loadingMore: Boolean,
+    onLoadMore: () -> Unit,
     onOpenNovel: () -> Unit,
     onTopicClick: (ForumTopic) -> Unit
 ) {
@@ -787,6 +804,14 @@ private fun ForumNovelBoardContent(
                 contentType = { "forum-topic" }
             ) { topic ->
                 ForumTopicCard(topic) { onTopicClick(topic) }
+            }
+            if (board.totalCount?.let { board.items.size < it }
+                    ?: (board.items.size % 20 == 0)) {
+                item(key = "forum-novel-more", contentType = "button") {
+                    OutlinedButton(onClick = onLoadMore, enabled = !loadingMore) {
+                        Text(stringResource(R.string.search_load_more))
+                    }
+                }
             }
         }
         item(key = "forum-novel-footer", contentType = "spacer") {
@@ -988,6 +1013,44 @@ private class ForumBoardPageModel(
     CommunityState.Loading
 ) {
     private var loadStarted = false
+    val loadingMore = mutableStateOf(false)
+
+    fun loadMore() {
+        if (loadStarted || loadingMore.value) return
+        val current = (mutableState.value as? CommunityState.Result)?.data ?: return
+        val oldItems = when (current) {
+            is ForumBoardResult.Topics -> current.items
+            is ForumBoardResult.Novel -> current.items
+        }
+        val total = when (current) {
+            is ForumBoardResult.Topics -> current.totalCount
+            is ForumBoardResult.Novel -> current.totalCount
+        }
+        if (oldItems.isEmpty() || (total != null && oldItems.size >= total)) return
+        loadingMore.value = true
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val next = PresentationAccess.client.getForumBoard(authorization, thread, oldItems.size)
+                val newItems = when (next) {
+                    is ForumBoardResult.Topics -> next.items
+                    is ForumBoardResult.Novel -> next.items
+                }
+                val merged = (oldItems + newItems).distinctBy { it.boardId to it.id }
+                val finalTotal = if (newItems.isEmpty()) merged.size else total
+                val updated = when (current) {
+                    is ForumBoardResult.Topics -> current.copy(items = merged, totalCount = finalTotal)
+                    is ForumBoardResult.Novel -> current.copy(items = merged, totalCount = finalTotal)
+                }
+                mutableState.value = CommunityState.Result(updated, isSyncSuccess = true)
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                AppLogger.e("ForumBoardPageModel", "Failed to load more forum topics", error)
+            } finally {
+                loadingMore.value = false
+            }
+        }
+    }
 
     fun retry() {
         loadStarted = false
