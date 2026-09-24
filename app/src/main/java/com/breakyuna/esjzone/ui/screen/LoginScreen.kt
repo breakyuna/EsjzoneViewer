@@ -58,10 +58,9 @@ import com.breakyuna.esjzone.ui.navigation.AppDestination
 import com.breakyuna.esjzone.ui.navigation.LocalAppNavigator
 import com.breakyuna.esjzone.R
 import com.breakyuna.esjzone.database.BookshelfRepository
-import com.breakyuna.esjzone.database.dao.put
 import com.breakyuna.esjzone.network.features.CommunitySyncManager
 import com.breakyuna.esjzone.network.features.login
-import com.breakyuna.esjzone.network.hasCredentials
+import com.breakyuna.esjzone.network.mirrorLoginOrder
 import kotlinx.coroutines.flow.first
 import com.breakyuna.esjzone.ui.component.AppGroup
 import com.breakyuna.esjzone.ui.component.AppSectionHeader
@@ -70,8 +69,10 @@ import com.breakyuna.esjzone.ui.designsystem.AppTypography
 import com.breakyuna.esjzone.util.AppLogger
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.io.IOException
 
 import com.breakyuna.esjzone.ui.navigation.AppExitBackHandler
 import com.breakyuna.esjzone.ui.navigation.LocalAppNavigator
@@ -94,11 +95,14 @@ object LoginScreen : AppDestination {
         var restoringSite by remember { mutableStateOf(false) }
         var loginFailed by remember { mutableStateOf(false) }
         var loginNetworkFailed by remember { mutableStateOf(false) }
+        var accountMismatch by remember { mutableStateOf(false) }
 
         fun submit() {
             emailError = email.trim().isBlank()
             passwordError = password.isBlank()
-            if (emailError || passwordError || loggingIn || restoringSite) return
+            accountMismatch = PresentationAccess.client.matchesActiveAccountEmail(email) == false
+            if (emailError || passwordError || accountMismatch || loggingIn || restoringSite) return
+            val sameAccountBeforeLogin = PresentationAccess.client.matchesActiveAccountEmail(email) == true
             loggingIn = true
             loginFailed = false
             loginNetworkFailed = false
@@ -107,17 +111,50 @@ object LoginScreen : AppDestination {
                 try {
                     val authorization = withContext(Dispatchers.IO) {
                         val result = cancellablePageRequest {
-                            PresentationAccess.client.login(email.trim(), password)
+                            PresentationAccess.client.login(email.trim(), password, selectedDomain)
                         }
                         if (result != null) {
-                            PresentationAccess.database.runInTransaction {
-                                val dao = PresentationAccess.database.cacheDao()
-                                dao.put("domain", selectedDomain)
+                            val sessions = mutableListOf(result)
+                            mirrorLoginOrder(selectedDomain, PresentationAccess.settings.DOMAINS)
+                                .drop(1).forEach { otherDomain ->
+                                    // A different account's old session must not remain active.
+                                    if (!sameAccountBeforeLogin) {
+                                        PresentationAccess.client.clearSession(otherDomain)
+                                    }
+                                    var otherSession: com.breakyuna.esjzone.network.Authorization? = null
+                                    for (attempt in 0 until 2) {
+                                        try {
+                                            otherSession = PresentationAccess.client.login(
+                                                email.trim(), password, otherDomain
+                                            )
+                                            // A rejected login will not improve through network retries.
+                                            break
+                                        } catch (error: CancellationException) {
+                                            throw error
+                                        } catch (error: IOException) {
+                                            if (attempt == 0) delay(600L)
+                                            else AppLogger.w("LoginScreen", "Other mirror login unavailable", error)
+                                        } catch (error: Exception) {
+                                            AppLogger.w("LoginScreen", "Other mirror login unavailable", error)
+                                            break
+                                        }
+                                    }
+                                    otherSession?.let(sessions::add)
+                                }
+                            sessions.forEach { session ->
+                                try {
+                                    BookshelfRepository.migrateLegacyScopeIfNeeded(session)
+                                } catch (error: CancellationException) {
+                                    throw error
+                                } catch (error: Exception) {
+                                    AppLogger.w("LoginScreen", "Legacy bookshelf migration deferred", error)
+                                }
                             }
                         }
                         result
                     }
                     if (authorization != null) {
+                        password = ""
                         BookshelfRepository.scheduleSync(authorization, delayMillis = 2000L)
                         CommunitySyncManager.schedulePreSync(authorization, delayMillis = 3500L)
                         navigator.replace(MainScreen(authorization))
@@ -192,14 +229,6 @@ object LoginScreen : AppDestination {
                                     scope.launch {
                                         try {
                                             PresentationAccess.settings.domainFlow.first { it == domain }
-                                            val existing = withContext(Dispatchers.IO) {
-                                                PresentationAccess.client.restoreAuthorization(domain)
-                                            }?.takeIf { it.hasCredentials() }
-                                            if (existing != null) {
-                                                BookshelfRepository.scheduleSync(existing, delayMillis = 2000L)
-                                                CommunitySyncManager.schedulePreSync(existing, delayMillis = 3500L)
-                                                navigator.replaceAll(MainScreen(existing))
-                                            }
                                         } catch (e: Exception) {
                                             AppLogger.e("LoginScreen", "Failed to restore selected site", e)
                                         } finally {
@@ -231,7 +260,7 @@ object LoginScreen : AppDestination {
                     )
                     OutlinedTextField(
                         value = email,
-                        onValueChange = { email = it; emailError = false; loginFailed = false; loginNetworkFailed = false },
+                        onValueChange = { email = it; emailError = false; accountMismatch = false; loginFailed = false; loginNetworkFailed = false },
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(horizontal = 16.dp, vertical = 6.dp),
@@ -286,6 +315,14 @@ object LoginScreen : AppDestination {
                         ),
                         keyboardActions = KeyboardActions(onDone = { submit() })
                     )
+                    if (accountMismatch) {
+                        Text(
+                            text = stringResource(R.string.login_same_account_required),
+                            style = AppTypography.bodyMedium,
+                            color = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp)
+                        )
+                    }
                     if (loginFailed || loginNetworkFailed) {
                         Text(
                             text = stringResource(if (loginNetworkFailed) R.string.login_network_fail else R.string.login_fail),

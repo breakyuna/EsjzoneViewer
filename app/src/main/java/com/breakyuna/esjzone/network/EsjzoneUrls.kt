@@ -67,6 +67,14 @@ object EsjzoneUrls {
         .replaceFirst(Regex("(?i)^https?://"), "")
         .trimEnd('/')}"
 
+    /** Shares mirror HTML while keeping query parameters that select different pages. */
+    fun canonicalCacheUrl(rawUrl: String): String {
+        val parsed = rawUrl.toHttpUrlOrNull() ?: return rawUrl
+        return if (parsed.host in SettingsDefaults.DOMAINS) {
+            parsed.newBuilder().host(SettingsDefaults.DOMAINS.first()).fragment(null).build().toString()
+        } else rawUrl
+    }
+
     private fun normalizeHttpUrl(rawUrl: String): String? {
         val parsed = rawUrl.toHttpUrlOrNull() ?: return null
         if (parsed.username.isNotEmpty() || parsed.password.isNotEmpty()) return null

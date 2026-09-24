@@ -3,6 +3,7 @@ package com.breakyuna.esjzone.network
 import android.content.Context
 import android.content.SharedPreferences
 import android.util.Log
+import com.breakyuna.esjzone.data.settings.SettingsDefaults
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
 import com.google.gson.Gson
@@ -34,6 +35,9 @@ internal class PersistentCookieJar(context: Context) : CookieJar {
     private val lock = Any()
     private val cookies = mutableListOf<StoredCookie>()
     private var epoch = 0L
+    private var memoryIdentity: String? = null
+    private var memoryEmailDigest: String? = null
+    private val memoryActiveHosts = mutableSetOf<String>()
 
     fun sessionEpoch(): Long = synchronized(lock) { epoch }
 
@@ -55,6 +59,15 @@ internal class PersistentCookieJar(context: Context) : CookieJar {
 
     override fun saveFromResponse(url: HttpUrl, cookies: List<Cookie>) =
         saveFromResponse(url, cookies, expectedEpoch = null)
+
+    /** A successful explicit login replaces every cookie from the old account on this host. */
+    fun replaceHostCookies(url: HttpUrl, responseCookies: List<Cookie>) = synchronized(lock) {
+        val host = url.host.lowercase().removePrefix("www.")
+        cookies.removeAll {
+            domainMatchesHost(it.domain, host) || domainMatchesHost(it.domain, "www.$host")
+        }
+        saveFromResponse(url, responseCookies, expectedEpoch = null)
+    }
 
     fun saveFromResponse(url: HttpUrl, responseCookies: List<Cookie>, expectedEpoch: Long?) {
         if (responseCookies.isEmpty()) return
@@ -109,6 +122,87 @@ internal class PersistentCookieJar(context: Context) : CookieJar {
         }
     }
 
+    /** Upgrades the selected legacy session to the one active account. */
+    fun establishActiveAccount(host: String) = synchronized(lock) {
+        val secure = securePreferences
+        if (secure == null) {
+            if (memoryIdentity == null && authorizationFor(host) != null) {
+                memoryIdentity = UUID.randomUUID().toString()
+                memoryActiveHosts += normalizedHost(host)
+            }
+            return@synchronized
+        }
+        if (secure.getString(ACTIVE_SHARED_SCOPE, null).isNullOrBlank() &&
+            authorizationFor(host) != null) {
+            val identity = secure.getString(activeAccountScopeKey(host), null)
+                ?.takeIf(String::isNotBlank) ?: cacheScopeFor(host)
+            secure.edit().putString(ACTIVE_SHARED_SCOPE, identity)
+                .putString(activeAccountScopeKey(host), identity)
+                .putString(LEGACY_PRIMARY_HOST, normalizedHost(host))
+                .putString(LEGACY_PRIMARY_IDENTITY, identity).commit()
+        }
+    }
+
+    fun mayMigrateLegacyDomainScope(host: String): Boolean = synchronized(lock) {
+        val secure = securePreferences ?: return@synchronized false
+        secure.getString(LEGACY_PRIMARY_HOST, null) == normalizedHost(host) &&
+            secure.getString(LEGACY_PRIMARY_IDENTITY, null) ==
+                secure.getString(ACTIVE_SHARED_SCOPE, null)
+    }
+
+    fun legacyPageCacheKey(url: HttpUrl): String? = synchronized(lock) {
+        val secure = securePreferences ?: return@synchronized null
+        val legacyHost = secure.getString(LEGACY_PRIMARY_HOST, null)
+            ?: return@synchronized null
+        if (!mayMigrateLegacyDomainScope(legacyHost)) return@synchronized null
+        val fullHost = SettingsDefaults.DOMAINS.firstOrNull {
+            normalizedHost(it) == legacyHost
+        } ?: return@synchronized null
+        val legacyUrl = url.newBuilder().host(fullHost).build().toString()
+        "${cacheScopeFor(fullHost)}|$legacyUrl"
+    }
+
+    fun isActiveSession(host: String): Boolean = synchronized(lock) {
+        val secure = securePreferences
+            ?: return@synchronized normalizedHost(host) in memoryActiveHosts
+        val shared = secure.getString(ACTIVE_SHARED_SCOPE, null) ?: return@synchronized false
+        secure.getString(activeAccountScopeKey(host), null) == shared
+    }
+
+    /** Reject work started with an authorization from a different active account. */
+    fun belongsToActiveAccount(authorization: Authorization): Boolean = synchronized(lock) {
+        if (!authorization.hasCredentials()) return@synchronized false
+        val active = activeAccountIdentity() ?: return@synchronized false
+        SettingsDefaults.DOMAINS.any { host ->
+            accountScopeFor(host, authorization.ewsKey) == active
+        }
+    }
+
+    fun activeAccountIdentity(): String? = synchronized(lock) {
+        securePreferences?.getString(ACTIVE_SHARED_SCOPE, null)?.takeIf(String::isNotBlank)
+            ?: memoryIdentity
+    }
+
+    /** null means an upgraded session has no known email mapping yet. */
+    fun matchesActiveAccountEmail(email: String): Boolean? = synchronized(lock) {
+        val activeDigest = securePreferences?.getString(ACTIVE_EMAIL_DIGEST, null)
+            ?: memoryEmailDigest ?: return@synchronized null
+        matchesKnownAccountEmail(activeDigest, email)
+    }
+
+    fun legacyAccountScopeFor(host: String, ewsKey: String): String? = synchronized(lock) {
+        val identity = securePreferences?.getString(accountKeyMappingKey(host, ewsKey), null)
+            ?: securePreferences?.getString(activeAccountScopeKey(host), null)
+                ?.takeIf { authorizationFor(host)?.ewsKey == ewsKey }
+            ?: return@synchronized null
+        "account:$host:$identity"
+    }
+
+    fun matchingEmailLegacyScopeFor(host: String): String? = synchronized(lock) {
+        val identity = activeAccountIdentity() ?: return@synchronized null
+        securePreferences?.getString(matchingEmailLegacyScopeKey(host, identity), null)
+    }
+
     /**
      * Returns an opaque, host-scoped cache identity that survives cookie rotation.
      * Session cookies are deliberately excluded: ESJ can rotate them after any
@@ -123,6 +217,10 @@ internal class PersistentCookieJar(context: Context) : CookieJar {
 
     /** Bookshelf identity is independent of the disposable page-cache namespace. */
     fun accountScopeFor(host: String, ewsKey: String): String = synchronized(lock) {
+        if (securePreferences == null && normalizedHost(host) in memoryActiveHosts &&
+            authorizationFor(host)?.ewsKey == ewsKey) {
+            memoryIdentity?.let { return@synchronized it }
+        }
         securePreferences?.getString(accountKeyMappingKey(host, ewsKey), null)
             ?.takeIf(String::isNotBlank)?.let { return@synchronized it }
         val currentKey = authorizationFor(host)?.ewsKey
@@ -139,28 +237,55 @@ internal class PersistentCookieJar(context: Context) : CookieJar {
 
     /** Reuse one opaque identity when the same account explicitly logs in again. */
     fun activateAccountScope(host: String, email: String, newEwsKey: String) = synchronized(lock) {
-        val secure = securePreferences ?: return@synchronized
         val normalizedEmail = email.trim().lowercase(Locale.ROOT)
         if (normalizedEmail.isBlank()) return@synchronized
-        val identityDigest = MessageDigest.getInstance("SHA-256")
+        // Invalidate requests from the previous login before changing which
+        // account owns this host. Cookie reads and writes check this under lock.
+        epoch++
+        val identityDigest = normalizedEmailDigest(normalizedEmail)
+        val secure = securePreferences
+        if (secure == null) {
+            if (memoryEmailDigest != identityDigest) {
+                memoryIdentity = UUID.randomUUID().toString()
+                memoryActiveHosts.clear()
+            }
+            memoryEmailDigest = identityDigest
+            memoryActiveHosts += normalizedHost(host)
+            return@synchronized
+        }
+        val mappingKey = ACCOUNT_SCOPE_PREFIX + identityDigest
+        val legacyEmailDigest = MessageDigest.getInstance("SHA-256")
             .digest("${normalizedHost(host)}:$normalizedEmail".toByteArray(StandardCharsets.UTF_8))
             .joinToString("") { byte -> "%02x".format(byte.toInt() and 0xff) }
-        val mappingKey = ACCOUNT_SCOPE_PREFIX + identityDigest
-        val existingIdentity = secure.getString(mappingKey, null)?.takeIf(String::isNotBlank)
+        val existingIdentity = (secure.getString(mappingKey, null)
+            ?: secure.getString(ACCOUNT_SCOPE_PREFIX + legacyEmailDigest, null))
+            ?.takeIf(String::isNotBlank)
+        val previousHostIdentity = secure.getString(activeAccountScopeKey(host), null)
         val previousAuthorization = authorizationFor(host)
         val legacyCacheScope = if (existingIdentity == null &&
             secure.getString(activeAccountScopeKey(host), null).isNullOrBlank() &&
             previousAuthorization?.ewsKey != newEwsKey
         ) preferences.getString(cacheScopeKey(host), null)?.takeIf(String::isNotBlank) else null
-        val identity = existingIdentity ?: if (previousAuthorization?.ewsKey == newEwsKey) {
-            accountScopeFor(host, newEwsKey)
-        } else {
-            UUID.randomUUID().toString()
-        }
+        val identity = chooseSharedAccountIdentity(
+            activeEmailDigest = secure.getString(ACTIVE_EMAIL_DIGEST, null),
+            requestedEmailDigest = identityDigest,
+            activeIdentity = secure.getString(ACTIVE_SHARED_SCOPE, null),
+            mappedIdentity = existingIdentity
+        ) ?: UUID.randomUUID().toString()
         val editor = secure.edit()
             .putString(mappingKey, identity)
+            .putString(ACTIVE_SHARED_SCOPE, identity)
+            .putString(ACTIVE_EMAIL_DIGEST, identityDigest)
             .putString(activeAccountScopeKey(host), identity)
             .putString(accountKeyMappingKey(host, newEwsKey), identity)
+        if (previousHostIdentity != null && previousHostIdentity != identity) {
+            editor.putString(pendingLegacyScopeKey(host, identity),
+                "account:$host:$previousHostIdentity")
+        }
+        if (existingIdentity != null && existingIdentity != identity) {
+            editor.putString(matchingEmailLegacyScopeKey(host, identity),
+                "account:$host:$existingIdentity")
+        }
         if (legacyCacheScope != null) {
             editor.putString(pendingLegacyScopeKey(host, identity), "account:$host:$legacyCacheScope")
         }
@@ -231,10 +356,17 @@ internal class PersistentCookieJar(context: Context) : CookieJar {
         synchronized(lock) {
             epoch++
             if (host.isNullOrBlank()) {
+                memoryIdentity = null
+                memoryEmailDigest = null
+                memoryActiveHosts.clear()
                 securePreferences?.let { secure ->
                     val editor = secure.edit()
                     secure.all.keys.filter { it.startsWith(ACTIVE_ACCOUNT_SCOPE_PREFIX) }
                         .forEach(editor::remove)
+                    editor.remove(ACTIVE_SHARED_SCOPE)
+                    editor.remove(ACTIVE_EMAIL_DIGEST)
+                    editor.remove(LEGACY_PRIMARY_HOST)
+                    editor.remove(LEGACY_PRIMARY_IDENTITY)
                     editor.commit()
                 }
                 cookies.clear()
@@ -247,6 +379,7 @@ internal class PersistentCookieJar(context: Context) : CookieJar {
                     .forEach(editor::remove)
                 editor.commit()
             } else {
+                memoryActiveHosts.remove(normalizedHost(host))
                 securePreferences?.edit()?.remove(activeAccountScopeKey(host))?.commit()
                 val normalizedHost = host.trim().lowercase().removePrefix("www.")
                 cookies.removeAll {
@@ -351,6 +484,9 @@ internal class PersistentCookieJar(context: Context) : CookieJar {
     private fun pendingLegacyScopeKey(host: String, identity: String): String =
         PENDING_LEGACY_SCOPE_PREFIX + normalizedHost(host) + ":" + identity
 
+    private fun matchingEmailLegacyScopeKey(host: String, identity: String): String =
+        MATCHING_EMAIL_LEGACY_SCOPE_PREFIX + normalizedHost(host) + ":" + identity
+
     private fun verificationKey(authorization: Authorization): String =
         verificationPrefix(authorization.domain) + sessionDigest(authorization)
 
@@ -422,8 +558,13 @@ internal class PersistentCookieJar(context: Context) : CookieJar {
         const val CACHE_SCOPE_PREFIX = "cache_scope_"
         const val ACCOUNT_SCOPE_PREFIX = "account_identity_"
         const val ACTIVE_ACCOUNT_SCOPE_PREFIX = "active_account_identity_"
+        const val ACTIVE_SHARED_SCOPE = "active_shared_account_identity"
+        const val ACTIVE_EMAIL_DIGEST = "active_shared_email_digest"
+        const val LEGACY_PRIMARY_HOST = "legacy_primary_host"
+        const val LEGACY_PRIMARY_IDENTITY = "legacy_primary_identity"
         const val ACCOUNT_KEY_SCOPE_PREFIX = "account_key_identity_"
         const val PENDING_LEGACY_SCOPE_PREFIX = "pending_legacy_bookshelf_"
+        const val MATCHING_EMAIL_LEGACY_SCOPE_PREFIX = "matching_email_legacy_bookshelf_"
         const val VERIFIED_AT_PREFIX = "verified_at_"
         val SESSION_COOKIE_NAMES = setOf("ews_key", "ews_token")
 

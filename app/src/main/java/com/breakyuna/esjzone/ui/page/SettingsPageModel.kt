@@ -13,19 +13,20 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 
+enum class CacheOperation { PAGES, IMAGES }
+
 /** Coordinates settings persistence and cache/session maintenance off the UI. */
 class SettingsPageModel : AppStateViewModel<SettingsPageModel.State>(State()) {
 
     data class State(
         val cacheStats: LocalCacheStats? = null,
-        val cacheOperation: Operation? = null,
+        val cacheOperation: CacheOperation? = null,
         val cacheStatsError: Boolean = false,
         val cacheClearError: Boolean = false,
         val logoutInProgress: Boolean = false,
-        val logoutCompleted: Boolean = false
+        val logoutCompleted: Boolean = false,
+        val logoutFailed: Boolean = false
     )
-
-    enum class Operation { PAGES, IMAGES }
 
     fun persist(key: String, value: String) {
         viewModelScope.launch(Dispatchers.IO) {
@@ -73,16 +74,16 @@ class SettingsPageModel : AppStateViewModel<SettingsPageModel.State>(State()) {
     }
 
     fun clearPageCache() {
-        clear(Operation.PAGES) { PresentationAccess.client.clearPageCache() }
+        clear(CacheOperation.PAGES) { PresentationAccess.client.clearPageCache() }
     }
 
     fun clearImageCache() {
-        clear(Operation.IMAGES) {
+        clear(CacheOperation.IMAGES) {
             PresentationAccess.clearImageCaches()
         }
     }
 
-    private fun clear(operation: Operation, action: suspend () -> Unit) {
+    private fun clear(operation: CacheOperation, action: suspend () -> Unit) {
         mutableState.value = mutableState.value.copy(
             cacheOperation = operation,
             cacheClearError = false
@@ -105,22 +106,32 @@ class SettingsPageModel : AppStateViewModel<SettingsPageModel.State>(State()) {
         }
     }
 
+    fun clearLogoutFailure() {
+        mutableState.value = mutableState.value.copy(logoutFailed = false)
+    }
+
     fun logout(authorization: Authorization) {
         if (mutableState.value.logoutInProgress) return
-        mutableState.value = mutableState.value.copy(logoutInProgress = true)
+        mutableState.value = mutableState.value.copy(
+            logoutInProgress = true, logoutCompleted = false, logoutFailed = false
+        )
         viewModelScope.launch(Dispatchers.IO) {
             var cancelled = false
+            var completed = false
             try {
+                com.breakyuna.esjzone.network.features.HistoryDataCache.clearSnapshot(authorization)
                 try {
-                    PresentationAccess.client.logout(authorization)
+                    PresentationAccess.settings.DOMAINS.forEach { domain ->
+                        val session = PresentationAccess.client.restoreAuthorization(domain)
+                            ?.takeIf { PresentationAccess.client.hasSiteSession(domain) }
+                        if (session != null) PresentationAccess.client.logout(session)
+                    }
                 } catch (e: CancellationException) {
                     throw e
                 } catch (e: Exception) {
                     AppLogger.w("SettingsPageModel", "Server logout failed; clearing local session", e)
                 }
-                PresentationAccess.client.clearSession(
-                    authorization.domain.ifBlank { PresentationAccess.settings.domain.value }
-                )
+                PresentationAccess.client.clearSession()
                 val dao = PresentationAccess.database.cacheDao()
                 dao.deleteByKey("ews_key")
                 dao.deleteByKey("ews_token")
@@ -128,8 +139,8 @@ class SettingsPageModel : AppStateViewModel<SettingsPageModel.State>(State()) {
                 dao.getAll()
                     .filter { it.key.startsWith("profile:") }
                     .forEach { dao.delete(it) }
-                com.breakyuna.esjzone.network.features.HistoryDataCache.clearSnapshot(authorization)
                 com.breakyuna.esjzone.network.features.HistoryDataCache.clearMemory()
+                completed = true
             } catch (e: CancellationException) {
                 cancelled = true
                 throw e
@@ -139,7 +150,8 @@ class SettingsPageModel : AppStateViewModel<SettingsPageModel.State>(State()) {
                 if (!cancelled) {
                     mutableState.value = mutableState.value.copy(
                         logoutInProgress = false,
-                        logoutCompleted = true
+                        logoutCompleted = completed,
+                        logoutFailed = !completed
                     )
                 }
             }

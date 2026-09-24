@@ -60,6 +60,14 @@ class MainScreen(val authorization: Authorization) : AppDestination {
             val sessionDomain = authorization.domain.ifBlank { activeDomain }
             if (sessionDomain != activeDomain) return@LaunchedEffect
             if (!authorization.hasCredentials()) return@LaunchedEffect
+            if (!PresentationAccess.client.hasSiteSession(sessionDomain) ||
+                PresentationAccess.client.accountScope(authorization) !=
+                    PresentationAccess.client.activeAccountScopeOrNull()) {
+                authorizationCheckResult = AuthorizationCheckResult.UNAUTHORIZED
+                return@LaunchedEffect
+            }
+
+            val checkedSessionEpoch = PresentationAccess.client.sessionEpoch()
 
             val result = try {
                 withContext(Dispatchers.IO) {
@@ -75,7 +83,10 @@ class MainScreen(val authorization: Authorization) : AppDestination {
             // A result for a previous domain must never prompt or alter the new UI.
             val isStillActive = withContext(Dispatchers.IO) {
                 PresentationAccess.settings.domain.value == sessionDomain &&
-                    PresentationAccess.client.restoreAuthorization(sessionDomain) == authorization
+                    PresentationAccess.client.sessionEpoch() == checkedSessionEpoch &&
+                    PresentationAccess.client.hasSiteSession(sessionDomain) &&
+                    PresentationAccess.client.accountScope(authorization) ==
+                        PresentationAccess.client.activeAccountScopeOrNull()
             }
             if (isStillActive) {
                 authorizationCheckResult = result
@@ -91,6 +102,7 @@ class MainScreen(val authorization: Authorization) : AppDestination {
                     !sessionPromptDismissed
                 if (showSessionBanner) {
                     SessionExpiredBanner(
+                        mirrorSessionMissing = !PresentationAccess.client.hasSiteSession(activeDomain),
                         onRelogin = {
                             appNavigator?.replace(LoginScreen) ?: run {
                                 sessionPromptDismissed = true
@@ -115,6 +127,7 @@ class MainScreen(val authorization: Authorization) : AppDestination {
 
 @Composable
 private fun SessionExpiredBanner(
+    mirrorSessionMissing: Boolean,
     onRelogin: () -> Unit,
     onContinueOffline: () -> Unit
 ) {
@@ -133,13 +146,13 @@ private fun SessionExpiredBanner(
                 .padding(horizontal = AppSpacing.lg, vertical = AppSpacing.sm)
         ) {
             Text(
-                text = stringResource(R.string.session_expired_title),
+                text = stringResource(if (mirrorSessionMissing) R.string.mirror_login_needed_title else R.string.session_expired_title),
                 style = AppTypography.titleMedium,
                 color = MaterialTheme.colorScheme.onErrorContainer
             )
             Spacer(modifier = Modifier.height(4.dp))
             Text(
-                text = stringResource(R.string.session_expired_message),
+                text = stringResource(if (mirrorSessionMissing) R.string.mirror_login_needed_message else R.string.session_expired_message),
                 style = AppTypography.bodyMedium,
                 color = MaterialTheme.colorScheme.onErrorContainer
             )
@@ -149,10 +162,10 @@ private fun SessionExpiredBanner(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 TextButton(onClick = onContinueOffline) {
-                    Text(text = stringResource(R.string.session_expired_continue))
+                    Text(text = stringResource(if (mirrorSessionMissing) R.string.mirror_login_continue else R.string.session_expired_continue))
                 }
                 Button(onClick = onRelogin) {
-                    Text(text = stringResource(R.string.session_expired_relogin))
+                    Text(text = stringResource(if (mirrorSessionMissing) R.string.mirror_login_action else R.string.session_expired_relogin))
                 }
             }
         }

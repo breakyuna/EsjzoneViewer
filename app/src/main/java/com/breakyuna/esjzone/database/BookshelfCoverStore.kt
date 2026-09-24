@@ -148,7 +148,14 @@ object BookshelfCoverStore {
         // networking pipeline as normal image rendering.
         try {
             val request = ImageRequest.Builder(EsjzoneApplication.instance)
-                .data(source)
+                .data(EsjzoneUrls.resolve(source))
+                .apply {
+                    if (source.toHttpUrlOrNull()?.host?.let(EsjzoneUrls::isEsjHost) == true) {
+                        val key = EsjzoneUrls.canonicalCacheUrl(source)
+                        memoryCacheKey(key)
+                        diskCacheKey(key)
+                    }
+                }
                 .memoryCachePolicy(CachePolicy.ENABLED)
                 .diskCachePolicy(CachePolicy.ENABLED)
                 .networkCachePolicy(CachePolicy.ENABLED)

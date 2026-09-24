@@ -3,6 +3,8 @@ package com.breakyuna.esjzone.network.features
 import android.content.Context
 import com.breakyuna.esjzone.EsjzoneApplication
 import com.breakyuna.esjzone.network.EsjzoneUrls
+import com.breakyuna.esjzone.network.EsjzoneClient
+import com.breakyuna.esjzone.network.Authorization
 import com.breakyuna.esjzone.novellibrary.data.HomeData
 import com.breakyuna.esjzone.novellibrary.data.WeeklyUpdateDay
 import com.breakyuna.esjzone.novellibrary.data.WeeklyPopularNovel
@@ -50,13 +52,13 @@ object HomeDataCache {
         }
     }
 
-    private fun normalizeDomain(domain: String): String {
+    private fun normalizeLegacyDomain(domain: String): String {
         val effective = domain.ifBlank { EsjzoneUrls.BaseWithoutProtocol }
         return effective.trim().lowercase().removePrefix("www.")
     }
 
-    fun readSnapshot(domain: String): HomeData? {
-        val normalizedDomain = normalizeDomain(domain)
+    fun readSnapshot(authorization: Authorization): HomeData? {
+        val normalizedDomain = EsjzoneClient.accountScope(authorization)
         val dir = storageDir ?: runCatching {
             EsjzoneApplication.instance.filesDir
         }.getOrNull() ?: return null
@@ -74,13 +76,15 @@ object HomeDataCache {
         }
     }
 
-    fun writeSnapshot(domain: String, data: HomeData) {
-        val normalizedDomain = normalizeDomain(domain)
+    fun writeSnapshot(authorization: Authorization, data: HomeData) {
+        val normalizedDomain = EsjzoneClient.accountScope(authorization)
+        if (normalizedDomain != EsjzoneClient.activeAccountScopeOrNull()) return
         val dir = storageDir ?: runCatching {
             EsjzoneApplication.instance.filesDir
         }.getOrNull() ?: return
 
         synchronized(ioLock) {
+            if (normalizedDomain != EsjzoneClient.activeAccountScopeOrNull()) return
             try {
                 val snapshot = data.toSnapshot(normalizedDomain)
                 val json = gson.toJson(snapshot)
@@ -116,8 +120,9 @@ object HomeDataCache {
             val json = file.readText(StandardCharsets.UTF_8)
             val snapshot = gson.fromJson(json, HomeDataSnapshot::class.java)
             val data = snapshot?.toHomeData() ?: return null
-            val domain = snapshot.domain?.takeIf(String::isNotBlank)?.let(::normalizeDomain)
-                ?: normalizeDomain("")
+            val domain = snapshot.domain?.takeIf(String::isNotBlank)?.let { stored ->
+                if (stored.startsWith("account:shared:")) stored else normalizeLegacyDomain(stored)
+            } ?: normalizeLegacyDomain("")
             domain to data
         } catch (e: Exception) {
             AppLogger.w("HomeDataCache", "Failed to read home data snapshot", e)

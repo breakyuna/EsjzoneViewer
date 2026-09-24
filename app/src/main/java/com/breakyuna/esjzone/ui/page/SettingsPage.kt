@@ -124,6 +124,7 @@ object SettingsPage : AppDestination {
         val autoCheck by ReleaseUpdateChecker.autoCheck.collectAsStateWithLifecycle()
         var showLogout by remember { mutableStateOf(false) }
         var switchingDomain by remember { mutableStateOf(false) }
+        var siteUnavailable by remember { mutableStateOf(false) }
         var draggingNavigationItem by remember { mutableStateOf<String?>(null) }
         var editableNavigationOrder by remember { mutableStateOf(navigationOrder) }
         LaunchedEffect(navigationOrder, draggingNavigationItem) {
@@ -170,17 +171,17 @@ object SettingsPage : AppDestination {
                                             val session = withContext(Dispatchers.IO) {
                                                 PresentationAccess.client.restoreAuthorization(candidate)
                                             }?.takeIf { it.hasCredentials() }
-                                            PresentationAccess.settings.setDomain(candidate)
-                                            PresentationAccess.settings.domainFlow.first { it == candidate }
-                                            withContext(Dispatchers.IO) {
-                                                PresentationAccess.client.clearPageCache()
-                                            }
                                             if (session != null) {
-                                                BookshelfRepository.scheduleSync(session)
-                                                CommunitySyncManager.schedulePreSync(session)
+                                                PresentationAccess.settings.setDomain(candidate)
+                                                PresentationAccess.settings.domainFlow.first { it == candidate }
+                                                PresentationAccess.client.clearParsedPageCache()
+                                                if (PresentationAccess.client.hasSiteSession(candidate)) {
+                                                    BookshelfRepository.scheduleSync(session)
+                                                    CommunitySyncManager.schedulePreSync(session)
+                                                }
                                                 rootNavigator?.replaceAll(MainScreen(session))
                                             } else {
-                                                rootNavigator?.replaceAll(LoginScreen)
+                                                siteUnavailable = true
                                             }
                                         } catch (e: Exception) {
                                             AppLogger.e("SettingsPage", "Failed to switch site", e)
@@ -558,6 +559,28 @@ object SettingsPage : AppDestination {
                 }
             }
         }
+        if (state.logoutFailed) AlertDialog(
+            onDismissRequest = { model.clearLogoutFailure() },
+            title = { Text(stringResource(R.string.settings_logout_failed_title)) },
+            text = { Text(stringResource(R.string.settings_logout_failed_message)) },
+            confirmButton = {
+                TextButton(onClick = { model.clearLogoutFailure() }) {
+                    Text(stringResource(R.string.logout_confirm))
+                }
+            }
+        )
+
+        if (siteUnavailable) AlertDialog(
+            onDismissRequest = { siteUnavailable = false },
+            title = { Text(stringResource(R.string.settings_mirror_unavailable_title)) },
+            text = { Text(stringResource(R.string.settings_mirror_unavailable_message)) },
+            confirmButton = {
+                TextButton(onClick = { siteUnavailable = false }) {
+                    Text(stringResource(R.string.logout_cancel))
+                }
+            }
+        )
+
         if (showLogout) AlertDialog(
             onDismissRequest = { if (!state.logoutInProgress) showLogout = false },
             title = { Text(stringResource(R.string.logout_confirm_message)) },

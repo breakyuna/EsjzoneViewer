@@ -56,7 +56,7 @@ private data class MetadataSupplementItem(
  * Single owner of the local-first shelf state machine. UI reads only its Room
  * flow; all remote work is serialized here and writes back into Room.
  *
- * Rows are scoped by account identity and domain, providing complete
+ * Rows are scoped by account identity, providing complete
  * isolation across account switches while preserving offline data across
  * transparent cookie rotations. Legacy domain-only scopes are smoothly migrated
  * on first access for single-account upgrades.
@@ -103,15 +103,15 @@ object BookshelfRepository {
         val domain = authorization.domain.ifBlank { EsjzoneUrls.BaseWithoutProtocol }
         val legacyScope = "domain:$domain"
         val targetScope = scopeFor(authorization)
-        if (legacyScope == targetScope) return
-
         val dao = requireDao()
-        val targetCount = dao.count(targetScope)
-        if (targetCount == 0) {
-            val legacyCount = dao.count(legacyScope)
-            if (legacyCount > 0) {
-                dao.migrateScope(oldScope = legacyScope, newScope = targetScope)
-                AppLogger.i("BookshelfRepository", "Migrated $legacyCount legacy bookshelf items to $targetScope")
+        val oldScopes = listOfNotNull(
+            EsjzoneClient.legacyBookshelfAccountScope(authorization),
+            EsjzoneClient.matchingEmailLegacyBookshelfScope(authorization),
+            legacyScope.takeIf { EsjzoneClient.mayMigrateLegacyDomainScope(authorization) }
+        ).distinct().filter { it != targetScope }
+        oldScopes.forEach { oldScope ->
+            if (dao.count(oldScope) > 0) {
+                dao.migrateScope(oldScope = oldScope, newScope = targetScope)
             }
         }
     }

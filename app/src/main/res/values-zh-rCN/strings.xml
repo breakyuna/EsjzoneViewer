@@ -18,6 +18,7 @@
     <string name="login_success">登录成功</string>
     <string name="login_fail">登录失败</string>
     <string name="login_network_fail">网络连接失败，请检查网络后重试</string>
+    <string name="login_same_account_required">请使用当前账号补登此站；如需更换账号，请先退出登录。</string>
     <string name="download_image_unavailable">[图片暂不可用]</string>
     <string name="screen_main_tab_home">主页</string>
     <string name="screen_main_tab_category">分类</string>
@@ -64,6 +65,8 @@
     <string name="logout_consequence">应用会短暂尝试通知服务器，然后清理本机登录会话。下载内容、书签、阅读历史和书架数据都会保留。</string>
     <string name="logout_cancel">手滑了</string>
     <string name="logout_confirm">确认</string>
+    <string name="settings_logout_failed_title">退出登录失败</string>
+    <string name="settings_logout_failed_message">本机会话未能完全清除，请重试退出登录。</string>
     <string name="field_required">此栏为必填项</string>
     <string name="categories">分类</string>
     <string name="categories_empty">当前没有可显示的分类</string>
@@ -340,6 +343,10 @@
     <string name="session_expired_message">登录会话已过期。本地书架和阅读历史仍可离线使用。</string>
     <string name="session_expired_continue">继续离线</string>
     <string name="session_expired_relogin">重新登录</string>
+    <string name="mirror_login_needed_title">此站尚未登录</string>
+    <string name="mirror_login_needed_message">另一个站点的登录会话无法用于此站。你仍可查看本地数据和公开页面；使用当前账号补登后可访问会员功能。</string>
+    <string name="mirror_login_continue">继续浏览</string>
+    <string name="mirror_login_action">补登此站</string>
     <string name="load_failed">内容加载失败</string>
     <string name="load_network_error">网络错误，请稍候再试</string>
     <string name="load_client_error">客户端错误，请联系开发者</string>
@@ -361,7 +368,9 @@
     <string name="settings_primary_description">主站点 · 当前访问源</string>
     <string name="settings_backup_mirror">国内站点</string>
     <string name="settings_backup_description">国内站点 · 遇到解析受阻时切换</string>
-    <string name="settings_mirror_note">切换活动站点将自动清理页面缓存，但不会删除已下载的小说、阅读记录、书签或书架数据。</string>
+    <string name="settings_mirror_note">两个站点共用当前账号和本地数据；切换时仅更换访问地址。</string>
+    <string name="settings_mirror_unavailable_title">站点暂不可用</string>
+    <string name="settings_mirror_unavailable_message">当前账号尚未在该站点建立会话，请稍后重试登录。</string>
     <string name="settings_language_section">界面语言</string>
     <string name="settings_language_description">选择应用显示语言，可跟随系统或手动指定。</string>
     <string name="settings_language_system">跟随系统</string>

@@ -18,6 +18,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.res.painterResource
 import com.breakyuna.esjzone.R
 import com.breakyuna.esjzone.app.PresentationAccess
+import com.breakyuna.esjzone.network.EsjzoneUrls
 import coil3.compose.AsyncImage
 import coil3.compose.SubcomposeAsyncImage
 import coil3.ImageLoader
@@ -49,9 +50,10 @@ fun AppImage(
     error: (@Composable () -> Unit)? = null,
     imageLoader: ImageLoader = PresentationAccess.imageLoader
 ) {
+    val imageRequest = sharedMirrorImageRequest(model)
     if (loading != null || error != null) {
         SubcomposeAsyncImage(
-            model = model,
+            model = imageRequest,
             imageLoader = imageLoader,
             contentDescription = contentDescription,
             modifier = modifier,
@@ -61,19 +63,6 @@ fun AppImage(
             error = { error?.invoke() ?: AppImageError() }
         )
     } else {
-        val context = LocalContext.current
-        val imageRequest = remember(model, context) {
-            if (model is ImageRequest) model
-            else ImageRequest.Builder(context)
-                .data(model)
-                // Covers are cache-first.  A missing-cover drawable is deliberately
-                // not used as a loading placeholder: on a disk-cache hit it would
-                // flash for at least one composition before the real cover appears.
-                .memoryCachePolicy(CachePolicy.ENABLED)
-                .diskCachePolicy(CachePolicy.ENABLED)
-                .networkCachePolicy(CachePolicy.ENABLED)
-                .build()
-        }
         AsyncImage(
             model = imageRequest,
             imageLoader = imageLoader,
@@ -178,9 +167,10 @@ fun AppReaderZoomableImage(
     loading: @Composable () -> Unit = { AppImageLoading() }
 ) {
     val loader = readerImageLoader(model)
+    val imageRequest = sharedMirrorImageRequest(model)
     Box(modifier = modifier) {
         ZoomableAsyncImage(
-            model = model,
+            model = imageRequest,
             imageLoader = loader,
             contentDescription = contentDescription,
             modifier = Modifier.fillMaxSize(),
@@ -192,6 +182,34 @@ fun AppReaderZoomableImage(
         )
         if (!state.isImageDisplayed) {
             loading()
+        }
+    }
+}
+
+@Composable
+private fun sharedMirrorImageRequest(model: Any?): ImageRequest {
+    val context = LocalContext.current
+    val activeDomain = PresentationAccess.settings.domain.value
+    return remember(model, context, activeDomain) {
+        if (model is ImageRequest) model
+        else {
+            val rawUrl = model as? String
+            val parsed = rawUrl?.toHttpUrlOrNull()
+            val isMirrorImage = parsed?.host?.let(EsjzoneUrls::isEsjHost) == true
+            val requestData = if (isMirrorImage) EsjzoneUrls.resolve(rawUrl.orEmpty()) else model
+            ImageRequest.Builder(context)
+                .data(requestData)
+                .apply {
+                    if (isMirrorImage) {
+                        val key = EsjzoneUrls.canonicalCacheUrl(rawUrl.orEmpty())
+                        memoryCacheKey(key)
+                        diskCacheKey(key)
+                    }
+                }
+                .memoryCachePolicy(CachePolicy.ENABLED)
+                .diskCachePolicy(CachePolicy.ENABLED)
+                .networkCachePolicy(CachePolicy.ENABLED)
+                .build()
         }
     }
 }

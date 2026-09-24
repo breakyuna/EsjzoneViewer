@@ -35,7 +35,7 @@ internal const val RANDOM_INACTIVITY_TIMEOUT_MS = 5 * 60 * 1000L
 class HomeTabModel(
     private val authorization: Authorization
 ) : AppStateViewModel<HomeTabModel.State>(
-    HomeDataCache.readSnapshot(authorization.domain)?.let { State.Result(it) } ?: State.Loading
+    HomeDataCache.readSnapshot(authorization)?.let { State.Result(it) } ?: State.Loading
 ) {
 
     private var loadStarted = false
@@ -240,12 +240,12 @@ class HomeTabModel(
                     forceRefresh = forceRefresh,
                     onProgress = { partialData ->
                         ensureActive()
-                        HomeDataCache.writeSnapshot(authorization.domain, partialData)
+                        HomeDataCache.writeSnapshot(authorization, partialData)
                         mutableState.value = State.Result(partialData, isSyncing = true)
                     }
                 )
                 ensureActive()
-                HomeDataCache.writeSnapshot(authorization.domain, data)
+                HomeDataCache.writeSnapshot(authorization, data)
                 mutableState.value = State.Result(data, isSyncing = false)
             } catch (e: CancellationException) {
                 loadStarted = false

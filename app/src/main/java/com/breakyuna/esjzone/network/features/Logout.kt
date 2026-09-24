@@ -15,7 +15,10 @@ fun EsjzoneClient.logout(authorization: Authorization) {
     try {
         client.newCall(
             Request.Builder()
-                .url(EsjzoneUrls.My.Logout)
+                .url(EsjzoneUrls.resolve(
+                    "/my/logout",
+                    EsjzoneUrls.baseForDomain(authorization.domain.ifBlank { EsjzoneUrls.BaseWithoutProtocol })
+                ))
                 .get()
                 .headers(this@logout.headers)
                 .build()

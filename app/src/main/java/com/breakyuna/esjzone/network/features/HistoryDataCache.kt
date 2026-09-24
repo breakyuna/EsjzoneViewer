@@ -3,6 +3,7 @@ package com.breakyuna.esjzone.network.features
 import android.content.Context
 import com.breakyuna.esjzone.EsjzoneApplication
 import com.breakyuna.esjzone.network.Authorization
+import com.breakyuna.esjzone.network.EsjzoneClient
 import com.breakyuna.esjzone.network.EsjzoneUrls
 import com.breakyuna.esjzone.network.hasCredentials
 import com.breakyuna.esjzone.novellibrary.novel.Chapter
@@ -33,8 +34,7 @@ object HistoryDataCache {
 
     fun scopeFor(authorization: Authorization): String? {
         if (!authorization.hasCredentials()) return null
-        val host = authorization.domain.ifBlank { EsjzoneUrls.BaseWithoutProtocol }
-        val input = "${authorization.ewsKey}:${authorization.ewsToken}@$host"
+        val input = EsjzoneClient.accountScope(authorization)
         return MessageDigest.getInstance("SHA-256")
             .digest(input.toByteArray(StandardCharsets.UTF_8))
             .joinToString("") { "%02x".format(it.toInt() and 0xff) }

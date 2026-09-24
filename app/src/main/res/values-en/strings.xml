@@ -18,6 +18,7 @@
     <string name="login_success">Login Successfully</string>
     <string name="login_fail">Failed to login</string>
     <string name="login_network_fail">Network connection failed. Check your connection and try again.</string>
+    <string name="login_same_account_required">Use the current account for this site. Sign out first to change accounts.</string>
     <string name="download_image_unavailable">[Image unavailable]</string>
     <string name="screen_main_tab_home">Home</string>
     <string name="screen_main_tab_category">Category</string>
@@ -64,6 +65,8 @@
     <string name="logout_consequence">The app will try the server logout briefly, then clear the local session on this device. Downloads, bookmarks, reading history, and bookshelf data will stay.</string>
     <string name="logout_cancel">Oops, not now</string>
     <string name="logout_confirm">Confirm</string>
+    <string name="settings_logout_failed_title">Sign-out failed</string>
+    <string name="settings_logout_failed_message">The local session could not be fully cleared. Please try signing out again.</string>
     <string name="field_required">This field is required</string>
     <string name="categories">Categories</string>
     <string name="categories_empty">No categories are visible</string>
@@ -340,6 +343,10 @@
     <string name="session_expired_message">Your session has expired. Your local shelf and reading history are still available offline.</string>
     <string name="session_expired_continue">Continue offline</string>
     <string name="session_expired_relogin">Log in again</string>
+    <string name="mirror_login_needed_title">Not signed in on this site</string>
+    <string name="mirror_login_needed_message">A session from the other site cannot sign you in here. Local data and public pages remain available. Sign in with the current account for member features.</string>
+    <string name="mirror_login_continue">Keep browsing</string>
+    <string name="mirror_login_action">Sign in here</string>
     <string name="load_failed">Unable to load content</string>
     <string name="load_network_error">Network error. Please try again later.</string>
     <string name="load_client_error">Client error. Please contact the developer.</string>
@@ -361,7 +368,9 @@
     <string name="settings_primary_description">Primary site · current access source</string>
     <string name="settings_backup_mirror">Domestic site</string>
     <string name="settings_backup_description">Domestic site · switch when parsing is limited</string>
-    <string name="settings_mirror_note">Changing the active site clears page cache. Downloads, bookmarks, history and bookshelf data stay on this device.</string>
+    <string name="settings_mirror_note">Both sites share the current account and local data. Switching changes the access address.</string>
+    <string name="settings_mirror_unavailable_title">Site unavailable</string>
+    <string name="settings_mirror_unavailable_message">This account has no session on that site yet. Try signing in again later.</string>
     <string name="settings_language_section">Language</string>
     <string name="settings_language_description">Choose the app display language or follow the system default.</string>
     <string name="settings_language_system">System Default</string>

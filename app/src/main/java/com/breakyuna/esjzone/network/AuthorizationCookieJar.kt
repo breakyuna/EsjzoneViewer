@@ -14,7 +14,10 @@ class AuthorizationCookieJar(
 
     override fun loadForRequest(url: HttpUrl): List<Cookie> {
         if (!authorization.hasCredentials()) return emptyList()
+        if (!isAuthorizationHost(url)) return emptyList()
         if (persistentJar != null) {
+            if (!persistentJar.belongsToActiveAccount(authorization)) return emptyList()
+            if (!persistentJar.isActiveSession(url.host)) return emptyList()
             // Once the persistent jar is available it is the source of truth.  Falling
             // back to stale legacy values here could resurrect a server-deleted session.
             return persistentJar.loadForRequest(url, sessionEpoch)
@@ -24,11 +27,23 @@ class AuthorizationCookieJar(
 
     override fun saveFromResponse(url: HttpUrl, cookies: List<Cookie>) {
         if (!authorization.hasCredentials()) return
-        if (persistResponses) persistentJar?.saveFromResponse(url, cookies, sessionEpoch)
+        if (!isAuthorizationHost(url)) return
+        if (persistResponses && persistentJar?.belongsToActiveAccount(authorization) == true &&
+            persistentJar.isActiveSession(url.host)) {
+            persistentJar.saveFromResponse(url, cookies, sessionEpoch)
+        }
+    }
+
+    private fun isAuthorizationHost(url: HttpUrl): Boolean {
+        if (!url.isHttps) return false
+        val sessionHost = authorization.domain.trim().lowercase()
+            .ifBlank { EsjzoneUrls.BaseWithoutProtocol.lowercase() }
+            .removePrefix("www.")
+        return url.host.lowercase().removePrefix("www.") == sessionHost
     }
 
     private fun legacyCookies(url: HttpUrl): List<Cookie> {
-        if (!url.isHttps || !authorization.hasCredentials()) return emptyList()
+        if (!authorization.hasCredentials()) return emptyList()
         val sessionHost = authorization.domain.trim().lowercase()
             .ifBlank { EsjzoneUrls.BaseWithoutProtocol.lowercase() }
         val normalizedSessionHost = sessionHost.removePrefix("www.")

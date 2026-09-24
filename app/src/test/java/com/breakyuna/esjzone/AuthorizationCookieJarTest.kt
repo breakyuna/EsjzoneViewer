@@ -41,6 +41,9 @@ class AuthorizationCookieJarTest {
         assertTrue(
             jar.loadForRequest("https://cdn.esjzone.one/assets/cover.jpg".toHttpUrl()).isEmpty()
         )
+        assertTrue(
+            jar.loadForRequest("https://cdn.esjzone.cc/assets/cover.jpg".toHttpUrl()).isEmpty()
+        )
     }
 
     @Test

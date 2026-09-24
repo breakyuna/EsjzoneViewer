@@ -2,6 +2,7 @@ package com.breakyuna.esjzone.app
 
 import com.breakyuna.esjzone.database.dao.put
 import com.breakyuna.esjzone.network.Authorization
+import com.breakyuna.esjzone.network.EsjzoneClient
 import com.breakyuna.esjzone.novellibrary.user.UserProfile
 import java.nio.charset.StandardCharsets
 import java.security.MessageDigest
@@ -25,7 +26,7 @@ suspend fun cacheUserProfile(
 
 internal fun profileCachePrefix(authorization: Authorization, domain: String): String {
     val digest = MessageDigest.getInstance("SHA-256")
-        .digest("${authorization.ewsKey}:${authorization.ewsToken}".toByteArray(StandardCharsets.UTF_8))
+        .digest(EsjzoneClient.accountScope(authorization).toByteArray(StandardCharsets.UTF_8))
         .joinToString("") { "%02x".format(it.toInt() and 0xff) }
-    return "profile:$domain:$digest:"
+    return "profile:shared:$digest:"
 }

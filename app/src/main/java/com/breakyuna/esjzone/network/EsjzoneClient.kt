@@ -156,23 +156,32 @@ object EsjzoneClient {
         allowStaleOnError: Boolean = !forceRefresh
     ): String {
         val cacheKey = pageCacheKey(authorization, url)
+        val legacyKey = if (authorization.hasCredentials() &&
+            accountScope(authorization) == activeAccountScopeOrNull()) {
+            url.toHttpUrlOrNull()?.takeIf { EsjzoneUrls.isEsjHost(it.host) }
+                ?.let { persistentCookieJar?.legacyPageCacheKey(it) }
+        } else null
         val requestEpoch = cacheEpoch.get()
         if (!forceRefresh) {
-            PageCache.read(cacheKey, maxAgeMillis)?.let { cached ->
-                if (PageResponsePolicy.validate(200, cached, url, kind = pageKind).trusted) {
-                    return cached
+            val current = PageCache.read(cacheKey, maxAgeMillis)
+            val cached = current ?: legacyKey?.let { PageCache.read(it, maxAgeMillis) }
+            cached?.let {
+                if (PageResponsePolicy.validate(200, it, url, kind = pageKind).trusted) {
+                    if (current == null) PageCache.write(cacheKey, it)
+                    return it
                 }
                 // A previous app version could have cached an HTML block/challenge page.
                 // Do not keep returning it after the network becomes healthy.
-                PageCache.remove(cacheKey)
+                PageCache.remove(if (current != null) cacheKey else legacyKey ?: cacheKey)
             }
         }
-        val staleCandidate = PageCache.readStale(cacheKey)
+        val currentStale = PageCache.readStale(cacheKey)
+        val staleCandidate = currentStale ?: legacyKey?.let(PageCache::readStale)
         val stalePage = staleCandidate?.let { candidate ->
             if (PageResponsePolicy.validate(200, candidate, url, kind = pageKind).trusted) {
                 candidate
             } else {
-                PageCache.remove(cacheKey)
+                PageCache.remove(if (currentStale != null) cacheKey else legacyKey ?: cacheKey)
                 null
             }
         }
@@ -355,6 +364,11 @@ object EsjzoneClient {
         PageCache.clear()
     }
 
+    /** Parsed models contain absolute links from the previous mirror; raw HTML stays shared. */
+    fun clearParsedPageCache() {
+        NovelDetailCache.clear()
+    }
+
     fun pageCacheStats(): PageCacheStats = PageCache.stats()
 
     /** Invalidates one account-scoped page after a successful remote write. */
@@ -390,16 +404,38 @@ object EsjzoneClient {
     /** Returns the persisted session for a host, importing the legacy Room format once. */
     fun restoreAuthorization(host: String, legacy: Authorization? = null): Authorization? {
         val jar = persistentCookieJar ?: return legacy?.takeIf { it.hasCredentials() }
-        jar.authorizationFor(host)?.let { return it }
+        jar.establishActiveAccount(host)
+        jar.authorizationFor(host)?.takeIf { jar.isActiveSession(host) }?.let { return it }
         if (legacy?.hasCredentials() == true && jar.importLegacyAuthorization(host, legacy)) {
-            return jar.authorizationFor(host)
+            jar.establishActiveAccount(host)
+            return jar.authorizationFor(host)?.takeIf { jar.isActiveSession(host) }
         }
-        return null
+        // A mirror without its own server session still opens shared local data
+        // and public pages. The CookieJar will never send the other host's cookies.
+        if (jar.activeAccountIdentity() == null) {
+            com.breakyuna.esjzone.data.settings.SettingsDefaults.DOMAINS
+                .firstOrNull { jar.authorizationFor(it) != null }
+                ?.let(jar::establishActiveAccount)
+        }
+        val source = com.breakyuna.esjzone.data.settings.SettingsDefaults.DOMAINS
+            .firstNotNullOfOrNull { candidate ->
+                jar.authorizationFor(candidate)?.takeIf { jar.isActiveSession(candidate) }
+            }
+        return source?.copy(domain = host)
     }
+
+    fun hasSiteSession(host: String): Boolean = persistentCookieJar?.let { jar ->
+        jar.isActiveSession(host) && jar.authorizationFor(host) != null
+    } == true
+
+    fun sessionEpoch(): Long = persistentCookieJar?.sessionEpoch() ?: 0L
+
+    fun matchesActiveAccountEmail(email: String): Boolean? =
+        persistentCookieJar?.matchesActiveAccountEmail(email)
 
     /** Stores all cookies returned by the login flow without exposing their values to logs. */
     internal fun persistCookies(url: HttpUrl, cookies: List<Cookie>) {
-        persistentCookieJar?.saveFromResponse(url, cookies)
+        persistentCookieJar?.replaceHostCookies(url, cookies)
     }
 
     internal fun rotatePageCacheScope(host: String) {
@@ -412,6 +448,15 @@ object EsjzoneClient {
 
     fun pendingLegacyBookshelfScope(authorization: Authorization): String? =
         persistentCookieJar?.pendingLegacyScopeFor(authorization.domain, authorization.ewsKey)
+
+    fun legacyBookshelfAccountScope(authorization: Authorization): String? =
+        persistentCookieJar?.legacyAccountScopeFor(authorization.domain, authorization.ewsKey)
+
+    fun mayMigrateLegacyDomainScope(authorization: Authorization): Boolean =
+        persistentCookieJar?.mayMigrateLegacyDomainScope(authorization.domain) == true
+
+    fun matchingEmailLegacyBookshelfScope(authorization: Authorization): String? =
+        persistentCookieJar?.matchingEmailLegacyScopeFor(authorization.domain)
 
     fun clearPendingLegacyBookshelfScope(authorization: Authorization) {
         persistentCookieJar?.clearPendingLegacyScope(authorization.domain, authorization.ewsKey)
@@ -429,18 +474,28 @@ object EsjzoneClient {
     fun accountScope(authorization: Authorization): String {
         val host = authorization.domain.ifBlank { EsjzoneUrls.BaseWithoutProtocol }
         return if (authorization.hasCredentials()) {
-            val accountId = persistentCookieJar?.accountScopeFor(host, authorization.ewsKey) ?: MessageDigest.getInstance("SHA-256")
+            val jar = persistentCookieJar
+            val activeIdentity = jar?.activeAccountIdentity()
+            val belongsToActiveAccount = activeIdentity != null &&
+                com.breakyuna.esjzone.data.settings.SettingsDefaults.DOMAINS.any { candidate ->
+                    jar?.accountScopeFor(candidate, authorization.ewsKey) == activeIdentity
+                }
+            val accountId = activeIdentity?.takeIf { belongsToActiveAccount }
+                ?: MessageDigest.getInstance("SHA-256")
                 .digest(
                     "${authorization.ewsKey}:${authorization.ewsToken}"
                         .toByteArray(StandardCharsets.UTF_8)
                 )
                 .joinToString("") { byte -> "%02x".format(byte.toInt() and 0xff) }
                 .take(16)
-            "account:$host:$accountId"
+            "account:shared:$accountId"
         } else {
             "guest:$host"
         }
     }
+
+    fun activeAccountScopeOrNull(): String? =
+        persistentCookieJar?.activeAccountIdentity()?.let { "account:shared:$it" }
 
     internal fun novelDetailCacheKey(authorization: Authorization, url: String): String =
         pageCacheKey(authorization, url)
@@ -479,18 +534,13 @@ object EsjzoneClient {
         .build()
 
     private fun pageCacheKey(authorization: Authorization, url: String): String {
-        val host = url.toHttpUrlOrNull()?.host ?: authorization.domain
         val scope = if (authorization.hasCredentials()) {
-            persistentCookieJar?.cacheScopeFor(host) ?: MessageDigest.getInstance("SHA-256")
-                .digest(
-                    "${authorization.ewsKey}:${authorization.ewsToken}"
-                        .toByteArray(StandardCharsets.UTF_8)
-                )
-                .joinToString("") { byte -> "%02x".format(byte.toInt() and 0xff) }
+            accountScope(authorization)
         } else {
             "public"
         }
-        return "$scope|$url"
+        val key = EsjzoneUrls.canonicalCacheUrl(url)
+        return "$scope|$key"
     }
 
     private data class PageResponseData(
