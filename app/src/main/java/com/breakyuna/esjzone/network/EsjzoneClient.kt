@@ -323,7 +323,11 @@ object EsjzoneClient {
                     owner.complete(fallback)
                     return fallback
                 }
-                val error = UntrustedPageException(url, validation)
+                val error = UntrustedPageException(
+                    url,
+                    validation,
+                    responseData.safeDiagnostic(url)
+                )
                 owner.completeExceptionally(error)
                 throw error
             }
@@ -548,7 +552,34 @@ object EsjzoneClient {
         val body: String,
         val finalUrl: String,
         val contentType: String?
-    )
+    ) {
+        /** Response shape only; never include page text, headers, or session values in logs. */
+        fun safeDiagnostic(requestedUrl: String): String {
+            val leading = body.firstOrNull { !it.isWhitespace() }
+            val shape = when (leading) {
+                '<' -> "markup"
+                '{', '[' -> "json-like"
+                null -> "empty"
+                else -> "text"
+            }
+            val mime = when {
+                contentType == null -> "missing"
+                contentType.contains("html", ignoreCase = true) -> "html"
+                contentType.contains("json", ignoreCase = true) -> "json"
+                contentType.contains("text/plain", ignoreCase = true) -> "plain"
+                else -> "other"
+            }
+            return "status=$statusCode, redirected=${finalUrl != requestedUrl}, " +
+                "hostChanged=${finalUrl.toHttpUrlOrNull()?.host != requestedUrl.toHttpUrlOrNull()?.host}, " +
+                "mime=$mime, chars=${body.length}, shape=$shape, " +
+                "htmlOpen=${body.contains("<html", ignoreCase = true)}, " +
+                "bodyOpen=${body.contains("<body", ignoreCase = true)}, " +
+                "bodyClose=${body.contains("</body>", ignoreCase = true)}, " +
+                "htmlClose=${body.contains("</html>", ignoreCase = true)}, " +
+                "favoriteRoute=${body.contains("/my/favorite", ignoreCase = true)}, " +
+                "table=${body.contains("<table", ignoreCase = true)}"
+        }
+    }
 
     private const val NETWORK_PERMIT_WAIT_SECONDS = 30L
 }

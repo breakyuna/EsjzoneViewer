@@ -248,7 +248,9 @@ internal object PageResponsePolicy {
 
 internal class UntrustedPageException(
     val url: String,
-    val validation: PageValidation
+    val validation: PageValidation,
+    responseDiagnostic: String? = null
 ) : java.io.IOException(
-    "Untrusted ESJ response for $url: ${validation.reason}"
+    "Untrusted ESJ response for $url: ${validation.reason}" +
+        (responseDiagnostic?.let { " ($it)" } ?: "")
 )
