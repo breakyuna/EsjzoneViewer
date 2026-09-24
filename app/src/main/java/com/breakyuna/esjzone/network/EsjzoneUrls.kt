@@ -10,32 +10,6 @@ import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 object EsjzoneUrls {
 
     private val FORUM_BOARD_PATH = Regex("^/forum/[0-9]+/([0-9]+)$")
-    private val DETAIL_PATH = Regex("^/detail/[0-9]+\\.html$")
-
-    /** Untrusted links must resolve to a detail page on the selected site. */
-    fun trustedDetailUrl(rawUrl: String, domain: String = BaseWithoutProtocol): String? {
-        if (rawUrl.length > 2048) return null
-        val base = baseForDomain(domain).toHttpUrlOrNull() ?: return null
-        val resolved = resolve(rawUrl, base.toString()).toHttpUrlOrNull() ?: return null
-        return resolved.toString().takeIf {
-            resolved.isHttps && resolved.host == base.host && resolved.port == base.port &&
-                resolved.username.isEmpty() && resolved.password.isEmpty() &&
-                resolved.encodedPath.matches(DETAIL_PATH) && resolved.query == null &&
-                resolved.fragment == null
-        }
-    }
-
-    fun trustedForumDataUrl(rawUrl: String, domain: String = BaseWithoutProtocol): String? {
-        if (rawUrl.length > 2048) return null
-        val base = baseForDomain(domain).toHttpUrlOrNull() ?: return null
-        val resolved = resolve(rawUrl, base.toString()).toHttpUrlOrNull() ?: return null
-        return resolved.toString().takeIf {
-            resolved.isHttps && resolved.host == base.host && resolved.port == base.port &&
-                resolved.encodedPath == "/inc/forum_list_data.php" &&
-                resolved.username.isEmpty() && resolved.password.isEmpty() &&
-                resolved.fragment == null
-        }
-    }
 
     /**
      * Resolves a site link while guaranteeing that the result is an HTTPS HTTP URL.

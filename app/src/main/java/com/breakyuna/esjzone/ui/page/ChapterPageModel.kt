@@ -156,7 +156,6 @@ class ChapterPageModel(
                 orderJob?.let(::add)
                 addAll(prefetchJobs.values)
             }.distinct()
-            prefetchJobs.clear()
             initialJob = null
             appendJob = null
             prependJob = null
@@ -520,11 +519,8 @@ class ChapterPageModel(
     }
 
     private suspend fun loadDetail(chapter: Chapter, showSecurityCheck: Boolean = false): DetailedChapter? {
-        val requestSession = synchronized(lock) { sessionId }
         val key = chapterKey(chapter)
-        val prefetched = synchronized(lock) {
-            if (requestSession == sessionId) prefetchedDetails.remove(key) else null
-        }
+        val prefetched = synchronized(lock) { prefetchedDetails.remove(key) }
         if (prefetched != null) {
             queueChapterPersistence(chapter, prefetched)
             return prefetched
@@ -537,9 +533,7 @@ class ChapterPageModel(
             } catch (e: CancellationException) {
                 throw e
             }
-            synchronized(lock) {
-                if (requestSession == sessionId) prefetchedDetails.remove(key) else null
-            }?.let {
+            synchronized(lock) { prefetchedDetails.remove(key) }?.let {
                 queueChapterPersistence(chapter, it)
                 return it
             }
@@ -547,9 +541,7 @@ class ChapterPageModel(
 
         // The prefetch can finish between the first cache check and job lookup.
         // Check one more time before issuing a duplicate request.
-        synchronized(lock) {
-            if (requestSession == sessionId) prefetchedDetails.remove(key) else null
-        }?.let {
+        synchronized(lock) { prefetchedDetails.remove(key) }?.let {
             queueChapterPersistence(chapter, it)
             return it
         }
@@ -558,11 +550,7 @@ class ChapterPageModel(
             cancellablePageRequest {
                 PresentationAccess.client.getChapterDetail(authorization, chapter,
                     onSecurityCheck = if (showSecurityCheck) {
-                        {
-                            if (synchronized(lock) { requestSession == sessionId }) {
-                                mutableState.value = State.SecurityCheck
-                            }
-                        }
+                        { mutableState.value = State.SecurityCheck }
                     } else null)
             }
         } catch (e: CancellationException) {
@@ -573,9 +561,6 @@ class ChapterPageModel(
                     PresentationAccess.downloads.readChapter(chapter.url)
                 }.getOrNull()
                 if (downloaded != null) {
-                    if (!synchronized(lock) { requestSession == sessionId }) {
-                        throw CancellationException("Reader session changed")
-                    }
                     synchronized(lock) { offlineChapterKeys += key }
                     AppLogger.i(
                         "ChapterPageModel",
@@ -591,9 +576,6 @@ class ChapterPageModel(
                 e
             )
             throw e
-        }
-        if (!synchronized(lock) { requestSession == sessionId }) {
-            throw CancellationException("Reader session changed")
         }
         queueChapterPersistence(chapter, detail)
         return detail
@@ -632,7 +614,6 @@ class ChapterPageModel(
         val key = chapterKey(chapter)
         if (key.isBlank()) return
         synchronized(lock) {
-            val prefetchSession = sessionId
             if (loadedChapters.any { sameChapter(it.chapter, chapter) } ||
                 prefetchedDetails.containsKey(key) || prefetchJobs.containsKey(key)
             ) {
@@ -643,7 +624,7 @@ class ChapterPageModel(
                     cancellablePageRequest { PresentationAccess.client.getChapterDetail(authorization, chapter) }
                 } catch (e: CancellationException) {
                     synchronized(lock) {
-                        if (prefetchJobs[key] == coroutineContext[Job]) prefetchJobs.remove(key)
+                        prefetchJobs.remove(key)
                     }
                     throw e
                 } catch (e: Exception) {
@@ -655,10 +636,8 @@ class ChapterPageModel(
                     null
                 }
                 synchronized(lock) {
-                    if (prefetchSession == sessionId && prefetchJobs[key] == coroutineContext[Job]) {
-                        if (detail != null) prefetchedDetails[key] = detail
-                        prefetchJobs.remove(key)
-                    }
+                    if (detail != null) prefetchedDetails[key] = detail
+                    prefetchJobs.remove(key)
                 }
             }
         }

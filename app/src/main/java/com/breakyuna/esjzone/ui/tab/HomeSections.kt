@@ -333,14 +333,13 @@ internal fun LazyListScope.homeCollection(
             contentType = { "home-grid-row" }
         ) { rowIndex ->
             val row = rows[rowIndex]
-            val rowDescription = stringResource(R.string.home_row_description, title, rowIndex + 1)
             NovelGridRow(
                 row = row,
                 showLatestTitle = false,
                 onNovelClick = onNovelClick,
                 modifier = Modifier
                     .padding(bottom = if (rowIndex < rows.size - 1) AppSpacing.lg else AppSpacing.zero)
-                    .semantics { contentDescription = rowDescription }
+                    .semantics { contentDescription = "$title row $rowIndex" }
             )
         }
     }

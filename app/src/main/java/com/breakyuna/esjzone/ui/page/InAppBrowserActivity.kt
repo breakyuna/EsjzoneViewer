@@ -134,7 +134,6 @@ class InAppBrowserActivity : ComponentActivity() {
     }
 
     private fun openSystemBrowser(url: String) {
-        if (!isWebUrl(url)) return
         runCatching {
             startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)).addCategory(Intent.CATEGORY_BROWSABLE))
         }
@@ -153,11 +152,7 @@ class InAppBrowserActivity : ComponentActivity() {
             )
         }
 
-        private fun isWebUrl(url: String): Boolean {
-            if (url.length > 2048) return false
-            val parsed = Uri.parse(url)
-            return parsed.scheme?.lowercase() in setOf("http", "https") &&
-                !parsed.host.isNullOrBlank() && parsed.userInfo.isNullOrBlank()
-        }
+        private fun isWebUrl(url: String): Boolean = Uri.parse(url).scheme?.lowercase() in setOf("http", "https") &&
+            !Uri.parse(url).host.isNullOrBlank()
     }
 }

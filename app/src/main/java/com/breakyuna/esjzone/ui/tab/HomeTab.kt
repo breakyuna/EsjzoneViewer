@@ -49,7 +49,6 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.repeatOnLifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -457,11 +456,7 @@ object HomeTab : AppTab {
             }
         }
 
-        LaunchedEffect(lifecycleOwner, model) {
-            lifecycleOwner.repeatOnLifecycle(Lifecycle.State.RESUMED) {
-                model.getHomeData()
-            }
-        }
+        LaunchedEffect(Unit) { model.getHomeData() }
         LaunchedEffect(adult) { model.onRandomAdultModeChanged(adult) }
     }
 }

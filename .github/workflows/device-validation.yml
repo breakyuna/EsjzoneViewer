@@ -1,13 +1,8 @@
 name: Android Device Validation
 
 on:
-  pull_request:
-    branches:
-      - master
-      - beta
-  schedule:
-    - cron: '0 3 * * 0'
-  # Emulator tests run before merges and weekly; profile generation remains opt-in.
+  # Device tests are deliberately opt-in: they need an emulator and are not part
+  # of the signed-release path that runs for every beta push.
   workflow_dispatch:
     inputs:
       generate_baseline_profile:

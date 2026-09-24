@@ -67,13 +67,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.semantics.CustomAccessibilityAction
-import androidx.compose.ui.semantics.customActions
-import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.semantics.selected
-import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
@@ -132,9 +126,6 @@ object SettingsPage : AppDestination {
         var switchingDomain by remember { mutableStateOf(false) }
         var draggingNavigationItem by remember { mutableStateOf<String?>(null) }
         var editableNavigationOrder by remember { mutableStateOf(navigationOrder) }
-        val layoutDirection = LocalLayoutDirection.current
-        val moveEarlierLabel = stringResource(R.string.settings_navigation_move_earlier)
-        val moveLaterLabel = stringResource(R.string.settings_navigation_move_later)
         LaunchedEffect(navigationOrder, draggingNavigationItem) {
             if (draggingNavigationItem == null) editableNavigationOrder = navigationOrder
         }
@@ -238,36 +229,17 @@ object SettingsPage : AppDestination {
                             editableNavigationOrder.forEach { item ->
                                 key(item) {
                                 val selected = draggingNavigationItem == item
-                                val itemIndex = editableNavigationOrder.indexOf(item)
                                 var dragOffsetX by remember(item) { mutableFloatStateOf(0f) }
                                 Surface(
                                     modifier = Modifier
                                         .weight(1f)
                                         .zIndex(if (selected) 1f else 0f)
-                                        .semantics {
-                                            customActions = buildList {
-                                                if (itemIndex > 0) add(CustomAccessibilityAction(moveEarlierLabel) {
-                                                    editableNavigationOrder = editableNavigationOrder.toMutableList().apply {
-                                                        java.util.Collections.swap(this, itemIndex, itemIndex - 1)
-                                                    }
-                                                    PresentationAccess.settings.setNavigationOrder(editableNavigationOrder)
-                                                    true
-                                                })
-                                                if (itemIndex < editableNavigationOrder.lastIndex) add(CustomAccessibilityAction(moveLaterLabel) {
-                                                    editableNavigationOrder = editableNavigationOrder.toMutableList().apply {
-                                                        java.util.Collections.swap(this, itemIndex, itemIndex + 1)
-                                                    }
-                                                    PresentationAccess.settings.setNavigationOrder(editableNavigationOrder)
-                                                    true
-                                                })
-                                            }
-                                        }
                                         .graphicsLayer {
                                             translationX = dragOffsetX
                                             scaleX = if (selected) 1.05f else 1f
                                             scaleY = if (selected) 1.05f else 1f
                                         }
-                                        .pointerInput(item, layoutDirection) {
+                                        .pointerInput(item) {
                                             detectDragGesturesAfterLongPress(
                                                 onDragStart = {
                                                     draggingNavigationItem = item
@@ -289,10 +261,9 @@ object SettingsPage : AppDestination {
                                                     dragOffsetX += dragAmount.x
                                                     val threshold = size.width * 0.55f
                                                     val currentIndex = editableNavigationOrder.indexOf(item)
-                                                    val logicalOffset = if (layoutDirection == LayoutDirection.Rtl) -dragOffsetX else dragOffsetX
                                                     val targetIndex = when {
-                                                        logicalOffset > threshold -> currentIndex + 1
-                                                        logicalOffset < -threshold -> currentIndex - 1
+                                                        dragOffsetX > threshold -> currentIndex + 1
+                                                        dragOffsetX < -threshold -> currentIndex - 1
                                                         else -> currentIndex
                                                     }
                                                     if (targetIndex in editableNavigationOrder.indices && targetIndex != currentIndex) {
@@ -300,8 +271,7 @@ object SettingsPage : AppDestination {
                                                         java.util.Collections.swap(reordered, currentIndex, targetIndex)
                                                         editableNavigationOrder = reordered
                                                         val indexDelta = targetIndex - currentIndex
-                                                        dragOffsetX -= indexDelta * size.width.toFloat() *
-                                                            if (layoutDirection == LayoutDirection.Rtl) -1f else 1f
+                                                        dragOffsetX -= indexDelta * size.width.toFloat()
                                                     }
                                                 }
                                             )
@@ -666,7 +636,7 @@ private fun SettingsSection(icon: ImageVector, title: String, content: @Composab
 
 @Composable
 private fun ChoiceRow(title: String, subtitle: String, selected: Boolean, onClick: () -> Unit) {
-    Surface(onClick = onClick, color = if (selected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent, shape = com.breakyuna.esjzone.ui.designsystem.AppShapes.compact, modifier = Modifier.fillMaxWidth().semantics { this.selected = selected }) {
+    Surface(onClick = onClick, color = if (selected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent, shape = com.breakyuna.esjzone.ui.designsystem.AppShapes.compact, modifier = Modifier.fillMaxWidth()) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) { Text(title, style = com.breakyuna.esjzone.ui.designsystem.AppTypography.labelLarge, maxLines = 1, overflow = TextOverflow.Ellipsis); Text(subtitle, style = com.breakyuna.esjzone.ui.designsystem.AppTypography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
             if (selected) Icon(Icons.Filled.Check, null, tint = MaterialTheme.colorScheme.primary)

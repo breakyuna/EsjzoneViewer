@@ -162,7 +162,6 @@ fun DiscoverySearchResults(
     modifier: Modifier = Modifier
 ) {
     val listState = rememberLazyListState()
-    LaunchedEffect(keyword, category, sort) { listState.scrollToItem(0) }
     LazyColumn(
         state = listState,
         modifier = modifier,

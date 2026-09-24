@@ -58,7 +58,6 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.repeatOnLifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -259,10 +258,8 @@ object FavoritePage : AppDestination {
             showDeleteDialog = false
         }
 
-        LaunchedEffect(lifecycleOwner, model) {
-            lifecycleOwner.repeatOnLifecycle(Lifecycle.State.RESUMED) {
-                model.initShelf()
-            }
+        LaunchedEffect(Unit) {
+            model.initShelf()
         }
         LaunchedEffect(visibleKeys) { selected = selected.intersect(visibleKeys) }
         LaunchedEffect(syncState) {

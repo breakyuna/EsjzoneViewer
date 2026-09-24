@@ -4,7 +4,7 @@
 
 ## 1. 访问与证据边界
 
-站点主体是传统服务端渲染 HTML。首页、列表、搜索、详情、章节、会员页和论坛页均可从 DOM 直接读取内容；本次没有获得浏览器网络层的 XHR/fetch 列表，也没有读取静态 JS 文件正文。外部脚本 modifyDetail.js?v=204 在云浏览器中直接打开时被客户端拦截。收藏切换另由项目维护者实际验证可用，见第 6 节；其他动态写入仍不做未经证实的 API 猜测。
+站点主体是传统服务端渲染 HTML。首页、列表、搜索、详情、章节、会员页和论坛页均可从 DOM 直接读取内容；本次没有获得浏览器网络层的 XHR/fetch 列表，也没有读取静态 JS 文件正文。外部脚本 modifyDetail.js?v=204 在云浏览器中直接打开时被客户端拦截。收藏切换另由项目维护者抓包确认，见第 6 节；其他动态写入仍不做未经证实的 API 猜测。
 
 所有需要登录的请求都应复用浏览器登录会话，不能把会话 Cookie 或授权值写入配置文件。
 
@@ -103,7 +103,7 @@
 | 页面 | `/forum/{categoryId}/{boardId}/` |
 | DOM 壳 | `#dataTable[data-url]`、`data-side-pagination="server"`、`data-page-size="20"`、`data-sort-name="last_reply"`、`data-sort-order="desc"` |
 | data-url 样例 | `/inc/forum_list_data.php?totalRows=3`、`/inc/forum_list_data.php?totalRows=142` |
-| 客户端请求 | 先向当前板块页 POST `plxf=getAuthToken`；只接受当前站点 `/inc/forum_list_data.php` 作为 data-url，按页补充 `limit=20&offset={offset}&sort=last_reply&order=desc`；GET 请求携带响应令牌到 `Authorization` 请求头且不跟随重定向；业务状态 `301` 时重新获取令牌并最多重试一次 |
+| 客户端请求 | 先向当前板块页 POST `plxf=getAuthToken`，再使用 data-url 作为端点并补充 `limit=20&offset=0&sort=last_reply&order=desc`；GET 请求携带响应令牌到 `Authorization` 请求头；业务状态 `301` 时重新获取令牌并最多重试一次 |
 | 返回形态 | JSON；观察到 Bootstrap Table 的 `total` 与 `rows` 字段，主题链接位于 `rows[].subject` HTML 中 |
 | 初始占位 | HTML 首次解析可见 `no-records-found`，但脚本加载后非空板块会填充主题行 |
 | 空板块判定 | 仅当 `totalRows=0` 或动态 JSON 确认总数为 0 时返回空列表 |
@@ -151,7 +151,6 @@
 2. 未验证的写操作默认不启用；已由项目维护者验证的收藏切换可以执行，失败时保留本地待同步意图。
 3. API 错误解析不能假定固定 HTTP 状态码或 JSON 字段，遇到未验证响应应保留原始响应摘要并返回 UNKNOWN。
 4. 不在日志中输出 Cookie、授权值、密码或完整私讯 HTML。
-5. 外部 Intent 的小说链接与详情请求只接受当前站点的 `/detail/{novelId}.html`；详情请求不跟随重定向。
 
 ### 7.1 论坛与章节评论响应
 

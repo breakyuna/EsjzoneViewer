@@ -450,7 +450,6 @@ internal fun CommentSectionContent(
                 pageUrl = model.pageUrl,
                 comments = emptyList(),
                 lastCreatedCommentId = lastCreatedCommentId,
-                onCreatedCommentHandled = { model.lastCreatedCommentId.value = null },
                 showHeader = showHeader,
                 modifier = modifier,
                 onReply = ::selectReply,
@@ -463,7 +462,6 @@ internal fun CommentSectionContent(
                 pageUrl = model.pageUrl,
                 comments = snapshot.data,
                 lastCreatedCommentId = lastCreatedCommentId,
-                onCreatedCommentHandled = { model.lastCreatedCommentId.value = null },
                 showHeader = showHeader,
                 modifier = modifier,
                 onReply = ::selectReply,
@@ -554,7 +552,6 @@ private fun CommentSection(
     pageUrl: String,
     comments: List<Comment>,
     lastCreatedCommentId: String?,
-    onCreatedCommentHandled: () -> Unit,
     showHeader: Boolean,
     modifier: Modifier,
     onReply: (Comment) -> Unit,
@@ -577,10 +574,7 @@ private fun CommentSection(
             selectedPageIndex.coerceIn(0, (pages.size - 1).coerceAtLeast(0))
         } else {
             val createdIndex = comments.indexOfFirst { it.id == lastCreatedCommentId }
-            if (createdIndex >= 0) {
-                onCreatedCommentHandled()
-                createdIndex / COMMENT_PAGE_SIZE
-            } else safePageIndex
+            if (createdIndex >= 0) createdIndex / COMMENT_PAGE_SIZE else safePageIndex
         }
     }
 

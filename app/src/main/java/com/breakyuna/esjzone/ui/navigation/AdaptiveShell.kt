@@ -191,9 +191,7 @@ fun AdaptiveAppShell(
     val floatingNavPadding = PaddingValues(0.dp)
 
     val isRootOfSecondaryTab = tab != defaultTabId && (selectedStack.size <= 1 || selectedStack.lastOrNull() == tab.route)
-    var navigationRevision by remember { mutableStateOf(0L) }
     BackHandler(enabled = isRootOfSecondaryTab) {
-        navigationRevision++
         selectedTab = defaultTabId.name
     }
 
@@ -205,23 +203,13 @@ fun AdaptiveAppShell(
 
     LaunchedEffect(Unit) {
         if (!autoResumeHandled) {
-            val initialRevision = navigationRevision
-            val initialTab = selectedTab
-            val initialStacks = listOf(
-                homeStack.toList(), historyStack.toList(),
-                bookshelfStack.toList(), profileStack.toList()
-            )
+            autoResumeHandled = true
             if (PresentationAccess.readerSettings.settings.value.autoResumeLastReading) {
                 try {
                     val latest = withContext(Dispatchers.IO) {
                         PresentationAccess.database.localReadingActivityDao().getLatest()
                     }
-                    val navigationUnchanged = navigationRevision == initialRevision &&
-                        selectedTab == initialTab && initialStacks == listOf(
-                        homeStack.toList(), historyStack.toList(),
-                        bookshelfStack.toList(), profileStack.toList()
-                    )
-                    if (latest != null && navigationUnchanged) {
+                    if (latest != null) {
                         selectedTab = defaultTabId.name
                         val defaultNavigator = when (defaultTabId) {
                             AppTabId.HOME -> homeNavigator
@@ -249,12 +237,10 @@ fun AdaptiveAppShell(
                     )
                 }
             }
-            autoResumeHandled = true
         }
     }
 
     val onTabSelected: (AppTabId) -> Unit = { targetTab ->
-        navigationRevision++
         focusManager.clearFocus(force = true)
         if (tab == targetTab) {
             if (targetTab == AppTabId.HISTORY) {

@@ -90,13 +90,13 @@ app/src/main/java/com/breakyuna/esjzone/
 
 ## 本地验证策略
 
-本地验证的目标是提前发现会使 GitHub Actions 中断的常见错误，同时控制 Termux 设备负担。Termux 已配置 Android SDK、JDK 和 Gradle。普通 Kotlin、Compose、网络、解析、UI 等代码修改时，先完成整批修改和轻量静态检查，再集中执行一次与 CI 对应的测试和 Lint：
+本地验证的目标是提前发现会使 GitHub Actions 中断的常见错误。Termux 已配置 Android SDK、JDK 和 Gradle。普通 Kotlin、Compose、网络、解析、UI 等代码修改完成后，执行与 CI 对应的测试和 Lint：
 
 ```bash
 ./gradlew testDebugUnitTest lintDebug --build-cache
 ```
 
-同一任务中不要为每个小改动反复启动 Gradle，也不要并行启动多次编译。首次测试或 Lint 失败且修复后，再针对失败项或受影响任务重跑；没有新增改动时不重复运行。两项全部成功后，才能称为“本地测试与 Lint 通过”。`testDebugUnitTest` 验证 JVM 单元测试和业务回归，`lintDebug` 检查 Android 项目问题；两者也会编译所需的 Debug 代码。行为修改应补充能检验结果的测试，不添加只重复实现过程的测试。纯文档或仅修改本地规则时，可只运行相关静态检查。
+两项全部成功后，才能称为“本地测试与 Lint 通过”。`testDebugUnitTest` 验证 JVM 单元测试和业务回归，`lintDebug` 检查 Android 项目问题；两者也会编译所需的 Debug 代码。行为修改应补充能检验结果的测试，不添加只重复实现过程的测试。纯文档或仅修改本地规则时，可只运行相关静态检查。
 
 APK 构建交给 GitHub Actions。日常本地验证不要求 `assembleDebug` 或 `assembleRelease`；Release Variant、R8、资源压缩、签名和 Baseline Profile 集成由 CI 的 Release 构建检查。如用户明确要求排查构建问题，可按需要单独执行构建任务。
 

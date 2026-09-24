@@ -184,7 +184,6 @@ class FavoritePageModel(private val authorization: Authorization) :
     }
 
     fun autoCheck() {
-        if (BookshelfRepository.isSyncScheduled(authorization)) return
         val scope = BookshelfRepository.scopeFor(authorization)
         val now = System.currentTimeMillis()
         synchronized(autoCheckTimes) {

@@ -5,8 +5,6 @@ import com.breakyuna.esjzone.network.EsjzoneClient
 import com.breakyuna.esjzone.network.EsjzoneUrls
 import okhttp3.FormBody
 import okhttp3.Request
-import com.breakyuna.esjzone.network.readTextBounded
-import org.json.JSONObject
 
 fun EsjzoneClient.removeHistory(authorization: Authorization, vid: String) {
     runNetworkSafely("RemoveHistory", Unit) {
@@ -24,11 +22,7 @@ fun EsjzoneClient.removeHistory(authorization: Authorization, vid: String) {
                     .header("Authorization", authToken)
                     .build()
             ).execute().use { response ->
-                val body = response.body?.readTextBounded().orEmpty()
-                if (response.isSuccessful &&
-                    runCatching { JSONObject(body).optInt("status") == 200 }.getOrDefault(false)) {
-                    invalidateHistoryCache(authorization)
-                }
+                if (response.isSuccessful) invalidateHistoryCache(authorization)
             }
         }
     }

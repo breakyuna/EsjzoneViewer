@@ -10,38 +10,6 @@ import org.junit.Test
 class EsjzoneUrlsTest {
 
     @Test
-    fun untrustedDetailLink_acceptsOnlySelectedSiteDetailPath() {
-        assertEquals(
-            "https://www.esjzone.cc/detail/123.html",
-            EsjzoneUrls.trustedDetailUrl("/detail/123.html", "www.esjzone.cc")
-        )
-        listOf(
-            "https://example.test/detail/123.html",
-            "https://www.esjzone.cc/my/profile",
-            "https://www.esjzone.cc/detail/123.html?next=1",
-            "https://www.esjzone.cc/detail/%2e%2e/my/profile"
-        ).forEach { unsafe ->
-            assertEquals(null, EsjzoneUrls.trustedDetailUrl(unsafe, "www.esjzone.cc"))
-        }
-    }
-
-    @Test
-    fun forumDataLink_rejectsCrossOriginAndUnexpectedPaths() {
-        assertEquals(
-            "https://www.esjzone.cc/inc/forum_list_data.php?totalRows=20",
-            EsjzoneUrls.trustedForumDataUrl(
-                "/inc/forum_list_data.php?totalRows=20", "www.esjzone.cc"
-            )
-        )
-        assertEquals(null, EsjzoneUrls.trustedForumDataUrl(
-            "https://example.test/inc/forum_list_data.php", "www.esjzone.cc"
-        ))
-        assertEquals(null, EsjzoneUrls.trustedForumDataUrl(
-            "/inc/mem_favorite.php", "www.esjzone.cc"
-        ))
-    }
-
-    @Test
     fun coverOrEmpty_recognizesSitePlaceholderVariants() {
         val placeholders = listOf(
             "https://www.esjzone.cc/assets/img/empty_cover.jpg?t=123",

@@ -46,14 +46,13 @@ import kotlinx.coroutines.launch
 /** Novel names in a category are already available from the list endpoint. */
 class CategoryPage(private val category: Category) : AppDestination {
     override val key: String =
-        "CategoryPage:" + android.net.Uri.encode(category.url.trim().ifBlank { category.name.trim() }) +
-            ":" + android.net.Uri.encode(category.name.trim()) + ":" + category.isAdult
+        "CategoryPage:" + category.url.trim().ifBlank { category.name.trim() } +
+            if (category.name.isNotBlank()) ":" + category.name.trim() else ""
 
     @Composable
     override fun Content() {
         val navigator = LocalBaseNavigator.current
         val authorization = LocalAuthorization.current
-        val adultEnabled by PresentationAccess.settings.adult
         val model = rememberAppViewModel { CategoryPageModel(authorization, category) }
         DiscoveryScaffold(
             title = category.name,
@@ -65,13 +64,7 @@ class CategoryPage(private val category: Category) : AppDestination {
                 onRefresh = model::retry,
                 modifier = Modifier.fillMaxSize()
             ) {
-            if (category.isAdult && !adultEnabled) {
-                DiscoveryEmptyState(
-                    title = stringResource(R.string.home_adult_hidden),
-                    message = "",
-                    modifier = Modifier.fillMaxSize().padding(padding)
-                )
-            } else when (val snapshot = state) {
+            when (val snapshot = state) {
                 CategoryPageModel.State.Loading -> DiscoveryLoadingState(
                     modifier = Modifier.fillMaxSize().padding(padding)
                 )
@@ -119,9 +112,7 @@ class CategoryPage(private val category: Category) : AppDestination {
             }
             }
         }
-        LaunchedEffect(adultEnabled) {
-            if (!category.isAdult || adultEnabled) model.getNovels()
-        }
+        LaunchedEffect(Unit) { model.getNovels() }
     }
 }
 

@@ -34,7 +34,9 @@ internal const val RANDOM_INACTIVITY_TIMEOUT_MS = 5 * 60 * 1000L
 
 class HomeTabModel(
     private val authorization: Authorization
-) : AppStateViewModel<HomeTabModel.State>(State.Loading) {
+) : AppStateViewModel<HomeTabModel.State>(
+    HomeDataCache.readSnapshot(authorization.domain)?.let { State.Result(it) } ?: State.Loading
+) {
 
     private var loadStarted = false
     private var randomLoadJob: Job? = null
@@ -230,8 +232,7 @@ class HomeTabModel(
         if (loadStarted) return
         loadStarted = true
         viewModelScope.launch(Dispatchers.IO) {
-            val visibleData = (mutableState.value as? State.Result)
-                ?: HomeDataCache.readSnapshot(authorization.domain)?.let { State.Result(it) }
+            val visibleData = mutableState.value as? State.Result
             mutableState.value = visibleData?.copy(isSyncing = true) ?: State.Loading
             try {
                 val data = PresentationAccess.client.getHomeData(

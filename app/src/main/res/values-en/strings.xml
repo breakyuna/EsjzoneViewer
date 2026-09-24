@@ -159,7 +159,6 @@
     <string name="novel_download_success">Download task completed</string>
     <string name="novel_download_failed">Download failed; completed chapters were kept</string>
     <string name="novel_download_channel">Novel downloads</string>
-    <string name="novel_download_action_channel">Download needs attention</string>
     <string name="novel_download_notification_title">Downloading %1$s</string>
     <string name="novel_download_notification_waiting">Preparing download…</string>
     <string name="novel_download_completed_with_passwords">Download completed; %1$d password-protected chapter(s) were skipped</string>
@@ -171,9 +170,9 @@
     <string name="novel_download_unlock_failed">Failed to unlock: %1$s</string>
     <string name="chapter_password_required_badge">Password</string>
     <string name="novel_download_common_password_title">Common password for this book</string>
-    <string name="novel_download_common_password_hint">Used for batch unlock on this page only; discarded when you leave</string>
-    <string name="novel_download_common_password_active">Current password: entered</string>
-    <string name="novel_download_set_common_password">Enter batch unlock password</string>
+    <string name="novel_download_common_password_hint">Applies to this novel only; automatically tried during download and batch unlock</string>
+    <string name="novel_download_common_password_active">Common password: set</string>
+    <string name="novel_download_set_common_password">Set common password</string>
     <string name="novel_download_clear_common_password">Clear password</string>
     <string name="novel_download_common_password_cleared">Common password cleared for this book</string>
     <string name="novel_download_batch_unlock_action">Unlock all with common password (%1$d)</string>
@@ -181,9 +180,9 @@
     <string name="novel_download_batch_unlock_success">Successfully unlocked all %1$d chapter(s)</string>
     <string name="novel_download_batch_unlock_partial">Unlocked %1$d chapter(s); %2$d chapter(s) password mismatch</string>
     <string name="novel_download_batch_unlock_failed">Batch unlock failed; password did not match</string>
-    <string name="novel_download_save_as_common_password">Use this password for this batch</string>
+    <string name="novel_download_save_as_common_password">Also save as common password for this book</string>
     <string name="novel_download_use_common_password">Fill common password</string>
-    <string name="novel_download_save_and_unlock">Start unlocking</string>
+    <string name="novel_download_save_and_unlock">Save &amp; unlock</string>
     <string name="novel_export_txt">Export TXT</string>
     <string name="novel_export_epub">Export EPUB</string>
     <string name="novel_export_success">Export complete</string>
@@ -376,11 +375,6 @@
     <string name="settings_navigation_section">Navigation &amp; startup</string>
     <string name="settings_navigation_description">Change the item order shared by the bottom navigation bar and side rail.</string>
     <string name="settings_navigation_reset">Restore default order</string>
-    <string name="settings_navigation_move_earlier">Move earlier</string>
-    <string name="settings_navigation_move_later">Move later</string>
-    <string name="novel_list_toggle_view">Switch novel list layout</string>
-    <string name="search_history_item_description">Search history: %1$s</string>
-    <string name="home_row_description">%1$s, row %2$d</string>
     <string name="settings_startup_page_title">Default startup page</string>
     <string name="settings_startup_page_description">Choose the page that opens by default after the app finishes loading.</string>
     <string name="settings_startup_follow_nav">Follow first navigation tab</string>

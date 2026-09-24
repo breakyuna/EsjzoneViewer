@@ -30,7 +30,6 @@ import okhttp3.Headers
 import okhttp3.FormBody
 import okhttp3.Request
 import org.jsoup.Jsoup
-import okhttp3.HttpUrl.Companion.toHttpUrl
 import org.jsoup.nodes.Document
 import org.jsoup.nodes.Element
 
@@ -479,8 +478,7 @@ sealed class ForumBoardResult {
  */
 fun EsjzoneClient.getForumBoard(
     authorization: Authorization,
-    thread: ForumThread,
-    offset: Int = 0
+    thread: ForumThread
 ): ForumBoardResult {
     val targetUrl = EsjzoneUrls.resolve(thread.url)
     AppLogger.i("GetCommunity", "Fetching forum board ${thread.id} at $targetUrl")
@@ -520,7 +518,7 @@ fun EsjzoneClient.getForumBoard(
         ?.groupValues
         ?.getOrNull(1)
         ?.toIntOrNull()
-    if (inlineTopics.isNotEmpty() && offset == 0) {
+    if (inlineTopics.isNotEmpty()) {
         return forumBoardResult(novelDetailUrl, inlineTopics, declaredTotal)
     }
     if (declaredTotal == 0) {
@@ -529,11 +527,7 @@ fun EsjzoneClient.getForumBoard(
     if (dataUrl.isBlank()) {
         throw ForumBoardDataException("Forum topic table has no data endpoint")
     }
-    val endpoint = appendForumTableParams(
-        EsjzoneUrls.trustedForumDataUrl(dataUrl, authorization.domain.ifBlank { EsjzoneUrls.BaseWithoutProtocol })
-            ?: throw ForumBoardDataException("Forum topic endpoint is not trusted"),
-        offset
-    )
+    val endpoint = appendForumTableParams(EsjzoneUrls.resolve(dataUrl))
     var authToken = requireForumAuthToken(requestAuthToken(authorization, targetUrl))
     var body = getForumTableData(authorization, endpoint, targetUrl, authToken)
     if (forumApplicationStatus(body) == 301) {
@@ -545,7 +539,7 @@ fun EsjzoneClient.getForumBoard(
     validateForumTableResponse(body)
     val payload = parseForumTopicsPayload(body, thread.id)
     val totalCount = payload.totalCount ?: declaredTotal
-    if (payload.items.isEmpty() && totalCount != null && totalCount > 0 && offset == 0) {
+    if (payload.items.isEmpty() && totalCount != null && totalCount > 0) {
         throw ForumBoardDataException("Forum topic response contained no readable topics")
     }
     return forumBoardResult(novelDetailUrl, payload.items, totalCount)
@@ -769,13 +763,10 @@ private fun Element.mainCellText(): String? {
         .takeIf { it.isNotBlank() }
 }
 
-private fun appendForumTableParams(url: String, offset: Int): String = url.toHttpUrl()
-    .newBuilder()
-    .setQueryParameter("limit", "20")
-    .setQueryParameter("offset", offset.coerceAtLeast(0).toString())
-    .setQueryParameter("sort", "last_reply")
-    .setQueryParameter("order", "desc")
-    .build().toString()
+private fun appendForumTableParams(url: String): String {
+    val separator = if (url.contains('?')) '&' else '?'
+    return "$url${separator}limit=20&offset=0&sort=last_reply&order=desc"
+}
 
 private fun EsjzoneClient.getForumTableData(
     authorization: Authorization,
@@ -789,10 +780,7 @@ private fun EsjzoneClient.getForumTableData(
         .add("X-Requested-With", "XMLHttpRequest")
         .add("Authorization", authToken)
         .build()
-    val client = authenticatedClient(authorization).newBuilder()
-        .followRedirects(false)
-        .followSslRedirects(false)
-        .build()
+    val client = authenticatedClient(authorization)
     val response = try {
         client.newCall(
             Request.Builder()

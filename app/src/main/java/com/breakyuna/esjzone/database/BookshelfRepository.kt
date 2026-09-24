@@ -70,7 +70,7 @@ object BookshelfRepository {
     private const val MAX_SYNC_RETRIES = 5
     private val workerScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val scheduledScopes = ConcurrentHashMap.newKeySet<String>()
-    private val rescheduleScopes = ConcurrentHashMap<String, Authorization>()
+    private val rescheduleScopes = ConcurrentHashMap.newKeySet<String>()
     private val metadataAttempts = ConcurrentHashMap<String, Long>()
     private val metadataSemaphore = Semaphore(2)
 
@@ -100,30 +100,36 @@ object BookshelfRepository {
     }
 
     suspend fun migrateLegacyScopeIfNeeded(authorization: Authorization) {
-        // Legacy domain rows have no reliable account owner. Leave them for
-        // explicit recovery rather than assigning their pending writes.
+        val domain = authorization.domain.ifBlank { EsjzoneUrls.BaseWithoutProtocol }
+        val legacyScope = "domain:$domain"
+        val targetScope = scopeFor(authorization)
+        if (legacyScope == targetScope) return
+
+        val dao = requireDao()
+        val targetCount = dao.count(targetScope)
+        if (targetCount == 0) {
+            val legacyCount = dao.count(legacyScope)
+            if (legacyCount > 0) {
+                dao.migrateScope(oldScope = legacyScope, newScope = targetScope)
+                AppLogger.i("BookshelfRepository", "Migrated $legacyCount legacy bookshelf items to $targetScope")
+            }
+        }
     }
 
     /** An old cache-scoped shelf can only be assigned after the user explicitly claims it. */
     suspend fun pendingLegacyBookshelfCount(authorization: Authorization): Int {
-        return legacyScopes(authorization).sumOf { requireDao().count(it) }
+        val oldScope = EsjzoneClient.pendingLegacyBookshelfScope(authorization) ?: return 0
+        return requireDao().count(oldScope)
     }
 
     suspend fun claimLegacyBookshelf(authorization: Authorization): Int = intentMutex.withLock {
+        val oldScope = EsjzoneClient.pendingLegacyBookshelfScope(authorization) ?: return@withLock 0
         val targetScope = scopeFor(authorization)
-        val moved = legacyScopes(authorization).sumOf { oldScope ->
-            requireDao().migrateScope(oldScope, targetScope)
-        }
+        val moved = requireDao().migrateScope(oldScope, targetScope)
         EsjzoneClient.clearPendingLegacyBookshelfScope(authorization)
         if (moved > 0) scheduleSync(authorization)
         moved
     }
-
-    private fun legacyScopes(authorization: Authorization): List<String> =
-        listOfNotNull(
-            EsjzoneClient.pendingLegacyBookshelfScope(authorization),
-            "domain:${authorization.domain.ifBlank { EsjzoneUrls.BaseWithoutProtocol }}"
-        ).distinct().filter { it != scopeFor(authorization) }
 
     fun keyFor(url: String): String =
         EsjzoneUrls.canonicalPageKey(url).ifBlank { EsjzoneUrls.resolve(url).substringBefore('#') }
@@ -307,27 +313,23 @@ object BookshelfRepository {
     fun scheduleSync(authorization: Authorization, delayMillis: Long = 0L) {
         if (authorization.hasCredentials()) {
             val scope = scopeFor(authorization)
-            val generation = EsjzoneClient.sessionGeneration()
             if (!scheduledScopes.add(scope)) {
                 // A new local intent arrived while the current sync was in
                 // flight. Run one more pass after it finishes.
-                rescheduleScopes[scope] = authorization
+                rescheduleScopes.add(scope)
                 return
             }
             workerScope.launch {
                 try {
                     if (delayMillis > 0L) delay(delayMillis)
-                    sync(authorization, generation = generation)
+                    sync(authorization)
                 } finally {
                     scheduledScopes.remove(scope)
-                    rescheduleScopes.remove(scope)?.let { scheduleSync(it) }
+                    if (rescheduleScopes.remove(scope)) scheduleSync(authorization)
                 }
             }
         }
     }
-
-    fun isSyncScheduled(authorization: Authorization): Boolean =
-        scopeFor(authorization) in scheduledScopes
 
     /**
      * Completes metadata missing from cloud favorite rows in the background.
@@ -437,14 +439,7 @@ object BookshelfRepository {
         }
     }
 
-    suspend fun sync(
-        authorization: Authorization,
-        manualRetry: Boolean = false,
-        generation: Long = EsjzoneClient.sessionGeneration()
-    ): BookshelfSyncResult = syncMutex.withLock {
-        if (!EsjzoneClient.isCurrentSession(authorization, generation)) {
-            return@withLock BookshelfSyncResult(success = false)
-        }
+    suspend fun sync(authorization: Authorization, manualRetry: Boolean = false): BookshelfSyncResult = syncMutex.withLock {
         migrateLegacyScopeIfNeeded(authorization)
         val dao = requireDao()
         val scope = scopeFor(authorization)
@@ -462,9 +457,6 @@ object BookshelfRepository {
         } catch (error: Exception) {
             AppLogger.w("BookshelfRepository", "Remote shelf snapshot unavailable; keeping local rows", error)
             return@withLock BookshelfSyncResult(success = false, loadFailure = error.loadFailureKind())
-        }
-        if (!EsjzoneClient.isCurrentSession(authorization, generation)) {
-            return@withLock BookshelfSyncResult(success = false)
         }
         val remoteByKey = remote.associateBy { keyFor(it.url) }.filterKeys { it.isNotBlank() }
             .let { byKey ->
@@ -485,9 +477,6 @@ object BookshelfRepository {
         // Resolve pending intents against the snapshot before importing it.
         var remoteCallCount = 0
         pendingRows.forEach { local ->
-            if (!EsjzoneClient.isCurrentSession(authorization, generation)) {
-                return@withLock BookshelfSyncResult(success = false)
-            }
             val remoteHas = remoteByKey.containsKey(local.bookKey)
             if (local.syncState == BookshelfSyncState.PENDING_ADD) {
                 if (remoteHas) {
@@ -507,8 +496,7 @@ object BookshelfRepository {
                         return@forEach
                     }
                     remoteCallCount++
-                    if (EsjzoneClient.toggleFavorite(authorization, local) &&
-                        EsjzoneClient.isCurrentSession(authorization, generation)) {
+                    if (EsjzoneClient.toggleFavorite(authorization, local)) {
                         val current = dao.find(scope, local.bookKey)
                         if (current != null && BookshelfSyncRules.shouldApplyResponse(
                                 current.operationVersion, local.operationVersion
@@ -542,8 +530,7 @@ object BookshelfRepository {
                         return@forEach
                     }
                     remoteCallCount++
-                    if (EsjzoneClient.toggleFavorite(authorization, local) &&
-                        EsjzoneClient.isCurrentSession(authorization, generation)) {
+                    if (EsjzoneClient.toggleFavorite(authorization, local)) {
                         val current = dao.find(scope, local.bookKey)
                         if (current != null && BookshelfSyncRules.shouldApplyResponse(
                                 current.operationVersion, local.operationVersion

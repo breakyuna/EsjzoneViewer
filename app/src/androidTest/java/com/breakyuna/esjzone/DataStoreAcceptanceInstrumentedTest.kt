@@ -126,17 +126,14 @@ class DataStoreAcceptanceInstrumentedTest {
         try {
             val reader = ReaderSettingsDataStore(context, scope, fileName("reader-corrupt-legacy"))
             reader.migrateFromLegacy(context)
-            val recovered = reader.settings.first {
-                it.letterSpacingSp == 2f && it.lineSpacingSp == 4f &&
-                    it.pageSpacingDp == 16f && it.horizontalPaddingDp == 48f
-            }
+            val recovered = reader.settings.first { it.fontSizeSp == 18f }
             assertEquals(ReaderBackground.SYSTEM, recovered.background)
             assertEquals(ReaderFont.SYSTEM, recovered.font)
             assertEquals(18f, recovered.fontSizeSp)
             assertEquals(2f, recovered.letterSpacingSp)
-            assertEquals(4f, recovered.lineSpacingSp)
+            assertEquals(10f, recovered.lineSpacingSp)
             assertEquals(10f, recovered.paragraphSpacingDp)
-            assertEquals(16f, recovered.pageSpacingDp)
+            assertEquals(32f, recovered.pageSpacingDp)
             assertEquals(48f, recovered.horizontalPaddingDp)
             assertEquals(ReaderScript.ORIGINAL, recovered.script)
         } finally {

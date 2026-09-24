@@ -138,7 +138,7 @@ class NovelListPage(
                 }) {
                     Icon(
                         imageVector = if (gridView) Icons.Filled.ViewList else Icons.Filled.GridView,
-                        contentDescription = stringResource(R.string.novel_list_toggle_view)
+                        contentDescription = "切换小说列表展示方式"
                     )
                 }
             }

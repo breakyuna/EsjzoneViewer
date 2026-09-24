@@ -4,10 +4,8 @@ import com.breakyuna.esjzone.network.features.getChapterDetail
 import com.breakyuna.esjzone.network.cancellablePageRequest
 
 import android.annotation.SuppressLint
-import android.Manifest
 import android.content.Context
 import android.net.Uri
-import android.os.Build
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -1135,38 +1133,23 @@ private suspend fun exportNovel(
         val manifest = PresentationAccess.downloads.manifest(novel.url)
             ?.takeIf { it.complete }
             ?: error("Novel download is incomplete")
-        val staged = java.io.File.createTempFile("novel-export-", ".tmp", context.cacheDir)
-        try {
-            staged.outputStream().use { stream ->
-                val loader = { record: DownloadedChapterRecord ->
-                    PresentationAccess.downloads.chapterContent(novel.url, record)
-                }
-                when (format) {
-                    NovelExportFormat.TXT -> NovelExporter.exportTxt(manifest, loader, stream)
-                    NovelExportFormat.EPUB -> NovelExporter.exportEpub(
-                        manifest = manifest,
-                        chapterLoader = loader,
-                        output = stream,
-                        imageLoader = { component ->
-                            PresentationAccess.downloads.imageFile(novel.url, component)
-                        }
-                    )
-                }
+        val output = context.contentResolver.openOutputStream(uri, "w")
+            ?: error("Unable to open the selected file")
+        output.use { stream ->
+            val loader = { record: DownloadedChapterRecord ->
+                PresentationAccess.downloads.chapterContent(novel.url, record)
             }
-            try {
-                val output = context.contentResolver.openOutputStream(uri, "w")
-                    ?: error("Unable to open the selected file")
-                output.use { stream -> staged.inputStream().use { it.copyTo(stream) } }
-            } catch (error: Exception) {
-                // CreateDocument supplied this destination for the export. Remove
-                // a partial file if the document provider supports deletion.
-                runCatching {
-                    android.provider.DocumentsContract.deleteDocument(context.contentResolver, uri)
-                }
-                throw error
+            when (format) {
+                NovelExportFormat.TXT -> NovelExporter.exportTxt(manifest, loader, stream)
+                NovelExportFormat.EPUB -> NovelExporter.exportEpub(
+                    manifest = manifest,
+                    chapterLoader = loader,
+                    output = stream,
+                    imageLoader = { component ->
+                        PresentationAccess.downloads.imageFile(novel.url, component)
+                    }
+                )
             }
-        } finally {
-            staged.delete()
         }
     }
 }
@@ -1204,9 +1187,6 @@ private fun NovelDownloadActions(
     var selectedChapterUrls by rememberSaveable(novel.url) { mutableStateOf<Set<String>>(emptySet()) }
     var verificationSelection by remember(novel.url) { mutableStateOf<Set<String>?>(null) }
     val downloadScope = rememberCoroutineScope()
-    val notificationPermissionLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestPermission()
-    ) { }
 
     LaunchedEffect(novel.url) {
         val current = withContext(Dispatchers.IO) { PresentationAccess.downloads.manifest(novel.url) }
@@ -1257,13 +1237,6 @@ private fun NovelDownloadActions(
 
     fun enqueueDownload(selectedUrls: Set<String>? = null) {
         if (downloading || preflighting || novel.chapterList.orderedChapters.isEmpty()) return
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
-            androidx.core.content.ContextCompat.checkSelfPermission(
-                context, Manifest.permission.POST_NOTIFICATIONS
-            ) != android.content.pm.PackageManager.PERMISSION_GRANTED
-        ) {
-            notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
-        }
         pausing = false
         val targetChapters = novel.chapterList.orderedChapters.filter { chapter ->
             !chapter.isExternal && (selectedUrls == null || chapter.url in selectedUrls)
@@ -1390,7 +1363,7 @@ private fun NovelDownloadActions(
             val deleted = withContext(Dispatchers.IO) {
                 PresentationAccess.downloads.delete(novel.url)
             }
-            if (deleted) onDownloadedChange(null)
+            onDownloadedChange(null)
             deletingDownload = false
             if (deleted) {
                 Toast.makeText(context, R.string.novel_download_deleted, Toast.LENGTH_SHORT).show()
@@ -1721,7 +1694,7 @@ private fun NovelDownloadActions(
     }
 
     if (showCommonPasswordDialog) {
-        var passwordInput by remember(novel.url) { mutableStateOf(downloaded?.commonPassword.orEmpty()) }
+        var passwordInput by rememberSaveable(novel.url) { mutableStateOf(downloaded?.commonPassword.orEmpty()) }
         AlertDialog(
             onDismissRequest = { if (!batchUnlocking) showCommonPasswordDialog = false },
             title = { Text(stringResource(R.string.novel_download_common_password_title)) },
@@ -1737,7 +1710,6 @@ private fun NovelDownloadActions(
                         onValueChange = { passwordInput = it },
                         label = { Text(stringResource(R.string.reader_password_label)) },
                         singleLine = true,
-                        visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
                         enabled = !batchUnlocking
                     )
                 }
@@ -1786,7 +1758,6 @@ private fun NovelDownloadActions(
                         onValueChange = { passwordInput = it },
                         label = { Text(stringResource(R.string.reader_password_label)) },
                         singleLine = true,
-                        visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
                         enabled = !unlocking
                     )
                     Row(

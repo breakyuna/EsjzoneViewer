@@ -20,7 +20,9 @@ import kotlinx.coroutines.launch
 /** Cloud history loader isolated from the tab and its paging presentation. */
 class HistoryPageModel(
     private val authorization: Authorization
-) : AppStateViewModel<HistoryPageModel.State>(State.Loading) {
+) : AppStateViewModel<HistoryPageModel.State>(
+    HistoryDataCache.readSnapshot(authorization)?.let { State.Result(it, isSyncSuccess = false) } ?: State.Loading
+) {
 
     private var loadJob: Job? = null
     private var loadStarted = false
@@ -43,9 +45,7 @@ class HistoryPageModel(
         val generation = ++loadGeneration
         loadJob?.cancel()
         loadJob = viewModelScope.launch(Dispatchers.IO) {
-            val visibleData = (mutableState.value as? State.Result)
-                ?: HistoryDataCache.readSnapshot(authorization)
-                    ?.let { State.Result(it, isSyncSuccess = false) }
+            val visibleData = mutableState.value as? State.Result
             mutableState.value = visibleData?.copy(
                 isSyncing = true,
                 isSyncSuccess = false,
