@@ -19,6 +19,7 @@ fun EsjzoneClient.requestAuthToken(authorization: Authorization, url: String): S
                         .build()
                 )
                 .headers(this.headers)
+                .header("Accept", "text/javascript, text/html, application/xml, text/xml, */*")
                 .build()
         ).execute().use { response ->
             if (!response.isSuccessful) {

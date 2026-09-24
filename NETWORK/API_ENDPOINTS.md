@@ -140,7 +140,7 @@
 
 ## 6. 收藏写入与未观察到的接口
 
-- 收藏新增/取消：项目维护者已在实际使用中验证远端切换可用，早先的云浏览器采样未覆盖该操作。客户端向 `/inc/mem_favorite.php` 发送携带当前页面授权 token 的 POST，请求前读取远端收藏列表以确定是否需要切换；失败时保留本地待同步意图。具体响应样例尚未记录，客户端目前以成功 HTTP 状态且响应不含登录页、拦截页或错误标记作为请求成功条件。
+- 收藏新增/取消：维护者在 `www.esjzone.one` 的小说详情页抓包确认两次操作使用同一个 Toggle 接口。先向目标 `/detail/{novelId}.html` POST 表单 `plxf=getAuthToken`，请求头 `Accept: text/javascript, text/html, application/xml, text/xml, */*`，从 `<JinJing>...</JinJing>` 提取标签内的 token；再以同一登录会话向 `/inc/mem_favorite.php` POST 空 Body，设置 `Authorization: {token}`、`Accept: application/json, text/javascript, */*; q=0.01`、`X-Requested-With: XMLHttpRequest`。业务请求没有小说 ID 或增删动作字段。响应的 Content-Type 实测为 `text/html; charset=utf-8`，Body 实际为 JSON；成功样本为 `{"status":200,"msg":"","url":"","id":"","swal":"","favorite":3714}`，其中 `favorite` 是收藏人数，不能据此推断当前用户是否收藏。失败响应形态尚未实测。客户端先读取完整远端收藏列表，与本地意图比较后决定是否 Toggle；只有 HTTP 成功且 JSON `status` 为数值 200 才确认写入，否则保留待同步状态，并在下次同步时重新读取远端列表核对。
 - 留言提交、举报提交、资料更新、工单创建、工单回复：只有表单目标被观察，真实服务端响应未验证。
 - 其他会员页面 Bootstrap Table 的实际请求参数和返回字段仍未逐项通过网络面板确认，不应与论坛子板块端点混用。
 - 章节正文、评论、TOC：当前均直接出现在 HTML 中，没有证据表明需要额外 JSON API。
