@@ -5,6 +5,7 @@ import com.breakyuna.esjzone.network.cancellablePageRequest
 
 import android.annotation.SuppressLint
 import android.content.Context
+import android.content.Intent
 import android.net.Uri
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -232,7 +233,7 @@ class NovelPage(
             RebuiltDetailTopBar(
                 onBack = { navigator?.pop() },
                 onOpenExternal = {
-                    openExternal(
+                    openSystemBrowser(
                         context,
                         (state as? NovelPageModel.State.Result)?.detailed?.sourceUrl
                             ?.takeIf(String::isNotBlank)
@@ -391,7 +392,7 @@ class NovelPage(
                 onDismiss = { showMoreActions = false },
                 onOpenSource = {
                     showMoreActions = false
-                    openExternal(
+                    openSystemBrowser(
                         context,
                         (state as? NovelPageModel.State.Result)?.detailed?.sourceUrl
                             ?.takeIf(String::isNotBlank)
@@ -400,7 +401,7 @@ class NovelPage(
                 },
                 onOpenForum = { forumUrl ->
                     showMoreActions = false
-                    openExternal(context, EsjzoneUrls.resolve(forumUrl))
+                    openSystemBrowser(context, EsjzoneUrls.resolve(forumUrl))
                 }
             )
         }
@@ -652,7 +653,7 @@ private fun NovelDetailContent(
                         if (detailed.forumUrl.isNotBlank()) {
                             OutlinedButton(
                                 onClick = {
-                                    openExternal(context, EsjzoneUrls.resolve(detailed.forumUrl))
+                                    openSystemBrowser(context, EsjzoneUrls.resolve(detailed.forumUrl))
                                 },
                                 modifier = Modifier
                                     .weight(1f)
@@ -2284,5 +2285,17 @@ private fun openExternal(context: Context, rawUrl: String) {
         InAppBrowserActivity.open(context, url)
     }.onFailure { error ->
         AppLogger.w("NovelPage", "Unable to open external URL", error)
+    }
+}
+
+private fun openSystemBrowser(context: Context, rawUrl: String) {
+    val url = rawUrl.trim()
+    if (url.isBlank()) return
+    runCatching {
+        context.startActivity(
+            Intent(Intent.ACTION_VIEW, Uri.parse(url)).addCategory(Intent.CATEGORY_BROWSABLE)
+        )
+    }.onFailure { error ->
+        AppLogger.w("NovelPage", "Unable to open URL in system browser", error)
     }
 }

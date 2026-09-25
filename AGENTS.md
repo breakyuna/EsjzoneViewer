@@ -16,7 +16,7 @@
 
 ## 强制约束
 
-1. 除 ChatGPT work 场景外，以本地单元测试和 Lint 通过为日常验证优先级；APK 构建由 GitHub Actions 验证。
+1. 小型改动以静态检查作为日常验证；只有大规模改动后才执行本地 JVM 单元测试和 Android Lint。APK 构建由 GitHub Actions 验证。
 2. 不要在日志、异常信息、测试数据或文档中写入真实密码、会话 Cookie、`ews_key`、`ews_token` 或其他账户凭据。
 3. 不要未经明确要求修改 `applicationId`、包名、数据库名称、远程仓库地址或发布签名配置。
 4. 修改应保持最小范围，不要顺带重写无关代码或删除看似未使用但可能由资源、反射或网页解析流程依赖的内容。
@@ -90,13 +90,13 @@ app/src/main/java/com/breakyuna/esjzone/
 
 ## 本地验证策略
 
-本地验证的目标是提前发现会使 GitHub Actions 中断的常见错误。Termux 已配置 Android SDK、JDK 和 Gradle。普通 Kotlin、Compose、网络、解析、UI 等代码修改完成后，执行与 CI 对应的测试和 Lint：
+本地验证的目标是提前发现会使 GitHub Actions 中断的常见错误。Termux 已配置 Android SDK、JDK 和 Gradle。小型改动（局部、影响范围明确的代码、资源或文档修改）只执行下述静态检查。大规模改动（跨多个模块或核心流程、涉及广泛重构等）完成后，执行与 CI 对应的 JVM 单元测试和 Android Lint：
 
 ```bash
 ./gradlew testDebugUnitTest lintDebug --build-cache
 ```
 
-两项全部成功后，才能称为“本地测试与 Lint 通过”。`testDebugUnitTest` 验证 JVM 单元测试和业务回归，`lintDebug` 检查 Android 项目问题；两者也会编译所需的 Debug 代码。行为修改应补充能检验结果的测试，不添加只重复实现过程的测试。纯文档或仅修改本地规则时，可只运行相关静态检查。
+两项全部成功后，才能称为“本地测试与 Lint 通过”。`testDebugUnitTest` 验证 JVM 单元测试和业务回归，`lintDebug` 检查 Android 项目问题；两者也会编译所需的 Debug 代码。行为修改应补充能检验结果的测试，不添加只重复实现过程的测试。
 
 APK 构建交给 GitHub Actions。日常本地验证不要求 `assembleDebug` 或 `assembleRelease`；Release Variant、R8、资源压缩、签名和 Baseline Profile 集成由 CI 的 Release 构建检查。如用户明确要求排查构建问题，可按需要单独执行构建任务。
 
@@ -109,7 +109,7 @@ python3 tools/qa/verify_static_contracts.py
 git diff --check
 ```
 
-对代码修改，静态验证通过不得代替 Gradle 单元测试或 Lint；静态检查也不能证明 APK 构建成功。还要检查新增或删除的类名、资源名、路径和文档链接的引用，Kotlin、XML、JSON、Markdown 结构，新增用户可见文本的英文和简体中文资源，以及提交范围内的敏感信息和无关文件。
+对小型代码修改，静态验证通过即可完成本地验证，但不能据此声称 JVM 单元测试、Android Lint 或 APK 构建通过。大规模改动必须运行上述 Gradle 单元测试和 Lint。还要检查新增或删除的类名、资源名、路径和文档链接的引用，Kotlin、XML、JSON、Markdown 结构，新增用户可见文本的英文和简体中文资源，以及提交范围内的敏感信息和无关文件。
 
 验证结果按实际执行的命令表述：只检查源码称“静态验证通过”；`testDebugUnitTest` 成功称“JVM 单元测试通过”；`lintDebug` 成功称“Android Lint 通过”；`assembleDebug` 成功称“Debug 构建通过”；`assembleRelease` 成功称“Release 构建通过”；`connectedDebugAndroidTest` 成功称“Android Instrumentation 测试通过”。本地测试与 Lint 通过不代表 APK 构建通过；没有实际执行的项目应明确标注未验证。
 
