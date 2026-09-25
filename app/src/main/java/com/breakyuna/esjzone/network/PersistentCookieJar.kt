@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.SharedPreferences
 import android.util.Log
 import com.breakyuna.esjzone.data.settings.SettingsDefaults
+import com.breakyuna.esjzone.util.AppLogger
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
 import com.google.gson.Gson
@@ -44,6 +45,12 @@ internal class PersistentCookieJar(context: Context) : CookieJar {
     init {
         migrateLegacyCookies()
         cookies += loadCookies()
+        val restoredHosts = SettingsDefaults.DOMAINS.filter { host -> authorizationFor(host) != null }
+        AppLogger.i(
+            TAG,
+            "Session storage restored: secure=${securePreferences != null}, " +
+                "siteSessions=${restoredHosts.joinToString(",").ifBlank { "none" }}"
+        )
     }
 
     override fun loadForRequest(url: HttpUrl): List<Cookie> = loadForRequest(url, expectedEpoch = null)
@@ -101,7 +108,9 @@ internal class PersistentCookieJar(context: Context) : CookieJar {
                     ?.putString(accountKeyMappingKey(url.host, rotatedKey), activeIdentity)
                     ?.apply()
             }
-            persistLocked()
+            persistLocked(durable = responseCookies.any {
+                it.name in SESSION_COOKIE_NAMES && it.expiresAt > System.currentTimeMillis()
+            })
         }
     }
 
@@ -110,6 +119,7 @@ internal class PersistentCookieJar(context: Context) : CookieJar {
             HttpUrl.Builder()
                 .scheme("https")
                 .host(host)
+                .addPathSegments("my/profile")
                 .build()
         }.getOrNull() ?: return null
         val matching = loadForRequest(url)
@@ -125,21 +135,37 @@ internal class PersistentCookieJar(context: Context) : CookieJar {
     /** Upgrades the selected legacy session to the one active account. */
     fun establishActiveAccount(host: String) = synchronized(lock) {
         val secure = securePreferences
+        val authorization = authorizationFor(host)
         if (secure == null) {
-            if (memoryIdentity == null && authorizationFor(host) != null) {
+            if (memoryIdentity == null && authorization != null) {
                 memoryIdentity = UUID.randomUUID().toString()
                 memoryActiveHosts += normalizedHost(host)
             }
             return@synchronized
         }
         if (secure.getString(ACTIVE_SHARED_SCOPE, null).isNullOrBlank() &&
-            authorizationFor(host) != null) {
+            authorization != null) {
             val identity = secure.getString(activeAccountScopeKey(host), null)
                 ?.takeIf(String::isNotBlank) ?: cacheScopeFor(host)
             secure.edit().putString(ACTIVE_SHARED_SCOPE, identity)
                 .putString(activeAccountScopeKey(host), identity)
+                .putString(accountKeyMappingKey(host, authorization.ewsKey), identity)
                 .putString(LEGACY_PRIMARY_HOST, normalizedHost(host))
                 .putString(LEGACY_PRIMARY_IDENTITY, identity).commit()
+        } else if (authorization != null) {
+            val shared = secure.getString(ACTIVE_SHARED_SCOPE, null)
+            if (!shared.isNullOrBlank() &&
+                secure.getString(activeAccountScopeKey(host), null) == shared &&
+                secure.getString(accountKeyMappingKey(host, authorization.ewsKey), null) != shared
+            ) {
+                // A restored key may have been rotated in a previous process before
+                // its account mapping reached disk. Keep the page's Authorization
+                // associated with this account after the next cookie rotation.
+                val committed = secure.edit()
+                    .putString(accountKeyMappingKey(host, authorization.ewsKey), shared)
+                    .commit()
+                AppLogger.i(TAG, "Restored session account mapping: host=${normalizedHost(host)}, committed=$committed")
+            }
         }
     }
 
@@ -400,7 +426,7 @@ internal class PersistentCookieJar(context: Context) : CookieJar {
                     .forEach(editor::remove)
                 editor.commit()
             }
-            persistLocked()
+            persistLocked(durable = true)
         }
     }
 
@@ -422,6 +448,7 @@ internal class PersistentCookieJar(context: Context) : CookieJar {
 
     private fun loadCookies(): MutableList<StoredCookie> {
         val json = runCatching { securePreferences?.getString(COOKIES, null) }
+            .onFailure { AppLogger.w(TAG, "Secure session read failed (${it::class.java.simpleName})") }
             .getOrNull()
             ?: return mutableListOf()
         return parseCookies(json)
@@ -431,14 +458,21 @@ internal class PersistentCookieJar(context: Context) : CookieJar {
         return try {
             gson.fromJson(json, Array<StoredCookie>::class.java)?.toMutableList()
                 ?: mutableListOf()
-        } catch (_: Exception) {
+        } catch (error: Exception) {
+            AppLogger.w(TAG, "Stored session could not be parsed (${error::class.java.simpleName})")
             mutableListOf()
         }
     }
 
-    private fun persistLocked() {
+    private fun persistLocked(durable: Boolean = false) {
         runCatching {
-            securePreferences?.edit()?.putString(COOKIES, gson.toJson(cookies))?.apply()
+            val editor = securePreferences?.edit()?.putString(COOKIES, gson.toJson(cookies))
+                ?: return@runCatching
+            if (durable) {
+                if (!editor.commit()) AppLogger.w(TAG, "Secure session write was not committed")
+            } else {
+                editor.apply()
+            }
         }.onFailure {
             // Keep the current process usable, but never fall back to plaintext storage.
             Log.e(TAG, "Unable to persist the secure session", it)
