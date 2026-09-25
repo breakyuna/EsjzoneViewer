@@ -33,6 +33,7 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Done
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.GridView
+import androidx.compose.material.icons.filled.SelectAll
 import androidx.compose.material.icons.filled.Sort
 import androidx.compose.material.icons.filled.ViewList
 import androidx.compose.material3.AlertDialog
@@ -342,8 +343,7 @@ object FavoritePage : AppDestination {
                     onToggleView = { focusManager.clearFocus(force = true); listView = !listView },
                     onEdit = { editing = true; selected = emptySet() },
                     onDone = ::exitEdit,
-                    onSelectAll = { selected = if (selected == visibleKeys) emptySet() else visibleKeys },
-                    onDelete = ::requestDelete
+                    onSelectAll = { selected = if (selected == visibleKeys) emptySet() else visibleKeys }
                 )
             },
             bottomBar = {
@@ -640,8 +640,7 @@ private fun BookshelfTopBar(
     onSyncStatusMenuChange: (Boolean) -> Unit,
     onEdit: () -> Unit,
     onDone: () -> Unit,
-    onSelectAll: () -> Unit,
-    onDelete: () -> Unit
+    onSelectAll: () -> Unit
 ) {
     Surface(color = MaterialTheme.colorScheme.background) {
         Row(
@@ -676,10 +675,7 @@ private fun BookshelfTopBar(
             }
             if (editing) {
                 IconButton(onClick = onSelectAll, enabled = totalCount > 0 && !deleting) {
-                    Icon(Icons.Filled.Check, stringResource(R.string.bookshelf_select_all))
-                }
-                IconButton(onClick = onDelete, enabled = selectedCount > 0 && !deleting) {
-                    Icon(Icons.Filled.Delete, stringResource(R.string.bookshelf_delete_selected), tint = MaterialTheme.colorScheme.error)
+                    Icon(Icons.Filled.SelectAll, stringResource(R.string.bookshelf_select_all))
                 }
                 IconButton(onClick = onDone, enabled = !deleting) { Icon(Icons.Filled.Done, stringResource(R.string.bookshelf_edit_done)) }
             } else {
