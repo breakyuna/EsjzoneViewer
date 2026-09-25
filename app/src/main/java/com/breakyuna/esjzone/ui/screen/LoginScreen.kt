@@ -54,7 +54,8 @@ import com.breakyuna.esjzone.ui.navigation.LocalAppNavigator
 import com.breakyuna.esjzone.R
 import com.breakyuna.esjzone.database.BookshelfRepository
 import com.breakyuna.esjzone.network.features.CommunitySyncManager
-import com.breakyuna.esjzone.network.features.login
+import com.breakyuna.esjzone.network.features.LoginAttemptResult
+import com.breakyuna.esjzone.network.features.loginWithOutcome
 import com.breakyuna.esjzone.network.mirrorLoginOrder
 import kotlinx.coroutines.flow.first
 import com.breakyuna.esjzone.ui.component.AppGroup
@@ -105,6 +106,7 @@ object LoginScreen : AppDestination {
                     val authorization = withContext(Dispatchers.IO) {
                         val sessions = mutableListOf<com.breakyuna.esjzone.network.Authorization>()
                         var networkFailure: IOException? = null
+                        var receivedServerResult = false
                         mirrorLoginOrder(selectedDomain, PresentationAccess.settings.DOMAINS)
                             .forEach { domain ->
                                 // Once a different account has logged in, an old session on
@@ -115,10 +117,15 @@ object LoginScreen : AppDestination {
                                 var siteSession: com.breakyuna.esjzone.network.Authorization? = null
                                 for (attempt in 0 until 2) {
                                     try {
-                                        siteSession = cancellablePageRequest {
-                                            PresentationAccess.client.login(email.trim(), password, domain)
+                                        when (val outcome = cancellablePageRequest {
+                                            PresentationAccess.client.loginWithOutcome(email.trim(), password, domain)
+                                        }) {
+                                            is LoginAttemptResult.Success -> siteSession = outcome.authorization
+                                            is LoginAttemptResult.NonSuccessStatus,
+                                            LoginAttemptResult.InvalidResponse -> receivedServerResult = true
+                                            is LoginAttemptResult.IoFailure -> throw outcome.error
                                         }
-                                        // A rejected login will not improve through network retries.
+                                        // A complete server result will not improve through an I/O retry.
                                         break
                                     } catch (error: CancellationException) {
                                         throw error
@@ -148,7 +155,9 @@ object LoginScreen : AppDestination {
                                 }
                             }
                         }
-                        result ?: networkFailure?.let { throw it }
+                        // A reachable mirror returned a definite non-network result.
+                        // An I/O error from another mirror must not mask that response.
+                        result ?: if (!receivedServerResult) networkFailure?.let { throw it } else null
                     }
                     if (authorization != null) {
                         if (authorization.domain != selectedDomain) {

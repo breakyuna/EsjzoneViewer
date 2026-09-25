@@ -582,7 +582,6 @@
     <string name="logs_thread">线程：%1$s</string>
     <string name="logs_copy_stacktrace">复制堆栈详情</string>
     <string name="login_description">登录后即可继续使用个人阅读工具。</string>
-    <string name="login_site_title">选择站点</string>
     <string name="login_account_title">账号</string>
     <string name="bookshelf_recent_rank">最近阅读：第 %1$d 本</string>
     <string name="profile_tools">常用功能</string>

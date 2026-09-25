@@ -18,11 +18,29 @@ import okhttp3.Request
 import java.util.concurrent.TimeUnit
 import java.io.IOException
 
+internal sealed interface LoginAttemptResult {
+    data class Success(val authorization: Authorization) : LoginAttemptResult
+    data class NonSuccessStatus(val status: Int) : LoginAttemptResult
+    data object InvalidResponse : LoginAttemptResult
+    data class IoFailure(val error: IOException) : LoginAttemptResult
+}
+
 fun EsjzoneClient.login(
     email: String,
     password: String,
     domain: String = EsjzoneUrls.BaseWithoutProtocol
-): Authorization? {
+): Authorization? = when (val result = loginWithOutcome(email, password, domain)) {
+    is LoginAttemptResult.Success -> result.authorization
+    is LoginAttemptResult.IoFailure -> throw result.error
+    is LoginAttemptResult.NonSuccessStatus,
+    LoginAttemptResult.InvalidResponse -> null
+}
+
+internal fun EsjzoneClient.loginWithOutcome(
+    email: String,
+    password: String,
+    domain: String = EsjzoneUrls.BaseWithoutProtocol
+): LoginAttemptResult {
     require(domain in SettingsDefaults.DOMAINS)
     return try {
         val baseUrl = EsjzoneUrls.baseForDomain(domain)
@@ -59,7 +77,7 @@ fun EsjzoneClient.login(
 
         if (authorizationToken.isNullOrBlank()) {
             AppLogger.w("Login", "Login token response was empty or malformed")
-            return null
+            return LoginAttemptResult.InvalidResponse
         }
 
         val loginCall = httpClient.newCall(
@@ -88,34 +106,34 @@ fun EsjzoneClient.login(
 
         if (cancellation?.isCancelled() == true) throw CancellationException("Login cancelled")
 
-        if (status != 200) {
-            return null
-        }
+        if (status == null) return LoginAttemptResult.InvalidResponse
+        if (status != 200) return LoginAttemptResult.NonSuccessStatus(status)
 
-        val responseUrl = loginResponseUrl ?: return null
+        val responseUrl = loginResponseUrl ?: return LoginAttemptResult.InvalidResponse
         val cookies = cookieJar.allCookies().filter { it.matches(responseUrl) }
         val key = cookies.firstOrNull { it.name == "ews_key" }?.value
         val token = cookies.firstOrNull { it.name == "ews_token" }?.value
         if (key.isNullOrBlank() || token.isNullOrBlank()) {
             AppLogger.w("Login", "Login succeeded without the required session cookies")
-            return null
+            return LoginAttemptResult.InvalidResponse
         }
 
         activateAccountScope(responseUrl.host, email, key)
         rotatePageCacheScope(responseUrl.host)
         persistCookies(responseUrl, cookies)
-        return Authorization(key, token, domain).also {
+        val authorization = Authorization(key, token, domain).also {
             markAuthorizationVerified(it)
         }
+        LoginAttemptResult.Success(authorization)
     } catch (e: CancellationException) {
         throw e
     } catch (e: IOException) {
         if (pageRequestCancellation.get()?.isCancelled() == true) throw CancellationException("Login cancelled")
         AppLogger.e("Login", "Login network request failed", e)
-        throw e
+        LoginAttemptResult.IoFailure(e)
     } catch (e: Exception) {
         AppLogger.e("Login", "Login request or response parsing failed", e)
-        null
+        LoginAttemptResult.InvalidResponse
     }
 }
 
