@@ -116,6 +116,7 @@ object SettingsPage : AppDestination {
         val model = rememberAppViewModel { SettingsPageModel() }
         val state by model.state.collectAsStateWithLifecycle()
         val adult by PresentationAccess.settings.adult
+        val hideHomeRecommendations by PresentationAccess.settings.hideHomeRecommendations
         val domain by PresentationAccess.settings.domain
         val language by PresentationAccess.settings.language
         val autoSave by PresentationAccess.settings.readerAutoSave
@@ -211,6 +212,11 @@ object SettingsPage : AppDestination {
 
                 SettingsSection(Icons.Filled.NoAdultContent, stringResource(R.string.settings_content_section)) {
                     ToggleRow(stringResource(R.string.settings_showadultcontent), stringResource(R.string.settings_adult_description), adult) { PresentationAccess.settings.setAdult(it); model.persist("show_adult", it.toString()) }
+                    ToggleRow(
+                        stringResource(R.string.settings_hide_home_recommendations),
+                        stringResource(R.string.settings_hide_home_recommendations_description),
+                        hideHomeRecommendations
+                    ) { PresentationAccess.settings.setHideHomeRecommendations(it) }
                 }
 
                 SettingsSection(Icons.Filled.Reorder, stringResource(R.string.settings_navigation_section)) {

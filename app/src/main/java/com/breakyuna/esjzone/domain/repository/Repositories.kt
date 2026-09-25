@@ -32,6 +32,7 @@ interface SessionRepository {
 /** Settings are exposed as flows; callers do not need to know the legacy cache key format. */
 interface SettingsRepository {
     val adult: StateFlow<Boolean>
+    val hideHomeRecommendations: StateFlow<Boolean>
     val domain: StateFlow<String>
     val language: StateFlow<AppLanguage>
     val readerAutoSave: StateFlow<Boolean>
@@ -41,6 +42,7 @@ interface SettingsRepository {
     val navigationOrder: StateFlow<List<String>>
     val startTab: StateFlow<String>
     fun setAdult(value: Boolean)
+    fun setHideHomeRecommendations(value: Boolean)
     fun setDomain(value: String)
     fun setLanguage(value: AppLanguage)
     fun setReaderAutoSave(value: Boolean)

@@ -77,6 +77,7 @@ object SettingsStateBoundary {
     private var boundRepository: SettingsRepository? = null
 
     private val _adult = mutableStateOf(true)
+    private val _hideHomeRecommendations = mutableStateOf(false)
     private val _domain = mutableStateOf(SettingsDefaults.DOMAINS.first())
     private val _language = mutableStateOf(AppLanguage.SYSTEM)
     private val _readerAutoSave = mutableStateOf(true)
@@ -93,6 +94,7 @@ object SettingsStateBoundary {
             if (boundRepository === repository) return repository
             boundRepository = repository
             _adult.value = repository.adult.value
+            _hideHomeRecommendations.value = repository.hideHomeRecommendations.value
             _domain.value = repository.domain.value
             _language.value = repository.language.value
             _readerAutoSave.value = repository.readerAutoSave.value
@@ -102,6 +104,7 @@ object SettingsStateBoundary {
             _navigationOrder.value = repository.navigationOrder.value
             _startTab.value = repository.startTab.value
             scope.launch { repository.adult.collect { _adult.value = it } }
+            scope.launch { repository.hideHomeRecommendations.collect { _hideHomeRecommendations.value = it } }
             scope.launch { repository.domain.collect { _domain.value = it } }
             scope.launch { repository.language.collect { _language.value = it } }
             scope.launch { repository.readerAutoSave.collect { _readerAutoSave.value = it } }
@@ -115,6 +118,7 @@ object SettingsStateBoundary {
     }
 
     val adult: State<Boolean> get() { repository(); return _adult }
+    val hideHomeRecommendations: State<Boolean> get() { repository(); return _hideHomeRecommendations }
     val adultFlow: StateFlow<Boolean> get() = repository().adult
     val domain: State<String> get() { repository(); return _domain }
     val domainFlow: StateFlow<String> get() = repository().domain
@@ -134,6 +138,7 @@ object SettingsStateBoundary {
     val startTabFlow: StateFlow<String> get() = repository().startTab
 
     fun setAdult(value: Boolean) = repository().setAdult(value)
+    fun setHideHomeRecommendations(value: Boolean) = repository().setHideHomeRecommendations(value)
     fun setDomain(value: String) = repository().setDomain(value)
     fun setLanguage(value: AppLanguage) = repository().setLanguage(value)
     fun setReaderAutoSave(value: Boolean) = repository().setReaderAutoSave(value)

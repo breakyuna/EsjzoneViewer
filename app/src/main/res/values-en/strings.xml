@@ -397,6 +397,8 @@
     <string name="settings_volume_key_paging">Volume key paging</string>
     <string name="settings_volume_key_paging_description">Use the volume keys to move one page up or down while reading</string>
     <string name="settings_adult_description">Show restricted works on Home, Categories and the catalog.</string>
+    <string name="settings_hide_home_recommendations">Hide popular recommendations</string>
+    <string name="settings_hide_home_recommendations_description">Hide the rarely updated popular recommendations section on Home.</string>
     <string name="settings_storage_section">Local storage &amp; cache</string>
     <string name="settings_page_cache">Page parsing cache</string>
     <string name="settings_image_cache">Covers and image cache</string>

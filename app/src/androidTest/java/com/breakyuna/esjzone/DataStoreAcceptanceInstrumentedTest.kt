@@ -31,6 +31,7 @@ class DataStoreAcceptanceInstrumentedTest {
         try {
             val settings = SettingsDataStore(context, scope, fileName("settings-defaults"))
             assertTrue(settings.adult.first())
+            assertFalse(settings.hideHomeRecommendations.first())
             assertEquals("www.esjzone.cc", settings.domain.first())
             assertEquals(AppLanguage.SYSTEM, settings.language.first())
             assertTrue(settings.readerAutoSave.first())
@@ -48,12 +49,14 @@ class DataStoreAcceptanceInstrumentedTest {
         try {
             val first = SettingsDataStore(context, firstScope, fileName)
             first.setAdult(false)
+            first.setHideHomeRecommendations(true)
             first.setDomain("www.esjzone.one")
             first.setLanguage(AppLanguage.SIMPLIFIED_CHINESE)
             first.setReaderAutoSave(false)
             first.setNovelListGridView(true)
             first.setNovelListAdultOnly(true)
             assertFalse(first.adult.first { !it })
+            assertTrue(first.hideHomeRecommendations.first { it })
             assertTrue(first.novelListGridView.first { it })
             assertTrue(first.novelListAdultOnly.first { it })
         } finally {
@@ -64,6 +67,7 @@ class DataStoreAcceptanceInstrumentedTest {
         try {
             val second = SettingsDataStore(context, secondScope, fileName)
             assertFalse(second.adult.first { !it })
+            assertTrue(second.hideHomeRecommendations.first { it })
             assertEquals("www.esjzone.one", second.domain.first())
             assertEquals(AppLanguage.SIMPLIFIED_CHINESE, second.language.first())
             assertFalse(second.readerAutoSave.first())

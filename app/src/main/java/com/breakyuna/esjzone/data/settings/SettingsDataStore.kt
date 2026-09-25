@@ -63,6 +63,8 @@ class SettingsDataStore(
 
     override val adult: StateFlow<Boolean> = values.map { it.adult }
         .stateIn(scope, SharingStarted.Eagerly, defaults.adult)
+    override val hideHomeRecommendations: StateFlow<Boolean> = values.map { it.hideHomeRecommendations }
+        .stateIn(scope, SharingStarted.Eagerly, defaults.hideHomeRecommendations)
     override val domain: StateFlow<String> = values.map { it.domain }
         .stateIn(scope, SharingStarted.Eagerly, defaults.domain)
     override val language: StateFlow<AppLanguage> = values.map { it.language }
@@ -81,6 +83,7 @@ class SettingsDataStore(
         .stateIn(scope, SharingStarted.Eagerly, defaults.startTab)
 
     override fun setAdult(value: Boolean) = write { it[ADULT] = value }
+    override fun setHideHomeRecommendations(value: Boolean) = write { it[HIDE_HOME_RECOMMENDATIONS] = value }
     override fun setDomain(value: String) {
         write { it[DOMAIN] = value.takeIf { candidate -> candidate in SettingsDefaults.DOMAINS } ?: defaults.domain }
     }
@@ -152,6 +155,7 @@ class SettingsDataStore(
 
     private data class SettingsValues(
         val adult: Boolean = true,
+        val hideHomeRecommendations: Boolean = false,
         val domain: String = SettingsDefaults.DOMAINS.first(),
         val language: AppLanguage = AppLanguage.SYSTEM,
         val readerAutoSave: Boolean = true,
@@ -164,6 +168,7 @@ class SettingsDataStore(
 
     private fun Preferences.toSettingsValues(): SettingsValues = SettingsValues(
         adult = this[ADULT] ?: defaults.adult,
+        hideHomeRecommendations = this[HIDE_HOME_RECOMMENDATIONS] ?: defaults.hideHomeRecommendations,
         domain = this[DOMAIN]?.takeIf { it in SettingsDefaults.DOMAINS } ?: defaults.domain,
         language = AppLanguage.fromCode(this[LANGUAGE]),
         readerAutoSave = this[READER_AUTO_SAVE] ?: defaults.readerAutoSave,
@@ -187,6 +192,7 @@ class SettingsDataStore(
         const val FILE_NAME = "settings.preferences_pb"
         const val READER_AUTO_SAVE_KEY = SettingsDefaults.READER_AUTO_SAVE_KEY
         val ADULT = booleanPreferencesKey("adult")
+        val HIDE_HOME_RECOMMENDATIONS = booleanPreferencesKey("hide_home_recommendations")
         val DOMAIN = stringPreferencesKey("domain")
         val LANGUAGE = stringPreferencesKey("language")
         val READER_AUTO_SAVE = booleanPreferencesKey("reader_auto_save")

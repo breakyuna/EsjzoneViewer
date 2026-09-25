@@ -97,6 +97,7 @@ object HomeTab : AppTab {
         val state by model.state.collectAsStateWithLifecycle()
         val randomState by model.randomRecommendations.collectAsStateWithLifecycle()
         val adult by PresentationAccess.settings.adult
+        val hideHomeRecommendations by PresentationAccess.settings.hideHomeRecommendations
         val editorPicksTitle = stringResource(R.string.home_editor_picks)
         val translatedTitle = stringResource(R.string.tab_home_recentlyupdate_tranlated)
         val originalTitle = stringResource(R.string.tab_home_recentlyupdate_original)
@@ -360,7 +361,7 @@ object HomeTab : AppTab {
                         HomeTabModel.State.Loading -> {
                             homeLoadingHero()
                             homeActionsItem(onForum, onGuestbook, onWaterCooler)
-                            homeLoadingCollection(editorPicksTitle)
+                            if (!hideHomeRecommendations) homeLoadingCollection(editorPicksTitle)
                             homeLoadingCollection(translatedTitle)
                             homeLoadingCollection(originalTitle)
                             if (adult) {
@@ -386,16 +387,18 @@ object HomeTab : AppTab {
                                 onNovelClick = onNovelClick
                             )
                             homeActionsItem(onForum, onGuestbook, onWaterCooler)
-                            homeCollection(
-                                title = editorPicksTitle,
-                                rows = editorPicksRows,
-                                showDivider = true,
-                                onMore = null,
-                                onNovelClick = onNovelClick,
-                                browseMoreLabel = browseMoreLabel,
-                                emptyTitle = emptyCollectionTitle,
-                                emptyMessage = emptyCollectionMessage
-                            )
+                            if (!hideHomeRecommendations) {
+                                homeCollection(
+                                    title = editorPicksTitle,
+                                    rows = editorPicksRows,
+                                    showDivider = true,
+                                    onMore = null,
+                                    onNovelClick = onNovelClick,
+                                    browseMoreLabel = browseMoreLabel,
+                                    emptyTitle = emptyCollectionTitle,
+                                    emptyMessage = emptyCollectionMessage
+                                )
+                            }
                             homeCollection(
                                 title = translatedTitle,
                                 rows = translatedRows,

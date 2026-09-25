@@ -397,6 +397,8 @@
     <string name="settings_volume_key_paging">音量键翻页</string>
     <string name="settings_volume_key_paging_description">阅读时按音量键向上或向下翻一页</string>
     <string name="settings_adult_description">在首页、分类与小说库中显示限制级译文与原创小说。</string>
+    <string name="settings_hide_home_recommendations">隐藏热门推荐</string>
+    <string name="settings_hide_home_recommendations_description">隐藏首页中长期未更新的热门推荐版块。</string>
     <string name="settings_storage_section">本地存储与缓存管理</string>
     <string name="settings_page_cache">页面解析缓存</string>
     <string name="settings_image_cache">封面与图片缓存</string>
