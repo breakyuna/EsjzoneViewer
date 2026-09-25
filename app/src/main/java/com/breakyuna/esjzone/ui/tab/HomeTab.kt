@@ -15,10 +15,10 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Home
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -117,6 +117,25 @@ object HomeTab : AppTab {
 
         val onNovelClick: (CoveredNovel) -> Unit = remember(navigator) {
             { novel -> navigator?.pushIfNotCurrent(NovelPage(novel)) }
+        }
+        val onForum: () -> Unit = { navigator?.pushIfNotCurrent(ForumPage) }
+        val onGuestbook: () -> Unit = { navigator?.pushIfNotCurrent(GuestbookPage) }
+        val onWaterCooler: () -> Unit = {
+            navigator?.pushIfNotCurrent(
+                ForumPostPage(
+                    ForumTopic(
+                        boardId = EsjzoneUrls.WATER_COOLER_BOARD_ID,
+                        id = EsjzoneUrls.WATER_COOLER_TOPIC_ID,
+                        title = waterCoolerTitle,
+                        author = null,
+                        createdAt = null,
+                        replyCount = null,
+                        viewCount = null,
+                        lastReplyAt = null,
+                        url = EsjzoneUrls.WaterCooler
+                    )
+                )
+            )
         }
 
         val weeklyDays = remember(state) {
@@ -288,7 +307,7 @@ object HomeTab : AppTab {
             }
         ) { padding ->
             PullToRefreshBox(
-                isRefreshing = (state as? HomeTabModel.State.Result)?.isSyncing == true,
+                isRefreshing = (state as? HomeTabModel.State.Result)?.isRefreshing == true,
                 onRefresh = model::reload,
                 modifier = Modifier
                     .fillMaxSize()
@@ -338,8 +357,17 @@ object HomeTab : AppTab {
                     verticalArrangement = Arrangement.spacedBy(AppSpacing.sm)
                 ) {
                     when (val snapshot = state) {
-                        HomeTabModel.State.Loading -> item(key = "home-loading", contentType = "loading") {
-                            HomeInitialLoadingState()
+                        HomeTabModel.State.Loading -> {
+                            homeLoadingHero()
+                            homeActionsItem(onForum, onGuestbook, onWaterCooler)
+                            homeLoadingCollection(editorPicksTitle)
+                            homeLoadingCollection(translatedTitle)
+                            homeLoadingCollection(originalTitle)
+                            if (adult) {
+                                homeLoadingCollection(translatedAdultTitle)
+                                homeLoadingCollection(originalAdultTitle)
+                            }
+                            homeLoadingWeeklyUpdates()
                         }
                         is HomeTabModel.State.Error -> item(key = "home-error", contentType = "error") {
                             Column {
@@ -357,29 +385,7 @@ object HomeTab : AppTab {
                                 novels = weeklyPopularNovels,
                                 onNovelClick = onNovelClick
                             )
-                            item(key = "home-actions", contentType = "home-actions") {
-                                HomeActions(
-                                    onForum = { navigator?.pushIfNotCurrent(ForumPage) },
-                                    onGuestbook = { navigator?.pushIfNotCurrent(GuestbookPage) },
-                                    onWaterCooler = {
-                                        navigator?.pushIfNotCurrent(
-                                            ForumPostPage(
-                                                ForumTopic(
-                                                    boardId = EsjzoneUrls.WATER_COOLER_BOARD_ID,
-                                                    id = EsjzoneUrls.WATER_COOLER_TOPIC_ID,
-                                                    title = waterCoolerTitle,
-                                                    author = null,
-                                                    createdAt = null,
-                                                    replyCount = null,
-                                                    viewCount = null,
-                                                    lastReplyAt = null,
-                                                    url = EsjzoneUrls.WaterCooler
-                                                )
-                                            )
-                                        )
-                                    }
-                                )
-                            }
+                            homeActionsItem(onForum, onGuestbook, onWaterCooler)
                             homeCollection(
                                 title = editorPicksTitle,
                                 rows = editorPicksRows,
@@ -440,6 +446,9 @@ object HomeTab : AppTab {
                                 onSelect = { selectedWeeklyDate = weeklyDays[it].date.toString() },
                                 onNovelClick = onNovelClick
                             )
+                            if (weeklyDays.isEmpty() && snapshot.isSyncing) {
+                                homeLoadingWeeklyUpdates()
+                            }
                             randomRecommendationsSection(
                                 state = randomState,
                                 title = randomRecommendationsTitle,
@@ -461,12 +470,12 @@ object HomeTab : AppTab {
     }
 }
 
-@Composable
-private fun HomeInitialLoadingState() {
-    Box(
-        modifier = Modifier.fillMaxWidth().padding(AppSpacing.xxxl),
-        contentAlignment = Alignment.Center
-    ) {
-        CircularProgressIndicator()
+private fun LazyListScope.homeActionsItem(
+    onForum: () -> Unit,
+    onGuestbook: () -> Unit,
+    onWaterCooler: () -> Unit
+) {
+    item(key = "home-actions", contentType = "home-actions") {
+        HomeActions(onForum, onGuestbook, onWaterCooler)
     }
 }

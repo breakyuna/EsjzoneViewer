@@ -53,7 +53,8 @@ class HomeTabModel(
         data class Error(val failure: LoadFailureKind) : State()
         data class Result(
             val homeData: HomeData,
-            val isSyncing: Boolean = false
+            val isSyncing: Boolean = false,
+            val isRefreshing: Boolean = false
         ) : State()
     }
 
@@ -233,7 +234,10 @@ class HomeTabModel(
         loadStarted = true
         viewModelScope.launch(Dispatchers.IO) {
             val visibleData = mutableState.value as? State.Result
-            mutableState.value = visibleData?.copy(isSyncing = true) ?: State.Loading
+            mutableState.value = visibleData?.copy(
+                isSyncing = true,
+                isRefreshing = forceRefresh
+            ) ?: State.Loading
             try {
                 val data = PresentationAccess.client.getHomeData(
                     authorization = authorization,
@@ -241,7 +245,11 @@ class HomeTabModel(
                     onProgress = { partialData ->
                         ensureActive()
                         HomeDataCache.writeSnapshot(authorization, partialData)
-                        mutableState.value = State.Result(partialData, isSyncing = true)
+                        mutableState.value = State.Result(
+                            partialData,
+                            isSyncing = true,
+                            isRefreshing = forceRefresh
+                        )
                     }
                 )
                 ensureActive()
@@ -255,7 +263,7 @@ class HomeTabModel(
                     mutableState.value = State.Error(e.loadFailureKind())
                 } else {
                     val current = mutableState.value as State.Result
-                    mutableState.value = current.copy(isSyncing = false)
+                    mutableState.value = current.copy(isSyncing = false, isRefreshing = false)
                 }
                 loadStarted = false
                 com.breakyuna.esjzone.util.AppLogger.e("HomeTabModel", "Failed to load home data", e)

@@ -2,6 +2,8 @@ package com.breakyuna.esjzone.ui.page
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -42,6 +44,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -68,6 +71,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
@@ -122,6 +126,8 @@ object SettingsPage : AppDestination {
         val checkState by ReleaseUpdateChecker.status.collectAsStateWithLifecycle()
         val autoCheck by ReleaseUpdateChecker.autoCheck.collectAsStateWithLifecycle()
         var showLogout by remember { mutableStateOf(false) }
+        var showLanguageDialog by remember { mutableStateOf(false) }
+        var showStartupPageDialog by remember { mutableStateOf(false) }
         var switchingDomain by remember { mutableStateOf(false) }
         var siteUnavailable by remember { mutableStateOf(false) }
         var draggingNavigationItem by remember { mutableStateOf<String?>(null) }
@@ -196,9 +202,11 @@ object SettingsPage : AppDestination {
 
                 SettingsSection(Icons.Filled.Language, stringResource(R.string.settings_language_section)) {
                     Text(stringResource(R.string.settings_language_description), style = com.breakyuna.esjzone.ui.designsystem.AppTypography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    AppLanguage.entries.forEach { candidate ->
-                        ChoiceRow(stringResource(candidate.titleRes), stringResource(candidate.subtitleRes), candidate == language) { PresentationAccess.settings.setLanguage(candidate); LocaleHelper.syncSystemLocale(context, candidate); model.persist("language", candidate.code) }
-                    }
+                    SelectionSettingRow(
+                        title = stringResource(language.titleRes),
+                        subtitle = stringResource(language.subtitleRes),
+                        onClick = { showLanguageDialog = true }
+                    )
                 }
 
                 SettingsSection(Icons.Filled.NoAdultContent, stringResource(R.string.settings_content_section)) {
@@ -343,25 +351,11 @@ object SettingsPage : AppDestination {
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
 
-                    val startTabOptions = remember {
-                        listOf(
-                            com.breakyuna.esjzone.data.settings.SettingsDefaults.START_TAB_FOLLOW_NAV,
-                            "HOME",
-                            "BOOKSHELF",
-                            "HISTORY",
-                            "PROFILE"
-                        )
-                    }
-                    startTabOptions.forEach { candidate ->
-                        ChoiceRow(
-                            title = startupPageTitle(candidate),
-                            subtitle = startupPageSubtitle(candidate),
-                            selected = candidate == startTab,
-                            onClick = {
-                                PresentationAccess.settings.setStartTab(candidate)
-                            }
-                        )
-                    }
+                    SelectionSettingRow(
+                        title = startupPageTitle(startTab),
+                        subtitle = startupPageSubtitle(startTab),
+                        onClick = { showStartupPageDialog = true }
+                    )
                 }
 
                 SettingsSection(Icons.Filled.MenuBook, stringResource(R.string.settings_reader_section)) {
@@ -557,6 +551,42 @@ object SettingsPage : AppDestination {
                 }
             }
         }
+        if (showLanguageDialog) SelectionDialog(
+            title = stringResource(R.string.settings_language_section),
+            options = AppLanguage.entries.map { candidate ->
+                SelectionOption(
+                    candidate.code,
+                    stringResource(candidate.titleRes),
+                    stringResource(candidate.subtitleRes)
+                )
+            },
+            selectedId = language.code,
+            onSelect = { selected ->
+                showLanguageDialog = false
+                val candidate = AppLanguage.fromCode(selected)
+                PresentationAccess.settings.setLanguage(candidate)
+                LocaleHelper.syncSystemLocale(context, candidate)
+                model.persist("language", candidate.code)
+            },
+            onDismiss = { showLanguageDialog = false }
+        )
+
+        if (showStartupPageDialog) SelectionDialog(
+            title = stringResource(R.string.settings_startup_page_title),
+            options = listOf(
+                com.breakyuna.esjzone.data.settings.SettingsDefaults.START_TAB_FOLLOW_NAV,
+                "HOME", "BOOKSHELF", "HISTORY", "PROFILE"
+            ).map { candidate ->
+                SelectionOption(candidate, startupPageTitle(candidate), startupPageSubtitle(candidate))
+            },
+            selectedId = startTab,
+            onSelect = { selected ->
+                showStartupPageDialog = false
+                PresentationAccess.settings.setStartTab(selected)
+            },
+            onDismiss = { showStartupPageDialog = false }
+        )
+
         if (state.logoutFailed) AlertDialog(
             onDismissRequest = { model.clearLogoutFailure() },
             title = { Text(stringResource(R.string.settings_logout_failed_title)) },
@@ -663,6 +693,81 @@ private fun ChoiceRow(title: String, subtitle: String, selected: Boolean, onClic
             if (selected) Icon(Icons.Filled.Check, null, tint = MaterialTheme.colorScheme.primary)
         }
     }
+}
+
+private data class SelectionOption(val id: String, val title: String, val subtitle: String)
+
+@Composable
+private fun SelectionSettingRow(title: String, subtitle: String, onClick: () -> Unit) {
+    Surface(
+        onClick = onClick,
+        color = Color.Transparent,
+        shape = com.breakyuna.esjzone.ui.designsystem.AppShapes.compact,
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text(title, style = com.breakyuna.esjzone.ui.designsystem.AppTypography.labelLarge)
+                Text(
+                    subtitle,
+                    style = com.breakyuna.esjzone.ui.designsystem.AppTypography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            Icon(Icons.Filled.ChevronRight, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+}
+
+@Composable
+private fun SelectionDialog(
+    title: String,
+    options: List<SelectionOption>,
+    selectedId: String,
+    onSelect: (String) -> Unit,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(title) },
+        text = {
+            Column(Modifier.selectableGroup().verticalScroll(rememberScrollState())) {
+                options.forEach { option ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .selectable(
+                                selected = option.id == selectedId,
+                                role = Role.RadioButton,
+                                onClick = {
+                                    if (option.id == selectedId) onDismiss()
+                                    else onSelect(option.id)
+                                }
+                            )
+                            .padding(vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        RadioButton(selected = option.id == selectedId, onClick = null)
+                        Column(Modifier.weight(1f)) {
+                            Text(option.title, style = com.breakyuna.esjzone.ui.designsystem.AppTypography.labelLarge)
+                            Text(
+                                option.subtitle,
+                                style = com.breakyuna.esjzone.ui.designsystem.AppTypography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.logout_cancel)) }
+        }
+    )
 }
 
 @Composable
