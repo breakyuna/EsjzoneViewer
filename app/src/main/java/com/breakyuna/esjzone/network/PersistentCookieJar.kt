@@ -325,6 +325,10 @@ internal class PersistentCookieJar(context: Context) : CookieJar {
             .apply()
     }
 
+    fun invalidateVerification(authorization: Authorization) = synchronized(lock) {
+        preferences.edit().remove(verificationKey(authorization)).apply()
+    }
+
     /** Imports the two-cookie format written by older app versions. */
     fun importLegacyAuthorization(host: String, authorization: Authorization): Boolean {
         if (!authorization.hasCredentials()) return false

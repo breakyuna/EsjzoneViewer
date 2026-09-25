@@ -100,12 +100,11 @@ private fun EsjzoneClient.checkAuthorizationOnce(
         val document = Jsoup.parse(responseBody)
         val profileMarkerPresent = hasProfileMarker(document)
         val redirectedToLogin = finalPath.contains("/my/login") ||
-            LOGIN_REDIRECT_PATTERN.containsMatchIn(responseBody)
+            PageResponsePolicy.hasScriptLoginRedirect(responseBody)
         val hasLoginForm = document.select("form.login-box").isNotEmpty() ||
             (document.select("input[name=pwd]").isNotEmpty() &&
                 responseBody.contains("/my/login", ignoreCase = true))
-        val explicitLoginPage = finalPath.contains("/my/login") ||
-            (redirectedToLogin && hasLoginForm)
+        val explicitLoginPage = redirectedToLogin
 
         val result = when {
             explicitLoginPage ->
@@ -152,7 +151,3 @@ private fun remainingTimeoutMillis(deadlineNanos: Long): Long {
  */
 fun EsjzoneClient.isAuthorized(authorization: Authorization): Boolean =
     checkAuthorization(authorization) == AuthorizationCheckResult.AUTHORIZED
-
-private val LOGIN_REDIRECT_PATTERN = Regex(
-    """(?i)window\s*\.\s*location\s*\.\s*href\s*=\s*['\"]/?my/login(?:[/?'\"]|$)"""
-)

@@ -265,9 +265,10 @@ object EsjzoneClient {
                 )
             }
             val cancellation = pageRequestCancellation.get()
+            val requestCookieJar = AuthorizationCookieJar(authorization, deferResponses = true)
             val responseData = try {
                 val response = try {
-                    val call = authenticatedClient(authorization).newCall(
+                    val call = sharedHttpClient.newBuilder().cookieJar(requestCookieJar).build().newCall(
                         Request.Builder()
                             .url(url)
                             .get()
@@ -305,9 +306,15 @@ object EsjzoneClient {
                 contentType = responseData.contentType,
                 kind = pageKind
             )
-            if (requestEpoch == cacheEpoch.get() && validation.trusted) {
-                NovelDetailCache.remove(cacheKey)
-                PageCache.write(cacheKey, responseData.body)
+            if (PageResponsePolicy.hasScriptLoginRedirect(responseData.body)) {
+                persistentCookieJar?.invalidateVerification(authorization)
+            }
+            if (validation.trusted) {
+                requestCookieJar.commitDeferredResponses()
+                if (requestEpoch == cacheEpoch.get()) {
+                    NovelDetailCache.remove(cacheKey)
+                    PageCache.write(cacheKey, responseData.body)
+                }
             }
             if (!validation.trusted) {
                 val fallback = if (allowStaleOnError) {

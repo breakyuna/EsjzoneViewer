@@ -53,6 +53,13 @@ internal object PageResponsePolicy {
     )
 
     private val loginPath = Regex("(?:^|/)my/login(?:[/?#.]|$)", RegexOption.IGNORE_CASE)
+    private val scriptLoginRedirect = Regex(
+        """window\s*\.\s*location\s*\.\s*href\s*=\s*['\"]/?my/login(?:[/?'\"]|$)""",
+        RegexOption.IGNORE_CASE
+    )
+
+    fun hasScriptLoginRedirect(body: String): Boolean =
+        !body.contains("<html", ignoreCase = true) && scriptLoginRedirect.containsMatchIn(body)
 
     fun validate(
         statusCode: Int,
@@ -81,7 +88,8 @@ internal object PageResponsePolicy {
         val lower = body.lowercase()
         val lowerFinalUrl = finalUrl.lowercase()
         val lowerRequestedUrl = requestedUrl.lowercase()
-        if (loginPath.containsMatchIn(lowerFinalUrl) || looksLikeLoginPage(lower)) {
+        if (loginPath.containsMatchIn(lowerFinalUrl) || looksLikeLoginPage(lower) ||
+            hasScriptLoginRedirect(body)) {
             return PageValidation(false, "login page")
         }
         if (looksLikeBlockPage(lower)) {
@@ -149,7 +157,7 @@ internal object PageResponsePolicy {
     fun looksLikeBlockedOrLoginPage(body: String, finalUrl: String = ""): Boolean {
         val lower = body.lowercase()
         return loginPath.containsMatchIn(finalUrl.lowercase()) ||
-            looksLikeLoginPage(lower) || looksLikeBlockPage(lower)
+            looksLikeLoginPage(lower) || hasScriptLoginRedirect(body) || looksLikeBlockPage(lower)
     }
 
     private fun looksLikeLoginPage(lowerBody: String): Boolean {
