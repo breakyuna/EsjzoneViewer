@@ -18,6 +18,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.key
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -111,14 +112,16 @@ class MainScreen(val authorization: Authorization) : AppDestination {
                         onContinueOffline = { sessionPromptDismissed = true }
                     )
                 }
-                AdaptiveAppShell(
-                    authorization = authorization,
-                    rootNavigator = appNavigator ?: error("Navigation 3 root is not provided"),
-                    modifier = Modifier.weight(1f),
-                    // The banner owns the status-bar inset while it is
-                    // visible; the shell owns it in every other state.
-                    topInsetConsumed = showSessionBanner
-                )
+                key(authorization.domain) {
+                    AdaptiveAppShell(
+                        authorization = authorization,
+                        rootNavigator = appNavigator ?: error("Navigation 3 root is not provided"),
+                        modifier = Modifier.weight(1f),
+                        // The banner owns the status-bar inset while it is
+                        // visible; the shell owns it in every other state.
+                        topInsetConsumed = showSessionBanner
+                    )
+                }
             }
         }
     }

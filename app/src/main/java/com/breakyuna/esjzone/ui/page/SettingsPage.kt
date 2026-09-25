@@ -93,7 +93,6 @@ import com.breakyuna.esjzone.ui.screen.MainScreen
 import com.breakyuna.esjzone.util.LocaleHelper
 import com.breakyuna.esjzone.util.AppLogger
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -173,7 +172,6 @@ object SettingsPage : AppDestination {
                                             }?.takeIf { it.hasCredentials() }
                                             if (session != null) {
                                                 PresentationAccess.settings.setDomain(candidate)
-                                                PresentationAccess.settings.domainFlow.first { it == candidate }
                                                 PresentationAccess.client.clearParsedPageCache()
                                                 if (PresentationAccess.client.hasSiteSession(candidate)) {
                                                     BookshelfRepository.scheduleSync(session)

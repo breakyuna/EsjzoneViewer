@@ -14,7 +14,10 @@ fun EsjzoneClient.getUserProfile(
 ): UserProfile {
     val responseBody = getPage(
         authorization,
-        EsjzoneUrls.My.Profile,
+        EsjzoneUrls.resolve(
+            "/my/profile",
+            EsjzoneUrls.baseForDomain(authorization.domain.ifBlank { EsjzoneUrls.BaseWithoutProtocol })
+        ),
         PageCacheTtl.PROFILE,
         forceRefresh = forceRefresh,
         pageKind = PageKind.ACCOUNT

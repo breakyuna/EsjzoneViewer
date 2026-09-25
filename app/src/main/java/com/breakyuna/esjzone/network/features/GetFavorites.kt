@@ -22,7 +22,7 @@ fun EsjzoneClient.getFavorites(
     sort: String,
     forceRefresh: Boolean = false
 ): Pair<PageableRequester<FavoriteNovel>, List<FavoriteNovel>> {
-    val firstPageUrl = favoritePageUrl(sort, 1)
+    val firstPageUrl = favoritePageUrl(sort, 1, authorization.domain)
     // The site uses the /new/ or /udate/ landing request to establish the
     // server-side order used by later numeric links.  Normal reads reuse the
     // persistent page cache; callers can force the landing request after a
@@ -77,7 +77,7 @@ fun EsjzoneClient.getAllFavorites(
         }
         throw lastFailure ?: IOException("Favorite page unavailable")
     }
-    val firstPageUrl = favoritePageUrl(sort, 1)
+    val firstPageUrl = favoritePageUrl(sort, 1, authorization.domain)
     val firstBody = fetchPage(firstPageUrl)
     val firstDocument = Jsoup.parse(firstBody, firstPageUrl)
     val pages = pageCount(firstDocument)
@@ -105,7 +105,7 @@ fun EsjzoneClient.getAllFavorites(
     requireFavoritePage(firstDocument, firstBody)
     addPage(firstDocument)
     for (page in 2..pages) {
-        val pageUrl = favoritePageUrl(sort, page)
+        val pageUrl = favoritePageUrl(sort, page, authorization.domain)
         val body = fetchPage(pageUrl)
         val document = Jsoup.parse(body, pageUrl)
         requireFavoritePage(document, body)
@@ -156,7 +156,7 @@ private class FavoriteNovelRequester(
     }
 
     override fun more(page: Int): List<FavoriteNovel> {
-        val pageUrl = favoritePageUrl(sort, page)
+        val pageUrl = favoritePageUrl(sort, page, authorization.domain)
         val responseBody = EsjzoneClient.getPage(
             authorization,
             pageUrl,
@@ -180,17 +180,23 @@ private class FavoriteNovelRequester(
  * visiting the landing route establishes the server-side order before those
  * page links are requested.
  */
-internal fun favoritePageUrl(sort: String, page: Int): String {
+internal fun favoritePageUrl(
+    sort: String,
+    page: Int,
+    domain: String = EsjzoneUrls.BaseWithoutProtocol
+): String {
     val safePage = page.coerceAtLeast(1)
     val route = if (sort.trim().equals("udate", ignoreCase = true)) "udate" else "new"
+    val base = EsjzoneUrls.baseForDomain(domain.ifBlank { EsjzoneUrls.BaseWithoutProtocol })
+    val favorite = "$base/my/favorite"
     return when {
         route == "udate" && safePage == 1 ->
-            "${EsjzoneUrls.My.Favorite}/udate/"
+            "$favorite/udate/"
         route == "udate" ->
-            "${EsjzoneUrls.My.Favorite}/udate/$safePage"
+            "$favorite/udate/$safePage"
         safePage == 1 ->
-            "${EsjzoneUrls.My.Favorite}/new/"
+            "$favorite/new/"
         else ->
-            "${EsjzoneUrls.My.Favorite}/$safePage"
+            "$favorite/$safePage"
     }
 }

@@ -20,7 +20,10 @@ fun EsjzoneClient.getHistories(
 ): List<HistoryNovel> {
     val responseBody = getPage(
         authorization,
-        EsjzoneUrls.My.View,
+        EsjzoneUrls.resolve(
+            "/my/view",
+            EsjzoneUrls.baseForDomain(authorization.domain.ifBlank { EsjzoneUrls.BaseWithoutProtocol })
+        ),
         PageCacheTtl.ACCOUNT_LIST,
         forceRefresh = forceRefresh,
         pageKind = PageKind.ACCOUNT,
