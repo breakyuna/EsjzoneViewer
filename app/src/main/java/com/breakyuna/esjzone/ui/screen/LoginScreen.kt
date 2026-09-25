@@ -9,7 +9,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.imePadding
@@ -23,20 +22,16 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Email
 import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.FilterChip
-import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -75,7 +70,6 @@ import kotlinx.coroutines.withContext
 import java.io.IOException
 
 import com.breakyuna.esjzone.ui.navigation.AppExitBackHandler
-import com.breakyuna.esjzone.ui.navigation.LocalAppNavigator
 
 object LoginScreen : AppDestination {
     private fun readResolve(): Any = LoginScreen
@@ -92,7 +86,6 @@ object LoginScreen : AppDestination {
         var emailError by remember { mutableStateOf(false) }
         var passwordError by remember { mutableStateOf(false) }
         var loggingIn by remember { mutableStateOf(false) }
-        var restoringSite by remember { mutableStateOf(false) }
         var loginFailed by remember { mutableStateOf(false) }
         var loginNetworkFailed by remember { mutableStateOf(false) }
         var accountMismatch by remember { mutableStateOf(false) }
@@ -101,7 +94,7 @@ object LoginScreen : AppDestination {
             emailError = email.trim().isBlank()
             passwordError = password.isBlank()
             accountMismatch = PresentationAccess.client.matchesActiveAccountEmail(email) == false
-            if (emailError || passwordError || accountMismatch || loggingIn || restoringSite) return
+            if (emailError || passwordError || accountMismatch || loggingIn) return
             val sameAccountBeforeLogin = PresentationAccess.client.matchesActiveAccountEmail(email) == true
             loggingIn = true
             loginFailed = false
@@ -110,37 +103,41 @@ object LoginScreen : AppDestination {
             scope.launch {
                 try {
                     val authorization = withContext(Dispatchers.IO) {
-                        val result = cancellablePageRequest {
-                            PresentationAccess.client.login(email.trim(), password, selectedDomain)
-                        }
-                        if (result != null) {
-                            val sessions = mutableListOf(result)
-                            mirrorLoginOrder(selectedDomain, PresentationAccess.settings.DOMAINS)
-                                .drop(1).forEach { otherDomain ->
-                                    // A different account's old session must not remain active.
-                                    if (!sameAccountBeforeLogin) {
-                                        PresentationAccess.client.clearSession(otherDomain)
-                                    }
-                                    var otherSession: com.breakyuna.esjzone.network.Authorization? = null
-                                    for (attempt in 0 until 2) {
-                                        try {
-                                            otherSession = PresentationAccess.client.login(
-                                                email.trim(), password, otherDomain
-                                            )
-                                            // A rejected login will not improve through network retries.
-                                            break
-                                        } catch (error: CancellationException) {
-                                            throw error
-                                        } catch (error: IOException) {
-                                            if (attempt == 0) delay(600L)
-                                            else AppLogger.w("LoginScreen", "Other mirror login unavailable", error)
-                                        } catch (error: Exception) {
-                                            AppLogger.w("LoginScreen", "Other mirror login unavailable", error)
-                                            break
-                                        }
-                                    }
-                                    otherSession?.let(sessions::add)
+                        val sessions = mutableListOf<com.breakyuna.esjzone.network.Authorization>()
+                        var networkFailure: IOException? = null
+                        mirrorLoginOrder(selectedDomain, PresentationAccess.settings.DOMAINS)
+                            .forEach { domain ->
+                                // Once a different account has logged in, an old session on
+                                // the next mirror must not remain attached to that account.
+                                if (sessions.isNotEmpty() && !sameAccountBeforeLogin) {
+                                    PresentationAccess.client.clearSession(domain)
                                 }
+                                var siteSession: com.breakyuna.esjzone.network.Authorization? = null
+                                for (attempt in 0 until 2) {
+                                    try {
+                                        siteSession = cancellablePageRequest {
+                                            PresentationAccess.client.login(email.trim(), password, domain)
+                                        }
+                                        // A rejected login will not improve through network retries.
+                                        break
+                                    } catch (error: CancellationException) {
+                                        throw error
+                                    } catch (error: IOException) {
+                                        networkFailure = error
+                                        if (attempt == 0) delay(600L)
+                                        else AppLogger.w("LoginScreen", "Site login unavailable: host=$domain", error)
+                                    }
+                                }
+                                AppLogger.i("LoginScreen", "Site login result: host=$domain, success=${siteSession != null}")
+                                siteSession?.let(sessions::add)
+                            }
+                        val result = sessions.firstOrNull()
+                        if (result != null) {
+                            // The preferred site may be unavailable on first install.
+                            // Do not keep a different account's old session there.
+                            if (result.domain != selectedDomain && !sameAccountBeforeLogin) {
+                                PresentationAccess.client.clearSession(selectedDomain)
+                            }
                             sessions.forEach { session ->
                                 try {
                                     BookshelfRepository.migrateLegacyScopeIfNeeded(session)
@@ -151,9 +148,13 @@ object LoginScreen : AppDestination {
                                 }
                             }
                         }
-                        result
+                        result ?: networkFailure?.let { throw it }
                     }
                     if (authorization != null) {
+                        if (authorization.domain != selectedDomain) {
+                            PresentationAccess.settings.setDomain(authorization.domain)
+                            PresentationAccess.settings.domainFlow.first { it == authorization.domain }
+                        }
                         password = ""
                         BookshelfRepository.scheduleSync(authorization, delayMillis = 2000L)
                         CommunitySyncManager.schedulePreSync(authorization, delayMillis = 3500L)
@@ -206,51 +207,6 @@ object LoginScreen : AppDestination {
                         style = AppTypography.displayMedium,
                         color = MaterialTheme.colorScheme.onSurface
                     )
-                }
-
-                AppGroup {
-                    AppSectionHeader(
-                        title = stringResource(R.string.login_site_title),
-                        modifier = Modifier.padding(top = 8.dp)
-                    )
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 16.dp, vertical = 12.dp),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        PresentationAccess.settings.DOMAINS.forEach { domain ->
-                            FilterChip(
-                                selected = currentDomain == domain,
-                                onClick = {
-                                    if (currentDomain == domain || restoringSite) return@FilterChip
-                                    restoringSite = true
-                                    PresentationAccess.settings.setDomain(domain)
-                                    scope.launch {
-                                        try {
-                                            PresentationAccess.settings.domainFlow.first { it == domain }
-                                        } catch (e: Exception) {
-                                            AppLogger.e("LoginScreen", "Failed to restore selected site", e)
-                                        } finally {
-                                            restoringSite = false
-                                        }
-                                    }
-                                },
-                                enabled = !loggingIn && !restoringSite,
-                                label = { Text(domain) },
-                                leadingIcon = if (currentDomain == domain) {
-                                    {
-                                        Icon(
-                                            Icons.Filled.Check,
-                                            contentDescription = null,
-                                            modifier = Modifier.size(FilterChipDefaults.IconSize)
-                                        )
-                                    }
-                                } else null,
-                                modifier = Modifier.weight(1f)
-                            )
-                        }
-                    }
                 }
 
                 AppGroup {

@@ -16,6 +16,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import android.net.Uri
@@ -544,15 +545,17 @@ fun AppNavigation() {
     // cookie session before composing the root NavDisplay; LoadingScreen still
     // owns the legacy Room import for the normal Loading route.
     val currentDomain by PresentationAccess.settings.domain
-    var authorization by remember(currentDomain) {
+    val authorizationState = remember(currentDomain) {
         mutableStateOf(
             PresentationAccess.client.restoreAuthorization(
                 currentDomain
             )
         )
     }
+    var authorization by authorizationState
+    val currentAuthorizationState = rememberUpdatedState(authorizationState)
     val navigator = remember(backStack, registry) {
-        AppNavigator(backStack, registry, setAuthorization = { authorization = it })
+        AppNavigator(backStack, registry, setAuthorization = { currentAuthorizationState.value.value = it })
     }
 
     LaunchedEffect(Unit) {
