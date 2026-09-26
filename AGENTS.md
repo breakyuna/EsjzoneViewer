@@ -8,7 +8,7 @@
 - 未经明确要求，不得修改 `applicationId`、包名、数据库名称、远程仓库地址或发布签名配置。
 - 不得在日志、异常信息、测试数据或文档中写入真实密码、会话 Cookie、`ews_key`、`ews_token` 或其他账户凭据。
 - 保持现有 GPL-3.0 许可证文件和第三方开源库归属信息。
-- 上传 GitHub 前无需在本地运行测试；日常改动仅需完成静态检查，测试、代码检查与 APK 构建统一由 GitHub Actions 验证。
+- 按文末验证策略选择检查：小型改动只做静态检查，大规模改动在全部修改完成并确认后，统一执行 JVM 单元测试和 Android Lint，APK 构建由 GitHub Actions 验证。
 
 ### 本地凭据
 
@@ -105,37 +105,43 @@ app/src/main/java/com/breakyuna/esjzone/
 - 不要把网络请求、数据库操作或大型列表计算直接放进 Compose 重组过程；页面状态使用 Navigation 3 entry 提供生命周期的 AndroidX `ViewModel`（当前基类为 `AppStateViewModel`），并通过协程执行后台工作。`screenModelScope` 是迁移期间保留的兼容命名，清理前必须先迁移所有调用点。
 ## 本地验证策略
 
-本地验证用于提前发现格式、凭据或契约错误。Termux 已配置 Android SDK、JDK 和 Gradle，但没有模拟器。上传 GitHub 前日常不要求在本地执行 Gradle 单元测试或 Lint，统一交由 GitHub Actions CI 执行验证。
+本地验证用于提前发现会使 GitHub Actions 中断的常见错误。Termux 已配置 Android SDK、JDK 和 Gradle，但没有模拟器。
 
-### 静态检查（本地日常必跑）
+### 所有改动：静态检查
 
 ```bash
 python3 tools/qa/verify_static_contracts.py
 git diff --check
 ```
 
-提交与上传前检查修改范围内的以下内容：
+同时检查修改范围内的以下内容：
 
 - 新增或删除的类名、资源名、路径和文档链接的引用。
 - Kotlin、XML、JSON、Markdown 结构。
 - 新增用户可见文本的英文和简体中文资源。
 - 敏感信息和无关文件。
 
-静态验证通过即可完成本地常规验证，随后即可提交并上传 GitHub。
+小型改动指局部、影响范围明确的代码、资源或文档修改，静态验证通过即可完成本地验证。
 
-### 按需本地测试（选跑）
+### 大规模改动：JVM 单元测试与 Android Lint
 
-日常上传无需在本地执行测试。仅当用户明确要求排查本地测试失败或特定构建问题时，才按需单独执行：
+跨多个模块或核心流程、涉及广泛重构等大规模改动，必须遵守以下验证时机：
+
+- 修改期间不得每改一处就运行 Gradle 测试、Lint 或构建；可按需进行轻量静态检查。
+- 完成本次任务的全部代码、资源、文档及测试修改，并确认修改范围完整、静态检查通过后，再统一执行下述检查。
+- 若检查失败，先集中修复相关问题，确认修复完成后再复跑受影响的检查；检查通过后，没有新的修改或未解决问题，不重复运行。
+
+最终统一执行与 CI 对应的检查：
 
 ```bash
 ./gradlew testDebugUnitTest lintDebug --build-cache
 ```
 
-`testDebugUnitTest` 验证 JVM 单元测试和业务回归，`lintDebug` 检查 Android 项目问题。未实际执行时如实标注“未在本地验证”。
+`testDebugUnitTest` 验证 JVM 单元测试和业务回归，`lintDebug` 检查 Android 项目问题；两者也会编译所需的 Debug 代码。只有两项全部成功，才能称为“本地测试与 Lint 通过”。
 
-### CI：测试、Lint 与 APK 构建
+### CI：APK 构建与设备验证
 
-- 自动化单元测试、Android Lint 以及 Debug/Release APK 构建全部交给 GitHub Actions 验证；日常本地验证不要求 `assembleDebug` 或 `assembleRelease`。
+- APK 构建交给 GitHub Actions；日常本地验证不要求 `assembleDebug` 或 `assembleRelease`。用户明确要求排查构建问题时，可按需要单独执行构建任务。
 - Release Variant、R8、资源压缩、签名和 Baseline Profile 集成由 CI 的 Release 构建检查。
 - 日常本地验收不强制运行 `connectedDebugAndroidTest`。保留 Room、DataStore、SharedPreferences 迁移、Cookie / Android Framework 持久化和 MainActivity 启动等 Instrumentation 测试；需要时通过 GitHub Actions 的 Android Device Validation 在模拟器上运行。
 
