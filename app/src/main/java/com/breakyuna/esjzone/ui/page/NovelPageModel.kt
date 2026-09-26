@@ -4,6 +4,7 @@ import androidx.lifecycle.viewModelScope
 import com.breakyuna.esjzone.app.PresentationAccess
 
 import com.breakyuna.esjzone.ui.navigation.AppStateViewModel
+import com.breakyuna.esjzone.database.ReadingStatisticsRecorder
 import com.breakyuna.esjzone.database.BookshelfRepository
 import com.breakyuna.esjzone.network.Authorization
 import com.breakyuna.esjzone.network.LoadFailureKind
@@ -51,12 +52,14 @@ class NovelPageModel(
                     fetchedDetail
                 }
                 ensureActive()
+                ReadingStatisticsRecorder.recordTags(detail)
                 mutableState.value = State.Result(detail)
             } catch (error: CancellationException) {
                 throw error
             } catch (error: Exception) {
                 val downloaded = PresentationAccess.downloads.readDetailedNovel(novel.url)
                 if (downloaded != null) {
+                    ReadingStatisticsRecorder.recordTags(downloaded)
                     mutableState.value = State.Result(downloaded)
                     AppLogger.w("NovelPageModel", "Using downloaded novel detail for ${novel.name}", error)
                 } else {

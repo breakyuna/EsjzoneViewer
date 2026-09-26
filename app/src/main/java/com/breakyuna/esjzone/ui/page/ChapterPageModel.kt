@@ -658,6 +658,7 @@ class ChapterPageModel(
         )
         val fetchedOrder = try {
             cancellablePageRequest { PresentationAccess.client.getNovelDetail(authorization, source) }
+                .also { com.breakyuna.esjzone.database.ReadingStatisticsRecorder.recordTags(it) }
                 .chapterList
                 .orderedChapters
         } catch (e: CancellationException) {

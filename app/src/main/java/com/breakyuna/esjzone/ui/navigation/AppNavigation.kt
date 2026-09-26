@@ -58,6 +58,7 @@ import com.breakyuna.esjzone.ui.page.NovelListPage
 import com.breakyuna.esjzone.ui.page.NovelPage
 import com.breakyuna.esjzone.ui.page.SearchPage
 import com.breakyuna.esjzone.ui.page.SettingsPage
+import com.breakyuna.esjzone.ui.page.ReadingStatisticsPage
 import com.breakyuna.esjzone.ui.tab.CategoryBrowserPage
 import com.breakyuna.esjzone.ui.tab.SearchTab
 import com.breakyuna.esjzone.ui.screen.LoadingScreen
@@ -464,6 +465,7 @@ private fun LegacyRoute.restore(): AppDestination? = when (this) {
         token == HistoryPage.key || token.endsWith(".HistoryPage") -> HistoryPage
         token == LogsPage.key || token.endsWith(".LogsPage") -> LogsPage
         token == SettingsPage.key || token.endsWith(".SettingsPage") -> SettingsPage
+        token == ReadingStatisticsPage.key || token.endsWith(".ReadingStatisticsPage") -> ReadingStatisticsPage
         token == ForumPage.key || token.endsWith(".ForumPage") -> ForumPage
         token == GuestbookPage.key || token.endsWith(".GuestbookPage") -> GuestbookPage
         token == SearchTab.key || token.endsWith(".SearchTab") -> SearchTab

@@ -58,7 +58,8 @@ class AppContainer(context: Context) {
         GeneralDatabase.MIGRATION_4_5,
         GeneralDatabase.MIGRATION_5_6,
         GeneralDatabase.MIGRATION_6_7,
-        GeneralDatabase.MIGRATION_7_8
+        GeneralDatabase.MIGRATION_7_8,
+        GeneralDatabase.MIGRATION_8_9
     ).fallbackToDestructiveMigrationOnDowngrade().build()
 
     val imageLoader: ImageLoader = ImageLoader.Builder(appContext)

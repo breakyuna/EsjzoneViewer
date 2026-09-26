@@ -24,6 +24,7 @@ import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.QueryStats
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -73,6 +74,7 @@ import com.breakyuna.esjzone.ui.navigation.LocalBaseNavigator
 import com.breakyuna.esjzone.ui.page.BookmarksPage
 import com.breakyuna.esjzone.ui.page.DownloadPage
 import com.breakyuna.esjzone.ui.page.SettingsPage
+import com.breakyuna.esjzone.ui.page.ReadingStatisticsPage
 import com.breakyuna.esjzone.util.AppLogger
 import com.breakyuna.esjzone.util.LocaleHelper
 import kotlinx.coroutines.CancellationException
@@ -180,6 +182,7 @@ private data class ProfileMenuItem(val id: String, val icon: ImageVector, val ti
 
 @Composable
 private fun profileMenuItems(): List<ProfileMenuItem> = listOf(
+    ProfileMenuItem("reading_stats", Icons.Filled.QueryStats, stringResource(R.string.reading_stats_title), stringResource(R.string.reading_stats_description), ReadingStatisticsPage),
     ProfileMenuItem("bookmarks", Icons.Filled.Bookmark, stringResource(R.string.bookmarks), stringResource(R.string.bookmarks_description), BookmarksPage),
     ProfileMenuItem("downloads", Icons.Filled.Download, stringResource(R.string.downloads), stringResource(R.string.profile_downloads_description), DownloadPage),
     ProfileMenuItem("settings", Icons.Filled.Settings, stringResource(R.string.settings), stringResource(R.string.profile_settings_description), SettingsPage)

@@ -121,6 +121,7 @@ import com.breakyuna.esjzone.ui.navigation.rememberAppViewModel
 import com.breakyuna.esjzone.ui.navigation.AppDestination
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -132,6 +133,8 @@ import kotlin.math.max
 import kotlin.math.roundToInt
 import com.breakyuna.esjzone.R
 import com.breakyuna.esjzone.database.LocalReadingHistoryRecorder
+import com.breakyuna.esjzone.database.ReadingStatisticsSession
+import com.breakyuna.esjzone.database.readingStatisticsBookKey
 import com.breakyuna.esjzone.database.entity.LocalReadingActivity
 import com.breakyuna.esjzone.network.EsjzoneUrls
 import com.breakyuna.esjzone.network.LocalAuthorization
@@ -732,6 +735,42 @@ class ChapterPage(
                 chapterProgress = currentBookLocation?.chapterProgress ?: measuredChapterProgress ?: 0f
             )
         )
+
+        val statisticsBookKey = readingStatisticsBookKey(
+            localHistoryPosition.value.novelId,
+            localHistoryPosition.value.novelUrl,
+            chapter.url
+        )
+        val statisticsBookName = localHistoryPosition.value.novelName
+        val statisticsReady = (state as? ChapterPageModel.State.Result)
+            ?.chapters?.any { it.document.blocks.isNotEmpty() } == true
+        val statisticsSession = remember(statisticsBookKey, statisticsBookName) {
+            ReadingStatisticsSession(statisticsBookKey, statisticsBookName)
+        }
+        DisposableEffect(lifecycleOwner, statisticsReady, readerResumed, statisticsSession) {
+            val observer = LifecycleEventObserver { _, event ->
+                when (event) {
+                    Lifecycle.Event.ON_RESUME -> if (statisticsReady && readerResumed) statisticsSession.start()
+                    Lifecycle.Event.ON_PAUSE, Lifecycle.Event.ON_STOP -> statisticsSession.stop()
+                    else -> Unit
+                }
+            }
+            lifecycleOwner.lifecycle.addObserver(observer)
+            if (statisticsReady && readerResumed && lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) {
+                statisticsSession.start()
+            }
+            onDispose {
+                lifecycleOwner.lifecycle.removeObserver(observer)
+                statisticsSession.stop()
+            }
+        }
+        LaunchedEffect(statisticsReady, statisticsSession) {
+            if (!statisticsReady) return@LaunchedEffect
+            while (true) {
+                delay(30_000L)
+                statisticsSession.checkpoint()
+            }
+        }
 
         // A history-origin reader suppresses position writes until restoration
         // completes. Still update its timestamp immediately so the bookshelf's

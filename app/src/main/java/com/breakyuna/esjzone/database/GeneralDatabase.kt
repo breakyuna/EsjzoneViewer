@@ -9,15 +9,17 @@ import com.breakyuna.esjzone.database.dao.BookshelfDao
 import com.breakyuna.esjzone.database.dao.CacheDao
 import com.breakyuna.esjzone.database.dao.LocalReadingActivityDao
 import com.breakyuna.esjzone.database.dao.SearchHistoryDao
+import com.breakyuna.esjzone.database.dao.ReadingStatDao
 import com.breakyuna.esjzone.database.entity.Bookmark
 import com.breakyuna.esjzone.database.entity.BookshelfEntry
 import com.breakyuna.esjzone.database.entity.Cache
 import com.breakyuna.esjzone.database.entity.LocalReadingActivity
 import com.breakyuna.esjzone.database.entity.SearchHistory
+import com.breakyuna.esjzone.database.entity.ReadingStat
 
 @Database(
-    entities = [Cache::class, SearchHistory::class, Bookmark::class, LocalReadingActivity::class, BookshelfEntry::class],
-    version = 8,
+    entities = [Cache::class, SearchHistory::class, Bookmark::class, LocalReadingActivity::class, BookshelfEntry::class, ReadingStat::class],
+    version = 9,
     exportSchema = true
 )
 abstract class GeneralDatabase : RoomDatabase() {
@@ -31,6 +33,8 @@ abstract class GeneralDatabase : RoomDatabase() {
     abstract fun bookshelfDao(): BookshelfDao
 
     abstract fun localReadingActivityDao(): LocalReadingActivityDao
+
+    abstract fun readingStatDao(): ReadingStatDao
 
     companion object {
         val MIGRATION_1_2: Migration = object : Migration(1, 2) {
@@ -177,6 +181,21 @@ abstract class GeneralDatabase : RoomDatabase() {
                     CREATE INDEX IF NOT EXISTS index_local_reading_history_novel_url
                     ON local_reading_history(novel_url)
                     """.trimIndent()
+                )
+            }
+        }
+
+        val MIGRATION_8_9: Migration = object : Migration(8, 9) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL(
+                    "CREATE TABLE IF NOT EXISTS reading_stats (" +
+                        "date TEXT NOT NULL, book_key TEXT NOT NULL, " +
+                        "book_name TEXT NOT NULL, duration_ms INTEGER NOT NULL, " +
+                        "PRIMARY KEY(date, book_key))"
+                )
+                database.execSQL(
+                    "CREATE INDEX IF NOT EXISTS index_reading_stats_book_key " +
+                        "ON reading_stats(book_key)"
                 )
             }
         }

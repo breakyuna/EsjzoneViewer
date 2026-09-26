@@ -12,6 +12,9 @@ import com.breakyuna.esjzone.database.entity.Cache
 @Dao
 interface CacheDao {
 
+    @Query("SELECT * FROM cache WHERE cache_key GLOB 'reading_stats_tags:*'")
+    fun observeReadingTags(): kotlinx.coroutines.flow.Flow<List<Cache>>
+
     @Query("SELECT * FROM cache")
     fun getAll(): List<Cache>
 
