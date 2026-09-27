@@ -150,7 +150,7 @@
     <string name="novel_description_collapse">收起简介</string>
     <string name="novel_download">下载到本地</string>
     <string name="novel_download_select_chapters">选择章节下载</string>
-    <string name="novel_download_clear_selection">清空</string>
+    <string name="novel_download_clear_selection">清除</string>
     <string name="novel_download_already_saved">已下载</string>
     <string name="novel_download_selected_action">下载所选章节</string>
     <string name="novel_download_update">检查新章节</string>
@@ -641,19 +641,15 @@
     <string name="reconnect">重新连接</string>
     <string name="cancel">取消</string>
     <string name="comment_write_placeholder">写下评论</string>
-    <string name="novel_download_select_missing">选中未下载</string>
-    <string name="novel_download_range">按序号选择</string>
     <string name="novel_download_group_progress">已选 %1$d / %2$d</string>
     <string name="novel_download_group_collapsed_progress">已选 %1$d / %2$d，含折叠章节</string>
     <string name="novel_download_pending_count">本次待下载 %1$d 章</string>
     <string name="novel_download_expand_group">展开分组</string>
     <string name="novel_download_collapse_group">收起分组</string>
-    <string name="novel_download_selection_total">已选择 %1$d / %2$d 章</string>
-    <string name="novel_download_range_hint">输入列表序号 1–%1$d，包含起止两章。已下载章节保持勾选，范围操作只影响未下载章节。</string>
+    <string name="novel_download_downloaded_count">已下载章节 %1$d / %2$d</string>
     <string name="novel_download_range_start">起始序号</string>
-    <string name="novel_download_range_end">结束序号</string>
-    <string name="novel_download_range_error">请输入 1–%1$d 内的整数，结束序号不能小于起始序号。</string>
-    <string name="novel_download_range_add">添加范围</string>
-    <string name="novel_download_range_remove">取消选择</string>
-    <string name="novel_download_selection_too_large">所选章节超过单次任务容量，请缩小范围分批下载；选中全部未下载章节可下载全书。</string>
+    <string name="novel_download_range_end">终止序号</string>
+    <string name="novel_download_range_error">请输入 1–%1$d 内的整数，终止序号不能小于起始序号。</string>
+    <string name="novel_download_range_confirm">确定</string>
+    <string name="novel_download_selection_too_large">所选章节超过单次任务容量，请缩小范围分批下载；输入完整目录范围可下载全书。</string>
 </resources>

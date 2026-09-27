@@ -641,19 +641,15 @@
     <string name="reconnect">Reconnect</string>
     <string name="cancel">Cancel</string>
     <string name="comment_write_placeholder">Write a comment</string>
-    <string name="novel_download_select_missing">Select missing</string>
-    <string name="novel_download_range">Select a range</string>
     <string name="novel_download_group_progress">%1$d / %2$d selected</string>
     <string name="novel_download_group_collapsed_progress">%1$d / %2$d selected, including hidden chapters</string>
     <string name="novel_download_pending_count">%1$d chapters to download</string>
     <string name="novel_download_expand_group">Expand group</string>
     <string name="novel_download_collapse_group">Collapse group</string>
-    <string name="novel_download_selection_total">%1$d / %2$d chapters selected</string>
-    <string name="novel_download_range_hint">Enter list positions from 1 to %1$d, including both ends. Downloaded chapters stay checked; range actions only change chapters not yet downloaded.</string>
+    <string name="novel_download_downloaded_count">%1$d / %2$d chapters downloaded</string>
     <string name="novel_download_range_start">Start position</string>
     <string name="novel_download_range_end">End position</string>
     <string name="novel_download_range_error">Enter whole numbers from 1 to %1$d. The end must be at or after the start.</string>
-    <string name="novel_download_range_add">Add range</string>
-    <string name="novel_download_range_remove">Deselect</string>
-    <string name="novel_download_selection_too_large">This selection exceeds the task limit. Download smaller ranges separately, or select all missing chapters to download the whole book.</string>
+    <string name="novel_download_range_confirm">Confirm</string>
+    <string name="novel_download_selection_too_large">This selection exceeds the task limit. Download smaller ranges separately, or enter the full table of contents range to download the whole book.</string>
 </resources>

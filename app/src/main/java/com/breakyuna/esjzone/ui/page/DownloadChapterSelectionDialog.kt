@@ -4,27 +4,25 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -53,6 +51,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.state.ToggleableState
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
@@ -89,7 +88,8 @@ internal fun DownloadChapterSelectionDialog(
         }
     }
     var expandedOverride by rememberSaveable(novel.url) { mutableStateOf<Set<String>?>(null) }
-    var showRange by rememberSaveable(novel.url) { mutableStateOf(false) }
+    var rangeStart by rememberSaveable(novel.url) { mutableStateOf("") }
+    var rangeEnd by rememberSaveable(novel.url) { mutableStateOf("") }
     var validating by remember { mutableStateOf(false) }
     var selectionTooLarge by remember(selectedUrls) { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
@@ -100,18 +100,23 @@ internal fun DownloadChapterSelectionDialog(
     }
     val checked = remember(selected, saved) { selected + saved }
     val available = remember(catalog, saved) { catalog?.urls.orEmpty() - saved }
+    val range = remember(catalog, rangeStart, rangeEnd) { catalog?.range(rangeStart, rangeEnd) }
+    val pendingRange = remember(range, saved) { range.orEmpty() - saved }
+    val invalidRange = rangeStart.isNotBlank() && rangeEnd.isNotBlank() && range == null
     val expanded = expandedOverride ?: catalog?.defaultExpandedIds.orEmpty()
     val currentSelection by rememberUpdatedState(selected)
     val compactHeight = LocalConfiguration.current.screenHeightDp < 480
+    val compactWidth = LocalConfiguration.current.screenWidthDp < 360
     val rows = remember(catalog, expanded) { catalog?.visibleRows(expanded).orEmpty() }
 
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         Surface(
-            modifier = Modifier.padding(if (compactHeight) 8.dp else 16.dp).widthIn(max = 640.dp)
+            modifier = Modifier.padding(if (compactHeight || compactWidth) 8.dp else 16.dp).widthIn(max = 640.dp)
                 .fillMaxWidth().fillMaxHeight(if (compactHeight) 1f else 0.9f),
             shape = AppShapes.standard
         ) {
-            Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Column(Modifier.padding(horizontal = if (compactWidth) 8.dp else 16.dp, vertical = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(stringResource(R.string.novel_download_select_chapters),
                         style = AppTypography.titleMedium, modifier = Modifier.weight(1f))
@@ -120,17 +125,37 @@ internal fun DownloadChapterSelectionDialog(
                     }
                 }
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    TextButton(onClick = { onSelectionChange(available) }, enabled = available.isNotEmpty(),
-                        modifier = Modifier.weight(1f)) {
-                        Text(stringResource(R.string.novel_download_select_missing), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    OutlinedTextField(value = rangeStart, onValueChange = { rangeStart = it.filter { digit -> digit in '0'..'9' }.take(6) },
+                        modifier = Modifier.weight(1f), enabled = available.isNotEmpty(), singleLine = true,
+                        label = { Text(stringResource(R.string.novel_download_range_start), style = AppTypography.labelMedium,
+                            maxLines = 1) },
+                        textStyle = AppTypography.bodyMedium.copy(textAlign = TextAlign.Center),
+                        isError = invalidRange, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number))
+                    Text("–", modifier = Modifier.padding(horizontal = 4.dp))
+                    OutlinedTextField(value = rangeEnd, onValueChange = { rangeEnd = it.filter { digit -> digit in '0'..'9' }.take(6) },
+                        modifier = Modifier.weight(1f), enabled = available.isNotEmpty(), singleLine = true,
+                        label = { Text(stringResource(R.string.novel_download_range_end), style = AppTypography.labelMedium,
+                            maxLines = 1) },
+                        textStyle = AppTypography.bodyMedium.copy(textAlign = TextAlign.Center),
+                        isError = invalidRange, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number))
+                    TextButton(onClick = {
+                        catalog?.let { current -> range?.let { onSelectionChange(current.applyRange(selected, saved, it, true)) } }
+                    }, enabled = pendingRange.any { it !in selected },
+                        modifier = Modifier.width(if (compactWidth) 56.dp else 64.dp),
+                        contentPadding = PaddingValues(0.dp)) {
+                        Text(stringResource(R.string.novel_download_range_confirm))
                     }
-                    TextButton(onClick = { showRange = true }, enabled = available.isNotEmpty(),
-                        modifier = Modifier.weight(1f)) {
-                        Text(stringResource(R.string.novel_download_range), maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    }
-                    TextButton(onClick = { onSelectionChange(emptySet()) }, enabled = selected.isNotEmpty()) {
+                    TextButton(onClick = {
+                        onSelectionChange(emptySet())
+                    }, enabled = selected.isNotEmpty(),
+                        modifier = Modifier.width(if (compactWidth) 56.dp else 64.dp),
+                        contentPadding = PaddingValues(0.dp)) {
                         Text(stringResource(R.string.novel_download_clear_selection))
                     }
+                }
+                if (invalidRange) {
+                    Text(stringResource(R.string.novel_download_range_error, catalog?.chapters?.size ?: 0),
+                        style = AppTypography.bodySmall, color = MaterialTheme.colorScheme.error)
                 }
                 HorizontalDivider()
                 LazyColumn(Modifier.weight(1f).fillMaxWidth()) {
@@ -209,7 +234,7 @@ internal fun DownloadChapterSelectionDialog(
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Column(Modifier.weight(0.9f)) {
-                        Text(stringResource(R.string.novel_download_selection_total, checked.size, catalog?.chapters?.size ?: 0),
+                        Text(stringResource(R.string.novel_download_downloaded_count, saved.size, catalog?.chapters?.size ?: 0),
                             style = AppTypography.labelLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         Text(stringResource(R.string.novel_download_pending_count, selected.size),
                             style = AppTypography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -248,54 +273,4 @@ internal fun DownloadChapterSelectionDialog(
             }
         }
     }
-    if (showRange && catalog != null) {
-        DownloadRangeDialog(catalog, onDismiss = { showRange = false }, onApply = { range, add ->
-            onSelectionChange(catalog.applyRange(selected, saved, range, add))
-            showRange = false
-        })
-    }
-}
-
-@Composable
-private fun DownloadRangeDialog(
-    catalog: DownloadChapterSelection,
-    onDismiss: () -> Unit,
-    onApply: (Set<String>, Boolean) -> Unit
-) {
-    var start by rememberSaveable { mutableStateOf("") }
-    var end by rememberSaveable { mutableStateOf("") }
-    var addToSelection by rememberSaveable { mutableStateOf(true) }
-    val range = remember(catalog, start, end) { catalog.range(start, end) }
-    val invalid = start.isNotBlank() && end.isNotBlank() && range == null
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.novel_download_range)) },
-        text = {
-            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text(stringResource(R.string.novel_download_range_hint, catalog.chapters.size))
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    FilterChip(selected = addToSelection, onClick = { addToSelection = true },
-                        label = { Text(stringResource(R.string.novel_download_range_add)) })
-                    FilterChip(selected = !addToSelection, onClick = { addToSelection = false },
-                        label = { Text(stringResource(R.string.novel_download_range_remove)) })
-                }
-                OutlinedTextField(value = start, onValueChange = { start = it },
-                    label = { Text(stringResource(R.string.novel_download_range_start)) }, singleLine = true,
-                    isError = invalid, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number))
-                OutlinedTextField(value = end, onValueChange = { end = it },
-                    label = { Text(stringResource(R.string.novel_download_range_end)) }, singleLine = true,
-                    isError = invalid, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number))
-                if (invalid) Text(stringResource(R.string.novel_download_range_error, catalog.chapters.size),
-                    color = MaterialTheme.colorScheme.error)
-            }
-        },
-        confirmButton = {
-            TextButton(onClick = { range?.let { onApply(it, addToSelection) } }, enabled = range != null) {
-                Text(stringResource(if (addToSelection) R.string.novel_download_range_add else R.string.novel_download_range_remove))
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) { Text(stringResource(R.string.close)) }
-        }
-    )
 }
