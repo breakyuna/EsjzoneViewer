@@ -3,7 +3,6 @@ package com.breakyuna.esjzone.ui.page
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.clickable
@@ -391,12 +390,10 @@ private fun ReadingHeatmap(summary: ReadingStatisticsSummary, selectedDate: Loca
                             }
                         }
                         val description = stringResource(R.string.reading_stats_day_detail, date.toString(), formatDuration(duration))
-                        val shape = RoundedCornerShape(3.dp)
                         Box(
-                            Modifier.size(16.dp).clip(shape)
+                            Modifier.size(16.dp).clip(RoundedCornerShape(3.dp))
                                 .background(shade)
                                 .then(if (inRange) Modifier
-                                    .then(if (date == selectedDate) Modifier.border(2.dp, MaterialTheme.colorScheme.onSurface, shape) else Modifier)
                                     .clickable { onSelect(date) }
                                     .semantics {
                                         contentDescription = description
