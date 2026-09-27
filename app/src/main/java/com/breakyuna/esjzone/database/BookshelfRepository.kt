@@ -27,8 +27,6 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.withContext
-import kotlinx.coroutines.async
-import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
@@ -42,14 +40,6 @@ data class BookshelfSyncResult(
     val success: Boolean,
     val added: Int = 0,
     val loadFailure: LoadFailureKind? = null
-)
-
-private data class MetadataSupplementItem(
-    val bookKey: String,
-    val title: String,
-    val author: String,
-    val coverUrl: String,
-    val isAdult: Boolean
 )
 
 /**
@@ -71,10 +61,13 @@ object BookshelfRepository {
     private val workerScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val scheduledScopes = ConcurrentHashMap.newKeySet<String>()
     private val rescheduleScopes = ConcurrentHashMap.newKeySet<String>()
+    private val metadataScheduleLock = Any()
+    private val supplementingScopes = mutableSetOf<String>()
+    private val pendingSupplementAuthorizations = mutableMapOf<String, Authorization>()
     private val metadataAttempts = ConcurrentHashMap<String, Long>()
-    private val metadataSemaphore = Semaphore(2)
+    private val metadataSemaphore = Semaphore(6)
 
-    /** Avoid repeatedly refetching rows that are known to have no cover. */
+    /** Avoid repeatedly refetching rows with missing metadata. */
     private const val METADATA_RETRY_INTERVAL_MILLIS = 30 * 60 * 1000L
     private const val METADATA_BATCH_SIZE = 36
     private const val METADATA_BATCH_COOLDOWN_MILLIS = 3_000L
@@ -335,106 +328,140 @@ object BookshelfRepository {
      * Completes metadata missing from cloud favorite rows in the background.
      * This is intentionally best effort: a failed/empty detail response does
      * not alter the stored URL and is retried only after a short in-process
-     * cooldown. At most two detail pages are fetched concurrently.
+     * cooldown. At most six detail pages are fetched concurrently.
      */
-    fun scheduleMetadataSupplement(authorization: Authorization) {
+    fun scheduleMetadataSupplement(authorization: Authorization, delayMillis: Long = 0L) {
         if (!authorization.hasCredentials()) return
+        val scope = scopeFor(authorization)
+        val shouldStart = synchronized(metadataScheduleLock) {
+            if (supplementingScopes.add(scope)) true else {
+                pendingSupplementAuthorizations[scope] = authorization
+                false
+            }
+        }
+        if (!shouldStart) return
         workerScope.launch {
-            val dao = requireDao()
-            val scope = scopeFor(authorization)
+            try {
+                if (delayMillis > 0L) delay(delayMillis)
+                val dao = requireDao()
 
-            val initialCandidates = dao.getAll(scope)
-                .filter { it.visible && it.coverUrl.isBlank() && it.url.isNotBlank() }
+                val initialCandidates = dao.getAll(scope)
+                    .filter {
+                        it.visible && it.url.isNotBlank() &&
+                            (it.coverUrl.isBlank() || EsjzoneUrls.coverOrEmpty(it.coverUrl).isBlank())
+                    }
+                val readingActivities = if (initialCandidates.isNotEmpty()) localReadingDao.getAll() else null
 
-            if (initialCandidates.isNotEmpty()) {
-                requireDatabase().withTransaction {
-                    for (row in initialCandidates) {
-                        val existing = dao.findAnyWithCover(row.bookKey)
-                        if (existing != null && existing.coverUrl.isNotBlank()) {
-                            val resolvedCover = runCatching { EsjzoneUrls.resolve(existing.coverUrl) }
-                                .getOrDefault(existing.coverUrl)
-                            dao.supplementMetadata(
-                                scope = scope,
-                                bookKey = row.bookKey,
-                                title = existing.title.takeIf { it.isNotBlank() } ?: row.title,
-                                author = existing.author,
-                                coverUrl = resolvedCover,
-                                isAdult = existing.isAdult
-                            )
+                if (initialCandidates.isNotEmpty()) {
+                    val readingCoverByKey = mutableMapOf<String, String>()
+                    val readingCoverById = mutableMapOf<String, String>()
+                    // getAll is newest first; retain the first usable cover per novel.
+                    for (activity in readingActivities.orEmpty()) {
+                        val cover = EsjzoneUrls.coverOrEmpty(activity.novelCoverUrl)
+                        if (cover.isBlank()) continue
+                        if (activity.novelUrl.isNotBlank()) {
+                            val key = keyFor(activity.novelUrl)
+                            if (key.isNotBlank()) readingCoverByKey.putIfAbsent(key, cover)
+                        }
+                        if (activity.novelId.isNotBlank()) {
+                            readingCoverById.putIfAbsent(activity.novelId, cover)
                         }
                     }
-                }
-            }
 
-            delay(2_500L)
-            val now = System.currentTimeMillis()
-            val candidates = dao.getAll(scope)
-                .asSequence()
-                .filter { it.visible && it.coverUrl.isBlank() && it.url.isNotBlank() }
-                .filter { row ->
-                    val attemptKey = "$scope:${row.bookKey}"
-                    val previous = metadataAttempts.putIfAbsent(attemptKey, now)
-                    previous == null ||
-                        (now - previous >= METADATA_RETRY_INTERVAL_MILLIS &&
-                            metadataAttempts.replace(attemptKey, previous, now))
-                }
-                .toList()
-
-            candidates.chunked(METADATA_BATCH_SIZE).forEachIndexed { batchIndex, batch ->
-                coroutineScope {
-                    val batchResults = batch.map { row ->
-                        async {
-                            metadataSemaphore.withPermit {
-                                try {
-                                    val detail = EsjzoneClient.getNovelDetail(
-                                        authorization,
-                                        FavoriteNovel(
-                                            row.title,
-                                            row.url
-                                        )
-                                    )
-                                    // supplementMetadata only fills blank fields,
-                                    // so a late response cannot replace a newer
-                                    // local/detail-page value.
-                                    MetadataSupplementItem(
-                                        bookKey = row.bookKey,
-                                        title = detail.name,
-                                        author = detail.author,
-                                        coverUrl = EsjzoneUrls.coverOrEmpty(detail.coverUrl),
-                                        isAdult = detail.isAdult
-                                    )
-                                } catch (error: CancellationException) {
-                                    throw error
-                                } catch (error: Exception) {
-                                    AppLogger.w(
-                                        "BookshelfRepository",
-                                        "Metadata supplement unavailable for ${row.bookKey}",
-                                        error
-                                    )
-                                    null
-                                }
+                    requireDatabase().withTransaction {
+                        for (row in initialCandidates) {
+                            if (row.coverUrl.isNotBlank()) {
+                                dao.clearCoverIfCurrent(scope, row.bookKey, row.coverUrl)
                             }
-                        }
-                    }.awaitAll().filterNotNull()
-
-                    if (batchResults.isNotEmpty()) {
-                        requireDatabase().withTransaction {
-                            for (item in batchResults) {
+                            val existing = dao.findAnyWithCover(row.bookKey)
+                            val readingCover = readingCoverByKey[row.bookKey]
+                                ?: readingCoverById[row.novelId.ifBlank { novelIdFor(row.url) }]
+                            val availableCover = existing?.coverUrl
+                                ?.let(EsjzoneUrls::coverOrEmpty)
+                                ?.takeIf { it.isNotBlank() }
+                                ?: readingCover
+                            if (availableCover != null) {
                                 dao.supplementMetadata(
                                     scope = scope,
-                                    bookKey = item.bookKey,
-                                    title = item.title,
-                                    author = item.author,
-                                    coverUrl = item.coverUrl,
-                                    isAdult = item.isAdult
+                                    bookKey = row.bookKey,
+                                    title = existing?.title?.takeIf { it.isNotBlank() } ?: row.title,
+                                    author = existing?.author.orEmpty(),
+                                    coverUrl = availableCover,
+                                    isAdult = existing?.isAdult ?: false
                                 )
                             }
                         }
                     }
                 }
-                if (batchIndex < candidates.lastIndex / METADATA_BATCH_SIZE) {
-                    delay(METADATA_BATCH_COOLDOWN_MILLIS)
+
+                val now = System.currentTimeMillis()
+                val remainingCandidates = dao.getAll(scope)
+                    .asSequence()
+                    // A reading-history cover does not provide author or R18 metadata.
+                    .filter { it.visible && it.url.isNotBlank() && (it.coverUrl.isBlank() || it.author.isBlank()) }
+                    .filter { row ->
+                        val attemptKey = "$scope:${row.bookKey}"
+                        val previous = metadataAttempts.putIfAbsent(attemptKey, now)
+                        previous == null ||
+                            (now - previous >= METADATA_RETRY_INTERVAL_MILLIS &&
+                                metadataAttempts.replace(attemptKey, previous, now))
+                    }
+                    .toList()
+
+                if (remainingCandidates.isEmpty()) return@launch
+
+                val activities = readingActivities ?: localReadingDao.getAll()
+                val sortedCandidates = BookshelfSort.sort(
+                    entries = remainingCandidates,
+                    activities = activities,
+                    keyForUrl = ::keyFor,
+                    order = BookshelfSort.Order.RECENT_READ
+                )
+
+                sortedCandidates.chunked(METADATA_BATCH_SIZE).forEachIndexed { batchIndex, batch ->
+                    coroutineScope {
+                        batch.forEach { row ->
+                            launch {
+                                metadataSemaphore.withPermit {
+                                    try {
+                                        val detail = EsjzoneClient.getNovelDetail(
+                                            authorization,
+                                            FavoriteNovel(
+                                                row.title,
+                                                row.url
+                                            )
+                                        )
+                                        dao.supplementMetadata(
+                                            scope = scope,
+                                            bookKey = row.bookKey,
+                                            title = detail.name,
+                                            author = detail.author,
+                                            coverUrl = EsjzoneUrls.coverOrEmpty(detail.coverUrl),
+                                            isAdult = detail.isAdult
+                                        )
+                                    } catch (error: CancellationException) {
+                                        throw error
+                                    } catch (error: Exception) {
+                                        AppLogger.w(
+                                            "BookshelfRepository",
+                                            "Metadata supplement unavailable for ${row.bookKey}",
+                                            error
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    if (batchIndex < sortedCandidates.lastIndex / METADATA_BATCH_SIZE) {
+                        delay(METADATA_BATCH_COOLDOWN_MILLIS)
+                    }
                 }
+            } finally {
+                val nextAuthorization = synchronized(metadataScheduleLock) {
+                    supplementingScopes.remove(scope)
+                    pendingSupplementAuthorizations.remove(scope)
+                }
+                nextAuthorization?.let(::scheduleMetadataSupplement)
             }
         }
     }

@@ -16,9 +16,6 @@ import com.breakyuna.esjzone.util.AppLogger
 import java.io.IOException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
-import kotlinx.coroutines.awaitAll
-import kotlinx.coroutines.sync.Semaphore
-import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import org.jsoup.Jsoup
 
@@ -164,33 +161,45 @@ suspend fun EsjzoneClient.getHomeData(
         weeklyUpdatesDeferred.await()
     }
 
-    // Asynchronously enrich remaining uncached popular seeds with bounded concurrency
+    // Enrich remaining uncached popular seeds sequentially, reporting useful updates.
     val seedsToEnrich = popularSeeds.filterIndexed { index, _ ->
         val item = initialPopular.getOrNull(index)
         item == null || item.coverUrl.isBlank()
     }
 
-    val enrichedPopular = if (seedsToEnrich.isEmpty()) {
-        initialPopular
-    } else {
-        val semaphore = Semaphore(3)
-        val enrichedMap = seedsToEnrich.map { seed ->
-            async {
-                semaphore.withPermit {
-                    try {
-                        cancellablePageRequest { enrichWeeklyPopular(authorization, seed) }
-                    } catch (error: kotlinx.coroutines.CancellationException) {
-                        throw error
-                    } catch (error: Exception) {
-                        AppLogger.w("GetHomeData", "Failed to enrich weekly popular item: ${seed.name}", error)
-                        null
-                    }
-                }?.let { seed.url to it }
+    var currentPopular = initialPopular
+    if (seedsToEnrich.isNotEmpty()) {
+        for (seed in seedsToEnrich) {
+            val enriched = try {
+                cancellablePageRequest { enrichWeeklyPopular(authorization, seed) }
+            } catch (error: kotlinx.coroutines.CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                AppLogger.w("GetHomeData", "Failed to enrich weekly popular item: ${seed.name}", error)
+                null
             }
-        }.awaitAll().filterNotNull().toMap()
-
-        initialPopular.map { item ->
-            enrichedMap[item.url] ?: item
+            if (enriched != null) {
+                val previous = currentPopular.firstOrNull { it.url == seed.url }
+                currentPopular = currentPopular.map { item ->
+                    if (item.url == seed.url) enriched else item
+                }
+                // A missing cover needs no intermediate snapshot unless R18 visibility changes.
+                if (previous != null && enriched != previous &&
+                    (enriched.coverUrl.isNotBlank() || enriched.isAdult != previous.isAdult)
+                ) {
+                    onProgress?.invoke(
+                        HomeData(
+                            recentlyUpdateTranslatedNovels,
+                            recentlyUpdateOriginalNovels,
+                            recentlyUpdateTranslatedR18Novels,
+                            recentlyUpdateOriginalR18Novels,
+                            recommendationNovels,
+                            finalWeeklyUpdates,
+                            currentPopular
+                        )
+                    )
+                }
+            }
         }
     }
 
@@ -201,7 +210,7 @@ suspend fun EsjzoneClient.getHomeData(
         recentlyUpdateOriginalR18Novels,
         recommendationNovels,
         finalWeeklyUpdates,
-        enrichedPopular
+        currentPopular
     )
 }
 

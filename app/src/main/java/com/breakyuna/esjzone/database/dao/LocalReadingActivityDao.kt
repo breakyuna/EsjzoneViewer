@@ -14,6 +14,9 @@ interface LocalReadingActivityDao {
     @Query("SELECT * FROM local_reading_history ORDER BY last_read_at DESC, started_at DESC")
     fun observeAll(): Flow<List<LocalReadingActivity>>
 
+    @Query("SELECT * FROM local_reading_history ORDER BY last_read_at DESC, started_at DESC")
+    suspend fun getAll(): List<LocalReadingActivity>
+
     @Query(
         "SELECT * FROM local_reading_history " +
             "ORDER BY last_read_at DESC, started_at DESC LIMIT 1"

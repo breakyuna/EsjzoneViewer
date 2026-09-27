@@ -100,8 +100,8 @@ class LoadingScreen : AppDestination {
                 // MainScreen and the shelf itself remain local-first and do
                 // not wait for this network operation.
                 if (PresentationAccess.client.hasSiteSession(authorization.domain)) {
-                    BookshelfRepository.scheduleSync(authorization, delayMillis = 2000L)
-                    CommunitySyncManager.schedulePreSync(authorization, delayMillis = 3500L)
+                    BookshelfRepository.scheduleSync(authorization, delayMillis = 1000L)
+                    CommunitySyncManager.schedulePreSync(authorization, delayMillis = 2000L)
                 }
                 navigator.replace(MainScreen(authorization = authorization))
             } else {

@@ -108,6 +108,12 @@ interface BookshelfDao {
     )
 
     @Query(
+        "UPDATE bookshelf SET cover_url = '' WHERE scope = :scope AND book_key = :bookKey " +
+            "AND visible = 1 AND cover_url = :oldCover"
+    )
+    suspend fun clearCoverIfCurrent(scope: String, bookKey: String, oldCover: String): Int
+
+    @Query(
         "UPDATE bookshelf SET cover_url = :coverUrl " +
             "WHERE scope = :scope AND book_key = :bookKey AND sync_state != 'PENDING_REMOVE' " +
             "AND :coverUrl != '' AND cover_url != :coverUrl"
