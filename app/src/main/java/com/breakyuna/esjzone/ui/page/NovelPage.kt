@@ -11,9 +11,7 @@ import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -56,7 +54,6 @@ import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material.icons.filled.TextSnippet
 import androidx.compose.material.icons.filled.OpenInNew
 import androidx.compose.material.icons.filled.MoreVert
-import androidx.compose.foundation.background
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -1185,7 +1182,9 @@ private fun NovelDownloadActions(
     var deletingDownload by remember(novel.url) { mutableStateOf(false) }
     var showDeleteDownloadDialog by rememberSaveable(novel.url) { mutableStateOf(false) }
     var showChapterSelection by rememberSaveable(novel.url) { mutableStateOf(false) }
-    var selectedChapterUrls by rememberSaveable(novel.url) { mutableStateOf<Set<String>>(emptySet()) }
+    var selectedChapterUrls by rememberSaveable(novel.url, stateSaver = DownloadChapterSelectionSaver) {
+        mutableStateOf<Set<String>>(emptySet())
+    }
     var verificationSelection by remember(novel.url) { mutableStateOf<Set<String>?>(null) }
     val downloadScope = rememberCoroutineScope()
 
@@ -1503,173 +1502,15 @@ private fun NovelDownloadActions(
     }
 
     if (showChapterSelection) {
-        val selectable = novel.chapterList.orderedChapters.filter { !it.isExternal }
-            .distinctBy { com.breakyuna.esjzone.offline.NovelDownloadStore.chapterKey(it.url) }
-        val downloadedKeys = downloaded?.chapters.orEmpty().filter { it.downloaded }
-            .map { com.breakyuna.esjzone.offline.NovelDownloadStore.chapterKey(it.url) }.toSet()
-        AlertDialog(
-            onDismissRequest = { showChapterSelection = false },
-            title = {
-                Text(
-                    text = stringResource(R.string.novel_download_select_chapters),
-                    style = AppTypography.titleMedium
-                )
-            },
-            text = {
-                Column(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalArrangement = Arrangement.spacedBy(AppSpacing.xs)
-                ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Text(
-                            text = stringResource(R.string.novel_download_selected_count, selectedChapterUrls.size),
-                            style = AppTypography.labelLarge,
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                        Row(horizontalArrangement = Arrangement.spacedBy(AppSpacing.xs)) {
-                            TextButton(
-                                onClick = { selectedChapterUrls = selectable.map { it.url }.toSet() },
-                                contentPadding = PaddingValues(horizontal = AppSpacing.sm, vertical = 0.dp),
-                                modifier = Modifier.height(32.dp)
-                            ) {
-                                Text(stringResource(R.string.novel_download_select_all), style = AppTypography.labelMedium)
-                            }
-                            TextButton(
-                                onClick = { selectedChapterUrls = emptySet() },
-                                enabled = selectedChapterUrls.isNotEmpty(),
-                                contentPadding = PaddingValues(horizontal = AppSpacing.sm, vertical = 0.dp),
-                                modifier = Modifier.height(32.dp)
-                            ) {
-                                Text(stringResource(R.string.novel_download_clear_selection), style = AppTypography.labelMedium)
-                            }
-                        }
-                    }
-                    Surface(
-                        shape = AppShapes.standard,
-                        color = MaterialTheme.colorScheme.surface,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f), AppShapes.standard)
-                            .clip(AppShapes.standard)
-                    ) {
-                        LazyColumn(
-                            modifier = Modifier.heightIn(max = 380.dp),
-                            contentPadding = PaddingValues(AppSpacing.xs),
-                            verticalArrangement = Arrangement.spacedBy(2.dp)
-                        ) {
-                            novel.chapterList.items.filterIsInstance<com.breakyuna.esjzone.novellibrary.component.ChapterListItem>()
-                                .forEachIndexed { groupIndex, group ->
-                                    val groupUrls = group.chapters.filter { !it.isExternal }
-                                        .map { it.url }.toSet()
-                                    if (groupUrls.isNotEmpty()) {
-                                        item(key = "group:$groupIndex") {
-                                            Surface(
-                                                shape = AppShapes.compact,
-                                                color = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.6f),
-                                                modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp)
-                                            ) {
-                                                Row(
-                                                    modifier = Modifier
-                                                        .clickable {
-                                                            selectedChapterUrls = if (groupUrls.all { it in selectedChapterUrls }) {
-                                                                selectedChapterUrls - groupUrls
-                                                            } else {
-                                                                selectedChapterUrls + groupUrls
-                                                            }
-                                                        }
-                                                        .padding(horizontal = AppSpacing.sm, vertical = 6.dp),
-                                                    verticalAlignment = Alignment.CenterVertically
-                                                ) {
-                                                    Text(
-                                                        text = stringResource(R.string.novel_download_select_group, group.name.text, groupUrls.size),
-                                                        style = AppTypography.labelMedium,
-                                                        color = MaterialTheme.colorScheme.primary,
-                                                        maxLines = 1,
-                                                        overflow = TextOverflow.Ellipsis
-                                                    )
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            items(selectable, key = { it.url }) { chapter ->
-                                val checked = chapter.url in selectedChapterUrls
-                                val isDownloaded = com.breakyuna.esjzone.offline.NovelDownloadStore.chapterKey(chapter.url) in downloadedKeys
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .clip(AppShapes.compact)
-                                        .then(
-                                            if (checked) {
-                                                Modifier.background(MaterialTheme.colorScheme.primary.copy(alpha = 0.08f), AppShapes.compact)
-                                            } else {
-                                                Modifier
-                                            }
-                                        )
-                                        .clickable {
-                                            selectedChapterUrls = if (checked) selectedChapterUrls - chapter.url
-                                            else selectedChapterUrls + chapter.url
-                                        }
-                                        .padding(horizontal = AppSpacing.xs, vertical = 2.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Checkbox(
-                                        checked = checked,
-                                        onCheckedChange = { value ->
-                                            selectedChapterUrls = if (value) selectedChapterUrls + chapter.url
-                                            else selectedChapterUrls - chapter.url
-                                        }
-                                    )
-                                    Column(
-                                        modifier = Modifier.weight(1f).padding(vertical = 4.dp),
-                                        verticalArrangement = Arrangement.spacedBy(1.dp)
-                                    ) {
-                                        Text(
-                                            text = chapter.name,
-                                            style = AppTypography.bodyMedium,
-                                            maxLines = 2,
-                                            overflow = TextOverflow.Ellipsis
-                                        )
-                                        if (isDownloaded) {
-                                            Text(
-                                                text = stringResource(R.string.novel_download_already_saved),
-                                                style = AppTypography.bodySmall,
-                                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                                            )
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        val selected = selectedChapterUrls
-                        showChapterSelection = false
-                        enqueueDownload(selected)
-                    },
-                    enabled = selectedChapterUrls.isNotEmpty(),
-                    shape = AppShapes.standard,
-                    contentPadding = PaddingValues(horizontal = AppSpacing.md, vertical = 0.dp),
-                    modifier = Modifier.height(40.dp)
-                ) {
-                    Text(stringResource(R.string.novel_download_selected_action), style = AppTypography.labelLarge)
-                }
-            },
-            dismissButton = {
-                TextButton(
-                    onClick = { showChapterSelection = false },
-                    modifier = Modifier.height(40.dp)
-                ) {
-                    Text(stringResource(R.string.close), style = AppTypography.labelLarge)
-                }
+        DownloadChapterSelectionDialog(
+            novel = novel,
+            downloaded = downloaded,
+            selectedUrls = selectedChapterUrls,
+            onSelectionChange = { selectedChapterUrls = it },
+            onDismiss = { showChapterSelection = false },
+            onDownload = { selected ->
+                showChapterSelection = false
+                enqueueDownload(selected)
             }
         )
     }
