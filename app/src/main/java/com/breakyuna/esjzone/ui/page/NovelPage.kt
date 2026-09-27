@@ -1367,7 +1367,11 @@ private fun NovelDownloadActions(
             onDownloadedChange(null)
             deletingDownload = false
             if (deleted) {
-                Toast.makeText(context, R.string.novel_download_deleted, Toast.LENGTH_SHORT).show()
+                Toast.makeText(
+                    context,
+                    context.getString(R.string.novel_download_deleted, novel.name),
+                    Toast.LENGTH_SHORT
+                ).show()
             }
         }
     }
@@ -2293,7 +2297,9 @@ private fun openSystemBrowser(context: Context, rawUrl: String) {
     if (url.isBlank()) return
     runCatching {
         context.startActivity(
-            Intent(Intent.ACTION_VIEW, Uri.parse(url)).addCategory(Intent.CATEGORY_BROWSABLE)
+            Intent(Intent.ACTION_VIEW, Uri.parse(url))
+                .addCategory(Intent.CATEGORY_BROWSABLE)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         )
     }.onFailure { error ->
         AppLogger.w("NovelPage", "Unable to open URL in system browser", error)

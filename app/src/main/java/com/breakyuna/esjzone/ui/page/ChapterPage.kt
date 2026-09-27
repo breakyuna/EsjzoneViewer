@@ -297,7 +297,8 @@ class ChapterPage(
                         if (pendingWenkuResult?.verificationWebViewUnavailable == true ||
                             pendingWenkuResult?.verificationStorageUnavailable == true) {
                             context.startActivity(Intent(Intent.ACTION_VIEW,
-                                Uri.parse(EsjzoneUrls.resolve(pendingWenkuVerification.url))))
+                                Uri.parse(EsjzoneUrls.resolve(pendingWenkuVerification.url)))
+                                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
                         } else {
                             wenkuVerificationChapter = pendingWenkuVerification
                         }
@@ -1213,7 +1214,8 @@ class ChapterPage(
                                 TextButton(onClick = {
                                     val url = EsjzoneUrls.resolve(requestedChapter.value.url)
                                     if (url.startsWith("https://www.wenku8.net/")) {
-                                        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+                                        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))
+                                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
                                     }
                                 }) { Text(stringResource(R.string.wenku_open_browser)) }
                             }
@@ -1228,7 +1230,8 @@ class ChapterPage(
                                 onAction = {
                                     val url = EsjzoneUrls.resolve(requestedChapter.value.url)
                                     if (url.startsWith("https://www.wenku8.net/")) {
-                                        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+                                        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))
+                                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
                                     }
                                 }
                             )
@@ -1314,7 +1317,8 @@ class ChapterPage(
                                         onVerify = { wenkuVerificationChapter = readerResult.verificationChapter },
                                         onBrowser = {
                                             context.startActivity(Intent(Intent.ACTION_VIEW,
-                                                Uri.parse(EsjzoneUrls.resolve(readerResult.verificationChapter!!.url))))
+                                                Uri.parse(EsjzoneUrls.resolve(readerResult.verificationChapter!!.url)))
+                                                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
                                         },
                                         onRetry = {
                                             dismissedWenkuPrompt = null
@@ -1346,7 +1350,8 @@ class ChapterPage(
                                         onVerify = { wenkuVerificationChapter = readerResult.verificationChapter },
                                         onBrowser = {
                                             context.startActivity(Intent(Intent.ACTION_VIEW,
-                                                Uri.parse(EsjzoneUrls.resolve(readerResult.verificationChapter!!.url))))
+                                                Uri.parse(EsjzoneUrls.resolve(readerResult.verificationChapter!!.url)))
+                                                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
                                         },
                                         onRetry = {
                                             dismissedWenkuPrompt = null

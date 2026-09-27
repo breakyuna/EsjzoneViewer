@@ -70,7 +70,10 @@ data class ForumReplyResponse(
     val exp: Int?
 )
 
-class CommentSubmissionNotVerifiedException(val comments: List<Comment>) : IOException(
+class CommentSubmissionNotVerifiedException(
+    val comments: List<Comment>,
+    val previousIds: Set<String>
+) : IOException(
     "The server accepted the request but the new comment could not be verified after refresh"
 )
 
@@ -296,11 +299,11 @@ fun EsjzoneClient.submitForumComment(
                 targetUrl
             )
         } catch (error: IOException) {
-            throw CommentSubmissionNotVerifiedException(previousComments)
+            throw CommentSubmissionNotVerifiedException(previousComments, previousIds)
         }
         val comments = parseComments(refreshedDocument, parentId)
         val createdComment = findCreatedComment(comments, previousIds, submittedContent)
-            ?: throw CommentSubmissionNotVerifiedException(comments)
+            ?: throw CommentSubmissionNotVerifiedException(comments, previousIds)
 
         return CommentSubmission(comments, createdComment)
     }
@@ -1011,7 +1014,7 @@ private fun extractNumber(text: String, label: String): Int? =
 
 private fun String.normalizedWhitespace(): String = trim().replace(Regex("\\s+"), " ")
 
-private fun findCreatedComment(
+internal fun findCreatedComment(
     comments: List<Comment>,
     previousIds: Set<String>,
     submittedContent: String

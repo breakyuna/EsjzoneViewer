@@ -567,6 +567,7 @@
     <string name="comment_submit_failed">发表失败，请检查网络或登录状态后重试</string>
     <string name="comment_submit_unverified">请求已完成，但未能确认新评论，请刷新检查后再决定是否重发</string>
     <string name="comment_submit_timeout">响应超时，评论可能已提交。请先刷新检查，避免重复发送</string>
+    <string name="comment_submit_experience_increased">经验值已增加，评论可能已提交，但尚未在评论区确认。请稍后刷新检查，避免重复发送</string>
     <string name="comment_check_before_retry_hint">请刷新页面检查消息是否已经发送后再尝试</string>
     <string name="comment_action_refresh">刷新</string>
     <string name="comment_refresh">刷新评论</string>

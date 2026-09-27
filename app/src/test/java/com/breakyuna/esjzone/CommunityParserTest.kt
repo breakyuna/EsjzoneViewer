@@ -1,6 +1,7 @@
 package com.breakyuna.esjzone
 
 import com.breakyuna.esjzone.network.features.ForumBoardDataException
+import com.breakyuna.esjzone.network.features.findCreatedComment
 import com.breakyuna.esjzone.network.features.findForumNovelDetailUrl
 import com.breakyuna.esjzone.network.features.parseComments
 import com.breakyuna.esjzone.network.features.parseForumCategories
@@ -23,6 +24,24 @@ import org.junit.Assert.assertThrows
 import org.junit.Test
 
 class CommunityParserTest {
+
+    @Test
+    fun findCreatedComment_ignoresAnOlderCommentWithTheSameText() {
+        val comments = parseComments(
+            Jsoup.parse(
+                """
+                <section class="comments-section">
+                  <div class="comment" id="comment-1"><div class="comment-text">Same text</div></div>
+                  <div class="comment" id="comment-2"><div class="comment-text">Same text</div></div>
+                </section>
+                """.trimIndent()
+            ),
+            "9001"
+        )
+
+        assertNull(findCreatedComment(comments.take(1), setOf("1"), "Same text"))
+        assertEquals("2", findCreatedComment(comments, setOf("1"), "Same text")?.id)
+    }
 
     @Test
     fun parseForumReplyResponse_readsSuccessAndBusinessFailures() {

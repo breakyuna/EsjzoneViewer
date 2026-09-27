@@ -37,6 +37,7 @@ internal fun ReleaseUpdateDialog() {
                     context.startActivity(
                         Intent(Intent.ACTION_VIEW, Uri.parse(release.pageUrl))
                             .addCategory(Intent.CATEGORY_BROWSABLE)
+                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                     )
                     ReleaseUpdateChecker.dismiss()
                 } catch (_: ActivityNotFoundException) {

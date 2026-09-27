@@ -567,6 +567,7 @@
     <string name="comment_submit_failed">Failed to post. Check your connection or login status and try again.</string>
     <string name="comment_submit_unverified">The request completed but the new comment could not be verified. Refresh before posting again.</string>
     <string name="comment_submit_timeout">Response timed out. The comment may have been posted. Refresh to verify before retrying.</string>
+    <string name="comment_submit_experience_increased">Experience increased. The comment may have been posted, but it is not visible yet. Refresh later before posting again.</string>
     <string name="comment_check_before_retry_hint">Please refresh the page to check if your message was already posted before trying again</string>
     <string name="comment_action_refresh">Refresh</string>
     <string name="comment_refresh">Refresh</string>
