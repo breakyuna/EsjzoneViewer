@@ -83,22 +83,31 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import com.breakyuna.esjzone.ui.navigation.AppStateViewModel
 import com.breakyuna.esjzone.R
+import com.breakyuna.esjzone.EsjzoneApplication
 import com.breakyuna.esjzone.network.Authorization
 import com.breakyuna.esjzone.network.EsjzoneUrls
 import com.breakyuna.esjzone.network.LoadFailureKind
 import com.breakyuna.esjzone.network.loadFailureKind
-import com.breakyuna.esjzone.network.features.CommentSubmissionNotVerifiedException
-import com.breakyuna.esjzone.network.features.CommentSubmissionTimeoutException
+import com.breakyuna.esjzone.network.comments.CommentBrowserNotDispatchedException
+import com.breakyuna.esjzone.network.comments.CommentBrowserPreparationException
+import com.breakyuna.esjzone.network.comments.CommentBrowserSnapshotTooLargeException
+import com.breakyuna.esjzone.network.comments.CommentBrowserUnavailableException
+import com.breakyuna.esjzone.network.comments.CommentReplyNotLoadedException
+import com.breakyuna.esjzone.network.comments.CommentSessionChangedException
+import com.breakyuna.esjzone.network.comments.CommentSubmissionJournal
+import com.breakyuna.esjzone.network.comments.CommentWebSession
+import com.breakyuna.esjzone.network.comments.PendingCommentExistsException
+import com.breakyuna.esjzone.network.comments.PendingCommentWrite
+import com.breakyuna.esjzone.network.comments.findObservedComment
+import com.breakyuna.esjzone.network.comments.retainLoadedComments
 import com.breakyuna.esjzone.network.features.ForumReplyBusinessException
-import com.breakyuna.esjzone.network.features.findCreatedComment
 import com.breakyuna.esjzone.network.features.getPageComments
 import com.breakyuna.esjzone.network.features.getUserProfile
-import com.breakyuna.esjzone.network.features.submitForumComment
 import com.breakyuna.esjzone.novellibrary.novel.COMMENT_PAGE_SIZE
 import com.breakyuna.esjzone.novellibrary.novel.Comment
 import com.breakyuna.esjzone.novellibrary.user.UserProfile
+import com.breakyuna.esjzone.ui.navigation.AppStateViewModel
 import com.breakyuna.esjzone.ui.navigation.LocalBaseNavigator
 import com.breakyuna.esjzone.ui.designsystem.AppAvatarImage
 import com.breakyuna.esjzone.ui.designsystem.AppShapes
@@ -517,12 +526,14 @@ internal fun CommentComposerHost(
         null
     }
     val isSubmitting by model.isSubmitting
+    val isObserving by model.isObserving
     val submitError by model.submitError
     val canRetryAfterRefresh by model.canRetryAfterRefresh
     CommentComposer(
         draft = draft,
         replyAuthor = replyAuthor,
         isSubmitting = isSubmitting,
+        isObserving = isObserving,
         canRetryAfterRefresh = canRetryAfterRefresh,
         error = submitError,
         onDraftChange = {
@@ -536,14 +547,17 @@ internal fun CommentComposerHost(
         onRefresh = {
             val currentError = model.submitError.value
             val uncertainSubmission = currentError == CommentSubmitError.TIMEOUT ||
-                currentError == CommentSubmitError.NOT_VERIFIED ||
-                currentError == CommentSubmitError.EXPERIENCE_INCREASED
+                currentError == CommentSubmitError.EXPERIENCE_INCREASED ||
+                currentError == CommentSubmitError.ACCEPTED ||
+                (model.hasPendingWrite() && (currentError == CommentSubmitError.SESSION_CHANGED ||
+                    currentError == CommentSubmitError.SNAPSHOT_TOO_LARGE))
             if (!uncertainSubmission) {
                 model.clearSubmitError()
             }
             model.load(forceRefresh = true, allowRetryAfterRefresh = uncertainSubmission)
         },
         onSubmit = { model.submit(draft, model.replyToken.value) },
+        onStopObserving = model::stopObserving,
         // Keep system insets outside the painted composer surface.
         // Combining navigationBars and IME insets using union (taking the max
         // of both) ensures the composer sits above the navigation bar when the
@@ -663,12 +677,14 @@ private fun CommentComposer(
     draft: String,
     replyAuthor: String?,
     isSubmitting: Boolean,
+    isObserving: Boolean,
     canRetryAfterRefresh: Boolean,
     error: CommentSubmitError?,
     onDraftChange: (String) -> Unit,
     onCancelReply: () -> Unit,
     onRefresh: () -> Unit,
     onSubmit: () -> Unit,
+    onStopObserving: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     Surface(
@@ -792,7 +808,7 @@ private fun CommentComposer(
                 }
                 Button(
                     onClick = onSubmit,
-                    enabled = !isSubmitting && draft.isNotBlank() &&
+                    enabled = !isSubmitting && !isObserving && draft.isNotBlank() &&
                         (error == null || error == CommentSubmitError.EMPTY || canRetryAfterRefresh),
                     modifier = Modifier.size(AppTouchTarget.minimum),
                     shape = AppShapes.pill,
@@ -826,7 +842,8 @@ private fun CommentComposer(
                     Text(
                         text = err.message(context = LocalContext.current),
                         style = AppTypography.bodySmall,
-                        color = MaterialTheme.colorScheme.error,
+                        color = if (err == CommentSubmitError.ACCEPTED) MaterialTheme.colorScheme.primary
+                            else MaterialTheme.colorScheme.error,
                         modifier = Modifier.fillMaxWidth()
                     )
                     if (err != CommentSubmitError.EMPTY) {
@@ -854,6 +871,11 @@ private fun CommentComposer(
                                     text = stringResource(id = R.string.comment_action_refresh),
                                     style = AppTypography.labelMedium
                                 )
+                            }
+                            if (isObserving) {
+                                TextButton(onClick = onStopObserving) {
+                                    Text(stringResource(id = R.string.comment_stop_observing))
+                                }
                             }
                         }
                     }
@@ -1113,11 +1135,17 @@ internal class CommentPageModel(
     private val authorization: Authorization,
     internal val pageUrl: String
 ) : AppStateViewModel<CommunityState<List<Comment>>>(CommunityState.Loading) {
+    private val journal = CommentSubmissionJournal(EsjzoneApplication.instance, authorization, pageUrl)
+    private var restoredPending = false
+    private var pendingWrite: PendingCommentWrite? = null
+    private var draftAtDispatch: String? = null
+    private var submitJob: Job? = null
     private var loadJob: Job? = null
     private var loadStarted = false
     @Volatile private var loadGeneration = 0L
 
     val isSubmitting = mutableStateOf(false)
+    val isObserving = mutableStateOf(false)
     val submitError = mutableStateOf<CommentSubmitError?>(null)
     val canRetryAfterRefresh = mutableStateOf(false)
     val lastCreatedCommentId = mutableStateOf<String?>(null)
@@ -1133,6 +1161,20 @@ internal class CommentPageModel(
         val generation = ++loadGeneration
         loadJob?.cancel()
         loadJob = viewModelScope.launch(Dispatchers.IO) {
+            if (!restoredPending) {
+                val saved = journal.read()
+                withContext(Dispatchers.Main) {
+                    restoredPending = true
+                    if (saved != null && !isSubmitting.value) {
+                        pendingWrite = saved
+                        pendingSubmission = PendingSubmission(saved.content, saved.previousIds, submitAttemptId)
+                        if (draft.value.isBlank()) draft.value = saved.content
+                        draftAtDispatch = saved.content
+                        replyToken.value = saved.replyToken
+                        submitError.value = if (saved.accepted) CommentSubmitError.ACCEPTED else CommentSubmitError.TIMEOUT
+                    }
+                }
+            }
             val currentResult = mutableState.value as? CommunityState.Result
             val cachedComments = if (!forceRefresh && currentResult == null) {
                 runCatching {
@@ -1163,16 +1205,26 @@ internal class CommentPageModel(
                     forceRefresh = true
                 )
                 ensureActive()
+                val records = journal.readAll()
                 var recovered = false
                 withContext(Dispatchers.Main) {
                     if (generation != loadGeneration) return@withContext
                     val pending = pendingSubmission?.takeIf { it.attemptId == submitAttemptId }
-                    val found = pending?.takeIf { !isSubmitting.value }
-                        ?.let { findCreatedComment(comments, it.previousIds, it.content) }
+                    val currentRecord = pendingWrite
+                    val found = currentRecord?.takeIf { !isSubmitting.value }
+                        ?.let { operation -> findObservedComment(comments, operation.previousIds,
+                            operation.content, operation.acceptedId, operation.authorName) }
+                    records.filter { it.operationId != currentRecord?.operationId }.forEach { operation ->
+                        if (findObservedComment(comments, operation.previousIds, operation.content,
+                                operation.acceptedId, operation.authorName) != null) {
+                            viewModelScope.launch(Dispatchers.IO) { journal.clear(operation.operationId) }
+                        }
+                    }
                     if (found != null) {
+                        submitJob?.takeIf { isObserving.value }?.cancel()
                         completeRecoveredSubmission(found)
                         recovered = true
-                    } else if (allowRetryAfterRefresh && pending != null && !isSubmitting.value) {
+                    } else if (allowRetryAfterRefresh && pending != null && !isSubmitting.value && currentRecord?.accepted != true) {
                         // The user checked the current server list. Keep the warning,
                         // but allow an intentional retry without editing the draft.
                         canRetryAfterRefresh.value = true
@@ -1232,8 +1284,18 @@ internal class CommentPageModel(
 
     fun clearSubmitError() {
         submitError.value = null
-        pendingSubmission = null
+        // Editing hides the banner but does not discard an outstanding server write.
         canRetryAfterRefresh.value = false
+    }
+
+    fun hasPendingWrite(): Boolean = pendingWrite != null
+
+    fun stopObserving() {
+        if (!isObserving.value) return
+        submitJob?.cancel()
+        isObserving.value = false
+        isSubmitting.value = false
+        // The request may already have reached the server. Keep its record and warning.
     }
 
     fun submit(content: String, replyToken: String?) {
@@ -1242,7 +1304,12 @@ internal class CommentPageModel(
             submitError.value = CommentSubmitError.EMPTY
             return
         }
-        if (isSubmitting.value) return
+        if (isSubmitting.value || isObserving.value) return
+        if (pendingWrite?.accepted == true && pendingWrite?.content == submitted &&
+            pendingWrite?.replyToken == replyToken) {
+            submitError.value = CommentSubmitError.ACCEPTED
+            return
+        }
 
         // Deduplication protection: If the exact same content is resubmitted within 10s after an error,
         // prevent redundant network calls to avoid accidental duplicate comments.
@@ -1257,110 +1324,164 @@ internal class CommentPageModel(
         lastSubmittedContent = submitted
         lastSubmitAttemptTime = System.currentTimeMillis()
         val attemptId = ++submitAttemptId
+        val previousRecordId = pendingWrite?.operationId
 
+        val explicitRetry = canRetryAfterRefresh.value
         isSubmitting.value = true
+        draftAtDispatch = draft.value
         submitError.value = null
         pendingSubmission = null
+        pendingWrite = null
         canRetryAfterRefresh.value = false
-        viewModelScope.launch(Dispatchers.IO) {
+        submitJob = viewModelScope.launch(Dispatchers.IO) {
             var baselineExperience: Int? = null
+            val experienceCheckStarted = java.util.concurrent.atomic.AtomicBoolean(false)
             try {
                 // Compare two fresh server values for this attempt. A cached profile
                 // could make an unrelated earlier gain look like this comment's gain.
                 baselineExperience = fetchFreshProfile()?.exp
-                val submission = PresentationAccess.client.submitForumComment(
+                val submission = CommentWebSession.submit(
+                    context = EsjzoneApplication.instance,
                     authorization = authorization,
                     pageUrl = pageUrl,
                     content = submitted,
-                    replyToken = replyToken
+                    replyToken = replyToken,
+                    onDispatch = { previousIds, author ->
+                        val operation = PendingCommentWrite(content = submitted, replyToken = replyToken,
+                            previousIds = previousIds, authorName = author)
+                        withContext(Dispatchers.IO) { journal.start(operation, explicitRetry) }
+                        pendingWrite = operation
+                        pendingSubmission = PendingSubmission(submitted, previousIds, attemptId)
+                    },
+                    onAccepted = { id ->
+                        if (attemptId == submitAttemptId) {
+                            pendingWrite = pendingWrite?.copy(accepted = true, acceptedId = id)
+                            pendingWrite?.let { operation -> withContext(Dispatchers.IO) { journal.write(operation) } }
+                            submitError.value = CommentSubmitError.ACCEPTED
+                            isSubmitting.value = false
+                            isObserving.value = true
+                        }
+                    },
+                    onUncertain = {
+                        if (attemptId == submitAttemptId && submitError.value != CommentSubmitError.ACCEPTED) {
+                            submitError.value = CommentSubmitError.TIMEOUT
+                            isSubmitting.value = false
+                            isObserving.value = true
+                            if (experienceCheckStarted.compareAndSet(false, true)) {
+                                viewModelScope.launch(Dispatchers.IO) {
+                                    checkExperienceIncrease(baselineExperience, attemptId)
+                                }
+                            }
+                        }
+                    }
                 )
                 ensureActive()
-                mutableState.value = CommunityState.Result(submission.comments, isSyncSuccess = true)
-                lastCreatedCommentId.value = submission.createdComment.id
-                draft.value = ""
-                lastSubmittedContent = null
-                pendingSubmission = null
-                this@CommentPageModel.replyToken.value = null
-                this@CommentPageModel.replyAuthor.value = null
-                viewModelScope.launch(Dispatchers.IO) { refreshProfileSnapshot() }
+                PresentationAccess.client.invalidatePage(authorization, pageUrl)
+                val needsExperienceCheck = withContext(Dispatchers.Main) {
+                    if (attemptId != submitAttemptId) return@withContext false
+                    val loaded = (mutableState.value as? CommunityState.Result)?.data
+                    val visible = retainLoadedComments(loaded, submission.comments, submission.created)
+                    mutableState.value = CommunityState.Result(visible, isSyncSuccess = submission.created != null)
+                    if (submission.created != null) {
+                        completeRecoveredSubmission(submission.created)
+                        false
+                    } else {
+                        if (submission.accepted) {
+                            pendingWrite = pendingWrite?.copy(accepted = true, acceptedId = submission.acceptedId)
+                        }
+                        submitError.value = if (submission.accepted) CommentSubmitError.ACCEPTED else CommentSubmitError.TIMEOUT
+                        !submission.accepted
+                    }
+                }
+                if (needsExperienceCheck && experienceCheckStarted.compareAndSet(false, true)) viewModelScope.launch(Dispatchers.IO) {
+                    checkExperienceIncrease(baselineExperience, attemptId)
+                }
+                if (submission.accepted || submission.created != null) {
+                    viewModelScope.launch(Dispatchers.IO) { refreshProfileSnapshot() }
+                }
             } catch (error: CancellationException) {
                 throw error
-            } catch (error: CommentSubmissionTimeoutException) {
-                val previousIds = error.comments.mapTo(mutableSetOf()) { it.id }
-                pendingSubmission = PendingSubmission(submitted, previousIds, attemptId)
-                mutableState.value = CommunityState.Result(error.comments, isSyncSuccess = false)
-                submitError.value = CommentSubmitError.TIMEOUT
-                AppLogger.w("CommentPageModel", "Comment submit timed out; attempting silent recovery", error)
-                viewModelScope.launch(Dispatchers.IO) {
-                    checkExperienceIncrease(baselineExperience, attemptId)
+            } catch (error: PendingCommentExistsException) {
+                withContext(Dispatchers.Main) {
+                    pendingWrite = error.operation
+                    pendingSubmission = PendingSubmission(error.operation.content, error.operation.previousIds, attemptId)
+                    submitError.value = if (error.operation.accepted) CommentSubmitError.ACCEPTED else CommentSubmitError.TIMEOUT
                 }
-                viewModelScope.launch(Dispatchers.IO) {
-                    silentVerifySubmission(submitted, previousIds, attemptId)
+            } catch (error: CommentBrowserUnavailableException) {
+                restoreLatestPending(attemptId)
+                withContext(Dispatchers.Main) { submitError.value = CommentSubmitError.BROWSER_UNAVAILABLE }
+            } catch (error: CommentBrowserNotDispatchedException) {
+                val operationId = withContext(Dispatchers.Main) { pendingWrite?.operationId }
+                if (operationId != null) journal.clear(operationId)
+                restoreLatestPending(attemptId)
+                withContext(Dispatchers.Main) {
+                    submitError.value = CommentSubmitError.BROWSER_PREPARATION
                 }
-            } catch (error: CommentSubmissionNotVerifiedException) {
-                pendingSubmission = PendingSubmission(submitted, error.previousIds, attemptId)
-                mutableState.value = CommunityState.Result(error.comments, isSyncSuccess = false)
-                submitError.value = CommentSubmitError.NOT_VERIFIED
-                AppLogger.w("CommentPageModel", "Comment write completed but was not verified")
-                viewModelScope.launch(Dispatchers.IO) {
-                    checkExperienceIncrease(baselineExperience, attemptId)
-                }
+            } catch (error: CommentBrowserPreparationException) {
+                restoreLatestPending(attemptId)
+                withContext(Dispatchers.Main) { submitError.value = CommentSubmitError.BROWSER_PREPARATION }
+            } catch (error: CommentReplyNotLoadedException) {
+                restoreLatestPending(attemptId)
+                withContext(Dispatchers.Main) { submitError.value = CommentSubmitError.REPLY_NOT_LOADED }
+            } catch (error: CommentBrowserSnapshotTooLargeException) {
+                restoreLatestPending(attemptId)
+                withContext(Dispatchers.Main) { submitError.value = CommentSubmitError.SNAPSHOT_TOO_LARGE }
+            } catch (error: CommentSessionChangedException) {
+                withContext(Dispatchers.Main) { submitError.value = CommentSubmitError.SESSION_CHANGED }
             } catch (error: ForumReplyBusinessException) {
+                val operationId = withContext(Dispatchers.Main) { pendingWrite?.operationId }
+                if (operationId != null) journal.clear(operationId)
+                restoreLatestPending(attemptId)
                 // ESJ returns HTTP 200 for business failures such as the daily
                 // posting limit. Preserve the server message and leave the list intact.
-                submitError.value = CommentSubmitError.Server(error.serverMessage)
+                withContext(Dispatchers.Main) {
+                    submitError.value = CommentSubmitError.Server(error.serverMessage)
+                }
             } catch (error: Exception) {
-                submitError.value = CommentSubmitError.FAILED
-                AppLogger.e("CommentPageModel", "Failed to submit comment", error)
+                if (withContext(Dispatchers.Main) { pendingWrite == null }) restoreLatestPending(attemptId)
+                withContext(Dispatchers.Main) {
+                    submitError.value = if (pendingWrite != null && pendingWrite?.operationId != previousRecordId) {
+                        CommentSubmitError.TIMEOUT
+                    } else CommentSubmitError.FAILED
+                }
+                AppLogger.w("CommentPageModel", "Comment browser stopped (${error::class.java.simpleName})")
             } finally {
-                isSubmitting.value = false
+                withContext(kotlinx.coroutines.NonCancellable + Dispatchers.Main) {
+                    if (attemptId == submitAttemptId) {
+                        isSubmitting.value = false
+                        isObserving.value = false
+                        submitJob = null
+                    }
+                }
             }
         }
     }
 
-    private suspend fun silentVerifySubmission(
-        submittedContent: String,
-        previousIds: Set<String>,
-        attemptId: Long
-    ) {
-        try {
-            delay(3000L)
-            val comments = PresentationAccess.client.getPageComments(
-                authorization,
-                pageUrl,
-                forceRefresh = true
-            )
-            val found = findCreatedComment(comments, previousIds, submittedContent)
-            if (found != null) {
-                val recovered = withContext(Dispatchers.Main) {
-                    if (pendingSubmission?.attemptId != attemptId || isSubmitting.value) {
-                        return@withContext false
-                    }
-                    mutableState.value = if (comments.isEmpty()) {
-                        CommunityState.Empty(isSyncSuccess = true)
-                    } else {
-                        CommunityState.Result(comments, isSyncSuccess = true)
-                    }
-                    completeRecoveredSubmission(found)
-                    true
-                }
-                if (recovered) refreshProfileSnapshot()
-            }
-        } catch (error: CancellationException) {
-            throw error
-        } catch (error: Exception) {
-            AppLogger.d("CommentPageModel", "Silent recovery check completed without finding comment")
+    private suspend fun restoreLatestPending(attemptId: Long) {
+        val operation = journal.read()
+        withContext(Dispatchers.Main) {
+            if (attemptId != submitAttemptId) return@withContext
+            pendingWrite = operation
+            pendingSubmission = operation?.let { PendingSubmission(it.content, it.previousIds, attemptId) }
+            if (operation != null) draftAtDispatch = operation.content
         }
     }
 
     private fun completeRecoveredSubmission(comment: Comment) {
         lastCreatedCommentId.value = comment.id
-        draft.value = ""
+        val originalDraft = (draft.value == draftAtDispatch || draft.value.trim() == pendingSubmission?.content) &&
+            replyToken.value == pendingWrite?.replyToken
+        if (originalDraft) {
+            draft.value = ""
+            replyToken.value = null
+            replyAuthor.value = null
+        }
+        val completedId = pendingWrite?.operationId
+        pendingWrite = null
+        if (completedId != null) viewModelScope.launch(Dispatchers.IO) { journal.clear(completedId) }
         lastSubmittedContent = null
         pendingSubmission = null
         canRetryAfterRefresh.value = false
-        replyToken.value = null
-        replyAuthor.value = null
         submitError.value = null
     }
 
@@ -1389,8 +1510,7 @@ internal class CommentPageModel(
         val updatedProfile = profile ?: return
         val evidenceApplied = withContext(Dispatchers.Main) {
             if (attemptId == submitAttemptId &&
-                (submitError.value == CommentSubmitError.TIMEOUT ||
-                    submitError.value == CommentSubmitError.NOT_VERIFIED)
+                submitError.value == CommentSubmitError.TIMEOUT
             ) {
                 submitError.value = CommentSubmitError.EXPERIENCE_INCREASED
                 true
@@ -1428,17 +1548,27 @@ internal class CommentPageModel(
 internal sealed class CommentSubmitError {
     data object EMPTY : CommentSubmitError()
     data object FAILED : CommentSubmitError()
-    data object NOT_VERIFIED : CommentSubmitError()
     data object TIMEOUT : CommentSubmitError()
     data object EXPERIENCE_INCREASED : CommentSubmitError()
+    data object ACCEPTED : CommentSubmitError()
+    data object BROWSER_UNAVAILABLE : CommentSubmitError()
+    data object BROWSER_PREPARATION : CommentSubmitError()
+    data object SNAPSHOT_TOO_LARGE : CommentSubmitError()
+    data object REPLY_NOT_LOADED : CommentSubmitError()
+    data object SESSION_CHANGED : CommentSubmitError()
     data class Server(val serverMessage: String) : CommentSubmitError()
 
     fun message(context: android.content.Context): String = when (this) {
         EMPTY -> context.getString(R.string.comment_empty_error)
         FAILED -> context.getString(R.string.comment_submit_failed)
-        NOT_VERIFIED -> context.getString(R.string.comment_submit_unverified)
         TIMEOUT -> context.getString(R.string.comment_submit_timeout)
         EXPERIENCE_INCREASED -> context.getString(R.string.comment_submit_experience_increased)
+        ACCEPTED -> context.getString(R.string.comment_submit_accepted)
+        BROWSER_UNAVAILABLE -> context.getString(R.string.comment_browser_unavailable)
+        BROWSER_PREPARATION -> context.getString(R.string.comment_browser_preparation)
+        SNAPSHOT_TOO_LARGE -> context.getString(R.string.comment_snapshot_too_large)
+        REPLY_NOT_LOADED -> context.getString(R.string.comment_reply_not_loaded)
+        SESSION_CHANGED -> context.getString(R.string.comment_session_changed)
         is Server -> serverMessage.ifBlank { context.getString(R.string.comment_submit_failed) }
     }
 }

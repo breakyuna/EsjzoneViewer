@@ -8,6 +8,7 @@
 <full-backup-content>
     <!-- Sessions are encrypted at rest, but neither the ciphertext nor legacy
          plaintext session data should be transferred to another device. -->
+    <exclude domain="root" path="app_webview" />
     <exclude domain="sharedpref" path="esj_session.xml" />
     <exclude domain="sharedpref" path="esj_session_secure.xml" />
     <exclude domain="sharedpref" path="__androidx_security_crypto_encrypted_prefs_key_keyset__.xml" />

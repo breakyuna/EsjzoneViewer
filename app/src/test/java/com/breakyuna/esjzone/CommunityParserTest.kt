@@ -1,12 +1,10 @@
 package com.breakyuna.esjzone
 
 import com.breakyuna.esjzone.network.features.ForumBoardDataException
-import com.breakyuna.esjzone.network.features.findCreatedComment
 import com.breakyuna.esjzone.network.features.findForumNovelDetailUrl
 import com.breakyuna.esjzone.network.features.parseComments
 import com.breakyuna.esjzone.network.features.parseForumCategories
 import com.breakyuna.esjzone.network.features.parseForumPost
-import com.breakyuna.esjzone.network.features.parseForumReplyResponse
 import com.breakyuna.esjzone.network.features.parseForumThreads
 import com.breakyuna.esjzone.network.features.parseForumTopicRows
 import com.breakyuna.esjzone.network.features.parseForumTopics
@@ -24,41 +22,6 @@ import org.junit.Assert.assertThrows
 import org.junit.Test
 
 class CommunityParserTest {
-
-    @Test
-    fun findCreatedComment_ignoresAnOlderCommentWithTheSameText() {
-        val comments = parseComments(
-            Jsoup.parse(
-                """
-                <section class="comments-section">
-                  <div class="comment" id="comment-1"><div class="comment-text">Same text</div></div>
-                  <div class="comment" id="comment-2"><div class="comment-text">Same text</div></div>
-                </section>
-                """.trimIndent()
-            ),
-            "9001"
-        )
-
-        assertNull(findCreatedComment(comments.take(1), setOf("1"), "Same text"))
-        assertEquals("2", findCreatedComment(comments, setOf("1"), "Same text")?.id)
-    }
-
-    @Test
-    fun parseForumReplyResponse_readsSuccessAndBusinessFailures() {
-        val success = parseForumReplyResponse(
-            """{"status":200,"msg":"經驗值 +104","reload":1,"anchor":"#comment-3261580","exp":104}"""
-        )
-        assertEquals(200, success.status)
-        assertEquals("經驗值 +104", success.msg)
-        assertEquals("#comment-3261580", success.anchor)
-        assertEquals(104, success.exp)
-
-        val dailyLimit = parseForumReplyResponse(
-            """{"status":214,"msg":"每日留言次數已超過限制！","reload":0}"""
-        )
-        assertEquals(214, dailyLimit.status)
-        assertEquals("每日留言次數已超過限制！", dailyLimit.msg)
-    }
 
     @Test
     fun parseComments_assignsFixedPageAndPreservesReplyCapability() {

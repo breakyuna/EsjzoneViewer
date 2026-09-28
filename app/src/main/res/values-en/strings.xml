@@ -562,7 +562,6 @@
     <string name="comment_cancel_reply">Cancel reply</string>
     <string name="comment_empty_error">Comment content cannot be empty</string>
     <string name="comment_submit_failed">Failed to post. Check your connection or login status and try again.</string>
-    <string name="comment_submit_unverified">The request completed but the new comment could not be verified. Refresh before posting again.</string>
     <string name="comment_submit_timeout">Response timed out. The comment may have been posted. Refresh to verify before retrying.</string>
     <string name="comment_submit_experience_increased">Experience increased. The comment may have been posted, but it is not visible yet. Refresh later before posting again.</string>
     <string name="comment_check_before_retry_hint">Please refresh the page to check if your message was already posted before trying again</string>
@@ -652,4 +651,11 @@
     <string name="novel_download_range_error">Enter whole numbers from 1 to %1$d. The end must be at or after the start.</string>
     <string name="novel_download_range_confirm">Confirm</string>
     <string name="novel_download_selection_too_large">This selection exceeds the task limit. Download smaller ranges separately, or enter the full table of contents range to download the whole book.</string>
+    <string name="comment_submit_accepted">The website accepted your comment. Waiting for it to appear. Refresh to check; do not resend.</string>
+    <string name="comment_browser_unavailable">Update Android System WebView to send comments with an isolated session.</string>
+    <string name="comment_browser_preparation">The comment page is not ready. Check your connection and login for this site, then retry.</string>
+    <string name="comment_stop_observing">Stop waiting</string>
+    <string name="comment_snapshot_too_large">There are too many comments for the browser to verify. Refresh the comment list to check whether your comment was posted.</string>
+    <string name="comment_reply_not_loaded">The comment you are replying to is absent from the current website page. Refresh and try again.</string>
+    <string name="comment_session_changed">Your login for this site changed, so the comment result is unknown. Sign in again and refresh the comment list before retrying.</string>
 </resources>

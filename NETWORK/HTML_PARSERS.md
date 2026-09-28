@@ -315,3 +315,7 @@ table.table
 - 外部脚本、广告、统计和 Cloudflare beacon 不属于业务正文。
 - 公共页有多处 createBook 模态表单，解析当前页面功能时应按表单 ID/业务容器过滤。
 - 详情页控制台观察到一条 .comments-page-1 #https://www.esjzone.cc/detail/1716174812.html 选择器语法错误，属于站点前端已知问题线索，解析器不应依赖其滚动逻辑。
+
+### 隐藏评论编辑器
+
+评论发送使用真实页面 `.btn-send[data-form][data-send]` 与对应 Froala `editor` 实例；回复通过 `.forum_reply[data-comment]` 创建 replyEditor。发送响应及 DOM 观察、就绪条件和公开脚本证据见 [COMMENT_WEBVIEW.md](COMMENT_WEBVIEW.md)。

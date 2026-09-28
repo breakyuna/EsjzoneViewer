@@ -158,3 +158,7 @@
 - 再 POST `/inc/forum_reply.php`，携带同一 CookieJar、`authorization: {token}`、`X-Requested-With: XMLHttpRequest`、`Origin: https://www.esjzone.cc` 与 URL-encoded form。
 - HTTP 2xx 不代表写入成功；解析 JSON `status`。`status=200` 成功，其他状态直接展示非空 `msg`。实测 `status=214`、`msg=每日留言次數已超過限制！` 为当日次数上限。
 - 成功响应可带 `anchor="#comment-{commentId}"`，用于定位新评论。业务失败不得刷新或假装评论已发送。
+
+### 7.2 隐藏 WebView 发送
+
+原生评论 UI 由独立隐藏 WebView 点击网站发送按钮，由网站获取 token 并调用上述接口，监听业务响应与后续评论 DOM。已移除旧的 OkHttp 评论写入函数；不确定结果不会自动重发。实现、恢复规则及验收边界见 [COMMENT_WEBVIEW.md](COMMENT_WEBVIEW.md)。

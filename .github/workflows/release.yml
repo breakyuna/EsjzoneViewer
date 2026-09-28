@@ -27,6 +27,14 @@ jobs:
       - name: Verify source and resource contracts
         run: python3 tools/qa/verify_static_contracts.py
 
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Test comment page script
+        run: node --test tools/qa/tests/comment_session.test.cjs
+
       - name: Check patch whitespace
         run: git diff --check
 

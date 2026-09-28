@@ -157,3 +157,7 @@ Set-Cookie 恢复旧会话。普通服务端 Cookie 轮换不递增代次，保�
 页面与接口 HTML/JSON 统一限制解压后最多 8 MiB，超过上限作为可恢复的 IOException 处理。
 同时检查声明长度和实际流，不依赖 Content-Length；已有字符集与 BOM 解码规则保持由 OkHttp 负责。
 该限制不应用于离线图片流，图片继续使用独立大小限制。
+
+### 隐藏评论浏览器
+
+原生评论发送使用独立 WebView Profile，按当前站点、账号和代次导入原生 Cookie；不复用默认浏览器存储，也不跨镜像迁移会话。Cookie 只经原生 API 同步，不通过 JS。当前仅单向导入，详情及限制见 [COMMENT_WEBVIEW.md](COMMENT_WEBVIEW.md)。

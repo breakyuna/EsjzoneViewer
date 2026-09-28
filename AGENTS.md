@@ -30,6 +30,38 @@
 - [HTML_PARSERS.md](NETWORK/HTML_PARSERS.md)：页面解析。
 - [SITE_MAP.md](NETWORK/SITE_MAP.md)：站点结构。
 
+## 长时间任务等待策略
+
+Gradle 构建、测试、GitHub Actions、长时间脚本和 Subagent 等预计需要数分钟的任务，应优先使用少量长时间阻塞等待，避免由主 Agent 频繁轮询状态。
+
+### 通用规则
+
+- 对预计耗时约 5～8 分钟的任务，优先进行一次最长 10 分钟（600000 ms）的阻塞等待；任务提前完成时立即处理结果，无须等满时长。
+- 如果任务本身可以持续阻塞直到完成，应等待该进程或完成事件，不要每隔几十秒重新查询状态，也不要只为汇报“仍在运行”而唤醒主 Agent。
+- 只有一次长等待超时且任务仍在运行时，才检查当前状态并继续长等待。暂时没有新输出不代表任务卡死。
+- 等待期间，除非出现异常、失败、需要人工输入或必须立即干预的情况，不要为了确认进度而额外调用模型。
+- 明显超过 10 分钟的任务，可以按预计耗时延长单次等待；始终优先少量长等待，而非大量短等待。
+
+### Gradle 构建、测试与静态分析
+
+启动 Gradle 构建、测试、Lint 或静态分析后，优先对运行中的进程进行一次最长 10 分钟的阻塞等待，不要每隔几十秒调用 `write_stdin` 或重新检查输出。进程提前结束时立即处理退出状态和输出；10 分钟后仍在运行时，再检查一次状态并继续长等待。
+
+### GitHub Actions
+
+不要由主 Agent 反复执行 `gh run view` 查询 Workflow 状态。优先让 GitHub CLI 自行等待，例如：
+
+```bash
+gh run watch --exit-status --interval 30
+```
+
+主 Agent 对 `gh run watch` 进程进行一次最长 10 分钟的阻塞等待；Workflow 提前结束时立即分析结果，超时后仍在运行时再继续长等待，不要为了中间进度频繁唤醒主 Agent。
+
+### Subagent
+
+预计需要数分钟的 Subagent 启动后，默认优先等待一次最长 10 分钟；支持显式超时时可使用 `wait_agent(timeout_ms=600000)`。Subagent 提前完成时立即处理结果；只有等待超时且仍在运行时才再次等待。并行运行多个 Subagent 时，尽量一次等待多个完成事件，不要逐个高频轮询。
+
+核心流程是“启动任务 → 长时间阻塞等待 → 完成时立即返回 → 处理结果”。尽可能由 Runtime、Shell、GitHub CLI 或 Subagent 的等待机制负责阻塞，减少无意义的模型轮询、上下文重复输入和 Token 消耗，同时保持完成后的及时响应。
+
 ## 项目结构与调用链
 
 ### 技术概览
@@ -113,6 +145,8 @@ app/src/main/java/com/breakyuna/esjzone/
 python3 tools/qa/verify_static_contracts.py
 git diff --check
 ```
+
+隐藏 WebView 评论脚本的行为测试命令为 `node --test tools/qa/tests/comment_session.test.cjs`，Build 与 Release CI 会执行；它不属于静态检查。
 
 同时检查修改范围内的以下内容：
 
