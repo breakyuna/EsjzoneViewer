@@ -103,7 +103,9 @@ class ReaderSettingsDataStore(
                 SCRIPT,
                 PAGE_ANIMATION,
                 VOLUME_KEY_PAGING,
-                AUTO_RESUME_LAST_READING
+                AUTO_RESUME_LAST_READING,
+                TAP_PAGING,
+                HORIZONTAL_SWIPE_PAGING
             ).any { current.contains(it) }
             if (!hasCurrentSettings) {
                 dataStore.edit { preferences ->
@@ -146,6 +148,8 @@ class ReaderSettingsDataStore(
             script = enumOrDefault(this[SCRIPT], defaults.script),
             pageAnimation = enumOrDefault(this[PAGE_ANIMATION], defaults.pageAnimation),
             volumeKeyPaging = this[VOLUME_KEY_PAGING] ?: defaults.volumeKeyPaging,
+            tapPagingEnabled = this[TAP_PAGING] ?: defaults.tapPagingEnabled,
+            horizontalSwipePagingEnabled = this[HORIZONTAL_SWIPE_PAGING] ?: defaults.horizontalSwipePagingEnabled,
             autoResumeLastReading = this[AUTO_RESUME_LAST_READING] ?: defaults.autoResumeLastReading
         )
     }
@@ -171,6 +175,8 @@ class ReaderSettingsDataStore(
         preferences[SCRIPT] = script.name
         preferences[PAGE_ANIMATION] = pageAnimation.name
         preferences[VOLUME_KEY_PAGING] = volumeKeyPaging
+        preferences[TAP_PAGING] = tapPagingEnabled
+        preferences[HORIZONTAL_SWIPE_PAGING] = horizontalSwipePagingEnabled
         preferences[AUTO_RESUME_LAST_READING] = autoResumeLastReading
     }
 
@@ -216,6 +222,8 @@ class ReaderSettingsDataStore(
         val HORIZONTAL_PADDING = floatPreferencesKey("horizontal_padding")
         val SCRIPT = stringPreferencesKey("script")
         val PAGE_ANIMATION = stringPreferencesKey("page_animation")
+        val TAP_PAGING = booleanPreferencesKey("tap_paging")
+        val HORIZONTAL_SWIPE_PAGING = booleanPreferencesKey("horizontal_swipe_paging")
         val VOLUME_KEY_PAGING = booleanPreferencesKey("volume_key_paging")
         val AUTO_RESUME_LAST_READING = booleanPreferencesKey("auto_resume_last_reading")
         val MIGRATION_COMPLETE = androidx.datastore.preferences.core.booleanPreferencesKey(

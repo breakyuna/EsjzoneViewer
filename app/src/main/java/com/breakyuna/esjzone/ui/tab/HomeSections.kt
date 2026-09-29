@@ -92,6 +92,11 @@ internal fun LazyListScope.weeklyPopularCarousel(
         val lifecycleOwner = LocalLifecycleOwner.current
         LaunchedEffect(pagerState, visible.size, lifecycleOwner) {
             lifecycleOwner.repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.RESUMED) {
+                // Navigation can cancel an auto-play animation between pages. The
+                // saveable pager state retains that offset, so settle it on return.
+                if (pagerState.currentPageOffsetFraction != 0f) {
+                    pagerState.scrollToPage(pagerState.currentPage)
+                }
                 while (true) {
                     val manualScrollStarted = withTimeoutOrNull(HOME_WEEKLY_POPULAR_AUTO_PLAY_MS) {
                         snapshotFlow { pagerState.isScrollInProgress }

@@ -54,15 +54,19 @@ enum class ReaderFont {
     SERIF,
     MONOSPACE,
     SANS_SERIF,
-    CURSIVE;
+    CURSIVE,
+    SOURCE_HAN_SERIF,
+    SOURCE_HAN_SANS,
+    LXGW_WENKAI;
 
-    val family: FontFamily
-        get() = when (this) {
+    @Composable
+    fun family(): FontFamily = when (this) {
             SYSTEM -> FontFamily.Default
             SERIF -> FontFamily.Serif
             MONOSPACE -> FontFamily.Monospace
             SANS_SERIF -> FontFamily.SansSerif
             CURSIVE -> FontFamily.Cursive
+            SOURCE_HAN_SERIF, SOURCE_HAN_SANS, LXGW_WENKAI -> ReaderFontStore.family(this)
         }
 }
 
@@ -86,6 +90,8 @@ data class ReaderSettings(
     val script: ReaderScript = ReaderScript.ORIGINAL,
     val pageAnimation: ReaderPageAnimation = ReaderPageAnimation.VERTICAL_SCROLL,
     val volumeKeyPaging: Boolean = false,
+    val tapPagingEnabled: Boolean = true,
+    val horizontalSwipePagingEnabled: Boolean = true,
     val autoResumeLastReading: Boolean = false
 ) {
     val lineHeightSp: Float

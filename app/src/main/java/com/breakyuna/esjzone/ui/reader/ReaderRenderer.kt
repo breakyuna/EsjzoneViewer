@@ -83,7 +83,7 @@ fun ReaderBlocks(
     textTransform: (String) -> String = { it }
 ) {
     val textStyle = MaterialTheme.typography.bodyLarge.copy(
-        fontFamily = settings.font.family,
+        fontFamily = settings.font.family(),
         fontSize = settings.fontSizeSp.sp,
         lineHeight = settings.lineHeightSp.sp,
         letterSpacing = settings.letterSpacingSp.sp
@@ -198,7 +198,7 @@ fun ReaderChapterHeading(
         text = textTransform(name),
         style = MaterialTheme.typography.headlineSmall.copy(
             fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
-            fontFamily = settings.font.family,
+            fontFamily = settings.font.family(),
             fontSize = (settings.fontSizeSp + 6f).sp,
             lineHeight = (settings.lineHeightSp + 6f).sp,
             letterSpacing = settings.letterSpacingSp.sp

@@ -652,4 +652,22 @@
     <string name="novel_download_range_error">Enter whole numbers from 1 to %1$d. The end must be at or after the start.</string>
     <string name="novel_download_range_confirm">Confirm</string>
     <string name="novel_download_selection_too_large">This selection exceeds the task limit. Download smaller ranges separately, or enter the full table of contents range to download the whole book.</string>
+    <string name="reader_tab_appearance">Appearance</string>
+    <string name="reader_tab_layout">Typography</string>
+    <string name="reader_tab_controls">Controls</string>
+    <string name="reader_font_source_serif">Source Han Serif</string>
+    <string name="reader_font_source_sans">Source Han Sans</string>
+    <string name="reader_font_wenkai">LXGW WenKai</string>
+    <string name="reader_font_downloading">Downloading; using default for now</string>
+    <string name="reader_font_sample">山间清风 · 阅读时光</string>
+    <string name="reader_preview_sample">A gentle breeze turns the pages. Find a comfortable rhythm for your next chapter.</string>
+    <string name="reader_font_licenses">Font licenses</string>
+    <string name="reader_chapter_spacing">Chapter spacing</string>
+    <string name="reader_tap_paging">Tap to turn pages</string>
+    <string name="reader_tap_paging_help">When off, tap anywhere in the text to toggle the toolbar.</string>
+    <string name="reader_swipe_paging">Swipe to turn pages</string>
+    <string name="reader_swipe_paging_help">Swipe left or right to turn a page. Vertical scrolling stays available.</string>
+    <string name="reader_volume_paging">Volume key paging</string>
+    <string name="reader_volume_paging_help">Use volume keys to turn pages while reading.</string>
+    <string name="reader_reset_confirmation">Restore all reader settings to their defaults?</string>
 </resources>

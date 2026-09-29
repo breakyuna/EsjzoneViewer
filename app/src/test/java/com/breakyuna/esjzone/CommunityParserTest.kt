@@ -4,6 +4,7 @@ import com.breakyuna.esjzone.network.features.ForumBoardDataException
 import com.breakyuna.esjzone.network.features.findCreatedComment
 import com.breakyuna.esjzone.network.features.findForumNovelDetailUrl
 import com.breakyuna.esjzone.network.features.parseComments
+import com.breakyuna.esjzone.network.features.parseCommentPageSnapshot
 import com.breakyuna.esjzone.network.features.parseForumCategories
 import com.breakyuna.esjzone.network.features.parseForumPost
 import com.breakyuna.esjzone.network.features.parseForumReplyResponse
@@ -24,6 +25,41 @@ import org.junit.Assert.assertThrows
 import org.junit.Test
 
 class CommunityParserTest {
+
+    @Test
+    fun commentPageSnapshot_preparesForumRouteFromTheLoadedPage() {
+        val chapterUrl = "https://www.esjzone.cc/forum/123/456.html"
+        val chapter = parseCommentPageSnapshot(
+            Jsoup.parse(
+                """
+                <form class="commentEditor"><input name="forum_id" value=""></form>
+                <section class="comments-section">
+                  <div class="comment" id="comment-7"><div class="comment-text">Earlier</div></div>
+                </section>
+                """.trimIndent(),
+                chapterUrl
+            ),
+            chapterUrl
+        )
+        assertEquals("forum", chapter.forumPreparation?.data)
+        assertEquals("456", chapter.forumPreparation?.forumId)
+        assertEquals(listOf("7"), chapter.forumPreparation?.comments?.map { it.id })
+
+        val detailUrl = "https://www.esjzone.cc/detail/123.html"
+        val detail = parseCommentPageSnapshot(
+            Jsoup.parse("<form class=\"commentEditor\"><input name=\"forum_id\" value=\"\"></form>", detailUrl),
+            detailUrl
+        )
+        assertEquals("books", detail.forumPreparation?.data)
+        assertEquals("0", detail.forumPreparation?.forumId)
+
+        val guestbookUrl = "https://www.esjzone.cc/guestbook/"
+        val guestbook = parseCommentPageSnapshot(
+            Jsoup.parse("<form class=\"gbEditor\"></form>", guestbookUrl),
+            guestbookUrl
+        )
+        assertNull(guestbook.forumPreparation)
+    }
 
     @Test
     fun findCreatedComment_ignoresAnOlderCommentWithTheSameText() {

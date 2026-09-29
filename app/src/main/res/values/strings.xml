@@ -652,4 +652,22 @@
     <string name="novel_download_range_error">请输入 1–%1$d 内的整数，终止序号不能小于起始序号。</string>
     <string name="novel_download_range_confirm">确定</string>
     <string name="novel_download_selection_too_large">所选章节超过单次任务容量，请缩小范围分批下载；输入完整目录范围可下载全书。</string>
+    <string name="reader_tab_appearance">外观</string>
+    <string name="reader_tab_layout">排版</string>
+    <string name="reader_tab_controls">操作</string>
+    <string name="reader_font_source_serif">思源宋体</string>
+    <string name="reader_font_source_sans">思源黑体</string>
+    <string name="reader_font_wenkai">霞鹜文楷</string>
+    <string name="reader_font_downloading">正在下载，暂用默认字体</string>
+    <string name="reader_font_sample">山间清风 · 阅读时光</string>
+    <string name="reader_preview_sample">清风翻过书页，故事缓缓展开。在文字之间，找到舒适的阅读节奏。</string>
+    <string name="reader_font_licenses">字体授权</string>
+    <string name="reader_chapter_spacing">章节间距</string>
+    <string name="reader_tap_paging">点击两侧翻页</string>
+    <string name="reader_tap_paging_help">关闭后，轻点正文任意位置可显示或隐藏工具栏。</string>
+    <string name="reader_swipe_paging">横滑翻页</string>
+    <string name="reader_swipe_paging_help">左右滑动翻页，同时保留上下滚动。</string>
+    <string name="reader_volume_paging">音量键翻页</string>
+    <string name="reader_volume_paging_help">阅读时使用音量键上下翻页。</string>
+    <string name="reader_reset_confirmation">将全部阅读设置恢复为默认值？</string>
 </resources>

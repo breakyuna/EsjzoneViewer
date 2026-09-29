@@ -25,4 +25,5 @@
     <exclude domain="file" path="history_data_snapshot.json" />
     <exclude domain="file" path="home_data_snapshot.json" />
     <exclude domain="file" path="bookmark_covers" />
+    <exclude domain="file" path="reader_fonts" />
 </full-backup-content>

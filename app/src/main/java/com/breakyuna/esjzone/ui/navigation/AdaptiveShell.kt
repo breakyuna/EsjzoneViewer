@@ -74,9 +74,13 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithCache
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import com.breakyuna.esjzone.R
 import com.breakyuna.esjzone.app.PresentationAccess
@@ -478,6 +482,10 @@ private fun TabStackDisplay(
 }
 
 private val BottomBarHeight = 52.dp
+private val BottomBarIndicatorWidth = 64.dp
+private val BottomBarIndicatorHeight = 32.dp
+// Material 3's default capsule starts at 12.dp; this follows the icon's 3.dp offset.
+private val BottomBarIndicatorTop = 15.dp
 
 @Composable
 private fun AppNavigationBar(
@@ -503,7 +511,32 @@ private fun AppNavigationBar(
         ) {
             tabs.forEach { tab ->
                 val isSelected = selected == tab
+                val indicatorProgress by animateFloatAsState(
+                    targetValue = if (isSelected) 1f else 0f,
+                    animationSpec = tween(durationMillis = 100),
+                    label = "${tab.name}BottomIndicator"
+                )
+                val indicatorColor = MaterialTheme.colorScheme.secondaryContainer
                 NavigationBarItem(
+                    modifier = Modifier.drawBehind {
+                        val progress = indicatorProgress
+                        if (progress > 0f) {
+                            val indicatorWidth = BottomBarIndicatorWidth.toPx() * progress
+                            val indicatorHeight = BottomBarIndicatorHeight.toPx()
+                            drawRoundRect(
+                                color = indicatorColor.copy(alpha = progress),
+                                topLeft = Offset(
+                                    x = (size.width - indicatorWidth) / 2f,
+                                    y = BottomBarIndicatorTop.toPx()
+                                ),
+                                size = Size(indicatorWidth, indicatorHeight),
+                                cornerRadius = CornerRadius(
+                                    x = minOf(indicatorWidth, indicatorHeight) / 2f,
+                                    y = minOf(indicatorWidth, indicatorHeight) / 2f
+                                )
+                            )
+                        }
+                    },
                     selected = isSelected,
                     onClick = { onSelected(tab) },
                     icon = {
@@ -523,9 +556,9 @@ private fun AppNavigationBar(
                     },
                     alwaysShowLabel = true,
                     colors = NavigationBarItemDefaults.colors(
+                        indicatorColor = Color.Transparent,
                         selectedIconColor = MaterialTheme.colorScheme.primary,
                         selectedTextColor = MaterialTheme.colorScheme.primary,
-                        indicatorColor = MaterialTheme.colorScheme.secondaryContainer,
                         unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
                         unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant
                     )

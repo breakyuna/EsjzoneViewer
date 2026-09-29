@@ -7,6 +7,8 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
@@ -26,6 +28,8 @@ fun ReaderShell(
     onHorizontalSwipe: (forward: Boolean) -> Unit = {},
     content: @Composable BoxScope.() -> Unit
 ) {
+    val currentTap by rememberUpdatedState(onReadingAreaTap)
+    val currentSwipe by rememberUpdatedState(onHorizontalSwipe)
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -37,11 +41,17 @@ fun ReaderShell(
                     var last = start
                     var childConsumed = down.isConsumed
                     var released: Offset? = null
+                    var maxDistance = 0f
+                    var multiTouch = false
+                    var duration = 0L
                     do {
                         val event = awaitPointerEvent()
-                        val change = event.changes.firstOrNull() ?: break
+                        multiTouch = multiTouch || event.changes.size > 1
+                        val change = event.changes.firstOrNull { it.id == down.id } ?: break
                         childConsumed = childConsumed || change.isConsumed
                         last = change.position
+                        maxDistance = maxOf(maxDistance, (last - start).getDistance())
+                        duration = change.uptimeMillis - down.uptimeMillis
                         if (!change.pressed) released = change.position
                     } while (event.changes.any { it.pressed })
 
@@ -51,9 +61,11 @@ fun ReaderShell(
                         abs(delta.x) > abs(delta.y) * 1.35f
                     val release = released
                     when {
-                        horizontalSwipe && !childConsumed -> onHorizontalSwipe(delta.x < 0f)
-                        release != null && !childConsumed && delta.getDistance() < viewConfiguration.touchSlop -> {
-                            onReadingAreaTap(
+                        horizontalSwipe && !childConsumed && !multiTouch &&
+                            duration < viewConfiguration.longPressTimeoutMillis -> currentSwipe(delta.x < 0f)
+                        release != null && !childConsumed && !multiTouch &&
+                            duration < viewConfiguration.longPressTimeoutMillis && maxDistance < viewConfiguration.touchSlop -> {
+                            currentTap(
                                 (release.x / size.width.coerceAtLeast(1)).coerceIn(0f, 1f),
                                 (release.y / size.height.coerceAtLeast(1)).coerceIn(0f, 1f)
                             )

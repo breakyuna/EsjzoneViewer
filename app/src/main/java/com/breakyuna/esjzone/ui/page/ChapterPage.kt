@@ -1,3 +1,5 @@
+@file:OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+
 package com.breakyuna.esjzone.ui.page
 import com.breakyuna.esjzone.app.PresentationAccess
 
@@ -21,7 +23,6 @@ import androidx.compose.foundation.gestures.animateScrollBy
 import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -34,19 +35,17 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.statusBarsIgnoringVisibility
+import androidx.compose.foundation.layout.union
+import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
-import androidx.compose.foundation.layout.wrapContentWidth
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Forum
@@ -59,13 +58,10 @@ import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.FilledTonalIconButton
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -76,20 +72,18 @@ import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.BookmarkBorder
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.snapshotFlow
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.Modifier
@@ -144,8 +138,6 @@ import com.breakyuna.esjzone.domain.reader.ReaderBlock
 import com.breakyuna.esjzone.ui.reader.ReaderPageAnimation
 import com.breakyuna.esjzone.ui.navigation.LocalBaseNavigator
 import com.breakyuna.esjzone.ui.navigation.ChapterStateHolder
-import com.breakyuna.esjzone.ui.reader.ReaderBackground
-import com.breakyuna.esjzone.ui.reader.ReaderFont
 import com.breakyuna.esjzone.ui.reader.ReaderScript
 import com.breakyuna.esjzone.ui.reader.ReaderScriptConverter
 import com.breakyuna.esjzone.ui.reader.ReaderSettings
@@ -194,6 +186,7 @@ class ChapterPage(
         val authorization = LocalAuthorization.current
 
         val textMeasurer = rememberTextMeasurer()
+        val stableTopInset = WindowInsets.statusBarsIgnoringVisibility.union(WindowInsets.displayCutout).asPaddingValues().calculateTopPadding()
         val density = LocalDensity.current
         val adaptiveMetrics = rememberAppAdaptiveMetrics()
         val scope = rememberCoroutineScope()
@@ -246,7 +239,7 @@ class ChapterPage(
         var isBookmarked by rememberSaveable { mutableStateOf(false) }
 
         val readerTextStyle = MaterialTheme.typography.bodyLarge.copy(
-            fontFamily = readerSettings.font.family,
+            fontFamily = readerSettings.font.family(),
             fontSize = readerSettings.fontSizeSp.sp,
             lineHeight = readerSettings.lineHeightSp.sp,
             letterSpacing = readerSettings.letterSpacingSp.sp
@@ -1036,40 +1029,32 @@ class ChapterPage(
             }
         }
 
-        DisposableEffect(readerSettings.volumeKeyPaging, currentReadingChapter.url, result) {
-            if (!readerSettings.volumeKeyPaging) {
-                onDispose { }
-            } else {
-                val registration = ReaderVolumeKeyDispatcher.register { keyCode ->
-                    val pageSize = scrollState.layoutInfo.viewportSize.height.toFloat()
-                    if (pageSize <= 0f) return@register false
-                    val offset = when (keyCode) {
-                        android.view.KeyEvent.KEYCODE_VOLUME_UP -> -pageSize
-                        android.view.KeyEvent.KEYCODE_VOLUME_DOWN -> pageSize
-                        else -> return@register false
-                    }
-                    scope.launch { scrollState.animateScrollBy(offset) }
-                    true
-                }
-                onDispose { ReaderVolumeKeyDispatcher.unregister(registration) }
-            }
-        }
-
         val pageTranslation = remember { Animatable(0f) }
         val pageAlpha = remember { Animatable(1f) }
         var pageTurnInProgress by remember { mutableStateOf(false) }
 
+        val reducedMotion = com.breakyuna.esjzone.ui.designsystem.rememberReaderReducedMotion()
+        val readerDialogVisible = passwordRequired != null || wenkuVerificationChapter != null ||
+            (pendingWenkuVerification != null && pendingWenkuVerification.url != dismissedWenkuPrompt)
+        val pagingEnabled = readerResumed && state is ChapterPageModel.State.Result &&
+            !showReaderSettings && !showReaderContents && !readerDialogVisible
+        com.breakyuna.esjzone.ui.reader.ReaderSystemBars(
+            showBars = showToolbar || showReaderSettings || showReaderContents || readerDialogVisible
+        )
+
         fun turnReaderPage(forward: Boolean) {
-            if (pageTurnInProgress) return
+            if (pageTurnInProgress || !pagingEnabled) return
             val viewportHeight = scrollState.layoutInfo.viewportSize.height.toFloat()
             if (viewportHeight <= 0f) return
             // Keep a small overlap so the reader never loses the line at the page boundary.
             val distance = viewportHeight * 0.88f * if (forward) 1f else -1f
             val viewportWidth = scrollState.layoutInfo.viewportSize.width.toFloat().coerceAtLeast(1f)
+            pageTurnInProgress = true
             scope.launch {
-                pageTurnInProgress = true
                 try {
-                    when (readerSettings.pageAnimation) {
+                    if (reducedMotion) {
+                        scrollState.scrollBy(distance)
+                    } else when (readerSettings.pageAnimation) {
                         ReaderPageAnimation.VERTICAL_SCROLL -> scrollState.animateScrollBy(distance)
                         ReaderPageAnimation.HORIZONTAL_SLIDE -> {
                             pageTranslation.animateTo(
@@ -1099,16 +1084,28 @@ class ChapterPage(
             }
         }
 
+        val currentTurnPage by rememberUpdatedState<(Boolean) -> Unit>(::turnReaderPage)
+        DisposableEffect(readerSettings.volumeKeyPaging, pagingEnabled) {
+            val registration = if (readerSettings.volumeKeyPaging && pagingEnabled) {
+                ReaderVolumeKeyDispatcher.register { key ->
+                    currentTurnPage(key == android.view.KeyEvent.KEYCODE_VOLUME_DOWN)
+                    true
+                }
+            } else null
+            onDispose { registration?.let(ReaderVolumeKeyDispatcher::unregister) }
+        }
+
         Box(modifier = Modifier.fillMaxSize()) {
             ReaderShell(
                 background = readerSettings.background.containerColor(),
-                horizontalSwipeEnabled = true,
+                horizontalSwipeEnabled = readerSettings.horizontalSwipePagingEnabled && pagingEnabled,
                 onHorizontalSwipe = ::turnReaderPage,
                 onReadingAreaTap = { xFraction, _ ->
                     if (progressPreview != null) {
                         dismissProgressPreview()
                     } else {
                         val forward = when {
+                            !readerSettings.tapPagingEnabled -> null
                             xFraction < 0.28f -> false
                             xFraction > 0.72f -> true
                             else -> null
@@ -1136,7 +1133,7 @@ class ChapterPage(
                         contentPadding = androidx.compose.foundation.layout.PaddingValues(
                             // Reserve a stable header area. The header
                             // is an overlay and never changes list geometry.
-                            top = ReaderLayout.contentTopPadding,
+                            top = ReaderLayout.contentTopPadding + stableTopInset,
                             bottom = ReaderLayout.contentBottomPadding
                         )
                     ) {
@@ -1395,7 +1392,7 @@ class ChapterPage(
                 AppGlassSurface(
                     modifier = Modifier
                         .align(Alignment.TopEnd)
-                        .statusBarsPadding()
+                        .windowInsetsPadding(WindowInsets.statusBarsIgnoringVisibility.union(WindowInsets.displayCutout).only(WindowInsetsSides.Top))
                         .padding(top = 32.dp, end = AppSpacing.lg),
                     spec = com.breakyuna.esjzone.ui.designsystem.glass.AppGlassSpec(
                         tint = MaterialTheme.colorScheme.tertiaryContainer,
@@ -1416,7 +1413,7 @@ class ChapterPage(
                 Surface(
                     modifier = Modifier
                         .align(Alignment.TopCenter)
-                        .statusBarsPadding()
+                        .windowInsetsPadding(WindowInsets.statusBarsIgnoringVisibility.union(WindowInsets.displayCutout).only(WindowInsetsSides.Top))
                         .padding(top = ReaderLayout.previousLoadingTopPadding),
                     shape = AppShapes.prominent,
                     tonalElevation = 4.dp,
@@ -1673,7 +1670,7 @@ class ChapterPage(
                 modifier = Modifier
                     .align(Alignment.TopCenter)
                     .fillMaxWidth()
-                    .statusBarsPadding()
+                    .windowInsetsPadding(WindowInsets.statusBarsIgnoringVisibility.union(WindowInsets.displayCutout).only(WindowInsetsSides.Top))
                     .windowInsetsPadding(WindowInsets.displayCutout.only(WindowInsetsSides.Horizontal))
                     .padding(top = 4.dp)
                     .zIndex(2f)
@@ -1956,7 +1953,7 @@ private fun ReaderStatusBar(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .statusBarsPadding()
+            .windowInsetsPadding(WindowInsets.statusBarsIgnoringVisibility.union(WindowInsets.displayCutout).only(WindowInsetsSides.Top))
             .windowInsetsPadding(WindowInsets.displayCutout.only(WindowInsetsSides.Horizontal))
             .padding(horizontal = AppSpacing.xl, vertical = AppSpacing.xs)
             .zIndex(1f),
@@ -2333,7 +2330,7 @@ private fun ReaderContentsSheet(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .statusBarsPadding()
+                .windowInsetsPadding(WindowInsets.statusBarsIgnoringVisibility.union(WindowInsets.displayCutout).only(WindowInsetsSides.Top))
                 .navigationBarsPadding()
                 .padding(horizontal = AppSpacing.md, vertical = AppSpacing.sm)
         ) {
@@ -2417,297 +2414,3 @@ private fun ReaderContentsSheet(
 
 private fun sameReaderChapter(first: Chapter, second: Chapter): Boolean =
     chapterIdentity(first) == chapterIdentity(second)
-
-@Composable
-private fun ReaderSettingsSheet(
-    visible: Boolean,
-    settings: ReaderSettings,
-    previewText: String,
-    onSettingsChange: (ReaderSettings) -> Unit,
-    onDismiss: () -> Unit
-) {
-    AppSideSheet(
-        visible = visible,
-        edge = AppSideSheetEdge.END,
-        onDismissRequest = onDismiss
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .statusBarsPadding()
-                .navigationBarsPadding()
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = AppSpacing.md, vertical = AppSpacing.sm)
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = stringResource(id = R.string.reader_settings),
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier.weight(1f)
-                )
-                TextButton(
-                    onClick = { onSettingsChange(ReaderSettings()) }
-                ) {
-                    Text(text = stringResource(id = R.string.reader_reset))
-                }
-                IconButton(onClick = onDismiss) {
-                    Icon(
-                        imageVector = Icons.Filled.Close,
-                        contentDescription = stringResource(id = R.string.close)
-                    )
-                }
-            }
-
-            Surface(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = AppSpacing.md),
-                shape = AppShapes.prominent,
-                color = settings.background.containerColor().copy(alpha = 0.72f),
-                contentColor = settings.background.contentColor()
-            ) {
-                Column(
-                    modifier = Modifier.padding(
-                        horizontal = AppSpacing.md,
-                        vertical = AppSpacing.md
-                    )
-                ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = stringResource(R.string.reader_live_preview),
-                            style = MaterialTheme.typography.labelLarge,
-                            modifier = Modifier.weight(1f)
-                        )
-                        Text(
-                            text = "${settings.fontSizeSp.roundToInt()}sp",
-                            style = MaterialTheme.typography.labelLarge,
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                    }
-                    if (previewText.isNotBlank()) {
-                        Text(
-                            text = previewText,
-                            style = MaterialTheme.typography.bodyLarge.copy(
-                                fontFamily = settings.font.family,
-                                fontSize = settings.fontSizeSp.sp,
-                                lineHeight = settings.lineHeightSp.sp,
-                                letterSpacing = settings.letterSpacingSp.sp
-                            ),
-                            maxLines = 3,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.padding(top = 8.dp)
-                        )
-                    }
-                }
-            }
-
-            Text(
-                text = stringResource(id = R.string.reader_background),
-                style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.SemiBold,
-                modifier = Modifier.padding(top = AppSpacing.lg, bottom = AppSpacing.sm)
-            )
-            ReaderSettingChoices(
-                selected = settings.background,
-                options = listOf(
-                    ReaderBackground.SYSTEM to stringResource(id = R.string.reader_background_system),
-                    ReaderBackground.PAPER to stringResource(id = R.string.reader_background_paper),
-                    ReaderBackground.SEPIA to stringResource(id = R.string.reader_background_sepia),
-                    ReaderBackground.DARK to stringResource(id = R.string.reader_background_dark),
-                    ReaderBackground.MINT to stringResource(id = R.string.reader_background_mint),
-                    ReaderBackground.LAVENDER to stringResource(id = R.string.reader_background_lavender),
-                    ReaderBackground.SLATE to stringResource(id = R.string.reader_background_slate),
-                    ReaderBackground.OLED to stringResource(id = R.string.reader_background_oled)
-                ),
-                onSelected = { background ->
-                    onSettingsChange(settings.copy(background = background))
-                }
-            )
-
-            Text(
-                text = stringResource(id = R.string.reader_font),
-                style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.SemiBold,
-                modifier = Modifier.padding(top = AppSpacing.lg, bottom = AppSpacing.sm)
-            )
-            ReaderSettingChoices(
-                selected = settings.font,
-                options = listOf(
-                    ReaderFont.SYSTEM to stringResource(id = R.string.reader_font_system),
-                    ReaderFont.SERIF to stringResource(id = R.string.reader_font_serif),
-                    ReaderFont.MONOSPACE to stringResource(id = R.string.reader_font_monospace),
-                    ReaderFont.SANS_SERIF to stringResource(id = R.string.reader_font_sans_serif),
-                    ReaderFont.CURSIVE to stringResource(id = R.string.reader_font_cursive)
-                ),
-                onSelected = { font ->
-                    onSettingsChange(settings.copy(font = font))
-                }
-            )
-
-            Text(
-                text = stringResource(id = R.string.reader_script),
-                style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.SemiBold,
-                modifier = Modifier.padding(top = AppSpacing.lg, bottom = AppSpacing.sm)
-            )
-            ReaderSettingChoices(
-                selected = settings.script,
-                options = listOf(
-                    ReaderScript.ORIGINAL to stringResource(id = R.string.reader_script_original),
-                    ReaderScript.SIMPLIFIED to stringResource(id = R.string.reader_script_simplified),
-                    ReaderScript.TRADITIONAL to stringResource(id = R.string.reader_script_traditional)
-                ),
-                onSelected = { script ->
-                    onSettingsChange(settings.copy(script = script))
-                }
-            )
-
-            Text(
-                text = stringResource(id = R.string.reader_paging_method),
-                style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.SemiBold,
-                modifier = Modifier.padding(top = AppSpacing.lg, bottom = AppSpacing.sm)
-            )
-            ReaderSettingChoices(
-                selected = settings.pageAnimation,
-                options = listOf(
-                    ReaderPageAnimation.VERTICAL_SCROLL to stringResource(id = R.string.reader_page_animation_vertical),
-                    ReaderPageAnimation.HORIZONTAL_SLIDE to stringResource(id = R.string.reader_page_animation_slide),
-                    ReaderPageAnimation.FADE to stringResource(id = R.string.reader_page_animation_fade),
-                    ReaderPageAnimation.COVER to stringResource(id = R.string.reader_page_animation_cover)
-                ),
-                onSelected = { animation ->
-                    onSettingsChange(settings.copy(pageAnimation = animation))
-                }
-            )
-
-            ReaderSettingSlider(
-                label = stringResource(id = R.string.reader_font_size),
-                value = settings.fontSizeSp,
-                valueLabel = { "${it.roundToInt()}sp" },
-                valueRange = 14f..30f,
-                steps = 15,
-                onValueChangeFinished = { value ->
-                    onSettingsChange(settings.copy(fontSizeSp = value))
-                }
-            )
-            ReaderSettingSlider(
-                label = stringResource(id = R.string.reader_letter_spacing),
-                value = settings.letterSpacingSp,
-                valueLabel = { "${(it * 10f).roundToInt() / 10f}sp" },
-                valueRange = 0f..2f,
-                steps = 19,
-                onValueChangeFinished = { value ->
-                    onSettingsChange(settings.copy(letterSpacingSp = value))
-                }
-            )
-            ReaderSettingSlider(
-                label = stringResource(id = R.string.reader_line_spacing),
-                value = settings.lineSpacingSp,
-                valueLabel = { "${it.roundToInt()}sp" },
-                valueRange = 4f..24f,
-                steps = 19,
-                onValueChangeFinished = { value ->
-                    onSettingsChange(settings.copy(lineSpacingSp = value))
-                }
-            )
-            ReaderSettingSlider(
-                label = stringResource(id = R.string.reader_paragraph_spacing),
-                value = settings.paragraphSpacingDp,
-                valueLabel = { "${it.roundToInt()}dp" },
-                valueRange = 0f..32f,
-                steps = 15,
-                onValueChangeFinished = { value ->
-                    onSettingsChange(settings.copy(paragraphSpacingDp = value))
-                }
-            )
-            ReaderSettingSlider(
-                label = stringResource(id = R.string.reader_page_spacing),
-                value = settings.pageSpacingDp,
-                valueLabel = { "${it.roundToInt()}dp" },
-                valueRange = 16f..80f,
-                steps = 15,
-                onValueChangeFinished = { value ->
-                    onSettingsChange(settings.copy(pageSpacingDp = value))
-                }
-            )
-            ReaderSettingSlider(
-                label = stringResource(id = R.string.reader_horizontal_padding),
-                value = settings.horizontalPaddingDp,
-                valueLabel = { "${it.roundToInt()}dp" },
-                valueRange = 12f..48f,
-                steps = 8,
-                onValueChangeFinished = { value ->
-                    onSettingsChange(settings.copy(horizontalPaddingDp = value))
-                }
-            )
-            Spacer(modifier = Modifier.height(AppSpacing.lg))
-        }
-    }
-}
-
-@Composable
-private fun <T> ReaderSettingChoices(
-    selected: T,
-    options: List<Pair<T, String>>,
-    onSelected: (T) -> Unit
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .horizontalScroll(rememberScrollState()),
-        horizontalArrangement = Arrangement.spacedBy(AppSpacing.sm)
-    ) {
-        options.forEach { (value, label) ->
-            FilterChip(
-                selected = selected == value,
-                onClick = { onSelected(value) },
-                label = { Text(text = label) }
-            )
-        }
-    }
-}
-
-@Composable
-private fun ReaderSettingSlider(
-    label: String,
-    value: Float,
-    valueLabel: (Float) -> String,
-    valueRange: ClosedFloatingPointRange<Float>,
-    steps: Int,
-    onValueChangeFinished: (Float) -> Unit
-) {
-    var sliderPosition by remember(value) { mutableFloatStateOf(value) }
-    Column(modifier = Modifier.padding(top = AppSpacing.md)) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                text = label,
-                style = MaterialTheme.typography.bodyMedium,
-                modifier = Modifier.weight(1f)
-            )
-            Text(
-                text = valueLabel(sliderPosition),
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.primary
-            )
-        }
-        Slider(
-            value = sliderPosition,
-            onValueChange = { sliderPosition = it },
-            onValueChangeFinished = { onValueChangeFinished(sliderPosition) },
-            valueRange = valueRange,
-            steps = steps,
-            modifier = Modifier.fillMaxWidth()
-        )
-    }
-}

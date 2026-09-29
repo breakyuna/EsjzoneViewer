@@ -26,6 +26,30 @@ class DataStoreAcceptanceInstrumentedTest {
         get() = ApplicationProvider.getApplicationContext()
 
     @Test
+    fun readerFontsAndIndependentGesturesPersistAndReset() = runBlocking {
+        val scope = newScope()
+        try {
+            val reader = ReaderSettingsDataStore(context, scope, fileName("reader-font-gestures"))
+            reader.save(ReaderSettings(font = ReaderFont.LXGW_WENKAI, tapPagingEnabled = false, horizontalSwipePagingEnabled = true))
+            val first = reader.settings.first { it.font == ReaderFont.LXGW_WENKAI }
+            assertFalse(first.tapPagingEnabled)
+            assertTrue(first.horizontalSwipePagingEnabled)
+            reader.save(first.copy(font = ReaderFont.SOURCE_HAN_SERIF, tapPagingEnabled = true, horizontalSwipePagingEnabled = false))
+            val second = reader.settings.first { it.font == ReaderFont.SOURCE_HAN_SERIF }
+            assertTrue(second.tapPagingEnabled)
+            assertFalse(second.horizontalSwipePagingEnabled)
+            reader.save(second.copy(font = ReaderFont.SOURCE_HAN_SANS))
+            assertEquals(ReaderFont.SOURCE_HAN_SANS, reader.settings.first { it.font == ReaderFont.SOURCE_HAN_SANS }.font)
+            reader.save(ReaderSettings())
+            val reset = reader.settings.first { it.font == ReaderFont.SYSTEM }
+            assertTrue(reset.tapPagingEnabled)
+            assertTrue(reset.horizontalSwipePagingEnabled)
+        } finally {
+            scope.cancel()
+        }
+    }
+
+    @Test
     fun settings_defaults_areStableOnFreshStore() = runBlocking {
         val scope = newScope()
         try {

@@ -92,7 +92,9 @@ import com.breakyuna.esjzone.network.loadFailureKind
 import com.breakyuna.esjzone.network.features.CommentSubmissionNotVerifiedException
 import com.breakyuna.esjzone.network.features.CommentSubmissionTimeoutException
 import com.breakyuna.esjzone.network.features.ForumReplyBusinessException
+import com.breakyuna.esjzone.network.features.ForumCommentPreparation
 import com.breakyuna.esjzone.network.features.findCreatedComment
+import com.breakyuna.esjzone.network.features.getCommentPageSnapshot
 import com.breakyuna.esjzone.network.features.getPageComments
 import com.breakyuna.esjzone.network.features.getUserProfile
 import com.breakyuna.esjzone.network.features.submitForumComment
@@ -117,11 +119,14 @@ import com.breakyuna.esjzone.ui.product.stableProductKey
 import com.breakyuna.esjzone.util.AppLogger
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.util.concurrent.TimeUnit
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -487,6 +492,7 @@ internal fun CommentComposerHost(
     var savedReplyAuthor by rememberSaveable(model.pageUrl) { mutableStateOf<String?>(null) }
     val anonymousLabel = stringResource(id = R.string.anonymous_user)
     LaunchedEffect(model) {
+        model.prepareOnOpen()
         // Restore the composer after an activity/process recreation, then keep
         // the saveable mirror current while the screen model remains the
         // single source shared by the comments list and this host.
@@ -1116,6 +1122,9 @@ internal class CommentPageModel(
     private var loadJob: Job? = null
     private var loadStarted = false
     @Volatile private var loadGeneration = 0L
+    @Volatile private var forumPreparation: ForumCommentPreparation? = null
+    private data class ExperienceBaseline(val experience: Int, val fetchedAtNanos: Long)
+    @Volatile private var experiencePrefetch: Deferred<ExperienceBaseline?>? = null
 
     val isSubmitting = mutableStateOf(false)
     val submitError = mutableStateOf<CommentSubmitError?>(null)
@@ -1127,10 +1136,20 @@ internal class CommentPageModel(
     val replyToken = mutableStateOf<String?>(null)
     val replyAuthor = mutableStateOf<String?>(null)
 
+    fun prepareOnOpen() {
+        if (!loadStarted && mutableState.value is CommunityState.Loading) load()
+    }
+
     fun load(forceRefresh: Boolean = false, allowRetryAfterRefresh: Boolean = false) {
         if (!forceRefresh && loadStarted) return
+        if (experiencePrefetch == null) {
+            experiencePrefetch = viewModelScope.async(Dispatchers.IO) {
+                fetchFreshProfile()?.exp?.let { ExperienceBaseline(it, System.nanoTime()) }
+            }
+        }
         loadStarted = true
         val generation = ++loadGeneration
+        val loadAttemptId = submitAttemptId
         loadJob?.cancel()
         loadJob = viewModelScope.launch(Dispatchers.IO) {
             val currentResult = mutableState.value as? CommunityState.Result
@@ -1157,15 +1176,19 @@ internal class CommentPageModel(
             }
 
             try {
-                val comments = PresentationAccess.client.getPageComments(
+                val snapshot = PresentationAccess.client.getCommentPageSnapshot(
                     authorization,
                     pageUrl,
                     forceRefresh = true
                 )
+                val comments = snapshot.comments
                 ensureActive()
                 var recovered = false
                 withContext(Dispatchers.Main) {
                     if (generation != loadGeneration) return@withContext
+                    if (loadAttemptId == submitAttemptId && !isSubmitting.value) {
+                        forumPreparation = snapshot.forumPreparation
+                    }
                     val pending = pendingSubmission?.takeIf { it.attemptId == submitAttemptId }
                     val found = pending?.takeIf { !isSubmitting.value }
                         ?.let { findCreatedComment(comments, it.previousIds, it.content) }
@@ -1267,12 +1290,15 @@ internal class CommentPageModel(
             try {
                 // Compare two fresh server values for this attempt. A cached profile
                 // could make an unrelated earlier gain look like this comment's gain.
-                baselineExperience = fetchFreshProfile()?.exp
+                baselineExperience = freshExperienceBaseline()
+                val preparedForAttempt = forumPreparation
+                forumPreparation = null
                 val submission = PresentationAccess.client.submitForumComment(
                     authorization = authorization,
                     pageUrl = pageUrl,
                     content = submitted,
-                    replyToken = replyToken
+                    replyToken = replyToken,
+                    preparedForum = preparedForAttempt
                 )
                 ensureActive()
                 mutableState.value = CommunityState.Result(submission.comments, isSyncSuccess = true)
@@ -1371,6 +1397,15 @@ internal class CommentPageModel(
     } catch (error: Exception) {
         AppLogger.w("CommentPageModel", "Fresh profile unavailable during comment submission (${error::class.java.simpleName})")
         null
+    }
+
+    private suspend fun freshExperienceBaseline(): Int? {
+        val prefetched = experiencePrefetch?.await()
+        experiencePrefetch = null
+        if (prefetched != null &&
+            System.nanoTime() - prefetched.fetchedAtNanos in 0..TimeUnit.SECONDS.toNanos(10)
+        ) return prefetched.experience
+        return fetchFreshProfile()?.exp
     }
 
     private suspend fun checkExperienceIncrease(baseline: Int?, attemptId: Long) {

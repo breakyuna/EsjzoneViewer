@@ -58,6 +58,21 @@ data class CommentSubmission(
     val createdComment: Comment
 )
 
+data class ForumCommentPreparation(
+    val targetUrl: String,
+    val comments: List<Comment>,
+    val data: String,
+    val forumId: String,
+    val currentUserName: String?,
+    val currentUserAvatar: String?,
+    val fetchedAtNanos: Long
+)
+
+data class CommentPageSnapshot(
+    val comments: List<Comment>,
+    val forumPreparation: ForumCommentPreparation?
+)
+
 data class ForumReplyResponse(
     val status: Int,
     val msg: String,
@@ -97,7 +112,13 @@ fun EsjzoneClient.getPageComments(
     authorization: Authorization,
     pageUrl: String,
     forceRefresh: Boolean = false
-): List<Comment> {
+): List<Comment> = getCommentPageSnapshot(authorization, pageUrl, forceRefresh).comments
+
+fun EsjzoneClient.getCommentPageSnapshot(
+    authorization: Authorization,
+    pageUrl: String,
+    forceRefresh: Boolean = false
+): CommentPageSnapshot {
     val targetUrl = EsjzoneUrls.resolve(pageUrl).substringBefore('#')
     AppLogger.i("GetCommunity", "Fetching comments at $targetUrl")
     val document = Jsoup.parse(
@@ -111,54 +132,51 @@ fun EsjzoneClient.getPageComments(
         ),
         targetUrl
     )
-    return parseComments(document, commentParentId(targetUrl))
+    return parseCommentPageSnapshot(document, targetUrl)
+}
+
+internal fun parseCommentPageSnapshot(document: Document, targetUrl: String): CommentPageSnapshot {
+    val comments = parseComments(document, commentParentId(targetUrl))
+    return CommentPageSnapshot(
+        comments,
+        forumPreparation(document, targetUrl, comments)
+    )
 }
 
 fun EsjzoneClient.submitForumComment(
     authorization: Authorization,
     pageUrl: String,
     content: String,
-    replyToken: String? = null
+    replyToken: String? = null,
+    preparedForum: ForumCommentPreparation? = null
 ): CommentSubmission {
     val submittedContent = content.trim()
     require(submittedContent.isNotEmpty()) { "Comment content cannot be empty" }
 
     val targetUrl = EsjzoneUrls.resolve(pageUrl).substringBefore('#')
-    val initialDocument = Jsoup.parse(
-        getPage(
-            authorization,
-            targetUrl,
-            PageCacheTtl.COMMUNITY,
-            pageKind = PageKind.COMMUNITY
-        ),
-        targetUrl
-    )
-    val form = initialDocument.selectFirst("form.commentEditor, form.gbEditor")
-        ?: throw IOException("Comment form was not found; the session may have expired")
-    val formForumId = form.selectFirst("[name=forum_id]")
-        ?.attr("value")
-        ?.trim()
-        ?.takeIf { it.isNotBlank() }
-        ?: POST_URL.find(targetUrl)?.groupValues?.getOrNull(1)
-    // The detail page has an empty hidden forum_id but its page script uses
-    // forum_id=0; chapter pages use the chapter post id.  The empty hidden
-    // values must therefore be replaced with the route-specific values.
-    val forumId = formForumId
-        ?: DETAIL_URL.find(targetUrl)?.let { "0" }
-    val formData = form.selectFirst("[name=data]")
-        ?.attr("value")
-        ?.trim()
-        ?.takeIf { it.isNotBlank() }
-    val data = formData ?: when {
-        form.hasClass("gbEditor") -> null
-        DETAIL_URL.containsMatchIn(targetUrl) -> "books"
-        form.hasClass("commentEditor") -> "forum"
-        else -> null
+    val prepared = preparedForum?.takeIf {
+        it.targetUrl == targetUrl &&
+            System.nanoTime() - it.fetchedAtNanos in 0..TimeUnit.MINUTES.toNanos(2)
     }
-    // forum_id is a submission routing field, not the stable identity used to
-    // compare comments before and after the request (detail pages use 0 for it).
+    val initialDocument = if (prepared == null) {
+        Jsoup.parse(
+            getPage(authorization, targetUrl, PageCacheTtl.COMMUNITY, pageKind = PageKind.COMMUNITY),
+            targetUrl
+        )
+    } else null
+    val form = initialDocument?.selectFirst("form.commentEditor, form.gbEditor")
+    val previousComments = prepared?.comments
+        ?: initialDocument?.let { parseComments(it, commentParentId(targetUrl)) }
+        ?: emptyList()
+    val forumPreparation = prepared
+        ?: initialDocument?.let { forumPreparation(it, targetUrl, previousComments) }
+    if (forumPreparation == null && form?.hasClass("commentEditor") == true) {
+        throw ForumReplyProtocolException("Forum comment form did not provide routing fields")
+    }
+    if (forumPreparation == null && form == null) {
+        throw IOException("Comment form was not found; the session may have expired")
+    }
     val parentId = commentParentId(targetUrl)
-    val previousComments = parseComments(initialDocument, parentId)
     val previousIds = previousComments.mapTo(mutableSetOf()) { it.id }
 
     AppLogger.i(
@@ -168,8 +186,7 @@ fun EsjzoneClient.submitForumComment(
     // Both forum threads and novel-detail discussions are submitted to the
     // same ESJ reply endpoint.  A detail form uses `data=books` and
     // `forum_id=0`, but it still requires the page-scoped dynamic token.
-    val forumReply = data == "forum" || data == "books"
-    if (forumReply) {
+    if (forumPreparation != null) {
         // ESJ issues a single-use dynamic token from the page being commented on.
         // Request it and submit through a scoped client with an 8-second read timeout
         // so writes fail fast instead of blocking UI.
@@ -182,12 +199,8 @@ fun EsjzoneClient.submitForumComment(
         val token = requestForumReplyAuthToken(writeClient, targetUrl)
         val bodyBuilder = FormBody.Builder()
             .add("content", submittedContent)
-            .add("data", data ?: throw ForumReplyProtocolException(
-                "Forum comment form did not provide data"
-            ))
-            .add("forum_id", forumId ?: throw ForumReplyProtocolException(
-                "Forum comment form did not provide forum_id"
-            ))
+            .add("data", forumPreparation.data)
+            .add("forum_id", forumPreparation.forumId)
         replyToken?.trim()?.takeIf { it.isNotBlank() }?.let { tokenValue ->
             bodyBuilder.add("reply", tokenValue)
         }
@@ -234,8 +247,8 @@ fun EsjzoneClient.submitForumComment(
             ?: replyResponse.id?.trim()?.takeIf { it.isNotBlank() }
             ?: "$parentId-${System.currentTimeMillis()}"
 
-        val currentUserName = initialDocument.selectFirst("nav a[href*='/my/profile']")?.text()?.trim()?.takeIf { it.isNotBlank() }
-        val currentUserAvatar = initialDocument.selectFirst("nav a[href*='/my/profile'] img")?.let(::resolveImageUrl)
+        val currentUserName = forumPreparation.currentUserName
+        val currentUserAvatar = forumPreparation.currentUserAvatar
 
         val createdComment = Comment(
             id = createdCommentId,
@@ -255,13 +268,18 @@ fun EsjzoneClient.submitForumComment(
         return CommentSubmission(previousComments + createdComment, createdComment)
     } else {
         // Guestbook and non-forum forms
+        val guestbookForm = form ?: throw IOException("Comment form was not found")
+        val data = guestbookForm.selectFirst("[name=data]")
+            ?.attr("value")?.trim()?.takeIf { it.isNotBlank() }
+        val forumId = guestbookForm.selectFirst("[name=forum_id]")
+            ?.attr("value")?.trim()?.takeIf { it.isNotBlank() }
         val writeClient = authenticatedClient(authorization).newBuilder()
             .connectTimeout(5, TimeUnit.SECONDS)
             .readTimeout(8, TimeUnit.SECONDS)
             .callTimeout(12, TimeUnit.SECONDS)
             .build()
         val bodyBuilder = FormBody.Builder().add("content", submittedContent)
-        form.select("input[type=hidden][name]").forEach { input ->
+        guestbookForm.select("input[type=hidden][name]").forEach { input ->
             val name = input.attr("name").trim()
             if (name.isNotBlank() && name != "content" && name != "data" &&
                 name != "forum_id" && !(name == "reply" && !replyToken.isNullOrBlank())
@@ -271,7 +289,7 @@ fun EsjzoneClient.submitForumComment(
         forumId?.let { bodyBuilder.add("forum_id", it) }
         replyToken?.trim()?.takeIf { it.isNotBlank() }?.let { bodyBuilder.add("reply", it) }
         val actionUrl = EsjzoneUrls.resolve(
-            form.absUrl("action").ifBlank { targetUrl }, targetUrl
+            guestbookForm.absUrl("action").ifBlank { targetUrl }, targetUrl
         ).ifBlank { targetUrl }.substringBefore('#')
         val responseBody = try {
             writeClient.newCall(
@@ -307,6 +325,34 @@ fun EsjzoneClient.submitForumComment(
 
         return CommentSubmission(comments, createdComment)
     }
+}
+
+private fun forumPreparation(
+    document: Document,
+    targetUrl: String,
+    comments: List<Comment>
+): ForumCommentPreparation? {
+    val form = document.selectFirst("form.commentEditor") ?: return null
+    val forumId = form.selectFirst("[name=forum_id]")
+        ?.attr("value")?.trim()?.takeIf { it.isNotBlank() }
+        ?: POST_URL.find(targetUrl)?.groupValues?.getOrNull(1)
+        ?: DETAIL_URL.find(targetUrl)?.let { "0" }
+        ?: return null
+    val data = form.selectFirst("[name=data]")
+        ?.attr("value")?.trim()?.takeIf { it.isNotBlank() }
+        ?: if (DETAIL_URL.containsMatchIn(targetUrl)) "books" else "forum"
+    if (data != "forum" && data != "books") return null
+    return ForumCommentPreparation(
+        targetUrl = targetUrl,
+        comments = comments,
+        data = data,
+        forumId = forumId,
+        currentUserName = document.selectFirst("nav a[href*='/my/profile']")
+            ?.text()?.trim()?.takeIf { it.isNotBlank() },
+        currentUserAvatar = document.selectFirst("nav a[href*='/my/profile'] img")
+            ?.let(::resolveImageUrl),
+        fetchedAtNanos = System.nanoTime()
+    )
 }
 
 internal fun parseForumReplyResponse(body: String): ForumReplyResponse {
