@@ -39,7 +39,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
+import com.breakyuna.esjzone.ui.designsystem.GlobalText as Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
@@ -64,7 +64,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.res.stringResource
+import com.breakyuna.esjzone.ui.designsystem.globalStringResource as stringResource
 import com.breakyuna.esjzone.R
 import com.breakyuna.esjzone.novellibrary.novel.CategoryNovel
 import com.breakyuna.esjzone.novellibrary.novel.CoveredNovel
@@ -96,7 +96,7 @@ fun DiscoveryTopBar(
         navigationIcon = {
             if (onBack != null) {
                 IconButton(onClick = onBack) {
-                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = androidx.compose.ui.res.stringResource(R.string.reader_back))
+                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = com.breakyuna.esjzone.ui.designsystem.globalStringResource(R.string.reader_back))
                 }
             }
         },
@@ -223,7 +223,7 @@ fun DiscoveryCategoryNovelCard(
             maxLines = 2,
             overflow = TextOverflow.Ellipsis
         )
-        Icon(Icons.Filled.ArrowForward, contentDescription = androidx.compose.ui.res.stringResource(R.string.forum_open_novel))
+        Icon(Icons.Filled.ArrowForward, contentDescription = com.breakyuna.esjzone.ui.designsystem.globalStringResource(R.string.forum_open_novel))
     }
 }
 
@@ -355,7 +355,7 @@ fun DiscoverySearchField(
     onSearch: () -> Unit,
     onClear: () -> Unit,
     modifier: Modifier = Modifier,
-    placeholder: String = androidx.compose.ui.res.stringResource(R.string.search_placeholder),
+    placeholder: String = com.breakyuna.esjzone.ui.designsystem.globalStringResource(R.string.search_placeholder),
     leadingIcon: @Composable (() -> Unit)? = null
 ) {
     val accessibilityLabel = stringResource(R.string.search_placeholder)
@@ -471,7 +471,7 @@ fun DiscoveryErrorState(
     onRetry: (() -> Unit)? = null
 ) {
     DiscoveryEmptyState(
-        title = androidx.compose.ui.res.stringResource(R.string.load_failed),
+        title = com.breakyuna.esjzone.ui.designsystem.globalStringResource(R.string.load_failed),
         message = message,
         modifier = modifier,
         onAction = onRetry
@@ -486,7 +486,7 @@ fun DiscoveryOfflineBanner(modifier: Modifier = Modifier) {
         shape = AppShapes.compact
     ) {
         Text(
-            text = androidx.compose.ui.res.stringResource(R.string.load_network_error),
+            text = com.breakyuna.esjzone.ui.designsystem.globalStringResource(R.string.load_network_error),
             style = AppTypography.bodySmall,
             modifier = Modifier.padding(horizontal = AppSpacing.md, vertical = AppSpacing.sm)
         )
@@ -511,10 +511,10 @@ fun LazyListScope.discoveryLoadingFooter(
             when {
                 errorMessage != null -> {
                     Text(errorMessage, style = AppTypography.bodySmall, color = MaterialTheme.colorScheme.error)
-                    if (onRetry != null) TextButton(onClick = onRetry) { Text(androidx.compose.ui.res.stringResource(R.string.retry)) }
+                    if (onRetry != null) TextButton(onClick = onRetry) { Text(com.breakyuna.esjzone.ui.designsystem.globalStringResource(R.string.retry)) }
                 }
                 loading -> LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-                else -> Text(androidx.compose.ui.res.stringResource(R.string.the_end), style = AppTypography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                else -> Text(com.breakyuna.esjzone.ui.designsystem.globalStringResource(R.string.the_end), style = AppTypography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
     }

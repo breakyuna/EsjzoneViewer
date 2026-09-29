@@ -45,7 +45,7 @@ private val MonochromeDarkColors = darkColorScheme(
     outline = Color(0xFF8A8A8A), outlineVariant = Color(0xFF2A2A2A), scrim = Color(0xFF000000)
 )
 
-/** One neutral visual identity which follows the system light/dark mode. */
+/** One neutral visual identity with a system-mode default. */
 @Composable
 fun AppTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),

@@ -18,7 +18,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.material3.Text
+import com.breakyuna.esjzone.ui.designsystem.GlobalText as Text
 import androidx.compose.ui.unit.dp
 
 /** Keep account pages comfortable to scan on both phones and wide tablets. */

@@ -25,6 +25,7 @@ import androidx.compose.material.icons.filled.Dns
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Language
+import androidx.compose.material.icons.filled.Translate
 import androidx.compose.material.icons.filled.MenuBook
 import androidx.compose.material.icons.filled.NoAdultContent
 import androidx.compose.material.icons.filled.Reorder
@@ -47,7 +48,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
-import androidx.compose.material3.Text
+import com.breakyuna.esjzone.ui.designsystem.GlobalText as Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
@@ -70,12 +71,13 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.res.stringResource
+import com.breakyuna.esjzone.ui.designsystem.globalStringResource as stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
 import com.breakyuna.esjzone.AppLanguage
+import com.breakyuna.esjzone.ui.reader.ReaderScript
 import com.breakyuna.esjzone.BuildConfig
 import com.breakyuna.esjzone.Constants
 import com.breakyuna.esjzone.update.ReleaseCheckState
@@ -128,6 +130,7 @@ object SettingsPage : AppDestination {
         val autoCheck by ReleaseUpdateChecker.autoCheck.collectAsStateWithLifecycle()
         var showLogout by remember { mutableStateOf(false) }
         var showLanguageDialog by remember { mutableStateOf(false) }
+        var showScriptDialog by remember { mutableStateOf(false) }
         var showStartupPageDialog by remember { mutableStateOf(false) }
         var switchingDomain by remember { mutableStateOf(false) }
         var siteUnavailable by remember { mutableStateOf(false) }
@@ -207,6 +210,18 @@ object SettingsPage : AppDestination {
                         title = stringResource(language.titleRes),
                         subtitle = stringResource(language.subtitleRes),
                         onClick = { showLanguageDialog = true }
+                    )
+                }
+
+                SettingsSection(Icons.Filled.Translate, stringResource(R.string.settings_script_section)) {
+                    SelectionSettingRow(
+                        title = stringResource(when (readerSettings.script) {
+                            ReaderScript.ORIGINAL -> R.string.reader_script_original
+                            ReaderScript.SIMPLIFIED -> R.string.reader_script_simplified
+                            ReaderScript.TRADITIONAL -> R.string.reader_script_traditional
+                        }),
+                        subtitle = stringResource(R.string.settings_script_description),
+                        onClick = { showScriptDialog = true }
                     )
                 }
 
@@ -575,6 +590,23 @@ object SettingsPage : AppDestination {
                 model.persist("language", candidate.code)
             },
             onDismiss = { showLanguageDialog = false }
+        )
+
+        if (showScriptDialog) SelectionDialog(
+            title = stringResource(R.string.settings_script_section),
+            options = listOf(
+                SelectionOption(ReaderScript.ORIGINAL.name, stringResource(R.string.reader_script_original), stringResource(R.string.settings_script_original_description)),
+                SelectionOption(ReaderScript.SIMPLIFIED.name, stringResource(R.string.reader_script_simplified), stringResource(R.string.settings_script_simplified_description)),
+                SelectionOption(ReaderScript.TRADITIONAL.name, stringResource(R.string.reader_script_traditional), stringResource(R.string.settings_script_traditional_description))
+            ),
+            selectedId = readerSettings.script.name,
+            onSelect = { selected ->
+                showScriptDialog = false
+                PresentationAccess.readerSettings.saveInBackground(
+                    readerSettings.copy(script = ReaderScript.valueOf(selected))
+                )
+            },
+            onDismiss = { showScriptDialog = false }
         )
 
         if (showStartupPageDialog) SelectionDialog(

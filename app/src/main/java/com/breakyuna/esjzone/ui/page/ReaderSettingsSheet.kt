@@ -1,200 +1,218 @@
 package com.breakyuna.esjzone.ui.page
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.interaction.DragInteraction
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ChevronLeft
+import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material.icons.filled.Brightness4
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.res.stringResource
+import com.breakyuna.esjzone.ui.designsystem.globalStringResource as stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.breakyuna.esjzone.R
-import com.breakyuna.esjzone.ui.reader.*
+import com.breakyuna.esjzone.AppThemeMode
+import com.breakyuna.esjzone.app.PresentationAccess
 import com.breakyuna.esjzone.ui.designsystem.AppSpacing
-import com.breakyuna.esjzone.ui.designsystem.AppShapes
+import com.breakyuna.esjzone.ui.designsystem.GlobalText as Text
+import com.breakyuna.esjzone.ui.reader.*
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlin.math.roundToInt
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun ReaderSettingsSheet(
     visible: Boolean,
     settings: ReaderSettings,
-    previewText: String,
     onSettingsChange: (ReaderSettings) -> Unit,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    modifier: Modifier = Modifier
 ) {
     var tab by rememberSaveable { mutableIntStateOf(0) }
-    if (!visible) return
     var draft by remember(settings) { mutableStateOf(settings) }
     var confirmReset by remember { mutableStateOf(false) }
     var showLicenses by remember { mutableStateOf(false) }
+    val themeMode by PresentationAccess.settings.themeMode
+    val systemDark = isSystemInDarkTheme()
+    val darkTheme = when (themeMode) {
+        AppThemeMode.SYSTEM -> systemDark
+        AppThemeMode.LIGHT -> false
+        AppThemeMode.DARK -> true
+    }
     fun commit(value: ReaderSettings) {
         draft = value
         onSettingsChange(value)
     }
-    val maximumHeight = (LocalConfiguration.current.screenHeightDp * 0.9f).dp
-    ModalBottomSheet(
-        onDismissRequest = onDismiss,
-        modifier = Modifier.heightIn(max = maximumHeight),
-        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
-        sheetMaxWidth = 640.dp
+
+    AnimatedVisibility(
+        visible = visible,
+        modifier = modifier,
+        enter = slideInVertically(initialOffsetY = { it }) + fadeIn(),
+        exit = slideOutVertically(targetOffsetY = { it }) + fadeOut()
     ) {
-        Column(Modifier.fillMaxWidth()) {
-            Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text(stringResource(R.string.reader_settings), style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
-                TextButton(onClick = { confirmReset = true }) { Text(stringResource(R.string.reader_reset)) }
-                IconButton(onClick = onDismiss) { Icon(Icons.Default.Close, stringResource(R.string.close)) }
-            }
-            TabRow(selectedTabIndex = tab) {
-                listOf(R.string.reader_tab_appearance, R.string.reader_tab_layout, R.string.reader_tab_controls).forEachIndexed { index, label ->
-                    Tab(selected = tab == index, onClick = { draft = settings; tab = index }, text = { Text(stringResource(label)) })
+        Surface(
+            modifier = Modifier.widthIn(max = 640.dp).fillMaxWidth()
+                .height((LocalConfiguration.current.screenHeightDp * 0.5f).dp),
+            shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
+            color = MaterialTheme.colorScheme.surface,
+            shadowElevation = 12.dp
+        ) {
+            Column {
+                Row(
+                    Modifier.fillMaxWidth().padding(start = 16.dp, end = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(stringResource(R.string.reader_settings), style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+                    TextButton(onClick = { confirmReset = true }) { Text(stringResource(R.string.reader_reset)) }
+                    IconButton(onClick = onDismiss) { Icon(Icons.Default.Close, stringResource(R.string.close)) }
                 }
-            }
-            key(tab) {
-                Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState()).padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    if (tab != 2) {
-                        Surface(color = draft.background.containerColor(), contentColor = draft.background.contentColor(), shape = AppShapes.prominent) {
-                            Column(Modifier.fillMaxWidth().padding(horizontal = draft.horizontalPaddingDp.dp, vertical = 16.dp)) {
-                                Text(stringResource(R.string.reader_live_preview), style = MaterialTheme.typography.labelMedium)
-                                val sample = previewText.take(100).ifBlank { stringResource(R.string.reader_preview_sample) }
-                                val style = MaterialTheme.typography.bodyLarge.copy(fontFamily = draft.font.family(), fontSize = draft.fontSizeSp.sp, lineHeight = draft.lineHeightSp.sp, letterSpacing = draft.letterSpacingSp.sp)
-                                Text(sample, style = style, maxLines = 3, modifier = Modifier.padding(top = 12.dp))
-                                Spacer(Modifier.height(draft.paragraphSpacingDp.dp))
-                                Text(stringResource(R.string.reader_preview_sample), style = style, maxLines = 2)
-                                if (tab == 1) {
-                                    Spacer(Modifier.height(draft.pageSpacingDp.dp))
-                                    HorizontalDivider(color = draft.background.contentColor().copy(alpha = 0.2f))
-                                    Text(stringResource(R.string.reader_chapter_spacing), style = MaterialTheme.typography.labelSmall)
-                                }
-                            }
-                        }
+                TabRow(selectedTabIndex = tab) {
+                    listOf(R.string.reader_tab_appearance, R.string.reader_tab_controls).forEachIndexed { index, label ->
+                        Tab(selected = tab == index, onClick = { tab = index }, text = { Text(stringResource(label)) })
                     }
-                    when (tab) {
-                        0 -> {
-                            Text(stringResource(R.string.reader_background), style = MaterialTheme.typography.titleSmall)
-                            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                ReaderBackground.entries.forEach { background ->
-                                    FilterChip(selected = draft.background == background, onClick = { commit(draft.copy(background = background)) },
-                                        label = { Text(stringResource(background.label())) },
-                                        leadingIcon = { Surface(color = background.containerColor(), border = androidx.compose.foundation.BorderStroke(1.dp, background.contentColor().copy(alpha = 0.3f)), shape = AppShapes.pill) { Spacer(Modifier.size(22.dp)) } })
+                }
+                Column(
+                    Modifier.weight(1f).verticalScroll(rememberScrollState())
+                        .padding(horizontal = 16.dp, vertical = 8.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    if (tab == 0) {
+                        Text(stringResource(R.string.reader_background), style = MaterialTheme.typography.titleSmall)
+                        Row(
+                            Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Surface(
+                                onClick = {
+                                    PresentationAccess.settings.setThemeMode(AppThemeMode.SYSTEM)
+                                    commit(draft.copy(background = ReaderBackground.SYSTEM))
+                                },
+                                modifier = Modifier.size(48.dp),
+                                shape = CircleShape,
+                                color = Color.Transparent,
+                                border = BorderStroke(
+                                    if (draft.background == ReaderBackground.SYSTEM && themeMode == AppThemeMode.SYSTEM) 2.dp else 1.dp,
+                                    if (draft.background == ReaderBackground.SYSTEM && themeMode == AppThemeMode.SYSTEM)
+                                        MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline
+                                )
+                            ) {
+                                Box(contentAlignment = Alignment.Center) {
+                                    Text(stringResource(R.string.reader_background_system), style = MaterialTheme.typography.labelSmall)
                                 }
                             }
-                            Text(stringResource(R.string.reader_font), style = MaterialTheme.typography.titleSmall)
-                            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                ReaderFont.entries.forEach { font ->
-                                    Surface(onClick = { commit(draft.copy(font = font)) }, shape = AppShapes.standard,
-                                        color = if (draft.font == font) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceContainer,
-                                        border = if (draft.font == font) androidx.compose.foundation.BorderStroke(2.dp, MaterialTheme.colorScheme.primary) else null) {
-                                        Column(Modifier.widthIn(min = 140.dp).padding(12.dp)) {
-                                            val sampleFont = if (draft.font == font) font.family() else FontFamily.Default
-                                            Text((if (draft.font == font) "✓ " else "") + stringResource(font.label()), fontFamily = sampleFont, style = MaterialTheme.typography.titleMedium)
-                                            Text(stringResource(R.string.reader_font_sample), fontFamily = sampleFont, fontSize = 16.sp)
-                                            if (draft.font == font && !ReaderFontStore.isAvailable(font)) Text(stringResource(R.string.reader_font_downloading), style = MaterialTheme.typography.labelSmall)
-                                        }
+                            Surface(
+                                onClick = {
+                                    PresentationAccess.settings.setThemeMode(
+                                        if (darkTheme) AppThemeMode.LIGHT else AppThemeMode.DARK
+                                    )
+                                    commit(draft.copy(background = ReaderBackground.SYSTEM))
+                                },
+                                modifier = Modifier.size(48.dp),
+                                shape = CircleShape,
+                                color = if (darkTheme) Color(0xFF333333) else Color(0xFFEAEAEA),
+                                border = BorderStroke(
+                                    if (draft.background == ReaderBackground.SYSTEM && themeMode != AppThemeMode.SYSTEM) 2.dp else 1.dp,
+                                    if (draft.background == ReaderBackground.SYSTEM && themeMode != AppThemeMode.SYSTEM)
+                                        MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline
+                                )
+                            ) {
+                                Box(contentAlignment = Alignment.Center) {
+                                    Icon(
+                                        Icons.Default.Brightness4,
+                                        contentDescription = stringResource(
+                                            if (darkTheme) R.string.reader_theme_switch_light else R.string.reader_theme_switch_dark
+                                        ),
+                                        tint = if (darkTheme) Color.White else Color.Black,
+                                        modifier = Modifier.size(24.dp)
+                                    )
+                                }
+                            }
+                            ReaderBackground.entries.filterNot { it == ReaderBackground.SYSTEM }.forEach { background ->
+                                FilterChip(
+                                    selected = draft.background == background,
+                                    onClick = { commit(draft.copy(background = background)) },
+                                    label = { Text(stringResource(background.label())) },
+                                    leadingIcon = {
+                                        Surface(
+                                            color = background.containerColor(),
+                                            border = BorderStroke(1.dp, background.contentColor().copy(alpha = 0.3f)),
+                                            shape = RoundedCornerShape(50)
+                                        ) { Spacer(Modifier.size(18.dp)) }
                                     }
-                                }
+                                )
                             }
-                            Text(stringResource(R.string.reader_script), style = MaterialTheme.typography.titleSmall)
-                            ReaderSettingChoices(draft.script, listOf(ReaderScript.ORIGINAL to stringResource(R.string.reader_script_original), ReaderScript.SIMPLIFIED to stringResource(R.string.reader_script_simplified), ReaderScript.TRADITIONAL to stringResource(R.string.reader_script_traditional))) { commit(draft.copy(script = it)) }
-                            TextButton(onClick = { showLicenses = true }) { Text(stringResource(R.string.reader_font_licenses)) }
                         }
-                        1 -> {
-                            ReaderSettingSlider(
-                                label = stringResource(id = R.string.reader_font_size),
-                                value = settings.fontSizeSp,
-                                onValueChange = { draft = draft.copy(fontSizeSp = it) },
-                                valueLabel = { "${it.roundToInt()}sp" },
-                                valueRange = 14f..30f,
-                                steps = 15,
-                                onValueChangeFinished = { value ->
-                                    commit(draft.copy(fontSizeSp = value))
-                                }
-                            )
-                            ReaderSettingSlider(
-                                label = stringResource(id = R.string.reader_letter_spacing),
-                                value = settings.letterSpacingSp,
-                                onValueChange = { draft = draft.copy(letterSpacingSp = it) },
-                                valueLabel = { "${(it * 10f).roundToInt() / 10f}sp" },
-                                valueRange = 0f..2f,
-                                steps = 19,
-                                onValueChangeFinished = { value ->
-                                    commit(draft.copy(letterSpacingSp = value))
-                                }
-                            )
-                            ReaderSettingSlider(
-                                label = stringResource(id = R.string.reader_line_spacing),
-                                value = settings.lineSpacingSp,
-                                onValueChange = { draft = draft.copy(lineSpacingSp = it) },
-                                valueLabel = { "${it.roundToInt()}sp" },
-                                valueRange = 4f..24f,
-                                steps = 19,
-                                onValueChangeFinished = { value ->
-                                    commit(draft.copy(lineSpacingSp = value))
-                                }
-                            )
-                            ReaderSettingSlider(
-                                label = stringResource(id = R.string.reader_paragraph_spacing),
-                                value = settings.paragraphSpacingDp,
-                                onValueChange = { draft = draft.copy(paragraphSpacingDp = it) },
-                                valueLabel = { "${it.roundToInt()}dp" },
-                                valueRange = 0f..32f,
-                                steps = 15,
-                                onValueChangeFinished = { value ->
-                                    commit(draft.copy(paragraphSpacingDp = value))
-                                }
-                            )
-                            ReaderSettingSlider(
-                                label = stringResource(id = R.string.reader_chapter_spacing),
-                                value = settings.pageSpacingDp,
-                                onValueChange = { draft = draft.copy(pageSpacingDp = it) },
-                                valueLabel = { "${it.roundToInt()}dp" },
-                                valueRange = 16f..80f,
-                                steps = 15,
-                                onValueChangeFinished = { value ->
-                                    commit(draft.copy(pageSpacingDp = value))
-                                }
-                            )
-                            ReaderSettingSlider(
-                                label = stringResource(id = R.string.reader_horizontal_padding),
-                                value = settings.horizontalPaddingDp,
-                                onValueChange = { draft = draft.copy(horizontalPaddingDp = it) },
-                                valueLabel = { "${it.roundToInt()}dp" },
-                                valueRange = 12f..48f,
-                                steps = 8,
-                                onValueChangeFinished = { value ->
-                                    commit(draft.copy(horizontalPaddingDp = value))
-                                }
-                            )
+                        Text(stringResource(R.string.reader_font), style = MaterialTheme.typography.titleSmall)
+                        Row(
+                            Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            ReaderFont.entries.forEach { font ->
+                                FilterChip(
+                                    selected = draft.font == font,
+                                    onClick = { commit(draft.copy(font = font)) },
+                                    label = {
+                                        Text(
+                                            stringResource(font.label()),
+                                            fontFamily = if (draft.font == font) font.family() else FontFamily.Default
+                                        )
+                                    }
+                                )
+                            }
                         }
-                        2 -> {
-                            ReaderToggle(stringResource(R.string.reader_tap_paging), stringResource(R.string.reader_tap_paging_help), draft.tapPagingEnabled) { commit(draft.copy(tapPagingEnabled = it)) }
-                            ReaderToggle(stringResource(R.string.reader_swipe_paging), stringResource(R.string.reader_swipe_paging_help), draft.horizontalSwipePagingEnabled) { commit(draft.copy(horizontalSwipePagingEnabled = it)) }
-                            ReaderToggle(stringResource(R.string.reader_volume_paging), stringResource(R.string.reader_volume_paging_help), draft.volumeKeyPaging) { commit(draft.copy(volumeKeyPaging = it)) }
-                            Text(stringResource(R.string.reader_paging_method), style = MaterialTheme.typography.titleSmall)
-                            ReaderSettingChoices(draft.pageAnimation, listOf(
-                                ReaderPageAnimation.VERTICAL_SCROLL to stringResource(R.string.reader_page_animation_vertical),
-                                ReaderPageAnimation.HORIZONTAL_SLIDE to stringResource(R.string.reader_page_animation_slide),
-                                ReaderPageAnimation.FADE to stringResource(R.string.reader_page_animation_fade),
-                                ReaderPageAnimation.COVER to stringResource(R.string.reader_page_animation_cover)
-                            )) { commit(draft.copy(pageAnimation = it)) }
+                        if (!ReaderFontStore.isAvailable(draft.font)) {
+                            Text(stringResource(R.string.reader_font_downloading), style = MaterialTheme.typography.labelSmall)
                         }
+                        ReaderLayoutSlider(draft, settings, ::commit) { draft = it }
+                        Text(stringResource(R.string.reader_script), style = MaterialTheme.typography.titleSmall)
+                        ReaderSettingChoices(draft.script, listOf(
+                            ReaderScript.ORIGINAL to stringResource(R.string.reader_script_original),
+                            ReaderScript.SIMPLIFIED to stringResource(R.string.reader_script_simplified),
+                            ReaderScript.TRADITIONAL to stringResource(R.string.reader_script_traditional)
+                        )) { commit(draft.copy(script = it)) }
+                        TextButton(onClick = { showLicenses = true }) { Text(stringResource(R.string.reader_font_licenses)) }
+                    } else {
+                        ReaderToggle(stringResource(R.string.reader_tap_paging), draft.tapPagingEnabled) { commit(draft.copy(tapPagingEnabled = it)) }
+                        ReaderToggle(stringResource(R.string.reader_swipe_paging), draft.horizontalSwipePagingEnabled) { commit(draft.copy(horizontalSwipePagingEnabled = it)) }
+                        ReaderToggle(stringResource(R.string.reader_volume_paging), draft.volumeKeyPaging) { commit(draft.copy(volumeKeyPaging = it)) }
+                        Text(stringResource(R.string.reader_paging_method), style = MaterialTheme.typography.titleSmall)
+                        ReaderSettingChoices(draft.pageAnimation, listOf(
+                            ReaderPageAnimation.VERTICAL_SCROLL to stringResource(R.string.reader_page_animation_vertical),
+                            ReaderPageAnimation.HORIZONTAL_SLIDE to stringResource(R.string.reader_page_animation_slide),
+                            ReaderPageAnimation.FADE to stringResource(R.string.reader_page_animation_fade),
+                            ReaderPageAnimation.COVER to stringResource(R.string.reader_page_animation_cover)
+                        )) { commit(draft.copy(pageAnimation = it)) }
                     }
                 }
             }
         }
     }
+
     if (confirmReset) AlertDialog(onDismissRequest = { confirmReset = false }, title = { Text(stringResource(R.string.reader_reset)) }, text = { Text(stringResource(R.string.reader_reset_confirmation)) }, confirmButton = { TextButton(onClick = { commit(ReaderSettings()); confirmReset = false }) { Text(stringResource(R.string.reader_reset)) } }, dismissButton = { TextButton(onClick = { confirmReset = false }) { Text(stringResource(R.string.cancel)) } })
     if (showLicenses) {
         val context = LocalContext.current
@@ -208,15 +226,94 @@ internal fun ReaderSettingsSheet(
 }
 
 @Composable
-private fun ReaderToggle(title: String, description: String, checked: Boolean, onChange: (Boolean) -> Unit) {
-    Surface(shape = AppShapes.standard, color = MaterialTheme.colorScheme.surfaceContainer) {
-        Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f).padding(end = 12.dp)) {
-                Text(title, style = MaterialTheme.typography.titleSmall)
-                Text(description, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+private fun ReaderLayoutSlider(
+    draft: ReaderSettings,
+    settings: ReaderSettings,
+    commit: (ReaderSettings) -> Unit,
+    onDraftChange: (ReaderSettings) -> Unit
+) {
+    val labels = listOf(
+        R.string.reader_font_size, R.string.reader_letter_spacing,
+        R.string.reader_line_spacing, R.string.reader_paragraph_spacing,
+        R.string.reader_page_spacing, R.string.reader_horizontal_padding
+    )
+    val pagerState = rememberPagerState(pageCount = { labels.size })
+    val scope = rememberCoroutineScope()
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        IconButton(
+            onClick = { scope.launch { pagerState.animateScrollToPage(pagerState.currentPage - 1) } },
+            enabled = pagerState.currentPage > 0
+        ) { Icon(Icons.Default.ChevronLeft, stringResource(labels[(pagerState.currentPage - 1).coerceAtLeast(0)])) }
+        HorizontalPager(state = pagerState, modifier = Modifier.weight(1f)) { page ->
+            Box(Modifier.fillMaxWidth().height(44.dp), contentAlignment = Alignment.Center) {
+                Text(stringResource(labels[page]), style = MaterialTheme.typography.titleSmall)
             }
-            Switch(checked = checked, onCheckedChange = onChange)
         }
+        IconButton(
+            onClick = { scope.launch { pagerState.animateScrollToPage(pagerState.currentPage + 1) } },
+            enabled = pagerState.currentPage < labels.lastIndex
+        ) { Icon(Icons.Default.ChevronRight, stringResource(labels[(pagerState.currentPage + 1).coerceAtMost(labels.lastIndex)])) }
+    }
+    val index = pagerState.currentPage
+    val value = when (index) {
+        0 -> settings.fontSizeSp
+        1 -> settings.letterSpacingSp
+        2 -> settings.lineSpacingSp
+        3 -> settings.paragraphSpacingDp
+        4 -> settings.pageSpacingDp
+        else -> settings.horizontalPaddingDp
+    }
+    val valueRange = when (index) {
+        0 -> 14f..30f
+        1 -> 0f..2f
+        2 -> 4f..24f
+        3 -> 0f..32f
+        4 -> 16f..80f
+        else -> 12f..48f
+    }
+    val steps = when (index) {
+        0, 3, 4 -> 15
+        1, 2 -> 19
+        else -> 8
+    }
+    key(index) {
+        ReaderSettingSlider(
+            value = value,
+            valueLabel = {
+                val amount = if (index == 1) "${(it * 10f).roundToInt() / 10f}" else "${it.roundToInt()}"
+                amount + if (index >= 3) "dp" else "sp"
+            },
+            valueRange = valueRange,
+            steps = steps,
+            onValueChange = { changed ->
+                onDraftChange(when (index) {
+                    0 -> draft.copy(fontSizeSp = changed)
+                    1 -> draft.copy(letterSpacingSp = changed)
+                    2 -> draft.copy(lineSpacingSp = changed)
+                    3 -> draft.copy(paragraphSpacingDp = changed)
+                    4 -> draft.copy(pageSpacingDp = changed)
+                    else -> draft.copy(horizontalPaddingDp = changed)
+                })
+            },
+            onValueChangeFinished = { changed ->
+                commit(when (index) {
+                    0 -> draft.copy(fontSizeSp = changed)
+                    1 -> draft.copy(letterSpacingSp = changed)
+                    2 -> draft.copy(lineSpacingSp = changed)
+                    3 -> draft.copy(paragraphSpacingDp = changed)
+                    4 -> draft.copy(pageSpacingDp = changed)
+                    else -> draft.copy(horizontalPaddingDp = changed)
+                })
+            }
+        )
+    }
+}
+
+@Composable
+private fun ReaderToggle(title: String, checked: Boolean, onChange: (Boolean) -> Unit) {
+    Row(Modifier.fillMaxWidth().heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text(title, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+        Switch(checked = checked, onCheckedChange = onChange)
     }
 }
 
@@ -242,28 +339,16 @@ private fun ReaderBackground.label(): Int = when (this) {
 }
 
 @Composable
-private fun <T> ReaderSettingChoices(
-    selected: T,
-    options: List<Pair<T, String>>,
-    onSelected: (T) -> Unit
-) {
-    FlowRow(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(AppSpacing.sm)
-    ) {
+private fun <T> ReaderSettingChoices(selected: T, options: List<Pair<T, String>>, onSelected: (T) -> Unit) {
+    FlowRow(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(AppSpacing.sm)) {
         options.forEach { (value, label) ->
-            FilterChip(
-                selected = selected == value,
-                onClick = { onSelected(value) },
-                label = { Text(text = label) }
-            )
+            FilterChip(selected = selected == value, onClick = { onSelected(value) }, label = { Text(label) })
         }
     }
 }
 
 @Composable
 private fun ReaderSettingSlider(
-    label: String,
     value: Float,
     valueLabel: (Float) -> String,
     valueRange: ClosedFloatingPointRange<Float>,
@@ -283,22 +368,7 @@ private fun ReaderSettingSlider(
             }
         }
     }
-    Column(modifier = Modifier.padding(top = AppSpacing.md)) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                text = label,
-                style = MaterialTheme.typography.bodyMedium,
-                modifier = Modifier.weight(1f)
-            )
-            Text(
-                text = valueLabel(sliderPosition),
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.primary
-            )
-        }
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
         Slider(
             value = sliderPosition,
             interactionSource = interactionSource,
@@ -306,7 +376,8 @@ private fun ReaderSettingSlider(
             onValueChangeFinished = { onValueChangeFinished(sliderPosition) },
             valueRange = valueRange,
             steps = steps,
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier.fillMaxWidth().height(40.dp)
         )
+        Text(valueLabel(sliderPosition), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
     }
 }

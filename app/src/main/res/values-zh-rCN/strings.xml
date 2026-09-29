@@ -369,6 +369,11 @@
     <string name="settings_mirror_unavailable_title">站点暂不可用</string>
     <string name="settings_mirror_unavailable_message">当前账号尚未在该站点建立会话，请稍后重试登录。</string>
     <string name="settings_language_section">界面语言</string>
+    <string name="settings_script_section">全局繁简字</string>
+    <string name="settings_script_description">应用界面和网站内容的文字显示方式</string>
+    <string name="settings_script_original_description">保留原有文字</string>
+    <string name="settings_script_simplified_description">统一显示简体字</string>
+    <string name="settings_script_traditional_description">统一显示繁體字</string>
     <string name="settings_language_description">选择应用显示语言，可跟随系统或手动指定。</string>
     <string name="settings_language_system">跟随系统</string>
     <string name="settings_language_system_description">跟随 Android 系统语言设置</string>
@@ -455,7 +460,9 @@
     <string name="reader_page_animation_cover">覆盖翻页</string>
     <string name="reader_reset">恢复默认</string>
     <string name="reader_background">背景颜色</string>
-    <string name="reader_background_system">跟随主题</string>
+    <string name="reader_background_system">系统</string>
+    <string name="reader_theme_switch_light">切换应用为浅色模式</string>
+    <string name="reader_theme_switch_dark">切换应用为深色模式</string>
     <string name="reader_background_paper">纸张</string>
     <string name="reader_background_sepia">护眼</string>
     <string name="reader_background_dark">深色</string>
@@ -494,7 +501,6 @@
     <string name="reader_preview_origin">原阅读位置：%1$s</string>
     <string name="reader_preview_return">返回原阅读位置</string>
     <string name="reader_preview_dismiss_hint">点击正文区域可关闭预览</string>
-    <string name="reader_live_preview">排版预览</string>
     <string name="reader_contents_action">目录</string>
     <string name="reader_settings_action">设置</string>
     <string name="reader_comments_action">评论</string>
@@ -652,22 +658,15 @@
     <string name="novel_download_range_error">请输入 1–%1$d 内的整数，终止序号不能小于起始序号。</string>
     <string name="novel_download_range_confirm">确定</string>
     <string name="novel_download_selection_too_large">所选章节超过单次任务容量，请缩小范围分批下载；输入完整目录范围可下载全书。</string>
-    <string name="reader_tab_appearance">外观</string>
-    <string name="reader_tab_layout">排版</string>
+    <string name="reader_tab_appearance">外观与排版</string>
     <string name="reader_tab_controls">操作</string>
     <string name="reader_font_source_serif">思源宋体</string>
     <string name="reader_font_source_sans">思源黑体</string>
     <string name="reader_font_wenkai">霞鹜文楷</string>
     <string name="reader_font_downloading">正在下载，暂用默认字体</string>
-    <string name="reader_font_sample">山间清风 · 阅读时光</string>
-    <string name="reader_preview_sample">清风翻过书页，故事缓缓展开。在文字之间，找到舒适的阅读节奏。</string>
     <string name="reader_font_licenses">字体授权</string>
-    <string name="reader_chapter_spacing">章节间距</string>
     <string name="reader_tap_paging">点击两侧翻页</string>
-    <string name="reader_tap_paging_help">关闭后，轻点正文任意位置可显示或隐藏工具栏。</string>
     <string name="reader_swipe_paging">横滑翻页</string>
-    <string name="reader_swipe_paging_help">左右滑动翻页，同时保留上下滚动。</string>
     <string name="reader_volume_paging">音量键翻页</string>
-    <string name="reader_volume_paging_help">阅读时使用音量键上下翻页。</string>
     <string name="reader_reset_confirmation">将全部阅读设置恢复为默认值？</string>
 </resources>

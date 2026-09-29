@@ -4,6 +4,7 @@ import androidx.compose.runtime.State
 import androidx.compose.runtime.mutableStateOf
 import coil3.ImageLoader
 import com.breakyuna.esjzone.AppLanguage
+import com.breakyuna.esjzone.AppThemeMode
 import com.breakyuna.esjzone.EsjzoneApplication
 import com.breakyuna.esjzone.data.settings.ReaderSettingsDataStore
 import com.breakyuna.esjzone.data.settings.SettingsDefaults
@@ -77,6 +78,7 @@ object SettingsStateBoundary {
     private var boundRepository: SettingsRepository? = null
 
     private val _adult = mutableStateOf(true)
+    private val _themeMode = mutableStateOf(AppThemeMode.SYSTEM)
     private val _hideHomeRecommendations = mutableStateOf(false)
     private val _domain = mutableStateOf(SettingsDefaults.DOMAINS.first())
     private val _language = mutableStateOf(AppLanguage.SYSTEM)
@@ -94,6 +96,7 @@ object SettingsStateBoundary {
             if (boundRepository === repository) return repository
             boundRepository = repository
             _adult.value = repository.adult.value
+            _themeMode.value = repository.themeMode.value
             _hideHomeRecommendations.value = repository.hideHomeRecommendations.value
             _domain.value = repository.domain.value
             _language.value = repository.language.value
@@ -104,6 +107,7 @@ object SettingsStateBoundary {
             _navigationOrder.value = repository.navigationOrder.value
             _startTab.value = repository.startTab.value
             scope.launch { repository.adult.collect { _adult.value = it } }
+            scope.launch { repository.themeMode.collect { _themeMode.value = it } }
             scope.launch { repository.hideHomeRecommendations.collect { _hideHomeRecommendations.value = it } }
             scope.launch { repository.domain.collect { _domain.value = it } }
             scope.launch { repository.language.collect { _language.value = it } }
@@ -118,6 +122,7 @@ object SettingsStateBoundary {
     }
 
     val adult: State<Boolean> get() { repository(); return _adult }
+    val themeMode: State<AppThemeMode> get() { repository(); return _themeMode }
     val hideHomeRecommendations: State<Boolean> get() { repository(); return _hideHomeRecommendations }
     val adultFlow: StateFlow<Boolean> get() = repository().adult
     val domain: State<String> get() { repository(); return _domain }
@@ -138,6 +143,10 @@ object SettingsStateBoundary {
     val startTabFlow: StateFlow<String> get() = repository().startTab
 
     fun setAdult(value: Boolean) = repository().setAdult(value)
+    fun setThemeMode(value: AppThemeMode) {
+        repository().setThemeMode(value)
+        _themeMode.value = value
+    }
     fun setHideHomeRecommendations(value: Boolean) = repository().setHideHomeRecommendations(value)
     fun setDomain(value: String) = repository().setDomain(value)
     fun setLanguage(value: AppLanguage) = repository().setLanguage(value)

@@ -3,15 +3,15 @@ package com.breakyuna.esjzone.update
 import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.net.Uri
-import android.widget.Toast
+import com.breakyuna.esjzone.ui.designsystem.GlobalToast as Toast
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Text
+import com.breakyuna.esjzone.ui.designsystem.GlobalText as Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.res.stringResource
+import com.breakyuna.esjzone.ui.designsystem.globalStringResource as stringResource
 import com.breakyuna.esjzone.BuildConfig
 import com.breakyuna.esjzone.R
 import com.breakyuna.esjzone.ui.designsystem.AppShapes

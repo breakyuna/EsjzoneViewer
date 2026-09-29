@@ -3,7 +3,7 @@ package com.breakyuna.esjzone.ui.navigation
 import android.app.Activity
 import android.content.Context
 import android.content.ContextWrapper
-import android.widget.Toast
+import com.breakyuna.esjzone.ui.designsystem.GlobalToast as Toast
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.LocalActivity
 import androidx.compose.runtime.Composable
@@ -13,7 +13,7 @@ import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.res.stringResource
+import com.breakyuna.esjzone.ui.designsystem.globalStringResource as stringResource
 import com.breakyuna.esjzone.R
 
 /**

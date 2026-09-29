@@ -369,6 +369,11 @@
     <string name="settings_mirror_unavailable_title">Site unavailable</string>
     <string name="settings_mirror_unavailable_message">This account has no session on that site yet. Try signing in again later.</string>
     <string name="settings_language_section">Language</string>
+    <string name="settings_script_section">App-wide Chinese script</string>
+    <string name="settings_script_description">Chinese text in the app and website content</string>
+    <string name="settings_script_original_description">Keep the original text</string>
+    <string name="settings_script_simplified_description">Display Simplified Chinese</string>
+    <string name="settings_script_traditional_description">Display Traditional Chinese</string>
     <string name="settings_language_description">Choose the app display language or follow the system default.</string>
     <string name="settings_language_system">System Default</string>
     <string name="settings_language_system_description">Follow Android system language</string>
@@ -456,6 +461,8 @@
     <string name="reader_reset">Reset</string>
     <string name="reader_background">Background</string>
     <string name="reader_background_system">System</string>
+    <string name="reader_theme_switch_light">Switch app to light mode</string>
+    <string name="reader_theme_switch_dark">Switch app to dark mode</string>
     <string name="reader_background_paper">Paper</string>
     <string name="reader_background_sepia">Sepia</string>
     <string name="reader_background_dark">Dark</string>
@@ -494,7 +501,6 @@
     <string name="reader_preview_origin">Original position: %1$s</string>
     <string name="reader_preview_return">Return to original position</string>
     <string name="reader_preview_dismiss_hint">Tap the reading area to close this preview</string>
-    <string name="reader_live_preview">Live preview</string>
     <string name="reader_contents_action">Contents</string>
     <string name="reader_settings_action">Settings</string>
     <string name="reader_comments_action">Comments</string>
@@ -652,22 +658,15 @@
     <string name="novel_download_range_error">Enter whole numbers from 1 to %1$d. The end must be at or after the start.</string>
     <string name="novel_download_range_confirm">Confirm</string>
     <string name="novel_download_selection_too_large">This selection exceeds the task limit. Download smaller ranges separately, or enter the full table of contents range to download the whole book.</string>
-    <string name="reader_tab_appearance">Appearance</string>
-    <string name="reader_tab_layout">Typography</string>
+    <string name="reader_tab_appearance">Appearance &amp; typography</string>
     <string name="reader_tab_controls">Controls</string>
     <string name="reader_font_source_serif">Source Han Serif</string>
     <string name="reader_font_source_sans">Source Han Sans</string>
     <string name="reader_font_wenkai">LXGW WenKai</string>
     <string name="reader_font_downloading">Downloading; using default for now</string>
-    <string name="reader_font_sample">山间清风 · 阅读时光</string>
-    <string name="reader_preview_sample">A gentle breeze turns the pages. Find a comfortable rhythm for your next chapter.</string>
     <string name="reader_font_licenses">Font licenses</string>
-    <string name="reader_chapter_spacing">Chapter spacing</string>
     <string name="reader_tap_paging">Tap to turn pages</string>
-    <string name="reader_tap_paging_help">When off, tap anywhere in the text to toggle the toolbar.</string>
     <string name="reader_swipe_paging">Swipe to turn pages</string>
-    <string name="reader_swipe_paging_help">Swipe left or right to turn a page. Vertical scrolling stays available.</string>
     <string name="reader_volume_paging">Volume key paging</string>
-    <string name="reader_volume_paging_help">Use volume keys to turn pages while reading.</string>
     <string name="reader_reset_confirmation">Restore all reader settings to their defaults?</string>
 </resources>

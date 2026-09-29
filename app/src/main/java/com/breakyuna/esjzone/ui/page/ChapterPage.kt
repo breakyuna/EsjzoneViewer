@@ -17,6 +17,7 @@ import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.gestures.animateScrollBy
@@ -63,7 +64,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
+import com.breakyuna.esjzone.ui.designsystem.GlobalText as Text
 import androidx.compose.material3.TextButton
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -79,6 +80,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
@@ -97,8 +99,9 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.core.view.WindowCompat
-import androidx.compose.ui.res.stringResource
+import com.breakyuna.esjzone.ui.designsystem.globalStringResource as stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.ProgressBarRangeInfo
 import androidx.compose.ui.semantics.progressBarRangeInfo
@@ -126,6 +129,7 @@ import kotlinx.coroutines.withContext
 import kotlin.math.max
 import kotlin.math.roundToInt
 import com.breakyuna.esjzone.R
+import com.breakyuna.esjzone.AppThemeMode
 import com.breakyuna.esjzone.database.LocalReadingHistoryRecorder
 import com.breakyuna.esjzone.database.ReadingStatisticsSession
 import com.breakyuna.esjzone.database.readingStatisticsBookKey
@@ -208,22 +212,26 @@ class ChapterPage(
             null
         }
         val isLightBackground = readerSettings.background.containerColor().luminance() > 0.5f
+        val appThemeMode by PresentationAccess.settings.themeMode
+        val systemDark = isSystemInDarkTheme()
+        val appIsLight = when (appThemeMode) {
+            AppThemeMode.SYSTEM -> !systemDark
+            AppThemeMode.LIGHT -> true
+            AppThemeMode.DARK -> false
+        }
+        val currentAppIsLight by rememberUpdatedState(appIsLight)
 
         DisposableEffect(window, view) {
             val controller = window?.let { WindowCompat.getInsetsController(it, view) }
-            val originalStatusAppearance = controller?.isAppearanceLightStatusBars
-            val originalNavAppearance = controller?.isAppearanceLightNavigationBars
             onDispose {
-                if (originalStatusAppearance != null) {
-                    controller.isAppearanceLightStatusBars = originalStatusAppearance
-                }
-                if (originalNavAppearance != null) {
-                    controller.isAppearanceLightNavigationBars = originalNavAppearance
+                controller?.let {
+                    it.isAppearanceLightStatusBars = currentAppIsLight
+                    it.isAppearanceLightNavigationBars = currentAppIsLight
                 }
             }
         }
 
-        LaunchedEffect(isLightBackground, window, view) {
+        LaunchedEffect(isLightBackground, appThemeMode, systemDark, window, view) {
             window?.let {
                 val controller = WindowCompat.getInsetsController(it, view)
                 controller.isAppearanceLightStatusBars = isLightBackground
@@ -389,6 +397,10 @@ class ChapterPage(
         var showToolbar by rememberSaveable {
             mutableStateOf(false)
         }
+        LaunchedEffect(showReaderSettings) {
+            if (showReaderSettings) showToolbar = true
+        }
+        var readerToolbarHeightPx by remember { mutableIntStateOf(0) }
 
         // Keep one stable list state for the entire reading session.  Chapter
         // items use stable URL keys below, so adding a chapter before the
@@ -460,7 +472,7 @@ class ChapterPage(
 
         LaunchedEffect(scrollState.isScrollInProgress) {
             if (scrollState.isScrollInProgress && !isProgrammaticScroll) {
-                if (showToolbar) {
+                if (showToolbar && !showReaderSettings) {
                     showToolbar = false
                 }
                 if (progressPreview != null) {
@@ -1110,7 +1122,8 @@ class ChapterPage(
                             xFraction > 0.72f -> true
                             else -> null
                         }
-                        if (forward == null) showToolbar = !showToolbar
+                        if (showReaderSettings) showReaderSettings = false
+                        else if (forward == null) showToolbar = !showToolbar
                         else turnReaderPage(forward)
                     }
                 }
@@ -1473,6 +1486,7 @@ class ChapterPage(
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
                     .windowInsetsPadding(WindowInsets.displayCutout.only(WindowInsetsSides.Horizontal))
+                    .onSizeChanged { readerToolbarHeightPx = it.height }
             ) {
                 Column(
                     modifier = Modifier
@@ -1745,18 +1759,10 @@ class ChapterPage(
             ReaderSettingsSheet(
                 visible = showReaderSettings,
                 settings = readerSettings,
-                previewText = activeChapter?.document?.blocks
-                    ?.firstNotNullOfOrNull { block ->
-                        when (block) {
-                            is ReaderBlock.Paragraph -> block.parts.firstOrNull()?.value
-                            is ReaderBlock.Text -> block.value
-                            else -> null
-                        }
-                    }
-                    ?.let(readerTextTransform)
-                    .orEmpty(),
                 onSettingsChange = { updated -> updateReaderSettings(updated) },
-                onDismiss = { showReaderSettings = false }
+                onDismiss = { showReaderSettings = false },
+                modifier = Modifier.align(Alignment.BottomCenter)
+                    .padding(bottom = with(density) { readerToolbarHeightPx.toDp() })
             )
         }
 

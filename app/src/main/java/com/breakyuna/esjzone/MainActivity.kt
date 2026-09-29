@@ -13,6 +13,7 @@ import androidx.activity.compose.LocalActivityResultRegistryOwner
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -24,8 +25,9 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
+import com.breakyuna.esjzone.ui.designsystem.GlobalText as Text
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -36,7 +38,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.res.stringResource
+import com.breakyuna.esjzone.ui.designsystem.globalStringResource as stringResource
 import androidx.compose.ui.res.painterResource
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -47,12 +49,14 @@ import kotlinx.coroutines.CoroutineScope
 import com.breakyuna.esjzone.ui.app.App
 import com.breakyuna.esjzone.app.PresentationAccess
 import com.breakyuna.esjzone.ui.designsystem.AppTheme
+import com.breakyuna.esjzone.ui.designsystem.LocalGlobalScript
 import com.breakyuna.esjzone.ui.designsystem.AppTypography
 import com.breakyuna.esjzone.util.AppLogger
 import com.breakyuna.esjzone.util.CrashHandler
 import com.breakyuna.esjzone.update.ReleaseUpdateChecker
 import com.breakyuna.esjzone.update.ReleaseUpdateDialog
 import com.breakyuna.esjzone.ui.reader.ReaderVolumeKeyDispatcher
+import androidx.core.view.WindowCompat
 import com.breakyuna.esjzone.util.LocaleHelper
 import java.util.Locale
 
@@ -118,6 +122,19 @@ class MainActivity : ComponentActivity() {
         setContent {
             val state by startup.collectAsStateWithLifecycle()
             val appLanguage by PresentationAccess.settings.language
+            val appThemeMode by PresentationAccess.settings.themeMode
+            val globalScript by PresentationAccess.readerSettings.settings.collectAsStateWithLifecycle()
+            val systemDark = isSystemInDarkTheme()
+            val appDark = when (appThemeMode) {
+                AppThemeMode.SYSTEM -> systemDark
+                AppThemeMode.LIGHT -> false
+                AppThemeMode.DARK -> true
+            }
+            LaunchedEffect(appDark) {
+                val controller = WindowCompat.getInsetsController(window, window.decorView)
+                controller.isAppearanceLightStatusBars = !appDark
+                controller.isAppearanceLightNavigationBars = !appDark
+            }
             val baseContext = LocalContext.current
             val currentConfiguration = LocalConfiguration.current
 
@@ -132,9 +149,10 @@ class MainActivity : ComponentActivity() {
                 LocalActivity provides this@MainActivity,
                 LocalActivityResultRegistryOwner provides this@MainActivity,
                 LocalContext provides localizedContext,
-                LocalConfiguration provides localizedConfiguration
+                LocalConfiguration provides localizedConfiguration,
+                LocalGlobalScript provides globalScript.script
             ) {
-                AppTheme {
+                AppTheme(darkTheme = appDark) {
                     if (state is StartupState.Ready) {
                         App()
                         ReleaseUpdateDialog()
