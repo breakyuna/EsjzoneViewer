@@ -464,6 +464,7 @@ private fun LegacyRoute.restore(): AppDestination? = when (this) {
         token == FavoritePage.key || token.endsWith(".FavoritePage") -> FavoritePage
         token == HistoryPage.key || token.endsWith(".HistoryPage") -> HistoryPage
         token == LogsPage.key || token.endsWith(".LogsPage") -> LogsPage
+        token == com.breakyuna.esjzone.ui.page.LocalBackupPage.key -> com.breakyuna.esjzone.ui.page.LocalBackupPage
         token == SettingsPage.key || token.endsWith(".SettingsPage") -> SettingsPage
         token == ReadingStatisticsPage.key || token.endsWith(".ReadingStatisticsPage") -> ReadingStatisticsPage
         token == ForumPage.key || token.endsWith(".ForumPage") -> ForumPage

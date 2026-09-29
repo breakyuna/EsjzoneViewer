@@ -18,8 +18,8 @@ import com.breakyuna.esjzone.database.entity.SearchHistory
 import com.breakyuna.esjzone.database.entity.ReadingStat
 
 @Database(
-    entities = [Cache::class, SearchHistory::class, Bookmark::class, LocalReadingActivity::class, BookshelfEntry::class, ReadingStat::class],
-    version = 9,
+    entities = [Cache::class, SearchHistory::class, Bookmark::class, LocalReadingActivity::class, BookshelfEntry::class, ReadingStat::class, com.breakyuna.esjzone.database.entity.BookshelfGroup::class, com.breakyuna.esjzone.database.entity.BookshelfGroupMember::class],
+    version = 10,
     exportSchema = true
 )
 abstract class GeneralDatabase : RoomDatabase() {
@@ -36,7 +36,16 @@ abstract class GeneralDatabase : RoomDatabase() {
 
     abstract fun readingStatDao(): ReadingStatDao
 
+    abstract fun bookshelfGroupDao(): com.breakyuna.esjzone.database.dao.BookshelfGroupDao
+
     companion object {
+        val MIGRATION_9_10: Migration = object : Migration(9, 10) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL("CREATE TABLE IF NOT EXISTS bookshelf_groups (scope TEXT NOT NULL, name TEXT NOT NULL, PRIMARY KEY(scope, name))")
+                database.execSQL("CREATE TABLE IF NOT EXISTS bookshelf_group_members (scope TEXT NOT NULL, bookKey TEXT NOT NULL, groupName TEXT NOT NULL, PRIMARY KEY(scope, bookKey))")
+            }
+        }
+
         val MIGRATION_1_2: Migration = object : Migration(1, 2) {
             override fun migrate(database: SupportSQLiteDatabase) {
                 database.execSQL(

@@ -669,4 +669,27 @@
     <string name="reader_swipe_paging">横滑翻页</string>
     <string name="reader_volume_paging">音量键翻页</string>
     <string name="reader_reset_confirmation">将全部阅读设置恢复为默认值？</string>
+
+    <string name="local_backup">本地数据备份</string>
+    <string name="backup_short_description">选择导出或导入本地数据</string>
+    <string name="backup_description">勾选需要导出或导入的数据。下载包含已保存的章节正文和图片；分组对应当前书架账号。不包含网站收藏、在线历史和登录信息。</string>
+    <string name="backup_reading">阅读数据</string>
+    <string name="backup_history">本地阅读历史</string>
+    <string name="backup_search">搜索历史</string>
+    <string name="backup_export">导出 ZIP 备份</string>
+    <string name="backup_import">导入 ZIP 备份</string>
+    <string name="backup_merge_hint">仅合并备份中已勾选的类别。阅读历史保留较新进度；同书同日阅读时长取较大值，不重复累加；已有下载小说和分组归属保留。分组恢复到当前账号，不会添加网站收藏。</string>
+    <string name="backup_done">操作完成</string>
+    <string name="backup_failed">操作未完成，请检查备份文件和剩余空间。部分数据可能已导入，重试不会重复累加阅读时长。</string>
+    <string name="backup_working">正在处理本地数据，请保持应用打开…</string>
+    <string name="shelf_groups">书架分组</string>
+    <string name="group_all">全部</string>
+    <string name="group_ungrouped">未分组</string>
+    <string name="group_move">移至分组</string>
+    <string name="group_create">新建分组</string>
+    <string name="group_rename">重命名</string>
+    <string name="group_delete">删除分组</string>
+    <string name="group_name">分组名称</string>
+    <string name="group_delete_hint">删除“%1$s”？组内书籍将移至未分组，仍保留在书架中。</string>
+    <string name="group_error">分组操作失败，请检查名称是否重复后重试。</string>
 </resources>

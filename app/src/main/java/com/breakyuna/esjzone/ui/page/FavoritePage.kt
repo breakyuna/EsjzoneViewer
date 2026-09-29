@@ -136,6 +136,12 @@ object FavoritePage : AppDestination {
         val authorization = LocalAuthorization.current
         val model = rememberAppViewModel { FavoritePageModel(authorization) }
         val entries by model.entries.collectAsStateWithLifecycle()
+        val groups by model.groups.collectAsStateWithLifecycle()
+        val members by model.groupMembers.collectAsStateWithLifecycle()
+        var activeGroup by rememberSaveable { mutableStateOf<String?>(null) }
+        var showMoveGroup by remember { mutableStateOf(false) }
+        val groupError by model.groupError.collectAsStateWithLifecycle()
+
         LaunchedEffect(entries) {
             BookshelfCoverStore.schedulePersist(entries)
         }
@@ -184,7 +190,11 @@ object FavoritePage : AppDestination {
             }
         }
 
-        val visible = remember(entries, adult) { entries.filter { adult || !it.isAdult } }
+        val visible = remember(entries, adult, members, activeGroup) {
+            val membership = members.associate { it.bookKey to it.groupName }
+            entries.filter { (adult || !it.isAdult) && (activeGroup == null ||
+                if (activeGroup == "") it.bookKey !in membership else membership[it.bookKey] == activeGroup) }
+        }
         // The repository stream is intentionally kept in recent-read order so
         // the showcase remains stable when the list order is changed below.
         val recentReads = remember(visible, readingIndex) {
@@ -309,6 +319,13 @@ object FavoritePage : AppDestination {
                 else -> Unit
             }
         }
+        if (groupError) AlertDialog(onDismissRequest = { model.groupError.value = false },
+            text = { Text(stringResource(R.string.group_error)) },
+            confirmButton = { TextButton(onClick = { model.groupError.value = false }) { Text(stringResource(android.R.string.ok)) } })
+        if (showMoveGroup) ShelfGroupPicker(groups.map { it.name }, onDismiss = { showMoveGroup = false }) { name ->
+            model.moveToGroup(selected, name)
+            showMoveGroup = false
+        }
         BackHandler(enabled = editing && !showDeleteDialog) { exitEdit() }
 
         Scaffold(
@@ -354,13 +371,8 @@ object FavoritePage : AppDestination {
                             horizontalArrangement = Arrangement.spacedBy(AppSpacing.sm),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text(
-                                stringResource(R.string.bookshelf_selected, selected.size),
-                                style = AppTypography.bodyMedium,
-                                modifier = Modifier.weight(1f)
-                            )
-                            OutlinedButton(onClick = ::exitEdit, enabled = !deleting) {
-                                Text(stringResource(android.R.string.cancel))
+                            TextButton(onClick = { showMoveGroup = true }, enabled = selected.isNotEmpty() && !deleting) {
+                                Text(stringResource(R.string.group_move))
                             }
                             Button(
                                 onClick = ::requestDelete,
@@ -417,6 +429,7 @@ object FavoritePage : AppDestination {
                     // the header after Room loads would preserve the header anchor and hide it.
                     item(key = "bookshelf_collection_header", contentType = "bookshelf_header") {
                         Column(verticalArrangement = Arrangement.spacedBy(AppSpacing.sm)) {
+                            ShelfGroupControls(groups.map { it.name }, activeGroup, { activeGroup = it }, model)
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Row(
                                     modifier = Modifier.weight(1f),

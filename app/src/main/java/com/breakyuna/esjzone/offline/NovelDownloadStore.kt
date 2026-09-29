@@ -173,6 +173,50 @@ object NovelDownloadStore {
         }
     }
 
+    /** Snapshot only persisted content; chapter passwords are deliberately excluded. */
+    fun exportBackup(destination: File) = synchronized(ioLock) {
+        destination.mkdirs()
+        rootDirectory?.listFiles().orEmpty().filter(File::isDirectory).forEach { source ->
+            val manifest = readManifest(source) ?: return@forEach
+            val target = File(destination, source.name)
+            target.mkdirs()
+            source.walkTopDown().filter { it.isFile && it.name != MANIFEST_FILE && !it.name.endsWith(".tmp") }
+                .forEach { file ->
+                    val output = File(target, file.relativeTo(source).path)
+                    output.parentFile?.mkdirs()
+                    file.copyTo(output, overwrite = true)
+                }
+            File(target, MANIFEST_FILE).writeText(gson.toJson(manifest.copy(commonPassword = null)))
+        }
+    }
+
+    /** Keep existing novels intact, including any active download writes. */
+    fun importBackup(source: File) = synchronized(ioLock) {
+        val root = checkNotNull(rootDirectory)
+        source.listFiles().orEmpty().filter(File::isDirectory).forEach { directory ->
+            val manifest = requireNotNull(readManifest(directory))
+            require(manifest.version == 1 && manifest.url.isNotBlank())
+            manifest.chapters.forEach { record ->
+                val file = requireNotNull(resolveLocalFile(directory, record.fileName))
+                require(!record.downloaded || file.isFile)
+            }
+            val target = File(root, digest(canonicalKey(manifest.url)))
+            if (!target.exists()) {
+                val staging = File.createTempFile("restore-", ".tmp", root)
+                check(staging.delete() && staging.mkdir())
+                try {
+                    directory.copyRecursively(staging, overwrite = true)
+                    File(staging, MANIFEST_FILE).writeText(gson.toJson(manifest.copy(commonPassword = null)))
+                    check(staging.renameTo(target))
+                } finally {
+                    staging.deleteRecursively()
+                }
+            }
+        }
+        chapterIndex.clear()
+        inventorySnapshot = null
+    }
+
     fun manifest(novelUrl: String): DownloadedNovelManifest? = synchronized(ioLock) {
         readManifest(directoryFor(novelUrl, create = false))
     }

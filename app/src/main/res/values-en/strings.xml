@@ -669,4 +669,26 @@
     <string name="reader_swipe_paging">Swipe to turn pages</string>
     <string name="reader_volume_paging">Volume key paging</string>
     <string name="reader_reset_confirmation">Restore all reader settings to their defaults?</string>
+    <string name="local_backup">Local data backup</string>
+    <string name="backup_short_description">Export or import selected local data</string>
+    <string name="backup_description">Choose the data to export or import. Downloads include saved chapters and images. Groups apply to the current bookshelf account. Website favorites, online history and login information are excluded.</string>
+    <string name="backup_reading">Reading statistics</string>
+    <string name="backup_history">Local reading history</string>
+    <string name="backup_search">Search history</string>
+    <string name="backup_export">Export ZIP backup</string>
+    <string name="backup_import">Import ZIP backup</string>
+    <string name="backup_merge_hint">Only selected categories present in the backup will be merged. Newer reading positions are kept. Reading time uses the larger value for each book and day, without adding it twice. Existing downloaded novels and group assignments are kept. Group assignments are restored to the current account without adding website favorites.</string>
+    <string name="backup_done">Completed</string>
+    <string name="backup_failed">Could not complete the backup operation. Check the file and free storage. Some categories may already have been imported; retrying will not duplicate reading time.</string>
+    <string name="backup_working">Processing local data… Keep the app open.</string>
+    <string name="shelf_groups">Bookshelf groups</string>
+    <string name="group_all">All</string>
+    <string name="group_ungrouped">Ungrouped</string>
+    <string name="group_move">Move to group</string>
+    <string name="group_create">New group</string>
+    <string name="group_rename">Rename</string>
+    <string name="group_delete">Delete group</string>
+    <string name="group_name">Group name</string>
+    <string name="group_delete_hint">Delete “%1$s”? Its books will become ungrouped and remain on your bookshelf.</string>
+    <string name="group_error">Could not update groups. Check for a duplicate name and try again.</string>
 </resources>

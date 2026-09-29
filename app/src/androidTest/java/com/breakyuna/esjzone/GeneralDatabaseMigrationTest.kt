@@ -40,7 +40,8 @@ class GeneralDatabaseMigrationTest {
             GeneralDatabase.MIGRATION_5_6,
             GeneralDatabase.MIGRATION_6_7,
             GeneralDatabase.MIGRATION_7_8,
-            GeneralDatabase.MIGRATION_8_9
+            GeneralDatabase.MIGRATION_8_9,
+            GeneralDatabase.MIGRATION_9_10
         )
         try {
             val sqlite = database.openHelper.writableDatabase
@@ -70,7 +71,8 @@ class GeneralDatabaseMigrationTest {
             GeneralDatabase.MIGRATION_5_6,
             GeneralDatabase.MIGRATION_6_7,
             GeneralDatabase.MIGRATION_7_8,
-            GeneralDatabase.MIGRATION_8_9
+            GeneralDatabase.MIGRATION_8_9,
+            GeneralDatabase.MIGRATION_9_10
         )
         try {
             val sqlite = database.openHelper.writableDatabase
@@ -102,7 +104,8 @@ class GeneralDatabaseMigrationTest {
             GeneralDatabase.MIGRATION_5_6,
             GeneralDatabase.MIGRATION_6_7,
             GeneralDatabase.MIGRATION_7_8,
-            GeneralDatabase.MIGRATION_8_9
+            GeneralDatabase.MIGRATION_8_9,
+            GeneralDatabase.MIGRATION_9_10
         )
         try {
             val sqlite = database.openHelper.writableDatabase
@@ -134,7 +137,8 @@ class GeneralDatabaseMigrationTest {
             GeneralDatabase.MIGRATION_5_6,
             GeneralDatabase.MIGRATION_6_7,
             GeneralDatabase.MIGRATION_7_8,
-            GeneralDatabase.MIGRATION_8_9
+            GeneralDatabase.MIGRATION_8_9,
+            GeneralDatabase.MIGRATION_9_10
         )
         try {
             val sqlite = database.openHelper.writableDatabase
@@ -238,7 +242,8 @@ class GeneralDatabaseMigrationTest {
             GeneralDatabase.MIGRATION_5_6,
             GeneralDatabase.MIGRATION_6_7,
             GeneralDatabase.MIGRATION_7_8,
-            GeneralDatabase.MIGRATION_8_9
+            GeneralDatabase.MIGRATION_8_9,
+            GeneralDatabase.MIGRATION_9_10
         )
         try {
             val sqlite = database.openHelper.writableDatabase
@@ -299,7 +304,8 @@ class GeneralDatabaseMigrationTest {
             databaseName,
             GeneralDatabase.MIGRATION_6_7,
             GeneralDatabase.MIGRATION_7_8,
-            GeneralDatabase.MIGRATION_8_9
+            GeneralDatabase.MIGRATION_8_9,
+            GeneralDatabase.MIGRATION_9_10
         )
         try {
             val sqlite = database.openHelper.writableDatabase
@@ -362,7 +368,8 @@ class GeneralDatabaseMigrationTest {
         val database = openWithMigrations(
             databaseName,
             GeneralDatabase.MIGRATION_7_8,
-            GeneralDatabase.MIGRATION_8_9
+            GeneralDatabase.MIGRATION_8_9,
+            GeneralDatabase.MIGRATION_9_10
         )
         try {
             val sqlite = database.openHelper.writableDatabase
@@ -615,11 +622,11 @@ class GeneralDatabaseMigrationTest {
     private fun assertCurrentTablesExist(database: SupportSQLiteDatabase) {
         database.query(
             "SELECT name FROM sqlite_master WHERE type = 'table' AND name IN " +
-                "('cache', 'searchhistory', 'bookmarks', 'local_reading_history', 'bookshelf', 'reading_stats')"
+                "('cache', 'searchhistory', 'bookmarks', 'local_reading_history', 'bookshelf', 'reading_stats', 'bookshelf_groups', 'bookshelf_group_members')"
         ).use { cursor ->
             var count = 0
             while (cursor.moveToNext()) count++
-            assertEquals(6, count)
+            assertEquals(8, count)
         }
     }
 }

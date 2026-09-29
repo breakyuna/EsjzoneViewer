@@ -29,6 +29,27 @@ import java.util.concurrent.atomic.AtomicLong
 /** Owns bookshelf synchronization and deletion jobs for the page. */
 class FavoritePageModel(private val authorization: Authorization) :
     AppStateViewModel<FavoritePageModel.State>(State.Idle) {
+    private val groupDao = PresentationAccess.database.bookshelfGroupDao()
+    private val groupScope = BookshelfRepository.scopeFor(authorization)
+    val groups = groupDao.observeGroups(groupScope)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    val groupMembers = groupDao.observeMembers(groupScope)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    val groupError = MutableStateFlow(false)
+    private fun changeGroup(action: suspend () -> Unit) {
+        viewModelScope.launch(Dispatchers.IO) {
+            try { action() } catch (error: CancellationException) { throw error }
+            catch (_: Exception) { groupError.value = true }
+        }
+    }
+    fun createGroup(name: String) = changeGroup {
+        require(name.trim().isNotEmpty())
+        groupDao.add(com.breakyuna.esjzone.database.entity.BookshelfGroup(groupScope, name.trim()))
+    }
+    fun renameGroup(old: String, name: String) = changeGroup { groupDao.rename(groupScope, old, name.trim()) }
+    fun deleteGroup(name: String) = changeGroup { groupDao.remove(groupScope, name) }
+    fun moveToGroup(keys: Set<String>, name: String?) = changeGroup { groupDao.move(groupScope, keys.toList(), name) }
+
     /** Hot snapshots prevent an empty Room frame from resetting the restored shelf position. */
     val entries: StateFlow<List<BookshelfEntry>> = BookshelfRepository.observe(authorization)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())

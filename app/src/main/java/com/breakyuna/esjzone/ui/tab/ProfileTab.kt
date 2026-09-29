@@ -185,6 +185,7 @@ private fun profileMenuItems(): List<ProfileMenuItem> = listOf(
     ProfileMenuItem("reading_stats", Icons.Filled.QueryStats, stringResource(R.string.reading_stats_title), stringResource(R.string.reading_stats_description), ReadingStatisticsPage),
     ProfileMenuItem("bookmarks", Icons.Filled.Bookmark, stringResource(R.string.bookmarks), stringResource(R.string.bookmarks_description), BookmarksPage),
     ProfileMenuItem("downloads", Icons.Filled.Download, stringResource(R.string.downloads), stringResource(R.string.profile_downloads_description), DownloadPage),
+    ProfileMenuItem("backup", Icons.Filled.Download, stringResource(R.string.local_backup), stringResource(R.string.backup_short_description), com.breakyuna.esjzone.ui.page.LocalBackupPage),
     ProfileMenuItem("settings", Icons.Filled.Settings, stringResource(R.string.settings), stringResource(R.string.profile_settings_description), SettingsPage)
 )
 

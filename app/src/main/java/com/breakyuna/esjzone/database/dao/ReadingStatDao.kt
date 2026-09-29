@@ -27,6 +27,14 @@ interface ReadingStatDao {
         }
     }
 
+    @Query("SELECT * FROM reading_stats")
+    fun getAll(): List<ReadingStat>
+    @Query("UPDATE reading_stats SET duration_ms = MAX(duration_ms, :duration), book_name = :name WHERE date = :date AND book_key = :key")
+    fun mergeDuration(date: String, key: String, name: String, duration: Long)
+    @Transaction
+    fun merge(stat: ReadingStat) {
+        if (insertIfMissing(stat) == -1L) mergeDuration(stat.date, stat.bookKey, stat.bookName, stat.durationMs)
+    }
     @Query("DELETE FROM reading_stats")
     fun deleteAll()
 }
