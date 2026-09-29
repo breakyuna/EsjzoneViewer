@@ -442,8 +442,8 @@ class ChapterPage(
                         .getLatestForNovel(novelId)
                 }
                 if (saved != null) {
-                    val savedKey = EsjzoneUrls.canonicalPageKey(saved.chapterUrl)
-                    val initialKey = EsjzoneUrls.canonicalPageKey(chapter.url)
+                    val savedKey = chapterIdentity(Chapter(saved.chapterName, saved.chapterUrl, true))
+                    val initialKey = chapterIdentity(chapter)
                     if (savedKey.isNotBlank() && savedKey != initialKey) {
                         val target = Chapter(saved.chapterName, saved.chapterUrl, true)
                         requestedChapter.value = target
@@ -641,7 +641,8 @@ class ChapterPage(
             }
         }
         var retainedChapterOrder by remember { mutableStateOf<List<Chapter>>(emptyList()) }
-        val currentLoadedOrder = result?.chapterOrder.orEmpty()
+        val currentLoadedOrder = chapterPageModel.chapterOrderState.value
+            .ifEmpty { result?.chapterOrder.orEmpty() }
             .ifEmpty { chapterOrder }
             .ifEmpty {
                 if (novelId.isBlank()) {
@@ -741,6 +742,10 @@ class ChapterPage(
                 chapterProgress = currentBookLocation?.chapterProgress ?: measuredChapterProgress ?: 0f
             )
         )
+        val lastReadablePosition = remember { mutableStateOf<LocalReadingPosition?>(null) }
+        if (activeChapter != null && sameReaderChapter(activeChapter.chapter, currentReadingChapter)) {
+            lastReadablePosition.value = localHistoryPosition.value
+        }
 
         val statisticsBookKey = readingStatisticsBookKey(
             localHistoryPosition.value.novelId,
@@ -838,7 +843,7 @@ class ChapterPage(
             }
         }
         LaunchedEffect(localHistoryActivityId) {
-            snapshotFlow { if (resumePending) null else localHistoryPosition.value }
+            snapshotFlow { if (resumePending) null else lastReadablePosition.value }
                 .filterNotNull()
                 .distinctUntilChanged()
                 .debounce(750)
@@ -854,24 +859,24 @@ class ChapterPage(
         DisposableEffect(lifecycleOwner, localHistoryActivityId) {
             val observer = LifecycleEventObserver { _, event ->
                 if ((event == Lifecycle.Event.ON_PAUSE || event == Lifecycle.Event.ON_STOP) && !resumePending) {
-                    LocalReadingHistoryRecorder.upsert(
-                        localHistoryPosition.value.toLocalReadingActivity(
+                    lastReadablePosition.value?.let { position ->
+                        LocalReadingHistoryRecorder.upsert(position.toLocalReadingActivity(
                             activityId = localHistoryActivityId,
                             startedAt = localHistoryStartedAt
-                        )
-                    )
+                        ))
+                    }
                 }
             }
             lifecycleOwner.lifecycle.addObserver(observer)
             onDispose {
                 lifecycleOwner.lifecycle.removeObserver(observer)
                 if (!resumePending) {
-                    LocalReadingHistoryRecorder.upsert(
-                        localHistoryPosition.value.toLocalReadingActivity(
+                    lastReadablePosition.value?.let { position ->
+                        LocalReadingHistoryRecorder.upsert(position.toLocalReadingActivity(
                             activityId = localHistoryActivityId,
                             startedAt = localHistoryStartedAt
-                        )
-                    )
+                        ))
+                    }
                 }
             }
         }
@@ -1491,6 +1496,7 @@ class ChapterPage(
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
+                        .then(if (showReaderSettings) Modifier.background(MaterialTheme.colorScheme.surface) else Modifier)
                         .navigationBarsPadding(),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
@@ -1503,8 +1509,12 @@ class ChapterPage(
                                 onClick = {}
                             ),
                         spec = com.breakyuna.esjzone.ui.designsystem.glass.AppGlassSpec(
-                            shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
-                            alpha = 0.94f
+                            shape = if (showReaderSettings) RoundedCornerShape(0.dp)
+                                else RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
+                            alpha = if (showReaderSettings) 1f else 0.94f,
+                            borderAlpha = if (showReaderSettings) 0f else 0.14f,
+                            tintAlpha = if (showReaderSettings) 0f else 0.16f,
+                            specularIntensity = if (showReaderSettings) 0f else 0.4f
                         )
                     ) {
                         Column(
@@ -1742,7 +1752,8 @@ class ChapterPage(
                 }
             }
 
-            val readerChapters = result?.chapterOrder.orEmpty()
+            val readerChapters = chapterPageModel.chapterOrderState.value
+                .ifEmpty { result?.chapterOrder.orEmpty() }
                 .ifEmpty { chapterOrder }
                 .ifEmpty { result?.chapters?.map { it.chapter }.orEmpty() }
             ReaderContentsSheet(
@@ -2384,7 +2395,7 @@ private fun ReaderContentsSheet(
                             onClick = { onChapterSelected(item) },
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(vertical = AppSpacing.xs),
+                                .padding(vertical = AppSpacing.xxs),
                             shape = AppShapes.standard,
                             color = if (selected) {
                                 MaterialTheme.colorScheme.primaryContainer
@@ -2396,7 +2407,7 @@ private fun ReaderContentsSheet(
                                 text = item.name,
                                 modifier = Modifier.padding(
                                     horizontal = AppSpacing.md,
-                                    vertical = AppSpacing.md
+                                    vertical = AppSpacing.sm
                                 ),
                                 color = if (selected) {
                                     MaterialTheme.colorScheme.onPrimaryContainer

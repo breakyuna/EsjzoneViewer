@@ -3,6 +3,8 @@ package com.breakyuna.esjzone
 import com.breakyuna.esjzone.database.entity.Bookmark
 import com.breakyuna.esjzone.database.entity.LocalReadingActivity
 import com.breakyuna.esjzone.network.EsjzoneUrls
+import com.breakyuna.esjzone.novellibrary.novel.Chapter
+import com.breakyuna.esjzone.ui.page.chapterIdentity
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -10,6 +12,16 @@ import org.junit.Test
 
 /** JVM coverage for reader persistence identities (Room itself stays in androidTest). */
 class ReaderPersistenceContractTest {
+
+    @Test
+    fun readerChapterIdentity_preservesDistinctFragmentsAcrossMirrors() {
+        val first = Chapter("Part 1", "https://www.esjzone.cc/forum/9001/1.html#part-1", false)
+        val sameOnMirror = Chapter("Part 1", "https://www.esjzone.one/forum/9001/1.html#part-1", false)
+        val second = Chapter("Part 2", "https://www.esjzone.cc/forum/9001/1.html#part-2", false)
+
+        assertEquals(chapterIdentity(first), chapterIdentity(sameOnMirror))
+        assertTrue(chapterIdentity(first) != chapterIdentity(second))
+    }
 
     @Test
     fun bookmarkIdentity_isCanonicalChapterPathAndEntityStoresLocalOnlyMetadata() {

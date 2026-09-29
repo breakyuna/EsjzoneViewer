@@ -4,6 +4,7 @@ import androidx.lifecycle.viewModelScope
 import com.breakyuna.esjzone.app.PresentationAccess
 
 import androidx.compose.runtime.MutableState
+import androidx.compose.runtime.mutableStateOf
 import com.breakyuna.esjzone.ui.navigation.AppStateViewModel
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -30,6 +31,7 @@ import com.breakyuna.esjzone.network.external.WenkuCookieStoreUnavailableExcepti
 import com.breakyuna.esjzone.novellibrary.novel.Chapter
 import com.breakyuna.esjzone.novellibrary.novel.DetailedChapter
 import com.breakyuna.esjzone.novellibrary.novel.FavoriteNovel
+import com.breakyuna.esjzone.offline.NovelDownloadStore
 import com.breakyuna.esjzone.ui.reader.toReaderDocument
 import com.breakyuna.esjzone.util.AppLogger
 
@@ -99,6 +101,7 @@ class ChapterPageModel(
     private val prefetchJobs = mutableMapOf<String, Job>()
     private var orderedChapters = normalizeChapterOrder(chapterOrder)
     private var orderResolved = orderedChapters.isNotEmpty()
+    val chapterOrderState = mutableStateOf(orderedChapters)
     private var sessionId = 0L
     private var initialJob: Job? = null
     private var appendJob: Job? = null
@@ -190,6 +193,23 @@ class ChapterPageModel(
         mutableState.value = State.Loading
 
         initialJob = viewModelScope.launch(Dispatchers.IO) {
+            if (!orderResolved) {
+                val targetNovelUrl = novelUrl.takeIf { it.isNotBlank() }
+                    ?: novelId.takeIf { it.isNotBlank() }
+                        ?.let { "${EsjzoneUrls.Base}/detail/$it.html" }
+                val localOrder = targetNovelUrl?.let { url ->
+                    runCatching { PresentationAccess.downloads.manifest(url)?.chapters
+                        ?.map { Chapter(it.name, it.url, false) } }.getOrNull()
+                }.orEmpty()
+                if (localOrder.isNotEmpty()) {
+                    synchronized(lock) {
+                        if (isCurrentSessionLocked(currentSession) && orderedChapters.isEmpty()) {
+                            orderedChapters = normalizeChapterOrder(localOrder)
+                            chapterOrderState.value = orderedChapters
+                        }
+                    }
+                }
+            }
             val detail = try {
                 loadDetail(chapter, showSecurityCheck = true)
             } catch (error: CancellationException) {
@@ -304,7 +324,7 @@ class ChapterPageModel(
     /** Loads the next canonical TOC chapter when the reader reaches the end buffer. */
     fun loadNextChapter() {
         val shouldWaitForOrder = synchronized(lock) {
-            !orderResolved && novelId.isNotBlank()
+            !orderResolved && orderedChapters.isEmpty() && novelId.isNotBlank()
         }
         if (shouldWaitForOrder) {
             synchronized(lock) {
@@ -391,7 +411,7 @@ class ChapterPageModel(
     /** Loads the previous canonical TOC chapter when the reader reaches the top buffer. */
     fun loadPreviousChapter() {
         val shouldWaitForOrder = synchronized(lock) {
-            !orderResolved && novelId.isNotBlank()
+            !orderResolved && orderedChapters.isEmpty() && novelId.isNotBlank()
         }
         if (shouldWaitForOrder) {
             synchronized(lock) {
@@ -675,6 +695,7 @@ class ChapterPageModel(
         synchronized(lock) {
             if (fetchedOrder.isNotEmpty()) {
                 orderedChapters = normalizeChapterOrder(fetchedOrder)
+                chapterOrderState.value = orderedChapters
             }
             orderResolved = true
         }
@@ -839,5 +860,5 @@ private fun persistLoadedChapter(
 }
 
 internal fun chapterIdentity(chapter: Chapter): String =
-    EsjzoneUrls.canonicalPageKey(chapter.url).takeIf { it.isNotBlank() && it != "/" }
+    NovelDownloadStore.chapterKey(chapter.url).takeIf { it.isNotBlank() && it != "/" }
         ?: chapter.name.trim()
