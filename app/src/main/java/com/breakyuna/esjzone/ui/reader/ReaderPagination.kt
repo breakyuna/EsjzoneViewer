@@ -28,7 +28,7 @@ import com.breakyuna.esjzone.domain.reader.ReaderBlock
 import com.breakyuna.esjzone.R
 import com.breakyuna.esjzone.ui.designsystem.globalStringResource as stringResource
 
-internal data class ReaderPage(val segments: List<ReaderPageSegment>)
+internal data class ReaderPage(val segments: List<ReaderPageSegment>, val contentPosition: Float)
 
 internal sealed interface ReaderPageSegment {
     data class Heading(val name: String) : ReaderPageSegment
@@ -58,16 +58,18 @@ internal fun paginateReaderChapter(
     val pages = mutableListOf<ReaderPage>()
     val current = mutableListOf<ReaderPageSegment>()
     var usedHeight = 0
+    var pageContentPosition = -1f
     val paragraphGap = with(density) { settings.paragraphSpacingDp.dp.roundToPx() }
     fun flush() {
         if (current.isNotEmpty()) {
-            pages += ReaderPage(current.toList())
+            pages += ReaderPage(current.toList(), pageContentPosition)
             current.clear()
             usedHeight = 0
         }
     }
-    fun add(segment: ReaderPageSegment, height: Int) {
+    fun add(segment: ReaderPageSegment, height: Int, position: Float) {
         if (current.isNotEmpty() && usedHeight + height > heightPx) flush()
+        if (current.isEmpty()) pageContentPosition = position
         current += segment
         usedHeight += height
     }
@@ -78,9 +80,9 @@ internal fun paginateReaderChapter(
         .mapNotNull { range ->
             content[range.item]?.let { AnnotatedString.Range(it.placeholder, range.start, range.end) }
         }
-    fun addText(text: AnnotatedString, inline: Map<String, InlineTextContent>) {
+    fun addText(text: AnnotatedString, inline: Map<String, InlineTextContent>, blockIndex: Int) {
         if (text.isEmpty()) {
-            add(ReaderPageSegment.Gap(settings.paragraphSpacingDp.dp), paragraphGap)
+            add(ReaderPageSegment.Gap(settings.paragraphSpacingDp.dp), paragraphGap, blockIndex.toFloat())
             return
         }
         val layout = textMeasurer.measure(
@@ -113,7 +115,7 @@ internal fun paginateReaderChapter(
                 settings.paragraphSpacingDp.dp
             } else 0.dp
             add(ReaderPageSegment.TextLine(text.subSequence(start, end), inline, gap),
-                lineHeight + with(density) { gap.roundToPx() })
+                lineHeight + with(density) { gap.roundToPx() }, blockIndex + start.toFloat() / text.length)
             startLine = endLine
             if (last && gap == 0.dp && paragraphGap > 0) flush()
         }
@@ -124,9 +126,9 @@ internal fun paginateReaderChapter(
         style = headingStyle,
         constraints = Constraints(maxWidth = widthPx)
     ).size.height + with(density) { (settings.paragraphSpacingDp + 8f).dp.roundToPx() }
-    add(ReaderPageSegment.Heading(chapterName), headingHeight)
+    add(ReaderPageSegment.Heading(chapterName), headingHeight, -1f)
 
-    blocks.forEach { block ->
+    blocks.forEachIndexed { blockIndex, block ->
         when (block) {
             is ReaderBlock.Paragraph -> {
                 val inline = linkedMapOf<String, InlineTextContent>()
@@ -137,19 +139,19 @@ internal fun paginateReaderChapter(
                         inline.putAll(content)
                     }
                 }
-                addText(text, inline)
+                addText(text, inline, blockIndex)
             }
             is ReaderBlock.Text -> {
                 val (text, inline) = block.toAnnotatedReaderText(textStyle, textMeasurer, density, textTransform)
-                addText(text, inline)
+                addText(text, inline, blockIndex)
             }
             is ReaderBlock.Image -> {
                 flush()
-                pages += ReaderPage(listOf(ReaderPageSegment.Image(block.url)))
+                pages += ReaderPage(listOf(ReaderPageSegment.Image(block.url)), blockIndex.toFloat())
             }
             ReaderBlock.LineBreak -> {
                 val gap = with(density) { settings.lineHeightSp.sp.toDp() }
-                add(ReaderPageSegment.Gap(gap), with(density) { gap.roundToPx() })
+                add(ReaderPageSegment.Gap(gap), with(density) { gap.roundToPx() }, blockIndex.toFloat())
             }
         }
     }

@@ -125,6 +125,7 @@ import com.breakyuna.esjzone.ui.navigation.rememberAppViewModel
 import com.breakyuna.esjzone.ui.navigation.AppDestination
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.debounce
@@ -579,52 +580,29 @@ class ChapterPage(
         var paginationSnapshot by remember { mutableStateOf<ReaderPaginationSnapshot?>(null) }
         val scriptReady = readerSettings.script == ReaderScript.ORIGINAL ||
             (convertedText?.script == readerSettings.script && convertedText?.chapters == result?.chapters)
-        LaunchedEffect(pagedMode, paginationKey, scriptReady) {
-            if (!pagedMode || !scriptReady || readerViewport.width <= 0 || pageContentHeightPx <= 0) return@LaunchedEffect
-            val cached = paginationSnapshot?.takeIf { it.layoutKey == paginationLayoutKey }?.pages.orEmpty()
-            val entries = result?.chapters.orEmpty()
-            val snapshot = withContext(Dispatchers.Default) {
-                // A private measurer/cache belongs to this worker, rather than sharing the UI measurer.
-                val measurer = TextMeasurer(fontResolver, density, layoutDirection, cacheSize = 0)
-                val pages = entries.associateWith { entry ->
-                    ensureActive()
-                    cached[entry] ?: paginateReaderChapter(
-                        entry.chapter.name, entry.document.blocks, paginationSettings,
-                        readerTextStyle, headingStyle, measurer, density,
-                        readerViewport.width, pageContentHeightPx, readerTextTransform
-                    )
-                }
-                val items = entries.flatMap { entry ->
-                    val chapterKey = chapterIdentity(entry.chapter)
-                    val chapterPages = pages.getValue(entry)
-                    chapterPages.mapIndexed { index, page ->
-                        ReaderDisplayItem("$chapterKey|page:$index", chapterKey, entry,
-                            index, chapterPages.size, emptyList(), page)
-                    }
-                }
-                ReaderPaginationSnapshot(paginationKey, paginationLayoutKey, pages, items)
-            }
-            paginationSnapshot = snapshot
-        }
         val paginationReady = !pagedMode || (scriptReady && paginationSnapshot?.key == paginationKey)
-        val displayItems = if (pagedMode) paginationSnapshot?.items.orEmpty().filter {
+        val pagedDisplayItems = paginationSnapshot?.items.orEmpty().filter {
             it.entry in result?.chapters.orEmpty()
-        } else {
+        }
+        val displayItems = if (pagedMode) pagedDisplayItems else {
             remember(result?.chapters) {
                 result?.chapters.orEmpty().flatMap { entry ->
                     val chapterKey = chapterIdentity(entry.chapter)
-                    val chunks = entry.document.blocks.chunked(8)
-                    val count = chunks.size + 1
+                    val blocks = entry.document.blocks
+                    val count = blocks.size + 1
                     listOf(ReaderDisplayItem(chapterKey, chapterKey, entry, 0, count, emptyList())) +
-                        chunks.mapIndexed { index, blocks ->
-                            ReaderDisplayItem("$chapterKey|part:$index", chapterKey, entry,
-                                index + 1, count, blocks)
+                        blocks.mapIndexed { index, block ->
+                            ReaderDisplayItem("$chapterKey|block:$index", chapterKey, entry,
+                                index + 1, count, listOf(block))
                         }
                 }
             }
         }
         val pageTurnInProgressForBoundary = remember { mutableStateOf(false) }
-        val horizontalPagerState = rememberPagerState(pageCount = { displayItems.size })
+        // A departing Pager may still request keys during a mode switch. Keep its
+        // count and provider on the same paginated snapshot, never scroll chunks.
+        val currentPagedDisplayItems by rememberUpdatedState(pagedDisplayItems)
+        val horizontalPagerState = rememberPagerState(pageCount = { currentPagedDisplayItems.size })
         LaunchedEffect(horizontalPagerState.isScrollInProgress, pagedMode) {
             if (pagedMode && horizontalPagerState.isScrollInProgress) {
                 if (!pageTurnInProgressForBoundary.value && !isProgrammaticScroll) pendingBoundaryTurn = null
@@ -636,6 +614,9 @@ class ChapterPage(
             displayItems.mapIndexed { index, item -> item.key to index }.toMap()
         }
         val displayByKey = remember(displayItems) { displayItems.associateBy { it.key } }
+        val hasPreviousVerification = result?.verificationChapter != null && result.verificationOffset < 0
+        fun readerListIndex(bodyIndex: Int): Int =
+            com.breakyuna.esjzone.ui.reader.readerBodyListIndex(bodyIndex, hasPreviousVerification)
         val pagerVisibleItem by remember(displayByKey, horizontalPagerState) {
             derivedStateOf {
                 horizontalPagerState.layoutInfo.visiblePagesInfo
@@ -672,7 +653,7 @@ class ChapterPage(
             isProgrammaticScroll = true
             try {
                 if (pagedMode) horizontalPagerState.scrollToPage(index)
-                else scrollState.scrollToItem(index, commentReturnOffset)
+                else scrollState.scrollToItem(readerListIndex(index), commentReturnOffset)
                 commentReturnKey = null
                 commentReturnChapterUrl = null
                 commentRecoveryStarted = false
@@ -790,6 +771,15 @@ class ChapterPage(
         val bookChapterIndices = remember(bookChapterOrder) {
             bookChapterOrder.mapIndexed { index, item -> chapterIdentity(item) to index }.toMap()
         }
+        val measuredContentPosition = if (pagedMode) {
+            pagerVisibleItem?.page?.contentPosition
+        } else {
+            activeChapterItem?.let { visible ->
+                displayByKey[visible.key.toString()]?.let { item ->
+                    item.ordinal - 1f + (chapterProgressFor(visible.offset, visible.size) ?: 0f)
+                }
+            }
+        }
         val measuredBookLocation = activeChapter?.chapter
             ?.takeIf { measuredChapterProgress != null }
             ?.let {
@@ -798,7 +788,7 @@ class ChapterPage(
                     chapterProgress = measuredChapterProgress ?: 0f,
                     chapterOrder = bookChapterOrder,
                     chapterIndices = bookChapterIndices
-                )
+                )?.copy(contentPosition = measuredContentPosition)
             }
         var retainedBookLocation by remember(requestedChapter.value.url) {
             mutableStateOf<ReaderBookLocation?>(null)
@@ -807,6 +797,38 @@ class ChapterPage(
             measuredBookLocation?.let { retainedBookLocation = it }
         }
         val currentBookLocation = measuredBookLocation ?: retainedBookLocation
+        val latestBookLocation by rememberUpdatedState(currentBookLocation)
+        LaunchedEffect(pagedMode, paginationKey, scriptReady) {
+            if (!pagedMode || !scriptReady || readerViewport.width <= 0 || pageContentHeightPx <= 0) return@LaunchedEffect
+            val cached = paginationSnapshot?.takeIf { it.layoutKey == paginationLayoutKey }?.pages.orEmpty()
+            val entries = result?.chapters.orEmpty()
+            val snapshot = withContext(Dispatchers.Default) {
+                // A private measurer/cache belongs to this worker, rather than sharing the UI measurer.
+                val measurer = TextMeasurer(fontResolver, density, layoutDirection, cacheSize = 0)
+                val pages = entries.associateWith { entry ->
+                    ensureActive()
+                    cached[entry] ?: paginateReaderChapter(
+                        entry.chapter.name, entry.document.blocks, paginationSettings,
+                        readerTextStyle, headingStyle, measurer, density,
+                        readerViewport.width, pageContentHeightPx, readerTextTransform
+                    )
+                }
+                val items = entries.flatMap { entry ->
+                    val chapterKey = chapterIdentity(entry.chapter)
+                    val chapterPages = pages.getValue(entry)
+                    chapterPages.mapIndexed { index, page ->
+                        ReaderDisplayItem("$chapterKey|page:$index", chapterKey, entry,
+                            index, chapterPages.size, emptyList(), page)
+                    }
+                }
+                ReaderPaginationSnapshot(paginationKey, paginationLayoutKey, pages, items)
+            }
+            if (paginationSnapshot?.layoutKey != paginationLayoutKey &&
+                !resumePending && pendingSeekLocation == null) {
+                pendingSeekLocation = latestBookLocation
+            }
+            paginationSnapshot = snapshot
+        }
         // Keep the last measured chapter as the UI/history anchor while a
         // list update briefly leaves no matching visible item.
         val currentReadingChapter = currentBookLocation?.chapter
@@ -1106,7 +1128,7 @@ class ChapterPage(
             isProgrammaticScroll = true
             try {
                 if (pagedMode) horizontalPagerState.scrollToPage(0)
-                else scrollState.scrollToItem(0)
+                else scrollState.scrollToItem(readerListIndex(0))
             } finally {
                 isProgrammaticScroll = false
             }
@@ -1147,7 +1169,7 @@ class ChapterPage(
             )
         }
 
-        LaunchedEffect(pendingSeekLocation, displayItems, paginationReady) {
+        LaunchedEffect(pendingSeekLocation, displayItems, paginationReady, hasPreviousVerification) {
             if (!paginationReady) return@LaunchedEffect
             val target = pendingSeekLocation ?: return@LaunchedEffect
             val targetKey = chapterIdentity(target.chapter)
@@ -1155,14 +1177,24 @@ class ChapterPage(
             val itemCount = displayItems[startIndex].itemCount
             val scaled = (target.chapterProgress.coerceIn(0f, 1f) * itemCount)
                 .coerceAtMost(itemCount - 0.001f)
-            val targetIndex = startIndex + scaled.toInt()
+            val contentPosition = target.contentPosition
+            val chapterItems = displayItems.subList(startIndex, startIndex + itemCount)
+            val sourceIndex = contentPosition?.let { position ->
+                com.breakyuna.esjzone.ui.reader.readerItemForContentPosition(
+                    chapterItems.map { it.page?.contentPosition ?: (it.ordinal - 1f) }, position
+                )
+            }
+            val targetIndex = startIndex + (sourceIndex ?: scaled.toInt())
             val targetItemKey = displayItems[targetIndex].key
 
             isProgrammaticScroll = true
             try {
                 if (pagedMode) horizontalPagerState.scrollToPage(targetIndex)
-                else scrollState.scrollToItem(targetIndex)
-                if (scaled > 0f && !pagedMode) {
+                else scrollState.scrollToItem(readerListIndex(targetIndex))
+                val itemFraction = if (contentPosition != null) {
+                    (contentPosition - (displayItems[targetIndex].ordinal - 1f)).coerceIn(0f, 1f)
+                } else scaled - scaled.toInt()
+                if (itemFraction > 0f && !pagedMode) {
                     val itemSize = kotlinx.coroutines.withTimeoutOrNull(1000L) {
                         snapshotFlow {
                             scrollState.layoutInfo.visibleItemsInfo
@@ -1173,7 +1205,7 @@ class ChapterPage(
                     if (itemSize != null) {
                         scrollState.scrollToItem(
                             itemSize.first,
-                            (itemSize.second * (scaled - scaled.toInt()))
+                            (itemSize.second * itemFraction)
                                 .roundToInt()
                                 .coerceAtLeast(0)
                         )
@@ -1197,7 +1229,7 @@ class ChapterPage(
                 isProgrammaticScroll = true
                 try {
                 if (pagedMode) horizontalPagerState.scrollToPage(0)
-                else scrollState.scrollToItem(0)
+                else scrollState.scrollToItem(readerListIndex(0))
                 } finally {
                     isProgrammaticScroll = false
                 }
@@ -1303,9 +1335,14 @@ class ChapterPage(
                         }
                     }
                 } finally {
-                    pageTranslation.snapTo(0f)
-                    pageAlpha.snapTo(1f)
-                    pageTurnInProgress = false
+                    try {
+                        withContext(NonCancellable) {
+                            pageTranslation.snapTo(0f)
+                            pageAlpha.snapTo(1f)
+                        }
+                    } finally {
+                        pageTurnInProgress = false
+                    }
                 }
             }
         }
@@ -1336,11 +1373,12 @@ class ChapterPage(
             } else {
                 snapshotFlow {
                     scrollState.layoutInfo.visibleItemsInfo.any { item ->
-                        item.key == pending.anchorKey && displayItems.getOrNull(item.index)?.key == item.key
+                        item.key == pending.anchorKey &&
+                            displayItems.getOrNull(item.index - readerListIndex(0))?.key == item.key
                     }
                 }.first { it }
                 pendingBoundaryTurn = null
-                scrollState.scrollToItem(targetIndex)
+                scrollState.scrollToItem(readerListIndex(targetIndex))
             }
         }
 
@@ -1640,7 +1678,7 @@ class ChapterPage(
                     } else {
                         HorizontalPager(
                             state = horizontalPagerState,
-                            key = { displayItems[it].key },
+                            key = { index -> currentPagedDisplayItems.getOrNull(index)?.key ?: index },
                             userScrollEnabled = readerSettings.horizontalSwipePagingEnabled && pagingEnabled &&
                                 readerSettings.pageAnimation == ReaderPageAnimation.HORIZONTAL_SLIDE,
                             modifier = Modifier
@@ -1662,7 +1700,7 @@ class ChapterPage(
                                     }
                                 }
                         ) { pageIndex ->
-                            displayItems.getOrNull(pageIndex)?.page?.let { page ->
+                            currentPagedDisplayItems.getOrNull(pageIndex)?.page?.let { page ->
                                 Box(
                                     Modifier.fillMaxSize().clipToBounds()
                                         .padding(top = pageTopPadding, bottom = pageBottomPadding)
@@ -2136,7 +2174,8 @@ class ChapterPage(
             previousLoadThreshold,
             loadedReaderChapterKeys,
             displayItems,
-            pagedMode
+            pagedMode,
+            hasPreviousVerification
         ) {
             if (pagedMode) return@LaunchedEffect
             var previousSnapshot: ReaderScrollSnapshot? = null
@@ -2144,18 +2183,18 @@ class ChapterPage(
                 val visibleChapterItems = scrollState.layoutInfo.visibleItemsInfo
                     .filter { it.key.toString() in displayByKey }
                 val layoutMatchesLoadedWindow = visibleChapterItems.all { item ->
-                    displayItems.getOrNull(item.index)?.key == item.key
+                    displayItems.getOrNull(item.index - readerListIndex(0))?.key == item.key
                 }
                 ReaderScrollSnapshot(
                     firstVisibleIndex = scrollState.firstVisibleItemIndex,
                     firstVisibleOffset = scrollState.firstVisibleItemScrollOffset,
                     firstVisibleChapterKey = visibleChapterItems.firstOrNull()
-                        ?.takeIf { it.index == 0 }
+                        ?.takeIf { it.index == readerListIndex(0) }
                         ?.let { displayByKey[it.key.toString()]?.chapterKey },
                     lastVisibleChapterKey = visibleChapterItems.lastOrNull()
                         ?.let { displayByKey[it.key.toString()]?.chapterKey },
                     distanceToLoadedTail = visibleChapterItems.lastOrNull()
-                        ?.takeIf { it.index == displayItems.lastIndex }?.let { item ->
+                        ?.takeIf { it.index == readerListIndex(displayItems.lastIndex) }?.let { item ->
                         (
                             item.offset + item.size - scrollState.layoutInfo.viewportEndOffset
                         ).coerceAtLeast(0)
@@ -2227,7 +2266,8 @@ private data class ReaderBookLocation(
     val chapter: Chapter,
     val chapterIndex: Int,
     val chapterProgress: Float,
-    val totalChapters: Int
+    val totalChapters: Int,
+    val contentPosition: Float? = null
 ) {
     val bookProgress: Float
         get() = if (totalChapters <= 0) {
