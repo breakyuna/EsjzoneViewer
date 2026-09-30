@@ -16,6 +16,10 @@ import com.breakyuna.esjzone.util.AppLogger
 import java.io.IOException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import org.jsoup.Jsoup
 
@@ -154,54 +158,55 @@ suspend fun EsjzoneClient.getHomeData(
     // Emit initial parsed home data immediately so UI displays with zero wait!
     onProgress?.invoke(initialHomeData)
 
-    // Now await weekly updates if not already included
-    val finalWeeklyUpdates = if (initialWeeklyUpdates.isNotEmpty()) {
-        initialWeeklyUpdates
-    } else {
-        weeklyUpdatesDeferred.await()
-    }
-
-    // Enrich remaining uncached popular seeds sequentially, reporting useful updates.
+    // Popular covers must not wait for the independent weekly-update request.
+    // The page client's existing six-request limit bounds detail enrichment.
+    // Publish each completed item immediately, keeping the original ranking order.
     val seedsToEnrich = popularSeeds.filterIndexed { index, _ ->
         val item = initialPopular.getOrNull(index)
         item == null || item.coverUrl.isBlank()
     }
 
     var currentPopular = initialPopular
-    if (seedsToEnrich.isNotEmpty()) {
-        for (seed in seedsToEnrich) {
-            val enriched = try {
-                cancellablePageRequest { enrichWeeklyPopular(authorization, seed) }
-            } catch (error: kotlinx.coroutines.CancellationException) {
-                throw error
-            } catch (error: Exception) {
-                AppLogger.w("GetHomeData", "Failed to enrich weekly popular item: ${seed.name}", error)
-                null
-            }
-            if (enriched != null) {
-                val previous = currentPopular.firstOrNull { it.url == seed.url }
-                currentPopular = currentPopular.map { item ->
-                    if (item.url == seed.url) enriched else item
+    val progressLock = Mutex()
+    coroutineScope {
+        seedsToEnrich.forEach { seed ->
+            launch {
+                val enriched = try {
+                    cancellablePageRequest { enrichWeeklyPopular(authorization, seed) }
+                } catch (error: kotlinx.coroutines.CancellationException) {
+                    throw error
+                } catch (error: Exception) {
+                    AppLogger.w("GetHomeData", "Failed to enrich weekly popular item: ${seed.name}", error)
+                    null
                 }
-                // A missing cover needs no intermediate snapshot unless R18 visibility changes.
-                if (previous != null && enriched != previous &&
-                    (enriched.coverUrl.isNotBlank() || enriched.isAdult != previous.isAdult)
-                ) {
-                    onProgress?.invoke(
-                        HomeData(
-                            recentlyUpdateTranslatedNovels,
-                            recentlyUpdateOriginalNovels,
-                            recentlyUpdateTranslatedR18Novels,
-                            recentlyUpdateOriginalR18Novels,
-                            recommendationNovels,
-                            finalWeeklyUpdates,
-                            currentPopular
-                        )
-                    )
+                if (enriched != null) {
+                    progressLock.withLock {
+                        val previous = currentPopular.firstOrNull { it.url == seed.url }
+                        currentPopular = currentPopular.map { item ->
+                            if (item.url == seed.url) enriched else item
+                        }
+                        if (previous != null && enriched != previous &&
+                            (enriched.coverUrl.isNotBlank() || enriched.isAdult != previous.isAdult)
+                        ) {
+                            onProgress?.invoke(
+                                HomeData(
+                                    recentlyUpdateTranslatedNovels,
+                                    recentlyUpdateOriginalNovels,
+                                    recentlyUpdateTranslatedR18Novels,
+                                    recentlyUpdateOriginalR18Novels,
+                                    recommendationNovels,
+                                    if (weeklyUpdatesDeferred.isCompleted) weeklyUpdatesDeferred.await()
+                                    else initialWeeklyUpdates,
+                                    currentPopular
+                                )
+                            )
+                        }
+                    }
                 }
             }
         }
     }
+    val finalWeeklyUpdates = weeklyUpdatesDeferred.await()
 
     HomeData(
         recentlyUpdateTranslatedNovels,

@@ -31,6 +31,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
@@ -52,7 +53,14 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.collectLatest
+import com.breakyuna.esjzone.app.CoverLoadingPolicy
 import com.breakyuna.esjzone.R
+import com.breakyuna.esjzone.database.BookshelfCoverStore
 import com.breakyuna.esjzone.app.PresentationAccess
 import com.breakyuna.esjzone.network.EsjzoneUrls
 import com.breakyuna.esjzone.network.LoadFailureKind
@@ -94,7 +102,7 @@ object HomeTab : AppTab {
         val navigator = LocalBaseNavigator.current
         val authorization = LocalAuthorization.current
         val model = rememberAppViewModel { HomeTabModel(authorization) }
-        val state by model.state.collectAsStateWithLifecycle()
+        val state by model.state.collectAsStateWithLifecycle(minActiveState = Lifecycle.State.CREATED)
         val randomState by model.randomRecommendations.collectAsStateWithLifecycle()
         val adult by PresentationAccess.settings.adult
         val hideHomeRecommendations by PresentationAccess.settings.hideHomeRecommendations
@@ -180,6 +188,39 @@ object HomeTab : AppTab {
         val originalAdultRows = remember(homeData?.recentlyUpdateOriginalR18, adult) {
             if (adult) prepareHomeSectionRows(homeData?.recentlyUpdateOriginalR18.orEmpty(), true)
             else emptyList()
+        }
+
+        val homeCoverUrls = remember(
+            weeklyPopularNovels, editorPicksRows, translatedRows, originalRows,
+            translatedAdultRows, originalAdultRows, hideHomeRecommendations
+        ) {
+            buildList<CoveredNovel> {
+                addAll(weeklyPopularNovels.take(2))
+                if (!hideHomeRecommendations) addAll(editorPicksRows.flatten())
+                addAll(translatedRows.flatten())
+                addAll(originalRows.flatten())
+                addAll(translatedAdultRows.flatten())
+                addAll(originalAdultRows.flatten())
+                addAll(weeklyPopularNovels.drop(2))
+            }.map { EsjzoneUrls.coverOrEmpty(it.coverUrl) }
+                .filter(String::isNotBlank)
+                .distinct()
+        }
+        val latestHomeCoverUrls by rememberUpdatedState(homeCoverUrls)
+        val coverDomain by PresentationAccess.settings.domain
+        LaunchedEffect(adult, hideHomeRecommendations, coverDomain) {
+            CoverLoadingPolicy.state.map { it.preloadHome }.distinctUntilChanged()
+                .collectLatest { allowed ->
+                    if (allowed) coroutineScope {
+                        val scheduled = mutableSetOf<String>()
+                        snapshotFlow { latestHomeCoverUrls }.collect { urls ->
+                            val added = urls.filter { scheduled.add(it) }
+                            if (added.isNotEmpty()) launch {
+                                BookshelfCoverStore.preloadHomeCovers(added)
+                            }
+                        }
+                    }
+                }
         }
 
         val density = LocalDensity.current

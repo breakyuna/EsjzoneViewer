@@ -32,6 +32,8 @@ import com.breakyuna.esjzone.domain.repository.SettingsRepository
 import com.breakyuna.esjzone.network.EsjzoneClient
 import com.breakyuna.esjzone.network.features.HomeDataCache
 import com.breakyuna.esjzone.offline.NovelDownloadStore
+import okhttp3.Dispatcher
+import okhttp3.OkHttpClient
 import okio.Path.Companion.toOkioPath
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.coroutineScope
@@ -63,6 +65,13 @@ class AppContainer(context: Context) {
         GeneralDatabase.MIGRATION_9_10
     ).fallbackToDestructiveMigrationOnDowngrade().build()
 
+    private val imageHttpClient = OkHttpClient.Builder()
+        .dispatcher(Dispatcher().apply {
+            maxRequests = 8
+            maxRequestsPerHost = 8
+        })
+        .build()
+
     val imageLoader: ImageLoader = ImageLoader.Builder(appContext)
         .memoryCache {
             MemoryCache.Builder()
@@ -74,6 +83,9 @@ class AppContainer(context: Context) {
                 .directory(appContext.cacheDir.resolve("image_cache").toOkioPath())
                 .maxSizePercent(0.05)
                 .build()
+        }
+        .components {
+            add(OkHttpNetworkFetcherFactory(callFactory = { imageHttpClient }))
         }
         .build()
 
@@ -103,6 +115,7 @@ class AppContainer(context: Context) {
     val reader: ReaderRepository = novel as ReaderRepository
 
     suspend fun initializeAsync() = withContext(Dispatchers.IO) {
+        CoverLoadingPolicy.initialize(appContext)
         coroutineScope {
             val clientJob = launch { EsjzoneClient.initialize(appContext) }
             val downloadJob = launch { NovelDownloadStore.initialize(appContext) }

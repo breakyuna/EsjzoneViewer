@@ -8,6 +8,8 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -17,6 +19,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.res.painterResource
 import com.breakyuna.esjzone.R
+import com.breakyuna.esjzone.app.CoverLoadingPolicy
+import com.breakyuna.esjzone.app.LocalCoverPage
 import com.breakyuna.esjzone.app.PresentationAccess
 import com.breakyuna.esjzone.network.EsjzoneUrls
 import coil3.compose.AsyncImage
@@ -85,8 +89,12 @@ fun AppCoverImage(
     loading: (@Composable () -> Unit)? = null,
     error: (@Composable () -> Unit)? = null
 ) {
+    val policy by CoverLoadingPolicy.state.collectAsState()
+    val page = LocalCoverPage.current
+    val allowed = page.isBlank() || policy.allowNetwork(page)
+    val request = sharedMirrorImageRequest(model, allowed)
     AppImage(
-        model = model,
+        model = request,
         contentDescription = contentDescription,
         modifier = modifier,
         contentScale = contentScale,
@@ -187,11 +195,14 @@ fun AppReaderZoomableImage(
 }
 
 @Composable
-private fun sharedMirrorImageRequest(model: Any?): ImageRequest {
+private fun sharedMirrorImageRequest(model: Any?, allowNetwork: Boolean = true): ImageRequest {
     val context = LocalContext.current
     val activeDomain = PresentationAccess.settings.domain.value
-    return remember(model, context, activeDomain) {
-        if (model is ImageRequest) model
+    return remember(model, context, activeDomain, allowNetwork) {
+        if (model is ImageRequest) {
+            if (allowNetwork) model else model.newBuilder()
+                .networkCachePolicy(CachePolicy.DISABLED).build()
+        }
         else {
             val rawUrl = model as? String
             val parsed = rawUrl?.toHttpUrlOrNull()
@@ -208,7 +219,7 @@ private fun sharedMirrorImageRequest(model: Any?): ImageRequest {
                 }
                 .memoryCachePolicy(CachePolicy.ENABLED)
                 .diskCachePolicy(CachePolicy.ENABLED)
-                .networkCachePolicy(CachePolicy.ENABLED)
+                .networkCachePolicy(if (allowNetwork) CachePolicy.ENABLED else CachePolicy.DISABLED)
                 .build()
         }
     }

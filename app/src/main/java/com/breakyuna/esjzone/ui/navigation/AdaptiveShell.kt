@@ -173,6 +173,9 @@ fun AdaptiveAppShell(
     var selectedTab by rememberSaveable { mutableStateOf(defaultTabId.name) }
     val suppressedTabs = remember { mutableStateMapOf<AppTabId, Boolean>() }
     val tab = AppTabId.entries.find { it.name == selectedTab } ?: defaultTabId
+    androidx.compose.runtime.SideEffect {
+        com.breakyuna.esjzone.app.CoverLoadingPolicy.showPage(tab.name)
+    }
     val focusManager = LocalFocusManager.current
     val homeNavigator = remember(homeStack, rootNavigator) { rootNavigator.child(homeStack) }
     val historyNavigator = remember(historyStack, rootNavigator) { rootNavigator.child(historyStack) }
@@ -436,6 +439,7 @@ private fun TabStackDisplay(
         { suppressed: Boolean -> suppressionState[tabId] = suppressed }
     }
     CompositionLocalProvider(
+        com.breakyuna.esjzone.app.LocalCoverPage provides tabId.name,
         LocalBaseNavigator provides navigator,
         LocalFloatingNavSuppression provides suppressNavigation,
         LocalLifecycleOwner provides lifecycleOwner,

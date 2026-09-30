@@ -5,6 +5,7 @@ import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import androidx.lifecycle.viewModelScope
 import com.breakyuna.esjzone.EsjzoneApplication
+import com.breakyuna.esjzone.app.CoverLoadingPolicy
 import com.breakyuna.esjzone.app.PresentationAccess
 import com.breakyuna.esjzone.network.Authorization
 import com.breakyuna.esjzone.network.LoadFailureKind
@@ -232,6 +233,7 @@ class HomeTabModel(
     fun getHomeData(forceRefresh: Boolean = false) {
         if (loadStarted) return
         loadStarted = true
+        CoverLoadingPolicy.homeDataLoading(true)
         viewModelScope.launch(Dispatchers.IO) {
             val visibleData = mutableState.value as? State.Result
             mutableState.value = visibleData?.copy(
@@ -267,6 +269,8 @@ class HomeTabModel(
                 }
                 loadStarted = false
                 com.breakyuna.esjzone.util.AppLogger.e("HomeTabModel", "Failed to load home data", e)
+            } finally {
+                CoverLoadingPolicy.homeDataLoading(false)
             }
         }
     }

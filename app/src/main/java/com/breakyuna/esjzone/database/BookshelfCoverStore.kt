@@ -1,6 +1,7 @@
 package com.breakyuna.esjzone.database
 
 import com.breakyuna.esjzone.EsjzoneApplication
+import com.breakyuna.esjzone.app.CoverLoadingPolicy
 import com.breakyuna.esjzone.app.PresentationAccess
 import com.breakyuna.esjzone.data.settings.SettingsDefaults
 import com.breakyuna.esjzone.database.entity.BookshelfEntry
@@ -11,6 +12,12 @@ import coil3.request.ImageRequest
 import java.io.File
 import java.security.MessageDigest
 import java.util.concurrent.ConcurrentHashMap
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.transformLatest
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -31,6 +38,7 @@ import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
  * visible bookshelf item gets a stable app-files copy.  The file name includes
  * the remote image hash, so an updated cover replaces the previous file.
  */
+@OptIn(ExperimentalCoroutinesApi::class)
 object BookshelfCoverStore {
     private const val DIRECTORY_NAME = "bookshelf_covers"
     private const val BATCH_SIZE = 4
@@ -38,6 +46,37 @@ object BookshelfCoverStore {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val activeKeys = ConcurrentHashMap.newKeySet<String>()
     private val downloadSemaphore = Semaphore(2)
+    private val homePreloadSemaphore = Semaphore(8)
+
+    /** Home covers enter the shared image queue before new shelf persistence downloads. */
+    suspend fun preloadHomeCovers(urls: List<String>) {
+        if (urls.isEmpty()) return
+        CoverLoadingPolicy.homePreloadStarted()
+        try {
+            coroutineScope {
+                urls.map { source ->
+                    async {
+                        homePreloadSemaphore.withPermit {
+                            val request = ImageRequest.Builder(EsjzoneApplication.instance)
+                                .data(EsjzoneUrls.resolve(source))
+                                .size(320, 480)
+                                .apply {
+                                    if (source.toHttpUrlOrNull()?.host?.let(EsjzoneUrls::isEsjHost) == true) {
+                                        val key = EsjzoneUrls.canonicalCacheUrl(source)
+                                        memoryCacheKey(key)
+                                        diskCacheKey(key)
+                                    }
+                                }
+                                .build()
+                            PresentationAccess.imageLoader.execute(request)
+                        }
+                    }
+                }.awaitAll()
+            }
+        } finally {
+            CoverLoadingPolicy.homePreloadFinished()
+        }
+    }
 
     private val directory: File
         get() = File(EsjzoneApplication.instance.filesDir, DIRECTORY_NAME).apply { mkdirs() }
@@ -120,7 +159,14 @@ object BookshelfCoverStore {
                     coroutineScope {
                         batch.map { entry ->
                             async {
-                                downloadSemaphore.withPermit { persist(entry) }
+                                downloadSemaphore.withPermit {
+                                    CoverLoadingPolicy.state
+                                        .map { it.allowNetwork("BOOKSHELF") }
+                                        .distinctUntilChanged()
+                                        .transformLatest { allowed ->
+                                            if (allowed) emit(persist(entry))
+                                        }.first()
+                                }
                             }
                         }.awaitAll()
                     }
@@ -162,6 +208,8 @@ object BookshelfCoverStore {
                 .build()
             PresentationAccess.imageLoader.execute(request)
             BookmarkCoverStore.findCoilCachedCover(source)?.let { copyAtomically(it, target) }
+        } catch (error: CancellationException) {
+            throw error
         } catch (error: Exception) {
             AppLogger.w("BookshelfCoverStore", "Unable to persist cover for ${entry.bookKey}", error)
         }
