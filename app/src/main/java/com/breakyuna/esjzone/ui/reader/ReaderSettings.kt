@@ -92,7 +92,13 @@ data class ReaderSettings(
     val volumeKeyPaging: Boolean = false,
     val tapPagingEnabled: Boolean = true,
     val horizontalSwipePagingEnabled: Boolean = true,
-    val autoResumeLastReading: Boolean = false
+    val autoResumeLastReading: Boolean = false,
+    val leftTapForward: Boolean = false,
+    val eyeProtectionEnabled: Boolean = false,
+    val showSystemStatusBar: Boolean = false,
+    val showSystemNavigationBar: Boolean = true,
+    val showChapterName: Boolean = true,
+    val showTimeBattery: Boolean = false
 ) {
     val lineHeightSp: Float
         get() = fontSizeSp + lineSpacingSp

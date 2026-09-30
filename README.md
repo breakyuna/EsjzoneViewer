@@ -131,3 +131,5 @@ ESJ Zone 的网络请求、登录认证、页面结构与 HTML 解析相关说�
 ## 📄 许可证
 
 本项目采用 **GNU General Public License v3.0**，完整文本见 [LICENSE](LICENSE)。保留原项目的版权与许可证信息，第三方依赖遵循各自的许可证。
+
+应用内可从设置页版本号下方的“开源许可”进入次级页面，离线查看本项目、第三方依赖和阅读字体的来源与完整许可文本。项目依赖许可位于 `app/src/main/assets/open_source_licenses/`，字体许可保留在 `app/src/main/assets/font_licenses/`；新增依赖时同步补充对应归属与许可。

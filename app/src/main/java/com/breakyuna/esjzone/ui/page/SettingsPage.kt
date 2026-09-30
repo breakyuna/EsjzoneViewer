@@ -132,6 +132,7 @@ object SettingsPage : AppDestination {
         var showLanguageDialog by remember { mutableStateOf(false) }
         var showScriptDialog by remember { mutableStateOf(false) }
         var showStartupPageDialog by remember { mutableStateOf(false) }
+        var showMoreReaderSettings by remember { mutableStateOf(false) }
         var switchingDomain by remember { mutableStateOf(false) }
         var siteUnavailable by remember { mutableStateOf(false) }
         var draggingNavigationItem by remember { mutableStateOf<String?>(null) }
@@ -380,24 +381,8 @@ object SettingsPage : AppDestination {
                 }
 
                 SettingsSection(Icons.Filled.MenuBook, stringResource(R.string.settings_reader_section)) {
-                    ToggleRow(
-                        stringResource(R.string.settings_auto_resume_reading),
-                        stringResource(R.string.settings_auto_resume_reading_description),
-                        readerSettings.autoResumeLastReading
-                    ) { enabled ->
-                        PresentationAccess.readerSettings.saveInBackground(
-                            readerSettings.copy(autoResumeLastReading = enabled)
-                        )
-                    }
-                    HorizontalDivider(modifier = Modifier.padding(vertical = 2.dp))
-                    ToggleRow(
-                        stringResource(R.string.settings_volume_key_paging),
-                        stringResource(R.string.settings_volume_key_paging_description),
-                        readerSettings.volumeKeyPaging
-                    ) { enabled ->
-                        PresentationAccess.readerSettings.saveInBackground(
-                            readerSettings.copy(volumeKeyPaging = enabled)
-                        )
+                    LinkRow(Icons.Filled.MenuBook, stringResource(R.string.reader_more_settings)) {
+                        showMoreReaderSettings = true
                     }
                     HorizontalDivider(modifier = Modifier.padding(vertical = 2.dp))
                     ToggleRow(
@@ -470,6 +455,10 @@ object SettingsPage : AppDestination {
                 }
 
                 SettingsSection(Icons.Filled.Storage, stringResource(R.string.settings_storage_section)) {
+                    LinkRow(Icons.Filled.Download, stringResource(R.string.local_backup), stringResource(R.string.backup_short_description)) {
+                        navigator?.pushIfNotCurrent(LocalBackupPage)
+                    }
+                    HorizontalDivider()
                     val cache = state.cacheStats
                     CacheRow(stringResource(R.string.settings_page_cache), when { state.cacheStatsError -> stringResource(R.string.local_cache_stats_failed); cache == null -> stringResource(R.string.local_cache_loading); else -> stringResource(R.string.local_cache_pages, formatBytes(cache.pageBytes), cache.pageEntries) }, state.cacheOperation != null, stringResource(R.string.local_cache_clear_pages)) { model.clearPageCache() }
                     HorizontalDivider()
@@ -520,6 +509,9 @@ object SettingsPage : AppDestination {
                             style = com.breakyuna.esjzone.ui.designsystem.AppTypography.titleMedium,
                             color = MaterialTheme.colorScheme.primary
                         )
+                    }
+                    LinkRow(Icons.Filled.Info, stringResource(R.string.open_source_licenses)) {
+                        navigator?.pushIfNotCurrent(OpenSourceLicensesPage)
                     }
                     ToggleRow(
                         title = stringResource(R.string.update_auto_check),
@@ -623,6 +615,12 @@ object SettingsPage : AppDestination {
                 PresentationAccess.settings.setStartTab(selected)
             },
             onDismiss = { showStartupPageDialog = false }
+        )
+
+        if (showMoreReaderSettings) ReaderMoreSettingsDialog(
+            settings = readerSettings,
+            onSettingsChange = PresentationAccess.readerSettings::saveDebounced,
+            onDismiss = { showMoreReaderSettings = false }
         )
 
         if (state.logoutFailed) AlertDialog(

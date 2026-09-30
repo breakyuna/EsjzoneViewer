@@ -658,16 +658,26 @@
     <string name="novel_download_range_error">Enter whole numbers from 1 to %1$d. The end must be at or after the start.</string>
     <string name="novel_download_range_confirm">Confirm</string>
     <string name="novel_download_selection_too_large">This selection exceeds the task limit. Download smaller ranges separately, or enter the full table of contents range to download the whole book.</string>
-    <string name="reader_tab_appearance">Appearance &amp; typography</string>
+    <string name="reader_tab_appearance">Display</string>
     <string name="reader_tab_controls">Controls</string>
     <string name="reader_font_source_serif">Source Han Serif</string>
     <string name="reader_font_source_sans">Source Han Sans</string>
     <string name="reader_font_wenkai">LXGW WenKai</string>
     <string name="reader_font_downloading">Downloading; using default for now</string>
-    <string name="reader_font_licenses">Font licenses</string>
     <string name="reader_tap_paging">Tap to turn pages</string>
     <string name="reader_swipe_paging">Swipe to turn pages</string>
     <string name="reader_volume_paging">Volume key paging</string>
+    <string name="reader_more_settings">More reading settings</string>
+    <string name="reader_more_controls">Paging and startup</string>
+    <string name="reader_more_display">Reading screen</string>
+    <string name="reader_left_tap_action">Tap the left side</string>
+    <string name="reader_left_tap_previous">Previous page</string>
+    <string name="reader_left_tap_next">Next page</string>
+    <string name="reader_eye_protection">Eye comfort mode</string>
+    <string name="reader_show_system_status">Show system status bar</string>
+    <string name="reader_show_system_navigation">Show system navigation bar</string>
+    <string name="reader_show_chapter_name">Show chapter name</string>
+    <string name="reader_show_time_battery">Show time and battery</string>
     <string name="reader_reset_confirmation">Restore all reader settings to their defaults?</string>
     <string name="local_backup">Local data backup</string>
     <string name="backup_short_description">Export or import selected local data</string>
@@ -691,4 +701,5 @@
     <string name="group_name">Group name</string>
     <string name="group_delete_hint">Delete “%1$s”? Its books will become ungrouped and remain on your bookshelf.</string>
     <string name="group_error">Could not update groups. Check for a duplicate name and try again.</string>
+    <string name="open_source_licenses">Open source licenses</string>
 </resources>

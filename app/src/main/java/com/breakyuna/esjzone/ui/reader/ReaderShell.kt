@@ -15,6 +15,16 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import kotlin.math.abs
 
+/** Returns the page direction for a tap in the reader canvas; null keeps the toolbar action. */
+fun readerTapPageDirection(xFraction: Float, enabled: Boolean, leftTapForward: Boolean): Boolean? {
+    if (!enabled) return null
+    return when {
+        xFraction < 0.28f -> leftTapForward
+        xFraction > 0.72f -> !leftTapForward
+        else -> null
+    }
+}
+
 /**
  * Root presentation boundary for immersive reading. It deliberately owns only
  * the reader canvas and tap surface; Navigation 3 owns the route and back

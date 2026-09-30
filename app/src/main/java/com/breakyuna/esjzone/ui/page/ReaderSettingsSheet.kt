@@ -24,12 +24,10 @@ import androidx.compose.material.icons.filled.Brightness4
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalConfiguration
-import androidx.compose.ui.platform.LocalContext
 import com.breakyuna.esjzone.ui.designsystem.globalStringResource as stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
@@ -39,9 +37,7 @@ import com.breakyuna.esjzone.app.PresentationAccess
 import com.breakyuna.esjzone.ui.designsystem.AppSpacing
 import com.breakyuna.esjzone.ui.designsystem.GlobalText as Text
 import com.breakyuna.esjzone.ui.reader.*
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import kotlin.math.roundToInt
 
 @Composable
@@ -50,12 +46,13 @@ internal fun ReaderSettingsSheet(
     settings: ReaderSettings,
     onSettingsChange: (ReaderSettings) -> Unit,
     onDismiss: () -> Unit,
+    onMoreSettings: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    var tab by rememberSaveable { mutableIntStateOf(0) }
+    val tabPager = rememberPagerState(pageCount = { 2 })
+    val scope = rememberCoroutineScope()
     var draft by remember(settings) { mutableStateOf(settings) }
     var confirmReset by remember { mutableStateOf(false) }
-    var showLicenses by remember { mutableStateOf(false) }
     val themeMode by PresentationAccess.settings.themeMode
     val systemDark = isSystemInDarkTheme()
     val darkTheme = when (themeMode) {
@@ -79,7 +76,7 @@ internal fun ReaderSettingsSheet(
                 .height((LocalConfiguration.current.screenHeightDp * 0.5f).dp),
             shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
             color = MaterialTheme.colorScheme.surface,
-            shadowElevation = 12.dp
+            shadowElevation = 0.dp
         ) {
             Column {
                 Row(
@@ -90,16 +87,19 @@ internal fun ReaderSettingsSheet(
                     TextButton(onClick = { confirmReset = true }) { Text(stringResource(R.string.reader_reset)) }
                     IconButton(onClick = onDismiss) { Icon(Icons.Default.Close, stringResource(R.string.close)) }
                 }
-                TabRow(selectedTabIndex = tab) {
+                TabRow(selectedTabIndex = tabPager.currentPage) {
                     listOf(R.string.reader_tab_appearance, R.string.reader_tab_controls).forEachIndexed { index, label ->
-                        Tab(selected = tab == index, onClick = { tab = index }, text = { Text(stringResource(label)) })
+                        Tab(selected = tabPager.currentPage == index,
+                            onClick = { scope.launch { tabPager.animateScrollToPage(index) } },
+                            text = { Text(stringResource(label)) })
                     }
                 }
-                Column(
-                    Modifier.weight(1f).verticalScroll(rememberScrollState())
-                        .padding(horizontal = 16.dp, vertical = 8.dp),
-                    verticalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
+                HorizontalPager(state = tabPager, modifier = Modifier.weight(1f)) { tab ->
+                    Column(
+                        Modifier.fillMaxSize().verticalScroll(rememberScrollState())
+                            .padding(horizontal = 16.dp, vertical = 8.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
                     if (tab == 0) {
                         Text(stringResource(R.string.reader_background), style = MaterialTheme.typography.titleSmall)
                         Row(
@@ -195,7 +195,6 @@ internal fun ReaderSettingsSheet(
                             ReaderScript.SIMPLIFIED to stringResource(R.string.reader_script_simplified),
                             ReaderScript.TRADITIONAL to stringResource(R.string.reader_script_traditional)
                         )) { commit(draft.copy(script = it)) }
-                        TextButton(onClick = { showLicenses = true }) { Text(stringResource(R.string.reader_font_licenses)) }
                     } else {
                         ReaderToggle(stringResource(R.string.reader_tap_paging), draft.tapPagingEnabled) { commit(draft.copy(tapPagingEnabled = it)) }
                         ReaderToggle(stringResource(R.string.reader_swipe_paging), draft.horizontalSwipePagingEnabled) { commit(draft.copy(horizontalSwipePagingEnabled = it)) }
@@ -208,21 +207,14 @@ internal fun ReaderSettingsSheet(
                             ReaderPageAnimation.COVER to stringResource(R.string.reader_page_animation_cover)
                         )) { commit(draft.copy(pageAnimation = it)) }
                     }
+                    TextButton(onClick = onMoreSettings) { Text(stringResource(R.string.reader_more_settings)) }
+                    }
                 }
             }
         }
     }
 
     if (confirmReset) AlertDialog(onDismissRequest = { confirmReset = false }, title = { Text(stringResource(R.string.reader_reset)) }, text = { Text(stringResource(R.string.reader_reset_confirmation)) }, confirmButton = { TextButton(onClick = { commit(ReaderSettings()); confirmReset = false }) { Text(stringResource(R.string.reader_reset)) } }, dismissButton = { TextButton(onClick = { confirmReset = false }) { Text(stringResource(R.string.cancel)) } })
-    if (showLicenses) {
-        val context = LocalContext.current
-        val license by produceState("") {
-            value = withContext(Dispatchers.IO) {
-                listOf("SOURCES.md", "source_han_serif.txt", "source_han_sans.txt", "lxgw_wenkai.txt").joinToString("\n\n") { name -> context.assets.open("font_licenses/$name").bufferedReader().use { it.readText() } }
-            }
-        }
-        AlertDialog(onDismissRequest = { showLicenses = false }, title = { Text(stringResource(R.string.reader_font_licenses)) }, text = { Text(license, modifier = Modifier.verticalScroll(rememberScrollState())) }, confirmButton = { TextButton(onClick = { showLicenses = false }) { Text(stringResource(R.string.close)) } })
-    }
 }
 
 @Composable

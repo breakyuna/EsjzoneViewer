@@ -117,7 +117,7 @@ fun ReaderBlocks(
                         modifier = Modifier.padding(vertical = settings.paragraphSpacingDp.dp)
                     )
                     ReaderBlock.LineBreak -> Spacer(
-                        modifier = Modifier.height(settings.lineHeightSp.dp)
+                        modifier = Modifier.height(with(density) { settings.lineHeightSp.sp.toDp() })
                     )
                 }
             }
@@ -211,10 +211,11 @@ fun ReaderChapterHeading(
 }
 
 @Composable
-private fun ReaderImage(
+internal fun ReaderImage(
     url: String,
     contentDescription: String,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    contentScale: ContentScale = ContentScale.FillWidth
 ) {
     var expanded by rememberSaveable(url) { mutableStateOf(false) }
     val reducedMotion = rememberReaderReducedMotion()
@@ -230,7 +231,7 @@ private fun ReaderImage(
         AppReaderImage(
             model = url,
             contentDescription = contentDescription,
-            contentScale = ContentScale.FillWidth,
+            contentScale = contentScale,
             modifier = Modifier.fillMaxWidth()
         )
     }

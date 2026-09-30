@@ -1,5 +1,6 @@
 package com.breakyuna.esjzone
 
+import android.annotation.SuppressLint
 import android.content.Intent
 import android.content.res.Configuration
 import android.content.res.Resources
@@ -62,18 +63,16 @@ import java.util.Locale
 
 class MainActivity : ComponentActivity() {
 
-    override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
-        if (event?.repeatCount == 0 && ReaderVolumeKeyDispatcher.dispatch(keyCode)) {
+    // Handle volume keys before a focused reader control can consume them.
+    @SuppressLint("RestrictedApi")
+    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        if (ReaderVolumeKeyDispatcher.isIntercepting(event.keyCode)) {
+            if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0) {
+                ReaderVolumeKeyDispatcher.dispatch(event.keyCode)
+            }
             return true
         }
-        return super.onKeyDown(keyCode, event)
-    }
-
-    override fun onKeyUp(keyCode: Int, event: KeyEvent?): Boolean {
-        if (ReaderVolumeKeyDispatcher.isIntercepting(keyCode)) {
-            return true
-        }
-        return super.onKeyUp(keyCode, event)
+        return super.dispatchKeyEvent(event)
     }
 
     companion object {

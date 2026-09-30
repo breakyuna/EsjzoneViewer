@@ -30,10 +30,26 @@ class DataStoreAcceptanceInstrumentedTest {
         val scope = newScope()
         try {
             val reader = ReaderSettingsDataStore(context, scope, fileName("reader-font-gestures"))
-            reader.save(ReaderSettings(font = ReaderFont.LXGW_WENKAI, tapPagingEnabled = false, horizontalSwipePagingEnabled = true))
+            reader.save(ReaderSettings(
+                font = ReaderFont.LXGW_WENKAI,
+                tapPagingEnabled = false,
+                horizontalSwipePagingEnabled = true,
+                leftTapForward = true,
+                eyeProtectionEnabled = true,
+                showSystemStatusBar = true,
+                showSystemNavigationBar = false,
+                showChapterName = false,
+                showTimeBattery = true
+            ))
             val first = reader.settings.first { it.font == ReaderFont.LXGW_WENKAI }
             assertFalse(first.tapPagingEnabled)
             assertTrue(first.horizontalSwipePagingEnabled)
+            assertTrue(first.leftTapForward)
+            assertTrue(first.eyeProtectionEnabled)
+            assertTrue(first.showSystemStatusBar)
+            assertFalse(first.showSystemNavigationBar)
+            assertFalse(first.showChapterName)
+            assertTrue(first.showTimeBattery)
             reader.save(first.copy(font = ReaderFont.SOURCE_HAN_SERIF, tapPagingEnabled = true, horizontalSwipePagingEnabled = false))
             val second = reader.settings.first { it.font == ReaderFont.SOURCE_HAN_SERIF }
             assertTrue(second.tapPagingEnabled)
@@ -44,6 +60,7 @@ class DataStoreAcceptanceInstrumentedTest {
             val reset = reader.settings.first { it.font == ReaderFont.SYSTEM }
             assertTrue(reset.tapPagingEnabled)
             assertTrue(reset.horizontalSwipePagingEnabled)
+            assertFalse(reset.leftTapForward)
         } finally {
             scope.cancel()
         }

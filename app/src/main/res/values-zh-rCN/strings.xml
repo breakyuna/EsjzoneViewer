@@ -658,16 +658,26 @@
     <string name="novel_download_range_error">请输入 1–%1$d 内的整数，终止序号不能小于起始序号。</string>
     <string name="novel_download_range_confirm">确定</string>
     <string name="novel_download_selection_too_large">所选章节超过单次任务容量，请缩小范围分批下载；输入完整目录范围可下载全书。</string>
-    <string name="reader_tab_appearance">外观与排版</string>
+    <string name="reader_tab_appearance">显示</string>
     <string name="reader_tab_controls">操作</string>
     <string name="reader_font_source_serif">思源宋体</string>
     <string name="reader_font_source_sans">思源黑体</string>
     <string name="reader_font_wenkai">霞鹜文楷</string>
     <string name="reader_font_downloading">正在下载，暂用默认字体</string>
-    <string name="reader_font_licenses">字体授权</string>
     <string name="reader_tap_paging">点击两侧翻页</string>
     <string name="reader_swipe_paging">横滑翻页</string>
     <string name="reader_volume_paging">音量键翻页</string>
+    <string name="reader_more_settings">更多阅读设置</string>
+    <string name="reader_more_controls">翻页与启动</string>
+    <string name="reader_more_display">阅读界面显示</string>
+    <string name="reader_left_tap_action">轻按页面左侧</string>
+    <string name="reader_left_tap_previous">翻到上一页</string>
+    <string name="reader_left_tap_next">翻到下一页</string>
+    <string name="reader_eye_protection">护眼模式</string>
+    <string name="reader_show_system_status">显示系统状态栏</string>
+    <string name="reader_show_system_navigation">显示系统导航栏</string>
+    <string name="reader_show_chapter_name">显示章节名</string>
+    <string name="reader_show_time_battery">显示时间电量</string>
     <string name="reader_reset_confirmation">将全部阅读设置恢复为默认值？</string>
 
     <string name="local_backup">本地数据备份</string>
@@ -692,4 +702,5 @@
     <string name="group_name">分组名称</string>
     <string name="group_delete_hint">删除“%1$s”？组内书籍将移至未分组，仍保留在书架中。</string>
     <string name="group_error">分组操作失败，请检查名称是否重复后重试。</string>
+    <string name="open_source_licenses">开源许可</string>
 </resources>

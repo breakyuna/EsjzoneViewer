@@ -150,7 +150,13 @@ class ReaderSettingsDataStore(
             volumeKeyPaging = this[VOLUME_KEY_PAGING] ?: defaults.volumeKeyPaging,
             tapPagingEnabled = this[TAP_PAGING] ?: defaults.tapPagingEnabled,
             horizontalSwipePagingEnabled = this[HORIZONTAL_SWIPE_PAGING] ?: defaults.horizontalSwipePagingEnabled,
-            autoResumeLastReading = this[AUTO_RESUME_LAST_READING] ?: defaults.autoResumeLastReading
+            autoResumeLastReading = this[AUTO_RESUME_LAST_READING] ?: defaults.autoResumeLastReading,
+            leftTapForward = this[LEFT_TAP_FORWARD] ?: defaults.leftTapForward,
+            eyeProtectionEnabled = this[EYE_PROTECTION] ?: defaults.eyeProtectionEnabled,
+            showSystemStatusBar = this[SHOW_SYSTEM_STATUS_BAR] ?: defaults.showSystemStatusBar,
+            showSystemNavigationBar = this[SHOW_SYSTEM_NAVIGATION_BAR] ?: defaults.showSystemNavigationBar,
+            showChapterName = this[SHOW_CHAPTER_NAME] ?: defaults.showChapterName,
+            showTimeBattery = this[SHOW_TIME_BATTERY] ?: defaults.showTimeBattery
         )
     }
 
@@ -178,6 +184,12 @@ class ReaderSettingsDataStore(
         preferences[TAP_PAGING] = tapPagingEnabled
         preferences[HORIZONTAL_SWIPE_PAGING] = horizontalSwipePagingEnabled
         preferences[AUTO_RESUME_LAST_READING] = autoResumeLastReading
+        preferences[LEFT_TAP_FORWARD] = leftTapForward
+        preferences[EYE_PROTECTION] = eyeProtectionEnabled
+        preferences[SHOW_SYSTEM_STATUS_BAR] = showSystemStatusBar
+        preferences[SHOW_SYSTEM_NAVIGATION_BAR] = showSystemNavigationBar
+        preferences[SHOW_CHAPTER_NAME] = showChapterName
+        preferences[SHOW_TIME_BATTERY] = showTimeBattery
     }
 
     private fun SharedPreferences.readString(key: String): String? =
@@ -226,6 +238,12 @@ class ReaderSettingsDataStore(
         val HORIZONTAL_SWIPE_PAGING = booleanPreferencesKey("horizontal_swipe_paging")
         val VOLUME_KEY_PAGING = booleanPreferencesKey("volume_key_paging")
         val AUTO_RESUME_LAST_READING = booleanPreferencesKey("auto_resume_last_reading")
+        val LEFT_TAP_FORWARD = booleanPreferencesKey("left_tap_forward")
+        val EYE_PROTECTION = booleanPreferencesKey("eye_protection")
+        val SHOW_SYSTEM_STATUS_BAR = booleanPreferencesKey("show_system_status_bar")
+        val SHOW_SYSTEM_NAVIGATION_BAR = booleanPreferencesKey("show_system_navigation_bar")
+        val SHOW_CHAPTER_NAME = booleanPreferencesKey("show_chapter_name")
+        val SHOW_TIME_BATTERY = booleanPreferencesKey("show_time_battery")
         val MIGRATION_COMPLETE = androidx.datastore.preferences.core.booleanPreferencesKey(
             "legacy_reader_settings_migration_complete"
         )

@@ -14,37 +14,48 @@ import androidx.core.view.WindowInsetsControllerCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 
-/** Own status-bar visibility only while this navigation entry is resumed. */
+/** Own system-bar visibility only while this reader entry is resumed. */
 @Composable
-fun ReaderSystemBars(showBars: Boolean) {
+fun ReaderSystemBars(
+    showChrome: Boolean,
+    showSystemStatusBar: Boolean,
+    showSystemNavigationBar: Boolean
+) {
     val view = LocalView.current
     val lifecycle = LocalLifecycleOwner.current.lifecycle
-    val currentShowBars = rememberUpdatedState(showBars)
+    val currentStatus = rememberUpdatedState(showChrome || showSystemStatusBar)
+    val currentNavigation = rememberUpdatedState(showChrome || showSystemNavigationBar)
     DisposableEffect(view, lifecycle) {
         var context = view.context
         while (context is ContextWrapper && context !is Activity) context = context.baseContext
         val window = (context as? Activity)?.window
         if (window == null) return@DisposableEffect onDispose { }
         val controller = WindowCompat.getInsetsController(window, view)
-        val type = WindowInsetsCompat.Type.statusBars()
-        var previousVisible = true
+        val statusType = WindowInsetsCompat.Type.statusBars()
+        val navigationType = WindowInsetsCompat.Type.navigationBars()
+        var previousStatusVisible = true
+        var previousNavigationVisible = true
         var previousBehavior = controller.systemBarsBehavior
         var ownsBars = false
         fun restore() {
             if (!ownsBars) return
             ownsBars = false
             controller.systemBarsBehavior = previousBehavior
-            if (previousVisible) controller.show(type) else controller.hide(type)
+            if (previousStatusVisible) controller.show(statusType) else controller.hide(statusType)
+            if (previousNavigationVisible) controller.show(navigationType) else controller.hide(navigationType)
         }
         fun apply() {
             if (!lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) return
             if (!ownsBars) {
-                previousVisible = ViewCompat.getRootWindowInsets(view)?.isVisible(type) ?: true
+                val insets = ViewCompat.getRootWindowInsets(view)
+                previousStatusVisible = insets?.isVisible(statusType) ?: true
+                previousNavigationVisible = insets?.isVisible(navigationType) ?: true
                 previousBehavior = controller.systemBarsBehavior
                 ownsBars = true
             }
             controller.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
-            if (currentShowBars.value) controller.show(type) else controller.hide(type)
+            if (currentStatus.value) controller.show(statusType) else controller.hide(statusType)
+            if (currentNavigation.value) controller.show(navigationType) else controller.hide(navigationType)
         }
         val observer = LifecycleEventObserver { _, event ->
             when (event) {
@@ -58,14 +69,16 @@ fun ReaderSystemBars(showBars: Boolean) {
         apply()
         onDispose { lifecycle.removeObserver(observer); restore() }
     }
-    DisposableEffect(showBars, view, lifecycle) {
+    DisposableEffect(showChrome, showSystemStatusBar, showSystemNavigationBar, view, lifecycle) {
         var context = view.context
         while (context is ContextWrapper && context !is Activity) context = context.baseContext
         val window = (context as? Activity)?.window
         if (window != null && lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) {
             val controller = WindowCompat.getInsetsController(window, view)
-            if (showBars) controller.show(WindowInsetsCompat.Type.statusBars())
+            if (showChrome || showSystemStatusBar) controller.show(WindowInsetsCompat.Type.statusBars())
             else controller.hide(WindowInsetsCompat.Type.statusBars())
+            if (showChrome || showSystemNavigationBar) controller.show(WindowInsetsCompat.Type.navigationBars())
+            else controller.hide(WindowInsetsCompat.Type.navigationBars())
         }
         onDispose { }
     }
