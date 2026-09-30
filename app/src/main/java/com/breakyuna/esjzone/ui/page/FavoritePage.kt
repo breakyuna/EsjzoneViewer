@@ -7,6 +7,7 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Spacer
@@ -259,6 +260,11 @@ object FavoritePage : AppDestination {
         fun requestDelete() {
             pendingDelete = shown.filter { it.bookKey in selected }
             showDeleteDialog = pendingDelete.isNotEmpty()
+        }
+
+        fun selectBook(entry: BookshelfEntry) {
+            selected = if (editing) selected + entry.bookKey else setOf(entry.bookKey)
+            editing = true
         }
 
         fun exitEdit() {
@@ -570,13 +576,15 @@ object FavoritePage : AppDestination {
                                         Box(Modifier.weight(1f)) {
                                             if (listView && !editing) ShelfListItem(
                                                 entry = entry, enabled = !deleting,
-                                                onClick = { openBook(entry) }
+                                                onClick = { openBook(entry) },
+                                                onLongClick = { selectBook(entry) }
                                             ) else ShelfCard(
                                                 entry = entry,
                                                 readingActivity = readingIndex.activityFor(entry),
                                                 selected = entry.bookKey in selected,
                                                 editing = editing,
                                                 enabled = !deleting,
+                                                onLongClick = { selectBook(entry) },
                                                 onClick = {
                                                     if (editing) {
                                                         selected = if (entry.bookKey in selected) selected - entry.bookKey else selected + entry.bookKey
@@ -767,6 +775,7 @@ private fun ShelfCard(
     selected: Boolean,
     editing: Boolean,
     enabled: Boolean,
+    onLongClick: () -> Unit,
     onClick: () -> Unit
 ) {
     // Keep bookshelf covers aligned with the compact 8dp corners used by
@@ -778,7 +787,14 @@ private fun ShelfCard(
         ).clickable(enabled = enabled, onClick = onClick).padding(if (selected && editing) AppSpacing.xs else AppSpacing.zero),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Box(Modifier.fillMaxWidth().aspectRatio(0.7f)) {
+        Box(
+            Modifier.fillMaxWidth().aspectRatio(0.7f).clip(shape).combinedClickable(
+                enabled = enabled,
+                onClick = onClick,
+                onLongClickLabel = stringResource(R.string.bookshelf_edit),
+                onLongClick = onLongClick
+            )
+        ) {
             AppNovelCover(
                 coverUrl = BookshelfCoverStore.localOrRemote(entry),
                 title = entry.title,
@@ -843,12 +859,24 @@ private fun BookshelfUpdateDot(modifier: Modifier = Modifier) {
 }
 
 @Composable
-private fun ShelfListItem(entry: BookshelfEntry, enabled: Boolean, onClick: () -> Unit) {
+private fun ShelfListItem(
+    entry: BookshelfEntry,
+    enabled: Boolean,
+    onClick: () -> Unit,
+    onLongClick: () -> Unit
+) {
     Row(
         Modifier.fillMaxWidth().clickable(enabled = enabled, onClick = onClick).padding(vertical = AppSpacing.xs),
         horizontalArrangement = Arrangement.spacedBy(AppSpacing.md), verticalAlignment = Alignment.Top
     ) {
-        Box(Modifier.size(width = 100.dp, height = 140.dp)) {
+        Box(
+            Modifier.size(width = 100.dp, height = 140.dp).clip(AppShapes.compact).combinedClickable(
+                enabled = enabled,
+                onClick = onClick,
+                onLongClickLabel = stringResource(R.string.bookshelf_edit),
+                onLongClick = onLongClick
+            )
+        ) {
             AppNovelCover(
                 BookshelfCoverStore.localOrRemote(entry),
                 entry.title,

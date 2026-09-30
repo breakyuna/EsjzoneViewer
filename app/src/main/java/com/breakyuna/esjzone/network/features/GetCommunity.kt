@@ -20,6 +20,7 @@ import com.breakyuna.esjzone.novellibrary.community.ForumThread
 import com.breakyuna.esjzone.novellibrary.community.resolveForumGroupName
 import com.breakyuna.esjzone.novellibrary.novel.Comment
 import com.breakyuna.esjzone.novellibrary.novel.COMMENT_PAGE_SIZE
+import com.breakyuna.esjzone.util.CommentRequestTiming
 import com.breakyuna.esjzone.util.AppLogger
 import com.google.gson.JsonElement
 import com.google.gson.JsonObject
@@ -143,12 +144,13 @@ internal fun parseCommentPageSnapshot(document: Document, targetUrl: String): Co
     )
 }
 
-fun EsjzoneClient.submitForumComment(
+internal fun EsjzoneClient.submitForumComment(
     authorization: Authorization,
     pageUrl: String,
     content: String,
     replyToken: String? = null,
-    preparedForum: ForumCommentPreparation? = null
+    preparedForum: ForumCommentPreparation? = null,
+    timing: CommentRequestTiming
 ): CommentSubmission {
     val submittedContent = content.trim()
     require(submittedContent.isNotEmpty()) { "Comment content cannot be empty" }
@@ -158,12 +160,14 @@ fun EsjzoneClient.submitForumComment(
         it.targetUrl == targetUrl &&
             System.nanoTime() - it.fetchedAtNanos in 0..TimeUnit.MINUTES.toNanos(2)
     }
-    val initialDocument = if (prepared == null) {
-        Jsoup.parse(
-            getPage(authorization, targetUrl, PageCacheTtl.COMMUNITY, pageKind = PageKind.COMMUNITY),
-            targetUrl
-        )
-    } else null
+    val initialDocument = timing.stage(if (prepared == null) "page_read_parse" else "page_preparation_reuse") {
+        if (prepared == null) {
+            Jsoup.parse(
+                getPage(authorization, targetUrl, PageCacheTtl.COMMUNITY, pageKind = PageKind.COMMUNITY),
+                targetUrl
+            )
+        } else null
+    }
     val form = initialDocument?.selectFirst("form.commentEditor, form.gbEditor")
     val previousComments = prepared?.comments
         ?: initialDocument?.let { parseComments(it, commentParentId(targetUrl)) }
@@ -196,7 +200,7 @@ fun EsjzoneClient.submitForumComment(
             .readTimeout(8, TimeUnit.SECONDS)
             .callTimeout(12, TimeUnit.SECONDS)
             .build()
-        val token = requestForumReplyAuthToken(writeClient, targetUrl)
+        val token = timing.stage("auth_token") { requestForumReplyAuthToken(writeClient, targetUrl) }
         val bodyBuilder = FormBody.Builder()
             .add("content", submittedContent)
             .add("data", forumPreparation.data)
@@ -218,12 +222,17 @@ fun EsjzoneClient.submitForumComment(
             )
             .build()
         val replyResponse = try {
-            writeClient.newCall(request).execute().use { response ->
-                if (!response.isSuccessful) {
-                    throw NetworkHttpException(targetUrl, response.code)
-                }
-                parseForumReplyResponse(response.body?.readTextBounded().orEmpty()).also { parsed ->
-                    if (parsed.status != 200) throw ForumReplyBusinessException(parsed.msg)
+            timing.stage("comment_post") {
+                timing.stage("response_headers") { writeClient.newCall(request).execute() }.use { response ->
+                    if (!response.isSuccessful) {
+                        throw NetworkHttpException(targetUrl, response.code)
+                    }
+                    val responseBody = timing.stage("response_body") { response.body?.readTextBounded().orEmpty() }
+                    timing.stage("response_parse") {
+                        parseForumReplyResponse(responseBody).also { parsed ->
+                            if (parsed.status != 200) throw ForumReplyBusinessException(parsed.msg)
+                        }
+                    }
                 }
             }
         } catch (error: IOException) {
@@ -237,35 +246,38 @@ fun EsjzoneClient.submitForumComment(
 
         // Fast-path: On status 200, the server accepted and committed the comment.
         // Invalidate the local page cache so subsequent loads fetch fresh HTML.
-        invalidatePage(authorization, targetUrl)
+        timing.point("comment_response_accepted")
+        timing.stage("cache_invalidate") { invalidatePage(authorization, targetUrl) }
 
-        val createdCommentId = replyResponse.anchor
-            ?.removePrefix("#comment-")
-            ?.removePrefix("#")
-            ?.trim()
-            ?.takeIf { it.isNotBlank() }
-            ?: replyResponse.id?.trim()?.takeIf { it.isNotBlank() }
-            ?: "$parentId-${System.currentTimeMillis()}"
+        return timing.stage("local_comment_create") {
+            val createdCommentId = replyResponse.anchor
+                ?.removePrefix("#comment-")
+                ?.removePrefix("#")
+                ?.trim()
+                ?.takeIf { it.isNotBlank() }
+                ?: replyResponse.id?.trim()?.takeIf { it.isNotBlank() }
+                ?: "$parentId-${System.currentTimeMillis()}"
 
-        val currentUserName = forumPreparation.currentUserName
-        val currentUserAvatar = forumPreparation.currentUserAvatar
+            val currentUserName = forumPreparation.currentUserName
+            val currentUserAvatar = forumPreparation.currentUserAvatar
 
-        val createdComment = Comment(
-            id = createdCommentId,
-            parentPostId = parentId,
-            authorId = null,
-            authorName = currentUserName,
-            authorUrl = null,
-            floor = "#${previousComments.size + 1}",
-            createdAt = null,
-            contentHtml = submittedContent,
-            contentText = submittedContent,
-            quotedContentText = null,
-            pageGroup = (previousComments.size / COMMENT_PAGE_SIZE) + 1,
-            replyToken = replyToken,
-            authorAvatarUrl = currentUserAvatar
-        )
-        return CommentSubmission(previousComments + createdComment, createdComment)
+            val createdComment = Comment(
+                id = createdCommentId,
+                parentPostId = parentId,
+                authorId = null,
+                authorName = currentUserName,
+                authorUrl = null,
+                floor = "#${previousComments.size + 1}",
+                createdAt = null,
+                contentHtml = submittedContent,
+                contentText = submittedContent,
+                quotedContentText = null,
+                pageGroup = (previousComments.size / COMMENT_PAGE_SIZE) + 1,
+                replyToken = replyToken,
+                authorAvatarUrl = currentUserAvatar
+            )
+            CommentSubmission(previousComments + createdComment, createdComment)
+        }
     } else {
         // Guestbook and non-forum forms
         val guestbookForm = form ?: throw IOException("Comment form was not found")
@@ -292,11 +304,13 @@ fun EsjzoneClient.submitForumComment(
             guestbookForm.absUrl("action").ifBlank { targetUrl }, targetUrl
         ).ifBlank { targetUrl }.substringBefore('#')
         val responseBody = try {
-            writeClient.newCall(
-                Request.Builder().url(actionUrl).post(bodyBuilder.build()).headers(headers).build()
-            ).execute().use { response ->
-                if (!response.isSuccessful) throw NetworkHttpException(targetUrl, response.code)
-                response.body?.readTextBounded().orEmpty()
+            timing.stage("guestbook_post") {
+                writeClient.newCall(
+                    Request.Builder().url(actionUrl).post(bodyBuilder.build()).headers(headers).build()
+                ).execute().use { response ->
+                    if (!response.isSuccessful) throw NetworkHttpException(targetUrl, response.code)
+                    timing.stage("response_body") { response.body?.readTextBounded().orEmpty() }
+                }
             }
         } catch (error: IOException) {
             if (error is NetworkHttpException) throw error
@@ -305,25 +319,29 @@ fun EsjzoneClient.submitForumComment(
         if (looksLikeLoginDocument(responseBody)) {
             throw IOException("Comment request was redirected to login")
         }
-        invalidatePage(authorization, targetUrl)
+        timing.stage("cache_invalidate") { invalidatePage(authorization, targetUrl) }
         val refreshedDocument = try {
-            Jsoup.parse(
-                getPage(
-                    authorization,
-                    targetUrl,
-                    PageCacheTtl.COMMUNITY,
-                    pageKind = PageKind.COMMUNITY
-                ),
-                targetUrl
-            )
+            timing.stage("guestbook_refresh") {
+                Jsoup.parse(
+                    getPage(
+                        authorization,
+                        targetUrl,
+                        PageCacheTtl.COMMUNITY,
+                        pageKind = PageKind.COMMUNITY
+                    ),
+                    targetUrl
+                )
+            }
         } catch (error: IOException) {
             throw CommentSubmissionNotVerifiedException(previousComments, previousIds)
         }
-        val comments = parseComments(refreshedDocument, parentId)
-        val createdComment = findCreatedComment(comments, previousIds, submittedContent)
-            ?: throw CommentSubmissionNotVerifiedException(comments, previousIds)
+        return timing.stage("guestbook_verify") {
+            val comments = parseComments(refreshedDocument, parentId)
+            val createdComment = findCreatedComment(comments, previousIds, submittedContent)
+                ?: throw CommentSubmissionNotVerifiedException(comments, previousIds)
 
-        return CommentSubmission(comments, createdComment)
+            CommentSubmission(comments, createdComment)
+        }
     }
 }
 

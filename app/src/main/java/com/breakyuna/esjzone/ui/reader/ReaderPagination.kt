@@ -19,6 +19,7 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.Placeholder
 import androidx.compose.ui.text.TextMeasurer
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.Dp
@@ -28,7 +29,11 @@ import com.breakyuna.esjzone.domain.reader.ReaderBlock
 import com.breakyuna.esjzone.R
 import com.breakyuna.esjzone.ui.designsystem.globalStringResource as stringResource
 
-internal data class ReaderPage(val segments: List<ReaderPageSegment>, val contentPosition: Float)
+internal data class ReaderPage(
+    val segments: List<ReaderPageSegment>,
+    val contentPosition: Float,
+    val isOversized: Boolean = false
+)
 
 internal sealed interface ReaderPageSegment {
     data class Heading(val name: String) : ReaderPageSegment
@@ -62,7 +67,7 @@ internal fun paginateReaderChapter(
     val paragraphGap = with(density) { settings.paragraphSpacingDp.dp.roundToPx() }
     fun flush() {
         if (current.isNotEmpty()) {
-            pages += ReaderPage(current.toList(), pageContentPosition)
+            pages += ReaderPage(current.toList(), pageContentPosition, isOversized = usedHeight > heightPx)
             current.clear()
             usedHeight = 0
         }
@@ -95,12 +100,10 @@ internal fun paginateReaderChapter(
         while (startLine < layout.lineCount) {
             if (current.isNotEmpty() && usedHeight >= heightPx) flush()
             var endLine = startLine
-            var lineHeight = 0
             while (endLine < layout.lineCount) {
                 val nextHeight = layout.getLineBottom(endLine).toInt() - layout.getLineTop(startLine).toInt()
                 if (current.isNotEmpty() && usedHeight + nextHeight > heightPx) break
                 if (current.isEmpty() && nextHeight > heightPx && endLine > startLine) break
-                lineHeight = nextHeight
                 endLine++
                 if (usedHeight + nextHeight >= heightPx) break
             }
@@ -109,12 +112,32 @@ internal fun paginateReaderChapter(
                 continue
             }
             val start = layout.getLineStart(startLine)
-            val end = layout.getLineEnd(endLine - 1)
+            // A substring is a new paragraph to Text: first/last-line metrics and
+            // trailing newlines can differ from the original paragraph's line box.
+            // Measure exactly what we render before committing it to this page.
+            var segmentText: AnnotatedString
+            var lineHeight: Int
+            while (true) {
+                segmentText = text.subSequence(start, layout.getLineEnd(endLine - 1))
+                lineHeight = textMeasurer.measure(
+                    text = segmentText,
+                    style = textStyle,
+                    placeholders = placeholders(segmentText, inline),
+                    constraints = Constraints(maxWidth = widthPx)
+                ).size.height
+                if (usedHeight + lineHeight <= heightPx) break
+                if (endLine == startLine + 1) break
+                endLine--
+            }
+            if (current.isNotEmpty() && usedHeight + lineHeight > heightPx) {
+                flush()
+                continue
+            }
             val last = endLine == layout.lineCount
             val gap = if (last && usedHeight + lineHeight + paragraphGap <= heightPx) {
                 settings.paragraphSpacingDp.dp
             } else 0.dp
-            add(ReaderPageSegment.TextLine(text.subSequence(start, end), inline, gap),
+            add(ReaderPageSegment.TextLine(segmentText, inline, gap),
                 lineHeight + with(density) { gap.roundToPx() }, blockIndex + start.toFloat() / text.length)
             startLine = endLine
             if (last && gap == 0.dp && paragraphGap > 0) flush()
@@ -169,18 +192,24 @@ internal fun ReaderPageContent(
     availableHeight: Dp
 ) {
     SelectionContainer {
-        Column(Modifier.fillMaxWidth().heightIn(max = availableHeight)
-            .verticalScroll(rememberScrollState())) {
+        // Ordinary pages keep their unclipped margins. A title or single line
+        // taller than the viewport needs scrolling to remain fully readable.
+        val contentModifier = if (page.isOversized) {
+            Modifier.fillMaxWidth().heightIn(max = availableHeight)
+                .verticalScroll(rememberScrollState())
+        } else Modifier.fillMaxWidth()
+        Column(contentModifier) {
             page.segments.forEach { segment ->
                 when (segment) {
                     is ReaderPageSegment.Heading -> ReaderChapterHeading(
-                        segment.name, settings, contentColor, textTransform
+                        segment.name, settings, contentColor, textTransform, overflow = TextOverflow.Visible
                     )
                     is ReaderPageSegment.TextLine -> Text(
                         text = segment.text,
                         inlineContent = segment.inlineContent,
                         style = textStyle,
                         color = contentColor,
+                        overflow = TextOverflow.Visible,
                         modifier = Modifier.padding(bottom = segment.bottomSpacing)
                     )
                     is ReaderPageSegment.Image -> ReaderImage(

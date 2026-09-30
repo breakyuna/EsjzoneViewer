@@ -7,6 +7,7 @@ import androidx.compose.ui.unit.dp
  * deliberately separate from the application shell's navigation insets.
  */
 internal object ReaderLayout {
+    val pagedContentPadding = 2.dp
     val contentTopPadding = 52.dp
     val contentBottomPadding = 80.dp
     val progressPreviewBottomPadding = 150.dp

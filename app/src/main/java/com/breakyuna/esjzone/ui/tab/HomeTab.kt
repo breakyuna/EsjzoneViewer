@@ -5,6 +5,7 @@ package com.breakyuna.esjzone.ui.tab
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
+import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -14,11 +15,13 @@ import androidx.compose.foundation.layout.calculateStartPadding
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Home
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import com.breakyuna.esjzone.ui.designsystem.GlobalText as Text
@@ -35,6 +38,7 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
@@ -227,12 +231,29 @@ object HomeTab : AppTab {
         val thresholdPx = remember(density) { with(density) { 40.dp.toPx() } }
         val maxPullPx = remember(density) { with(density) { 80.dp.toPx() } }
         var pullUpOffsetPx by remember { mutableFloatStateOf(0f) }
+        var isLoadingFromPull by remember { mutableStateOf(false) }
         var lastAutoLoadSize by remember { mutableStateOf(-1) }
         val isPullingUp by remember {
             derivedStateOf { !randomState.isActivated && pullUpOffsetPx > 0f }
         }
 
-        LaunchedEffect(randomState.isActivated) {
+        LaunchedEffect(randomState.isActivated, randomState.isLoading, isLoadingFromPull) {
+            if (isLoadingFromPull) {
+                if (randomState.isActivated && !randomState.isLoading) {
+                    // Let the new content be laid out before transferring the pull offset
+                    // into the list's scroll position, keeping the existing content in place.
+                    try {
+                        withFrameNanos { }
+                        withFrameNanos { }
+                        listState.scrollBy(pullUpOffsetPx)
+                    } finally {
+                        // A user drag can cancel scrollBy; it must still finish the pull UI.
+                        pullUpOffsetPx = 0f
+                        isLoadingFromPull = false
+                    }
+                }
+                return@LaunchedEffect
+            }
             if (randomState.isActivated) {
                 pullUpOffsetPx = 0f
             } else {
@@ -241,8 +262,8 @@ object HomeTab : AppTab {
         }
 
         LaunchedEffect(randomState.isActivated, randomState.items.size, randomState.isLoading,
-            randomState.hasMore, randomState.failure, adult) {
-            if (randomState.isActivated && randomState.items.isNotEmpty() &&
+            randomState.hasMore, randomState.failure, adult, isLoadingFromPull) {
+            if (!isLoadingFromPull && randomState.isActivated && randomState.items.isNotEmpty() &&
                 randomState.hasMore && !randomState.isLoading && randomState.failure == null) {
                 snapshotFlow {
                     val layout = listState.layoutInfo
@@ -257,8 +278,8 @@ object HomeTab : AppTab {
             }
         }
 
-        LaunchedEffect(listState.isScrollInProgress) {
-            if (!listState.isScrollInProgress && pullUpOffsetPx > 0f) {
+        LaunchedEffect(listState.isScrollInProgress, isLoadingFromPull) {
+            if (!listState.isScrollInProgress && !isLoadingFromPull && pullUpOffsetPx > 0f) {
                 Animatable(pullUpOffsetPx).animateTo(
                     targetValue = 0f,
                     animationSpec = spring(
@@ -293,10 +314,10 @@ object HomeTab : AppTab {
             }
         }
 
-        val bottomSwipeConnection = remember(randomState.isActivated, adult, thresholdPx, maxPullPx) {
+        val bottomSwipeConnection = remember(randomState.isActivated, isLoadingFromPull, adult, thresholdPx, maxPullPx) {
             object : NestedScrollConnection {
                 override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
-                    if (!randomState.isActivated && pullUpOffsetPx > 0f && available.y > 0f) {
+                    if (!randomState.isActivated && !isLoadingFromPull && pullUpOffsetPx > 0f && available.y > 0f) {
                         val consumedY = available.y.coerceAtMost(pullUpOffsetPx)
                         pullUpOffsetPx -= consumedY
                         return Offset(0f, consumedY)
@@ -309,7 +330,7 @@ object HomeTab : AppTab {
                     available: Offset,
                     source: NestedScrollSource
                 ): Offset {
-                    if (!randomState.isActivated && source == NestedScrollSource.UserInput && available.y < 0f) {
+                    if (!randomState.isActivated && !isLoadingFromPull && source == NestedScrollSource.UserInput && available.y < 0f) {
                         val delta = -available.y * 0.75f
                         pullUpOffsetPx = (pullUpOffsetPx + delta).coerceAtMost(maxPullPx)
                         return Offset(0f, available.y)
@@ -318,9 +339,9 @@ object HomeTab : AppTab {
                 }
 
                 override suspend fun onPreFling(available: Velocity): Velocity {
-                    if (!randomState.isActivated && pullUpOffsetPx >= thresholdPx) {
+                    if (!randomState.isActivated && !isLoadingFromPull && pullUpOffsetPx >= thresholdPx) {
+                        isLoadingFromPull = true
                         model.activateRandomRecommendations(adult)
-                        pullUpOffsetPx = 0f
                         return available
                     }
                     return Velocity.Zero
@@ -350,13 +371,17 @@ object HomeTab : AppTab {
         ) { padding ->
             PullToRefreshBox(
                 isRefreshing = (state as? HomeTabModel.State.Result)?.isRefreshing == true,
-                onRefresh = model::reload,
+                onRefresh = {
+                    isLoadingFromPull = false
+                    pullUpOffsetPx = 0f
+                    model.reload()
+                },
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(top = padding.calculateTopPadding())
                     .clipToBounds()
             ) {
-                if (isPullingUp) {
+                if (isPullingUp || isLoadingFromPull) {
                     Box(
                         modifier = Modifier
                             .align(Alignment.BottomCenter)
@@ -368,7 +393,12 @@ object HomeTab : AppTab {
                             },
                         contentAlignment = Alignment.Center
                     ) {
-                        Text(
+                        if (isLoadingFromPull) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(24.dp),
+                                strokeWidth = 2.dp
+                            )
+                        } else Text(
                             text = if (pullUpOffsetPx >= thresholdPx) {
                                 stringResource(R.string.home_random_release_to_load)
                             } else pullToLoadLabel,
@@ -495,6 +525,7 @@ object HomeTab : AppTab {
                             }
                             randomRecommendationsSection(
                                 state = randomState,
+                                showInitialLoading = !isLoadingFromPull,
                                 title = randomRecommendationsTitle,
                                 changeBatchLabel = changeBatchLabel,
                                 collapseLabel = collapseLabel,
@@ -510,7 +541,11 @@ object HomeTab : AppTab {
         }
 
         LaunchedEffect(Unit) { model.getHomeData() }
-        LaunchedEffect(adult) { model.onRandomAdultModeChanged(adult) }
+        LaunchedEffect(adult) {
+            isLoadingFromPull = false
+            pullUpOffsetPx = 0f
+            model.onRandomAdultModeChanged(adult)
+        }
     }
 }
 

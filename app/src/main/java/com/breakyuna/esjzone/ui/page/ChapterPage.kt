@@ -98,7 +98,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.input.pointer.changedToUp
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
@@ -550,9 +549,18 @@ class ChapterPage(
             convertedText = ReaderTextSnapshot(script, result?.chapters, values)
         }
         val pagedMode = readerSettings.pageAnimation != ReaderPageAnimation.VERTICAL_SCROLL
-        val pageTopPadding = ReaderLayout.contentTopPadding + stableTopInset
-        val pageBottomPadding = ReaderLayout.contentBottomPadding
+        var readerStatusHeightPx by remember { mutableStateOf(0) }
+        val pageTopPadding = if (pagedMode) {
+            ReaderLayout.pagedContentPadding + WindowInsets.statusBars.union(WindowInsets.displayCutout)
+                .asPaddingValues().calculateTopPadding()
+        } else ReaderLayout.contentTopPadding + stableTopInset
+        val pageBottomPadding = if (pagedMode) {
+            ReaderLayout.pagedContentPadding + with(density) { readerStatusHeightPx.toDp() }
+        } else ReaderLayout.contentBottomPadding
         var readerViewport by remember { mutableStateOf(IntSize.Zero) }
+        val pageContentWidthPx = with(density) {
+            (readerViewport.width - 2 * readerSettings.horizontalPaddingDp.dp.roundToPx()).coerceAtLeast(0)
+        }
         val pageContentHeightPx = with(density) {
             (readerViewport.height - pageTopPadding.roundToPx() - pageBottomPadding.roundToPx()).coerceAtLeast(0)
         }
@@ -573,7 +581,7 @@ class ChapterPage(
             lineSpacingSp = readerSettings.lineSpacingSp,
             paragraphSpacingDp = readerSettings.paragraphSpacingDp
         )
-        val paginationLayoutKey = listOf(readerViewport.width, pageContentHeightPx,
+        val paginationLayoutKey = listOf(pageContentWidthPx, pageContentHeightPx,
             paginationSettings, readerTextStyle, headingStyle, density, layoutDirection,
             fontResolver, readerSettings.script, convertedText?.values)
         val paginationKey = paginationLayoutKey + listOf(result?.chapters)
@@ -799,7 +807,7 @@ class ChapterPage(
         val currentBookLocation = measuredBookLocation ?: retainedBookLocation
         val latestBookLocation by rememberUpdatedState(currentBookLocation)
         LaunchedEffect(pagedMode, paginationKey, scriptReady) {
-            if (!pagedMode || !scriptReady || readerViewport.width <= 0 || pageContentHeightPx <= 0) return@LaunchedEffect
+            if (!pagedMode || !scriptReady || pageContentWidthPx <= 0 || pageContentHeightPx <= 0) return@LaunchedEffect
             val cached = paginationSnapshot?.takeIf { it.layoutKey == paginationLayoutKey }?.pages.orEmpty()
             val entries = result?.chapters.orEmpty()
             val snapshot = withContext(Dispatchers.Default) {
@@ -810,7 +818,7 @@ class ChapterPage(
                     cached[entry] ?: paginateReaderChapter(
                         entry.chapter.name, entry.document.blocks, paginationSettings,
                         readerTextStyle, headingStyle, measurer, density,
-                        readerViewport.width, pageContentHeightPx, readerTextTransform
+                        pageContentWidthPx, pageContentHeightPx, readerTextTransform
                     )
                 }
                 val items = entries.flatMap { entry ->
@@ -1678,19 +1686,22 @@ class ChapterPage(
                     } else {
                         HorizontalPager(
                             state = horizontalPagerState,
+                            // Keep glyph overhang inside the pager's outer clip, in the page margins.
+                            contentPadding = androidx.compose.foundation.layout.PaddingValues(
+                                horizontal = readerSettings.horizontalPaddingDp.dp
+                            ),
+                            pageSpacing = readerSettings.horizontalPaddingDp.dp * 2,
                             key = { index -> currentPagedDisplayItems.getOrNull(index)?.key ?: index },
                             userScrollEnabled = readerSettings.horizontalSwipePagingEnabled && pagingEnabled &&
                                 readerSettings.pageAnimation == ReaderPageAnimation.HORIZONTAL_SLIDE,
                             modifier = Modifier
                                 .fillMaxSize()
-                                .widthIn(max = adaptiveMetrics.contentMaxWidth)
                                 .align(Alignment.Center)
                                 .graphicsLayer {
                                     translationX = pageTranslation.value
                                     alpha = pageAlpha.value
                                 }
                                 .windowInsetsPadding(WindowInsets.displayCutout.only(WindowInsetsSides.Horizontal))
-                                .padding(horizontal = readerSettings.horizontalPaddingDp.dp)
                                 .onSizeChanged { size ->
                                     if (readerViewport != size) {
                                         if (!resumePending && pendingSeekLocation == null) {
@@ -1702,7 +1713,7 @@ class ChapterPage(
                         ) { pageIndex ->
                             currentPagedDisplayItems.getOrNull(pageIndex)?.page?.let { page ->
                                 Box(
-                                    Modifier.fillMaxSize().clipToBounds()
+                                    Modifier.fillMaxSize()
                                         .padding(top = pageTopPadding, bottom = pageBottomPadding)
                                 ) {
                                     ReaderPageContent(
@@ -1766,6 +1777,7 @@ class ChapterPage(
                 showChapterName = readerSettings.showChapterName,
                 showTimeBattery = readerSettings.showTimeBattery,
                 modifier = Modifier.align(Alignment.BottomCenter)
+                    .onSizeChanged { readerStatusHeightPx = it.height }
             )
 
             if ((state as? ChapterPageModel.State.Result)?.isOffline == true) {

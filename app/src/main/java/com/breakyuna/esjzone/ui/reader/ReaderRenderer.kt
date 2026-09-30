@@ -34,6 +34,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextMeasurer
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.foundation.text.InlineTextContent
@@ -192,7 +193,8 @@ fun ReaderChapterHeading(
     name: String,
     settings: ReaderSettings,
     contentColor: Color,
-    textTransform: (String) -> String = { it }
+    textTransform: (String) -> String = { it },
+    overflow: TextOverflow = TextOverflow.Clip
 ) {
     Text(
         text = textTransform(name),
@@ -204,6 +206,7 @@ fun ReaderChapterHeading(
             letterSpacing = settings.letterSpacingSp.sp
         ),
         color = contentColor,
+        overflow = overflow,
         modifier = Modifier
             .padding(bottom = (settings.paragraphSpacingDp + 8f).dp)
             .semantics { heading() }

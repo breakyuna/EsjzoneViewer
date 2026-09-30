@@ -23,6 +23,7 @@ import com.breakyuna.esjzone.ui.discovery.DiscoveryErrorState
 
 internal fun LazyListScope.randomRecommendationsSection(
     state: HomeTabModel.RandomRecommendationsState,
+    showInitialLoading: Boolean,
     title: String,
     changeBatchLabel: String,
     collapseLabel: String,
@@ -36,7 +37,7 @@ internal fun LazyListScope.randomRecommendationsSection(
     }
 
     if (state.items.isEmpty()) {
-        if (state.isLoading) {
+        if (state.isLoading && showInitialLoading) {
             item(key = "home-random-initial-loading", contentType = "loading") {
                 Box(
                     modifier = Modifier
