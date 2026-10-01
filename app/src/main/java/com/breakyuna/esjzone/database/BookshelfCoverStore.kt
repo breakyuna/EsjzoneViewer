@@ -9,6 +9,9 @@ import com.breakyuna.esjzone.network.EsjzoneUrls
 import com.breakyuna.esjzone.util.AppLogger
 import coil3.request.CachePolicy
 import coil3.request.ImageRequest
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.produceState
+import androidx.compose.runtime.key
 import java.io.File
 import java.security.MessageDigest
 import java.util.concurrent.ConcurrentHashMap
@@ -146,14 +149,25 @@ object BookshelfCoverStore {
         return if (local.isFile && local.length() > 0L) local.toURI().toString() else entry.coverUrl
     }
 
+    /** Resolve each visible cover off the UI thread; keep it stable across recompositions. */
+    @Composable
+    fun rememberLocalOrRemote(entry: BookshelfEntry): String {
+        return key(entry.bookKey, entry.coverUrl) {
+            // Wait for the local lookup before requesting a remote cover.
+            produceState(initialValue = "") {
+                value = withContext(Dispatchers.IO) { localOrRemote(entry) }
+            }.value
+        }
+    }
+
     /** Schedules a throttled, best-effort persistence pass without blocking shelf UI. */
     fun schedulePersist(entries: List<BookshelfEntry>) {
-        val pending = entries.filter { entry ->
-            entry.visible && EsjzoneUrls.coverOrEmpty(entry.coverUrl).isNotBlank() &&
-                !fileFor(entry).isFile && activeKeys.add(fileName(entry))
-        }
-        if (pending.isEmpty()) return
         scope.launch {
+            val pending = entries.filter { entry ->
+                entry.visible && EsjzoneUrls.coverOrEmpty(entry.coverUrl).isNotBlank() &&
+                    !fileFor(entry).isFile && activeKeys.add(fileName(entry))
+            }
+            if (pending.isEmpty()) return@launch
             try {
                 pending.chunked(BATCH_SIZE).forEachIndexed { index, batch ->
                     coroutineScope {

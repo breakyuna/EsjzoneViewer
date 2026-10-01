@@ -1,5 +1,8 @@
 package com.breakyuna.esjzone.ui.page
 
+import androidx.activity.compose.BackHandler
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.selection.selectable
@@ -132,7 +135,17 @@ object SettingsPage : AppDestination {
         var showLanguageDialog by remember { mutableStateOf(false) }
         var showScriptDialog by remember { mutableStateOf(false) }
         var showStartupPageDialog by remember { mutableStateOf(false) }
-        var showMoreReaderSettings by remember { mutableStateOf(false) }
+        val sectionStateHolder = rememberSaveableStateHolder()
+        var section by rememberSaveable { mutableStateOf("MAIN") }
+        var showSiteDialog by remember { mutableStateOf(false) }
+        BackHandler(enabled = section != "MAIN") { section = "MAIN" }
+        val pageTitle = stringResource(when (section) {
+            "NAVIGATION" -> R.string.settings_navigation_section
+            "READING" -> R.string.settings_reading_download_section
+            "STORAGE" -> R.string.settings_storage_section
+            "ABOUT" -> R.string.about
+            else -> R.string.settings_screen_title
+        })
         var switchingDomain by remember { mutableStateOf(false) }
         var siteUnavailable by remember { mutableStateOf(false) }
         var draggingNavigationItem by remember { mutableStateOf<String?>(null) }
@@ -141,22 +154,25 @@ object SettingsPage : AppDestination {
             if (draggingNavigationItem == null) editableNavigationOrder = navigationOrder
         }
         LaunchedEffect(Unit) {
-            model.refreshCacheStats()
             ReleaseUpdateChecker.initialize(context)
+        }
+        LaunchedEffect(section) {
+            if (section == "STORAGE") model.refreshCacheStats()
         }
         LaunchedEffect(state.logoutCompleted) { if (state.logoutCompleted) rootNavigator?.replaceAll(LoginScreen) }
 
         Scaffold(
             topBar = {
                 TopAppBar(
-                    title = { Text(stringResource(R.string.settings_screen_title), style = com.breakyuna.esjzone.ui.designsystem.AppTypography.titleLarge) },
-                    navigationIcon = { BackIconButton { navigator?.pop() } },
+                    title = { Text(pageTitle, style = com.breakyuna.esjzone.ui.designsystem.AppTypography.titleLarge) },
+                    navigationIcon = { BackIconButton { if (section == "MAIN") navigator?.pop() else section = "MAIN" } },
                     colors = TopAppBarDefaults.topAppBarColors(
                         containerColor = MaterialTheme.colorScheme.background
                     )
                 )
             }
         ) { padding ->
+            sectionStateHolder.SaveableStateProvider(section) {
             Column(
                 Modifier
                     .fillMaxSize()
@@ -166,402 +182,377 @@ object SettingsPage : AppDestination {
                     .padding(horizontal = com.breakyuna.esjzone.ui.designsystem.AppSpacing.lg, vertical = com.breakyuna.esjzone.ui.designsystem.AppSpacing.sm),
                 verticalArrangement = Arrangement.spacedBy(com.breakyuna.esjzone.ui.designsystem.AppSpacing.md)
             ) {
-                SettingsSection(Icons.Filled.Dns, stringResource(R.string.settings_network_section)) {
-                    Text(stringResource(R.string.settings_active_mirror), style = com.breakyuna.esjzone.ui.designsystem.AppTypography.labelLarge)
-                    PresentationAccess.settings.DOMAINS.forEach { candidate ->
-                        ChoiceRow(
-                            title = candidate,
-                            subtitle = stringResource(if (candidate.contains(".one")) R.string.settings_backup_description else R.string.settings_primary_description),
-                            selected = candidate == domain,
-                            onClick = {
-                                if (candidate != domain && !switchingDomain) {
-                                    switchingDomain = true
-                                    scope.launch {
-                                        try {
-                                            val session = withContext(Dispatchers.IO) {
-                                                PresentationAccess.client.restoreAuthorization(candidate)
-                                            }?.takeIf { it.hasCredentials() }
-                                            if (session != null) {
-                                                PresentationAccess.settings.setDomain(candidate)
-                                                PresentationAccess.client.clearParsedPageCache()
-                                                if (PresentationAccess.client.hasSiteSession(candidate)) {
-                                                    BookshelfRepository.scheduleSync(session)
-                                                    CommunitySyncManager.schedulePreSync(session)
-                                                }
-                                                rootNavigator?.replaceAll(MainScreen(session))
-                                            } else {
-                                                siteUnavailable = true
+                if (section == "MAIN") {
+                    SettingsSection(Icons.Filled.Language, stringResource(R.string.settings_general_section)) {
+                        Text(stringResource(R.string.settings_language_description), style = com.breakyuna.esjzone.ui.designsystem.AppTypography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        SelectionSettingRow(
+                            title = stringResource(R.string.settings_language_section),
+                            subtitle = stringResource(language.titleRes),
+                            onClick = { showLanguageDialog = true }
+                        )
+                        HorizontalDivider()
+                        SelectionSettingRow(
+                            title = stringResource(R.string.settings_script_section),
+                            subtitle = stringResource(when (readerSettings.script) {
+                                ReaderScript.ORIGINAL -> R.string.reader_script_original
+                                ReaderScript.SIMPLIFIED -> R.string.reader_script_simplified
+                                ReaderScript.TRADITIONAL -> R.string.reader_script_traditional
+                            }),
+                            onClick = { showScriptDialog = true }
+                        )
+                        HorizontalDivider()
+                        ToggleRow(stringResource(R.string.settings_showadultcontent), stringResource(R.string.settings_adult_description), adult) { PresentationAccess.settings.setAdult(it); model.persist("show_adult", it.toString()) }
+                        ToggleRow(
+                            stringResource(R.string.settings_hide_home_recommendations),
+                            stringResource(R.string.settings_hide_home_recommendations_description),
+                            hideHomeRecommendations
+                        ) { PresentationAccess.settings.setHideHomeRecommendations(it) }
+                    }
+                    SettingsSection(Icons.Filled.Dns, stringResource(R.string.settings_network_section)) {
+                        SelectionSettingRow(domain, stringResource(R.string.settings_mirror_note)) {
+                            if (!switchingDomain) showSiteDialog = true
+                        }
+                    }
+                    SettingsSection(Icons.Filled.Reorder, stringResource(R.string.settings_preferences_section)) {
+                        LinkRow(Icons.Filled.Reorder, stringResource(R.string.settings_navigation_section)) { section = "NAVIGATION" }
+                        LinkRow(Icons.Filled.MenuBook, stringResource(R.string.settings_reading_download_section)) { section = "READING" }
+                        LinkRow(Icons.Filled.Storage, stringResource(R.string.settings_storage_section)) { section = "STORAGE" }
+                        LinkRow(Icons.Filled.BugReport, stringResource(R.string.system_logs)) { navigator?.pushIfNotCurrent(LogsPage) }
+                        LinkRow(Icons.Filled.Info, stringResource(R.string.about)) { section = "ABOUT" }
+                    }
+                    Surface(
+                        color = MaterialTheme.colorScheme.surface,
+                        shape = com.breakyuna.esjzone.ui.designsystem.AppShapes.standard,
+                        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                        shadowElevation = 1.dp
+                    ) {
+                        LinkRow(
+                            Icons.AutoMirrored.Filled.Logout,
+                            stringResource(R.string.settings_logout_title),
+                            subtitle = null,
+                            centered = true
+                        ) { if (!state.logoutInProgress) showLogout = true }
+                    }
+                }
+                if (section == "NAVIGATION") {
+                    SettingsSection(Icons.Filled.Reorder, stringResource(R.string.settings_navigation_section)) {
+                        Text(
+                            stringResource(R.string.settings_navigation_description),
+                            style = com.breakyuna.esjzone.ui.designsystem.AppTypography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Surface(
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = androidx.compose.foundation.shape.RoundedCornerShape(percent = 50),
+                            color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                            border = androidx.compose.foundation.BorderStroke(
+                                1.dp,
+                                MaterialTheme.colorScheme.outlineVariant
+                            )
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp),
+                                horizontalArrangement = Arrangement.SpaceEvenly,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                editableNavigationOrder.forEach { item ->
+                                    key(item) {
+                                    val selected = draggingNavigationItem == item
+                                    var dragOffsetX by remember(item) { mutableFloatStateOf(0f) }
+                                    Surface(
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .zIndex(if (selected) 1f else 0f)
+                                            .graphicsLayer {
+                                                translationX = dragOffsetX
+                                                scaleX = if (selected) 1.05f else 1f
+                                                scaleY = if (selected) 1.05f else 1f
                                             }
-                                        } catch (e: Exception) {
-                                            AppLogger.e("SettingsPage", "Failed to switch site", e)
-                                        } finally {
-                                            switchingDomain = false
+                                            .pointerInput(item) {
+                                                detectDragGesturesAfterLongPress(
+                                                    onDragStart = {
+                                                        draggingNavigationItem = item
+                                                        dragOffsetX = 0f
+                                                    },
+                                                    onDragCancel = {
+                                                        dragOffsetX = 0f
+                                                        draggingNavigationItem = null
+                                                    },
+                                                    onDragEnd = {
+                                                        dragOffsetX = 0f
+                                                        draggingNavigationItem = null
+                                                        PresentationAccess.settings.setNavigationOrder(
+                                                            editableNavigationOrder
+                                                        )
+                                                    },
+                                                    onDrag = { change, dragAmount ->
+                                                        change.consume()
+                                                        dragOffsetX += dragAmount.x
+                                                        val threshold = size.width * 0.55f
+                                                        val currentIndex = editableNavigationOrder.indexOf(item)
+                                                        val targetIndex = when {
+                                                            dragOffsetX > threshold -> currentIndex + 1
+                                                            dragOffsetX < -threshold -> currentIndex - 1
+                                                            else -> currentIndex
+                                                        }
+                                                        if (targetIndex in editableNavigationOrder.indices && targetIndex != currentIndex) {
+                                                            val reordered = editableNavigationOrder.toMutableList()
+                                                            java.util.Collections.swap(reordered, currentIndex, targetIndex)
+                                                            editableNavigationOrder = reordered
+                                                            val indexDelta = targetIndex - currentIndex
+                                                            dragOffsetX -= indexDelta * size.width.toFloat()
+                                                        }
+                                                    }
+                                                )
+                                            },
+                                        shape = androidx.compose.foundation.shape.RoundedCornerShape(percent = 50),
+                                        color = if (selected) {
+                                            MaterialTheme.colorScheme.primaryContainer
+                                        } else Color.Transparent,
+                                        shadowElevation = if (selected) 6.dp else 0.dp
+                                    ) {
+                                        Column(
+                                            modifier = Modifier.padding(horizontal = 2.dp, vertical = 6.dp),
+                                            horizontalAlignment = Alignment.CenterHorizontally,
+                                            verticalArrangement = Arrangement.spacedBy(2.dp)
+                                        ) {
+                                            Icon(
+                                                navigationItemIcon(item),
+                                                contentDescription = null,
+                                                modifier = Modifier.size(22.dp),
+                                                tint = if (selected) MaterialTheme.colorScheme.onPrimaryContainer
+                                                else MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                            Text(
+                                                navigationItemLabel(item),
+                                                style = MaterialTheme.typography.labelSmall,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis,
+                                                color = if (selected) MaterialTheme.colorScheme.onPrimaryContainer
+                                                else MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
                                         }
+                                    }
                                     }
                                 }
                             }
-                        )
-                    }
-                    Text(stringResource(R.string.settings_mirror_note), style = com.breakyuna.esjzone.ui.designsystem.AppTypography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 4.dp, start = 4.dp))
-                }
-
-                SettingsSection(Icons.Filled.Language, stringResource(R.string.settings_language_section)) {
-                    Text(stringResource(R.string.settings_language_description), style = com.breakyuna.esjzone.ui.designsystem.AppTypography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    SelectionSettingRow(
-                        title = stringResource(language.titleRes),
-                        subtitle = stringResource(language.subtitleRes),
-                        onClick = { showLanguageDialog = true }
-                    )
-                }
-
-                SettingsSection(Icons.Filled.Translate, stringResource(R.string.settings_script_section)) {
-                    SelectionSettingRow(
-                        title = stringResource(when (readerSettings.script) {
-                            ReaderScript.ORIGINAL -> R.string.reader_script_original
-                            ReaderScript.SIMPLIFIED -> R.string.reader_script_simplified
-                            ReaderScript.TRADITIONAL -> R.string.reader_script_traditional
-                        }),
-                        subtitle = stringResource(R.string.settings_script_description),
-                        onClick = { showScriptDialog = true }
-                    )
-                }
-
-                SettingsSection(Icons.Filled.NoAdultContent, stringResource(R.string.settings_content_section)) {
-                    ToggleRow(stringResource(R.string.settings_showadultcontent), stringResource(R.string.settings_adult_description), adult) { PresentationAccess.settings.setAdult(it); model.persist("show_adult", it.toString()) }
-                    ToggleRow(
-                        stringResource(R.string.settings_hide_home_recommendations),
-                        stringResource(R.string.settings_hide_home_recommendations_description),
-                        hideHomeRecommendations
-                    ) { PresentationAccess.settings.setHideHomeRecommendations(it) }
-                }
-
-                SettingsSection(Icons.Filled.Reorder, stringResource(R.string.settings_navigation_section)) {
-                    Text(
-                        stringResource(R.string.settings_navigation_description),
-                        style = com.breakyuna.esjzone.ui.designsystem.AppTypography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Surface(
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = androidx.compose.foundation.shape.RoundedCornerShape(percent = 50),
-                        color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                        border = androidx.compose.foundation.BorderStroke(
-                            1.dp,
-                            MaterialTheme.colorScheme.outlineVariant
-                        )
-                    ) {
+                        }
                         Row(
-                            modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp),
-                            horizontalArrangement = Arrangement.SpaceEvenly,
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.End,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            editableNavigationOrder.forEach { item ->
-                                key(item) {
-                                val selected = draggingNavigationItem == item
-                                var dragOffsetX by remember(item) { mutableFloatStateOf(0f) }
+                            TextButton(
+                                onClick = {
+                                    PresentationAccess.settings.setNavigationOrder(
+                                        com.breakyuna.esjzone.data.settings.SettingsDefaults.NAVIGATION_ORDER
+                                    )
+                                    editableNavigationOrder =
+                                        com.breakyuna.esjzone.data.settings.SettingsDefaults.NAVIGATION_ORDER
+                                    draggingNavigationItem = null
+                                },
+                                enabled = editableNavigationOrder != com.breakyuna.esjzone.data.settings.SettingsDefaults.NAVIGATION_ORDER
+                            ) {
+                                Icon(Icons.Filled.RestartAlt, contentDescription = null)
+                                Text(stringResource(R.string.settings_navigation_reset), modifier = Modifier.padding(start = 8.dp))
+                            }
+                        }
+
+                        HorizontalDivider(
+                            modifier = Modifier.padding(vertical = 4.dp),
+                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+                        )
+
+                        Text(
+                            stringResource(R.string.settings_startup_page_title),
+                            style = com.breakyuna.esjzone.ui.designsystem.AppTypography.labelLarge
+                        )
+                        Text(
+                            stringResource(R.string.settings_startup_page_description),
+                            style = com.breakyuna.esjzone.ui.designsystem.AppTypography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+
+                        SelectionSettingRow(
+                            title = startupPageTitle(startTab),
+                            subtitle = startupPageSubtitle(startTab),
+                            onClick = { showStartupPageDialog = true }
+                        )
+                    }
+
+                    }
+                    if (section == "READING") {
+                    SettingsSection(Icons.Filled.MenuBook, stringResource(R.string.settings_reader_section)) {
+                        ReaderMoreSettingsContent(readerSettings, PresentationAccess.readerSettings::saveDebounced)
+                        HorizontalDivider(modifier = Modifier.padding(vertical = 2.dp))
+                        ToggleRow(
+                            stringResource(R.string.download_auto_save),
+                            stringResource(R.string.download_auto_save_description),
+                            autoSave
+                        ) { enabled ->
+                            PresentationAccess.settings.setReaderAutoSave(enabled)
+                            model.persist(PresentationAccess.settings.READER_AUTO_SAVE_KEY, enabled.toString())
+                        }
+                    }
+
+                    SettingsSection(Icons.Filled.Download, stringResource(R.string.settings_download_section)) {
+                        Text(
+                            stringResource(R.string.settings_download_concurrency_description),
+                            style = com.breakyuna.esjzone.ui.designsystem.AppTypography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        var showConcurrencyMenu by remember { mutableStateOf(false) }
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 8.dp, vertical = 3.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text(
+                                stringResource(R.string.settings_download_concurrency_label),
+                                style = com.breakyuna.esjzone.ui.designsystem.AppTypography.labelLarge
+                            )
+                            Box {
                                 Surface(
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .zIndex(if (selected) 1f else 0f)
-                                        .graphicsLayer {
-                                            translationX = dragOffsetX
-                                            scaleX = if (selected) 1.05f else 1f
-                                            scaleY = if (selected) 1.05f else 1f
-                                        }
-                                        .pointerInput(item) {
-                                            detectDragGesturesAfterLongPress(
-                                                onDragStart = {
-                                                    draggingNavigationItem = item
-                                                    dragOffsetX = 0f
-                                                },
-                                                onDragCancel = {
-                                                    dragOffsetX = 0f
-                                                    draggingNavigationItem = null
-                                                },
-                                                onDragEnd = {
-                                                    dragOffsetX = 0f
-                                                    draggingNavigationItem = null
-                                                    PresentationAccess.settings.setNavigationOrder(
-                                                        editableNavigationOrder
-                                                    )
-                                                },
-                                                onDrag = { change, dragAmount ->
-                                                    change.consume()
-                                                    dragOffsetX += dragAmount.x
-                                                    val threshold = size.width * 0.55f
-                                                    val currentIndex = editableNavigationOrder.indexOf(item)
-                                                    val targetIndex = when {
-                                                        dragOffsetX > threshold -> currentIndex + 1
-                                                        dragOffsetX < -threshold -> currentIndex - 1
-                                                        else -> currentIndex
-                                                    }
-                                                    if (targetIndex in editableNavigationOrder.indices && targetIndex != currentIndex) {
-                                                        val reordered = editableNavigationOrder.toMutableList()
-                                                        java.util.Collections.swap(reordered, currentIndex, targetIndex)
-                                                        editableNavigationOrder = reordered
-                                                        val indexDelta = targetIndex - currentIndex
-                                                        dragOffsetX -= indexDelta * size.width.toFloat()
-                                                    }
-                                                }
-                                            )
-                                        },
-                                    shape = androidx.compose.foundation.shape.RoundedCornerShape(percent = 50),
-                                    color = if (selected) {
-                                        MaterialTheme.colorScheme.primaryContainer
-                                    } else Color.Transparent,
-                                    shadowElevation = if (selected) 6.dp else 0.dp
+                                    onClick = { showConcurrencyMenu = true },
+                                    shape = com.breakyuna.esjzone.ui.designsystem.AppShapes.compact,
+                                    color = MaterialTheme.colorScheme.surfaceContainerLow,
+                                    border = androidx.compose.foundation.BorderStroke(
+                                        1.dp,
+                                        MaterialTheme.colorScheme.outlineVariant
+                                    )
                                 ) {
-                                    Column(
-                                        modifier = Modifier.padding(horizontal = 2.dp, vertical = 6.dp),
-                                        horizontalAlignment = Alignment.CenterHorizontally,
-                                        verticalArrangement = Arrangement.spacedBy(2.dp)
-                                    ) {
-                                        Icon(
-                                            navigationItemIcon(item),
-                                            contentDescription = null,
-                                            modifier = Modifier.size(22.dp),
-                                            tint = if (selected) MaterialTheme.colorScheme.onPrimaryContainer
-                                            else MaterialTheme.colorScheme.onSurfaceVariant
+                                    Text(
+                                        downloadConcurrency.toString(),
+                                        style = com.breakyuna.esjzone.ui.designsystem.AppTypography.titleMedium,
+                                        modifier = Modifier.padding(
+                                            horizontal = 14.dp,
+                                            vertical = 2.dp
                                         )
-                                        Text(
-                                            navigationItemLabel(item),
-                                            style = MaterialTheme.typography.labelSmall,
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis,
-                                            color = if (selected) MaterialTheme.colorScheme.onPrimaryContainer
-                                            else MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                                DropdownMenu(
+                                    expanded = showConcurrencyMenu,
+                                    onDismissRequest = { showConcurrencyMenu = false }
+                                ) {
+                                    listOf(1, 3, 5, 8).forEach { candidate ->
+                                        DropdownMenuItem(
+                                            text = { Text(candidate.toString()) },
+                                            onClick = {
+                                                PresentationAccess.settings.setDownloadConcurrency(candidate)
+                                                model.persist(PresentationAccess.settings.DOWNLOAD_CONCURRENCY_KEY, candidate.toString())
+                                                showConcurrencyMenu = false
+                                            },
+                                            trailingIcon = if (candidate == downloadConcurrency) {
+                                                { Icon(Icons.Filled.Check, contentDescription = null) }
+                                            } else null
                                         )
                                     }
                                 }
-                                }
                             }
                         }
                     }
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.End,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        TextButton(
-                            onClick = {
-                                PresentationAccess.settings.setNavigationOrder(
-                                    com.breakyuna.esjzone.data.settings.SettingsDefaults.NAVIGATION_ORDER
-                                )
-                                editableNavigationOrder =
-                                    com.breakyuna.esjzone.data.settings.SettingsDefaults.NAVIGATION_ORDER
-                                draggingNavigationItem = null
-                            },
-                            enabled = editableNavigationOrder != com.breakyuna.esjzone.data.settings.SettingsDefaults.NAVIGATION_ORDER
-                        ) {
-                            Icon(Icons.Filled.RestartAlt, contentDescription = null)
-                            Text(stringResource(R.string.settings_navigation_reset), modifier = Modifier.padding(start = 8.dp))
+
+                    }
+                    if (section == "STORAGE") {
+                    SettingsSection(Icons.Filled.Storage, stringResource(R.string.settings_storage_section)) {
+                        LinkRow(Icons.Filled.Download, stringResource(R.string.local_backup), stringResource(R.string.backup_short_description)) {
+                            navigator?.pushIfNotCurrent(LocalBackupPage)
                         }
+                        HorizontalDivider()
+                        val cache = state.cacheStats
+                        CacheRow(stringResource(R.string.settings_page_cache), when { state.cacheStatsError -> stringResource(R.string.local_cache_stats_failed); cache == null -> stringResource(R.string.local_cache_loading); else -> stringResource(R.string.local_cache_pages, formatBytes(cache.pageBytes), cache.pageEntries) }, state.cacheOperation != null, stringResource(R.string.local_cache_clear_pages)) { model.clearPageCache() }
+                        HorizontalDivider()
+                        CacheRow(stringResource(R.string.settings_image_cache), when { state.cacheStatsError -> stringResource(R.string.local_cache_stats_failed); cache == null -> stringResource(R.string.local_cache_loading); else -> formatBytes(cache.imageBytes) }, state.cacheOperation != null, stringResource(R.string.local_cache_clear_images)) { model.clearImageCache() }
+                        Text(stringResource(R.string.settings_cache_note), style = com.breakyuna.esjzone.ui.designsystem.AppTypography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(start = 4.dp, top = 2.dp))
+                        if (state.cacheOperation != null) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+                        if (state.cacheStatsError) TextButton(onClick = model::refreshCacheStats) { Text(stringResource(R.string.retry)) }
+                        if (state.cacheClearError) Text(stringResource(R.string.local_cache_clear_failed), color = MaterialTheme.colorScheme.error)
                     }
 
-                    HorizontalDivider(
-                        modifier = Modifier.padding(vertical = 4.dp),
-                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
-                    )
-
-                    Text(
-                        stringResource(R.string.settings_startup_page_title),
-                        style = com.breakyuna.esjzone.ui.designsystem.AppTypography.labelLarge
-                    )
-                    Text(
-                        stringResource(R.string.settings_startup_page_description),
-                        style = com.breakyuna.esjzone.ui.designsystem.AppTypography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-
-                    SelectionSettingRow(
-                        title = startupPageTitle(startTab),
-                        subtitle = startupPageSubtitle(startTab),
-                        onClick = { showStartupPageDialog = true }
-                    )
-                }
-
-                SettingsSection(Icons.Filled.MenuBook, stringResource(R.string.settings_reader_section)) {
-                    LinkRow(Icons.Filled.MenuBook, stringResource(R.string.reader_more_settings)) {
-                        showMoreReaderSettings = true
                     }
-                    HorizontalDivider(modifier = Modifier.padding(vertical = 2.dp))
-                    ToggleRow(
-                        stringResource(R.string.download_auto_save),
-                        stringResource(R.string.download_auto_save_description),
-                        autoSave
-                    ) { enabled ->
-                        PresentationAccess.settings.setReaderAutoSave(enabled)
-                        model.persist(PresentationAccess.settings.READER_AUTO_SAVE_KEY, enabled.toString())
-                    }
-                }
-
-                SettingsSection(Icons.Filled.Download, stringResource(R.string.settings_download_section)) {
-                    Text(
-                        stringResource(R.string.settings_download_concurrency_description),
-                        style = com.breakyuna.esjzone.ui.designsystem.AppTypography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    var showConcurrencyMenu by remember { mutableStateOf(false) }
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 8.dp, vertical = 3.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
+                    if (section == "ABOUT") {
+                    SettingsSection(Icons.Filled.Info, stringResource(R.string.about)) {
                         Text(
-                            stringResource(R.string.settings_download_concurrency_label),
-                            style = com.breakyuna.esjzone.ui.designsystem.AppTypography.labelLarge
+                            text = stringResource(R.string.about_disclaimer),
+                            style = com.breakyuna.esjzone.ui.designsystem.AppTypography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 8.dp, vertical = 4.dp)
                         )
-                        Box {
-                            Surface(
-                                onClick = { showConcurrencyMenu = true },
-                                shape = com.breakyuna.esjzone.ui.designsystem.AppShapes.compact,
-                                color = MaterialTheme.colorScheme.surfaceContainerLow,
-                                border = androidx.compose.foundation.BorderStroke(
-                                    1.dp,
-                                    MaterialTheme.colorScheme.outlineVariant
-                                )
-                            ) {
+                        HorizontalDivider(modifier = Modifier.padding(vertical = 2.dp))
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { ReleaseUpdateChecker.checkNow(context) }
+                                .padding(horizontal = 8.dp, vertical = 4.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(stringResource(R.string.build_version), style = com.breakyuna.esjzone.ui.designsystem.AppTypography.labelLarge)
                                 Text(
-                                    downloadConcurrency.toString(),
-                                    style = com.breakyuna.esjzone.ui.designsystem.AppTypography.titleMedium,
-                                    modifier = Modifier.padding(
-                                        horizontal = 14.dp,
-                                        vertical = 2.dp
-                                    )
+                                    text = when (val s = checkState) {
+                                        ReleaseCheckState.Checking -> stringResource(R.string.update_checking)
+                                        ReleaseCheckState.UpToDate -> stringResource(R.string.update_up_to_date)
+                                        ReleaseCheckState.Error -> stringResource(R.string.update_check_error)
+                                        is ReleaseCheckState.Available -> stringResource(R.string.update_available_status, s.version)
+                                        ReleaseCheckState.Idle -> stringResource(R.string.update_check_tap_version)
+                                    },
+                                    style = com.breakyuna.esjzone.ui.designsystem.AppTypography.bodySmall,
+                                    color = if (checkState is ReleaseCheckState.Error) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                             }
-                            DropdownMenu(
-                                expanded = showConcurrencyMenu,
-                                onDismissRequest = { showConcurrencyMenu = false }
-                            ) {
-                                listOf(1, 3, 5, 8).forEach { candidate ->
-                                    DropdownMenuItem(
-                                        text = { Text(candidate.toString()) },
-                                        onClick = {
-                                            PresentationAccess.settings.setDownloadConcurrency(candidate)
-                                            model.persist(PresentationAccess.settings.DOWNLOAD_CONCURRENCY_KEY, candidate.toString())
-                                            showConcurrencyMenu = false
-                                        },
-                                        trailingIcon = if (candidate == downloadConcurrency) {
-                                            { Icon(Icons.Filled.Check, contentDescription = null) }
-                                        } else null
-                                    )
-                                }
-                            }
-                        }
-                    }
-                }
-
-                SettingsSection(Icons.Filled.Storage, stringResource(R.string.settings_storage_section)) {
-                    LinkRow(Icons.Filled.Download, stringResource(R.string.local_backup), stringResource(R.string.backup_short_description)) {
-                        navigator?.pushIfNotCurrent(LocalBackupPage)
-                    }
-                    HorizontalDivider()
-                    val cache = state.cacheStats
-                    CacheRow(stringResource(R.string.settings_page_cache), when { state.cacheStatsError -> stringResource(R.string.local_cache_stats_failed); cache == null -> stringResource(R.string.local_cache_loading); else -> stringResource(R.string.local_cache_pages, formatBytes(cache.pageBytes), cache.pageEntries) }, state.cacheOperation != null, stringResource(R.string.local_cache_clear_pages)) { model.clearPageCache() }
-                    HorizontalDivider()
-                    CacheRow(stringResource(R.string.settings_image_cache), when { state.cacheStatsError -> stringResource(R.string.local_cache_stats_failed); cache == null -> stringResource(R.string.local_cache_loading); else -> formatBytes(cache.imageBytes) }, state.cacheOperation != null, stringResource(R.string.local_cache_clear_images)) { model.clearImageCache() }
-                    Text(stringResource(R.string.settings_cache_note), style = com.breakyuna.esjzone.ui.designsystem.AppTypography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(start = 4.dp, top = 2.dp))
-                    if (state.cacheOperation != null) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
-                    if (state.cacheStatsError) TextButton(onClick = model::refreshCacheStats) { Text(stringResource(R.string.retry)) }
-                    if (state.cacheClearError) Text(stringResource(R.string.local_cache_clear_failed), color = MaterialTheme.colorScheme.error)
-                }
-
-                SettingsSection(Icons.Filled.BugReport, stringResource(R.string.settings_diagnostics_section)) {
-                    LinkRow(Icons.Filled.BugReport, stringResource(R.string.system_logs), stringResource(R.string.settings_logs_description)) { navigator?.pushIfNotCurrent(LogsPage) }
-                }
-                SettingsSection(Icons.Filled.Info, stringResource(R.string.about)) {
-                    Text(
-                        text = stringResource(R.string.about_disclaimer),
-                        style = com.breakyuna.esjzone.ui.designsystem.AppTypography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 8.dp, vertical = 4.dp)
-                    )
-                    HorizontalDivider(modifier = Modifier.padding(vertical = 2.dp))
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { ReleaseUpdateChecker.checkNow(context) }
-                            .padding(horizontal = 8.dp, vertical = 4.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(stringResource(R.string.build_version), style = com.breakyuna.esjzone.ui.designsystem.AppTypography.labelLarge)
                             Text(
-                                text = when (val s = checkState) {
-                                    ReleaseCheckState.Checking -> stringResource(R.string.update_checking)
-                                    ReleaseCheckState.UpToDate -> stringResource(R.string.update_up_to_date)
-                                    ReleaseCheckState.Error -> stringResource(R.string.update_check_error)
-                                    is ReleaseCheckState.Available -> stringResource(R.string.update_available_status, s.version)
-                                    ReleaseCheckState.Idle -> stringResource(R.string.update_check_tap_version)
-                                },
-                                style = com.breakyuna.esjzone.ui.designsystem.AppTypography.bodySmall,
-                                color = if (checkState is ReleaseCheckState.Error) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant
+                                text = BuildConfig.VERSION_NAME,
+                                style = com.breakyuna.esjzone.ui.designsystem.AppTypography.titleMedium,
+                                color = MaterialTheme.colorScheme.primary
                             )
                         }
-                        Text(
-                            text = BuildConfig.VERSION_NAME,
-                            style = com.breakyuna.esjzone.ui.designsystem.AppTypography.titleMedium,
-                            color = MaterialTheme.colorScheme.primary
+                        LinkRow(Icons.Filled.Info, stringResource(R.string.open_source_licenses)) {
+                            navigator?.pushIfNotCurrent(OpenSourceLicensesPage)
+                        }
+                        ToggleRow(
+                            title = stringResource(R.string.update_auto_check),
+                            subtitle = stringResource(R.string.update_auto_check_description),
+                            checked = autoCheck,
+                            onCheckedChange = { ReleaseUpdateChecker.setAutoCheck(context, it) }
                         )
-                    }
-                    LinkRow(Icons.Filled.Info, stringResource(R.string.open_source_licenses)) {
-                        navigator?.pushIfNotCurrent(OpenSourceLicensesPage)
-                    }
-                    ToggleRow(
-                        title = stringResource(R.string.update_auto_check),
-                        subtitle = stringResource(R.string.update_auto_check_description),
-                        checked = autoCheck,
-                        onCheckedChange = { ReleaseUpdateChecker.setAutoCheck(context, it) }
-                    )
-                    HorizontalDivider(modifier = Modifier.padding(vertical = 2.dp))
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 8.dp, vertical = 4.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(stringResource(R.string.original_author), style = com.breakyuna.esjzone.ui.designsystem.AppTypography.labelLarge)
-                        Text(
-                            text = Constants.ORIGINAL_AUTHOR,
-                            style = com.breakyuna.esjzone.ui.designsystem.AppTypography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 8.dp, vertical = 4.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(stringResource(R.string.maintainers), style = com.breakyuna.esjzone.ui.designsystem.AppTypography.labelLarge)
-                        Text(
-                            text = Constants.MAINTAINERS.joinToString(", "),
-                            style = com.breakyuna.esjzone.ui.designsystem.AppTypography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+                        HorizontalDivider(modifier = Modifier.padding(vertical = 2.dp))
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 8.dp, vertical = 4.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(stringResource(R.string.original_author), style = com.breakyuna.esjzone.ui.designsystem.AppTypography.labelLarge)
+                            Text(
+                                text = Constants.ORIGINAL_AUTHOR,
+                                style = com.breakyuna.esjzone.ui.designsystem.AppTypography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 8.dp, vertical = 4.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(stringResource(R.string.maintainers), style = com.breakyuna.esjzone.ui.designsystem.AppTypography.labelLarge)
+                            Text(
+                                text = Constants.MAINTAINERS.joinToString(", "),
+                                style = com.breakyuna.esjzone.ui.designsystem.AppTypography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
                     }
                 }
-                Surface(
-                    color = MaterialTheme.colorScheme.surface,
-                    shape = com.breakyuna.esjzone.ui.designsystem.AppShapes.standard,
-                    border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-                    shadowElevation = 1.dp
-                ) {
-                    LinkRow(
-                        Icons.AutoMirrored.Filled.Logout,
-                        stringResource(R.string.settings_logout_title),
-                        subtitle = null,
-                        centered = true
-                    ) { if (!state.logoutInProgress) showLogout = true }
-                }
+
+            }
             }
         }
         if (showLanguageDialog) SelectionDialog(
@@ -617,10 +608,53 @@ object SettingsPage : AppDestination {
             onDismiss = { showStartupPageDialog = false }
         )
 
-        if (showMoreReaderSettings) ReaderMoreSettingsDialog(
-            settings = readerSettings,
-            onSettingsChange = PresentationAccess.readerSettings::saveDebounced,
-            onDismiss = { showMoreReaderSettings = false }
+        if (showSiteDialog) AlertDialog(
+            onDismissRequest = { showSiteDialog = false },
+            title = { Text(stringResource(R.string.settings_network_section)) },
+            text = {
+                Column(Modifier.verticalScroll(rememberScrollState())) {
+                    Text(stringResource(R.string.settings_active_mirror), style = com.breakyuna.esjzone.ui.designsystem.AppTypography.labelLarge)
+                    PresentationAccess.settings.DOMAINS.forEach { candidate ->
+                        ChoiceRow(
+                            title = candidate,
+                            subtitle = stringResource(if (candidate.contains(".one")) R.string.settings_backup_description else R.string.settings_primary_description),
+                            selected = candidate == domain,
+                            onClick = {
+                                if (candidate != domain && !switchingDomain) {
+                                    showSiteDialog = false
+                                    switchingDomain = true
+                                    scope.launch {
+                                        try {
+                                            val session = withContext(Dispatchers.IO) {
+                                                PresentationAccess.client.restoreAuthorization(candidate)
+                                            }?.takeIf { it.hasCredentials() }
+                                            if (session != null) {
+                                                PresentationAccess.settings.setDomain(candidate)
+                                                PresentationAccess.client.clearParsedPageCache()
+                                                if (PresentationAccess.client.hasSiteSession(candidate)) {
+                                                    BookshelfRepository.scheduleSync(session)
+                                                    CommunitySyncManager.schedulePreSync(session)
+                                                }
+                                                rootNavigator?.replaceAll(MainScreen(session))
+                                            } else {
+                                                siteUnavailable = true
+                                            }
+                                        } catch (e: Exception) {
+                                            AppLogger.e("SettingsPage", "Failed to switch site", e)
+                                        } finally {
+                                            switchingDomain = false
+                                        }
+                                    }
+                                }
+                            }
+                        )
+                    }
+                    Text(stringResource(R.string.settings_mirror_note), style = com.breakyuna.esjzone.ui.designsystem.AppTypography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 4.dp, start = 4.dp))
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showSiteDialog = false }) { Text(stringResource(R.string.logout_cancel)) }
+            }
         )
 
         if (state.logoutFailed) AlertDialog(

@@ -796,7 +796,7 @@ private fun ShelfCard(
             )
         ) {
             AppNovelCover(
-                coverUrl = BookshelfCoverStore.localOrRemote(entry),
+                coverUrl = BookshelfCoverStore.rememberLocalOrRemote(entry),
                 title = entry.title,
                 modifier = Modifier.fillMaxSize().clip(shape)
             )
@@ -878,7 +878,7 @@ private fun ShelfListItem(
             )
         ) {
             AppNovelCover(
-                BookshelfCoverStore.localOrRemote(entry),
+                BookshelfCoverStore.rememberLocalOrRemote(entry),
                 entry.title,
                 Modifier.fillMaxSize().clip(AppShapes.compact)
             )

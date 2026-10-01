@@ -702,4 +702,7 @@
     <string name="group_delete_hint">Delete “%1$s”? Its books will become ungrouped and remain on your bookshelf.</string>
     <string name="group_error">Could not update groups. Check for a duplicate name and try again.</string>
     <string name="open_source_licenses">Open source licenses</string>
+    <string name="settings_general_section">General</string>
+    <string name="settings_preferences_section">Preferences</string>
+    <string name="settings_reading_download_section">Reading and downloads</string>
 </resources>

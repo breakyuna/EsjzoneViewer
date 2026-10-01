@@ -4,21 +4,11 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -28,91 +18,65 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
 import com.breakyuna.esjzone.R
 import com.breakyuna.esjzone.ui.designsystem.GlobalText as Text
 import com.breakyuna.esjzone.ui.designsystem.globalStringResource as stringResource
 import com.breakyuna.esjzone.ui.reader.ReaderSettings
 
 @Composable
-internal fun ReaderMoreSettingsDialog(
+internal fun ReaderMoreSettingsContent(
     settings: ReaderSettings,
-    onSettingsChange: (ReaderSettings) -> Unit,
-    onDismiss: () -> Unit
+    onSettingsChange: (ReaderSettings) -> Unit
 ) {
     var draft by remember(settings) { mutableStateOf(settings) }
     fun commit(value: ReaderSettings) {
         draft = value
         onSettingsChange(value)
     }
-    Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
-        Surface(
-            modifier = Modifier.padding(16.dp).widthIn(max = 560.dp).fillMaxWidth().fillMaxHeight(0.88f),
-            shape = MaterialTheme.shapes.large,
-            color = MaterialTheme.colorScheme.surface
-        ) {
-            Column {
-                Row(
-                    Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    IconButton(onClick = onDismiss) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.reader_more_settings))
-                    }
-                    Text(stringResource(R.string.reader_more_settings), style = MaterialTheme.typography.titleLarge)
-                }
-                Column(
-                    Modifier.fillMaxWidth().weight(1f).verticalScroll(rememberScrollState())
-                        .padding(horizontal = 20.dp, vertical = 8.dp),
-                    verticalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    Text(stringResource(R.string.reader_more_controls), style = MaterialTheme.typography.titleSmall,
-                        color = MaterialTheme.colorScheme.primary)
-                    MoreReaderToggle(stringResource(R.string.reader_tap_paging), draft.tapPagingEnabled) {
-                        commit(draft.copy(tapPagingEnabled = it))
-                    }
-                    Column(Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
-                        Text(stringResource(R.string.reader_left_tap_action), style = MaterialTheme.typography.bodyLarge)
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            FilterChip(
-                                selected = !draft.leftTapForward,
-                                onClick = { commit(draft.copy(leftTapForward = false)) },
-                                label = { Text(stringResource(R.string.reader_left_tap_previous)) }
-                            )
-                            FilterChip(
-                                selected = draft.leftTapForward,
-                                onClick = { commit(draft.copy(leftTapForward = true)) },
-                                label = { Text(stringResource(R.string.reader_left_tap_next)) }
-                            )
-                        }
-                    }
-                    MoreReaderToggle(stringResource(R.string.settings_volume_key_paging), draft.volumeKeyPaging) {
-                        commit(draft.copy(volumeKeyPaging = it))
-                    }
-                    MoreReaderToggle(stringResource(R.string.settings_auto_resume_reading), draft.autoResumeLastReading) {
-                        commit(draft.copy(autoResumeLastReading = it))
-                    }
-                    HorizontalDivider(Modifier.padding(vertical = 8.dp))
-                    Text(stringResource(R.string.reader_more_display), style = MaterialTheme.typography.titleSmall,
-                        color = MaterialTheme.colorScheme.primary)
-                    MoreReaderToggle(stringResource(R.string.reader_eye_protection), draft.eyeProtectionEnabled) {
-                        commit(draft.copy(eyeProtectionEnabled = it))
-                    }
-                    MoreReaderToggle(stringResource(R.string.reader_show_system_status), draft.showSystemStatusBar) {
-                        commit(draft.copy(showSystemStatusBar = it))
-                    }
-                    MoreReaderToggle(stringResource(R.string.reader_show_system_navigation), draft.showSystemNavigationBar) {
-                        commit(draft.copy(showSystemNavigationBar = it))
-                    }
-                    MoreReaderToggle(stringResource(R.string.reader_show_chapter_name), draft.showChapterName) {
-                        commit(draft.copy(showChapterName = it))
-                    }
-                    MoreReaderToggle(stringResource(R.string.reader_show_time_battery), draft.showTimeBattery) {
-                        commit(draft.copy(showTimeBattery = it))
-                    }
-                }
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text(stringResource(R.string.reader_more_controls), style = MaterialTheme.typography.titleSmall,
+            color = MaterialTheme.colorScheme.primary)
+        MoreReaderToggle(stringResource(R.string.reader_tap_paging), draft.tapPagingEnabled) {
+            commit(draft.copy(tapPagingEnabled = it))
+        }
+        Column(Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
+            Text(stringResource(R.string.reader_left_tap_action), style = MaterialTheme.typography.bodyLarge)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                FilterChip(
+                    selected = !draft.leftTapForward,
+                    onClick = { commit(draft.copy(leftTapForward = false)) },
+                    label = { Text(stringResource(R.string.reader_left_tap_previous)) }
+                )
+                FilterChip(
+                    selected = draft.leftTapForward,
+                    onClick = { commit(draft.copy(leftTapForward = true)) },
+                    label = { Text(stringResource(R.string.reader_left_tap_next)) }
+                )
             }
+        }
+        MoreReaderToggle(stringResource(R.string.settings_volume_key_paging), draft.volumeKeyPaging) {
+            commit(draft.copy(volumeKeyPaging = it))
+        }
+        MoreReaderToggle(stringResource(R.string.settings_auto_resume_reading), draft.autoResumeLastReading) {
+            commit(draft.copy(autoResumeLastReading = it))
+        }
+        HorizontalDivider(Modifier.padding(vertical = 8.dp))
+        Text(stringResource(R.string.reader_more_display), style = MaterialTheme.typography.titleSmall,
+            color = MaterialTheme.colorScheme.primary)
+        MoreReaderToggle(stringResource(R.string.reader_eye_protection), draft.eyeProtectionEnabled) {
+            commit(draft.copy(eyeProtectionEnabled = it))
+        }
+        MoreReaderToggle(stringResource(R.string.reader_show_system_status), draft.showSystemStatusBar) {
+            commit(draft.copy(showSystemStatusBar = it))
+        }
+        MoreReaderToggle(stringResource(R.string.reader_show_system_navigation), draft.showSystemNavigationBar) {
+            commit(draft.copy(showSystemNavigationBar = it))
+        }
+        MoreReaderToggle(stringResource(R.string.reader_show_chapter_name), draft.showChapterName) {
+            commit(draft.copy(showChapterName = it))
+        }
+        MoreReaderToggle(stringResource(R.string.reader_show_time_battery), draft.showTimeBattery) {
+            commit(draft.copy(showTimeBattery = it))
         }
     }
 }

@@ -703,4 +703,7 @@
     <string name="group_delete_hint">删除“%1$s”？组内书籍将移至未分组，仍保留在书架中。</string>
     <string name="group_error">分组操作失败，请检查名称是否重复后重试。</string>
     <string name="open_source_licenses">开源许可</string>
+    <string name="settings_general_section">常规</string>
+    <string name="settings_preferences_section">功能与管理</string>
+    <string name="settings_reading_download_section">阅读与下载</string>
 </resources>
