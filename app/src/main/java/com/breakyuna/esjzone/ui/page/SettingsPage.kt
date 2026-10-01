@@ -1,6 +1,10 @@
 package com.breakyuna.esjzone.ui.page
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedContentTransitionScope
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.togetherWith
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.foundation.clickable
@@ -132,9 +136,6 @@ object SettingsPage : AppDestination {
         val checkState by ReleaseUpdateChecker.status.collectAsStateWithLifecycle()
         val autoCheck by ReleaseUpdateChecker.autoCheck.collectAsStateWithLifecycle()
         var showLogout by remember { mutableStateOf(false) }
-        var showLanguageDialog by remember { mutableStateOf(false) }
-        var showScriptDialog by remember { mutableStateOf(false) }
-        var showStartupPageDialog by remember { mutableStateOf(false) }
         val sectionStateHolder = rememberSaveableStateHolder()
         var section by rememberSaveable { mutableStateOf("MAIN") }
         var showSiteDialog by remember { mutableStateOf(false) }
@@ -172,34 +173,52 @@ object SettingsPage : AppDestination {
                 )
             }
         ) { padding ->
-            sectionStateHolder.SaveableStateProvider(section) {
+            AnimatedContent(
+                targetState = section,
+                modifier = Modifier.fillMaxSize().padding(padding),
+                transitionSpec = {
+                    val direction = if (targetState == "MAIN") {
+                        AnimatedContentTransitionScope.SlideDirection.Right
+                    } else {
+                        AnimatedContentTransitionScope.SlideDirection.Left
+                    }
+                    slideIntoContainer(direction, tween(250)) togetherWith
+                        slideOutOfContainer(direction, tween(250))
+                },
+                label = "SettingsSectionTransition"
+            ) { displayedSection ->
+            sectionStateHolder.SaveableStateProvider(displayedSection) {
             Column(
                 Modifier
                     .fillMaxSize()
                     .accountContentWidth()
-                    .padding(padding)
                     .verticalScroll(rememberScrollState())
                     .padding(horizontal = com.breakyuna.esjzone.ui.designsystem.AppSpacing.lg, vertical = com.breakyuna.esjzone.ui.designsystem.AppSpacing.sm),
                 verticalArrangement = Arrangement.spacedBy(com.breakyuna.esjzone.ui.designsystem.AppSpacing.md)
             ) {
-                if (section == "MAIN") {
+                if (displayedSection == "MAIN") {
                     SettingsSection(Icons.Filled.Language, stringResource(R.string.settings_general_section)) {
-                        Text(stringResource(R.string.settings_language_description), style = com.breakyuna.esjzone.ui.designsystem.AppTypography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        SelectionSettingRow(
+                        InlineSettingRow(
                             title = stringResource(R.string.settings_language_section),
-                            subtitle = stringResource(language.titleRes),
-                            onClick = { showLanguageDialog = true }
-                        )
+                            value = stringResource(language.titleRes)
+                        ) {
+                            val candidate = AppLanguage.entries[(language.ordinal + 1) % AppLanguage.entries.size]
+                            PresentationAccess.settings.setLanguage(candidate)
+                            LocaleHelper.syncSystemLocale(context, candidate)
+                            model.persist("language", candidate.code)
+                        }
                         HorizontalDivider()
-                        SelectionSettingRow(
+                        InlineSettingRow(
                             title = stringResource(R.string.settings_script_section),
-                            subtitle = stringResource(when (readerSettings.script) {
+                            value = stringResource(when (readerSettings.script) {
                                 ReaderScript.ORIGINAL -> R.string.reader_script_original
                                 ReaderScript.SIMPLIFIED -> R.string.reader_script_simplified
                                 ReaderScript.TRADITIONAL -> R.string.reader_script_traditional
-                            }),
-                            onClick = { showScriptDialog = true }
-                        )
+                            })
+                        ) {
+                            val script = ReaderScript.entries[(readerSettings.script.ordinal + 1) % ReaderScript.entries.size]
+                            PresentationAccess.readerSettings.saveInBackground(readerSettings.copy(script = script))
+                        }
                         HorizontalDivider()
                         ToggleRow(stringResource(R.string.settings_showadultcontent), stringResource(R.string.settings_adult_description), adult) { PresentationAccess.settings.setAdult(it); model.persist("show_adult", it.toString()) }
                         ToggleRow(
@@ -209,7 +228,7 @@ object SettingsPage : AppDestination {
                         ) { PresentationAccess.settings.setHideHomeRecommendations(it) }
                     }
                     SettingsSection(Icons.Filled.Dns, stringResource(R.string.settings_network_section)) {
-                        SelectionSettingRow(domain, stringResource(R.string.settings_mirror_note)) {
+                        SelectionSettingRow(domain) {
                             if (!switchingDomain) showSiteDialog = true
                         }
                     }
@@ -234,7 +253,7 @@ object SettingsPage : AppDestination {
                         ) { if (!state.logoutInProgress) showLogout = true }
                     }
                 }
-                if (section == "NAVIGATION") {
+                if (displayedSection == "NAVIGATION") {
                     SettingsSection(Icons.Filled.Reorder, stringResource(R.string.settings_navigation_section)) {
                         Text(
                             stringResource(R.string.settings_navigation_description),
@@ -373,15 +392,29 @@ object SettingsPage : AppDestination {
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
 
-                        SelectionSettingRow(
-                            title = startupPageTitle(startTab),
-                            subtitle = startupPageSubtitle(startTab),
-                            onClick = { showStartupPageDialog = true }
-                        )
+                        Column(Modifier.selectableGroup()) {
+                            listOf(
+                                com.breakyuna.esjzone.data.settings.SettingsDefaults.START_TAB_FOLLOW_NAV,
+                                "HOME", "BOOKSHELF", "HISTORY", "PROFILE"
+                            ).forEach { candidate ->
+                                Row(
+                                    modifier = Modifier.fillMaxWidth()
+                                        .selectable(
+                                            selected = candidate == startTab,
+                                            role = Role.RadioButton,
+                                            onClick = { PresentationAccess.settings.setStartTab(candidate) }
+                                        ).padding(vertical = 4.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    RadioButton(selected = candidate == startTab, onClick = null)
+                                    Text(startupPageTitle(candidate))
+                                }
+                            }
+                        }
                     }
 
                     }
-                    if (section == "READING") {
+                    if (displayedSection == "READING") {
                     SettingsSection(Icons.Filled.MenuBook, stringResource(R.string.settings_reader_section)) {
                         ReaderMoreSettingsContent(readerSettings, PresentationAccess.readerSettings::saveDebounced)
                         HorizontalDivider(modifier = Modifier.padding(vertical = 2.dp))
@@ -455,7 +488,7 @@ object SettingsPage : AppDestination {
                     }
 
                     }
-                    if (section == "STORAGE") {
+                    if (displayedSection == "STORAGE") {
                     SettingsSection(Icons.Filled.Storage, stringResource(R.string.settings_storage_section)) {
                         LinkRow(Icons.Filled.Download, stringResource(R.string.local_backup), stringResource(R.string.backup_short_description)) {
                             navigator?.pushIfNotCurrent(LocalBackupPage)
@@ -472,7 +505,7 @@ object SettingsPage : AppDestination {
                     }
 
                     }
-                    if (section == "ABOUT") {
+                    if (displayedSection == "ABOUT") {
                     SettingsSection(Icons.Filled.Info, stringResource(R.string.about)) {
                         Text(
                             text = stringResource(R.string.about_disclaimer),
@@ -554,60 +587,8 @@ object SettingsPage : AppDestination {
 
             }
             }
+            }
         }
-        if (showLanguageDialog) SelectionDialog(
-            title = stringResource(R.string.settings_language_section),
-            options = AppLanguage.entries.map { candidate ->
-                SelectionOption(
-                    candidate.code,
-                    stringResource(candidate.titleRes),
-                    stringResource(candidate.subtitleRes)
-                )
-            },
-            selectedId = language.code,
-            onSelect = { selected ->
-                showLanguageDialog = false
-                val candidate = AppLanguage.fromCode(selected)
-                PresentationAccess.settings.setLanguage(candidate)
-                LocaleHelper.syncSystemLocale(context, candidate)
-                model.persist("language", candidate.code)
-            },
-            onDismiss = { showLanguageDialog = false }
-        )
-
-        if (showScriptDialog) SelectionDialog(
-            title = stringResource(R.string.settings_script_section),
-            options = listOf(
-                SelectionOption(ReaderScript.ORIGINAL.name, stringResource(R.string.reader_script_original), stringResource(R.string.settings_script_original_description)),
-                SelectionOption(ReaderScript.SIMPLIFIED.name, stringResource(R.string.reader_script_simplified), stringResource(R.string.settings_script_simplified_description)),
-                SelectionOption(ReaderScript.TRADITIONAL.name, stringResource(R.string.reader_script_traditional), stringResource(R.string.settings_script_traditional_description))
-            ),
-            selectedId = readerSettings.script.name,
-            onSelect = { selected ->
-                showScriptDialog = false
-                PresentationAccess.readerSettings.saveInBackground(
-                    readerSettings.copy(script = ReaderScript.valueOf(selected))
-                )
-            },
-            onDismiss = { showScriptDialog = false }
-        )
-
-        if (showStartupPageDialog) SelectionDialog(
-            title = stringResource(R.string.settings_startup_page_title),
-            options = listOf(
-                com.breakyuna.esjzone.data.settings.SettingsDefaults.START_TAB_FOLLOW_NAV,
-                "HOME", "BOOKSHELF", "HISTORY", "PROFILE"
-            ).map { candidate ->
-                SelectionOption(candidate, startupPageTitle(candidate), startupPageSubtitle(candidate))
-            },
-            selectedId = startTab,
-            onSelect = { selected ->
-                showStartupPageDialog = false
-                PresentationAccess.settings.setStartTab(selected)
-            },
-            onDismiss = { showStartupPageDialog = false }
-        )
-
         if (showSiteDialog) AlertDialog(
             onDismissRequest = { showSiteDialog = false },
             title = { Text(stringResource(R.string.settings_network_section)) },
@@ -617,7 +598,6 @@ object SettingsPage : AppDestination {
                     PresentationAccess.settings.DOMAINS.forEach { candidate ->
                         ChoiceRow(
                             title = candidate,
-                            subtitle = stringResource(if (candidate.contains(".one")) R.string.settings_backup_description else R.string.settings_primary_description),
                             selected = candidate == domain,
                             onClick = {
                                 if (candidate != domain && !switchingDomain) {
@@ -649,7 +629,6 @@ object SettingsPage : AppDestination {
                             }
                         )
                     }
-                    Text(stringResource(R.string.settings_mirror_note), style = com.breakyuna.esjzone.ui.designsystem.AppTypography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 4.dp, start = 4.dp))
                 }
             },
             confirmButton = {
@@ -718,17 +697,6 @@ private fun startupPageTitle(id: String): String = when (id) {
 }
 
 @Composable
-private fun startupPageSubtitle(id: String): String = when (id) {
-    com.breakyuna.esjzone.data.settings.SettingsDefaults.START_TAB_FOLLOW_NAV ->
-        stringResource(R.string.settings_startup_follow_nav_description)
-    "HOME" -> stringResource(R.string.settings_startup_home_description)
-    "BOOKSHELF" -> stringResource(R.string.settings_startup_bookshelf_description)
-    "HISTORY" -> stringResource(R.string.settings_startup_history_description)
-    "PROFILE" -> stringResource(R.string.settings_startup_profile_description)
-    else -> ""
-}
-
-@Composable
 private fun SettingsSection(icon: ImageVector, title: String, content: @Composable ColumnScope.() -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(com.breakyuna.esjzone.ui.designsystem.AppSpacing.sm)) {
@@ -756,19 +724,29 @@ private fun SettingsSection(icon: ImageVector, title: String, content: @Composab
 }
 
 @Composable
-private fun ChoiceRow(title: String, subtitle: String, selected: Boolean, onClick: () -> Unit) {
+private fun ChoiceRow(title: String, subtitle: String? = null, selected: Boolean, onClick: () -> Unit) {
     Surface(onClick = onClick, color = if (selected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent, shape = com.breakyuna.esjzone.ui.designsystem.AppShapes.compact, modifier = Modifier.fillMaxWidth()) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f)) { Text(title, style = com.breakyuna.esjzone.ui.designsystem.AppTypography.labelLarge, maxLines = 1, overflow = TextOverflow.Ellipsis); Text(subtitle, style = com.breakyuna.esjzone.ui.designsystem.AppTypography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+            Column(Modifier.weight(1f)) { Text(title, style = com.breakyuna.esjzone.ui.designsystem.AppTypography.labelLarge, maxLines = 1, overflow = TextOverflow.Ellipsis); subtitle?.let { Text(it, style = com.breakyuna.esjzone.ui.designsystem.AppTypography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) } }
             if (selected) Icon(Icons.Filled.Check, null, tint = MaterialTheme.colorScheme.primary)
         }
     }
 }
 
-private data class SelectionOption(val id: String, val title: String, val subtitle: String)
+@Composable
+private fun InlineSettingRow(title: String, value: String, onClick: () -> Unit) {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(start = 10.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(title, modifier = Modifier.weight(1f),
+            style = com.breakyuna.esjzone.ui.designsystem.AppTypography.labelLarge)
+        TextButton(onClick = onClick) { Text(value) }
+    }
+}
 
 @Composable
-private fun SelectionSettingRow(title: String, subtitle: String, onClick: () -> Unit) {
+private fun SelectionSettingRow(title: String, subtitle: String? = null, onClick: () -> Unit) {
     Surface(
         onClick = onClick,
         color = Color.Transparent,
@@ -781,63 +759,14 @@ private fun SelectionSettingRow(title: String, subtitle: String, onClick: () -> 
         ) {
             Column(Modifier.weight(1f)) {
                 Text(title, style = com.breakyuna.esjzone.ui.designsystem.AppTypography.labelLarge)
-                Text(
-                    subtitle,
-                    style = com.breakyuna.esjzone.ui.designsystem.AppTypography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+                subtitle?.let {
+                    Text(it, style = com.breakyuna.esjzone.ui.designsystem.AppTypography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
             }
             Icon(Icons.Filled.ChevronRight, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
-}
-
-@Composable
-private fun SelectionDialog(
-    title: String,
-    options: List<SelectionOption>,
-    selectedId: String,
-    onSelect: (String) -> Unit,
-    onDismiss: () -> Unit
-) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(title) },
-        text = {
-            Column(Modifier.selectableGroup().verticalScroll(rememberScrollState())) {
-                options.forEach { option ->
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .selectable(
-                                selected = option.id == selectedId,
-                                role = Role.RadioButton,
-                                onClick = {
-                                    if (option.id == selectedId) onDismiss()
-                                    else onSelect(option.id)
-                                }
-                            )
-                            .padding(vertical = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        RadioButton(selected = option.id == selectedId, onClick = null)
-                        Column(Modifier.weight(1f)) {
-                            Text(option.title, style = com.breakyuna.esjzone.ui.designsystem.AppTypography.labelLarge)
-                            Text(
-                                option.subtitle,
-                                style = com.breakyuna.esjzone.ui.designsystem.AppTypography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    }
-                }
-            }
-        },
-        confirmButton = {
-            TextButton(onClick = onDismiss) { Text(stringResource(R.string.logout_cancel)) }
-        }
-    )
 }
 
 @Composable

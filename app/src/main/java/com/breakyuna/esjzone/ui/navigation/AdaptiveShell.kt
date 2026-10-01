@@ -50,12 +50,11 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBarDefaults
-import androidx.compose.material3.NavigationBarItem
-import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.NavigationRail
 import androidx.compose.material3.NavigationRailItem
 import androidx.compose.material3.NavigationRailItemDefaults
 import androidx.compose.material3.Surface
+import androidx.compose.material3.ripple
 import com.breakyuna.esjzone.ui.designsystem.GlobalText as Text
 import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
@@ -74,13 +73,10 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.drawBehind
 import com.breakyuna.esjzone.ui.designsystem.globalStringResource as stringResource
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithCache
-import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import com.breakyuna.esjzone.R
 import com.breakyuna.esjzone.app.PresentationAccess
@@ -485,11 +481,8 @@ private fun TabStackDisplay(
     }
 }
 
-private val BottomBarHeight = 52.dp
-private val BottomBarIndicatorWidth = 64.dp
-private val BottomBarIndicatorHeight = 32.dp
-// Material 3's default capsule starts at 12.dp; this follows the icon's 3.dp offset.
-private val BottomBarIndicatorTop = 15.dp
+private val BottomBarHeight = 68.dp
+private val BottomBarSelectionSize = 60.dp
 
 @Composable
 private fun AppNavigationBar(
@@ -515,58 +508,54 @@ private fun AppNavigationBar(
         ) {
             tabs.forEach { tab ->
                 val isSelected = selected == tab
-                val indicatorProgress by animateFloatAsState(
-                    targetValue = if (isSelected) 1f else 0f,
+                val backgroundColor by animateColorAsState(
+                    targetValue = if (isSelected) {
+                        MaterialTheme.colorScheme.secondaryContainer
+                    } else {
+                        Color.Transparent
+                    },
                     animationSpec = tween(durationMillis = 100),
                     label = "${tab.name}BottomIndicator"
                 )
-                val indicatorColor = MaterialTheme.colorScheme.secondaryContainer
-                NavigationBarItem(
-                    modifier = Modifier.drawBehind {
-                        val progress = indicatorProgress
-                        if (progress > 0f) {
-                            val indicatorWidth = BottomBarIndicatorWidth.toPx() * progress
-                            val indicatorHeight = BottomBarIndicatorHeight.toPx()
-                            drawRoundRect(
-                                color = indicatorColor.copy(alpha = progress),
-                                topLeft = Offset(
-                                    x = (size.width - indicatorWidth) / 2f,
-                                    y = BottomBarIndicatorTop.toPx()
-                                ),
-                                size = Size(indicatorWidth, indicatorHeight),
-                                cornerRadius = CornerRadius(
-                                    x = minOf(indicatorWidth, indicatorHeight) / 2f,
-                                    y = minOf(indicatorWidth, indicatorHeight) / 2f
-                                )
-                            )
-                        }
-                    },
-                    selected = isSelected,
-                    onClick = { onSelected(tab) },
-                    icon = {
+                val contentColor = if (isSelected) {
+                    MaterialTheme.colorScheme.primary
+                } else {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                }
+                Box(
+                    modifier = Modifier.weight(1f),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .size(BottomBarSelectionSize)
+                            .clip(CircleShape)
+                            .background(backgroundColor)
+                            .selectable(
+                                selected = isSelected,
+                                interactionSource = remember(tab) { MutableInteractionSource() },
+                                indication = ripple(color = contentColor),
+                                role = Role.Tab,
+                                onClick = { onSelected(tab) }
+                            ),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(2.dp, Alignment.CenterVertically)
+                    ) {
                         Icon(
                             imageVector = if (isSelected) tab.filledIcon else tab.outlinedIcon,
-                            contentDescription = tabLabel(tab),
-                            modifier = Modifier.offset(y = 3.dp)
+                            contentDescription = null,
+                            tint = contentColor,
+                            modifier = Modifier.size(24.dp)
                         )
-                    },
-                    label = {
                         Text(
                             text = tabLabel(tab),
+                            color = contentColor,
                             style = MaterialTheme.typography.labelMedium,
                             fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
                             maxLines = 1
                         )
-                    },
-                    alwaysShowLabel = true,
-                    colors = NavigationBarItemDefaults.colors(
-                        indicatorColor = Color.Transparent,
-                        selectedIconColor = MaterialTheme.colorScheme.primary,
-                        selectedTextColor = MaterialTheme.colorScheme.primary,
-                        unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                        unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                )
+                    }
+                }
             }
         }
     }

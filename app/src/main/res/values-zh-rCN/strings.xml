@@ -706,4 +706,6 @@
     <string name="settings_general_section">常规</string>
     <string name="settings_preferences_section">功能与管理</string>
     <string name="settings_reading_download_section">阅读与下载</string>
+    <string name="reading_stats_bar_chart">柱状图</string>
+    <string name="reading_stats_line_chart">折线图</string>
 </resources>

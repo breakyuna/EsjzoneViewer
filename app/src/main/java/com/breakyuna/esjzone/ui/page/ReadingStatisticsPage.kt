@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -48,6 +49,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -106,6 +108,7 @@ object ReadingStatisticsPage : AppDestination {
         val state by model.state.collectAsState()
         var selectedDate by remember { mutableStateOf(LocalDate.now()) }
         var trendDays by remember { mutableStateOf(7) }
+        var trendLineChart by rememberSaveable { mutableStateOf(false) }
         var rankingDays by remember { mutableStateOf<Int?>(30) }
         var tagDays by remember { mutableStateOf<Int?>(30) }
         var confirmClear by remember { mutableStateOf(false) }
@@ -196,7 +199,19 @@ object ReadingStatisticsPage : AppDestination {
                             StatCard {
                                 StatSectionTitle(Icons.Filled.ShowChart, stringResource(R.string.reading_stats_trend))
                                 StatPeriodFilter(listOf(7, 30), trendDays) { trendDays = it ?: 7 }
-                                TrendBars(summary, trendDays)
+                                Row(horizontalArrangement = Arrangement.spacedBy(AppSpacing.sm)) {
+                                    FilterChip(
+                                        selected = !trendLineChart,
+                                        onClick = { trendLineChart = false },
+                                        label = { Text(stringResource(R.string.reading_stats_bar_chart)) }
+                                    )
+                                    FilterChip(
+                                        selected = trendLineChart,
+                                        onClick = { trendLineChart = true },
+                                        label = { Text(stringResource(R.string.reading_stats_line_chart)) }
+                                    )
+                                }
+                                TrendChart(summary, trendDays, trendLineChart)
                             }
                         }
                         item {
@@ -245,43 +260,78 @@ private fun TagDonutChart(tags: List<ReadingTagTotal>) {
         else Color.hsv((index * 137.508f + 215f) % 360f, if (dark) .55f else .65f, if (dark) .9f else .8f)
     }
     val chartBackground = MaterialTheme.colorScheme.surface
-    Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-        Canvas(Modifier.size(200.dp)) {
-            val stroke = 28.dp.toPx()
-            val inset = stroke / 2
+    val middleAngles = tags.runningFold(-90f) { angle, tag ->
+        angle + (tag.durationMs / total * 360).toFloat()
+    }.let { boundaries ->
+        tags.indices.map { index -> (boundaries[index] + boundaries[index + 1]) / 2f }
+    }
+    val leftIndices = tags.indices.filter { kotlin.math.cos(Math.toRadians(middleAngles[it].toDouble())) < 0 }
+        .sortedBy { kotlin.math.sin(Math.toRadians(middleAngles[it].toDouble())) }
+    val rightIndices = tags.indices.filter { it !in leftIndices }
+        .sortedBy { kotlin.math.sin(Math.toRadians(middleAngles[it].toDouble())) }
+    val chartHeight = maxOf(220, maxOf(leftIndices.size, rightIndices.size) * 56).dp
+    BoxWithConstraints(Modifier.fillMaxWidth().height(chartHeight)) {
+        val radius = minOf(80.dp, maxWidth * .23f)
+        val labelWidth = (maxWidth - radius * 2) / 2 - 12.dp
+        val positions = tags.indices.map { index ->
+            val side = if (index in leftIndices) leftIndices else rightIndices
+            chartHeight * ((side.indexOf(index) + .5f) / side.size)
+        }
+        Canvas(Modifier.fillMaxSize()) {
+            val center = Offset(size.width / 2, size.height / 2)
+            val outerRadius = radius.toPx()
+            val stroke = 24.dp.toPx()
+            val arcRadius = outerRadius - stroke / 2
+            val arcTopLeft = center - Offset(arcRadius, arcRadius)
+            val arcSize = Size(arcRadius * 2, arcRadius * 2)
             var startAngle = -90f
             tags.forEachIndexed { index, tag ->
                 val sweep = (tag.durationMs / total * 360).toFloat()
-                drawArc(
-                    color = colors[index], startAngle = startAngle, sweepAngle = sweep,
-                    useCenter = false, topLeft = Offset(inset, inset),
-                    size = Size(size.width - stroke, size.height - stroke), style = Stroke(stroke)
-                )
+                drawArc(colors[index], startAngle, sweep, false, arcTopLeft, arcSize, style = Stroke(stroke))
                 if (tags.size > 1) {
-                    drawArc(color = chartBackground, startAngle = startAngle, sweepAngle = minOf(1.5f, sweep / 4),
-                        useCenter = false, topLeft = Offset(inset, inset),
-                        size = Size(size.width - stroke, size.height - stroke), style = Stroke(stroke))
+                    drawArc(chartBackground, startAngle, minOf(1.5f, sweep / 4), false,
+                        arcTopLeft, arcSize, style = Stroke(stroke))
                 }
+                val angle = Math.toRadians(middleAngles[index].toDouble())
+                val direction = Offset(kotlin.math.cos(angle).toFloat(), kotlin.math.sin(angle).toFloat())
+                val start = center + direction * outerRadius
+                val elbow = center + direction * (outerRadius + 6.dp.toPx())
+                val end = Offset(
+                    if (index in leftIndices) labelWidth.toPx() + 4.dp.toPx()
+                    else size.width - labelWidth.toPx() - 4.dp.toPx(),
+                    positions[index].toPx()
+                )
+                drawLine(colors[index], start, elbow, 1.dp.toPx())
+                drawLine(colors[index], elbow, end, 1.dp.toPx())
                 startAngle += sweep
             }
         }
-        Column(Modifier.width(116.dp), horizontalAlignment = Alignment.CenterHorizontally,
+        tags.forEachIndexed { index, tag ->
+            val left = index in leftIndices
+            Column(
+                modifier = Modifier
+                    .offset(x = if (left) 0.dp else maxWidth - labelWidth,
+                        y = positions[index] - 24.dp)
+                    .width(labelWidth)
+                    .height(48.dp)
+                    .semantics(mergeDescendants = true) {},
+                verticalArrangement = Arrangement.Center,
+                horizontalAlignment = if (left) Alignment.End else Alignment.Start
+            ) {
+                Text(tag.tag ?: stringResource(R.string.reading_stats_other),
+                    style = AppTypography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis,
+                    textAlign = if (left) TextAlign.End else TextAlign.Start)
+                Text(percentFormat.format(tag.durationMs / total),
+                    style = AppTypography.labelMedium, color = colors[index])
+            }
+        }
+        Column(Modifier.align(Alignment.Center).width(radius * 1.3f),
+            horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(AppSpacing.xs)) {
-            Text(percentFormat.format(tags.first().durationMs / total), style = AppTypography.displayMedium)
+            Text(percentFormat.format(tags.first().durationMs / total), style = AppTypography.titleLarge)
             Text(tags.first().tag ?: stringResource(R.string.reading_stats_other), style = AppTypography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center,
                 maxLines = 2, overflow = TextOverflow.Ellipsis)
-        }
-    }
-    tags.forEachIndexed { index, tag ->
-        Row(Modifier.fillMaxWidth().semantics(mergeDescendants = true) {},
-            horizontalArrangement = Arrangement.spacedBy(AppSpacing.sm), verticalAlignment = Alignment.CenterVertically) {
-            Box(Modifier.size(12.dp).clip(RoundedCornerShape(3.dp)).background(colors[index]))
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(AppSpacing.xxs)) {
-                Text(tag.tag ?: stringResource(R.string.reading_stats_other), style = AppTypography.bodyMedium)
-                Text(formatDuration(tag.durationMs), style = AppTypography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-            Text(percentFormat.format(tag.durationMs / total), style = AppTypography.labelLarge)
         }
     }
 }
@@ -415,15 +465,37 @@ private fun ReadingHeatmap(summary: ReadingStatisticsSummary, selectedDate: Loca
 }
 
 @Composable
-private fun TrendBars(summary: ReadingStatisticsSummary, days: Int) {
+private fun TrendChart(summary: ReadingStatisticsSummary, days: Int, lineChart: Boolean) {
     val values = (days - 1 downTo 0).map { summary.daily[summary.today.minusDays(it.toLong())] ?: 0L }
     val maximum = values.maxOrNull()?.coerceAtLeast(1L) ?: 1L
+    if (lineChart) {
+        val lineColor = MaterialTheme.colorScheme.primary
+        val baselineColor = MaterialTheme.colorScheme.outlineVariant
+        Canvas(Modifier.fillMaxWidth().height(90.dp)) {
+            val inset = 4.dp.toPx()
+            val chartWidth = (size.width - inset * 2).coerceAtLeast(0f)
+            val chartHeight = (size.height - inset * 2).coerceAtLeast(0f)
+            val baseline = inset + chartHeight
+            drawLine(baselineColor, Offset(inset, baseline), Offset(inset + chartWidth, baseline), 1.dp.toPx())
+            val points = values.mapIndexed { index, value ->
+                Offset(
+                    inset + chartWidth * index / (values.size - 1).coerceAtLeast(1),
+                    baseline - chartHeight * (value.toDouble() / maximum).toFloat()
+                )
+            }
+            points.zipWithNext().forEach { (start, end) ->
+                drawLine(lineColor, start, end, strokeWidth = 2.dp.toPx())
+            }
+            points.forEach { point -> drawCircle(lineColor, radius = 2.5.dp.toPx(), center = point) }
+        }
+    } else {
     Row(Modifier.fillMaxWidth().height(90.dp), horizontalArrangement = Arrangement.spacedBy(2.dp), verticalAlignment = Alignment.Bottom) {
         values.forEach { value ->
             Box(Modifier.weight(1f).height((4f + 82f * value / maximum).dp)
                 .clip(RoundedCornerShape(topStart = 3.dp, topEnd = 3.dp))
                 .background(if (value > 0L) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant))
         }
+    }
     }
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
         Text(summary.today.minusDays(days.toLong() - 1L).toString(), style = MaterialTheme.typography.labelSmall)

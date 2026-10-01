@@ -705,4 +705,6 @@
     <string name="settings_general_section">General</string>
     <string name="settings_preferences_section">Preferences</string>
     <string name="settings_reading_download_section">Reading and downloads</string>
+    <string name="reading_stats_bar_chart">Bar chart</string>
+    <string name="reading_stats_line_chart">Line chart</string>
 </resources>
