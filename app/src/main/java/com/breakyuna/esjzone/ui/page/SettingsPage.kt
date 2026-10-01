@@ -21,6 +21,9 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.background
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -200,9 +203,14 @@ object SettingsPage : AppDestination {
                     SettingsSection(Icons.Filled.Language, stringResource(R.string.settings_general_section)) {
                         InlineSettingRow(
                             title = stringResource(R.string.settings_language_section),
-                            value = stringResource(language.titleRes)
-                        ) {
-                            val candidate = AppLanguage.entries[(language.ordinal + 1) % AppLanguage.entries.size]
+                            options = listOf(
+                                stringResource(R.string.settings_language_system_short),
+                                stringResource(R.string.settings_language_chinese_short),
+                                stringResource(R.string.settings_language_en)
+                            ),
+                            selectedIndex = language.ordinal
+                        ) { index ->
+                            val candidate = AppLanguage.entries[index]
                             PresentationAccess.settings.setLanguage(candidate)
                             LocaleHelper.syncSystemLocale(context, candidate)
                             model.persist("language", candidate.code)
@@ -210,14 +218,16 @@ object SettingsPage : AppDestination {
                         HorizontalDivider()
                         InlineSettingRow(
                             title = stringResource(R.string.settings_script_section),
-                            value = stringResource(when (readerSettings.script) {
-                                ReaderScript.ORIGINAL -> R.string.reader_script_original
-                                ReaderScript.SIMPLIFIED -> R.string.reader_script_simplified
-                                ReaderScript.TRADITIONAL -> R.string.reader_script_traditional
-                            })
-                        ) {
-                            val script = ReaderScript.entries[(readerSettings.script.ordinal + 1) % ReaderScript.entries.size]
-                            PresentationAccess.readerSettings.saveInBackground(readerSettings.copy(script = script))
+                            options = listOf(
+                                stringResource(R.string.reader_script_original),
+                                stringResource(R.string.reader_script_simplified),
+                                stringResource(R.string.reader_script_traditional)
+                            ),
+                            selectedIndex = readerSettings.script.ordinal
+                        ) { index ->
+                            PresentationAccess.readerSettings.saveInBackground(
+                                readerSettings.copy(script = ReaderScript.entries[index])
+                            )
                         }
                         HorizontalDivider()
                         ToggleRow(stringResource(R.string.settings_showadultcontent), stringResource(R.string.settings_adult_description), adult) { PresentationAccess.settings.setAdult(it); model.persist("show_adult", it.toString()) }
@@ -734,14 +744,48 @@ private fun ChoiceRow(title: String, subtitle: String? = null, selected: Boolean
 }
 
 @Composable
-private fun InlineSettingRow(title: String, value: String, onClick: () -> Unit) {
+private fun InlineSettingRow(
+    title: String,
+    options: List<String>,
+    selectedIndex: Int,
+    onSelect: (Int) -> Unit
+) {
     Row(
-        modifier = Modifier.fillMaxWidth().padding(start = 10.dp),
+        modifier = Modifier.fillMaxWidth().padding(start = 10.dp, top = 6.dp, bottom = 6.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Text(title, modifier = Modifier.weight(1f),
+        Text(title, modifier = Modifier.weight(.35f),
             style = com.breakyuna.esjzone.ui.designsystem.AppTypography.labelLarge)
-        TextButton(onClick = onClick) { Text(value) }
+        Surface(
+            modifier = Modifier.weight(.65f),
+            shape = com.breakyuna.esjzone.ui.designsystem.AppShapes.compact,
+            color = MaterialTheme.colorScheme.surfaceContainerLow,
+            border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+        ) {
+            Row(Modifier.selectableGroup(), verticalAlignment = Alignment.CenterVertically) {
+                options.forEachIndexed { index, option ->
+                    if (index > 0) {
+                        Box(Modifier.width(1.dp).height(20.dp)
+                            .background(MaterialTheme.colorScheme.outlineVariant))
+                    }
+                    Box(
+                        modifier = Modifier.weight(1f).height(48.dp)
+                            .background(if (index == selectedIndex) MaterialTheme.colorScheme.primaryContainer else Color.Transparent)
+                            .selectable(
+                                selected = index == selectedIndex,
+                                role = Role.RadioButton,
+                                onClick = { if (index != selectedIndex) onSelect(index) }
+                            ),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(option, style = MaterialTheme.typography.labelSmall, maxLines = 1,
+                            color = if (index == selectedIndex) MaterialTheme.colorScheme.onPrimaryContainer
+                                else MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+            }
+        }
     }
 }
 

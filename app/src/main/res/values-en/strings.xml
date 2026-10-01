@@ -707,4 +707,6 @@
     <string name="settings_reading_download_section">Reading and downloads</string>
     <string name="reading_stats_bar_chart">Bar chart</string>
     <string name="reading_stats_line_chart">Line chart</string>
+    <string name="settings_language_system_short">System</string>
+    <string name="settings_language_chinese_short">中文</string>
 </resources>

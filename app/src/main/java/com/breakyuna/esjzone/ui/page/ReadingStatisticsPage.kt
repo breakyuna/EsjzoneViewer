@@ -273,9 +273,33 @@ private fun TagDonutChart(tags: List<ReadingTagTotal>) {
     BoxWithConstraints(Modifier.fillMaxWidth().height(chartHeight)) {
         val radius = minOf(80.dp, maxWidth * .23f)
         val labelWidth = (maxWidth - radius * 2) / 2 - 12.dp
+        val labelGap = 6.dp
+        val horizontalLength = 12.dp
+        val radialLength = 16.dp
+        // Keep each elbow on its sector's radius; the label shares the elbow's Y.
+        // Spread crowded labels by extending the radial leg where space permits.
+        val elbowRadii = MutableList(tags.size) { radius + radialLength }
+        listOf(leftIndices, rightIndices).forEach { side ->
+            var previousY = -24.dp
+            side.forEach { index ->
+                val angle = Math.toRadians(middleAngles[index].toDouble())
+                val sin = kotlin.math.sin(angle).toFloat()
+                val cos = kotlin.math.abs(kotlin.math.cos(angle).toFloat())
+                val desiredY = maxOf(chartHeight / 2 + elbowRadii[index] * sin, previousY + 48.dp)
+                val availableX = maxWidth / 2 - labelWidth - labelGap - horizontalLength
+                val maximumRadius = if (cos > .001f) availableX / cos else chartHeight / 2 - 24.dp
+                if (kotlin.math.abs(sin) > .001f) {
+                    val desiredRadius = (desiredY - chartHeight / 2) / sin
+                    elbowRadii[index] = desiredRadius.coerceIn(
+                        radius + 8.dp, maxOf(radius + 8.dp, maximumRadius)
+                    )
+                }
+                previousY = chartHeight / 2 + elbowRadii[index] * sin
+            }
+        }
         val positions = tags.indices.map { index ->
-            val side = if (index in leftIndices) leftIndices else rightIndices
-            chartHeight * ((side.indexOf(index) + .5f) / side.size)
+            chartHeight / 2 + elbowRadii[index] *
+                kotlin.math.sin(Math.toRadians(middleAngles[index].toDouble())).toFloat()
         }
         Canvas(Modifier.fillMaxSize()) {
             val center = Offset(size.width / 2, size.height / 2)
@@ -295,11 +319,11 @@ private fun TagDonutChart(tags: List<ReadingTagTotal>) {
                 val angle = Math.toRadians(middleAngles[index].toDouble())
                 val direction = Offset(kotlin.math.cos(angle).toFloat(), kotlin.math.sin(angle).toFloat())
                 val start = center + direction * outerRadius
-                val elbow = center + direction * (outerRadius + 6.dp.toPx())
+                val elbow = center + direction * elbowRadii[index].toPx()
                 val end = Offset(
-                    if (index in leftIndices) labelWidth.toPx() + 4.dp.toPx()
-                    else size.width - labelWidth.toPx() - 4.dp.toPx(),
-                    positions[index].toPx()
+                    if (index in leftIndices) labelWidth.toPx() + labelGap.toPx()
+                    else size.width - labelWidth.toPx() - labelGap.toPx(),
+                    elbow.y
                 )
                 drawLine(colors[index], start, elbow, 1.dp.toPx())
                 drawLine(colors[index], elbow, end, 1.dp.toPx())
