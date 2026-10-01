@@ -46,7 +46,6 @@ internal fun ReaderSettingsSheet(
     settings: ReaderSettings,
     onSettingsChange: (ReaderSettings) -> Unit,
     onDismiss: () -> Unit,
-    onMoreSettings: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val tabPager = rememberPagerState(pageCount = { 2 })
@@ -195,10 +194,6 @@ internal fun ReaderSettingsSheet(
                             ReaderScript.SIMPLIFIED to stringResource(R.string.reader_script_simplified),
                             ReaderScript.TRADITIONAL to stringResource(R.string.reader_script_traditional)
                         )) { commit(draft.copy(script = it)) }
-                    } else {
-                        ReaderToggle(stringResource(R.string.reader_tap_paging), draft.tapPagingEnabled) { commit(draft.copy(tapPagingEnabled = it)) }
-                        ReaderToggle(stringResource(R.string.reader_swipe_paging), draft.horizontalSwipePagingEnabled) { commit(draft.copy(horizontalSwipePagingEnabled = it)) }
-                        ReaderToggle(stringResource(R.string.reader_volume_paging), draft.volumeKeyPaging) { commit(draft.copy(volumeKeyPaging = it)) }
                         Text(stringResource(R.string.reader_paging_method), style = MaterialTheme.typography.titleSmall)
                         ReaderSettingChoices(draft.pageAnimation, listOf(
                             ReaderPageAnimation.VERTICAL_SCROLL to stringResource(R.string.reader_page_animation_vertical),
@@ -206,8 +201,23 @@ internal fun ReaderSettingsSheet(
                             ReaderPageAnimation.FADE to stringResource(R.string.reader_page_animation_fade),
                             ReaderPageAnimation.COVER to stringResource(R.string.reader_page_animation_cover)
                         )) { commit(draft.copy(pageAnimation = it)) }
+                    } else {
+                        ReaderToggle(stringResource(R.string.reader_tap_paging), draft.tapPagingEnabled) { commit(draft.copy(tapPagingEnabled = it)) }
+                        ReaderToggle(stringResource(R.string.reader_swipe_paging), draft.horizontalSwipePagingEnabled) { commit(draft.copy(horizontalSwipePagingEnabled = it)) }
+                        ReaderToggle(stringResource(R.string.reader_volume_paging), draft.volumeKeyPaging) { commit(draft.copy(volumeKeyPaging = it)) }
+                        ReaderToggle(stringResource(R.string.settings_auto_resume_reading), draft.autoResumeLastReading) { commit(draft.copy(autoResumeLastReading = it)) }
+                        Text(stringResource(R.string.reader_left_tap_action), style = MaterialTheme.typography.titleSmall)
+                        ReaderSettingChoices(draft.leftTapForward, listOf(
+                            false to stringResource(R.string.reader_left_tap_previous),
+                            true to stringResource(R.string.reader_left_tap_next)
+                        )) { commit(draft.copy(leftTapForward = it)) }
+                        HorizontalDivider(Modifier.padding(vertical = 8.dp))
+                        ReaderToggle(stringResource(R.string.reader_eye_protection), draft.eyeProtectionEnabled) { commit(draft.copy(eyeProtectionEnabled = it)) }
+                        ReaderToggle(stringResource(R.string.reader_show_system_status), draft.showSystemStatusBar) { commit(draft.copy(showSystemStatusBar = it)) }
+                        ReaderToggle(stringResource(R.string.reader_show_system_navigation), draft.showSystemNavigationBar) { commit(draft.copy(showSystemNavigationBar = it)) }
+                        ReaderToggle(stringResource(R.string.reader_show_chapter_name), draft.showChapterName) { commit(draft.copy(showChapterName = it)) }
+                        ReaderToggle(stringResource(R.string.reader_show_time_battery), draft.showTimeBattery) { commit(draft.copy(showTimeBattery = it)) }
                     }
-                    TextButton(onClick = onMoreSettings) { Text(stringResource(R.string.reader_more_settings)) }
                     }
                 }
             }

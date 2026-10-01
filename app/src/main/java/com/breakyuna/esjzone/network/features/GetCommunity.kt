@@ -917,7 +917,9 @@ internal fun parseComments(document: Document, parentPostId: String): List<Comme
             id = stableId,
             parentPostId = parentPostId,
             authorId = authorUrl?.let { PROFILE_UID.find(it)?.groupValues?.getOrNull(1) },
-            authorName = author?.text()?.trim()?.takeIf { it.isNotBlank() },
+            authorName = element.selectFirst(".comment-header .comment-title")
+                ?.text()?.trim()?.takeIf { it.isNotBlank() }
+                ?: author?.text()?.trim()?.takeIf { it.isNotBlank() },
             authorUrl = authorUrl,
             authorAvatarUrl = authorAvatarUrl,
             floor = element.selectFirst(".comment-floor")?.text()?.trim()

@@ -658,8 +658,8 @@
     <string name="novel_download_range_error">请输入 1–%1$d 内的整数，终止序号不能小于起始序号。</string>
     <string name="novel_download_range_confirm">确定</string>
     <string name="novel_download_selection_too_large">所选章节超过单次任务容量，请缩小范围分批下载；输入完整目录范围可下载全书。</string>
-    <string name="reader_tab_appearance">显示</string>
-    <string name="reader_tab_controls">操作</string>
+    <string name="reader_tab_appearance">常规</string>
+    <string name="reader_tab_controls">更多</string>
     <string name="reader_font_source_serif">思源宋体</string>
     <string name="reader_font_source_sans">思源黑体</string>
     <string name="reader_font_wenkai">霞鹜文楷</string>

@@ -32,7 +32,7 @@ import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Done
-import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.QueryStats
 import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.SelectAll
 import androidx.compose.material.icons.filled.Sort
@@ -328,7 +328,7 @@ object FavoritePage : AppDestination {
         if (groupError) AlertDialog(onDismissRequest = { model.groupError.value = false },
             text = { Text(stringResource(R.string.group_error)) },
             confirmButton = { TextButton(onClick = { model.groupError.value = false }) { Text(stringResource(android.R.string.ok)) } })
-        if (showMoveGroup) ShelfGroupPicker(groups.map { it.name }, onDismiss = { showMoveGroup = false }) { name ->
+        if (showMoveGroup) ShelfGroupPicker(groups.map { it.name }, onDismiss = { showMoveGroup = false }, onCreate = model::createGroup) { name ->
             model.moveToGroup(selected, name)
             showMoveGroup = false
         }
@@ -364,7 +364,7 @@ object FavoritePage : AppDestination {
                     onSyncStatusMenuChange = { showSyncStatusMenu = it },
                     listView = listView,
                     onToggleView = { focusManager.clearFocus(force = true); listView = !listView },
-                    onEdit = { editing = true; selected = emptySet() },
+                    onStatistics = { navigator?.pushIfNotCurrent(ReadingStatisticsPage) },
                     onDone = ::exitEdit,
                     onSelectAll = { selected = if (selected == visibleKeys) emptySet() else visibleKeys }
                 )
@@ -659,7 +659,7 @@ private fun BookshelfTopBar(
     deleting: Boolean,
     onBack: () -> Unit,
     onSyncStatusMenuChange: (Boolean) -> Unit,
-    onEdit: () -> Unit,
+    onStatistics: () -> Unit,
     onDone: () -> Unit,
     onSelectAll: () -> Unit
 ) {
@@ -703,7 +703,7 @@ private fun BookshelfTopBar(
                 IconButton(onClick = onToggleView) {
                     Icon(if (listView) Icons.Filled.GridView else Icons.Filled.ViewList, "切换书架展示方式")
                 }
-                IconButton(onClick = onEdit, enabled = totalCount > 0) { Icon(Icons.Filled.Edit, stringResource(R.string.bookshelf_edit)) }
+                IconButton(onClick = onStatistics) { Icon(Icons.Filled.QueryStats, stringResource(R.string.reading_stats_title)) }
             }
         }
     }

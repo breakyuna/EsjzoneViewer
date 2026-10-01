@@ -658,8 +658,8 @@
     <string name="novel_download_range_error">Enter whole numbers from 1 to %1$d. The end must be at or after the start.</string>
     <string name="novel_download_range_confirm">Confirm</string>
     <string name="novel_download_selection_too_large">This selection exceeds the task limit. Download smaller ranges separately, or enter the full table of contents range to download the whole book.</string>
-    <string name="reader_tab_appearance">Display</string>
-    <string name="reader_tab_controls">Controls</string>
+    <string name="reader_tab_appearance">General</string>
+    <string name="reader_tab_controls">More</string>
     <string name="reader_font_source_serif">Source Han Serif</string>
     <string name="reader_font_source_sans">Source Han Sans</string>
     <string name="reader_font_wenkai">LXGW WenKai</string>

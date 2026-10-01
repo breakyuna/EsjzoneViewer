@@ -13,14 +13,41 @@ import com.breakyuna.esjzone.ui.designsystem.GlobalText as Text
 import com.breakyuna.esjzone.ui.designsystem.globalStringResource as stringResource
 
 @Composable
-internal fun ShelfGroupPicker(names: List<String>, onDismiss: () -> Unit, onSelect: (String?) -> Unit) {
+internal fun ShelfGroupPicker(
+    names: List<String>,
+    onDismiss: () -> Unit,
+    onCreate: (String) -> Unit,
+    onSelect: (String?) -> Unit
+) {
+    var creating by remember { mutableStateOf(false) }
+    var newName by remember { mutableStateOf("") }
     AlertDialog(onDismissRequest = onDismiss, title = { Text(stringResource(R.string.group_move)) },
         text = { Column(Modifier.verticalScroll(rememberScrollState())) {
             TextButton(onClick = { onSelect(null) }) { Text(stringResource(R.string.group_ungrouped)) }
             names.forEach { name -> TextButton(onClick = { onSelect(name) }) { Text(name) } }
+            TextButton(onClick = { newName = ""; creating = true }) {
+                Text(stringResource(R.string.group_create))
+            }
         } }, confirmButton = {}, dismissButton = {
             TextButton(onClick = onDismiss) { Text(stringResource(android.R.string.cancel)) }
         })
+    if (creating) AlertDialog(
+        onDismissRequest = { creating = false },
+        title = { Text(stringResource(R.string.group_create)) },
+        text = {
+            OutlinedTextField(value = newName, onValueChange = { newName = it.take(60) },
+                singleLine = true, label = { Text(stringResource(R.string.group_name)) })
+        },
+        confirmButton = {
+            TextButton(enabled = newName.trim().isNotEmpty() && newName.trim() !in names,
+                onClick = { onCreate(newName.trim()); creating = false }) {
+                Text(stringResource(android.R.string.ok))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = { creating = false }) { Text(stringResource(android.R.string.cancel)) }
+        }
+    )
 }
 
 @Composable

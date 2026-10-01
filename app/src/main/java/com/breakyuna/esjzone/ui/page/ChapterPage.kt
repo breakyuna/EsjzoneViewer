@@ -77,6 +77,7 @@ import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.BookmarkBorder
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.DisposableEffect
@@ -445,7 +446,6 @@ class ChapterPage(
             lifecycleOwner.lifecycle.addObserver(observer)
             onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
         }
-        var showMoreReaderSettings by rememberSaveable { mutableStateOf(false) }
         var pendingBoundaryTurn by remember { mutableStateOf<ReaderBoundaryTurn?>(null) }
         var progressPreview by remember { mutableStateOf<ReaderBookLocation?>(null) }
         var progressReturnLocation by remember { mutableStateOf<ReaderBookLocation?>(null) }
@@ -506,7 +506,6 @@ class ChapterPage(
 
         BackHandler(enabled = navigator != null) {
             when {
-                showMoreReaderSettings -> showMoreReaderSettings = false
                 showReaderSettings -> showReaderSettings = false
                 showReaderContents -> showReaderContents = false
                 progressPreview != null -> dismissProgressPreview()
@@ -626,6 +625,31 @@ class ChapterPage(
         val hasPreviousVerification = result?.verificationChapter != null && result.verificationOffset < 0
         fun readerListIndex(bodyIndex: Int): Int =
             com.breakyuna.esjzone.ui.reader.readerBodyListIndex(bodyIndex, hasPreviousVerification)
+
+        // At index zero LazyColumn can retain the numeric position when new
+        // chapters are prepended. Preserve the old visible body key and offset
+        // explicitly before the next measure instead of landing on the new head.
+        val previousScrollHead = remember(scrollState) { arrayOfNulls<String>(1) }
+        val scrollHead = displayItems.firstOrNull()?.key
+        val oldScrollHead = previousScrollHead[0]
+        val prependedToScrollWindow = !pagedMode && oldScrollHead != null &&
+            oldScrollHead != scrollHead && (displayIndexByKey[oldScrollHead] ?: 0) > 0
+        val prependAnchor = if (prependedToScrollWindow) {
+            scrollState.layoutInfo.visibleItemsInfo.firstOrNull {
+                it.index == scrollState.firstVisibleItemIndex &&
+                    it.key.toString() in displayIndexByKey
+            }?.let { item ->
+                readerListIndex(displayIndexByKey.getValue(item.key.toString())) to
+                    scrollState.firstVisibleItemScrollOffset
+            }
+        } else null
+        SideEffect {
+            previousScrollHead[0] = scrollHead
+            if (prependAnchor != null && !resumePending && pendingSeekLocation == null &&
+                !isProgrammaticScroll && pendingBoundaryTurn == null) {
+                scrollState.requestScrollToItem(prependAnchor.first, prependAnchor.second)
+            }
+        }
         val pagerVisibleItem by remember(displayByKey, horizontalPagerState) {
             derivedStateOf {
                 horizontalPagerState.layoutInfo.visiblePagesInfo
@@ -1254,9 +1278,9 @@ class ChapterPage(
             (pendingWenkuVerification != null && pendingWenkuVerification.url != dismissedWenkuPrompt)
         val pagingEnabled = readerResumed && paginationReady && (!pagedMode || pagerLayoutReady) &&
             state is ChapterPageModel.State.Result &&
-            !showReaderSettings && !showMoreReaderSettings && !showReaderContents && !readerDialogVisible
+            !showReaderSettings && !showReaderContents && !readerDialogVisible
         com.breakyuna.esjzone.ui.reader.ReaderSystemBars(
-            showChrome = (showToolbar || showReaderSettings || showMoreReaderSettings || showReaderContents || readerDialogVisible),
+            showChrome = (showToolbar || showReaderSettings || showReaderContents || readerDialogVisible),
             showSystemStatusBar = readerSettings.showSystemStatusBar,
             showSystemNavigationBar = readerSettings.showSystemNavigationBar
         )
@@ -2162,15 +2186,10 @@ class ChapterPage(
                     updateReaderSettings(updated)
                 },
                 onDismiss = { showReaderSettings = false },
-                onMoreSettings = { showMoreReaderSettings = true },
                 modifier = Modifier.align(Alignment.BottomCenter)
                     .padding(bottom = with(density) { readerToolbarHeightPx.toDp() })
             )
-            if (showMoreReaderSettings) ReaderMoreSettingsDialog(
-                settings = readerSettings,
-                onSettingsChange = ::updateReaderSettings,
-                onDismiss = { showMoreReaderSettings = false }
-            )
+
         }
 
         LaunchedEffect(Unit) {

@@ -221,7 +221,7 @@ Cloudflare 挑战在正文解析和缓存之前识别。冷会话先尝试 OkHtt
 字段：
 
 - 评论 ID：.comment 的 id，样本形如 comment-{commentId}。
-- 用户名：.comment-header 内用户链接文本。
+- 用户名：优先读取 `.comment-header .comment-title` 的文本（包含带个人主页链接和无链接的纯文本用户名），缺失时读取原有用户链接文本。仅用户名为空时由界面显示“匿名用户”；无链接不代表无用户名。
 - 用户 URL：通常 /my/profile?uid={uid} 或 /my/profile.html?uid={uid}。
 - 用户头像：优先读取 .comment-author-ava .lazyload-author-ava 的 data-src、data-original 等懒加载属性；懒加载完成后再读取 style 中的 background-image，兼容旧模板的 img/[data-avatar]。
 - 楼层：.comment-floor。
