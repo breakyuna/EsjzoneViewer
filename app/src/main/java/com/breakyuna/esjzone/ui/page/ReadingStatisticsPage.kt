@@ -268,8 +268,17 @@ object ReadingStatisticsPage : AppDestination {
                                     Text(stringResource(R.string.reading_stats_no_tags), style = AppTypography.bodySmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 } else {
-                                    TagDonutChart(tags)
-                                    TagDistributionList(current.allTagRankings[tagDays].orEmpty())
+                                    val dark = MaterialTheme.colorScheme.surface.luminance() < .5f
+                                    val otherColor = MaterialTheme.colorScheme.outline
+                                    val tagColors = tags.mapIndexed { index, tag ->
+                                        tag.tag to if (tag.tag == null) otherColor else Color.hsv(
+                                            (index * 137.508f + 215f) % 360f,
+                                            if (dark) .55f else .65f,
+                                            if (dark) .9f else .8f
+                                        )
+                                    }.toMap()
+                                    TagDonutChart(tags, tagColors)
+                                    TagDistributionList(current.allTagRankings[tagDays].orEmpty(), tagColors, otherColor)
                                 }
                             }
                         }
@@ -316,17 +325,13 @@ private fun ReadingStatisticsIncognitoState(modifier: Modifier = Modifier) {
 }
 
 @Composable
-private fun TagDonutChart(tags: List<ReadingTagTotal>) {
+private fun TagDonutChart(tags: List<ReadingTagTotal>, tagColors: Map<String?, Color>) {
     val total = tags.sumOf { it.durationMs }.toDouble()
     val locale = LocalConfiguration.current.locales[0]
     val percentFormat = remember(locale) {
         java.text.NumberFormat.getPercentInstance(locale).apply { maximumFractionDigits = 1 }
     }
-    val dark = MaterialTheme.colorScheme.surface.luminance() < .5f
-    val colors = tags.mapIndexed { index, tag ->
-        if (tag.tag == null) MaterialTheme.colorScheme.outline
-        else Color.hsv((index * 137.508f + 215f) % 360f, if (dark) .55f else .65f, if (dark) .9f else .8f)
-    }
+    val colors = tags.map { tagColors.getValue(it.tag) }
     val chartBackground = MaterialTheme.colorScheme.surface
     val middleAngles = tags.runningFold(-90f) { angle, tag ->
         angle + (tag.durationMs / total * 360).toFloat()
@@ -397,7 +402,7 @@ private fun TagDonutChart(tags: List<ReadingTagTotal>) {
             ) {
                 Text(tag.tag ?: stringResource(R.string.reading_stats_other),
                     style = AppTypography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis,
-                    textAlign = TextAlign.Center)
+                    textAlign = TextAlign.Center, color = colors[index])
                 Text(percentFormat.format(tag.durationMs / total),
                     style = AppTypography.labelMedium, color = colors[index])
             }
@@ -405,16 +410,21 @@ private fun TagDonutChart(tags: List<ReadingTagTotal>) {
         Column(Modifier.align(Alignment.Center).width(radius * 1.3f),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(AppSpacing.xs)) {
-            Text(percentFormat.format(tags.first().durationMs / total), style = AppTypography.titleLarge)
+            Text(percentFormat.format(tags.first().durationMs / total), style = AppTypography.titleLarge,
+                color = colors.first())
             Text(tags.first().tag ?: stringResource(R.string.reading_stats_other), style = AppTypography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center,
+                color = colors.first(), textAlign = TextAlign.Center,
                 maxLines = 2, overflow = TextOverflow.Ellipsis)
         }
     }
 }
 
 @Composable
-private fun TagDistributionList(tags: List<ReadingTagTotal>) {
+private fun TagDistributionList(
+    tags: List<ReadingTagTotal>,
+    tagColors: Map<String?, Color>,
+    otherColor: Color
+) {
     var expanded by rememberSaveable { mutableStateOf(false) }
     val locale = LocalConfiguration.current.locales[0]
     val percentFormat = remember(locale) {
@@ -429,11 +439,13 @@ private fun TagDistributionList(tags: List<ReadingTagTotal>) {
         }
         if (expanded) {
             tags.forEach { tag ->
+                val color = tagColors[tag.tag] ?: otherColor
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(AppSpacing.md),
                     verticalAlignment = Alignment.CenterVertically) {
-                    Text(tag.tag.orEmpty(), modifier = Modifier.weight(1f), style = AppTypography.bodyMedium)
-                    Text(percentFormat.format(tag.durationMs / total), style = AppTypography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(tag.tag.orEmpty(), modifier = Modifier.weight(1f), style = AppTypography.bodyLarge,
+                        color = color)
+                    Text(percentFormat.format(tag.durationMs / total), style = AppTypography.bodyLarge,
+                        color = color)
                 }
             }
         }

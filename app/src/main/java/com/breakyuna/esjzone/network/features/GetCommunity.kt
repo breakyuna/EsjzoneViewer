@@ -192,13 +192,13 @@ internal fun EsjzoneClient.submitForumComment(
     // `forum_id=0`, but it still requires the page-scoped dynamic token.
     if (forumPreparation != null) {
         // ESJ issues a single-use dynamic token from the page being commented on.
-        // Request it and submit through a scoped client with an 8-second read timeout
+        // Request it and submit through a scoped client with a 12-second read timeout
         // so writes fail fast instead of blocking UI.
         val client = authenticatedClient(authorization)
         val writeClient = client.newBuilder()
             .connectTimeout(5, TimeUnit.SECONDS)
-            .readTimeout(8, TimeUnit.SECONDS)
-            .callTimeout(12, TimeUnit.SECONDS)
+            .readTimeout(12, TimeUnit.SECONDS)
+            .callTimeout(16, TimeUnit.SECONDS)
             .build()
         val token = timing.stage("auth_token") { requestForumReplyAuthToken(writeClient, targetUrl) }
         val bodyBuilder = FormBody.Builder()
@@ -277,8 +277,8 @@ internal fun EsjzoneClient.submitForumComment(
             ?.attr("value")?.trim()?.takeIf { it.isNotBlank() }
         val writeClient = authenticatedClient(authorization).newBuilder()
             .connectTimeout(5, TimeUnit.SECONDS)
-            .readTimeout(8, TimeUnit.SECONDS)
-            .callTimeout(12, TimeUnit.SECONDS)
+            .readTimeout(12, TimeUnit.SECONDS)
+            .callTimeout(16, TimeUnit.SECONDS)
             .build()
         val bodyBuilder = FormBody.Builder().add("content", submittedContent)
         guestbookForm.select("input[type=hidden][name]").forEach { input ->

@@ -163,7 +163,7 @@ class SettingsDataStore(
     private data class SettingsValues(
         val themeMode: AppThemeMode = AppThemeMode.SYSTEM,
         val adult: Boolean = true,
-        val hideHomeRecommendations: Boolean = false,
+        val hideHomeRecommendations: Boolean = true,
         val domain: String = SettingsDefaults.DOMAINS.first(),
         val language: AppLanguage = AppLanguage.SYSTEM,
         val readingStatisticsIncognito: Boolean = false,

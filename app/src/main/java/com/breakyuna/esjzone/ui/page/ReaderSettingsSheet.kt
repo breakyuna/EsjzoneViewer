@@ -48,7 +48,7 @@ internal fun ReaderSettingsSheet(
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val tabPager = rememberPagerState(pageCount = { 2 })
+    val tabPager = rememberPagerState(pageCount = { 3 })
     val scope = rememberCoroutineScope()
     var draft by remember(settings) { mutableStateOf(settings) }
     var confirmReset by remember { mutableStateOf(false) }
@@ -87,7 +87,7 @@ internal fun ReaderSettingsSheet(
                     IconButton(onClick = onDismiss) { Icon(Icons.Default.Close, stringResource(R.string.close)) }
                 }
                 TabRow(selectedTabIndex = tabPager.currentPage) {
-                    listOf(R.string.reader_tab_appearance, R.string.reader_tab_controls).forEachIndexed { index, label ->
+                    listOf(R.string.reader_tab_appearance, R.string.reader_tab_controls, R.string.reader_tab_toolbar).forEachIndexed { index, label ->
                         Tab(selected = tabPager.currentPage == index,
                             onClick = { scope.launch { tabPager.animateScrollToPage(index) } },
                             text = { Text(stringResource(label)) })
@@ -201,9 +201,12 @@ internal fun ReaderSettingsSheet(
                             ReaderPageAnimation.FADE to stringResource(R.string.reader_page_animation_fade),
                             ReaderPageAnimation.COVER to stringResource(R.string.reader_page_animation_cover)
                         )) { commit(draft.copy(pageAnimation = it)) }
-                    } else {
+                    } else if (tab == 1) {
                         ReaderToggle(stringResource(R.string.reader_tap_paging), draft.tapPagingEnabled) { commit(draft.copy(tapPagingEnabled = it)) }
-                        ReaderToggle(stringResource(R.string.reader_swipe_paging), draft.horizontalSwipePagingEnabled) { commit(draft.copy(horizontalSwipePagingEnabled = it)) }
+                        ReaderToggle(stringResource(R.string.reader_scroll_side_gestures), draft.scrollSideGesturesEnabled) { commit(draft.copy(scrollSideGesturesEnabled = it)) }
+                        Text(stringResource(R.string.reader_scroll_side_gestures_hint), style = MaterialTheme.typography.bodySmall)
+                        ReaderToggle(stringResource(R.string.reader_paged_bookmark_gestures), draft.pagedBookmarkGesturesEnabled) { commit(draft.copy(pagedBookmarkGesturesEnabled = it)) }
+                        Text(stringResource(R.string.reader_paged_bookmark_gestures_hint), style = MaterialTheme.typography.bodySmall)
                         ReaderToggle(stringResource(R.string.reader_volume_paging), draft.volumeKeyPaging) { commit(draft.copy(volumeKeyPaging = it)) }
                         ReaderToggle(stringResource(R.string.settings_auto_resume_reading), draft.autoResumeLastReading) { commit(draft.copy(autoResumeLastReading = it)) }
                         Text(stringResource(R.string.reader_left_tap_action), style = MaterialTheme.typography.titleSmall)
@@ -217,6 +220,8 @@ internal fun ReaderSettingsSheet(
                         ReaderToggle(stringResource(R.string.reader_show_system_navigation), draft.showSystemNavigationBar) { commit(draft.copy(showSystemNavigationBar = it)) }
                         ReaderToggle(stringResource(R.string.reader_show_chapter_name), draft.showChapterName) { commit(draft.copy(showChapterName = it)) }
                         ReaderToggle(stringResource(R.string.reader_show_time_battery), draft.showTimeBattery) { commit(draft.copy(showTimeBattery = it)) }
+                    } else {
+                        ReaderToolbarSettings(draft.toolbarTools) { commit(draft.copy(toolbarTools = it)) }
                     }
                     }
                 }

@@ -400,6 +400,8 @@
     <string name="settings_volume_key_paging">Volume key paging</string>
     <string name="settings_volume_key_paging_description">Use the volume keys to move one page up or down while reading</string>
     <string name="settings_hide_home_recommendations">Hide popular recommendations on Home</string>
+    <string name="settings_hide_home_recommendations_explanation">Popular recommendations have not been updated for a long time, so this section is hidden.</string>
+    <string name="settings_hide_home_recommendations_info">Why popular recommendations are hidden</string>
     <string name="settings_storage_section">Local storage &amp; cache</string>
     <string name="settings_page_cache">Page parsing cache</string>
     <string name="settings_image_cache">Covers and image cache</string>
@@ -655,13 +657,12 @@
     <string name="novel_download_range_confirm">Confirm</string>
     <string name="novel_download_selection_too_large">This selection exceeds the task limit. Download smaller ranges separately, or enter the full table of contents range to download the whole book.</string>
     <string name="reader_tab_appearance">General</string>
-    <string name="reader_tab_controls">More</string>
+    <string name="reader_tab_controls">Controls</string>
     <string name="reader_font_source_serif">Source Han Serif</string>
     <string name="reader_font_source_sans">Source Han Sans</string>
     <string name="reader_font_wenkai">LXGW WenKai</string>
     <string name="reader_font_downloading">Downloading</string>
     <string name="reader_tap_paging">Tap to turn pages</string>
-    <string name="reader_swipe_paging">Swipe to turn pages</string>
     <string name="reader_volume_paging">Volume key paging</string>
     <string name="reader_more_settings">More reading settings</string>
     <string name="reader_more_controls">Paging and startup</string>
@@ -726,4 +727,20 @@
     <string name="group_empty">No books in this group</string>
     <string name="group_empty_hint">Switch to All, then long-press books to move them into a group. You can also check your content filters.</string>
     <string name="group_done">Done</string>
+    <string name="reader_tab_toolbar">Toolbar</string>
+    <string name="reader_brightness">Brightness</string>
+    <string name="reader_dark_mode">Dark mode</string>
+    <string name="reader_layout_toggle">Switch reading layout</string>
+    <string name="reader_toolbar_hint">Selected %1$d / %2$d. Check tools to show them and use arrows to reorder. Settings remains available at the top.</string>
+    <string name="reader_tool_move_before">Move earlier</string>
+    <string name="reader_tool_move_after">Move later</string>
+    <string name="reader_scroll_side_gestures">Scroll layout: swipe for contents / comments</string>
+    <string name="reader_scroll_side_gestures_hint">Swipe right deliberately for contents, left for current chapter comments.</string>
+    <string name="reader_paged_bookmark_gestures">Paged layout: swipe vertically for bookmarks</string>
+    <string name="reader_paged_bookmark_gestures_hint">Swipe down deliberately to bookmark the current chapter, up to remove its bookmark. Horizontal swipes always turn pages.</string>
+    <string name="reader_brightness_system">Use system brightness</string>
+    <string name="reader_brightness_hint">Applies only in the reader; restored when you leave.</string>
+    <string name="reader_bookmark_added">Bookmark added</string>
+    <string name="reader_bookmark_removed">Bookmark removed</string>
+    <string name="reader_bookmark_failed">Could not update bookmark. Try again.</string>
 </resources>

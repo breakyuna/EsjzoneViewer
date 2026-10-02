@@ -3,7 +3,11 @@ package com.breakyuna.esjzone.util
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicLong
 
-/** Comment diagnostics contain only locally generated IDs, stage names and durations. */
+/**
+ * Log stages once on completion; keep explicit milestones for in-flight diagnostics.
+ * Only local IDs, fixed operation/stage/result labels, exception types and durations are logged.
+ * Never include comment content, URLs, response bodies, credentials or exception messages.
+ */
 internal class CommentRequestTiming(private val operation: String) {
     private val id = nextId.incrementAndGet()
     private val startedAt = System.nanoTime()
@@ -14,7 +18,6 @@ internal class CommentRequestTiming(private val operation: String) {
 
     fun <T> stage(name: String, block: () -> T): T {
         val start = System.nanoTime()
-        log(name, "started", start)
         var result = "completed"
         try {
             return block()
@@ -28,7 +31,6 @@ internal class CommentRequestTiming(private val operation: String) {
 
     suspend fun <T> suspendingStage(name: String, block: suspend () -> T): T {
         val start = System.nanoTime()
-        log(name, "started", start)
         var result = "completed"
         try {
             return block()

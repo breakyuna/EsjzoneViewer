@@ -229,7 +229,7 @@ object HomeTab : AppTab {
 
         val density = LocalDensity.current
         val thresholdPx = remember(density) { with(density) { 40.dp.toPx() } }
-        val maxPullPx = remember(density) { with(density) { 80.dp.toPx() } }
+        val maxPullPx = remember(density) { with(density) { 120.dp.toPx() } }
         var pullUpOffsetPx by remember { mutableFloatStateOf(0f) }
         var isLoadingFromPull by remember { mutableStateOf(false) }
         var lastAutoLoadSize by remember { mutableStateOf(-1) }
@@ -284,7 +284,7 @@ object HomeTab : AppTab {
                     targetValue = 0f,
                     animationSpec = spring(
                         dampingRatio = Spring.DampingRatioMediumBouncy,
-                        stiffness = Spring.StiffnessMediumLow
+                        stiffness = Spring.StiffnessLow
                     )
                 ) {
                     pullUpOffsetPx = value
@@ -316,10 +316,23 @@ object HomeTab : AppTab {
 
         val bottomSwipeConnection = remember(randomState.isActivated, isLoadingFromPull, adult, thresholdPx, maxPullPx) {
             object : NestedScrollConnection {
+                // A reversible rubber-band curve: responsive at first, then progressively
+                // firmer without hitting a hard stop. 40 dp still takes about 53 dp of drag.
+                private fun dragDistance(): Float {
+                    val offset = pullUpOffsetPx.coerceIn(0f, maxPullPx - 1f)
+                    return offset * maxPullPx / (1.125f * (maxPullPx - offset))
+                }
+
+                private fun updatePull(drag: Float) {
+                    val resistedDrag = drag * 1.125f
+                    pullUpOffsetPx = maxPullPx * resistedDrag / (maxPullPx + resistedDrag)
+                }
+
                 override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
                     if (!randomState.isActivated && !isLoadingFromPull && pullUpOffsetPx > 0f && available.y > 0f) {
-                        val consumedY = available.y.coerceAtMost(pullUpOffsetPx)
-                        pullUpOffsetPx -= consumedY
+                        val drag = dragDistance()
+                        val consumedY = available.y.coerceAtMost(drag)
+                        updatePull(drag - consumedY)
                         return Offset(0f, consumedY)
                     }
                     return Offset.Zero
@@ -331,8 +344,7 @@ object HomeTab : AppTab {
                     source: NestedScrollSource
                 ): Offset {
                     if (!randomState.isActivated && !isLoadingFromPull && source == NestedScrollSource.UserInput && available.y < 0f) {
-                        val delta = -available.y * 0.75f
-                        pullUpOffsetPx = (pullUpOffsetPx + delta).coerceAtMost(maxPullPx)
+                        updatePull(dragDistance() - available.y)
                         return Offset(0f, available.y)
                     }
                     return Offset.Zero

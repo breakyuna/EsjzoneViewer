@@ -165,6 +165,7 @@
 
 - 先 POST 当前论坛主题或章节页面，Body 为 `plxf=getAuthToken`；从 `<JinJing>...</JinJing>` 提取动态 token。
 - 再 POST `/inc/forum_reply.php`，携带同一 CookieJar、`authorization: {token}`、`X-Requested-With: XMLHttpRequest`、`Origin: https://www.esjzone.cc` 与 URL-encoded form。
+- 客户端获取动态 token、提交评论/回复及留言板提交使用连接超时 5 秒、读取超时 12 秒、单次请求总超时 16 秒；读取和总超时各延长 4 秒。此限制不覆盖发送前的经验值获取、评论页读取或发送后的后台核验，现有核验流程不变。
 - HTTP 2xx 不代表写入成功；解析 JSON `status`。`status=200` 成功，其他状态直接展示非空 `msg`。实测 `status=214`、`msg=每日留言次數已超過限制！` 为当日次数上限。
 - 成功响应可带 `anchor="#comment-{commentId}"`，用于定位新评论。业务失败不得刷新或假装评论已发送。
 - 客户端将发送前后可用经验值的增加视为可靠的发送确认：写入超时或页面未核验到新评论时，立即读取最新资料；确认增加后直接追加本地评论、定位新评论并清空草稿、回复和错误状态，无须等待页面再次显示评论。经验值确认使用本地临时评论 ID，真实 ID 由后续页面刷新取得；这是客户端确认策略，不代表本次已观察到网页中的新评论。
@@ -173,7 +174,7 @@
 ### 7.2 客户端评论流程计时日志
 
 - 日志标签为 `CommentTiming`，现有应用日志导出会包含这些记录。`trace` 是进程内递增的本地编号，`operation=load` 表示评论区加载，`operation=submit` 表示一次发送；同一次发送的后台恢复使用相同编号。
-- 每个阶段记录 `started` 和结束结果，`elapsed_ms` 为该阶段耗时，`total_ms` 为距离流程开始的累计耗时。使用单调时钟，不受系统时间调整影响；异常只记录类型，不记录异常消息、评论正文、请求 URL、响应正文、Cookie 或认证字段。
+- 每个阶段仅在结束时记录一次结果及耗时，取消逐阶段的 `started` 日志以减少重复输出；保留流程开始/结束和下述明确时间节点。`elapsed_ms` 为该阶段耗时，`total_ms` 为距离流程开始的累计耗时。使用单调时钟，不受系统时间调整影响；异常只记录类型，不记录异常消息、评论正文、请求 URL、响应正文、Cookie 或认证字段。
 - 加载阶段包括 `experience_prefetch`（与评论加载并行）、`initial_comments_read`、`comments_refresh_parse` 和 `comments_publish`。发送阶段包括经验值预取等待/复用/重新获取、页面读取或预取复用、`auth_token`、`comment_post`、`response_headers`（从执行 POST 到收到响应头）、`response_body`、`response_parse`、缓存失效、本地评论构造和 `ui_state_update`。
 - 留言板还记录 `guestbook_post`、`guestbook_refresh` 和 `guestbook_verify`。后台恢复分别记录固定延时与页面/资料请求；发送成功后的资料刷新记录为 `profile_refresh_after_success`。
 - 明确时间节点包括 `before_send_experience_started` / `before_send_experience_ready`（发送前经验值获取或预取复用）、`after_send_experience_started` / `after_send_experience_ready`（发送后资料请求，完成节点在缓存写入之前）、`comment_response_accepted`（评论接口确认接受）和 `new_comment_added_to_list`（新评论写入页面列表状态）。恢复路径另有 `new_comment_added_to_list_after_recovery` / `new_comment_verified_after_refresh`；发送后经验值重查会再次记录同名节点。节点的绝对时间由日志前缀提供，精确到毫秒，`total_ms` 表示距流程开始的相对时间；`available` / `unavailable` 区分是否取得经验值，不记录数值。

@@ -76,6 +76,16 @@ import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.BookmarkBorder
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Brightness6
+import androidx.compose.material.icons.filled.DarkMode
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.SwapHoriz
+import androidx.compose.material.icons.filled.VolumeUp
+import androidx.compose.material.icons.filled.Translate
+import androidx.compose.material3.IconButtonDefaults
+import com.breakyuna.esjzone.ui.reader.ReaderTool
+import com.breakyuna.esjzone.ui.reader.ReaderBackground
+import com.breakyuna.esjzone.ui.reader.ReaderBrightness
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
@@ -96,6 +106,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.luminance
@@ -233,6 +245,7 @@ class ChapterPage(
             }
             null
         }
+        ReaderBrightness(window, readerSettings.brightness)
         val isLightBackground = readerSettings.background.containerColor().luminance() > 0.5f
         val appThemeMode by PresentationAccess.settings.themeMode
         val systemDark = isSystemInDarkTheme()
@@ -266,7 +279,14 @@ class ChapterPage(
         var showReaderContents by rememberSaveable {
             mutableStateOf(false)
         }
+        var showBrightness by rememberSaveable { mutableStateOf(false) }
+        var lightReaderBackground by rememberSaveable { mutableStateOf(ReaderBackground.SYSTEM) }
         var isBookmarked by rememberSaveable { mutableStateOf(false) }
+        var bookmarkStateUrl by remember { mutableStateOf<String?>(null) }
+        var updatingBookmark by remember { mutableStateOf(false) }
+        var lastPagedAnimation by rememberSaveable {
+            mutableStateOf(ReaderPageAnimation.HORIZONTAL_SLIDE)
+        }
 
         val readerTextStyle = MaterialTheme.typography.bodyLarge.copy(
             fontFamily = readerSettings.font.family(),
@@ -277,6 +297,9 @@ class ChapterPage(
         val readerContentColor = readerSettings.background.contentColor()
 
         fun updateReaderSettings(settings: ReaderSettings) {
+            if (readerSettings.pageAnimation != ReaderPageAnimation.VERTICAL_SCROLL) {
+                lastPagedAnimation = readerSettings.pageAnimation
+            }
             readerSettings = settings
             PresentationAccess.readerSettings.saveDebounced(settings)
         }
@@ -739,7 +762,9 @@ class ChapterPage(
             EsjzoneUrls.canonicalPageKey(bookmarkChapter.url)
                 .ifBlank { bookmarkChapter.url.trim() }
         }
-        LaunchedEffect(bookmarkChapterUrl) {
+        val currentBookmarkChapterUrl by rememberUpdatedState(bookmarkChapterUrl)
+        LaunchedEffect(bookmarkChapterUrl, updatingBookmark) {
+            if (updatingBookmark) return@LaunchedEffect
             isBookmarked = withContext(Dispatchers.IO) {
                 runCatching {
                     PresentationAccess.database.bookmarkDao().findByChapterUrl(bookmarkChapterUrl) != null
@@ -748,6 +773,7 @@ class ChapterPage(
                     false
                 }
             }
+            bookmarkStateUrl = bookmarkChapterUrl
         }
 
         val isAtEndOfChapter = remember(displayByKey, activeChapter, scrollState, pagedMode,
@@ -1003,50 +1029,66 @@ class ChapterPage(
             }
         }
 
-        fun toggleBookmark() {
+        fun toggleBookmark(desired: Boolean = !isBookmarked) {
             val target = bookmarkChapter
-            if (bookmarkChapterUrl.isBlank()) return
-            val wasBookmarked = isBookmarked
-            isBookmarked = !wasBookmarked
-            scope.launch(Dispatchers.IO) {
+            if (updatingBookmark || bookmarkChapterUrl.isBlank() ||
+                bookmarkStateUrl != bookmarkChapterUrl || desired == isBookmarked) return
+            val coverSource = novelCoverUrl.ifBlank { localHistoryPosition.value.novelCoverUrl }
+            val currentNovelUrl = novelUrl.ifBlank { localHistoryPosition.value.novelUrl }
+            // Acquire on the UI thread before launching, including callers from gestures.
+            updatingBookmark = true
+            scope.launch {
                 try {
-                    val dao = PresentationAccess.database.bookmarkDao()
-                    val finalNovelId = novelId.ifBlank { target.novelId() }
-                    if (wasBookmarked) {
-                        dao.deleteByChapterUrl(bookmarkChapterUrl)
-                        com.breakyuna.esjzone.database.BookmarkCoverStore.cleanupIfUnused(finalNovelId, bookmarkChapterUrl)
-                    } else {
-                        dao.insert(
-                            com.breakyuna.esjzone.database.entity.Bookmark(
-                                chapterUrl = bookmarkChapterUrl,
-                                novelId = finalNovelId,
-                                novelName = novelName
-                                    .ifBlank { novelId }
-                                    .ifBlank { target.novelId() }
-                                    .ifBlank { target.name },
-                                chapterName = target.name
+                    withContext(Dispatchers.IO) {
+                        val dao = PresentationAccess.database.bookmarkDao()
+                        val finalNovelId = novelId.ifBlank { target.novelId() }
+                        if (!desired) {
+                            dao.deleteByChapterUrl(bookmarkChapterUrl)
+                        } else {
+                            dao.insert(
+                                com.breakyuna.esjzone.database.entity.Bookmark(
+                                    chapterUrl = bookmarkChapterUrl,
+                                    novelId = finalNovelId,
+                                    novelName = novelName
+                                        .ifBlank { novelId }
+                                        .ifBlank { target.novelId() }
+                                        .ifBlank { target.name },
+                                    chapterName = target.name
+                                )
                             )
-                        )
-                        val coverSource = novelCoverUrl.ifBlank {
-                            localHistoryPosition.value.novelCoverUrl
                         }
-                        val currentNovelUrl = novelUrl.ifBlank {
-                            localHistoryPosition.value.novelUrl
+                        // Cover maintenance must not roll back a committed bookmark in the UI.
+                        try {
+                            if (desired) {
+                                com.breakyuna.esjzone.database.BookmarkCoverStore.saveCoverFromCacheOrDownload(
+                                    novelId = finalNovelId,
+                                    coverUrl = coverSource,
+                                    novelUrl = currentNovelUrl,
+                                    chapterUrl = bookmarkChapterUrl
+                                )
+                            } else {
+                                com.breakyuna.esjzone.database.BookmarkCoverStore.cleanupIfUnused(finalNovelId, bookmarkChapterUrl)
+                            }
+                        } catch (error: CancellationException) {
+                            throw error
+                        } catch (error: Exception) {
+                            AppLogger.w("ChapterPage", "Failed to update local bookmark cover", error)
                         }
-                        com.breakyuna.esjzone.database.BookmarkCoverStore.saveCoverFromCacheOrDownload(
-                            novelId = finalNovelId,
-                            coverUrl = coverSource,
-                            novelUrl = currentNovelUrl,
-                            chapterUrl = bookmarkChapterUrl
-                        )
                     }
+                    if (currentBookmarkChapterUrl == bookmarkChapterUrl) {
+                        isBookmarked = desired
+                    }
+                    android.widget.Toast.makeText(context,
+                        if (desired) R.string.reader_bookmark_added else R.string.reader_bookmark_removed,
+                        android.widget.Toast.LENGTH_SHORT).show()
                 } catch (error: CancellationException) {
                     throw error
                 } catch (error: Exception) {
-                    withContext(Dispatchers.Main) {
-                        isBookmarked = wasBookmarked
-                    }
+                    android.widget.Toast.makeText(context, R.string.reader_bookmark_failed,
+                        android.widget.Toast.LENGTH_SHORT).show()
                     AppLogger.e("ChapterPage", "Failed to update local bookmark", error)
+                } finally {
+                    updatingBookmark = false
                 }
             }
         }
@@ -1274,8 +1316,54 @@ class ChapterPage(
         val pageAlpha = remember { Animatable(1f) }
         var pageTurnInProgress by pageTurnInProgressForBoundary
 
+        fun openReaderContents() {
+            dismissProgressPreview()
+            showReaderSettings = false
+            showReaderContents = true
+        }
+        fun openReaderSettings() {
+            dismissProgressPreview()
+            showReaderContents = false
+            showReaderSettings = true
+        }
+        val commentChapter = currentReadingChapter
+        val commentsAvailable = state is ChapterPageModel.State.Result &&
+            commentChapter.source == com.breakyuna.esjzone.novellibrary.novel.ChapterSource.ESJ_ZONE
+        fun openReaderComments() {
+            if (!commentsAvailable) return
+            dismissProgressPreview()
+            val visible = if (pagedMode) null else scrollState.layoutInfo.visibleItemsInfo
+                .firstOrNull { item -> item.key.toString() in displayByKey }
+            val visibleKey = if (pagedMode) {
+                displayItems.getOrNull(horizontalPagerState.currentPage)?.key
+            } else visible?.key?.toString()
+            commentReturnKey = visibleKey
+            commentReturnChapterUrl = visibleKey
+                ?.let { displayByKey[it]?.entry?.chapter?.url }
+            commentReturnChapterName = visibleKey
+                ?.let { displayByKey[it]?.entry?.chapter?.name }.orEmpty()
+            commentReturnOffset = visible?.let {
+                if (it.index == scrollState.firstVisibleItemIndex)
+                    scrollState.firstVisibleItemScrollOffset else 0
+            } ?: 0
+            val pushed = navigator?.pushIfNotCurrent(
+                ChapterCommentsPage(
+                    chapterName = commentChapter.name,
+                    chapterUrl = commentChapter.url
+                )
+            )
+            if (pushed == true) readerResumed = false
+            else {
+                commentReturnKey = null
+                commentReturnChapterUrl = null
+            }
+        }
+        val detailUrl = novelUrl.takeIf { it.isNotBlank() }
+            ?.let { EsjzoneUrls.resolve(it) }
+            ?: novelId.ifBlank { commentChapter.novelId() }.takeIf { it.isNotBlank() }
+                ?.let { id -> EsjzoneUrls.resolve("/detail/$id.html") }.orEmpty()
         val reducedMotion = com.breakyuna.esjzone.ui.designsystem.rememberReaderReducedMotion()
-        val readerDialogVisible = passwordRequired != null || wenkuVerificationChapter != null ||
+        val readerDialogVisible = showBrightness || passwordRequired != null || wenkuVerificationChapter != null ||
             (pendingWenkuVerification != null && pendingWenkuVerification.url != dismissedWenkuPrompt)
         val pagingEnabled = readerResumed && paginationReady && (!pagedMode || pagerLayoutReady) &&
             state is ChapterPageModel.State.Result &&
@@ -1431,9 +1519,17 @@ class ChapterPage(
         Box(modifier = Modifier.fillMaxSize()) {
             ReaderShell(
                 background = readerSettings.background.containerColor(),
-                horizontalSwipeEnabled = pagedMode && readerSettings.horizontalSwipePagingEnabled &&
-                    pagingEnabled && readerSettings.pageAnimation != ReaderPageAnimation.HORIZONTAL_SLIDE,
-                onHorizontalSwipe = ::turnReaderPage,
+                horizontalSwipeEnabled = pagingEnabled && if (pagedMode)
+                    readerSettings.pageAnimation != ReaderPageAnimation.HORIZONTAL_SLIDE
+                    else readerSettings.scrollSideGesturesEnabled,
+                deliberateHorizontalSwipe = !pagedMode,
+                onHorizontalSwipe = { left ->
+                    if (pagedMode) turnReaderPage(left)
+                    else if (left) openReaderComments() else openReaderContents()
+                },
+                verticalSwipeEnabled = !updatingBookmark && pagedMode && pagingEnabled && readerSettings.pagedBookmarkGesturesEnabled &&
+                    bookmarkStateUrl == bookmarkChapterUrl,
+                onVerticalSwipe = { up -> toggleBookmark(desired = !up) },
                 onReadingAreaTap = { xFraction, _ ->
                     if (progressPreview != null) {
                         dismissProgressPreview()
@@ -1718,7 +1814,7 @@ class ChapterPage(
                             ),
                             pageSpacing = readerSettings.horizontalPaddingDp.dp * 2,
                             key = { index -> currentPagedDisplayItems.getOrNull(index)?.key ?: index },
-                            userScrollEnabled = readerSettings.horizontalSwipePagingEnabled && pagingEnabled &&
+                            userScrollEnabled = pagingEnabled &&
                                 readerSettings.pageAnimation == ReaderPageAnimation.HORIZONTAL_SLIDE,
                             modifier = Modifier
                                 .fillMaxSize()
@@ -1980,110 +2076,83 @@ class ChapterPage(
                                 )
                             }
 
-                            val commentChapter = currentReadingChapter
                             Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .navigationBarsPadding()
-                                    .padding(bottom = AppSpacing.xs),
-                                horizontalArrangement = Arrangement.SpaceEvenly,
+                                modifier = Modifier.fillMaxWidth().padding(bottom = AppSpacing.xs),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                ReaderToolButton(
-                                    contentDescription = stringResource(R.string.reader_contents),
-                                    icon = Icons.Filled.List,
-                                    onClick = {
-                                        dismissProgressPreview()
-                                        showReaderSettings = false
-                                        showReaderContents = true
+                                readerSettings.toolbarTools.distinct().take(ReaderTool.MAX_VISIBLE).forEach { tool ->
+                                    val active = when (tool) {
+                                        ReaderTool.BOOKMARK -> isBookmarked
+                                        ReaderTool.EYE_PROTECTION -> readerSettings.eyeProtectionEnabled
+                                        ReaderTool.DARK_MODE -> !isLightBackground
+                                        ReaderTool.VOLUME_KEYS -> readerSettings.volumeKeyPaging
+                                        ReaderTool.LAYOUT -> pagedMode
+                                        ReaderTool.BRIGHTNESS -> readerSettings.brightness >= 0f
+                                        ReaderTool.SCRIPT -> readerSettings.script != ReaderScript.ORIGINAL
+                                        else -> false
                                     }
-                                )
-                                ReaderToolButton(
-                                    contentDescription = stringResource(R.string.reader_settings),
-                                    icon = Icons.Filled.Settings,
-                                    onClick = {
-                                        dismissProgressPreview()
-                                        showReaderContents = false
-                                        showReaderSettings = true
-                                    }
-                                )
-                                ReaderToolButton(
-                                    contentDescription = stringResource(
-                                        if (isBookmarked) R.string.reader_remove_bookmark
-                                        else R.string.reader_add_bookmark
-                                    ),
-                                    icon = if (isBookmarked) {
-                                        Icons.Filled.Bookmark
-                                    } else {
-                                        Icons.Filled.BookmarkBorder
-                                    },
-                                    enabled = state is ChapterPageModel.State.Result,
-                                    onClick = {
-                                        dismissProgressPreview()
-                                        toggleBookmark()
-                                    }
-                                )
-                                ReaderToolButton(
-                                    contentDescription = stringResource(R.string.comments),
-                                    icon = Icons.Filled.Forum,
-                                    enabled = state is ChapterPageModel.State.Result &&
-                                        commentChapter.source == com.breakyuna.esjzone.novellibrary.novel.ChapterSource.ESJ_ZONE,
-                                    onClick = {
-                                        dismissProgressPreview()
-                                        val visible = if (pagedMode) null else scrollState.layoutInfo.visibleItemsInfo
-                                            .firstOrNull { item -> item.key.toString() in displayByKey }
-                                        val visibleKey = if (pagedMode) {
-                                            displayItems.getOrNull(horizontalPagerState.currentPage)?.key
-                                        } else visible?.key?.toString()
-                                        commentReturnKey = visibleKey
-                                        commentReturnChapterUrl = visibleKey
-                                            ?.let { displayByKey[it]?.entry?.chapter?.url }
-                                        commentReturnChapterName = visibleKey
-                                            ?.let { displayByKey[it]?.entry?.chapter?.name }.orEmpty()
-                                        commentReturnOffset = visible?.let {
-                                            if (it.index == scrollState.firstVisibleItemIndex)
-                                                scrollState.firstVisibleItemScrollOffset else 0
-                                        } ?: 0
-                                        val pushed = navigator?.pushIfNotCurrent(
-                                            ChapterCommentsPage(
-                                                chapterName = commentChapter.name,
-                                                chapterUrl = commentChapter.url
-                                            )
-                                        )
-                                        if (pushed == true) readerResumed = false
-                                        else {
-                                            commentReturnKey = null
-                                            commentReturnChapterUrl = null
-                                        }
-                                    }
-                                )
-                                val detailUrl = novelUrl.takeIf { it.isNotBlank() }
-                                    ?.let { EsjzoneUrls.resolve(it) }
-                                    ?: novelId.ifBlank { commentChapter.novelId() }
-                                        .takeIf { it.isNotBlank() }
-                                        ?.let { id -> EsjzoneUrls.resolve("/detail/$id.html") }
-                                        .orEmpty()
-                                ReaderToolButton(
-                                    contentDescription = stringResource(
-                                        R.string.reader_open_novel_detail
-                                    ),
-                                    icon = Icons.AutoMirrored.Filled.MenuBook,
-                                    enabled = detailUrl.isNotBlank(),
-                                    onClick = {
-                                        dismissProgressPreview()
-                                        navigator?.pushIfNotCurrent(
-                                            NovelPage(
-                                                novel = FavoriteNovel(
-                                                    name = novelName.ifBlank {
-                                                        novelId.ifBlank { commentChapter.name }
-                                                    },
-                                                    url = detailUrl
-                                                ),
-                                                history = history
-                                            )
+                                    Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
+                                        ReaderToolButton(
+                                            contentDescription = stringResource(if (tool == ReaderTool.BOOKMARK && isBookmarked)
+                                                R.string.reader_remove_bookmark else tool.label()),
+                                            icon = when (tool) {
+                                                ReaderTool.CONTENTS -> Icons.Filled.List
+                                                ReaderTool.SETTINGS -> Icons.Filled.Settings
+                                                ReaderTool.BOOKMARK -> if (isBookmarked) Icons.Filled.Bookmark else Icons.Filled.BookmarkBorder
+                                                ReaderTool.COMMENTS -> Icons.Filled.Forum
+                                                ReaderTool.NOVEL_DETAIL -> Icons.AutoMirrored.Filled.MenuBook
+                                                ReaderTool.EYE_PROTECTION -> Icons.Filled.Visibility
+                                                ReaderTool.BRIGHTNESS -> Icons.Filled.Brightness6
+                                                ReaderTool.DARK_MODE -> Icons.Filled.DarkMode
+                                                ReaderTool.LAYOUT -> Icons.Filled.SwapHoriz
+                                                ReaderTool.VOLUME_KEYS -> Icons.Filled.VolumeUp
+                                                ReaderTool.SCRIPT -> Icons.Filled.Translate
+                                            },
+                                            selected = active,
+                                            enabled = when (tool) {
+                                                ReaderTool.BOOKMARK -> !updatingBookmark && state is ChapterPageModel.State.Result && bookmarkStateUrl == bookmarkChapterUrl
+                                                ReaderTool.COMMENTS -> commentsAvailable
+                                                ReaderTool.NOVEL_DETAIL -> detailUrl.isNotBlank()
+                                                else -> true
+                                            },
+                                            onClick = {
+                                                dismissProgressPreview()
+                                                when (tool) {
+                                                    ReaderTool.CONTENTS -> openReaderContents()
+                                                    ReaderTool.SETTINGS -> openReaderSettings()
+                                                    ReaderTool.BOOKMARK -> toggleBookmark()
+                                                    ReaderTool.COMMENTS -> openReaderComments()
+                                                    ReaderTool.NOVEL_DETAIL -> navigator?.pushIfNotCurrent(
+                                                        NovelPage(FavoriteNovel(novelName.ifBlank { novelId.ifBlank { commentChapter.name } }, detailUrl), history)
+                                                    )
+                                                    ReaderTool.EYE_PROTECTION -> updateReaderSettings(readerSettings.copy(eyeProtectionEnabled = !readerSettings.eyeProtectionEnabled))
+                                                    ReaderTool.BRIGHTNESS -> { showReaderSettings = false; showBrightness = true }
+                                                    ReaderTool.DARK_MODE -> {
+                                                        if (isLightBackground) {
+                                                            lightReaderBackground = readerSettings.background
+                                                            updateReaderSettings(readerSettings.copy(background = ReaderBackground.DARK))
+                                                        } else {
+                                                            val restored = if (lightReaderBackground == ReaderBackground.SYSTEM && !appIsLight)
+                                                                ReaderBackground.PAPER else lightReaderBackground
+                                                            updateReaderSettings(readerSettings.copy(background = restored))
+                                                        }
+                                                    }
+                                                    ReaderTool.LAYOUT -> {
+                                                        pendingSeekLocation = currentBookLocation
+                                                        updateReaderSettings(readerSettings.copy(pageAnimation = if (pagedMode)
+                                                            ReaderPageAnimation.VERTICAL_SCROLL else lastPagedAnimation))
+                                                    }
+                                                    ReaderTool.VOLUME_KEYS -> updateReaderSettings(readerSettings.copy(volumeKeyPaging = !readerSettings.volumeKeyPaging))
+                                                    ReaderTool.SCRIPT -> {
+                                                        pendingSeekLocation = currentBookLocation
+                                                        val next = ReaderScript.entries[(readerSettings.script.ordinal + 1) % ReaderScript.entries.size]
+                                                        updateReaderSettings(readerSettings.copy(script = next))
+                                                    }
+                                                }
+                                            }
                                         )
                                     }
-                                )
+                                }
                             }
                         }
                     }
@@ -2145,6 +2214,9 @@ class ChapterPage(
                                 overflow = TextOverflow.Ellipsis
                             )
                         }
+                        IconButton(onClick = ::openReaderSettings) {
+                            Icon(Icons.Filled.Settings, stringResource(R.string.reader_settings))
+                        }
                         Icon(
                             imageVector = if (isBookmarked) Icons.Filled.Bookmark else Icons.Filled.BookmarkBorder,
                             contentDescription = null,
@@ -2169,6 +2241,11 @@ class ChapterPage(
                     openTargetChapter(selectedChapter)
                 },
                 onDismiss = { showReaderContents = false }
+            )
+            if (showBrightness) ReaderBrightnessDialog(
+                brightness = readerSettings.brightness,
+                onChange = { updateReaderSettings(readerSettings.copy(brightness = it)) },
+                onDismiss = { showBrightness = false }
             )
             ReaderSettingsSheet(
                 visible = showReaderSettings,
@@ -2755,9 +2832,15 @@ private fun ReaderToolButton(
     icon: androidx.compose.ui.graphics.vector.ImageVector,
     contentDescription: String,
     enabled: Boolean = true,
+    selected: Boolean = false,
     onClick: () -> Unit
 ) {
     FilledTonalIconButton(
+        modifier = Modifier.semantics { this.selected = selected },
+        colors = IconButtonDefaults.filledTonalIconButtonColors(
+            containerColor = if (selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.secondaryContainer,
+            contentColor = if (selected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSecondaryContainer
+        ),
         enabled = enabled,
         onClick = onClick
     ) {

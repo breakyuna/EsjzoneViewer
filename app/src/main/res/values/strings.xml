@@ -400,6 +400,8 @@
     <string name="settings_volume_key_paging">音量键翻页</string>
     <string name="settings_volume_key_paging_description">阅读时按音量键向上或向下翻一页</string>
     <string name="settings_hide_home_recommendations">隐藏首页热门推荐</string>
+    <string name="settings_hide_home_recommendations_explanation">由于 热门推荐 模块长时间未更新，故将其隐藏</string>
+    <string name="settings_hide_home_recommendations_info">隐藏热门推荐的说明</string>
     <string name="settings_storage_section">本地存储与缓存管理</string>
     <string name="settings_page_cache">页面解析缓存</string>
     <string name="settings_image_cache">封面与图片缓存</string>
@@ -655,13 +657,12 @@
     <string name="novel_download_range_confirm">确定</string>
     <string name="novel_download_selection_too_large">所选章节超过单次任务容量，请缩小范围分批下载；输入完整目录范围可下载全书。</string>
     <string name="reader_tab_appearance">常规</string>
-    <string name="reader_tab_controls">更多</string>
+    <string name="reader_tab_controls">操作</string>
     <string name="reader_font_source_serif">思源宋体</string>
     <string name="reader_font_source_sans">思源黑体</string>
     <string name="reader_font_wenkai">霞鹜文楷</string>
     <string name="reader_font_downloading">正在下载</string>
     <string name="reader_tap_paging">点击两侧翻页</string>
-    <string name="reader_swipe_paging">横滑翻页</string>
     <string name="reader_volume_paging">音量键翻页</string>
     <string name="reader_more_settings">更多阅读设置</string>
     <string name="reader_more_controls">翻页与启动</string>
@@ -727,4 +728,20 @@
     <string name="group_empty">此分组暂无书籍</string>
     <string name="group_empty_hint">切换到“全部”，长按书籍后选择“移至分组”；也可检查当前内容筛选设置。</string>
     <string name="group_done">完成</string>
+    <string name="reader_tab_toolbar">工具欄</string>
+    <string name="reader_brightness">亮度</string>
+    <string name="reader_dark_mode">深色模式</string>
+    <string name="reader_layout_toggle">切換閱讀佈局</string>
+    <string name="reader_toolbar_hint">已選 %1$d / %2$d 個。勾選顯示，箭頭調整順序；頂部始終保留設定入口。</string>
+    <string name="reader_tool_move_before">向前移動</string>
+    <string name="reader_tool_move_after">向後移動</string>
+    <string name="reader_scroll_side_gestures">上下佈局：側滑開啟目錄／評論</string>
+    <string name="reader_scroll_side_gestures_hint">明顯右劃開啟目錄，左劃開啟目前章節評論。</string>
+    <string name="reader_paged_bookmark_gestures">左右佈局：上下滑動管理書籤</string>
+    <string name="reader_paged_bookmark_gestures_hint">明顯下拉新增目前章節書籤，上拉取消書籤。左右滑動始終用於翻頁。</string>
+    <string name="reader_brightness_system">跟隨系統亮度</string>
+    <string name="reader_brightness_hint">僅在閱讀器中生效，離開後恢復。</string>
+    <string name="reader_bookmark_added">已新增書籤</string>
+    <string name="reader_bookmark_removed">已取消書籤</string>
+    <string name="reader_bookmark_failed">書籤更新失敗，請重試</string>
 </resources>

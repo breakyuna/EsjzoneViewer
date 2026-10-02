@@ -79,7 +79,7 @@ object SettingsStateBoundary {
 
     private val _adult = mutableStateOf(true)
     private val _themeMode = mutableStateOf(AppThemeMode.SYSTEM)
-    private val _hideHomeRecommendations = mutableStateOf(false)
+    private val _hideHomeRecommendations = mutableStateOf(true)
     private val _domain = mutableStateOf(SettingsDefaults.DOMAINS.first())
     private val _language = mutableStateOf(AppLanguage.SYSTEM)
     private val _readerAutoSave = mutableStateOf(true)

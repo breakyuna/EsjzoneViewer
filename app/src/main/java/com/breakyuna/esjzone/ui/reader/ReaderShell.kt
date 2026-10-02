@@ -13,6 +13,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.unit.dp
 import kotlin.math.abs
 
 /** Returns the page direction for a tap in the reader canvas; null keeps the toolbar action. */
@@ -23,6 +25,16 @@ fun readerTapPageDirection(xFraction: Float, enabled: Boolean, leftTapForward: B
         xFraction > 0.72f -> !leftTapForward
         else -> null
     }
+}
+
+/** A deliberate swipe must retain the axis on which the drag started. */
+internal fun readerSwipeDirection(
+    deltaX: Float, deltaY: Float, horizontal: Boolean, threshold: Float
+): Boolean? {
+    val primary = if (horizontal) deltaX else deltaY
+    val secondary = if (horizontal) deltaY else deltaX
+    return if (abs(primary) >= threshold && abs(primary) > abs(secondary) * 1.5f)
+        primary < 0f else null
 }
 
 /**
@@ -36,15 +48,19 @@ fun ReaderShell(
     onReadingAreaTap: (xFraction: Float, yFraction: Float) -> Unit,
     horizontalSwipeEnabled: Boolean = false,
     onHorizontalSwipe: (forward: Boolean) -> Unit = {},
+    deliberateHorizontalSwipe: Boolean = false,
+    verticalSwipeEnabled: Boolean = false,
+    onVerticalSwipe: (up: Boolean) -> Unit = {},
     content: @Composable BoxScope.() -> Unit
 ) {
     val currentTap by rememberUpdatedState(onReadingAreaTap)
     val currentSwipe by rememberUpdatedState(onHorizontalSwipe)
+    val currentVerticalSwipe by rememberUpdatedState(onVerticalSwipe)
     Box(
         modifier = Modifier
             .fillMaxSize()
             .background(background)
-            .pointerInput(horizontalSwipeEnabled) {
+            .pointerInput(horizontalSwipeEnabled, deliberateHorizontalSwipe, verticalSwipeEnabled) {
                 awaitEachGesture {
                     val down = awaitFirstDown(requireUnconsumed = false)
                     val start = down.position
@@ -54,25 +70,40 @@ fun ReaderShell(
                     var maxDistance = 0f
                     var multiTouch = false
                     var duration = 0L
+                    var horizontalAxis: Boolean? = null
+                    var longPress = false
                     do {
-                        val event = awaitPointerEvent()
+                        val event = awaitPointerEvent(PointerEventPass.Final)
                         multiTouch = multiTouch || event.changes.size > 1
                         val change = event.changes.firstOrNull { it.id == down.id } ?: break
                         childConsumed = childConsumed || change.isConsumed
                         last = change.position
                         maxDistance = maxOf(maxDistance, (last - start).getDistance())
                         duration = change.uptimeMillis - down.uptimeMillis
+                        if (horizontalAxis == null) {
+                            if (duration >= viewConfiguration.longPressTimeoutMillis) longPress = true
+                            val movement = last - start
+                            if (movement.getDistance() >= viewConfiguration.touchSlop) {
+                                horizontalAxis = abs(movement.x) > abs(movement.y)
+                            }
+                        }
                         if (!change.pressed) released = change.position
                     } while (event.changes.any { it.pressed })
 
                     val delta = last - start
-                    val horizontalSwipe = horizontalSwipeEnabled &&
-                        abs(delta.x) >= viewConfiguration.touchSlop * 4f &&
-                        abs(delta.x) > abs(delta.y) * 1.35f
+                    val horizontalThreshold = if (deliberateHorizontalSwipe)
+                        maxOf(72.dp.toPx(), size.width * 0.2f) else maxOf(32.dp.toPx(), viewConfiguration.touchSlop * 4f)
+                    val horizontalDirection = readerSwipeDirection(delta.x, delta.y, true, horizontalThreshold)
+                    val verticalDirection = readerSwipeDirection(
+                        delta.x, delta.y, false, maxOf(96.dp.toPx(), size.height * 0.12f)
+                    )
                     val release = released
+                    val swipeAllowed = release != null && !childConsumed && !multiTouch && !longPress
                     when {
-                        horizontalSwipe && !childConsumed && !multiTouch &&
-                            duration < viewConfiguration.longPressTimeoutMillis -> currentSwipe(delta.x < 0f)
+                        swipeAllowed && horizontalAxis == true && horizontalSwipeEnabled && horizontalDirection != null ->
+                            currentSwipe(horizontalDirection)
+                        swipeAllowed && horizontalAxis == false && verticalSwipeEnabled && verticalDirection != null ->
+                            currentVerticalSwipe(verticalDirection)
                         release != null && !childConsumed && !multiTouch &&
                             duration < viewConfiguration.longPressTimeoutMillis && maxDistance < viewConfiguration.touchSlop -> {
                             currentTap(

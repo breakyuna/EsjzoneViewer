@@ -33,7 +33,10 @@ class DataStoreAcceptanceInstrumentedTest {
             reader.save(ReaderSettings(
                 font = ReaderFont.LXGW_WENKAI,
                 tapPagingEnabled = false,
-                horizontalSwipePagingEnabled = true,
+                scrollSideGesturesEnabled = true,
+                pagedBookmarkGesturesEnabled = false,
+                toolbarTools = listOf(com.breakyuna.esjzone.ui.reader.ReaderTool.BRIGHTNESS, com.breakyuna.esjzone.ui.reader.ReaderTool.CONTENTS),
+                brightness = 0.35f,
                 leftTapForward = true,
                 eyeProtectionEnabled = true,
                 showSystemStatusBar = true,
@@ -43,23 +46,29 @@ class DataStoreAcceptanceInstrumentedTest {
             ))
             val first = reader.settings.first { it.font == ReaderFont.LXGW_WENKAI }
             assertFalse(first.tapPagingEnabled)
-            assertTrue(first.horizontalSwipePagingEnabled)
+            assertTrue(first.scrollSideGesturesEnabled)
+            assertFalse(first.pagedBookmarkGesturesEnabled)
+            assertEquals(listOf(com.breakyuna.esjzone.ui.reader.ReaderTool.BRIGHTNESS, com.breakyuna.esjzone.ui.reader.ReaderTool.CONTENTS), first.toolbarTools)
+            assertEquals(0.35f, first.brightness, 0.001f)
             assertTrue(first.leftTapForward)
             assertTrue(first.eyeProtectionEnabled)
             assertTrue(first.showSystemStatusBar)
             assertFalse(first.showSystemNavigationBar)
             assertFalse(first.showChapterName)
             assertTrue(first.showTimeBattery)
-            reader.save(first.copy(font = ReaderFont.SOURCE_HAN_SERIF, tapPagingEnabled = true, horizontalSwipePagingEnabled = false))
+            reader.save(first.copy(font = ReaderFont.SOURCE_HAN_SERIF, tapPagingEnabled = true, scrollSideGesturesEnabled = false))
             val second = reader.settings.first { it.font == ReaderFont.SOURCE_HAN_SERIF }
             assertTrue(second.tapPagingEnabled)
-            assertFalse(second.horizontalSwipePagingEnabled)
+            assertFalse(second.scrollSideGesturesEnabled)
             reader.save(second.copy(font = ReaderFont.SOURCE_HAN_SANS))
             assertEquals(ReaderFont.SOURCE_HAN_SANS, reader.settings.first { it.font == ReaderFont.SOURCE_HAN_SANS }.font)
             reader.save(ReaderSettings())
             val reset = reader.settings.first { it.font == ReaderFont.SYSTEM }
             assertTrue(reset.tapPagingEnabled)
-            assertTrue(reset.horizontalSwipePagingEnabled)
+            assertTrue(reset.scrollSideGesturesEnabled)
+            assertTrue(reset.pagedBookmarkGesturesEnabled)
+            assertEquals(com.breakyuna.esjzone.ui.reader.ReaderTool.defaults, reset.toolbarTools)
+            assertEquals(-1f, reset.brightness, 0.001f)
             assertFalse(reset.leftTapForward)
         } finally {
             scope.cancel()
@@ -72,7 +81,7 @@ class DataStoreAcceptanceInstrumentedTest {
         try {
             val settings = SettingsDataStore(context, scope, fileName("settings-defaults"))
             assertTrue(settings.adult.first())
-            assertFalse(settings.hideHomeRecommendations.first())
+            assertTrue(settings.hideHomeRecommendations.first())
             assertEquals("www.esjzone.cc", settings.domain.first())
             assertEquals(AppLanguage.SYSTEM, settings.language.first())
             assertTrue(settings.readerAutoSave.first())
@@ -90,14 +99,14 @@ class DataStoreAcceptanceInstrumentedTest {
         try {
             val first = SettingsDataStore(context, firstScope, fileName)
             first.setAdult(false)
-            first.setHideHomeRecommendations(true)
+            first.setHideHomeRecommendations(false)
             first.setDomain("www.esjzone.one")
             first.setLanguage(AppLanguage.SIMPLIFIED_CHINESE)
             first.setReaderAutoSave(false)
             first.setNovelListGridView(true)
             first.setNovelListAdultOnly(true)
             assertFalse(first.adult.first { !it })
-            assertTrue(first.hideHomeRecommendations.first { it })
+            assertFalse(first.hideHomeRecommendations.first { !it })
             assertTrue(first.novelListGridView.first { it })
             assertTrue(first.novelListAdultOnly.first { it })
         } finally {
@@ -108,7 +117,7 @@ class DataStoreAcceptanceInstrumentedTest {
         try {
             val second = SettingsDataStore(context, secondScope, fileName)
             assertFalse(second.adult.first { !it })
-            assertTrue(second.hideHomeRecommendations.first { it })
+            assertFalse(second.hideHomeRecommendations.first { !it })
             assertEquals("www.esjzone.one", second.domain.first())
             assertEquals(AppLanguage.SIMPLIFIED_CHINESE, second.language.first())
             assertFalse(second.readerAutoSave.first())

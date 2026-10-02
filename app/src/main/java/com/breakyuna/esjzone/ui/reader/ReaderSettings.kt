@@ -77,6 +77,20 @@ enum class ReaderPageAnimation {
     COVER
 }
 
+enum class ReaderTool {
+    CONTENTS, SETTINGS, BOOKMARK, COMMENTS, NOVEL_DETAIL,
+    EYE_PROTECTION, BRIGHTNESS, DARK_MODE, LAYOUT, VOLUME_KEYS, SCRIPT;
+
+    companion object {
+        const val MAX_VISIBLE = 6
+        val defaults = listOf(CONTENTS, SETTINGS, BOOKMARK, COMMENTS, BRIGHTNESS, DARK_MODE)
+
+        fun decode(value: String?): List<ReaderTool> = if (value == null) defaults else
+            value.split(',').mapNotNull { name -> entries.find { it.name == name } }
+                .distinct().take(MAX_VISIBLE)
+    }
+}
+
 @Immutable
 data class ReaderSettings(
     val background: ReaderBackground = ReaderBackground.SYSTEM,
@@ -91,7 +105,11 @@ data class ReaderSettings(
     val pageAnimation: ReaderPageAnimation = ReaderPageAnimation.VERTICAL_SCROLL,
     val volumeKeyPaging: Boolean = false,
     val tapPagingEnabled: Boolean = true,
-    val horizontalSwipePagingEnabled: Boolean = true,
+    val scrollSideGesturesEnabled: Boolean = true,
+    val pagedBookmarkGesturesEnabled: Boolean = true,
+    val toolbarTools: List<ReaderTool> = ReaderTool.defaults,
+    // -1 follows the system; otherwise this is a reader-only window override.
+    val brightness: Float = -1f,
     val autoResumeLastReading: Boolean = false,
     val leftTapForward: Boolean = false,
     val eyeProtectionEnabled: Boolean = false,

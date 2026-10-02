@@ -35,6 +35,7 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.SelectAll
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.CircularProgressIndicator
@@ -243,7 +244,7 @@ object HistoryPage : AppDestination {
                                     },
                                     enabled = localRowIds.isNotEmpty()
                                 ) {
-                                    Icon(Icons.Filled.Check, stringResource(R.string.history_local_select_all))
+                                    Icon(Icons.Filled.SelectAll, stringResource(R.string.history_local_select_all))
                                 }
                                 IconButton(onClick = ::requestLocalDelete, enabled = localSelected.isNotEmpty()) {
                                     Icon(Icons.Filled.Delete, stringResource(R.string.history_local_delete_selected))
@@ -261,7 +262,7 @@ object HistoryPage : AppDestination {
                                 onClick = { cloudSelected = if (cloudSelected == cloudRowIds) emptySet() else cloudRowIds },
                                 enabled = cloudRowIds.isNotEmpty() && !cloudModel.deleting
                             ) {
-                                Icon(Icons.Filled.Check, stringResource(R.string.history_cloud_select_all))
+                                Icon(Icons.Filled.SelectAll, stringResource(R.string.history_cloud_select_all))
                             }
                             IconButton(
                                 onClick = {

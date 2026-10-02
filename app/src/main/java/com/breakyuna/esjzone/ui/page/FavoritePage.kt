@@ -354,7 +354,7 @@ object FavoritePage : AppDestination {
                 }
                 is FavoritePageModel.GroupChange.Deleted -> {
                     if (activeGroup == change.name) {
-                        activeGroup = ""
+                        activeGroup = null
                         activeFilter = BookshelfFilter.ALL
                     }
                     groupDialog = ShelfGroupDialog.MANAGE
@@ -499,13 +499,15 @@ object FavoritePage : AppDestination {
                     // the header after Room loads would preserve the header anchor and hide it.
                     item(key = "bookshelf_collection_header", contentType = "bookshelf_header") {
                         Column(verticalArrangement = Arrangement.spacedBy(AppSpacing.sm)) {
-                            ShelfGroupControls(
-                                names = groupNames,
-                                active = activeGroup,
-                                enabled = !editing && !savingGroup,
-                                onSelect = { activeGroup = it },
-                                onManage = { model.clearGroupResult(); groupDialog = ShelfGroupDialog.MANAGE }
-                            )
+                            if (groupNames.isNotEmpty() || activeGroup != null) {
+                                ShelfGroupControls(
+                                    names = groupNames,
+                                    active = activeGroup,
+                                    enabled = !editing && !savingGroup,
+                                    onSelect = { activeGroup = it },
+                                    onManage = { model.clearGroupResult(); groupDialog = ShelfGroupDialog.MANAGE }
+                                )
+                            }
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Row(
                                     modifier = Modifier.weight(1f),

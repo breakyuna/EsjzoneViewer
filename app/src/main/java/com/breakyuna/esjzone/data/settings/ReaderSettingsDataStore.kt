@@ -16,6 +16,7 @@ import com.breakyuna.esjzone.ui.reader.ReaderBackground
 import com.breakyuna.esjzone.ui.reader.ReaderFont
 import com.breakyuna.esjzone.ui.reader.ReaderScript
 import com.breakyuna.esjzone.ui.reader.ReaderPageAnimation
+import com.breakyuna.esjzone.ui.reader.ReaderTool
 import com.breakyuna.esjzone.ui.reader.ReaderSettings
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -105,7 +106,10 @@ class ReaderSettingsDataStore(
                 VOLUME_KEY_PAGING,
                 AUTO_RESUME_LAST_READING,
                 TAP_PAGING,
-                HORIZONTAL_SWIPE_PAGING
+                SCROLL_SIDE_GESTURES,
+                PAGED_BOOKMARK_GESTURES,
+                TOOLBAR_TOOLS,
+                BRIGHTNESS
             ).any { current.contains(it) }
             if (!hasCurrentSettings) {
                 dataStore.edit { preferences ->
@@ -149,7 +153,10 @@ class ReaderSettingsDataStore(
             pageAnimation = enumOrDefault(this[PAGE_ANIMATION], defaults.pageAnimation),
             volumeKeyPaging = this[VOLUME_KEY_PAGING] ?: defaults.volumeKeyPaging,
             tapPagingEnabled = this[TAP_PAGING] ?: defaults.tapPagingEnabled,
-            horizontalSwipePagingEnabled = this[HORIZONTAL_SWIPE_PAGING] ?: defaults.horizontalSwipePagingEnabled,
+            scrollSideGesturesEnabled = this[SCROLL_SIDE_GESTURES] ?: defaults.scrollSideGesturesEnabled,
+            pagedBookmarkGesturesEnabled = this[PAGED_BOOKMARK_GESTURES] ?: defaults.pagedBookmarkGesturesEnabled,
+            toolbarTools = ReaderTool.decode(this[TOOLBAR_TOOLS]),
+            brightness = this[BRIGHTNESS].safeBrightness(),
             autoResumeLastReading = this[AUTO_RESUME_LAST_READING] ?: defaults.autoResumeLastReading,
             leftTapForward = this[LEFT_TAP_FORWARD] ?: defaults.leftTapForward,
             eyeProtectionEnabled = this[EYE_PROTECTION] ?: defaults.eyeProtectionEnabled,
@@ -161,6 +168,8 @@ class ReaderSettingsDataStore(
     }
 
     private fun ReaderSettings.sanitized() = copy(
+        toolbarTools = toolbarTools.distinct().take(ReaderTool.MAX_VISIBLE),
+        brightness = brightness.safeBrightness(),
         fontSizeSp = fontSizeSp.safeValue(18f, 14f, 30f),
         letterSpacingSp = letterSpacingSp.safeValue(0.3f, 0f, 2f),
         lineSpacingSp = lineSpacingSp.safeValue(10f, 4f, 24f),
@@ -182,7 +191,10 @@ class ReaderSettingsDataStore(
         preferences[PAGE_ANIMATION] = pageAnimation.name
         preferences[VOLUME_KEY_PAGING] = volumeKeyPaging
         preferences[TAP_PAGING] = tapPagingEnabled
-        preferences[HORIZONTAL_SWIPE_PAGING] = horizontalSwipePagingEnabled
+        preferences[SCROLL_SIDE_GESTURES] = scrollSideGesturesEnabled
+        preferences[PAGED_BOOKMARK_GESTURES] = pagedBookmarkGesturesEnabled
+        preferences[TOOLBAR_TOOLS] = toolbarTools.joinToString(",") { it.name }
+        preferences[BRIGHTNESS] = brightness
         preferences[AUTO_RESUME_LAST_READING] = autoResumeLastReading
         preferences[LEFT_TAP_FORWARD] = leftTapForward
         preferences[EYE_PROTECTION] = eyeProtectionEnabled
@@ -205,6 +217,9 @@ class ReaderSettingsDataStore(
         ?.takeIf { it.isFinite() }
         ?.coerceIn(min, max)
         ?: default
+
+    private fun Float?.safeBrightness(): Float =
+        if (this == null || !isFinite() || this < 0f) -1f else coerceIn(0.01f, 1f)
 
     private fun Float?.safeValue(default: Float, min: Float, max: Float): Float =
         this?.takeIf { it.isFinite() }?.coerceIn(min, max) ?: default
@@ -235,7 +250,10 @@ class ReaderSettingsDataStore(
         val SCRIPT = stringPreferencesKey("script")
         val PAGE_ANIMATION = stringPreferencesKey("page_animation")
         val TAP_PAGING = booleanPreferencesKey("tap_paging")
-        val HORIZONTAL_SWIPE_PAGING = booleanPreferencesKey("horizontal_swipe_paging")
+        val SCROLL_SIDE_GESTURES = booleanPreferencesKey("scroll_side_gestures")
+        val PAGED_BOOKMARK_GESTURES = booleanPreferencesKey("paged_bookmark_gestures")
+        val TOOLBAR_TOOLS = stringPreferencesKey("toolbar_tools")
+        val BRIGHTNESS = floatPreferencesKey("brightness")
         val VOLUME_KEY_PAGING = booleanPreferencesKey("volume_key_paging")
         val AUTO_RESUME_LAST_READING = booleanPreferencesKey("auto_resume_last_reading")
         val LEFT_TAP_FORWARD = booleanPreferencesKey("left_tap_forward")

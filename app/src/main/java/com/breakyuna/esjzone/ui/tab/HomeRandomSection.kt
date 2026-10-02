@@ -17,6 +17,7 @@ import com.breakyuna.esjzone.ui.designsystem.globalStringResource as stringResou
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
+import com.breakyuna.esjzone.R
 import com.breakyuna.esjzone.novellibrary.novel.CoveredNovel
 import com.breakyuna.esjzone.ui.designsystem.AppSpacing
 import com.breakyuna.esjzone.ui.discovery.DiscoveryErrorState
@@ -36,7 +37,7 @@ internal fun LazyListScope.randomRecommendationsSection(
         return
     }
 
-    if (state.items.isEmpty()) {
+    if (state.items.isEmpty() && (state.isLoading || state.failure != null)) {
         if (state.isLoading && showInitialLoading) {
             item(key = "home-random-initial-loading", contentType = "loading") {
                 Box(
@@ -85,6 +86,17 @@ internal fun LazyListScope.randomRecommendationsSection(
             ) {
                 Text(changeBatchLabel)
             }
+        }
+    }
+
+    if (state.items.isEmpty()) {
+        item(key = "home-random-empty", contentType = "empty") {
+            Text(
+                text = stringResource(R.string.home_collection_empty_message),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(vertical = AppSpacing.lg)
+            )
         }
     }
 

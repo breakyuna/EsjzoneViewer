@@ -9,7 +9,6 @@ import com.breakyuna.esjzone.app.CoverLoadingPolicy
 import com.breakyuna.esjzone.app.PresentationAccess
 import com.breakyuna.esjzone.network.Authorization
 import com.breakyuna.esjzone.network.LoadFailureKind
-import com.breakyuna.esjzone.network.PageableRequester
 import com.breakyuna.esjzone.network.features.HomeDataCache
 import com.breakyuna.esjzone.network.features.getHomeData
 import com.breakyuna.esjzone.network.features.novels
@@ -27,10 +26,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import kotlin.random.Random
 
-internal const val RANDOM_RECOMMENDATION_BATCH_SIZE = 24
-internal const val RANDOM_RECOMMENDATION_MAX_PAGES_PER_BATCH = 3
 internal const val RANDOM_INACTIVITY_TIMEOUT_MS = 5 * 60 * 1000L
 
 class HomeTabModel(
@@ -42,10 +38,8 @@ class HomeTabModel(
     private var loadStarted = false
     private var randomLoadJob: Job? = null
     private var inactivityJob: Job? = null
-    private var randomRequester: PageableRequester<CoveredNovel>? = null
+    private var randomPool = createRandomPool()
     private var randomAdultMode: Boolean? = null
-    private val randomVisitedPages = mutableSetOf<Int>()
-    private val randomSeenNovelKeys = mutableSetOf<String>()
     private val _randomRecommendations = MutableStateFlow(RandomRecommendationsState())
     val randomRecommendations = _randomRecommendations.asStateFlow()
 
@@ -103,9 +97,7 @@ class HomeTabModel(
         randomLoadJob?.cancel()
         randomLoadJob = null
         if (clearDeduplication) {
-            randomVisitedPages.clear()
-            randomSeenNovelKeys.clear()
-            randomRequester = null
+            randomPool = createRandomPool()
         }
         _randomRecommendations.value = RandomRecommendationsState(
             items = emptyList(),
@@ -153,7 +145,7 @@ class HomeTabModel(
         val activeJob = randomLoadJob
         if (!replace && activeJob?.isActive == true) return
 
-        randomLoadJob = viewModelScope.launch(Dispatchers.IO) {
+        randomLoadJob = viewModelScope.launch {
             if (replace) activeJob?.cancelAndJoin()
             val previous = _randomRecommendations.value
             _randomRecommendations.value = previous.copy(
@@ -162,38 +154,7 @@ class HomeTabModel(
                 isActivated = activate || previous.isActivated
             )
             try {
-                val requester = randomRequester ?: PresentationAccess.client
-                    .novels(authorization, novelType = 0, sortType = 1)
-                    .first
-                    .also { randomRequester = it }
-                if (replace && randomVisitedPages.size >= requester.pages()) {
-                    randomVisitedPages.clear()
-                    randomSeenNovelKeys.clear()
-                }
-                val collected = ArrayList<CoveredNovel>(RANDOM_RECOMMENDATION_BATCH_SIZE)
-                var requestedPages = 0
-
-                while (
-                    collected.size < RANDOM_RECOMMENDATION_BATCH_SIZE &&
-                    requestedPages < RANDOM_RECOMMENDATION_MAX_PAGES_PER_BATCH &&
-                    randomVisitedPages.size < requester.pages()
-                ) {
-                    ensureActive()
-                    val page = chooseUnvisitedRandomPage(requester.pages()) ?: break
-                    randomVisitedPages += page
-                    requestedPages += 1
-                    requester.more(page)
-                        .filter { adult || !it.isAdult }
-                        .shuffled()
-                        .forEach { novel ->
-                            if (
-                                collected.size < RANDOM_RECOMMENDATION_BATCH_SIZE &&
-                                randomSeenNovelKeys.add(novelKey(novel))
-                            ) {
-                                collected += novel
-                            }
-                        }
-                }
+                val collected = randomPool.nextBatch(adult, restartIfExhausted = replace)
 
                 ensureActive()
                 val items = if (replace) collected else previous.items + collected
@@ -201,7 +162,7 @@ class HomeTabModel(
                     items = items,
                     isLoading = false,
                     failure = null,
-                    hasMore = randomVisitedPages.size < requester.pages(),
+                    hasMore = randomPool.hasMore,
                     isActivated = true
                 )
             } catch (error: CancellationException) {
@@ -221,13 +182,8 @@ class HomeTabModel(
         }
     }
 
-    private fun chooseUnvisitedRandomPage(pageCount: Int): Int? {
-        if (pageCount <= 0 || randomVisitedPages.size >= pageCount) return null
-        repeat(12) {
-            val candidate = Random.nextInt(1, pageCount + 1)
-            if (candidate !in randomVisitedPages) return candidate
-        }
-        return (1..pageCount).firstOrNull { it !in randomVisitedPages }
+    private fun createRandomPool() = HomeRecommendationPool { sortType ->
+        PresentationAccess.client.novels(authorization, novelType = 0, sortType = sortType)
     }
 
     fun getHomeData(forceRefresh: Boolean = false) {

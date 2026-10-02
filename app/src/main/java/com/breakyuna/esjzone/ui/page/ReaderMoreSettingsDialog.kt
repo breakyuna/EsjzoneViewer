@@ -39,6 +39,12 @@ internal fun ReaderMoreSettingsContent(
         onSettingsChange(value)
     }
     SettingsSection(title = stringResource(R.string.reader_more_controls)) {
+        MoreReaderToggle(stringResource(R.string.reader_scroll_side_gestures), draft.scrollSideGesturesEnabled) {
+            commit(draft.copy(scrollSideGesturesEnabled = it))
+        }
+        MoreReaderToggle(stringResource(R.string.reader_paged_bookmark_gestures), draft.pagedBookmarkGesturesEnabled) {
+            commit(draft.copy(pagedBookmarkGesturesEnabled = it))
+        }
         MoreReaderToggle(stringResource(R.string.reader_tap_paging), draft.tapPagingEnabled) {
             commit(draft.copy(tapPagingEnabled = it))
         }
