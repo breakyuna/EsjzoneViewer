@@ -16,7 +16,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
@@ -29,6 +28,9 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
+import androidx.compose.material3.Surface
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.TextButton
@@ -61,7 +63,6 @@ import com.breakyuna.esjzone.network.EsjzoneUrls
 import com.breakyuna.esjzone.network.LocalAuthorization
 import com.breakyuna.esjzone.ui.navigation.LocalFloatingNavPadding
 import com.breakyuna.esjzone.network.features.getUserProfile
-import com.breakyuna.esjzone.ui.designsystem.AccountIconBadge
 import com.breakyuna.esjzone.ui.designsystem.accountContentWidth
 import com.breakyuna.esjzone.ui.designsystem.AppAvatarImage
 import com.breakyuna.esjzone.ui.designsystem.AppShapes
@@ -169,8 +170,15 @@ object ProfileTab : AppTab {
             ) {
                 item(key = "profile-hero") { ProfileHero(profile, domain, loading, onRetry = { retry++ }) }
                 item(key = "profile-menu-title") { Text(stringResource(R.string.profile_tools), style = AppTypography.titleMedium, color = MaterialTheme.colorScheme.onSurfaceVariant) }
-                items(menuItems, key = { it.id }, contentType = { "profile_action" }) { item ->
-                    ProfileAction(item, onClick = { navigator?.pushIfNotCurrent(item.destination) })
+                item(key = "profile-actions") {
+                    Surface(shape = AppShapes.standard, color = MaterialTheme.colorScheme.surface) {
+                        Column {
+                            menuItems.forEachIndexed { index, item ->
+                                if (index > 0) HorizontalDivider()
+                                ProfileAction(item, onClick = { navigator?.pushIfNotCurrent(item.destination) })
+                            }
+                        }
+                    }
                 }
             }
             }
@@ -178,14 +186,14 @@ object ProfileTab : AppTab {
     }
 }
 
-private data class ProfileMenuItem(val id: String, val icon: ImageVector, val title: String, val subtitle: String, val destination: com.breakyuna.esjzone.ui.navigation.AppDestination)
+private data class ProfileMenuItem(val id: String, val icon: ImageVector, val title: String, val destination: com.breakyuna.esjzone.ui.navigation.AppDestination)
 
 @Composable
 private fun profileMenuItems(): List<ProfileMenuItem> = listOf(
-    ProfileMenuItem("reading_stats", Icons.Filled.QueryStats, stringResource(R.string.reading_stats_title), stringResource(R.string.reading_stats_description), ReadingStatisticsPage),
-    ProfileMenuItem("bookmarks", Icons.Filled.Bookmark, stringResource(R.string.bookmarks), stringResource(R.string.bookmarks_description), BookmarksPage),
-    ProfileMenuItem("downloads", Icons.Filled.Download, stringResource(R.string.downloads), stringResource(R.string.profile_downloads_description), DownloadPage),
-    ProfileMenuItem("settings", Icons.Filled.Settings, stringResource(R.string.settings), stringResource(R.string.profile_settings_description), SettingsPage)
+    ProfileMenuItem("reading_stats", Icons.Filled.QueryStats, stringResource(R.string.reading_stats_title), ReadingStatisticsPage),
+    ProfileMenuItem("bookmarks", Icons.Filled.Bookmark, stringResource(R.string.bookmarks), BookmarksPage),
+    ProfileMenuItem("downloads", Icons.Filled.Download, stringResource(R.string.downloads), DownloadPage),
+    ProfileMenuItem("settings", Icons.Filled.Settings, stringResource(R.string.settings), SettingsPage)
 )
 
 @Composable
@@ -258,17 +266,14 @@ private fun ProfileHero(profile: UserProfile?, domain: String, loading: Boolean,
 
 @Composable
 private fun ProfileAction(item: ProfileMenuItem, onClick: () -> Unit) {
-    Card(
-        onClick = onClick,
-        modifier = Modifier.fillMaxWidth(),
-        shape = AppShapes.standard,
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
-    ) {
-        Row(Modifier.fillMaxWidth().padding(AppSpacing.lg), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(AppSpacing.md)) {
-            AccountIconBadge(item.icon)
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(AppSpacing.xs)) { Text(item.title, style = AppTypography.titleMedium); Text(item.subtitle, style = AppTypography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis) }
+    Surface(onClick = onClick, color = MaterialTheme.colorScheme.surface) {
+        Row(
+            Modifier.fillMaxWidth().heightIn(min = 48.dp).padding(horizontal = AppSpacing.md, vertical = AppSpacing.sm),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(AppSpacing.md)
+        ) {
+            Icon(item.icon, contentDescription = null, modifier = Modifier.size(24.dp))
+            Text(item.title, modifier = Modifier.weight(1f), style = AppTypography.bodyLarge)
             Icon(Icons.AutoMirrored.Filled.ArrowForward, null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(20.dp))
         }
     }

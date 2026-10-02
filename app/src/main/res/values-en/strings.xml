@@ -170,7 +170,6 @@
     <string name="novel_download_unlock_failed">Failed to unlock: %1$s</string>
     <string name="chapter_password_required_badge">Password</string>
     <string name="novel_download_common_password_title">Common password for this book</string>
-    <string name="novel_download_common_password_hint">Applies to this novel only; automatically tried during download and batch unlock</string>
     <string name="novel_download_common_password_active">Common password: set</string>
     <string name="novel_download_set_common_password">Set common password</string>
     <string name="novel_download_clear_common_password">Clear password</string>
@@ -213,11 +212,9 @@
     <string name="download_delete_confirm">This removes saved chapters and images from this device. Bookshelf, reading history, and bookmarks are not affected.</string>
     <string name="download_delete_confirm_action">Delete downloads</string>
     <string name="download_settings">Download settings</string>
-    <string name="download_auto_save">Save while reading</string>
-    <string name="download_auto_save_description">Automatically save chapters as they load</string>
+    <string name="download_auto_save">Auto-save loaded chapters</string>
     <string name="settings_download_section">Downloads</string>
-    <string name="settings_download_concurrency_description">Maximum chapters downloaded at the same time. Takes effect for new download tasks.</string>
-    <string name="settings_download_concurrency_label">Concurrent downloads</string>
+    <string name="settings_download_concurrency_label">Simultaneous chapter downloads</string>
     <string name="novel_download_deleted">Deleted downloads for %1$s</string>
     <string name="novel_download_delete_title">Delete downloaded content</string>
     <string name="novel_download_delete_message">Delete all downloaded chapters for %1$s? This will not affect the bookshelf, reading history, or bookmarks.</string>
@@ -263,8 +260,6 @@
     <string name="profile_favorites_description">Manage saved novels and bookmarks</string>
     <string name="profile_history_description">Pick up where you left off reading</string>
     <string name="downloads">Downloads</string>
-    <string name="profile_downloads_description">Manage downloaded novels and offline chapters</string>
-    <string name="profile_settings_description">Theme, content preferences and site connection</string>
     <string name="profile_about_description">Version, contributors and open source licenses</string>
     <string name="about">About</string>
     <string name="about_disclaimer">EsjzoneViewer is not affiliated with esjzone.cc/esjzone.one.</string>
@@ -349,8 +344,7 @@
     <string name="load_client_error">Client error. Please contact the developer.</string>
     <string name="compile_information">Version</string>
     <string name="build_version">Build Version</string>
-    <string name="update_auto_check">Check for updates automatically</string>
-    <string name="update_auto_check_description">Check GitHub Releases for a newer version when the app starts</string>
+    <string name="update_auto_check">Check for updates at startup</string>
     <string name="update_check_tap_version">Tap the version to check manually</string>
     <string name="update_checking">Checking for updates…</string>
     <string name="update_up_to_date">You are up to date</string>
@@ -384,7 +378,7 @@
     <string name="settings_content_section">Content &amp; filtering</string>
     <string name="settings_reader_section">Reading</string>
     <string name="settings_navigation_section">Navigation &amp; startup</string>
-    <string name="settings_navigation_description">Change the item order shared by the bottom navigation bar and side rail.</string>
+    <string name="settings_navigation_description">Tap an item to set the default startup page; long press and drag to reorder the bottom navigation bar.</string>
     <string name="settings_navigation_reset">Restore default order</string>
     <string name="settings_startup_page_title">Default startup page</string>
     <string name="settings_startup_page_description">Choose the page that opens by default after the app finishes loading.</string>
@@ -398,13 +392,11 @@
     <string name="settings_auto_resume_reading_description">Automatically open the latest read chapter when launching the app</string>
     <string name="settings_volume_key_paging">Volume key paging</string>
     <string name="settings_volume_key_paging_description">Use the volume keys to move one page up or down while reading</string>
-    <string name="settings_adult_description">Show restricted works on Home, Categories and the catalog.</string>
-    <string name="settings_hide_home_recommendations">Hide popular recommendations</string>
-    <string name="settings_hide_home_recommendations_description">Hide the rarely updated popular recommendations section on Home.</string>
+    <string name="settings_hide_home_recommendations">Hide popular recommendations on Home</string>
     <string name="settings_storage_section">Local storage &amp; cache</string>
     <string name="settings_page_cache">Page parsing cache</string>
     <string name="settings_image_cache">Covers and image cache</string>
-    <string name="settings_cache_note">Clearing cache does not affect downloaded books, bookmarks, reading history or bookshelf data.</string>
+    <string name="settings_cache_note">Clearing cache does not affect downloaded data.</string>
     <string name="settings_diagnostics_section">Diagnostics &amp; maintenance</string>
     <string name="settings_logs_description">Live logs, severity filters, crash capture and export</string>
     <string name="settings_about_section">About &amp; open source</string>
@@ -592,7 +584,6 @@
     <string name="bookshelf_recent_rank">Recently read: number %1$d</string>
     <string name="profile_tools">Your library &amp; preferences</string>
     <string name="reading_stats_title">Reading statistics</string>
-    <string name="reading_stats_description">Reading time, calendar and book rankings</string>
     <string name="reading_stats_back">Back</string>
     <string name="reading_stats_loading">Loading reading statistics…</string>
     <string name="reading_stats_local_note">Stored on this device. Tracking starts with this version.</string>
@@ -606,7 +597,6 @@
     <string name="reading_stats_trend">Reading trend</string>
     <string name="reading_stats_other">Other</string>
     <string name="reading_stats_tags">Reading by tag</string>
-    <string name="reading_stats_tags_note" formatted="false">Shares use the sum of tag reading times. A book counts toward each of its known tags; shares below 5% are grouped as Other.</string>
     <string name="reading_stats_no_tags">No tagged reading in this period. Open a book’s details to add its tags.</string>
     <string name="reading_stats_ranking">Most read books</string>
     <string name="reading_stats_7_days">7 days</string>
@@ -663,7 +653,7 @@
     <string name="reader_font_source_serif">Source Han Serif</string>
     <string name="reader_font_source_sans">Source Han Sans</string>
     <string name="reader_font_wenkai">LXGW WenKai</string>
-    <string name="reader_font_downloading">Downloading; using default for now</string>
+    <string name="reader_font_downloading">Downloading</string>
     <string name="reader_tap_paging">Tap to turn pages</string>
     <string name="reader_swipe_paging">Swipe to turn pages</string>
     <string name="reader_volume_paging">Volume key paging</string>
@@ -679,8 +669,7 @@
     <string name="reader_show_chapter_name">Show chapter name</string>
     <string name="reader_show_time_battery">Show time and battery</string>
     <string name="reader_reset_confirmation">Restore all reader settings to their defaults?</string>
-    <string name="local_backup">Local data backup</string>
-    <string name="backup_short_description">Export or import selected local data</string>
+    <string name="local_backup">Backup and restore</string>
     <string name="backup_description">Choose the data to export or import. Downloads include saved chapters and images. Groups apply to the current bookshelf account. Website favorites, online history and login information are excluded.</string>
     <string name="backup_reading">Reading statistics</string>
     <string name="backup_history">Local reading history</string>
@@ -709,4 +698,7 @@
     <string name="reading_stats_line_chart">Line chart</string>
     <string name="settings_language_system_short">System</string>
     <string name="settings_language_chinese_short">中文</string>
+    <string name="reading_stats_incognito">Incognito</string>
+    <string name="reading_stats_show_tags">Show all tags and percentages</string>
+    <string name="reading_stats_hide_tags">Hide tag list</string>
 </resources>

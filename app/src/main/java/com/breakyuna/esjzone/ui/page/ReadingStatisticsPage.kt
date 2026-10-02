@@ -29,6 +29,8 @@ import androidx.compose.material.icons.filled.QueryStats
 import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.MenuBook
 import androidx.compose.material.icons.filled.ShowChart
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Label
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
@@ -38,6 +40,7 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Scaffold
 import com.breakyuna.esjzone.ui.designsystem.GlobalText as Text
 import androidx.compose.material3.TextButton
@@ -106,12 +109,14 @@ object ReadingStatisticsPage : AppDestination {
         val navigator = LocalBaseNavigator.current
         val model = rememberAppViewModel { ReadingStatisticsPageModel() }
         val state by model.state.collectAsState()
+        val incognito by PresentationAccess.settings.readingStatisticsIncognitoFlow.collectAsState()
         var selectedDate by remember { mutableStateOf(LocalDate.now()) }
         var trendDays by remember { mutableStateOf(7) }
         var trendLineChart by rememberSaveable { mutableStateOf(false) }
         var rankingDays by remember { mutableStateOf<Int?>(30) }
         var tagDays by remember { mutableStateOf<Int?>(30) }
         var confirmClear by remember { mutableStateOf(false) }
+        val incognitoDescription = stringResource(R.string.reading_stats_incognito)
         LaunchedEffect(Unit) { model.observe() }
 
         if (confirmClear) {
@@ -140,6 +145,16 @@ object ReadingStatisticsPage : AppDestination {
                     }
                 },
                 actions = {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(stringResource(R.string.reading_stats_incognito), style = MaterialTheme.typography.labelMedium)
+                        Switch(
+                            checked = incognito,
+                            onCheckedChange = PresentationAccess.settings::setReadingStatisticsIncognito,
+                            modifier = Modifier.padding(horizontal = 8.dp).semantics {
+                                contentDescription = incognitoDescription
+                            }
+                        )
+                    }
                     IconButton(onClick = { confirmClear = true }, enabled = state is ReadingStatisticsPageModel.State.Ready &&
                         (state as ReadingStatisticsPageModel.State.Ready).summary.totalMs > 0L) {
                         Icon(Icons.Filled.DeleteOutline, stringResource(R.string.reading_stats_clear))
@@ -229,14 +244,13 @@ object ReadingStatisticsPage : AppDestination {
                         item {
                             StatCard {
                                 StatSectionTitle(Icons.Filled.Label, stringResource(R.string.reading_stats_tags))
-                                Text(stringResource(R.string.reading_stats_tags_note), style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 StatPeriodFilter(listOf(7, 30, null), tagDays) { tagDays = it }
                                 val tags = current.tagRankings[tagDays].orEmpty()
                                 if (tags.isEmpty()) {
                                     Text(stringResource(R.string.reading_stats_no_tags))
                                 } else {
                                     TagDonutChart(tags)
+                                    TagDistributionList(current.allTagRankings[tagDays].orEmpty())
                                 }
                             }
                         }
@@ -265,41 +279,18 @@ private fun TagDonutChart(tags: List<ReadingTagTotal>) {
     }.let { boundaries ->
         tags.indices.map { index -> (boundaries[index] + boundaries[index + 1]) / 2f }
     }
-    val leftIndices = tags.indices.filter { kotlin.math.cos(Math.toRadians(middleAngles[it].toDouble())) < 0 }
-        .sortedBy { kotlin.math.sin(Math.toRadians(middleAngles[it].toDouble())) }
-    val rightIndices = tags.indices.filter { it !in leftIndices }
-        .sortedBy { kotlin.math.sin(Math.toRadians(middleAngles[it].toDouble())) }
-    val chartHeight = maxOf(220, maxOf(leftIndices.size, rightIndices.size) * 56).dp
+    // Label angles are evenly spaced independently of sector sizes.
+    val labelAngles = tags.indices.map { -90.0 + it * 360.0 / tags.size }
+    val chartHeight = maxOf(300, tags.size * 28).dp
     BoxWithConstraints(Modifier.fillMaxWidth().height(chartHeight)) {
-        val radius = minOf(80.dp, maxWidth * .23f)
-        val labelWidth = (maxWidth - radius * 2) / 2 - 12.dp
-        val labelGap = 6.dp
-        val horizontalLength = 12.dp
-        val radialLength = 16.dp
-        // Keep each elbow on its sector's radius; the label shares the elbow's Y.
-        // Spread crowded labels by extending the radial leg where space permits.
-        val elbowRadii = MutableList(tags.size) { radius + radialLength }
-        listOf(leftIndices, rightIndices).forEach { side ->
-            var previousY = -24.dp
-            side.forEach { index ->
-                val angle = Math.toRadians(middleAngles[index].toDouble())
-                val sin = kotlin.math.sin(angle).toFloat()
-                val cos = kotlin.math.abs(kotlin.math.cos(angle).toFloat())
-                val desiredY = maxOf(chartHeight / 2 + elbowRadii[index] * sin, previousY + 48.dp)
-                val availableX = maxWidth / 2 - labelWidth - labelGap - horizontalLength
-                val maximumRadius = if (cos > .001f) availableX / cos else chartHeight / 2 - 24.dp
-                if (kotlin.math.abs(sin) > .001f) {
-                    val desiredRadius = (desiredY - chartHeight / 2) / sin
-                    elbowRadii[index] = desiredRadius.coerceIn(
-                        radius + 8.dp, maxOf(radius + 8.dp, maximumRadius)
-                    )
-                }
-                previousY = chartHeight / 2 + elbowRadii[index] * sin
-            }
-        }
-        val positions = tags.indices.map { index ->
-            chartHeight / 2 + elbowRadii[index] *
-                kotlin.math.sin(Math.toRadians(middleAngles[index].toDouble())).toFloat()
+        val radius = minOf(80.dp, maxWidth * .21f)
+        val labelWidth = 72.dp
+        val labelRadiusX = (maxWidth - labelWidth) / 2
+        val labelRadiusY = chartHeight / 2 - 28.dp
+        val labelPositions = labelAngles.map { degrees ->
+            val angle = Math.toRadians(degrees)
+            (maxWidth / 2 + labelRadiusX * kotlin.math.cos(angle).toFloat()) to
+                (chartHeight / 2 + labelRadiusY * kotlin.math.sin(angle).toFloat())
         }
         Canvas(Modifier.fillMaxSize()) {
             val center = Offset(size.width / 2, size.height / 2)
@@ -319,32 +310,30 @@ private fun TagDonutChart(tags: List<ReadingTagTotal>) {
                 val angle = Math.toRadians(middleAngles[index].toDouble())
                 val direction = Offset(kotlin.math.cos(angle).toFloat(), kotlin.math.sin(angle).toFloat())
                 val start = center + direction * outerRadius
-                val elbow = center + direction * elbowRadii[index].toPx()
-                val end = Offset(
-                    if (index in leftIndices) labelWidth.toPx() + labelGap.toPx()
-                    else size.width - labelWidth.toPx() - labelGap.toPx(),
-                    elbow.y
-                )
+                val labelAngle = Math.toRadians(labelAngles[index])
+                val labelDirection = Offset(kotlin.math.cos(labelAngle).toFloat(), kotlin.math.sin(labelAngle).toFloat())
+                val elbow = center + labelDirection * (outerRadius + 12.dp.toPx())
+                val (labelX, labelY) = labelPositions[index]
+                val end = Offset(labelX.toPx(), labelY.toPx()) - labelDirection * 28.dp.toPx()
                 drawLine(colors[index], start, elbow, 1.dp.toPx())
                 drawLine(colors[index], elbow, end, 1.dp.toPx())
                 startAngle += sweep
             }
         }
         tags.forEachIndexed { index, tag ->
-            val left = index in leftIndices
+            val (labelX, labelY) = labelPositions[index]
             Column(
                 modifier = Modifier
-                    .offset(x = if (left) 0.dp else maxWidth - labelWidth,
-                        y = positions[index] - 24.dp)
+                    .offset(x = labelX - labelWidth / 2, y = labelY - 24.dp)
                     .width(labelWidth)
                     .height(48.dp)
                     .semantics(mergeDescendants = true) {},
                 verticalArrangement = Arrangement.Center,
-                horizontalAlignment = if (left) Alignment.End else Alignment.Start
+                horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 Text(tag.tag ?: stringResource(R.string.reading_stats_other),
                     style = AppTypography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis,
-                    textAlign = if (left) TextAlign.End else TextAlign.Start)
+                    textAlign = TextAlign.Center)
                 Text(percentFormat.format(tag.durationMs / total),
                     style = AppTypography.labelMedium, color = colors[index])
             }
@@ -356,6 +345,33 @@ private fun TagDonutChart(tags: List<ReadingTagTotal>) {
             Text(tags.first().tag ?: stringResource(R.string.reading_stats_other), style = AppTypography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center,
                 maxLines = 2, overflow = TextOverflow.Ellipsis)
+        }
+    }
+}
+
+@Composable
+private fun TagDistributionList(tags: List<ReadingTagTotal>) {
+    var expanded by rememberSaveable { mutableStateOf(false) }
+    val locale = LocalConfiguration.current.locales[0]
+    val percentFormat = remember(locale) {
+        java.text.NumberFormat.getPercentInstance(locale).apply { maximumFractionDigits = 1 }
+    }
+    val total = tags.sumOf { it.durationMs }.toDouble()
+    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(AppSpacing.sm)) {
+        TextButton(onClick = { expanded = !expanded }, modifier = Modifier.fillMaxWidth()) {
+            Text(stringResource(if (expanded) R.string.reading_stats_hide_tags else R.string.reading_stats_show_tags),
+                modifier = Modifier.weight(1f), textAlign = TextAlign.Start)
+            Icon(if (expanded) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore, contentDescription = null)
+        }
+        if (expanded) {
+            tags.forEach { tag ->
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(AppSpacing.md),
+                    verticalAlignment = Alignment.CenterVertically) {
+                    Text(tag.tag.orEmpty(), modifier = Modifier.weight(1f), style = AppTypography.bodyMedium)
+                    Text(percentFormat.format(tag.durationMs / total), style = AppTypography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
         }
     }
 }
@@ -559,7 +575,8 @@ private class ReadingStatisticsPageModel : AppStateViewModel<ReadingStatisticsPa
         data object Error : State
         data class Ready(val summary: ReadingStatisticsSummary) : State {
             val rankings = listOf(7, 30, null).associateWith(summary::topBooks)
-            val tagRankings = listOf(7, 30, null).associateWith(summary::tagDistribution)
+            val tagRankings = listOf(7, 30, null).associateWith { summary.tagDistribution(it) }
+            val allTagRankings = listOf(7, 30, null).associateWith { summary.tagDistribution(it, groupSmallTags = false) }
         }
     }
 

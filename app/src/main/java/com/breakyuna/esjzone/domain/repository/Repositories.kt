@@ -37,6 +37,7 @@ interface SettingsRepository {
     val hideHomeRecommendations: StateFlow<Boolean>
     val domain: StateFlow<String>
     val language: StateFlow<AppLanguage>
+    val readingStatisticsIncognito: StateFlow<Boolean>
     val readerAutoSave: StateFlow<Boolean>
     val downloadConcurrency: StateFlow<Int>
     val novelListGridView: StateFlow<Boolean>
@@ -48,6 +49,7 @@ interface SettingsRepository {
     fun setHideHomeRecommendations(value: Boolean)
     fun setDomain(value: String)
     fun setLanguage(value: AppLanguage)
+    fun setReadingStatisticsIncognito(value: Boolean)
     fun setReaderAutoSave(value: Boolean)
     fun setDownloadConcurrency(value: Int)
     fun setNovelListGridView(value: Boolean)

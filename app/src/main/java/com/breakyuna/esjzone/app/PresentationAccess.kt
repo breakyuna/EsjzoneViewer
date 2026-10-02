@@ -130,6 +130,8 @@ object SettingsStateBoundary {
     val language: State<AppLanguage> get() { repository(); return _language }
     val languageFlow: StateFlow<AppLanguage> get() = repository().language
     val readerAutoSave: State<Boolean> get() { repository(); return _readerAutoSave }
+    val readingStatisticsIncognitoFlow: StateFlow<Boolean> get() = repository().readingStatisticsIncognito
+    fun setReadingStatisticsIncognito(value: Boolean) = repository().setReadingStatisticsIncognito(value)
     val readerAutoSaveFlow: StateFlow<Boolean> get() = repository().readerAutoSave
     val downloadConcurrency: State<Int> get() { repository(); return _downloadConcurrency }
     val downloadConcurrencyFlow: StateFlow<Int> get() = repository().downloadConcurrency

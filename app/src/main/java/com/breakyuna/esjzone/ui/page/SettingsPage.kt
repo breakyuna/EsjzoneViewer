@@ -55,7 +55,6 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import com.breakyuna.esjzone.ui.designsystem.GlobalText as Text
@@ -141,7 +140,6 @@ object SettingsPage : AppDestination {
         var showLogout by remember { mutableStateOf(false) }
         val sectionStateHolder = rememberSaveableStateHolder()
         var section by rememberSaveable { mutableStateOf("MAIN") }
-        var showSiteDialog by remember { mutableStateOf(false) }
         BackHandler(enabled = section != "MAIN") { section = "MAIN" }
         val pageTitle = stringResource(when (section) {
             "NAVIGATION" -> R.string.settings_navigation_section
@@ -230,16 +228,43 @@ object SettingsPage : AppDestination {
                             )
                         }
                         HorizontalDivider()
-                        ToggleRow(stringResource(R.string.settings_showadultcontent), stringResource(R.string.settings_adult_description), adult) { PresentationAccess.settings.setAdult(it); model.persist("show_adult", it.toString()) }
+                        ToggleRow(stringResource(R.string.settings_showadultcontent), adult) { PresentationAccess.settings.setAdult(it); model.persist("show_adult", it.toString()) }
                         ToggleRow(
                             stringResource(R.string.settings_hide_home_recommendations),
-                            stringResource(R.string.settings_hide_home_recommendations_description),
                             hideHomeRecommendations
                         ) { PresentationAccess.settings.setHideHomeRecommendations(it) }
                     }
                     SettingsSection(Icons.Filled.Dns, stringResource(R.string.settings_network_section)) {
-                        SelectionSettingRow(domain) {
-                            if (!switchingDomain) showSiteDialog = true
+                        SiteSettingRow(
+                            domains = PresentationAccess.settings.DOMAINS,
+                            selectedDomain = domain,
+                            enabled = !switchingDomain
+                        ) { candidate ->
+                            if (candidate != domain && !switchingDomain) {
+                                switchingDomain = true
+                                scope.launch {
+                                    try {
+                                        val session = withContext(Dispatchers.IO) {
+                                            PresentationAccess.client.restoreAuthorization(candidate)
+                                        }?.takeIf { it.hasCredentials() }
+                                        if (session != null) {
+                                            PresentationAccess.settings.setDomain(candidate)
+                                            PresentationAccess.client.clearParsedPageCache()
+                                            if (PresentationAccess.client.hasSiteSession(candidate)) {
+                                                BookshelfRepository.scheduleSync(session)
+                                                CommunitySyncManager.schedulePreSync(session)
+                                            }
+                                            rootNavigator?.replaceAll(MainScreen(session))
+                                        } else {
+                                            siteUnavailable = true
+                                        }
+                                    } catch (e: Exception) {
+                                        AppLogger.e("SettingsPage", "Failed to switch site", e)
+                                    } finally {
+                                        switchingDomain = false
+                                    }
+                                }
+                            }
                         }
                     }
                     SettingsSection(Icons.Filled.Reorder, stringResource(R.string.settings_preferences_section)) {
@@ -264,7 +289,7 @@ object SettingsPage : AppDestination {
                     }
                 }
                 if (displayedSection == "NAVIGATION") {
-                    SettingsSection(Icons.Filled.Reorder, stringResource(R.string.settings_navigation_section)) {
+                    SettingsSection {
                         Text(
                             stringResource(R.string.settings_navigation_description),
                             style = com.breakyuna.esjzone.ui.designsystem.AppTypography.bodySmall,
@@ -280,23 +305,31 @@ object SettingsPage : AppDestination {
                             )
                         ) {
                             Row(
-                                modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp),
+                                modifier = Modifier.fillMaxWidth().selectableGroup().padding(horizontal = 8.dp, vertical = 6.dp),
                                 horizontalArrangement = Arrangement.SpaceEvenly,
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 editableNavigationOrder.forEach { item ->
                                     key(item) {
-                                    val selected = draggingNavigationItem == item
+                                    val dragging = draggingNavigationItem == item
+                                    val selected = item == if (startTab == com.breakyuna.esjzone.data.settings.SettingsDefaults.START_TAB_FOLLOW_NAV) {
+                                        editableNavigationOrder.firstOrNull()
+                                    } else startTab
                                     var dragOffsetX by remember(item) { mutableFloatStateOf(0f) }
                                     Surface(
                                         modifier = Modifier
                                             .weight(1f)
-                                            .zIndex(if (selected) 1f else 0f)
+                                            .zIndex(if (dragging) 1f else 0f)
                                             .graphicsLayer {
                                                 translationX = dragOffsetX
-                                                scaleX = if (selected) 1.05f else 1f
-                                                scaleY = if (selected) 1.05f else 1f
+                                                scaleX = if (dragging) 1.05f else 1f
+                                                scaleY = if (dragging) 1.05f else 1f
                                             }
+                                            .selectable(
+                                                selected = selected,
+                                                role = Role.RadioButton,
+                                                onClick = { PresentationAccess.settings.setStartTab(item) }
+                                            )
                                             .pointerInput(item) {
                                                 detectDragGesturesAfterLongPress(
                                                     onDragStart = {
@@ -338,7 +371,7 @@ object SettingsPage : AppDestination {
                                         color = if (selected) {
                                             MaterialTheme.colorScheme.primaryContainer
                                         } else Color.Transparent,
-                                        shadowElevation = if (selected) 6.dp else 0.dp
+                                        shadowElevation = if (dragging) 6.dp else 0.dp
                                     ) {
                                         Column(
                                             modifier = Modifier.padding(horizontal = 2.dp, vertical = 6.dp),
@@ -387,63 +420,21 @@ object SettingsPage : AppDestination {
                             }
                         }
 
-                        HorizontalDivider(
-                            modifier = Modifier.padding(vertical = 4.dp),
-                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
-                        )
 
-                        Text(
-                            stringResource(R.string.settings_startup_page_title),
-                            style = com.breakyuna.esjzone.ui.designsystem.AppTypography.labelLarge
-                        )
-                        Text(
-                            stringResource(R.string.settings_startup_page_description),
-                            style = com.breakyuna.esjzone.ui.designsystem.AppTypography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-
-                        Column(Modifier.selectableGroup()) {
-                            listOf(
-                                com.breakyuna.esjzone.data.settings.SettingsDefaults.START_TAB_FOLLOW_NAV,
-                                "HOME", "BOOKSHELF", "HISTORY", "PROFILE"
-                            ).forEach { candidate ->
-                                Row(
-                                    modifier = Modifier.fillMaxWidth()
-                                        .selectable(
-                                            selected = candidate == startTab,
-                                            role = Role.RadioButton,
-                                            onClick = { PresentationAccess.settings.setStartTab(candidate) }
-                                        ).padding(vertical = 4.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    RadioButton(selected = candidate == startTab, onClick = null)
-                                    Text(startupPageTitle(candidate))
-                                }
-                            }
-                        }
                     }
 
                     }
                     if (displayedSection == "READING") {
-                    SettingsSection(Icons.Filled.MenuBook, stringResource(R.string.settings_reader_section)) {
+                    SettingsSection {
                         ReaderMoreSettingsContent(readerSettings, PresentationAccess.readerSettings::saveDebounced)
                         HorizontalDivider(modifier = Modifier.padding(vertical = 2.dp))
                         ToggleRow(
                             stringResource(R.string.download_auto_save),
-                            stringResource(R.string.download_auto_save_description),
                             autoSave
                         ) { enabled ->
                             PresentationAccess.settings.setReaderAutoSave(enabled)
                             model.persist(PresentationAccess.settings.READER_AUTO_SAVE_KEY, enabled.toString())
                         }
-                    }
-
-                    SettingsSection(Icons.Filled.Download, stringResource(R.string.settings_download_section)) {
-                        Text(
-                            stringResource(R.string.settings_download_concurrency_description),
-                            style = com.breakyuna.esjzone.ui.designsystem.AppTypography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
                         var showConcurrencyMenu by remember { mutableStateOf(false) }
                         Row(
                             modifier = Modifier
@@ -499,8 +490,8 @@ object SettingsPage : AppDestination {
 
                     }
                     if (displayedSection == "STORAGE") {
-                    SettingsSection(Icons.Filled.Storage, stringResource(R.string.settings_storage_section)) {
-                        LinkRow(Icons.Filled.Download, stringResource(R.string.local_backup), stringResource(R.string.backup_short_description)) {
+                    SettingsSection {
+                        LinkRow(Icons.Filled.Download, stringResource(R.string.local_backup)) {
                             navigator?.pushIfNotCurrent(LocalBackupPage)
                         }
                         HorizontalDivider()
@@ -516,7 +507,7 @@ object SettingsPage : AppDestination {
 
                     }
                     if (displayedSection == "ABOUT") {
-                    SettingsSection(Icons.Filled.Info, stringResource(R.string.about)) {
+                    SettingsSection {
                         Text(
                             text = stringResource(R.string.about_disclaimer),
                             style = com.breakyuna.esjzone.ui.designsystem.AppTypography.bodySmall,
@@ -559,7 +550,6 @@ object SettingsPage : AppDestination {
                         }
                         ToggleRow(
                             title = stringResource(R.string.update_auto_check),
-                            subtitle = stringResource(R.string.update_auto_check_description),
                             checked = autoCheck,
                             onCheckedChange = { ReleaseUpdateChecker.setAutoCheck(context, it) }
                         )
@@ -599,52 +589,6 @@ object SettingsPage : AppDestination {
             }
             }
         }
-        if (showSiteDialog) AlertDialog(
-            onDismissRequest = { showSiteDialog = false },
-            title = { Text(stringResource(R.string.settings_network_section)) },
-            text = {
-                Column(Modifier.verticalScroll(rememberScrollState())) {
-                    Text(stringResource(R.string.settings_active_mirror), style = com.breakyuna.esjzone.ui.designsystem.AppTypography.labelLarge)
-                    PresentationAccess.settings.DOMAINS.forEach { candidate ->
-                        ChoiceRow(
-                            title = candidate,
-                            selected = candidate == domain,
-                            onClick = {
-                                if (candidate != domain && !switchingDomain) {
-                                    showSiteDialog = false
-                                    switchingDomain = true
-                                    scope.launch {
-                                        try {
-                                            val session = withContext(Dispatchers.IO) {
-                                                PresentationAccess.client.restoreAuthorization(candidate)
-                                            }?.takeIf { it.hasCredentials() }
-                                            if (session != null) {
-                                                PresentationAccess.settings.setDomain(candidate)
-                                                PresentationAccess.client.clearParsedPageCache()
-                                                if (PresentationAccess.client.hasSiteSession(candidate)) {
-                                                    BookshelfRepository.scheduleSync(session)
-                                                    CommunitySyncManager.schedulePreSync(session)
-                                                }
-                                                rootNavigator?.replaceAll(MainScreen(session))
-                                            } else {
-                                                siteUnavailable = true
-                                            }
-                                        } catch (e: Exception) {
-                                            AppLogger.e("SettingsPage", "Failed to switch site", e)
-                                        } finally {
-                                            switchingDomain = false
-                                        }
-                                    }
-                                }
-                            }
-                        )
-                    }
-                }
-            },
-            confirmButton = {
-                TextButton(onClick = { showSiteDialog = false }) { Text(stringResource(R.string.logout_cancel)) }
-            }
-        )
 
         if (state.logoutFailed) AlertDialog(
             onDismissRequest = { model.clearLogoutFailure() },
@@ -696,22 +640,25 @@ private fun navigationItemIcon(id: String): ImageVector = when (id) {
 }
 
 @Composable
-private fun startupPageTitle(id: String): String = when (id) {
-    com.breakyuna.esjzone.data.settings.SettingsDefaults.START_TAB_FOLLOW_NAV ->
-        stringResource(R.string.settings_startup_follow_nav)
-    "HOME" -> stringResource(R.string.navigation_home)
-    "BOOKSHELF" -> stringResource(R.string.bookshelf)
-    "HISTORY" -> stringResource(R.string.history)
-    "PROFILE" -> stringResource(R.string.navigation_profile)
-    else -> id
-}
-
-@Composable
-private fun SettingsSection(icon: ImageVector, title: String, content: @Composable ColumnScope.() -> Unit) {
+private fun SettingsSection(
+    icon: ImageVector? = null,
+    title: String? = null,
+    content: @Composable ColumnScope.() -> Unit
+) {
+    if (icon == null && title == null) {
+        Column(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(2.dp),
+            content = content
+        )
+        return
+    }
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(com.breakyuna.esjzone.ui.designsystem.AppSpacing.sm)) {
-            AccountIconBadge(icon)
-            Text(title, style = com.breakyuna.esjzone.ui.designsystem.AppTypography.titleMedium, color = MaterialTheme.colorScheme.primary)
+        if (icon != null && title != null) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(com.breakyuna.esjzone.ui.designsystem.AppSpacing.sm)) {
+                AccountIconBadge(icon)
+                Text(title, style = com.breakyuna.esjzone.ui.designsystem.AppTypography.titleMedium, color = MaterialTheme.colorScheme.primary)
+            }
         }
         Surface(
             color = MaterialTheme.colorScheme.surface,
@@ -729,16 +676,6 @@ private fun SettingsSection(icon: ImageVector, title: String, content: @Composab
                 verticalArrangement = Arrangement.spacedBy(2.dp),
                 content = content
             )
-        }
-    }
-}
-
-@Composable
-private fun ChoiceRow(title: String, subtitle: String? = null, selected: Boolean, onClick: () -> Unit) {
-    Surface(onClick = onClick, color = if (selected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent, shape = com.breakyuna.esjzone.ui.designsystem.AppShapes.compact, modifier = Modifier.fillMaxWidth()) {
-        Row(Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f)) { Text(title, style = com.breakyuna.esjzone.ui.designsystem.AppTypography.labelLarge, maxLines = 1, overflow = TextOverflow.Ellipsis); subtitle?.let { Text(it, style = com.breakyuna.esjzone.ui.designsystem.AppTypography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) } }
-            if (selected) Icon(Icons.Filled.Check, null, tint = MaterialTheme.colorScheme.primary)
         }
     }
 }
@@ -790,32 +727,45 @@ private fun InlineSettingRow(
 }
 
 @Composable
-private fun SelectionSettingRow(title: String, subtitle: String? = null, onClick: () -> Unit) {
-    Surface(
-        onClick = onClick,
-        color = Color.Transparent,
-        shape = com.breakyuna.esjzone.ui.designsystem.AppShapes.compact,
-        modifier = Modifier.fillMaxWidth()
+private fun SiteSettingRow(
+    domains: List<String>,
+    selectedDomain: String,
+    enabled: Boolean,
+    onSelect: (String) -> Unit
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth().selectableGroup().padding(horizontal = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.Center
     ) {
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 10.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Column(Modifier.weight(1f)) {
-                Text(title, style = com.breakyuna.esjzone.ui.designsystem.AppTypography.labelLarge)
-                subtitle?.let {
-                    Text(it, style = com.breakyuna.esjzone.ui.designsystem.AppTypography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
+        Text("|", color = MaterialTheme.colorScheme.onSurfaceVariant)
+        domains.forEachIndexed { index, candidate ->
+            if (index > 0) Text("/", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Box(
+                modifier = Modifier.weight(1f).selectable(
+                    selected = candidate == selectedDomain,
+                    enabled = enabled,
+                    role = Role.RadioButton,
+                    onClick = { onSelect(candidate) }
+                ).padding(vertical = 12.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    candidate,
+                    style = com.breakyuna.esjzone.ui.designsystem.AppTypography.labelLarge,
+                    maxLines = 1,
+                    color = if (candidate == selectedDomain) MaterialTheme.colorScheme.primary
+                        else MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
-            Icon(Icons.Filled.ChevronRight, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
         }
+        Text("|", color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 
 @Composable
-private fun ToggleRow(title: String, subtitle: String, checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
-    Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 3.dp), horizontalArrangement = Arrangement.spacedBy(com.breakyuna.esjzone.ui.designsystem.AppSpacing.md), verticalAlignment = Alignment.CenterVertically) { Column(Modifier.weight(1f)) { Text(title, style = com.breakyuna.esjzone.ui.designsystem.AppTypography.labelLarge); Text(subtitle, style = com.breakyuna.esjzone.ui.designsystem.AppTypography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }; Switch(checked, onCheckedChange) }
+private fun ToggleRow(title: String, checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
+    Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 3.dp), horizontalArrangement = Arrangement.spacedBy(com.breakyuna.esjzone.ui.designsystem.AppSpacing.md), verticalAlignment = Alignment.CenterVertically) { Text(title, modifier = Modifier.weight(1f), style = com.breakyuna.esjzone.ui.designsystem.AppTypography.labelLarge); Switch(checked, onCheckedChange) }
 }
 
 @Composable

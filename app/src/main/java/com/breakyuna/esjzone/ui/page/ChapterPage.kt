@@ -960,8 +960,9 @@ class ChapterPage(
             chapter.url
         )
         val statisticsBookName = localHistoryPosition.value.novelName
-        val statisticsReady = (state as? ChapterPageModel.State.Result)
-            ?.chapters?.any { it.document.blocks.isNotEmpty() } == true
+        val statisticsIncognito by PresentationAccess.settings.readingStatisticsIncognitoFlow.collectAsState()
+        val statisticsReady = !statisticsIncognito && ((state as? ChapterPageModel.State.Result)
+            ?.chapters?.any { it.document.blocks.isNotEmpty() } == true)
         val statisticsSession = remember(statisticsBookKey, statisticsBookName) {
             ReadingStatisticsSession(statisticsBookKey, statisticsBookName)
         }

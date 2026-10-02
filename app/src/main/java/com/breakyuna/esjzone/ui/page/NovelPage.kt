@@ -1546,11 +1546,6 @@ private fun NovelDownloadActions(
             title = { Text(stringResource(R.string.novel_download_common_password_title)) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(AppSpacing.sm)) {
-                    Text(
-                        text = stringResource(R.string.novel_download_common_password_hint),
-                        style = AppTypography.bodySmall,
-                        color = appStateColors().contentMuted
-                    )
                     OutlinedTextField(
                         value = passwordInput,
                         onValueChange = { passwordInput = it },

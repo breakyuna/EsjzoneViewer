@@ -3,6 +3,8 @@ package com.breakyuna.esjzone.update
 import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.net.Uri
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import com.breakyuna.esjzone.ui.designsystem.GlobalToast as Toast
 import androidx.compose.material3.AlertDialog
 import com.breakyuna.esjzone.ui.designsystem.GlobalText as Text
@@ -10,6 +12,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import com.breakyuna.esjzone.ui.designsystem.globalStringResource as stringResource
 import com.breakyuna.esjzone.BuildConfig
@@ -28,7 +31,8 @@ internal fun ReleaseUpdateDialog() {
         text = {
             Text(
                 stringResource(R.string.update_available_message, BuildConfig.VERSION_NAME, release.version) +
-                    if (release.description.isBlank()) "" else "\n\n" + stringResource(R.string.update_release_notes, release.description)
+                    if (release.description.isBlank()) "" else "\n\n" + stringResource(R.string.update_release_notes, release.description),
+                modifier = Modifier.verticalScroll(rememberScrollState())
             )
         },
         confirmButton = {

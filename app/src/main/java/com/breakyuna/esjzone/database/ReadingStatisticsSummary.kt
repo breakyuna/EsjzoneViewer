@@ -34,7 +34,7 @@ class ReadingStatisticsSummary(
         return daily.filterKeys { !it.isBefore(first) && !it.isAfter(today) }.values.sum()
     }
 
-    fun tagDistribution(days: Int?): List<ReadingTagTotal> {
+    fun tagDistribution(days: Int?, groupSmallTags: Boolean = true): List<ReadingTagTotal> {
         val first = days?.let { today.minusDays(it.toLong() - 1L) }
         val totals = mutableMapOf<String, Long>()
         datedRows.forEach { (date, row) ->
@@ -47,10 +47,11 @@ class ReadingStatisticsSummary(
         }
         val total = totals.values.sum()
         if (total <= 0L) return emptyList()
-        val (visible, small) = totals.map { (tag, duration) -> ReadingTagTotal(tag, duration) }
+        val sorted = totals.map { (tag, duration) -> ReadingTagTotal(tag, duration) }
             .filter { it.durationMs > 0L }
             .sortedWith(compareByDescending<ReadingTagTotal> { it.durationMs }.thenBy { it.tag })
-            .partition { it.durationMs.toDouble() / total >= 0.05 }
+        if (!groupSmallTags) return sorted
+        val (visible, small) = sorted.partition { it.durationMs.toDouble() / total >= 0.05 }
         val otherDuration = small.sumOf { it.durationMs }
         return if (otherDuration > 0L) visible + ReadingTagTotal(null, otherDuration) else visible
     }

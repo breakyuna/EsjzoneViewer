@@ -130,10 +130,7 @@ object DownloadPage : AppDestination {
                                 IconButton(onClick = { showSettings = true }) { Icon(Icons.Filled.Settings, stringResource(R.string.download_settings)) }
                                 DropdownMenu(expanded = showSettings, onDismissRequest = { showSettings = false }) {
                                     DropdownMenuItem(
-                                        text = { Column {
-                                            Text(stringResource(R.string.download_auto_save), style = AppTypography.labelLarge)
-                                            Text(stringResource(R.string.download_auto_save_description), style = AppTypography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                        } },
+                                        text = { Text(stringResource(R.string.download_auto_save), style = AppTypography.labelLarge) },
                                         trailingIcon = { Switch(checked = autoSave, onCheckedChange = { model.setAutoSave(it) }) },
                                         onClick = { model.setAutoSave(!autoSave) }
                                     )

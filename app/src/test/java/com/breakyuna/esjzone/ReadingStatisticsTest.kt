@@ -40,7 +40,7 @@ class ReadingStatisticsTest {
         var elapsed = 1_000L
         val session = ReadingStatisticsSession(
             "book", "Book", { records.add(it) },
-            wallClock = { end }, elapsedClock = { elapsed }, zone = { zone }
+            wallClock = { end }, elapsedClock = { elapsed }, zone = { zone }, enabled = { true }
         )
 
         session.start()
@@ -60,7 +60,7 @@ class ReadingStatisticsTest {
         val session = ReadingStatisticsSession(
             "book", "Book", { records.add(it) },
             wallClock = { 1_700_000_000_000L + elapsed },
-            elapsedClock = { elapsed }, zone = { zone }
+            elapsedClock = { elapsed }, zone = { zone }, enabled = { true }
         )
         session.start()
         elapsed = 30_000L
@@ -74,6 +74,31 @@ class ReadingStatisticsTest {
         session.stop()
 
         assertEquals(55_000L, records.sumOf { it.durationMs })
+    }
+
+    @Test
+    fun incognitoReadingIsExcludedAndNormalReadingResumes() {
+        val records = mutableListOf<ReadingStat>()
+        var elapsed = 0L
+        var incognito = true
+        val session = ReadingStatisticsSession(
+            "book", "Book", { records.add(it) },
+            wallClock = { 1_700_000_000_000L + elapsed },
+            elapsedClock = { elapsed }, zone = { zone }, enabled = { !incognito }
+        )
+        session.start()
+        elapsed = 30_000L
+        session.stop()
+        assertEquals(0, records.size)
+        incognito = false
+        session.start()
+        elapsed = 40_000L
+        session.stop()
+        incognito = true
+        session.start()
+        elapsed = 70_000L
+        session.stop()
+        assertEquals(10_000L, records.sumOf { it.durationMs })
     }
 
     @Test
@@ -126,6 +151,20 @@ class ReadingStatisticsTest {
         assertEquals(listOf("Tag 0", "Tag 1", null), slices.map { it.tag })
         assertEquals(listOf(85L, 5L, 10L), slices.map { it.durationMs })
         assertEquals(100L, slices.sumOf { it.durationMs })
+    }
+
+    @Test
+    fun fullTagListKeepsSmallTagsAndMatchesChartTotal() {
+        val today = LocalDate.parse("2026-09-26")
+        val rows = listOf(90L, 6L, 4L).mapIndexed { index, duration ->
+            ReadingStat(today.toString(), "$index", "Book", duration)
+        }
+        val tags = rows.indices.associate { "$it" to listOf("Tag $it") }
+        val summary = ReadingStatisticsSummary(rows, today, tags)
+        val full = summary.tagDistribution(7, groupSmallTags = false)
+        assertEquals(listOf("Tag 0", "Tag 1", "Tag 2"), full.map { it.tag })
+        assertEquals(listOf(90L, 6L, 4L), full.map { it.durationMs })
+        assertEquals(summary.tagDistribution(7).sumOf { it.durationMs }, full.sumOf { it.durationMs })
     }
 
     @Test

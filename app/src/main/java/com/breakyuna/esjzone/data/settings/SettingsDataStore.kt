@@ -72,6 +72,8 @@ class SettingsDataStore(
         .stateIn(scope, SharingStarted.Eagerly, defaults.domain)
     override val language: StateFlow<AppLanguage> = values.map { it.language }
         .stateIn(scope, SharingStarted.Eagerly, defaults.language)
+    override val readingStatisticsIncognito: StateFlow<Boolean> = values.map { it.readingStatisticsIncognito }
+        .stateIn(scope, SharingStarted.Eagerly, defaults.readingStatisticsIncognito)
     override val readerAutoSave: StateFlow<Boolean> = values.map { it.readerAutoSave }
         .stateIn(scope, SharingStarted.Eagerly, defaults.readerAutoSave)
     override val downloadConcurrency: StateFlow<Int> = values.map { it.downloadConcurrency }
@@ -92,6 +94,7 @@ class SettingsDataStore(
         write { it[DOMAIN] = value.takeIf { candidate -> candidate in SettingsDefaults.DOMAINS } ?: defaults.domain }
     }
     override fun setLanguage(value: AppLanguage) = write { it[LANGUAGE] = value.code }
+    override fun setReadingStatisticsIncognito(value: Boolean) = write { it[READING_STATISTICS_INCOGNITO] = value }
     override fun setReaderAutoSave(value: Boolean) = write { it[READER_AUTO_SAVE] = value }
     override fun setDownloadConcurrency(value: Int) = write {
         it[DOWNLOAD_CONCURRENCY] = value.coerceIn(
@@ -163,6 +166,7 @@ class SettingsDataStore(
         val hideHomeRecommendations: Boolean = false,
         val domain: String = SettingsDefaults.DOMAINS.first(),
         val language: AppLanguage = AppLanguage.SYSTEM,
+        val readingStatisticsIncognito: Boolean = false,
         val readerAutoSave: Boolean = true,
         val downloadConcurrency: Int = SettingsDefaults.DEFAULT_DOWNLOAD_CONCURRENCY,
         val novelListGridView: Boolean = false,
@@ -177,6 +181,7 @@ class SettingsDataStore(
         hideHomeRecommendations = this[HIDE_HOME_RECOMMENDATIONS] ?: defaults.hideHomeRecommendations,
         domain = this[DOMAIN]?.takeIf { it in SettingsDefaults.DOMAINS } ?: defaults.domain,
         language = AppLanguage.fromCode(this[LANGUAGE]),
+        readingStatisticsIncognito = this[READING_STATISTICS_INCOGNITO] ?: defaults.readingStatisticsIncognito,
         readerAutoSave = this[READER_AUTO_SAVE] ?: defaults.readerAutoSave,
         downloadConcurrency = this[DOWNLOAD_CONCURRENCY]
             ?.coerceIn(SettingsDefaults.MIN_DOWNLOAD_CONCURRENCY, SettingsDefaults.MAX_DOWNLOAD_CONCURRENCY)
@@ -202,6 +207,7 @@ class SettingsDataStore(
         val HIDE_HOME_RECOMMENDATIONS = booleanPreferencesKey("hide_home_recommendations")
         val DOMAIN = stringPreferencesKey("domain")
         val LANGUAGE = stringPreferencesKey("language")
+        val READING_STATISTICS_INCOGNITO = booleanPreferencesKey("reading_statistics_incognito")
         val READER_AUTO_SAVE = booleanPreferencesKey("reader_auto_save")
         val DOWNLOAD_CONCURRENCY = intPreferencesKey("download_concurrency")
         val NOVEL_LIST_GRID_VIEW = booleanPreferencesKey("novel_list_grid_view")

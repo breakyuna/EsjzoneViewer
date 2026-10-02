@@ -58,12 +58,14 @@ class ReadingStatisticsSession(
     private val record: (ReadingStat) -> Unit = ReadingStatisticsRecorder::record,
     private val wallClock: () -> Long = System::currentTimeMillis,
     private val elapsedClock: () -> Long = SystemClock::elapsedRealtime,
-    private val zone: () -> ZoneId = ZoneId::systemDefault
+    private val zone: () -> ZoneId = ZoneId::systemDefault,
+    private val enabled: () -> Boolean = ReadingStatisticsRecorder::isEnabled
 ) {
     private var lastElapsedMs: Long? = null
 
     @Synchronized
     fun start() {
+        if (!enabled()) return
         if (lastElapsedMs == null) lastElapsedMs = elapsedClock()
     }
 
@@ -73,7 +75,7 @@ class ReadingStatisticsSession(
         val nowElapsed = elapsedClock()
         val duration = (nowElapsed - previous).coerceAtLeast(0L)
         lastElapsedMs = nowElapsed
-        if (duration == 0L) return
+        if (duration == 0L || !enabled()) return
         readingTimeSlices(wallClock(), duration, zone()).forEach { (date, milliseconds) ->
             record(ReadingStat(date.toString(), bookKey, bookName, milliseconds))
         }
@@ -93,12 +95,16 @@ object ReadingStatisticsRecorder {
 
     const val TAGS_KEY_PREFIX = "reading_stats_tags:"
 
+    fun isEnabled(): Boolean = !EsjzoneApplication.instance.container.settings.readingStatisticsIncognito.value
+
     fun recordTags(novel: DetailedNovel) {
+        if (!isEnabled()) return
         val bookKey = readingStatisticsBookKey(novel.id(), novel.url)
         val tags = novel.tags.map(String::trim).filter(String::isNotEmpty).distinct()
         if (bookKey.isBlank() || tags.isEmpty()) return
         scope.launch {
             mutex.withLock {
+                if (!isEnabled()) return@withLock
                 try {
                     EsjzoneApplication.instance.container.database.cacheDao()
                         .put(TAGS_KEY_PREFIX + bookKey, Gson().toJson(tags))
@@ -112,10 +118,11 @@ object ReadingStatisticsRecorder {
     }
 
     fun record(stat: ReadingStat) {
+        if (!isEnabled()) return
         val recordedGeneration = generation.get()
         scope.launch {
             mutex.withLock {
-                if (recordedGeneration != generation.get()) return@withLock
+                if (!isEnabled() || recordedGeneration != generation.get()) return@withLock
                 try {
                     EsjzoneApplication.instance.container.database.readingStatDao().add(stat)
                 } catch (error: CancellationException) {
