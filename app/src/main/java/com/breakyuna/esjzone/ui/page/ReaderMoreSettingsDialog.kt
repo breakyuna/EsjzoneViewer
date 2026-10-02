@@ -4,10 +4,12 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.FilterChip
-import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Switch
 import androidx.compose.runtime.Composable
@@ -22,6 +24,9 @@ import com.breakyuna.esjzone.R
 import com.breakyuna.esjzone.ui.designsystem.GlobalText as Text
 import com.breakyuna.esjzone.ui.designsystem.globalStringResource as stringResource
 import com.breakyuna.esjzone.ui.reader.ReaderSettings
+import com.breakyuna.esjzone.ui.designsystem.AppShapes
+import com.breakyuna.esjzone.ui.designsystem.AppSpacing
+import com.breakyuna.esjzone.ui.designsystem.AppTypography
 
 @Composable
 internal fun ReaderMoreSettingsContent(
@@ -33,24 +38,28 @@ internal fun ReaderMoreSettingsContent(
         draft = value
         onSettingsChange(value)
     }
-    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Text(stringResource(R.string.reader_more_controls), style = MaterialTheme.typography.titleSmall,
-            color = MaterialTheme.colorScheme.primary)
+    SettingsSection(title = stringResource(R.string.reader_more_controls)) {
         MoreReaderToggle(stringResource(R.string.reader_tap_paging), draft.tapPagingEnabled) {
             commit(draft.copy(tapPagingEnabled = it))
         }
-        Column(Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
-            Text(stringResource(R.string.reader_left_tap_action), style = MaterialTheme.typography.bodyLarge)
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Column(Modifier.fillMaxWidth().padding(horizontal = AppSpacing.md, vertical = AppSpacing.sm)) {
+            Text(stringResource(R.string.reader_left_tap_action), style = AppTypography.bodyMedium)
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(AppSpacing.sm)) {
                 FilterChip(
                     selected = !draft.leftTapForward,
                     onClick = { commit(draft.copy(leftTapForward = false)) },
-                    label = { Text(stringResource(R.string.reader_left_tap_previous)) }
+                    shape = AppShapes.compact,
+                    border = null,
+                    colors = FilterChipDefaults.filterChipColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
+                    label = { Text(stringResource(R.string.reader_left_tap_previous), style = AppTypography.labelMedium) }
                 )
                 FilterChip(
                     selected = draft.leftTapForward,
                     onClick = { commit(draft.copy(leftTapForward = true)) },
-                    label = { Text(stringResource(R.string.reader_left_tap_next)) }
+                    shape = AppShapes.compact,
+                    border = null,
+                    colors = FilterChipDefaults.filterChipColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
+                    label = { Text(stringResource(R.string.reader_left_tap_next), style = AppTypography.labelMedium) }
                 )
             }
         }
@@ -60,9 +69,8 @@ internal fun ReaderMoreSettingsContent(
         MoreReaderToggle(stringResource(R.string.settings_auto_resume_reading), draft.autoResumeLastReading) {
             commit(draft.copy(autoResumeLastReading = it))
         }
-        HorizontalDivider(Modifier.padding(vertical = 8.dp))
-        Text(stringResource(R.string.reader_more_display), style = MaterialTheme.typography.titleSmall,
-            color = MaterialTheme.colorScheme.primary)
+    }
+    SettingsSection(title = stringResource(R.string.reader_more_display)) {
         MoreReaderToggle(stringResource(R.string.reader_eye_protection), draft.eyeProtectionEnabled) {
             commit(draft.copy(eyeProtectionEnabled = it))
         }
@@ -84,11 +92,12 @@ internal fun ReaderMoreSettingsContent(
 @Composable
 private fun MoreReaderToggle(title: String, checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
     Row(
-        Modifier.fillMaxWidth().clickable { onCheckedChange(!checked) }.padding(vertical = 8.dp),
+        Modifier.fillMaxWidth().heightIn(min = 56.dp).clickable { onCheckedChange(!checked) }
+            .padding(horizontal = AppSpacing.md, vertical = AppSpacing.xs),
+        horizontalArrangement = Arrangement.spacedBy(AppSpacing.md),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Text(title, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
+        Text(title, style = AppTypography.bodyMedium, modifier = Modifier.weight(1f))
         Switch(checked = checked, onCheckedChange = onCheckedChange)
     }
 }
-

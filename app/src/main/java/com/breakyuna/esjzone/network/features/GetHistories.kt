@@ -39,8 +39,9 @@ internal fun parseHistoryNovels(document: Document): List<HistoryNovel> {
     val novels = mutableListOf<HistoryNovel>()
 
     for (element in historySelector.select(document, "table.table tr, tr.view-log")) {
-        val idAttr = element.attr("id")
-        val vid = idAttr.removePrefix("novel-")
+        val vid = element.selectFirst(".view-del[data-id]")?.attr("data-id")?.trim()
+            ?.takeIf(String::isNotBlank)
+            ?: element.id().takeIf { it.startsWith("view_") }?.removePrefix("view_").orEmpty()
         val novelData = historySelector.first(
             element,
             ".view-log h5 a[href^='/detail/'], h5 a[href^='/detail/']"

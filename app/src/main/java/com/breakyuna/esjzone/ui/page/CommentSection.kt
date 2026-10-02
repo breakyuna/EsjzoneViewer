@@ -94,9 +94,11 @@ import com.breakyuna.esjzone.network.features.CommentSubmissionNotVerifiedExcept
 import com.breakyuna.esjzone.network.features.CommentSubmissionTimeoutException
 import com.breakyuna.esjzone.network.features.ForumReplyBusinessException
 import com.breakyuna.esjzone.network.features.ForumCommentPreparation
+import com.breakyuna.esjzone.network.features.commentParentId
 import com.breakyuna.esjzone.network.features.findCreatedComment
 import com.breakyuna.esjzone.network.features.getCommentPageSnapshot
 import com.breakyuna.esjzone.network.features.getPageComments
+import com.breakyuna.esjzone.network.features.localCommentSubmission
 import com.breakyuna.esjzone.network.features.getUserProfile
 import com.breakyuna.esjzone.network.features.submitForumComment
 import com.breakyuna.esjzone.novellibrary.novel.COMMENT_PAGE_SIZE
@@ -543,8 +545,7 @@ internal fun CommentComposerHost(
         onRefresh = {
             val currentError = model.submitError.value
             val uncertainSubmission = currentError == CommentSubmitError.TIMEOUT ||
-                currentError == CommentSubmitError.NOT_VERIFIED ||
-                currentError == CommentSubmitError.EXPERIENCE_INCREASED
+                currentError == CommentSubmitError.NOT_VERIFIED
             if (!uncertainSubmission) {
                 model.clearSubmitError()
             }
@@ -1202,7 +1203,7 @@ internal class CommentPageModel(
                         val found = pending?.takeIf { !isSubmitting.value }
                             ?.let { findCreatedComment(comments, it.previousIds, it.content) }
                         if (found != null) {
-                            completeRecoveredSubmission(found)
+                            completeSubmission(found)
                             timing.point("new_comment_verified_after_refresh")
                             recovered = true
                         } else if (allowRetryAfterRefresh && pending != null && !isSubmitting.value) {
@@ -1263,6 +1264,8 @@ internal class CommentPageModel(
     private data class PendingSubmission(
         val content: String,
         val previousIds: Set<String>,
+        val comments: List<Comment>,
+        val replyToken: String?,
         val attemptId: Long
     )
     @Volatile private var pendingSubmission: PendingSubmission? = null
@@ -1324,12 +1327,7 @@ internal class CommentPageModel(
                 ensureActive()
                 timing.stage("ui_state_update") {
                     mutableState.value = CommunityState.Result(submission.comments, isSyncSuccess = true)
-                    lastCreatedCommentId.value = submission.createdComment.id
-                    draft.value = ""
-                    lastSubmittedContent = null
-                    pendingSubmission = null
-                    this@CommentPageModel.replyToken.value = null
-                    this@CommentPageModel.replyAuthor.value = null
+                    completeSubmission(submission.createdComment)
                 }
                 timing.point("new_comment_added_to_list")
                 outcome = "accepted"
@@ -1342,7 +1340,7 @@ internal class CommentPageModel(
             } catch (error: CommentSubmissionTimeoutException) {
                 outcome = "uncertain_timeout"
                 val previousIds = error.comments.mapTo(mutableSetOf()) { it.id }
-                pendingSubmission = PendingSubmission(submitted, previousIds, attemptId)
+                pendingSubmission = PendingSubmission(submitted, previousIds, error.comments, replyToken, attemptId)
                 mutableState.value = CommunityState.Result(error.comments, isSyncSuccess = false)
                 submitError.value = CommentSubmitError.TIMEOUT
                 AppLogger.w("CommentPageModel", "Comment submit timed out; attempting silent recovery", error)
@@ -1358,7 +1356,7 @@ internal class CommentPageModel(
                 }
             } catch (error: CommentSubmissionNotVerifiedException) {
                 outcome = "uncertain_not_verified"
-                pendingSubmission = PendingSubmission(submitted, error.previousIds, attemptId)
+                pendingSubmission = PendingSubmission(submitted, error.previousIds, error.comments, replyToken, attemptId)
                 mutableState.value = CommunityState.Result(error.comments, isSyncSuccess = false)
                 submitError.value = CommentSubmitError.NOT_VERIFIED
                 AppLogger.w("CommentPageModel", "Comment write completed but was not verified")
@@ -1390,6 +1388,7 @@ internal class CommentPageModel(
     ) {
         try {
             timing.suspendingStage("comment_recovery_delay") { delay(3000L) }
+            if (pendingSubmission?.attemptId != attemptId) return
             val comments = timing.stage("comment_recovery_fetch") {
                 PresentationAccess.client.getPageComments(
                     authorization,
@@ -1408,7 +1407,7 @@ internal class CommentPageModel(
                     } else {
                         CommunityState.Result(comments, isSyncSuccess = true)
                     }
-                    completeRecoveredSubmission(found)
+                    completeSubmission(found)
                     timing.point("new_comment_added_to_list_after_recovery")
                     true
                 }
@@ -1421,7 +1420,7 @@ internal class CommentPageModel(
         }
     }
 
-    private fun completeRecoveredSubmission(comment: Comment) {
+    private fun completeSubmission(comment: Comment) {
         lastCreatedCommentId.value = comment.id
         draft.value = ""
         lastSubmittedContent = null
@@ -1450,43 +1449,63 @@ internal class CommentPageModel(
         return timing.stage("experience_fresh_fetch") { fetchFreshProfile()?.exp }
     }
 
-    private suspend fun checkExperienceIncrease(baseline: Int?, attemptId: Long, timing: CommentRequestTiming) {
-        if (baseline == null) return
-        timing.suspendingStage("experience_recovery_delay") { delay(2000L) }
+    private suspend fun checkExperienceIncrease(
+        baseline: Int?,
+        attemptId: Long,
+        timing: CommentRequestTiming
+    ) {
+        if (baseline == null || pendingSubmission?.attemptId != attemptId) return
         timing.point("after_send_experience_started")
         var profile = timing.stage("experience_recovery_fetch") { fetchFreshProfile() }
         timing.point("after_send_experience_ready", if (profile?.exp != null) "available" else "unavailable")
-        if (attemptId != submitAttemptId) return
+        if (pendingSubmission?.attemptId != attemptId) return
         if (!experienceSupportsSubmission(baseline, profile?.exp)) {
-            // The account page can lag the write response too. Make one bounded
-            // follow-up check without holding the composer in its loading state.
+            // The profile can lag the write. Recheck once without resending the comment.
             timing.suspendingStage("experience_recovery_followup_delay") { delay(6000L) }
-            if (attemptId != submitAttemptId) return
+            if (pendingSubmission?.attemptId != attemptId) return
             timing.point("after_send_experience_started")
             profile = timing.stage("experience_recovery_followup_fetch") { fetchFreshProfile() }
             timing.point("after_send_experience_ready", if (profile?.exp != null) "available" else "unavailable")
         }
         if (!experienceSupportsSubmission(baseline, profile?.exp)) return
         val updatedProfile = profile ?: return
-        val evidenceApplied = withContext(Dispatchers.Main) {
-            if (attemptId == submitAttemptId &&
-                (submitError.value == CommentSubmitError.TIMEOUT ||
-                    submitError.value == CommentSubmitError.NOT_VERIFIED)
-            ) {
-                submitError.value = CommentSubmitError.EXPERIENCE_INCREASED
-                true
-            } else {
-                false
+        val confirmed = withContext(Dispatchers.Main) {
+            val pending = pendingSubmission?.takeIf { it.attemptId == attemptId }
+                ?: return@withContext false
+            if (attemptId != submitAttemptId) return@withContext false
+            val comments = (mutableState.value as? CommunityState.Result)?.data ?: pending.comments
+            val submission = localCommentSubmission(
+                parentId = commentParentId(pageUrl),
+                content = pending.content,
+                replyToken = pending.replyToken,
+                previousComments = comments,
+                authorName = updatedProfile.name,
+                authorAvatarUrl = updatedProfile.avatarUrl
+            )
+            // A refresh started before confirmation must not replace this result with old HTML.
+            ++loadGeneration
+            loadJob?.cancel()
+            loadStarted = false
+            forumPreparation = null
+            timing.point("comment_experience_confirmed")
+            timing.stage("ui_state_update") {
+                mutableState.value = CommunityState.Result(submission.comments, isSyncSuccess = true)
+                completeSubmission(submission.createdComment)
             }
+            timing.point("new_comment_added_to_list_after_experience")
+            true
         }
-        if (!evidenceApplied) return
+        if (!confirmed) return
         val domain = authorization.domain.ifBlank { PresentationAccess.settings.domain.value }
         try {
+            timing.stage("cache_invalidate") {
+                PresentationAccess.client.invalidatePage(authorization, EsjzoneUrls.resolve(pageUrl).substringBefore('#'))
+            }
             cacheUserProfile(authorization, domain, updatedProfile)
         } catch (error: CancellationException) {
             throw error
         } catch (error: Exception) {
-            AppLogger.w("CommentPageModel", "Failed to cache profile after uncertain comment submission")
+            AppLogger.w("CommentPageModel", "Failed to update cache after experience-confirmed comment")
         }
     }
 
@@ -1517,7 +1536,6 @@ internal sealed class CommentSubmitError {
     data object FAILED : CommentSubmitError()
     data object NOT_VERIFIED : CommentSubmitError()
     data object TIMEOUT : CommentSubmitError()
-    data object EXPERIENCE_INCREASED : CommentSubmitError()
     data class Server(val serverMessage: String) : CommentSubmitError()
 
     fun message(context: android.content.Context): String = when (this) {
@@ -1525,7 +1543,6 @@ internal sealed class CommentSubmitError {
         FAILED -> context.getString(R.string.comment_submit_failed)
         NOT_VERIFIED -> context.getString(R.string.comment_submit_unverified)
         TIMEOUT -> context.getString(R.string.comment_submit_timeout)
-        EXPERIENCE_INCREASED -> context.getString(R.string.comment_submit_experience_increased)
         is Server -> serverMessage.ifBlank { context.getString(R.string.comment_submit_failed) }
     }
 }

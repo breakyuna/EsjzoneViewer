@@ -4,7 +4,7 @@
 
 ## 1. 访问与证据边界
 
-站点主体是传统服务端渲染 HTML。首页、列表、搜索、详情、章节、会员页和论坛页均可从 DOM 直接读取内容；本次没有获得浏览器网络层的 XHR/fetch 列表，也没有读取静态 JS 文件正文。外部脚本 modifyDetail.js?v=204 在云浏览器中直接打开时被客户端拦截。收藏切换另由项目维护者抓包确认，见第 6 节；其他动态写入仍不做未经证实的 API 猜测。
+站点主体是传统服务端渲染 HTML。首页、列表、搜索、详情、章节、会员页和论坛页均可从 DOM 直接读取内容；本次没有获得浏览器网络层的 XHR/fetch 列表，也没有读取静态 JS 文件正文。外部脚本 modifyDetail.js?v=204 在云浏览器中直接打开时被客户端拦截。收藏切换和云端观看记录删除另由项目维护者抓包确认，分别见第 6 节和第 3.1 节；其他动态写入仍不做未经证实的 API 猜测。
 
 所有需要登录的请求都应复用对应域名的登录会话，不能把会话 Cookie 或授权值写入配置文件。Android 客户端的一次用户登录输入可以对两个镜像分别执行登录；切站只更改前台请求地址，后台已入队下载仍使用入队时的地址。
 
@@ -44,17 +44,26 @@
 
 ### 3.1 删除观看记录
 
-| 项目 | 观察结果 |
+2026-10-02 项目维护者提供登录会话下的实际抓包，确认以下协议。客户端维护期间未执行真实账户删除。
+
+1. 使用目标站点已有登录 Cookie，向 `/my/view` 发出 POST：`plxf=getAuthToken`。
+   Content-Type 为 `application/x-www-form-urlencoded`，Accept 为 `text/javascript, text/html, application/xml, text/xml, */*`。
+2. 从响应 `<JinJing>[AUTH_TOKEN]</JinJing>` 提取运行时 Token，不持久化或记录其值。
+3. 向同一站点 `/inc/mem_view_del.php` 发出 POST，表单字段为 `vid={viewRecordId}`。
+
+| 项目 | 抓包确认 |
 |---|---|
-| URL | /inc/mem_view_del.php |
-| 方法 | POST |
-| 请求体 | 表单字段 vid={viewRecordId} |
-| 请求头 | authorization: <getAuthToken 回调返回值> |
-| 响应 | dataType: 'json' |
-| 成功条件 | result.status == 200 |
-| 成功副作用 | 删除 DOM 节点 #view_{vid} |
-| 证据 | /my/view 内联脚本 Observed |
-| 是否执行 | 未执行，避免破坏用户记录 |
+| Content-Type | application/x-www-form-urlencoded; charset=UTF-8 |
+| Accept | application/json, text/javascript, */*; q=0.01 |
+| authorization | 上一步返回的运行时 Token |
+| X-Requested-With | XMLHttpRequest |
+| 成功响应 | `{"status":200,"msg":"","url":"","id":"","swal":""}` |
+| 成功条件 | HTTP 成功且 JSON 数值 `status == 200`；仅 HTTP 2xx 不足以确认 |
+| View ID 来源 | 优先 `.view-del[data-id]`，缺失时取行 ID `view_` 后缀 |
+
+`vid` 是观看记录自身的 ID，不是小说 ID 或章节 ID；不从 `novel-` 行 ID 推导。批量删除先获取一次 Token，再串行删除多个 View ID；遇到未确认结果停止，不自动重试写请求。界面只移除已确认成功的项，并提示刷新核对其余记录。仅更新云端历史列表及缓存，不删除本地阅读历史。
+
+请求基址固定为本次授权对象的站点。旧云端快照的 `vid` 曾存储小说 ID，现改存 `viewRecordId`；旧记录仍可显示，但必须刷新得到真实 View ID 后才能删除。
 
 ### 3.2 加载私讯
 
@@ -158,6 +167,8 @@
 - 再 POST `/inc/forum_reply.php`，携带同一 CookieJar、`authorization: {token}`、`X-Requested-With: XMLHttpRequest`、`Origin: https://www.esjzone.cc` 与 URL-encoded form。
 - HTTP 2xx 不代表写入成功；解析 JSON `status`。`status=200` 成功，其他状态直接展示非空 `msg`。实测 `status=214`、`msg=每日留言次數已超過限制！` 为当日次数上限。
 - 成功响应可带 `anchor="#comment-{commentId}"`，用于定位新评论。业务失败不得刷新或假装评论已发送。
+- 客户端将发送前后可用经验值的增加视为可靠的发送确认：写入超时或页面未核验到新评论时，立即读取最新资料；确认增加后直接追加本地评论、定位新评论并清空草稿、回复和错误状态，无须等待页面再次显示评论。经验值确认使用本地临时评论 ID，真实 ID 由后续页面刷新取得；这是客户端确认策略，不代表本次已观察到网页中的新评论。
+- 经验值首次未增加时保留一次 6 秒后的重查；经验值缺失、持平或下降不确认成功，业务明确拒绝时不启动这条确认路径。核验不自动重发。迟到的恢复结果不能重复追加评论，确认前启动的页面刷新不能覆盖本地成功状态。
 
 ### 7.2 客户端评论流程计时日志
 
@@ -166,4 +177,5 @@
 - 加载阶段包括 `experience_prefetch`（与评论加载并行）、`initial_comments_read`、`comments_refresh_parse` 和 `comments_publish`。发送阶段包括经验值预取等待/复用/重新获取、页面读取或预取复用、`auth_token`、`comment_post`、`response_headers`（从执行 POST 到收到响应头）、`response_body`、`response_parse`、缓存失效、本地评论构造和 `ui_state_update`。
 - 留言板还记录 `guestbook_post`、`guestbook_refresh` 和 `guestbook_verify`。后台恢复分别记录固定延时与页面/资料请求；发送成功后的资料刷新记录为 `profile_refresh_after_success`。
 - 明确时间节点包括 `before_send_experience_started` / `before_send_experience_ready`（发送前经验值获取或预取复用）、`after_send_experience_started` / `after_send_experience_ready`（发送后资料请求，完成节点在缓存写入之前）、`comment_response_accepted`（评论接口确认接受）和 `new_comment_added_to_list`（新评论写入页面列表状态）。恢复路径另有 `new_comment_added_to_list_after_recovery` / `new_comment_verified_after_refresh`；发送后经验值重查会再次记录同名节点。节点的绝对时间由日志前缀提供，精确到毫秒，`total_ms` 表示距流程开始的相对时间；`available` / `unavailable` 区分是否取得经验值，不记录数值。
-- `stage=flow` 的结束记录表示前台流程结束，发送流程在 `isSubmitting=false` 后记录；后续后台记录不计入此前台耗时。`completed` 只表示该阶段正常返回，是否发送成功以流程结果 `accepted` 为准。嵌套阶段和并行阶段不能直接相加；`ui_state_update` 测量状态写入，不代表屏幕已经完成绘制。
+- 经验值确认成功另记录 `comment_experience_confirmed`，紧接 `ui_state_update` 和 `new_comment_added_to_list_after_experience`；资料缓存写入在界面状态更新后进行。个人资料页订阅当前账户的经验值缓存，直接显示此次确认得到的经验值，无须为此再请求资料接口。
+- `stage=flow` 的结束记录表示前台流程结束，发送流程在 `isSubmitting=false` 后记录；后续后台记录不计入此前台耗时。`completed` 只表示该阶段正常返回，发送成功可由流程结果 `accepted` 或后续的 `comment_experience_confirmed`、评论页面核验成功节点确认。嵌套阶段和并行阶段不能直接相加；`ui_state_update` 测量状态写入，不代表屏幕已经完成绘制。

@@ -33,12 +33,13 @@ import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -67,6 +68,7 @@ import com.breakyuna.esjzone.R
 import com.breakyuna.esjzone.ui.designsystem.AppShapes
 import com.breakyuna.esjzone.ui.designsystem.AppSpacing
 import com.breakyuna.esjzone.ui.designsystem.AppTypography
+import com.breakyuna.esjzone.ui.designsystem.accountContentWidth
 import com.breakyuna.esjzone.ui.navigation.AppDestination
 import com.breakyuna.esjzone.ui.navigation.LocalBaseNavigator
 import com.breakyuna.esjzone.util.AppLogger
@@ -106,7 +108,7 @@ object LogsPage : AppDestination {
         Scaffold(
             topBar = {
                 TopAppBar(
-                    title = { Text(stringResource(R.string.system_logs), style = AppTypography.titleLarge) },
+                    title = { Text(stringResource(R.string.system_logs), style = AppTypography.titleMedium) },
                     navigationIcon = { BackIconButton { navigator?.pop() } },
                     actions = {
                         if (crashReport != null) IconButton(onClick = { crashDialog = true }) { Icon(Icons.Filled.BugReport, stringResource(R.string.logs_crash_report_btn), tint = logCrashErrorColor()) }
@@ -126,12 +128,19 @@ object LogsPage : AppDestination {
                 )
             }
         ) { padding ->
-            Column(Modifier.fillMaxSize().padding(padding)) {
+            Column(Modifier.fillMaxSize().padding(padding).accountContentWidth()) {
                 OutlinedTextField(
                     value = query,
                     onValueChange = { query = it },
                     modifier = Modifier.fillMaxWidth().padding(horizontal = AppSpacing.lg, vertical = AppSpacing.sm),
                     singleLine = true,
+                    shape = AppShapes.standard,
+                    textStyle = AppTypography.bodyMedium,
+                    colors = OutlinedTextFieldDefaults.colors(
+                        unfocusedContainerColor = MaterialTheme.colorScheme.surface,
+                        focusedContainerColor = MaterialTheme.colorScheme.surface,
+                        unfocusedBorderColor = Color.Transparent
+                    ),
                     placeholder = { Text(stringResource(R.string.logs_search_placeholder)) },
                     leadingIcon = { Icon(Icons.Filled.Search, null) },
                     trailingIcon = { if (query.isNotBlank()) IconButton(onClick = { query = "" }) { Icon(Icons.Filled.Close, null) } }
@@ -144,12 +153,11 @@ object LogsPage : AppDestination {
                     LogFilter(LogLevel.INFO, stringResource(R.string.logs_filter_info), logs.count { it.level == LogLevel.INFO }, filter == LogLevel.INFO) { filter = if (filter == LogLevel.INFO) null else LogLevel.INFO }
                     LogFilter(LogLevel.DEBUG, stringResource(R.string.logs_filter_debug), logs.count { it.level == LogLevel.DEBUG }, filter == LogLevel.DEBUG) { filter = if (filter == LogLevel.DEBUG) null else LogLevel.DEBUG }
                 }
-                HorizontalDivider(Modifier.padding(top = AppSpacing.sm))
                 if (visible.isEmpty()) {
                     Column(Modifier.fillMaxSize().padding(AppSpacing.xxxl), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
-                        Icon(Icons.Filled.BugReport, null, Modifier.size(40.dp), tint = MaterialTheme.colorScheme.primary)
-                        Text(stringResource(if (logs.isEmpty()) R.string.logs_empty else R.string.logs_no_matches), style = AppTypography.titleMedium, modifier = Modifier.padding(top = AppSpacing.md))
-                        Text(stringResource(if (logs.isEmpty()) R.string.logs_empty_guidance else R.string.logs_search_empty_guidance), style = AppTypography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Icon(Icons.Filled.BugReport, null, Modifier.size(24.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(stringResource(if (logs.isEmpty()) R.string.logs_empty else R.string.logs_no_matches), style = AppTypography.labelLarge, modifier = Modifier.padding(top = AppSpacing.md))
+                        Text(stringResource(if (logs.isEmpty()) R.string.logs_empty_guidance else R.string.logs_search_empty_guidance), style = AppTypography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 } else {
                     LazyColumn(Modifier.fillMaxSize(), state = rememberLazyListState(), contentPadding = PaddingValues(AppSpacing.lg), verticalArrangement = Arrangement.spacedBy(AppSpacing.sm)) {
@@ -178,7 +186,9 @@ object LogsPage : AppDestination {
 
 @Composable
 private fun LogFilter(level: LogLevel?, label: String, count: Int, selected: Boolean, onClick: () -> Unit) {
-    FilterChip(selected = selected, onClick = onClick, label = { Text("$label ($count)") })
+    FilterChip(selected = selected, onClick = onClick, shape = AppShapes.compact, border = null,
+        colors = FilterChipDefaults.filterChipColors(containerColor = MaterialTheme.colorScheme.surface),
+        label = { Text("$label ($count)", style = AppTypography.labelMedium) })
 }
 
 @Composable
@@ -197,8 +207,8 @@ private fun LogItem(entry: LogEntry, context: Context) {
         LogLevel.WARN -> logWarnColor()
         else -> MaterialTheme.colorScheme.primary
     }
-    Surface(shape = AppShapes.standard, color = if (entry.level == LogLevel.CRASH) MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.55f) else MaterialTheme.colorScheme.surfaceContainer) {
-        Column(Modifier.fillMaxWidth().padding(AppSpacing.md), verticalArrangement = Arrangement.spacedBy(AppSpacing.sm)) {
+    Surface(shape = AppShapes.standard, color = if (entry.level == LogLevel.CRASH) MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.55f) else MaterialTheme.colorScheme.surface) {
+        Column(Modifier.fillMaxWidth().padding(AppSpacing.lg), verticalArrangement = Arrangement.spacedBy(AppSpacing.sm)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(label, style = AppTypography.labelMedium, color = accent, fontWeight = FontWeight.Bold)
                 Text(entry.tag, style = AppTypography.labelLarge, color = MaterialTheme.colorScheme.primary, modifier = Modifier.weight(1f).padding(start = AppSpacing.sm), maxLines = 1, overflow = TextOverflow.Ellipsis)

@@ -170,7 +170,8 @@ internal data class HistoryNovelSnapshot(
     val name: String = "",
     @SerializedName("url")
     val url: String = "",
-    @SerializedName("vid")
+    // Legacy "vid" stored a novel ID. Keep the row readable, but require a refresh before deletion.
+    @SerializedName("viewRecordId")
     val vid: String = "",
     @SerializedName("chapterName")
     val chapterName: String = "",

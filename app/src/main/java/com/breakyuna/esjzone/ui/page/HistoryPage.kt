@@ -10,6 +10,7 @@ import android.text.format.DateUtils
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -131,6 +132,7 @@ object HistoryPage : AppDestination {
         val authorization = LocalAuthorization.current
         val localModel = rememberAppViewModel { LocalHistoryPageModel(authorization) }
         val cloudModel = rememberAppViewModel { HistoryPageModel(authorization) }
+        val cloudDetailLoader = rememberAppViewModel { NovelDetailLoader(authorization) }
         val localState by localModel.state.collectAsStateWithLifecycle()
         val cloudState by cloudModel.state.collectAsStateWithLifecycle()
         var selectedPage by rememberSaveable { mutableIntStateOf(0) }
@@ -142,15 +144,23 @@ object HistoryPage : AppDestination {
         var showLocalDeleteDialog by remember { mutableStateOf(false) }
         var localDeleteError by remember { mutableStateOf(false) }
         var deletingLocal by remember { mutableStateOf(false) }
+        var cloudEditing by rememberSaveable { mutableStateOf(false) }
+        var cloudSelected by remember { mutableStateOf<Set<String>>(emptySet()) }
+        var pendingCloudDelete by remember { mutableStateOf<Set<String>>(emptySet()) }
+        var showCloudDeleteDialog by remember { mutableStateOf(false) }
+        var cloudDeleteError by remember { mutableStateOf(false) }
         var showCloudSyncStatusMenu by remember { mutableStateOf(false) }
 
-        BackHandler(enabled = localEditing && !showLocalDeleteDialog) {
+        BackHandler(enabled = (localEditing || cloudEditing) && !showLocalDeleteDialog && !showCloudDeleteDialog) {
             localEditing = false
             localSelected = emptySet()
+            cloudEditing = false
+            cloudSelected = emptySet()
         }
         val suppressFloatingNav = LocalFloatingNavSuppression.current
-        DisposableEffect(localEditing, showLocalDeleteDialog, suppressFloatingNav) {
-            suppressFloatingNav(localEditing || showLocalDeleteDialog)
+        val suppressNav = localEditing || cloudEditing || showLocalDeleteDialog || showCloudDeleteDialog
+        DisposableEffect(suppressNav, suppressFloatingNav) {
+            suppressFloatingNav(suppressNav)
             onDispose { suppressFloatingNav(false) }
         }
         val pager = rememberPagerState(initialPage = 0, pageCount = { 2 })
@@ -160,6 +170,12 @@ object HistoryPage : AppDestination {
             ?.filter { query.isBlank() || it.novelName.contains(query, true) || it.chapterName.contains(query, true) }
             .orEmpty()
         val localRowIds = remember(localRows) { localRows.mapTo(LinkedHashSet()) { it.activityId } }
+        val cloudRows = (cloudState as? HistoryPageModel.State.Result)?.historyNovels.orEmpty()
+            .distinctBy { it.url.ifBlank { it.name } }.filterByHistoryQuery(query)
+        val cloudRowIds = cloudRows.filter { history ->
+            val detail = cloudDetailLoader.details[cloudDetailLoader.key(history)]
+            history.vid.isNotBlank() && detail != null && (PresentationAccess.settings.adult.value || !detail.isAdult)
+        }.mapTo(linkedSetOf()) { it.vid }
 
         // This destination's ViewModels outlive recompositions. Start the one
         // cloud refresh when the screen enters, rather than from page content.
@@ -168,10 +184,18 @@ object HistoryPage : AppDestination {
             cloudModel.getNovels(forceRefresh = true)
         }
         LaunchedEffect(selectedPage) {
+            if (selectedPage == 0) {
+                cloudEditing = false
+                cloudSelected = emptySet()
+            } else {
+                localEditing = false
+                localSelected = emptySet()
+            }
             if (pager.currentPage != selectedPage) pager.animateScrollToPage(selectedPage)
         }
         LaunchedEffect(pager) { snapshotFlow { pager.currentPage }.collect { selectedPage = it } }
         LaunchedEffect(localRowIds) { localSelected = localSelected.intersect(localRowIds) }
+        LaunchedEffect(cloudRowIds) { cloudSelected = cloudSelected.intersect(cloudRowIds) }
 
         fun finishLocalEditing() {
             localEditing = false
@@ -184,6 +208,13 @@ object HistoryPage : AppDestination {
             pendingLocalDelete = localSelected
             localDeleteError = false
             showLocalDeleteDialog = localSelected.isNotEmpty()
+        }
+
+        fun finishCloudEditing() {
+            cloudEditing = false
+            cloudSelected = emptySet()
+            pendingCloudDelete = emptySet()
+            showCloudDeleteDialog = false
         }
 
         Scaffold(
@@ -224,6 +255,33 @@ object HistoryPage : AppDestination {
                                 IconButton(onClick = { localEditing = true; localSelected = emptySet() }) {
                                     Icon(Icons.Filled.Edit, stringResource(R.string.history_local_edit))
                                 }
+                            }
+                        } else if (cloudEditing) {
+                            IconButton(
+                                onClick = { cloudSelected = if (cloudSelected == cloudRowIds) emptySet() else cloudRowIds },
+                                enabled = cloudRowIds.isNotEmpty() && !cloudModel.deleting
+                            ) {
+                                Icon(Icons.Filled.Check, stringResource(R.string.history_cloud_select_all))
+                            }
+                            IconButton(
+                                onClick = {
+                                    pendingCloudDelete = cloudSelected
+                                    cloudDeleteError = false
+                                    showCloudDeleteDialog = true
+                                },
+                                enabled = cloudSelected.isNotEmpty() && !cloudModel.deleting
+                            ) {
+                                Icon(Icons.Filled.Delete, stringResource(R.string.history_cloud_delete_selected))
+                            }
+                            IconButton(onClick = ::finishCloudEditing, enabled = !cloudModel.deleting) {
+                                Icon(Icons.Filled.Check, stringResource(R.string.history_local_edit_done))
+                            }
+                        } else {
+                            IconButton(
+                                onClick = { cloudEditing = true; cloudSelected = emptySet() },
+                                enabled = cloudRowIds.isNotEmpty() && !cloudModel.deleting
+                            ) {
+                                Icon(Icons.Filled.Edit, stringResource(R.string.history_cloud_edit))
                             }
                         }
                     },
@@ -276,19 +334,77 @@ object HistoryPage : AppDestination {
                             selected = localSelected,
                             onToggleSelected = { id ->
                                 localSelected = if (id in localSelected) localSelected - id else localSelected + id
+                            },
+                            onSelect = { id ->
+                                localSelected = if (localEditing) localSelected + id else setOf(id)
+                                localEditing = true
                             }
                         )
                     } else {
                         PullToRefreshBox(
                             isRefreshing = cloudState.isSyncing(),
-                            onRefresh = cloudModel::reload,
+                            onRefresh = { if (!cloudEditing) cloudModel.reload() },
                             modifier = Modifier.fillMaxSize()
                         ) {
-                            CloudHistoryContent(cloudState, query, cloudModel, authorization, navigator)
+                            CloudHistoryContent(
+                                state = cloudState,
+                                query = query,
+                                model = cloudModel,
+                                detailLoader = cloudDetailLoader,
+                                navigator = navigator,
+                                editing = cloudEditing,
+                                selected = cloudSelected,
+                                onToggleSelected = { id ->
+                                    cloudSelected = if (id in cloudSelected) cloudSelected - id else cloudSelected + id
+                                },
+                                onSelect = { id ->
+                                    cloudSelected = if (cloudEditing) cloudSelected + id else setOf(id)
+                                    cloudEditing = true
+                                }
+                            )
                         }
                     }
                 }
             }
+        }
+
+        if (showCloudDeleteDialog) {
+            androidx.compose.material3.AlertDialog(
+                onDismissRequest = { if (!cloudModel.deleting) showCloudDeleteDialog = false },
+                title = { Text(stringResource(R.string.history_cloud_delete_title, pendingCloudDelete.size)) },
+                text = {
+                    Column(verticalArrangement = Arrangement.spacedBy(AppSpacing.sm)) {
+                        Text(stringResource(
+                            if (cloudDeleteError) R.string.history_cloud_delete_failed else R.string.history_cloud_delete_confirm
+                        ))
+                        if (cloudModel.deleting) CircularProgressIndicator()
+                    }
+                },
+                confirmButton = {
+                    TextButton(enabled = !cloudModel.deleting, onClick = {
+                        if (cloudDeleteError) {
+                            finishCloudEditing()
+                            cloudModel.reload()
+                        } else {
+                            cloudModel.delete(pendingCloudDelete) { deleted ->
+                                pendingCloudDelete = pendingCloudDelete - deleted
+                                cloudSelected = cloudSelected - deleted
+                                if (pendingCloudDelete.isEmpty()) finishCloudEditing()
+                                else cloudDeleteError = true
+                            }
+                        }
+                    }) {
+                        Text(stringResource(
+                            if (cloudDeleteError) R.string.history_cloud_refresh_and_done else R.string.history_cloud_delete_selected
+                        ))
+                    }
+                },
+                dismissButton = {
+                    TextButton(enabled = !cloudModel.deleting, onClick = { showCloudDeleteDialog = false }) {
+                        Text(stringResource(android.R.string.cancel))
+                    }
+                }
+            )
         }
 
         if (showLocalDeleteDialog) {
@@ -393,7 +509,8 @@ private fun LocalHistoryContent(
     navigator: com.breakyuna.esjzone.ui.navigation.AppNavigator?,
     editing: Boolean,
     selected: Set<String>,
-    onToggleSelected: (String) -> Unit
+    onToggleSelected: (String) -> Unit,
+    onSelect: (String) -> Unit
 ) {
     when (val current = state) {
         LocalHistoryPageModel.State.Loading -> HistoryListSkeleton()
@@ -445,6 +562,7 @@ private fun LocalHistoryContent(
                                     ))
                                 }
                             },
+                            onLongClick = { onSelect(activity.activityId) },
                             onCoverNeeded = { model.loadCover(activity) },
                             editing = editing,
                             selected = activity.activityId in selected
@@ -461,6 +579,7 @@ private fun LocalHistoryCard(
     activity: LocalReadingActivity,
     coverUrl: String,
     onOpen: () -> Unit,
+    onLongClick: () -> Unit,
     onCoverNeeded: () -> Unit,
     editing: Boolean,
     selected: Boolean
@@ -475,7 +594,11 @@ private fun LocalHistoryCard(
         modifier = Modifier
             .fillMaxWidth()
             .then(if (selected) Modifier.background(MaterialTheme.colorScheme.primaryContainer) else Modifier)
-            .clickable(onClick = onOpen)
+            .combinedClickable(
+                onClick = onOpen,
+                onLongClickLabel = stringResource(R.string.history_local_edit),
+                onLongClick = onLongClick
+            )
             .semantics { role = Role.Button }
     ) {
         Row(
@@ -507,10 +630,13 @@ private fun CloudHistoryContent(
     state: HistoryPageModel.State,
     query: String,
     model: HistoryPageModel,
-    authorization: Authorization,
-    navigator: com.breakyuna.esjzone.ui.navigation.AppNavigator?
+    detailLoader: NovelDetailLoader,
+    navigator: com.breakyuna.esjzone.ui.navigation.AppNavigator?,
+    editing: Boolean,
+    selected: Set<String>,
+    onToggleSelected: (String) -> Unit,
+    onSelect: (String) -> Unit
 ) {
-    val detailLoader = rememberAppViewModel { NovelDetailLoader(authorization) }
     when (state) {
         HistoryPageModel.State.Loading -> CloudHistoryLoadingState()
         is HistoryPageModel.State.Error -> if (state.failure == LoadFailureKind.NETWORK) {
@@ -564,7 +690,14 @@ private fun CloudHistoryContent(
                                     EsjzoneUrls.canonicalPageKey(it.url) == EsjzoneUrls.canonicalPageKey(history.chapter.url)
                                 },
                                 totalChapters = detail.chapterList.orderedChapters.size,
-                                onOpen = { navigator?.pushIfNotCurrent(NovelPage(history, history = ChapterStateHolder(history.chapter))) }
+                                editing = editing,
+                                selected = history.vid in selected,
+                                onLongClick = { onSelect(history.vid) },
+                                onOpen = {
+                                    if (editing) {
+                                        if (history.vid.isNotBlank()) onToggleSelected(history.vid)
+                                    } else navigator?.pushIfNotCurrent(NovelPage(history, history = ChapterStateHolder(history.chapter)))
+                                }
                             )
                         }
                     }
@@ -580,6 +713,9 @@ private fun CloudHistoryCard(
     coverUrl: String,
     chapterIndex: Int,
     totalChapters: Int,
+    editing: Boolean,
+    selected: Boolean,
+    onLongClick: () -> Unit,
     onOpen: () -> Unit
 ) {
     val progress = fullBookProgress(chapterIndex, totalChapters, 1f)
@@ -592,7 +728,12 @@ private fun CloudHistoryCard(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onOpen)
+            .then(if (selected) Modifier.background(MaterialTheme.colorScheme.primaryContainer) else Modifier)
+            .combinedClickable(
+                onClick = onOpen,
+                onLongClickLabel = stringResource(R.string.history_cloud_edit),
+                onLongClick = onLongClick.takeIf { history.vid.isNotBlank() }
+            )
             .semantics { role = Role.Button }
             .padding(vertical = AppSpacing.xs),
         verticalAlignment = Alignment.Top,
@@ -608,6 +749,13 @@ private fun CloudHistoryCard(
             Text(history.chapter.name, style = AppTypography.bodyMedium, color = MaterialTheme.colorScheme.primary, maxLines = 2, overflow = TextOverflow.Ellipsis)
             androidx.compose.material3.LinearProgressIndicator(progress = progress, modifier = Modifier.fillMaxWidth())
             Text(position, style = AppTypography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        if (editing) {
+            androidx.compose.material3.Checkbox(
+                checked = selected,
+                enabled = history.vid.isNotBlank(),
+                onCheckedChange = { onOpen() }
+            )
         }
     }
 }

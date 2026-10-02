@@ -22,7 +22,10 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.foundation.background
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -31,13 +34,9 @@ import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.ChevronRight
-import androidx.compose.material.icons.filled.Dns
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Info
-import androidx.compose.material.icons.filled.Language
-import androidx.compose.material.icons.filled.Translate
 import androidx.compose.material.icons.filled.MenuBook
-import androidx.compose.material.icons.filled.NoAdultContent
 import androidx.compose.material.icons.filled.Reorder
 import androidx.compose.material.icons.filled.RestartAlt
 import androidx.compose.material.icons.filled.Home
@@ -64,7 +63,6 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
@@ -91,7 +89,9 @@ import com.breakyuna.esjzone.BuildConfig
 import com.breakyuna.esjzone.Constants
 import com.breakyuna.esjzone.update.ReleaseCheckState
 import com.breakyuna.esjzone.update.ReleaseUpdateChecker
-import com.breakyuna.esjzone.ui.designsystem.AccountIconBadge
+import com.breakyuna.esjzone.ui.designsystem.AppTypography
+import com.breakyuna.esjzone.ui.designsystem.AppSpacing
+import com.breakyuna.esjzone.ui.designsystem.AppShapes
 import com.breakyuna.esjzone.ui.designsystem.accountContentWidth
 import com.breakyuna.esjzone.R
 import com.breakyuna.esjzone.app.PresentationAccess
@@ -166,7 +166,7 @@ object SettingsPage : AppDestination {
         Scaffold(
             topBar = {
                 TopAppBar(
-                    title = { Text(pageTitle, style = com.breakyuna.esjzone.ui.designsystem.AppTypography.titleLarge) },
+                    title = { Text(pageTitle, style = AppTypography.titleMedium) },
                     navigationIcon = { BackIconButton { if (section == "MAIN") navigator?.pop() else section = "MAIN" } },
                     colors = TopAppBarDefaults.topAppBarColors(
                         containerColor = MaterialTheme.colorScheme.background
@@ -194,11 +194,11 @@ object SettingsPage : AppDestination {
                     .fillMaxSize()
                     .accountContentWidth()
                     .verticalScroll(rememberScrollState())
-                    .padding(horizontal = com.breakyuna.esjzone.ui.designsystem.AppSpacing.lg, vertical = com.breakyuna.esjzone.ui.designsystem.AppSpacing.sm),
-                verticalArrangement = Arrangement.spacedBy(com.breakyuna.esjzone.ui.designsystem.AppSpacing.md)
+                    .padding(start = AppSpacing.lg, end = AppSpacing.lg, top = AppSpacing.sm, bottom = AppSpacing.xl),
+                verticalArrangement = Arrangement.spacedBy(AppSpacing.lg)
             ) {
                 if (displayedSection == "MAIN") {
-                    SettingsSection(Icons.Filled.Language, stringResource(R.string.settings_general_section)) {
+                    SettingsSection(title = stringResource(R.string.settings_general_section)) {
                         InlineSettingRow(
                             title = stringResource(R.string.settings_language_section),
                             options = listOf(
@@ -213,7 +213,7 @@ object SettingsPage : AppDestination {
                             LocaleHelper.syncSystemLocale(context, candidate)
                             model.persist("language", candidate.code)
                         }
-                        HorizontalDivider()
+                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = .45f))
                         InlineSettingRow(
                             title = stringResource(R.string.settings_script_section),
                             options = listOf(
@@ -227,14 +227,15 @@ object SettingsPage : AppDestination {
                                 readerSettings.copy(script = ReaderScript.entries[index])
                             )
                         }
-                        HorizontalDivider()
+                    }
+                    SettingsSection(title = stringResource(R.string.settings_content_section)) {
                         ToggleRow(stringResource(R.string.settings_showadultcontent), adult) { PresentationAccess.settings.setAdult(it); model.persist("show_adult", it.toString()) }
                         ToggleRow(
                             stringResource(R.string.settings_hide_home_recommendations),
                             hideHomeRecommendations
                         ) { PresentationAccess.settings.setHideHomeRecommendations(it) }
                     }
-                    SettingsSection(Icons.Filled.Dns, stringResource(R.string.settings_network_section)) {
+                    SettingsSection(title = stringResource(R.string.settings_network_section)) {
                         SiteSettingRow(
                             domains = PresentationAccess.settings.DOMAINS,
                             selectedDomain = domain,
@@ -267,18 +268,18 @@ object SettingsPage : AppDestination {
                             }
                         }
                     }
-                    SettingsSection(Icons.Filled.Reorder, stringResource(R.string.settings_preferences_section)) {
+                    SettingsSection(title = stringResource(R.string.settings_preferences_section)) {
                         LinkRow(Icons.Filled.Reorder, stringResource(R.string.settings_navigation_section)) { section = "NAVIGATION" }
                         LinkRow(Icons.Filled.MenuBook, stringResource(R.string.settings_reading_download_section)) { section = "READING" }
                         LinkRow(Icons.Filled.Storage, stringResource(R.string.settings_storage_section)) { section = "STORAGE" }
+                    }
+                    SettingsSection(title = stringResource(R.string.settings_diagnostics_section)) {
                         LinkRow(Icons.Filled.BugReport, stringResource(R.string.system_logs)) { navigator?.pushIfNotCurrent(LogsPage) }
                         LinkRow(Icons.Filled.Info, stringResource(R.string.about)) { section = "ABOUT" }
                     }
                     Surface(
                         color = MaterialTheme.colorScheme.surface,
-                        shape = com.breakyuna.esjzone.ui.designsystem.AppShapes.standard,
-                        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-                        shadowElevation = 1.dp
+                        shape = AppShapes.standard
                     ) {
                         LinkRow(
                             Icons.AutoMirrored.Filled.Logout,
@@ -292,17 +293,14 @@ object SettingsPage : AppDestination {
                     SettingsSection {
                         Text(
                             stringResource(R.string.settings_navigation_description),
-                            style = com.breakyuna.esjzone.ui.designsystem.AppTypography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            style = AppTypography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(AppSpacing.md)
                         )
                         Surface(
                             modifier = Modifier.fillMaxWidth(),
-                            shape = androidx.compose.foundation.shape.RoundedCornerShape(percent = 50),
-                            color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                            border = androidx.compose.foundation.BorderStroke(
-                                1.dp,
-                                MaterialTheme.colorScheme.outlineVariant
-                            )
+                            shape = AppShapes.standard,
+                            color = MaterialTheme.colorScheme.surfaceContainerLow
                         ) {
                             Row(
                                 modifier = Modifier.fillMaxWidth().selectableGroup().padding(horizontal = 8.dp, vertical = 6.dp),
@@ -367,14 +365,14 @@ object SettingsPage : AppDestination {
                                                     }
                                                 )
                                             },
-                                        shape = androidx.compose.foundation.shape.RoundedCornerShape(percent = 50),
+                                        shape = AppShapes.compact,
                                         color = if (selected) {
                                             MaterialTheme.colorScheme.primaryContainer
                                         } else Color.Transparent,
                                         shadowElevation = if (dragging) 6.dp else 0.dp
                                     ) {
                                         Column(
-                                            modifier = Modifier.padding(horizontal = 2.dp, vertical = 6.dp),
+                                            modifier = Modifier.padding(horizontal = AppSpacing.xxs, vertical = AppSpacing.md),
                                             horizontalAlignment = Alignment.CenterHorizontally,
                                             verticalArrangement = Arrangement.spacedBy(2.dp)
                                         ) {
@@ -425,165 +423,143 @@ object SettingsPage : AppDestination {
 
                     }
                     if (displayedSection == "READING") {
-                    SettingsSection {
                         ReaderMoreSettingsContent(readerSettings, PresentationAccess.readerSettings::saveDebounced)
-                        HorizontalDivider(modifier = Modifier.padding(vertical = 2.dp))
-                        ToggleRow(
-                            stringResource(R.string.download_auto_save),
-                            autoSave
-                        ) { enabled ->
-                            PresentationAccess.settings.setReaderAutoSave(enabled)
-                            model.persist(PresentationAccess.settings.READER_AUTO_SAVE_KEY, enabled.toString())
-                        }
-                        var showConcurrencyMenu by remember { mutableStateOf(false) }
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 8.dp, vertical = 3.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Text(
-                                stringResource(R.string.settings_download_concurrency_label),
-                                style = com.breakyuna.esjzone.ui.designsystem.AppTypography.labelLarge
-                            )
-                            Box {
-                                Surface(
-                                    onClick = { showConcurrencyMenu = true },
-                                    shape = com.breakyuna.esjzone.ui.designsystem.AppShapes.compact,
-                                    color = MaterialTheme.colorScheme.surfaceContainerLow,
-                                    border = androidx.compose.foundation.BorderStroke(
-                                        1.dp,
-                                        MaterialTheme.colorScheme.outlineVariant
-                                    )
-                                ) {
-                                    Text(
-                                        downloadConcurrency.toString(),
-                                        style = com.breakyuna.esjzone.ui.designsystem.AppTypography.titleMedium,
-                                        modifier = Modifier.padding(
-                                            horizontal = 14.dp,
-                                            vertical = 2.dp
+                        SettingsSection(title = stringResource(R.string.settings_download_section)) {
+                            ToggleRow(
+                                stringResource(R.string.download_auto_save),
+                                autoSave
+                            ) { enabled ->
+                                PresentationAccess.settings.setReaderAutoSave(enabled)
+                                model.persist(PresentationAccess.settings.READER_AUTO_SAVE_KEY, enabled.toString())
+                            }
+                            var showConcurrencyMenu by remember { mutableStateOf(false) }
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .heightIn(min = 56.dp)
+                                    .padding(horizontal = AppSpacing.md, vertical = AppSpacing.xs),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Text(
+                                    stringResource(R.string.settings_download_concurrency_label),
+                                    style = AppTypography.bodyMedium,
+                                    modifier = Modifier.weight(1f).padding(end = AppSpacing.md)
+                                )
+                                Box {
+                                    Surface(
+                                        onClick = { showConcurrencyMenu = true },
+                                        shape = AppShapes.compact,
+                                        color = MaterialTheme.colorScheme.surfaceContainerLow
+                                    ) {
+                                        Text(
+                                            downloadConcurrency.toString(),
+                                            style = AppTypography.labelLarge,
+                                            modifier = Modifier.heightIn(min = 48.dp).padding(
+                                                horizontal = AppSpacing.lg,
+                                                vertical = AppSpacing.md
+                                            )
                                         )
-                                    )
-                                }
-                                DropdownMenu(
-                                    expanded = showConcurrencyMenu,
-                                    onDismissRequest = { showConcurrencyMenu = false }
-                                ) {
-                                    listOf(1, 3, 5, 8).forEach { candidate ->
-                                        DropdownMenuItem(
-                                            text = { Text(candidate.toString()) },
-                                            onClick = {
-                                                PresentationAccess.settings.setDownloadConcurrency(candidate)
-                                                model.persist(PresentationAccess.settings.DOWNLOAD_CONCURRENCY_KEY, candidate.toString())
-                                                showConcurrencyMenu = false
-                                            },
-                                            trailingIcon = if (candidate == downloadConcurrency) {
-                                                { Icon(Icons.Filled.Check, contentDescription = null) }
-                                            } else null
-                                        )
+                                    }
+                                    DropdownMenu(
+                                        expanded = showConcurrencyMenu,
+                                        onDismissRequest = { showConcurrencyMenu = false }
+                                    ) {
+                                        listOf(1, 3, 5, 8).forEach { candidate ->
+                                            DropdownMenuItem(
+                                                text = { Text(candidate.toString()) },
+                                                onClick = {
+                                                    PresentationAccess.settings.setDownloadConcurrency(candidate)
+                                                    model.persist(PresentationAccess.settings.DOWNLOAD_CONCURRENCY_KEY, candidate.toString())
+                                                    showConcurrencyMenu = false
+                                                },
+                                                trailingIcon = if (candidate == downloadConcurrency) {
+                                                    { Icon(Icons.Filled.Check, contentDescription = null) }
+                                                } else null
+                                            )
+                                        }
                                     }
                                 }
                             }
                         }
-                    }
 
                     }
                     if (displayedSection == "STORAGE") {
-                    SettingsSection {
-                        LinkRow(Icons.Filled.Download, stringResource(R.string.local_backup)) {
-                            navigator?.pushIfNotCurrent(LocalBackupPage)
+                        SettingsSection {
+                            LinkRow(Icons.Filled.Download, stringResource(R.string.local_backup)) {
+                                navigator?.pushIfNotCurrent(LocalBackupPage)
+                            }
                         }
-                        HorizontalDivider()
-                        val cache = state.cacheStats
-                        CacheRow(stringResource(R.string.settings_page_cache), when { state.cacheStatsError -> stringResource(R.string.local_cache_stats_failed); cache == null -> stringResource(R.string.local_cache_loading); else -> stringResource(R.string.local_cache_pages, formatBytes(cache.pageBytes), cache.pageEntries) }, state.cacheOperation != null, stringResource(R.string.local_cache_clear_pages)) { model.clearPageCache() }
-                        HorizontalDivider()
-                        CacheRow(stringResource(R.string.settings_image_cache), when { state.cacheStatsError -> stringResource(R.string.local_cache_stats_failed); cache == null -> stringResource(R.string.local_cache_loading); else -> formatBytes(cache.imageBytes) }, state.cacheOperation != null, stringResource(R.string.local_cache_clear_images)) { model.clearImageCache() }
-                        Text(stringResource(R.string.settings_cache_note), style = com.breakyuna.esjzone.ui.designsystem.AppTypography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(start = 4.dp, top = 2.dp))
-                        if (state.cacheOperation != null) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
-                        if (state.cacheStatsError) TextButton(onClick = model::refreshCacheStats) { Text(stringResource(R.string.retry)) }
-                        if (state.cacheClearError) Text(stringResource(R.string.local_cache_clear_failed), color = MaterialTheme.colorScheme.error)
-                    }
+                        SettingsSection {
+                            val cache = state.cacheStats
+                            CacheRow(stringResource(R.string.settings_page_cache), when { state.cacheStatsError -> stringResource(R.string.local_cache_stats_failed); cache == null -> stringResource(R.string.local_cache_loading); else -> stringResource(R.string.local_cache_pages, formatBytes(cache.pageBytes), cache.pageEntries) }, state.cacheOperation != null, stringResource(R.string.local_cache_clear_pages)) { model.clearPageCache() }
+                            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = .45f))
+                            CacheRow(stringResource(R.string.settings_image_cache), when { state.cacheStatsError -> stringResource(R.string.local_cache_stats_failed); cache == null -> stringResource(R.string.local_cache_loading); else -> formatBytes(cache.imageBytes) }, state.cacheOperation != null, stringResource(R.string.local_cache_clear_images)) { model.clearImageCache() }
+                            Text(stringResource(R.string.settings_cache_note), style = AppTypography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(AppSpacing.md))
+                            if (state.cacheOperation != null) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+                            if (state.cacheStatsError) TextButton(onClick = model::refreshCacheStats) { Text(stringResource(R.string.retry)) }
+                            if (state.cacheClearError) Text(stringResource(R.string.local_cache_clear_failed), color = MaterialTheme.colorScheme.error)
+                        }
 
                     }
                     if (displayedSection == "ABOUT") {
-                    SettingsSection {
-                        Text(
-                            text = stringResource(R.string.about_disclaimer),
-                            style = com.breakyuna.esjzone.ui.designsystem.AppTypography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 8.dp, vertical = 4.dp)
-                        )
-                        HorizontalDivider(modifier = Modifier.padding(vertical = 2.dp))
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable { ReleaseUpdateChecker.checkNow(context) }
-                                .padding(horizontal = 8.dp, vertical = 4.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(stringResource(R.string.build_version), style = com.breakyuna.esjzone.ui.designsystem.AppTypography.labelLarge)
-                                Text(
-                                    text = when (val s = checkState) {
-                                        ReleaseCheckState.Checking -> stringResource(R.string.update_checking)
-                                        ReleaseCheckState.UpToDate -> stringResource(R.string.update_up_to_date)
-                                        ReleaseCheckState.Error -> stringResource(R.string.update_check_error)
-                                        is ReleaseCheckState.Available -> stringResource(R.string.update_available_status, s.version)
-                                        ReleaseCheckState.Idle -> stringResource(R.string.update_check_tap_version)
-                                    },
-                                    style = com.breakyuna.esjzone.ui.designsystem.AppTypography.bodySmall,
-                                    color = if (checkState is ReleaseCheckState.Error) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant
-                                )
+                        Column(Modifier.fillMaxWidth().padding(AppSpacing.md),
+                            verticalArrangement = Arrangement.spacedBy(AppSpacing.sm)) {
+                            Text(stringResource(R.string.app_name), style = AppTypography.titleLarge)
+                            Text(stringResource(R.string.about_disclaimer), style = AppTypography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        SettingsSection {
+                            Row(
+                                modifier = Modifier.fillMaxWidth()
+                                    .clickable { ReleaseUpdateChecker.checkNow(context) }
+                                    .padding(AppSpacing.md),
+                                horizontalArrangement = Arrangement.spacedBy(AppSpacing.md),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(AppSpacing.xs)) {
+                                    Text(stringResource(R.string.build_version), style = AppTypography.bodyMedium)
+                                    Text(
+                                        text = when (val s = checkState) {
+                                            ReleaseCheckState.Checking -> stringResource(R.string.update_checking)
+                                            ReleaseCheckState.UpToDate -> stringResource(R.string.update_up_to_date)
+                                            ReleaseCheckState.Error -> stringResource(R.string.update_check_error)
+                                            is ReleaseCheckState.Available -> stringResource(R.string.update_available_status, s.version)
+                                            ReleaseCheckState.Idle -> stringResource(R.string.update_check_tap_version)
+                                        },
+                                        style = AppTypography.bodySmall,
+                                        color = if (checkState is ReleaseCheckState.Error) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                                Text(BuildConfig.VERSION_NAME, style = AppTypography.labelMedium,
+                                    modifier = Modifier.background(MaterialTheme.colorScheme.surfaceContainerLow, AppShapes.compact)
+                                        .padding(horizontal = AppSpacing.md, vertical = AppSpacing.sm),
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
-                            Text(
-                                text = BuildConfig.VERSION_NAME,
-                                style = com.breakyuna.esjzone.ui.designsystem.AppTypography.titleMedium,
-                                color = MaterialTheme.colorScheme.primary
+                            ToggleRow(
+                                title = stringResource(R.string.update_auto_check),
+                                checked = autoCheck,
+                                onCheckedChange = { ReleaseUpdateChecker.setAutoCheck(context, it) }
                             )
+                            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = .45f))
+                            LinkRow(Icons.Filled.Info, stringResource(R.string.open_source_licenses)) {
+                                navigator?.pushIfNotCurrent(OpenSourceLicensesPage)
+                            }
                         }
-                        LinkRow(Icons.Filled.Info, stringResource(R.string.open_source_licenses)) {
-                            navigator?.pushIfNotCurrent(OpenSourceLicensesPage)
-                        }
-                        ToggleRow(
-                            title = stringResource(R.string.update_auto_check),
-                            checked = autoCheck,
-                            onCheckedChange = { ReleaseUpdateChecker.setAutoCheck(context, it) }
-                        )
-                        HorizontalDivider(modifier = Modifier.padding(vertical = 2.dp))
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 8.dp, vertical = 4.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(stringResource(R.string.original_author), style = com.breakyuna.esjzone.ui.designsystem.AppTypography.labelLarge)
-                            Text(
-                                text = Constants.ORIGINAL_AUTHOR,
-                                style = com.breakyuna.esjzone.ui.designsystem.AppTypography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 8.dp, vertical = 4.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(stringResource(R.string.maintainers), style = com.breakyuna.esjzone.ui.designsystem.AppTypography.labelLarge)
-                            Text(
-                                text = Constants.MAINTAINERS.joinToString(", "),
-                                style = com.breakyuna.esjzone.ui.designsystem.AppTypography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
+                        SettingsSection {
+                            Column(Modifier.padding(AppSpacing.md), verticalArrangement = Arrangement.spacedBy(AppSpacing.xs)) {
+                                Text(stringResource(R.string.original_author), style = AppTypography.labelMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Text(Constants.ORIGINAL_AUTHOR, style = AppTypography.bodyMedium)
+                            }
+                            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = .45f))
+                            Column(Modifier.padding(AppSpacing.md), verticalArrangement = Arrangement.spacedBy(AppSpacing.xs)) {
+                                Text(stringResource(R.string.maintainers), style = AppTypography.labelMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Text(Constants.MAINTAINERS.joinToString(", "), style = AppTypography.bodyMedium)
+                            }
                         }
                     }
-                }
 
             }
             }
@@ -640,40 +616,22 @@ private fun navigationItemIcon(id: String): ImageVector = when (id) {
 }
 
 @Composable
-private fun SettingsSection(
-    icon: ImageVector? = null,
+internal fun SettingsSection(
     title: String? = null,
     content: @Composable ColumnScope.() -> Unit
 ) {
-    if (icon == null && title == null) {
-        Column(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 8.dp),
-            verticalArrangement = Arrangement.spacedBy(2.dp),
-            content = content
-        )
-        return
-    }
-    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        if (icon != null && title != null) {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(com.breakyuna.esjzone.ui.designsystem.AppSpacing.sm)) {
-                AccountIconBadge(icon)
-                Text(title, style = com.breakyuna.esjzone.ui.designsystem.AppTypography.titleMedium, color = MaterialTheme.colorScheme.primary)
-            }
+    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(AppSpacing.sm)) {
+        if (title != null) {
+            Text(title, style = AppTypography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(start = AppSpacing.md).semantics { heading() })
         }
         Surface(
             color = MaterialTheme.colorScheme.surface,
-            shape = com.breakyuna.esjzone.ui.designsystem.AppShapes.standard,
-            border = androidx.compose.foundation.BorderStroke(
-                1.dp,
-                MaterialTheme.colorScheme.outlineVariant
-            ),
-            shadowElevation = 1.dp
+            shape = AppShapes.standard
         ) {
             Column(
-                Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 14.dp, vertical = 8.dp),
-                verticalArrangement = Arrangement.spacedBy(2.dp),
+                Modifier.fillMaxWidth().padding(AppSpacing.xs),
                 content = content
             )
         }
@@ -687,37 +645,32 @@ private fun InlineSettingRow(
     selectedIndex: Int,
     onSelect: (Int) -> Unit
 ) {
-    Row(
-        modifier = Modifier.fillMaxWidth().padding(start = 10.dp, top = 6.dp, bottom = 6.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-        verticalAlignment = Alignment.CenterVertically
+    Column(
+        modifier = Modifier.fillMaxWidth().padding(AppSpacing.md),
+        verticalArrangement = Arrangement.spacedBy(AppSpacing.sm)
     ) {
-        Text(title, modifier = Modifier.weight(.35f),
-            style = com.breakyuna.esjzone.ui.designsystem.AppTypography.labelLarge)
+        Text(title, style = AppTypography.bodyMedium)
         Surface(
-            modifier = Modifier.weight(.65f),
-            shape = com.breakyuna.esjzone.ui.designsystem.AppShapes.compact,
-            color = MaterialTheme.colorScheme.surfaceContainerLow,
-            border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+            shape = AppShapes.compact,
+            color = MaterialTheme.colorScheme.surfaceContainerLow
         ) {
-            Row(Modifier.selectableGroup(), verticalAlignment = Alignment.CenterVertically) {
+            Row(Modifier.fillMaxWidth().selectableGroup().padding(AppSpacing.xs),
+                horizontalArrangement = Arrangement.spacedBy(AppSpacing.xs),
+                verticalAlignment = Alignment.CenterVertically) {
                 options.forEachIndexed { index, option ->
-                    if (index > 0) {
-                        Box(Modifier.width(1.dp).height(20.dp)
-                            .background(MaterialTheme.colorScheme.outlineVariant))
-                    }
                     Box(
-                        modifier = Modifier.weight(1f).height(48.dp)
-                            .background(if (index == selectedIndex) MaterialTheme.colorScheme.primaryContainer else Color.Transparent)
+                        modifier = Modifier.weight(1f).heightIn(min = 48.dp)
+                            .clip(AppShapes.compact)
+                            .background(if (index == selectedIndex) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent)
                             .selectable(
                                 selected = index == selectedIndex,
                                 role = Role.RadioButton,
                                 onClick = { if (index != selectedIndex) onSelect(index) }
-                            ),
+                            ).padding(horizontal = AppSpacing.xs, vertical = AppSpacing.sm),
                         contentAlignment = Alignment.Center
                     ) {
-                        Text(option, style = MaterialTheme.typography.labelSmall, maxLines = 1,
-                            color = if (index == selectedIndex) MaterialTheme.colorScheme.onPrimaryContainer
+                        Text(option, style = AppTypography.labelMedium, textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                            color = if (index == selectedIndex) MaterialTheme.colorScheme.onSecondaryContainer
                                 else MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
@@ -733,58 +686,58 @@ private fun SiteSettingRow(
     enabled: Boolean,
     onSelect: (String) -> Unit
 ) {
-    Row(
-        modifier = Modifier.fillMaxWidth().selectableGroup().padding(horizontal = 8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.Center
-    ) {
-        Text("|", color = MaterialTheme.colorScheme.onSurfaceVariant)
-        domains.forEachIndexed { index, candidate ->
-            if (index > 0) Text("/", color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Box(
-                modifier = Modifier.weight(1f).selectable(
-                    selected = candidate == selectedDomain,
-                    enabled = enabled,
-                    role = Role.RadioButton,
-                    onClick = { onSelect(candidate) }
-                ).padding(vertical = 12.dp),
-                contentAlignment = Alignment.Center
+    Column(Modifier.fillMaxWidth().selectableGroup().padding(AppSpacing.xs),
+        verticalArrangement = Arrangement.spacedBy(AppSpacing.xs)) {
+        domains.forEach { candidate ->
+            val selected = candidate == selectedDomain
+            Row(
+                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
+                    .clip(AppShapes.compact)
+                    .background(if (selected) MaterialTheme.colorScheme.surfaceContainer else Color.Transparent)
+                    .selectable(
+                        selected = selected,
+                        enabled = enabled,
+                        role = Role.RadioButton,
+                        onClick = { onSelect(candidate) }
+                    ).padding(horizontal = AppSpacing.md, vertical = AppSpacing.sm),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(AppSpacing.md)
             ) {
-                Text(
-                    candidate,
-                    style = com.breakyuna.esjzone.ui.designsystem.AppTypography.labelLarge,
-                    maxLines = 1,
-                    color = if (candidate == selectedDomain) MaterialTheme.colorScheme.primary
-                        else MaterialTheme.colorScheme.onSurfaceVariant
-                )
+                Text(candidate, modifier = Modifier.weight(1f), style = AppTypography.bodyMedium,
+                    color = if (selected) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant)
+                if (selected) Icon(Icons.Filled.Check, contentDescription = null, modifier = Modifier.size(18.dp))
             }
         }
-        Text("|", color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 
 @Composable
 private fun ToggleRow(title: String, checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
-    Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 3.dp), horizontalArrangement = Arrangement.spacedBy(com.breakyuna.esjzone.ui.designsystem.AppSpacing.md), verticalAlignment = Alignment.CenterVertically) { Text(title, modifier = Modifier.weight(1f), style = com.breakyuna.esjzone.ui.designsystem.AppTypography.labelLarge); Switch(checked, onCheckedChange) }
+    Row(Modifier.fillMaxWidth().heightIn(min = 56.dp).padding(horizontal = AppSpacing.md, vertical = AppSpacing.xs),
+        horizontalArrangement = Arrangement.spacedBy(AppSpacing.md), verticalAlignment = Alignment.CenterVertically) {
+        Text(title, modifier = Modifier.weight(1f), style = AppTypography.bodyMedium)
+        Switch(checked, onCheckedChange)
+    }
 }
 
 @Composable
 private fun CacheRow(title: String, value: String, busy: Boolean, action: String, onClick: () -> Unit) {
-    Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 3.dp), horizontalArrangement = Arrangement.spacedBy(com.breakyuna.esjzone.ui.designsystem.AppSpacing.md), verticalAlignment = Alignment.CenterVertically) {
-        Column(Modifier.weight(1f)) {
-            Text(title, style = com.breakyuna.esjzone.ui.designsystem.AppTypography.labelLarge)
-            Text(value, style = com.breakyuna.esjzone.ui.designsystem.AppTypography.bodySmall, color = MaterialTheme.colorScheme.primary)
+    Row(Modifier.fillMaxWidth().heightIn(min = 64.dp).padding(AppSpacing.md), horizontalArrangement = Arrangement.spacedBy(AppSpacing.md), verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(AppSpacing.xs)) {
+            Text(title, style = AppTypography.bodyMedium)
+            Text(value, style = AppTypography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         Button(
             onClick = onClick,
             enabled = !busy,
-            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 4.dp),
+            shape = AppShapes.compact,
+            contentPadding = PaddingValues(horizontal = AppSpacing.md, vertical = AppSpacing.sm),
             colors = ButtonDefaults.buttonColors(
                 containerColor = MaterialTheme.colorScheme.primaryContainer,
                 contentColor = MaterialTheme.colorScheme.onPrimaryContainer
             )
         ) {
-            Text(action, style = com.breakyuna.esjzone.ui.designsystem.AppTypography.labelMedium)
+            Text(action, style = AppTypography.labelMedium)
         }
     }
 }
@@ -802,29 +755,27 @@ private fun LinkRow(
         Row(
             Modifier
                 .fillMaxWidth()
-                .padding(
-                    horizontal = if (centered) 12.dp else 8.dp,
-                    vertical = if (centered) 8.dp else 6.dp
-                ),
+                .heightIn(min = 56.dp)
+                .padding(horizontal = AppSpacing.md, vertical = AppSpacing.sm),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = if (centered) Arrangement.Center else Arrangement.Start
         ) {
-            Icon(icon, null, tint = MaterialTheme.colorScheme.onSurface, modifier = Modifier.size(if (centered) 20.dp else 24.dp))
+            Icon(icon, null, tint = MaterialTheme.colorScheme.onSurface, modifier = Modifier.size(20.dp))
             if (centered) {
                 Text(
                     title,
-                    style = com.breakyuna.esjzone.ui.designsystem.AppTypography.labelLarge,
+                    style = AppTypography.labelLarge,
                     color = MaterialTheme.colorScheme.onSurface,
-                    modifier = Modifier.padding(start = com.breakyuna.esjzone.ui.designsystem.AppSpacing.sm)
+                    modifier = Modifier.padding(start = AppSpacing.sm)
                 )
             } else {
-                Column(Modifier.weight(1f).padding(horizontal = com.breakyuna.esjzone.ui.designsystem.AppSpacing.md)) {
-                    Text(title, style = com.breakyuna.esjzone.ui.designsystem.AppTypography.labelLarge, color = MaterialTheme.colorScheme.onSurface)
+                Column(Modifier.weight(1f).padding(horizontal = AppSpacing.md)) {
+                    Text(title, style = AppTypography.bodyMedium, color = MaterialTheme.colorScheme.onSurface)
                     subtitle?.let {
-                        Text(it, style = com.breakyuna.esjzone.ui.designsystem.AppTypography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                        Text(it, style = AppTypography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
                     }
                 }
-                if (enabled) Icon(Icons.Filled.ChevronRight, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                if (enabled) Icon(Icons.Filled.ChevronRight, null, modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
     }

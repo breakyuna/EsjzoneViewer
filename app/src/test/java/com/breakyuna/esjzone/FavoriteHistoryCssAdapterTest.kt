@@ -37,7 +37,7 @@ class FavoriteHistoryCssAdapterTest {
             document.select("tr[id^='novel-']").map { it.id().removePrefix("novel-") }
         )
         assertEquals(
-            listOf("9060", "9061"),
+            listOf("log-1", "log-2"),
             histories.map { it.vid }
         )
         assertEquals(
@@ -54,6 +54,21 @@ class FavoriteHistoryCssAdapterTest {
             listOf("log-1", "log-2"),
             document.select(".view-del").eachAttr("data-id")
         )
+    }
+
+    @Test
+    fun historyDeletionId_prefersButtonThenViewRowAndNeverNovelId() {
+        val document = Jsoup.parse("""
+            <table class="table">
+              <tr id="view_9101"><td><h5><a href="/detail/9001.html">One</a></h5>
+                <a href="/forum/9001/9201.html">Chapter</a><a class="view-del" data-id="9102"></a></td></tr>
+              <tr id="view_9103"><td><h5><a href="/detail/9002.html">Two</a></h5>
+                <a href="/forum/9002/9202.html">Chapter</a></td></tr>
+              <tr id="novel-9003"><td><h5><a href="/detail/9003.html">Three</a></h5>
+                <a href="/forum/9003/9203.html">Chapter</a></td></tr>
+            </table>
+        """)
+        assertEquals(listOf("9102", "9103", ""), parseHistoryNovels(document).map { it.vid })
     }
 
     private fun fixture(name: String) =

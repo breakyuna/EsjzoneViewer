@@ -258,25 +258,15 @@ internal fun EsjzoneClient.submitForumComment(
                 ?: replyResponse.id?.trim()?.takeIf { it.isNotBlank() }
                 ?: "$parentId-${System.currentTimeMillis()}"
 
-            val currentUserName = forumPreparation.currentUserName
-            val currentUserAvatar = forumPreparation.currentUserAvatar
-
-            val createdComment = Comment(
-                id = createdCommentId,
-                parentPostId = parentId,
-                authorId = null,
-                authorName = currentUserName,
-                authorUrl = null,
-                floor = "#${previousComments.size + 1}",
-                createdAt = null,
-                contentHtml = submittedContent,
-                contentText = submittedContent,
-                quotedContentText = null,
-                pageGroup = (previousComments.size / COMMENT_PAGE_SIZE) + 1,
+            localCommentSubmission(
+                parentId = parentId,
+                content = submittedContent,
                 replyToken = replyToken,
-                authorAvatarUrl = currentUserAvatar
+                previousComments = previousComments,
+                authorName = forumPreparation.currentUserName,
+                authorAvatarUrl = forumPreparation.currentUserAvatar,
+                createdCommentId = createdCommentId
             )
-            CommentSubmission(previousComments + createdComment, createdComment)
         }
     } else {
         // Guestbook and non-forum forms
@@ -343,6 +333,34 @@ internal fun EsjzoneClient.submitForumComment(
             CommentSubmission(comments, createdComment)
         }
     }
+}
+
+/** Builds the immediate UI result after either server acceptance or experience confirmation. */
+internal fun localCommentSubmission(
+    parentId: String,
+    content: String,
+    replyToken: String?,
+    previousComments: List<Comment>,
+    authorName: String?,
+    authorAvatarUrl: String?,
+    createdCommentId: String = "$parentId-${System.currentTimeMillis()}"
+): CommentSubmission {
+    val createdComment = Comment(
+        id = createdCommentId,
+        parentPostId = parentId,
+        authorId = null,
+        authorName = authorName,
+        authorUrl = null,
+        floor = "#${previousComments.size + 1}",
+        createdAt = null,
+        contentHtml = content,
+        contentText = content,
+        quotedContentText = null,
+        pageGroup = (previousComments.size / COMMENT_PAGE_SIZE) + 1,
+        replyToken = replyToken,
+        authorAvatarUrl = authorAvatarUrl
+    )
+    return CommentSubmission(previousComments + createdComment, createdComment)
 }
 
 private fun forumPreparation(

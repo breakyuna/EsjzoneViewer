@@ -176,7 +176,7 @@
 
 | 字段 | 类型 | 说明 |
 |---|---|---|
-| record_id | string | .view-del[data-id] |
+| record_id | string | 优先 .view-del[data-id]，其次 tr 的 view_ 后缀；对应 HistoryNovel.vid，不是小说或章节 ID |
 | novel_id | string | 详情链接 |
 | novel_title | string | 详情链接文本 |
 | last_post_id | string/null | 最后章节链接 |

@@ -241,6 +241,13 @@
     <string name="history_local_delete_confirm">删除后将无法恢复，但不会影响书架、云端历史、下载内容或书签。</string>
     <string name="history_local_delete_confirm_action">删除记录</string>
     <string name="history_local_delete_failed">删除所选历史记录失败，请重试。</string>
+    <string name="history_cloud_edit">编辑云端历史</string>
+    <string name="history_cloud_select_all">全选当前可见的云端记录</string>
+    <string name="history_cloud_delete_selected">删除云端记录</string>
+    <string name="history_cloud_delete_title">删除 %1$d 条云端记录？</string>
+    <string name="history_cloud_delete_confirm">将从 ESJZone 删除所选观看记录，无法恢复。本地历史、书架、下载和书签不受影响。</string>
+    <string name="history_cloud_delete_failed">已移除确认删除成功的记录，其余记录尚未确认删除。请先刷新云端历史核对结果，再重新选择需要删除的记录。</string>
+    <string name="history_cloud_refresh_and_done">刷新并退出</string>
     <string name="history_cloud_sync">同步云端历史</string>
     <string name="history_cloud_sync_running">云端历史同步中</string>
     <string name="history_cloud_sync_success">云端历史已同步</string>
@@ -562,7 +569,6 @@
     <string name="comment_submit_failed">发表失败，请检查网络或登录状态后重试</string>
     <string name="comment_submit_unverified">请求已完成，但未能确认新评论，请刷新检查后再决定是否重发</string>
     <string name="comment_submit_timeout">响应超时，评论可能已提交。请先刷新检查，避免重复发送</string>
-    <string name="comment_submit_experience_increased">经验值已增加，评论可能已提交，但尚未在评论区确认。请稍后刷新检查，避免重复发送</string>
     <string name="comment_check_before_retry_hint">请刷新页面检查消息是否已经发送后再尝试</string>
     <string name="comment_action_refresh">刷新</string>
     <string name="comment_refresh">刷新评论</string>
@@ -699,7 +705,8 @@
     <string name="reading_stats_line_chart">折线图</string>
     <string name="settings_language_system_short">系统</string>
     <string name="settings_language_chinese_short">中文</string>
-    <string name="reading_stats_incognito">無痕模式</string>
-    <string name="reading_stats_show_tags">展開全部標籤與佔比</string>
-    <string name="reading_stats_hide_tags">收起標籤列表</string>
+    <string name="reading_stats_incognito">无痕模式</string>
+    <string name="reading_stats_incognito_message">无痕模式开启，暂停记录阅读统计数据</string>
+    <string name="reading_stats_show_tags">展开全部标签与占比</string>
+    <string name="reading_stats_hide_tags">收起标签列表</string>
 </resources>

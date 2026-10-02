@@ -1,6 +1,11 @@
 package com.breakyuna.esjzone.ui.page
 
-import androidx.compose.foundation.BorderStroke
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
@@ -25,18 +30,15 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.DeleteOutline
-import androidx.compose.material.icons.filled.QueryStats
-import androidx.compose.material.icons.filled.DateRange
-import androidx.compose.material.icons.filled.MenuBook
-import androidx.compose.material.icons.filled.ShowChart
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
-import androidx.compose.material.icons.filled.Label
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -61,13 +63,18 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.luminance
-import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.res.painterResource
 import com.breakyuna.esjzone.ui.designsystem.globalStringResource as stringResource
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.unit.dp
@@ -81,9 +88,7 @@ import com.breakyuna.esjzone.database.ReadingStatisticsSummary
 import com.breakyuna.esjzone.ui.designsystem.AppSpacing
 import com.breakyuna.esjzone.ui.designsystem.AppShapes
 import com.breakyuna.esjzone.ui.designsystem.AppTypography
-import com.breakyuna.esjzone.ui.designsystem.AccountIconBadge
 import com.breakyuna.esjzone.ui.designsystem.AppLoadingState
-import com.breakyuna.esjzone.ui.designsystem.AppEmptyState
 import com.breakyuna.esjzone.ui.designsystem.AppErrorState
 import com.breakyuna.esjzone.ui.designsystem.accountContentWidth
 import com.breakyuna.esjzone.ui.navigation.AppDestination
@@ -137,7 +142,7 @@ object ReadingStatisticsPage : AppDestination {
 
         Scaffold(topBar = {
             TopAppBar(
-                title = { Text(stringResource(R.string.reading_stats_title), style = AppTypography.titleLarge) },
+                title = { Text(stringResource(R.string.reading_stats_title), style = AppTypography.titleMedium) },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background),
                 navigationIcon = {
                     IconButton(onClick = { navigator?.pop() }) {
@@ -155,13 +160,19 @@ object ReadingStatisticsPage : AppDestination {
                             }
                         )
                     }
-                    IconButton(onClick = { confirmClear = true }, enabled = state is ReadingStatisticsPageModel.State.Ready &&
-                        (state as ReadingStatisticsPageModel.State.Ready).summary.totalMs > 0L) {
-                        Icon(Icons.Filled.DeleteOutline, stringResource(R.string.reading_stats_clear))
+                    if (!incognito) {
+                        IconButton(onClick = { confirmClear = true }, enabled = state is ReadingStatisticsPageModel.State.Ready &&
+                            (state as ReadingStatisticsPageModel.State.Ready).summary.totalMs > 0L) {
+                            Icon(Icons.Filled.DeleteOutline, stringResource(R.string.reading_stats_clear))
+                        }
                     }
                 }
             )
         }) { padding ->
+            if (incognito) {
+                ReadingStatisticsIncognitoState(Modifier.fillMaxSize().padding(padding))
+                return@Scaffold
+            }
             when (val current = state) {
                 ReadingStatisticsPageModel.State.Loading -> AppLoadingState(
                     modifier = Modifier.fillMaxSize().padding(padding),
@@ -177,77 +188,85 @@ object ReadingStatisticsPage : AppDestination {
                     val summary = current.summary
                     LazyColumn(
                         modifier = Modifier.fillMaxSize().padding(padding).accountContentWidth(),
-                        contentPadding = PaddingValues(horizontal = AppSpacing.lg, vertical = AppSpacing.lg),
-                        verticalArrangement = Arrangement.spacedBy(AppSpacing.lg)
+                        contentPadding = PaddingValues(start = AppSpacing.lg, end = AppSpacing.lg, top = AppSpacing.sm, bottom = AppSpacing.xl),
+                        verticalArrangement = Arrangement.spacedBy(AppSpacing.md)
                     ) {
                         item {
                             StatCard {
-                                StatSectionTitle(Icons.Filled.QueryStats, stringResource(R.string.reading_stats_title))
                                 Row(horizontalArrangement = Arrangement.spacedBy(AppSpacing.md)) {
                                     StatValue(stringResource(R.string.reading_stats_total), formatDuration(summary.totalMs), Modifier.weight(1f), emphasized = true)
                                     StatValue(stringResource(R.string.reading_stats_today), formatDuration(summary.todayMs), Modifier.weight(1f))
                                 }
+                                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = .5f))
                                 Row(horizontalArrangement = Arrangement.spacedBy(AppSpacing.md)) {
                                     StatValue(stringResource(R.string.reading_stats_week), formatDuration(summary.weekMs), Modifier.weight(1f))
                                     StatValue(stringResource(R.string.reading_stats_streak), stringResource(R.string.reading_stats_days, summary.streakDays), Modifier.weight(1f))
                                 }
-                                Text(stringResource(R.string.reading_stats_local_note), style = AppTypography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 if (summary.totalMs == 0L) {
-                                    AppEmptyState(title = stringResource(R.string.reading_stats_empty), icon = Icons.Filled.MenuBook)
+                                    Text(stringResource(R.string.reading_stats_empty), style = AppTypography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 }
                             }
+                            Text(stringResource(R.string.reading_stats_local_note), style = AppTypography.bodySmall,
+                                modifier = Modifier.padding(horizontal = AppSpacing.xs, vertical = AppSpacing.sm),
+                                color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                         item {
                             StatCard {
-                                StatSectionTitle(Icons.Filled.DateRange, stringResource(R.string.reading_stats_activity))
+                                StatSectionTitle(stringResource(R.string.reading_stats_activity))
                                 ReadingHeatmap(summary, selectedDate) { selectedDate = it }
                                 Text(
                                     stringResource(R.string.reading_stats_day_detail, selectedDate.toString(), formatDuration(summary.daily[selectedDate] ?: 0L)),
-                                    style = AppTypography.labelLarge,
-                                    modifier = Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surfaceContainerLow, AppShapes.compact)
-                                        .padding(AppSpacing.md)
+                                    style = AppTypography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.fillMaxWidth()
                                 )
                             }
                         }
                         item {
                             StatCard {
-                                StatSectionTitle(Icons.Filled.ShowChart, stringResource(R.string.reading_stats_trend))
-                                StatPeriodFilter(listOf(7, 30), trendDays) { trendDays = it ?: 7 }
-                                Row(horizontalArrangement = Arrangement.spacedBy(AppSpacing.sm)) {
-                                    FilterChip(
-                                        selected = !trendLineChart,
-                                        onClick = { trendLineChart = false },
-                                        label = { Text(stringResource(R.string.reading_stats_bar_chart)) }
-                                    )
-                                    FilterChip(
-                                        selected = trendLineChart,
-                                        onClick = { trendLineChart = true },
-                                        label = { Text(stringResource(R.string.reading_stats_line_chart)) }
-                                    )
+                                StatSectionTitle(stringResource(R.string.reading_stats_trend))
+                                FlowRow(horizontalArrangement = Arrangement.spacedBy(AppSpacing.lg)) {
+                                    StatPeriodFilter(listOf(7, 30), trendDays) { trendDays = it ?: 7 }
+                                    Row(horizontalArrangement = Arrangement.spacedBy(AppSpacing.xs)) {
+                                        StatFilterChip(
+                                            selected = !trendLineChart,
+                                            onClick = { trendLineChart = false },
+                                            label = stringResource(R.string.reading_stats_bar_chart)
+                                        )
+                                        StatFilterChip(
+                                            selected = trendLineChart,
+                                            onClick = { trendLineChart = true },
+                                            label = stringResource(R.string.reading_stats_line_chart)
+                                        )
+                                    }
                                 }
                                 TrendChart(summary, trendDays, trendLineChart)
                             }
                         }
                         item {
                             StatCard {
-                                StatSectionTitle(Icons.Filled.MenuBook, stringResource(R.string.reading_stats_ranking))
+                                StatSectionTitle(stringResource(R.string.reading_stats_ranking))
                                 StatPeriodFilter(listOf(7, 30, null), rankingDays) { rankingDays = it }
                                 val topBooks = current.rankings[rankingDays].orEmpty()
                                 if (topBooks.isEmpty()) {
-                                    Text(stringResource(R.string.reading_stats_no_books))
+                                    Text(stringResource(R.string.reading_stats_no_books), style = AppTypography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 } else {
-                                    topBooks.forEachIndexed { index, book -> BookRank(index + 1, book) }
+                                    topBooks.forEachIndexed { index, book ->
+                                        BookRank(index + 1, book, topBooks.first().durationMs)
+                                    }
                                 }
                             }
                         }
                         item {
                             StatCard {
-                                StatSectionTitle(Icons.Filled.Label, stringResource(R.string.reading_stats_tags))
+                                StatSectionTitle(stringResource(R.string.reading_stats_tags))
                                 StatPeriodFilter(listOf(7, 30, null), tagDays) { tagDays = it }
                                 val tags = current.tagRankings[tagDays].orEmpty()
                                 if (tags.isEmpty()) {
-                                    Text(stringResource(R.string.reading_stats_no_tags))
+                                    Text(stringResource(R.string.reading_stats_no_tags), style = AppTypography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 } else {
                                     TagDonutChart(tags)
                                     TagDistributionList(current.allTagRankings[tagDays].orEmpty())
@@ -258,6 +277,41 @@ object ReadingStatisticsPage : AppDestination {
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun ReadingStatisticsIncognitoState(modifier: Modifier = Modifier) {
+    val transition = rememberInfiniteTransition(label = "IncognitoGhost")
+    val floatOffset = transition.animateFloat(
+        initialValue = -12f,
+        targetValue = 12f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(1800, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "GhostFloatOffset"
+    )
+    Column(
+        modifier = modifier.padding(AppSpacing.xl),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        Icon(
+            painter = painterResource(R.drawable.ic_reading_incognito_ghost),
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.size(192.dp).graphicsLayer {
+                translationY = floatOffset.value.dp.toPx()
+            }
+        )
+        Text(
+            text = stringResource(R.string.reading_stats_incognito_message),
+            modifier = Modifier.padding(top = 32.dp),
+            style = AppTypography.bodyLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.Center
+        )
     }
 }
 
@@ -279,18 +333,28 @@ private fun TagDonutChart(tags: List<ReadingTagTotal>) {
     }.let { boundaries ->
         tags.indices.map { index -> (boundaries[index] + boundaries[index + 1]) / 2f }
     }
-    // Label angles are evenly spaced independently of sector sizes.
-    val labelAngles = tags.indices.map { -90.0 + it * 360.0 / tags.size }
     val chartHeight = maxOf(300, tags.size * 28).dp
     BoxWithConstraints(Modifier.fillMaxWidth().height(chartHeight)) {
-        val radius = minOf(80.dp, maxWidth * .21f)
         val labelWidth = 72.dp
-        val labelRadiusX = (maxWidth - labelWidth) / 2
+        val labelGap = 12.dp
+        val labelRadiusX = maxWidth / 2 - labelWidth - labelGap
         val labelRadiusY = chartHeight / 2 - 28.dp
-        val labelPositions = labelAngles.map { degrees ->
-            val angle = Math.toRadians(degrees)
-            (maxWidth / 2 + labelRadiusX * kotlin.math.cos(angle).toFloat()) to
-                (chartHeight / 2 + labelRadiusY * kotlin.math.sin(angle).toFloat())
+        val radius = minOf(80.dp, maxWidth * .21f, labelRadiusX - labelGap)
+        // Intersect each sector's radius with the label ellipse, then connect horizontally.
+        val elbowPositions = middleAngles.map { degrees ->
+            val angle = Math.toRadians(degrees.toDouble())
+            val dx = kotlin.math.cos(angle).toFloat()
+            val dy = kotlin.math.sin(angle).toFloat()
+            val distance = 1f / kotlin.math.sqrt(
+                dx * dx / (labelRadiusX.value * labelRadiusX.value) +
+                    dy * dy / (labelRadiusY.value * labelRadiusY.value)
+            )
+            (maxWidth / 2 + (dx * distance).dp) to
+                (chartHeight / 2 + (dy * distance).dp)
+        }
+        val labelPositions = elbowPositions.mapIndexed { index, (elbowX, elbowY) ->
+            val side = if (kotlin.math.cos(Math.toRadians(middleAngles[index].toDouble())) >= 0) 1 else -1
+            (elbowX + (labelWidth / 2 + labelGap) * side) to elbowY
         }
         Canvas(Modifier.fillMaxSize()) {
             val center = Offset(size.width / 2, size.height / 2)
@@ -310,11 +374,11 @@ private fun TagDonutChart(tags: List<ReadingTagTotal>) {
                 val angle = Math.toRadians(middleAngles[index].toDouble())
                 val direction = Offset(kotlin.math.cos(angle).toFloat(), kotlin.math.sin(angle).toFloat())
                 val start = center + direction * outerRadius
-                val labelAngle = Math.toRadians(labelAngles[index])
-                val labelDirection = Offset(kotlin.math.cos(labelAngle).toFloat(), kotlin.math.sin(labelAngle).toFloat())
-                val elbow = center + labelDirection * (outerRadius + 12.dp.toPx())
+                val (elbowX, elbowY) = elbowPositions[index]
+                val elbow = Offset(elbowX.toPx(), elbowY.toPx())
                 val (labelX, labelY) = labelPositions[index]
-                val end = Offset(labelX.toPx(), labelY.toPx()) - labelDirection * 28.dp.toPx()
+                val side = if (direction.x >= 0) 1 else -1
+                val end = Offset((labelX - labelWidth / 2 * side).toPx(), labelY.toPx())
                 drawLine(colors[index], start, elbow, 1.dp.toPx())
                 drawLine(colors[index], elbow, end, 1.dp.toPx())
                 startAngle += sweep
@@ -380,49 +444,61 @@ private fun TagDistributionList(tags: List<ReadingTagTotal>) {
 private fun StatCard(content: @Composable androidx.compose.foundation.layout.ColumnScope.() -> Unit) {
     Card(
         modifier = Modifier.fillMaxWidth(),
-        shape = AppShapes.prominent,
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        shape = AppShapes.standard,
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
     ) {
-        Column(Modifier.fillMaxWidth().padding(AppSpacing.lg), verticalArrangement = Arrangement.spacedBy(AppSpacing.lg), content = content)
+        Column(Modifier.fillMaxWidth().padding(AppSpacing.lg), verticalArrangement = Arrangement.spacedBy(AppSpacing.md), content = content)
     }
 }
 
 @Composable
-private fun StatSectionTitle(icon: ImageVector, title: String) {
-    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(AppSpacing.md)) {
-        AccountIconBadge(icon)
-        Text(title, style = AppTypography.titleMedium, modifier = Modifier.weight(1f))
-    }
+private fun StatSectionTitle(title: String) {
+    Text(title, style = AppTypography.labelLarge, modifier = Modifier.semantics { heading() })
 }
 
 @Composable
 private fun StatPeriodFilter(options: List<Int?>, selected: Int?, onSelect: (Int?) -> Unit) {
-    FlowRow(horizontalArrangement = Arrangement.spacedBy(AppSpacing.sm)) {
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(AppSpacing.xs)) {
         options.forEach { days ->
-            FilterChip(
+            StatFilterChip(
                 selected = selected == days,
                 onClick = { onSelect(days) },
-                shape = AppShapes.pill,
-                label = { Text(stringResource(when (days) {
+                label = stringResource(when (days) {
                     7 -> R.string.reading_stats_7_days
                     30 -> R.string.reading_stats_30_days
                     else -> R.string.reading_stats_all
-                }), style = AppTypography.labelMedium) }
+                })
             )
         }
     }
 }
 
 @Composable
+private fun StatFilterChip(selected: Boolean, onClick: () -> Unit, label: String) {
+    FilterChip(
+        selected = selected,
+        onClick = onClick,
+        shape = AppShapes.compact,
+        border = null,
+        colors = FilterChipDefaults.filterChipColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+            labelColor = MaterialTheme.colorScheme.onSurfaceVariant,
+            selectedContainerColor = MaterialTheme.colorScheme.secondaryContainer,
+            selectedLabelColor = MaterialTheme.colorScheme.onSecondaryContainer
+        ),
+        label = { Text(label, style = AppTypography.labelMedium) }
+    )
+}
+
+@Composable
 private fun StatValue(label: String, value: String, modifier: Modifier = Modifier, emphasized: Boolean = false) {
     Column(
-        modifier.background(if (emphasized) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerLow, AppShapes.standard)
-            .padding(AppSpacing.md),
-        verticalArrangement = Arrangement.spacedBy(AppSpacing.sm)
+        modifier.padding(vertical = AppSpacing.xs).semantics(mergeDescendants = true) {},
+        verticalArrangement = Arrangement.spacedBy(AppSpacing.xs)
     ) {
         Text(label, style = AppTypography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Text(value, style = AppTypography.titleLarge, color = MaterialTheme.colorScheme.onSurface)
+        Text(value, style = if (emphasized) AppTypography.titleLarge else AppTypography.titleMedium,
+            color = MaterialTheme.colorScheme.onSurface)
     }
 }
 
@@ -508,52 +584,79 @@ private fun ReadingHeatmap(summary: ReadingStatisticsSummary, selectedDate: Loca
 private fun TrendChart(summary: ReadingStatisticsSummary, days: Int, lineChart: Boolean) {
     val values = (days - 1 downTo 0).map { summary.daily[summary.today.minusDays(it.toLong())] ?: 0L }
     val maximum = values.maxOrNull()?.coerceAtLeast(1L) ?: 1L
-    if (lineChart) {
-        val lineColor = MaterialTheme.colorScheme.primary
-        val baselineColor = MaterialTheme.colorScheme.outlineVariant
-        Canvas(Modifier.fillMaxWidth().height(90.dp)) {
+    val lineColor = MaterialTheme.colorScheme.primary
+    val gridColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = .45f)
+    val mutedColor = MaterialTheme.colorScheme.onSurfaceVariant
+    Column(verticalArrangement = Arrangement.spacedBy(AppSpacing.sm)) {
+        Text(formatDuration(values.maxOrNull() ?: 0L), style = AppTypography.labelMedium, color = mutedColor)
+        Canvas(Modifier.fillMaxWidth().height(96.dp)) {
             val inset = 4.dp.toPx()
             val chartWidth = (size.width - inset * 2).coerceAtLeast(0f)
             val chartHeight = (size.height - inset * 2).coerceAtLeast(0f)
             val baseline = inset + chartHeight
-            drawLine(baselineColor, Offset(inset, baseline), Offset(inset + chartWidth, baseline), 1.dp.toPx())
-            val points = values.mapIndexed { index, value ->
-                Offset(
-                    inset + chartWidth * index / (values.size - 1).coerceAtLeast(1),
-                    baseline - chartHeight * (value.toDouble() / maximum).toFloat()
-                )
+            repeat(3) { index ->
+                val y = inset + chartHeight * index / 2
+                drawLine(gridColor, Offset(inset, y), Offset(inset + chartWidth, y), 1.dp.toPx())
             }
-            points.zipWithNext().forEach { (start, end) ->
-                drawLine(lineColor, start, end, strokeWidth = 2.dp.toPx())
+            if (lineChart) {
+                val points = values.mapIndexed { index, value ->
+                    Offset(
+                        inset + chartWidth * index / (values.size - 1).coerceAtLeast(1),
+                        baseline - chartHeight * (value.toDouble() / maximum).toFloat()
+                    )
+                }
+                val fill = Path().apply {
+                    moveTo(points.first().x, baseline)
+                    points.forEach { lineTo(it.x, it.y) }
+                    lineTo(points.last().x, baseline)
+                    close()
+                }
+                drawPath(fill, Brush.verticalGradient(listOf(lineColor.copy(alpha = .12f), Color.Transparent)))
+                points.zipWithNext().forEach { (start, end) ->
+                    drawLine(lineColor, start, end, strokeWidth = 2.dp.toPx(), cap = StrokeCap.Round)
+                }
+                points.forEach { point -> drawCircle(lineColor, radius = 2.dp.toPx(), center = point) }
+            } else {
+                val slotWidth = chartWidth / values.size
+                val barWidth = minOf(16.dp.toPx(), slotWidth * .65f)
+                values.forEachIndexed { index, value ->
+                    val barHeight = maxOf(2.dp.toPx(), chartHeight * (value.toDouble() / maximum).toFloat())
+                    drawRoundRect(
+                        color = if (value == 0L) gridColor else lineColor.copy(alpha = if (index == values.lastIndex) .9f else .5f),
+                        topLeft = Offset(inset + slotWidth * index + (slotWidth - barWidth) / 2, baseline - barHeight),
+                        size = Size(barWidth, barHeight),
+                        cornerRadius = androidx.compose.ui.geometry.CornerRadius(2.dp.toPx())
+                    )
+                }
             }
-            points.forEach { point -> drawCircle(lineColor, radius = 2.5.dp.toPx(), center = point) }
         }
-    } else {
-    Row(Modifier.fillMaxWidth().height(90.dp), horizontalArrangement = Arrangement.spacedBy(2.dp), verticalAlignment = Alignment.Bottom) {
-        values.forEach { value ->
-            Box(Modifier.weight(1f).height((4f + 82f * value / maximum).dp)
-                .clip(RoundedCornerShape(topStart = 3.dp, topEnd = 3.dp))
-                .background(if (value > 0L) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant))
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            Text(summary.today.minusDays(days.toLong() - 1L).toString(),
+                style = MaterialTheme.typography.labelSmall, color = mutedColor)
+            Text(summary.today.toString(), style = MaterialTheme.typography.labelSmall, color = mutedColor)
         }
-    }
-    }
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-        Text(summary.today.minusDays(days.toLong() - 1L).toString(), style = MaterialTheme.typography.labelSmall)
-        Text(summary.today.toString(), style = MaterialTheme.typography.labelSmall)
     }
 }
 
 @Composable
-private fun BookRank(rank: Int, book: ReadingBookTotal) {
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(AppSpacing.md), verticalAlignment = Alignment.CenterVertically) {
-        Box(Modifier.size(AppSpacing.xxl).background(
-            if (rank == 1) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerLow,
-            AppShapes.compact), contentAlignment = Alignment.Center) {
-            Text(rank.toString(), style = AppTypography.labelLarge)
-        }
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(AppSpacing.xs)) {
+private fun BookRank(rank: Int, book: ReadingBookTotal, maximumDuration: Long) {
+    Row(Modifier.fillMaxWidth().padding(vertical = AppSpacing.xs).semantics(mergeDescendants = true) {},
+        horizontalArrangement = Arrangement.spacedBy(AppSpacing.md), verticalAlignment = Alignment.Top) {
+        Text(rank.toString().padStart(2, '0'), modifier = Modifier.width(AppSpacing.xl),
+            style = AppTypography.labelLarge,
+            color = if (rank == 1) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant)
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(AppSpacing.sm)) {
             Text(book.bookName, style = AppTypography.bodyMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
-            Text(formatDuration(book.durationMs), style = AppTypography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Row(horizontalArrangement = Arrangement.spacedBy(AppSpacing.md), verticalAlignment = Alignment.CenterVertically) {
+                Box(Modifier.weight(1f).height(3.dp).clip(AppShapes.pill)
+                    .background(MaterialTheme.colorScheme.surfaceVariant)) {
+                    Box(Modifier.fillMaxWidth((book.durationMs.toDouble() / maximumDuration.coerceAtLeast(1L)).toFloat().coerceIn(0f, 1f))
+                        .height(3.dp).clip(AppShapes.pill)
+                        .background(MaterialTheme.colorScheme.primary.copy(alpha = if (rank == 1) .8f else .4f)))
+                }
+                Text(formatDuration(book.durationMs), style = AppTypography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
         }
     }
 }

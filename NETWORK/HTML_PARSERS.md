@@ -269,7 +269,7 @@ table.table
 .book-ep
 ~~~
 
-删除按钮的 data-id 是观看记录 ID，不一定是小说 ID；从 data-id 读取并发送给 /inc/mem_view_del.php。
+删除按钮 `.view-del[data-id]` 的 `data-id` 是观看记录自身的 View ID，不是小说 ID 或章节 ID；优先读取该字段，缺失时可取 `<tr id="view_{vid}">` 的 `view_` 后缀。不得从 `novel-` 行 ID 推导删除目标；无 View ID 的记录仍可显示和阅读，但不能删除。客户端 `HistoryNovel.vid` 保存该 View ID，并发送给 `/inc/mem_view_del.php`。
 
 ### 8.4 资料表单
 

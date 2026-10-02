@@ -11,6 +11,8 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.calculateStartPadding
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -18,7 +20,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowForward
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Person
@@ -29,7 +31,6 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Surface
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
@@ -47,6 +48,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -81,6 +84,8 @@ import com.breakyuna.esjzone.util.AppLogger
 import com.breakyuna.esjzone.util.LocaleHelper
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
 import androidx.compose.ui.graphics.vector.rememberVectorPainter
 
@@ -106,6 +111,16 @@ object ProfileTab : AppTab {
         val profile = profileName?.let { UserProfile(it, profileAvatar, profileExp, profileLevel) }
         val menuItems = profileMenuItems()
 
+        LaunchedEffect(domain, authorization.ewsKey, authorization.ewsToken) {
+            val prefix = profileCachePrefix(authorization, domain)
+            // Comment confirmation persists the exact profile used as evidence.
+            // Observe it so a retained tab updates without another network request.
+            PresentationAccess.database.cacheDao().observeByKey("${prefix}experience")
+                .map { it?.value?.toIntOrNull() }
+                .distinctUntilChanged()
+                .collect { profileExp = it }
+        }
+
         LaunchedEffect(domain, authorization.ewsKey, authorization.ewsToken, retry) {
             loading = true
             val prefix = profileCachePrefix(authorization, domain)
@@ -121,7 +136,6 @@ object ProfileTab : AppTab {
                 if (cached != null) {
                     profileName = cached.name
                     profileAvatar = cached.avatarUrl
-                    profileExp = cached.exp
                     profileLevel = cached.level
                 }
             } catch (e: CancellationException) { throw e } catch (e: Exception) { AppLogger.w("ProfileTab", "Failed to read cached profile", e) }
@@ -134,7 +148,6 @@ object ProfileTab : AppTab {
                 }
                 profileName = fresh.name
                 profileAvatar = fresh.avatarUrl
-                profileExp = fresh.exp
                 profileLevel = fresh.level
                 withContext(Dispatchers.IO) { cacheUserProfile(authorization, domain, fresh) }
             } catch (e: CancellationException) { throw e } catch (e: Exception) { AppLogger.w("ProfileTab", "Profile unavailable; using local snapshot", e) } finally { loading = false }
@@ -170,13 +183,19 @@ object ProfileTab : AppTab {
                 verticalArrangement = Arrangement.spacedBy(AppSpacing.md)
             ) {
                 item(key = "profile-hero") { ProfileHero(profile, domain, loading, onRetry = { retry++ }) }
-                item(key = "profile-menu-title") { Text(stringResource(R.string.profile_tools), style = AppTypography.titleMedium, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                item(key = "profile-menu-title") {
+                    Text(stringResource(R.string.profile_tools), style = AppTypography.labelMedium,
+                        modifier = Modifier.padding(start = AppSpacing.xs, top = AppSpacing.sm).semantics { heading() },
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
                 item(key = "profile-actions") {
-                    Surface(shape = AppShapes.standard, color = MaterialTheme.colorScheme.surface) {
-                        Column {
-                            menuItems.forEachIndexed { index, item ->
-                                if (index > 0) HorizontalDivider()
-                                ProfileAction(item, onClick = { navigator?.pushIfNotCurrent(item.destination) })
+                    Column(verticalArrangement = Arrangement.spacedBy(AppSpacing.md)) {
+                        menuItems.chunked(2).forEach { items ->
+                            Row(Modifier.height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(AppSpacing.md)) {
+                                items.forEach { item ->
+                                    ProfileAction(item, modifier = Modifier.weight(1f).fillMaxHeight(),
+                                        onClick = { navigator?.pushIfNotCurrent(item.destination) })
+                                }
                             }
                         }
                     }
@@ -266,16 +285,20 @@ private fun ProfileHero(profile: UserProfile?, domain: String, loading: Boolean,
 }
 
 @Composable
-private fun ProfileAction(item: ProfileMenuItem, onClick: () -> Unit) {
-    Surface(onClick = onClick, color = MaterialTheme.colorScheme.surface) {
-        Row(
-            Modifier.fillMaxWidth().heightIn(min = 48.dp).padding(horizontal = AppSpacing.md, vertical = AppSpacing.sm),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(AppSpacing.md)
+private fun ProfileAction(item: ProfileMenuItem, modifier: Modifier = Modifier, onClick: () -> Unit) {
+    Surface(onClick = onClick, modifier = modifier, shape = AppShapes.standard, color = MaterialTheme.colorScheme.surface) {
+        Column(
+            Modifier.fillMaxWidth().heightIn(min = 96.dp).padding(AppSpacing.lg),
+            verticalArrangement = Arrangement.spacedBy(AppSpacing.md)
         ) {
-            Icon(item.icon, contentDescription = null, modifier = Modifier.size(24.dp))
-            Text(item.title, modifier = Modifier.weight(1f), style = AppTypography.bodyLarge)
-            Icon(Icons.AutoMirrored.Filled.ArrowForward, null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(20.dp))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically) {
+                Icon(item.icon, contentDescription = null, modifier = Modifier.size(22.dp),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null,
+                    tint = MaterialTheme.colorScheme.outline, modifier = Modifier.size(18.dp))
+            }
+            Text(item.title, style = AppTypography.labelLarge)
         }
     }
 }

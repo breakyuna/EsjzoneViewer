@@ -24,6 +24,9 @@ interface CacheDao {
     @Query("SELECT * FROM cache WHERE cache_key = :key LIMIT 1")
     fun findByKey(key: String): Cache?
 
+    @Query("SELECT * FROM cache WHERE cache_key = :key LIMIT 1")
+    fun observeByKey(key: String): kotlinx.coroutines.flow.Flow<Cache?>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     fun insertAll(vararg caches: Cache)
 

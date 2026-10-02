@@ -28,7 +28,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.CloudOff
-import androidx.compose.material.icons.outlined.Inbox
 import androidx.compose.material.icons.outlined.WarningAmber
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -120,26 +119,6 @@ fun AppLoading(modifier: Modifier = Modifier, size: Dp = 24.dp) {
             .size(size)
             .semantics { progressBarRangeInfo = ProgressBarRangeInfo.Indeterminate },
         strokeWidth = 2.5.dp
-    )
-}
-
-/** Empty state with an optional action. The title is the accessible state label. */
-@Composable
-fun AppEmptyState(
-    title: String,
-    message: String? = null,
-    modifier: Modifier = Modifier,
-    icon: ImageVector = Icons.Outlined.Inbox,
-    actionLabel: String? = null,
-    onAction: (() -> Unit)? = null
-) {
-    AppStateMessage(
-        title = title,
-        message = message,
-        modifier = modifier,
-        icon = icon,
-        actionLabel = actionLabel,
-        onAction = onAction
     )
 }
 

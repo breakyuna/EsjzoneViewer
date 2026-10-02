@@ -37,7 +37,7 @@
 | 收藏状态读取 | button.btn-favorite | 是 | 已验证 | 无 | P0 | 样本为已收藏 |
 | 添加/取消收藏 | /inc/mem_favorite.php | 是 | 维护者抓包确认 Toggle 协议及成功 JSON | 中 | P1 | 从目标详情页获取运行时 token；先读远端列表再按本地意图切换，仅 `status=200` 确认成功；失败响应形态未实测 |
 | 观看记录读取 | /my/view | 是 | 已验证 | 无 | P0 | 16 条样本 |
-| 删除观看记录 | /inc/mem_view_del.php | 是 | 部分验证 | 高 | P2 | 脚本和请求形状已知，未执行 |
+| 删除观看记录 | /inc/mem_view_del.php | 是 | 维护者抓包确认 Token、View ID 及成功 JSON | 高 | P2 | 客户端支持长按多选、全选可见记录和确认删除；批次复用一次 Token，数值 status=200 才确认成功；未执行真实账户删除 |
 | 我的贴文 | /my/post | 是 | 已验证 | 无 | P2 | 当前为空表 |
 | 我的回复 | /my/reply | 是 | 部分验证 | 无 | P2 | bootpag total 0 |
 | 私讯联系人 | /my/message | 是 | 部分验证 | 无 | P2 | 联系人/列表未渲染 |

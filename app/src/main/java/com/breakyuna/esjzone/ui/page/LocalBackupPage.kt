@@ -26,6 +26,10 @@ import com.breakyuna.esjzone.backup.LocalBackup
 import com.breakyuna.esjzone.database.BookshelfRepository
 import com.breakyuna.esjzone.network.LocalAuthorization
 import com.breakyuna.esjzone.ui.designsystem.GlobalText as Text
+import com.breakyuna.esjzone.ui.designsystem.AppShapes
+import com.breakyuna.esjzone.ui.designsystem.AppSpacing
+import com.breakyuna.esjzone.ui.designsystem.AppTypography
+import com.breakyuna.esjzone.ui.designsystem.accountContentWidth
 import com.breakyuna.esjzone.ui.designsystem.globalStringResource as stringResource
 import com.breakyuna.esjzone.ui.navigation.*
 import kotlinx.coroutines.CancellationException
@@ -70,36 +74,55 @@ object LocalBackupPage : AppDestination {
         val open = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
             if (uri != null) model.run(context, uri, pendingScope, pendingNames.map { BackupCategory.valueOf(it) }.toSet(), true)
         }
-        Scaffold(topBar = { TopAppBar(title = { Text(stringResource(R.string.local_backup)) }, navigationIcon = {
+        Scaffold(topBar = { TopAppBar(title = { Text(stringResource(R.string.local_backup), style = AppTypography.titleMedium) },
+            colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background), navigationIcon = {
             IconButton(onClick = { navigator?.pop() }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.reading_stats_back)) }
         }) }) { padding ->
-            Column(Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text(stringResource(R.string.backup_description))
-                BackupCategory.entries.forEach { category ->
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Checkbox(checked = category.name in selectedNames, enabled = !state.busy, onCheckedChange = { checked ->
-                            selectedNames = if (checked) selectedNames + category.name else selectedNames - category.name
-                        })
-                        Text(stringResource(when (category) {
-                            BackupCategory.BOOKMARKS -> R.string.bookmarks
-                            BackupCategory.DOWNLOADS -> R.string.downloads
-                            BackupCategory.READING -> R.string.backup_reading
-                            BackupCategory.HISTORY -> R.string.backup_history
-                            BackupCategory.SEARCH -> R.string.backup_search
-                            BackupCategory.GROUPS -> R.string.shelf_groups
-                        }))
+            Column(Modifier.fillMaxSize().padding(padding).accountContentWidth().verticalScroll(rememberScrollState())
+                .padding(start = AppSpacing.lg, end = AppSpacing.lg, top = AppSpacing.sm, bottom = AppSpacing.xl),
+                verticalArrangement = Arrangement.spacedBy(AppSpacing.lg)) {
+                Text(stringResource(R.string.backup_description), style = AppTypography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(horizontal = AppSpacing.xs))
+                SettingsSection {
+                    BackupCategory.entries.forEach { category ->
+                        Row(Modifier.fillMaxWidth().heightIn(min = 56.dp).padding(horizontal = AppSpacing.xs),
+                            verticalAlignment = Alignment.CenterVertically) {
+                            Checkbox(checked = category.name in selectedNames, enabled = !state.busy, onCheckedChange = { checked ->
+                                selectedNames = if (checked) selectedNames + category.name else selectedNames - category.name
+                            })
+                            Text(stringResource(when (category) {
+                                BackupCategory.BOOKMARKS -> R.string.bookmarks
+                                BackupCategory.DOWNLOADS -> R.string.downloads
+                                BackupCategory.READING -> R.string.backup_reading
+                                BackupCategory.HISTORY -> R.string.backup_history
+                                BackupCategory.SEARCH -> R.string.backup_search
+                                BackupCategory.GROUPS -> R.string.shelf_groups
+                            }), style = AppTypography.bodyMedium, modifier = Modifier.padding(end = AppSpacing.md))
+                        }
                     }
                 }
-                Button(enabled = !state.busy && selectedNames.isNotEmpty(), onClick = {
-                    pendingNames = selectedNames; pendingScope = scope
-                    create.launch("esjzone-backup-${java.time.LocalDate.now()}.zip")
-                }) { Text(stringResource(R.string.backup_export)) }
-                OutlinedButton(enabled = !state.busy && selectedNames.isNotEmpty(), onClick = { confirmImport = true }) {
-                    Text(stringResource(R.string.backup_import))
+                Column(verticalArrangement = Arrangement.spacedBy(AppSpacing.sm)) {
+                    Button(modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp), shape = AppShapes.compact,
+                        enabled = !state.busy && selectedNames.isNotEmpty(), onClick = {
+                        pendingNames = selectedNames; pendingScope = scope
+                        create.launch("esjzone-backup-${java.time.LocalDate.now()}.zip")
+                    }) { Text(stringResource(R.string.backup_export)) }
+                    OutlinedButton(modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp), shape = AppShapes.compact,
+                        enabled = !state.busy && selectedNames.isNotEmpty(), onClick = { confirmImport = true }) {
+                        Text(stringResource(R.string.backup_import))
+                    }
                 }
-                if (state.busy) { LinearProgressIndicator(Modifier.fillMaxWidth()); Text(stringResource(R.string.backup_working)) }
-                state.result?.let { Text(stringResource(it)) }
+                if (state.busy) {
+                    LinearProgressIndicator(Modifier.fillMaxWidth())
+                    Text(stringResource(R.string.backup_working), style = AppTypography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                state.result?.let {
+                    Surface(shape = AppShapes.standard, color = MaterialTheme.colorScheme.surface) {
+                        Text(stringResource(it), style = AppTypography.bodyMedium,
+                            modifier = Modifier.fillMaxWidth().padding(AppSpacing.lg))
+                    }
+                }
             }
         }
         if (confirmImport) AlertDialog(onDismissRequest = { confirmImport = false },

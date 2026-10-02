@@ -10,16 +10,23 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.breakyuna.esjzone.R
 import com.breakyuna.esjzone.ui.designsystem.GlobalText as Text
+import com.breakyuna.esjzone.ui.designsystem.AppShapes
+import com.breakyuna.esjzone.ui.designsystem.AppSpacing
+import com.breakyuna.esjzone.ui.designsystem.AppTypography
+import com.breakyuna.esjzone.ui.designsystem.accountContentWidth
 import com.breakyuna.esjzone.ui.designsystem.globalStringResource as stringResource
 import com.breakyuna.esjzone.ui.navigation.*
 import kotlinx.coroutines.Dispatchers
@@ -60,27 +67,38 @@ object OpenSourceLicensesPage : AppDestination {
         val licenses by model.state.collectAsStateWithLifecycle()
         var expandedPath by rememberSaveable { mutableStateOf<String?>(null) }
         Scaffold(topBar = {
-            TopAppBar(title = { Text(stringResource(R.string.open_source_licenses)) }, navigationIcon = {
+            TopAppBar(title = { Text(stringResource(R.string.open_source_licenses), style = AppTypography.titleMedium) },
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background), navigationIcon = {
                 IconButton(onClick = { navigator?.pop() }) {
                     Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.reading_stats_back))
                 }
             })
         }) { padding ->
-            LazyColumn(Modifier.fillMaxSize().padding(padding), contentPadding = PaddingValues(16.dp)) {
-                if (licenses == null) item { CircularProgressIndicator() }
+            LazyColumn(Modifier.fillMaxSize().padding(padding).accountContentWidth(),
+                contentPadding = PaddingValues(start = AppSpacing.lg, end = AppSpacing.lg, top = AppSpacing.sm, bottom = AppSpacing.xl),
+                verticalArrangement = Arrangement.spacedBy(AppSpacing.sm)) {
+                if (licenses == null) item {
+                    Box(Modifier.fillMaxWidth().padding(AppSpacing.xl), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
+                }
                 items(licenses.orEmpty(), key = OpenSourceLicense::path) { license ->
-                    Column(Modifier.fillMaxWidth()) {
-                        Text(
-                            license.title, style = MaterialTheme.typography.titleMedium,
-                            modifier = Modifier.fillMaxWidth().clickable {
-                                expandedPath = if (expandedPath == license.path) null else license.path
-                            }.padding(vertical = 16.dp)
-                        )
-                        if (expandedPath == license.path) SelectionContainer {
-                            Text(license.text, style = MaterialTheme.typography.bodySmall,
-                                modifier = Modifier.padding(bottom = 16.dp))
+                    Surface(shape = AppShapes.standard, color = MaterialTheme.colorScheme.surface) {
+                        Column(Modifier.fillMaxWidth()) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp).clickable {
+                                    expandedPath = if (expandedPath == license.path) null else license.path
+                                }.padding(AppSpacing.lg),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(AppSpacing.md)
+                            ) {
+                                Text(license.title, style = AppTypography.bodyMedium, modifier = Modifier.weight(1f))
+                                Icon(if (expandedPath == license.path) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
+                                    contentDescription = null, modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                            if (expandedPath == license.path) SelectionContainer {
+                                Text(license.text, style = AppTypography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.padding(start = AppSpacing.lg, end = AppSpacing.lg, bottom = AppSpacing.lg))
+                            }
                         }
-                        HorizontalDivider()
                     }
                 }
             }

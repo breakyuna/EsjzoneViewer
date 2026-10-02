@@ -241,6 +241,13 @@
     <string name="history_local_delete_confirm">Deleted records cannot be recovered. Bookshelf, cloud history, downloads, and bookmarks are not affected.</string>
     <string name="history_local_delete_confirm_action">Delete records</string>
     <string name="history_local_delete_failed">Could not delete the selected history. Please try again.</string>
+    <string name="history_cloud_edit">Edit cloud history</string>
+    <string name="history_cloud_select_all">Select all visible cloud records</string>
+    <string name="history_cloud_delete_selected">Delete cloud records</string>
+    <string name="history_cloud_delete_title">Delete %1$d cloud record(s)?</string>
+    <string name="history_cloud_delete_confirm">The selected viewing records will be permanently deleted from ESJZone. Local history, bookshelf, downloads, and bookmarks are not affected.</string>
+    <string name="history_cloud_delete_failed">Confirmed deletions have been removed. Deletion of the remaining records is unconfirmed. Refresh cloud history to check the result before selecting records again.</string>
+    <string name="history_cloud_refresh_and_done">Refresh and finish editing</string>
     <string name="history_cloud_sync">Sync cloud history</string>
     <string name="history_cloud_sync_running">Syncing cloud history</string>
     <string name="history_cloud_sync_success">Cloud history synced</string>
@@ -562,7 +569,6 @@
     <string name="comment_submit_failed">Failed to post. Check your connection or login status and try again.</string>
     <string name="comment_submit_unverified">The request completed but the new comment could not be verified. Refresh before posting again.</string>
     <string name="comment_submit_timeout">Response timed out. The comment may have been posted. Refresh to verify before retrying.</string>
-    <string name="comment_submit_experience_increased">Experience increased. The comment may have been posted, but it is not visible yet. Refresh later before posting again.</string>
     <string name="comment_check_before_retry_hint">Please refresh the page to check if your message was already posted before trying again</string>
     <string name="comment_action_refresh">Refresh</string>
     <string name="comment_refresh">Refresh</string>
@@ -699,6 +705,7 @@
     <string name="settings_language_system_short">System</string>
     <string name="settings_language_chinese_short">中文</string>
     <string name="reading_stats_incognito">Incognito</string>
+    <string name="reading_stats_incognito_message">Incognito mode is on. Reading statistics recording is paused.</string>
     <string name="reading_stats_show_tags">Show all tags and percentages</string>
     <string name="reading_stats_hide_tags">Hide tag list</string>
 </resources>

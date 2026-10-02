@@ -67,7 +67,8 @@ getAuthToken({
 
 - authorization 是运行时产生的短期或会话相关值，具体格式、寿命和刷新规则 UNKNOWN / NOT VERIFIED。
 - 客户端不能把它当作长期 API key。
-- 如果浏览器运行时不能提供 JinJing().Callback，应返回“需要浏览器会话”而不是自行伪造 token。
+- `/my/view` 删除历史的 Token 获取已由维护者于 2026-10-02 抓包确认：在同站登录会话下 POST `plxf=getAuthToken`，解析响应 `<JinJing>` 标签，再作为删除请求的 `authorization` 头；一次批量操作可复用该 Token。详见 API_ENDPOINTS.md 第 3.1 节。
+- 无法获取有效 Token 时停止写操作，不自行伪造 Token。
 
 ## 5. 登录态可见页面
 

@@ -382,9 +382,6 @@ object EsjzoneUrls {
         val MemFavorite: String
             get() = "$Base/inc/mem_favorite.php"
 
-        val MemViewDel: String
-            get() = "$Base/inc/mem_view_del.php"
-
     }
 
     object Novel {
