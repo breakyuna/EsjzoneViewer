@@ -63,6 +63,7 @@ import com.breakyuna.esjzone.network.EsjzoneUrls
 import com.breakyuna.esjzone.network.LocalAuthorization
 import com.breakyuna.esjzone.ui.navigation.LocalFloatingNavPadding
 import com.breakyuna.esjzone.network.features.getUserProfile
+import com.breakyuna.esjzone.ui.designsystem.AccountIconBadge
 import com.breakyuna.esjzone.ui.designsystem.accountContentWidth
 import com.breakyuna.esjzone.ui.designsystem.AppAvatarImage
 import com.breakyuna.esjzone.ui.designsystem.AppShapes
