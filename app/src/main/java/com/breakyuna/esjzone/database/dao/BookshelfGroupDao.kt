@@ -26,13 +26,25 @@ interface BookshelfGroupDao {
     @Query("UPDATE bookshelf_group_members SET groupName = :newName WHERE scope = :scope AND groupName = :oldName")
     suspend fun renameMembers(scope: String, oldName: String, newName: String)
     @Transaction
+    suspend fun create(scope: String, name: String, keys: List<String> = emptyList()) {
+        require(name.isNotBlank() && name.length <= 60 && name == name.trim())
+        require(groups(scope).none { it.name == name })
+        add(BookshelfGroup(scope, name))
+        // Creating a destination and moving the selection is one local operation.
+        keys.forEach { assign(BookshelfGroupMember(scope, it, name)) }
+    }
+    @Transaction
     suspend fun remove(scope: String, name: String) {
         deleteMembers(scope, name)
         deleteGroup(scope, name)
     }
     @Transaction
     suspend fun rename(scope: String, oldName: String, newName: String) {
-        require(newName.isNotBlank() && groups(scope).none { it.name == newName })
+        require(newName.isNotBlank() && newName.length <= 60 && newName == newName.trim())
+        val existing = groups(scope)
+        require(existing.any { it.name == oldName })
+        if (oldName == newName) return
+        require(existing.none { it.name == newName })
         add(BookshelfGroup(scope, newName))
         renameMembers(scope, oldName, newName)
         deleteGroup(scope, oldName)

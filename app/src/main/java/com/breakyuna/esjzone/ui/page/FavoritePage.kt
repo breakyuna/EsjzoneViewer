@@ -31,6 +31,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.Done
 import androidx.compose.material.icons.filled.QueryStats
 import androidx.compose.material.icons.filled.GridView
@@ -40,6 +41,7 @@ import androidx.compose.material.icons.filled.ViewList
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -70,6 +72,8 @@ import androidx.compose.runtime.key
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -140,8 +144,12 @@ object FavoritePage : AppDestination {
         val groups by model.groups.collectAsStateWithLifecycle()
         val members by model.groupMembers.collectAsStateWithLifecycle()
         var activeGroup by rememberSaveable { mutableStateOf<String?>(null) }
-        var showMoveGroup by remember { mutableStateOf(false) }
-        val groupError by model.groupError.collectAsStateWithLifecycle()
+        val groupNames = remember(groups) { groups.map { it.name } }
+        val membership = remember(members) { members.associate { it.bookKey to it.groupName } }
+        var groupDialog by rememberSaveable { mutableStateOf<ShelfGroupDialog?>(null) }
+        var groupOriginal by rememberSaveable { mutableStateOf("") }
+        val groupState by model.groupState.collectAsStateWithLifecycle()
+        val savingGroup = groupState == FavoritePageModel.GroupState.Saving
 
         LaunchedEffect(entries) {
             BookshelfCoverStore.schedulePersist(entries)
@@ -154,12 +162,15 @@ object FavoritePage : AppDestination {
         val legacyRecoveryFailed by model.legacyRecoveryFailed.collectAsStateWithLifecycle()
         val adult by PresentationAccess.settings.adult
         val snackbar = remember { SnackbarHostState() }
+        val uiScope = rememberCoroutineScope()
         val listState = rememberLazyListState()
         var editing by rememberSaveable { mutableStateOf(false) }
         var activeFilter by rememberSaveable { mutableStateOf(BookshelfFilter.ALL) }
         var activeSort by rememberSaveable { mutableStateOf(BookshelfSort.Order.RECENT_READ) }
         var listView by rememberSaveable { mutableStateOf(false) }
-        var selected by remember { mutableStateOf<Set<String>>(emptySet()) }
+        var selected by rememberSaveable(stateSaver = listSaver<Set<String>, String>(
+            save = { it.toList() }, restore = { it.toSet() }
+        )) { mutableStateOf(emptySet()) }
         var pendingDelete by remember { mutableStateOf<List<BookshelfEntry>>(emptyList()) }
         var showDeleteDialog by remember { mutableStateOf(false) }
         var showLegacyRecoveryDialog by remember { mutableStateOf(false) }
@@ -191,8 +202,7 @@ object FavoritePage : AppDestination {
             }
         }
 
-        val visible = remember(entries, adult, members, activeGroup) {
-            val membership = members.associate { it.bookKey to it.groupName }
+        val visible = remember(entries, adult, membership, activeGroup) {
             entries.filter { (adult || !it.isAdult) && (activeGroup == null ||
                 if (activeGroup == "") it.bookKey !in membership else membership[it.bookKey] == activeGroup) }
         }
@@ -231,6 +241,9 @@ object FavoritePage : AppDestination {
         val syncFailedMessage = stringResource(R.string.bookshelf_sync_failed)
         val deleteDoneMessage = stringResource(R.string.bookshelf_delete_done)
         val deleteFailedMessage = stringResource(R.string.bookshelf_delete_failed)
+        val groupMovedMessage = stringResource(R.string.group_move_done)
+        val groupDeletedMessage = stringResource(R.string.group_delete_done)
+        val ungroupedLabel = stringResource(R.string.group_ungrouped)
 
         suspend fun showTransientSnackbar(message: String, durationMillis: Long = 2000L) {
             snackbar.currentSnackbarData?.dismiss()
@@ -268,7 +281,7 @@ object FavoritePage : AppDestination {
         }
 
         fun exitEdit() {
-            if (deleting) return
+            if (deleting || savingGroup) return
             editing = false
             selected = emptySet()
             pendingDelete = emptyList()
@@ -325,14 +338,62 @@ object FavoritePage : AppDestination {
                 else -> Unit
             }
         }
-        if (groupError) AlertDialog(onDismissRequest = { model.groupError.value = false },
-            text = { Text(stringResource(R.string.group_error)) },
-            confirmButton = { TextButton(onClick = { model.groupError.value = false }) { Text(stringResource(android.R.string.ok)) } })
-        if (showMoveGroup) ShelfGroupPicker(groups.map { it.name }, onDismiss = { showMoveGroup = false }, onCreate = model::createGroup) { name ->
-            model.moveToGroup(selected, name)
-            showMoveGroup = false
+        LaunchedEffect(groupState) {
+            val result = groupState as? FavoritePageModel.GroupState.Completed ?: return@LaunchedEffect
+            val message = when (val change = result.change) {
+                is FavoritePageModel.GroupChange.Created -> {
+                    activeGroup = change.name
+                    activeFilter = BookshelfFilter.ALL
+                    groupDialog = null
+                    null
+                }
+                is FavoritePageModel.GroupChange.Renamed -> {
+                    if (activeGroup == change.old) activeGroup = change.name
+                    groupDialog = ShelfGroupDialog.MANAGE
+                    null
+                }
+                is FavoritePageModel.GroupChange.Deleted -> {
+                    if (activeGroup == change.name) {
+                        activeGroup = ""
+                        activeFilter = BookshelfFilter.ALL
+                    }
+                    groupDialog = ShelfGroupDialog.MANAGE
+                    groupDeletedMessage
+                }
+                is FavoritePageModel.GroupChange.Moved -> {
+                    groupDialog = null
+                    editing = false
+                    selected = emptySet()
+                    groupMovedMessage.format(change.count, change.name ?: ungroupedLabel)
+                }
+            }
+            model.clearGroupResult()
+            if (message != null) uiScope.launch { showTransientSnackbar(message) }
         }
-        BackHandler(enabled = editing && !showDeleteDialog) { exitEdit() }
+        groupDialog?.let { dialog ->
+            ShelfGroupDialogs(
+                dialog = dialog,
+                original = groupOriginal,
+                names = groupNames,
+                selectedGroups = remember(selected, membership) {
+                    selected.mapTo(mutableSetOf()) { membership[it].orEmpty() }
+                },
+                selectedCount = selected.size,
+                saving = savingGroup,
+                failed = groupState == FavoritePageModel.GroupState.Failed,
+                onNavigate = { next, original ->
+                    model.clearGroupResult()
+                    groupOriginal = original
+                    groupDialog = next
+                },
+                onDismiss = { groupDialog = null; model.clearGroupResult() },
+                onCreate = model::createGroup,
+                onRename = model::renameGroup,
+                onDelete = model::deleteGroup,
+                onMove = { name, create -> model.moveToGroup(selected, name, create) }
+            )
+        }
+        BackHandler(enabled = editing && !showDeleteDialog && groupDialog == null) { exitEdit() }
 
         Scaffold(
             contentWindowInsets = WindowInsets(0, 0, 0, 0),
@@ -356,7 +417,7 @@ object FavoritePage : AppDestination {
                     isSyncSuccess = isSyncSuccess,
                     isSyncFailed = isSyncFailed,
                     showSyncStatusMenu = showSyncStatusMenu,
-                    deleting = deleting,
+                    deleting = deleting || savingGroup,
                     onBack = {
                         snackbar.currentSnackbarData?.dismiss()
                         if (editing) exitEdit() else navigator?.pop()
@@ -377,16 +438,19 @@ object FavoritePage : AppDestination {
                             horizontalArrangement = Arrangement.spacedBy(AppSpacing.sm),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            TextButton(onClick = { showMoveGroup = true }, enabled = selected.isNotEmpty() && !deleting) {
-                                Text(stringResource(R.string.group_move))
-                            }
                             Button(
+                                onClick = { model.clearGroupResult(); groupDialog = ShelfGroupDialog.MOVE },
+                                modifier = Modifier.weight(1f),
+                                enabled = selected.isNotEmpty() && !deleting && !savingGroup
+                            ) {
+                                Icon(Icons.Filled.FolderOpen, null)
+                                Text(stringResource(R.string.group_move), Modifier.padding(start = 6.dp))
+                            }
+                            OutlinedButton(
                                 onClick = ::requestDelete,
-                                enabled = selected.isNotEmpty() && !deleting,
-                                colors = ButtonDefaults.buttonColors(
-                                    containerColor = MaterialTheme.colorScheme.errorContainer,
-                                    contentColor = MaterialTheme.colorScheme.onErrorContainer
-                                )
+                                modifier = Modifier.weight(1f),
+                                enabled = selected.isNotEmpty() && !deleting && !savingGroup,
+                                colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error)
                             ) {
                                 if (deleting) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
                                 else Icon(Icons.Filled.Delete, null)
@@ -410,7 +474,7 @@ object FavoritePage : AppDestination {
             BoxWithConstraints(Modifier.fillMaxSize()) {
                 val startPadding = AppSpacing.lg + navPadding.calculateStartPadding(layoutDirection)
                 val endPadding = AppSpacing.lg
-                val columns = if (listView && !editing) 1 else bookshelfColumnCount(
+                val columns = if (listView) 1 else bookshelfColumnCount(
                     (maxWidth - startPadding - endPadding).value,
                     AppSpacing.xl.value
                 )
@@ -429,13 +493,19 @@ object FavoritePage : AppDestination {
                         top = AppSpacing.lg,
                         bottom = AppSpacing.lg + (if (editing) 0.dp else navPadding.calculateBottomPadding())
                     ),
-                    verticalArrangement = Arrangement.spacedBy(if (listView && !editing) AppSpacing.sm else AppSpacing.lg)
+                    verticalArrangement = Arrangement.spacedBy(if (listView) AppSpacing.sm else AppSpacing.lg)
                 ) {
                     // Keep the showcase inside the first stable item. Inserting a new item above
                     // the header after Room loads would preserve the header anchor and hide it.
                     item(key = "bookshelf_collection_header", contentType = "bookshelf_header") {
                         Column(verticalArrangement = Arrangement.spacedBy(AppSpacing.sm)) {
-                            ShelfGroupControls(groups.map { it.name }, activeGroup, { activeGroup = it }, model)
+                            ShelfGroupControls(
+                                names = groupNames,
+                                active = activeGroup,
+                                enabled = !editing && !savingGroup,
+                                onSelect = { activeGroup = it },
+                                onManage = { model.clearGroupResult(); groupDialog = ShelfGroupDialog.MANAGE }
+                            )
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Row(
                                     modifier = Modifier.weight(1f),
@@ -450,6 +520,7 @@ object FavoritePage : AppDestination {
                                 }
                                 FilterChip(
                                     selected = activeFilter == BookshelfFilter.DOWNLOADED,
+                                    enabled = !editing,
                                     onClick = {
                                         activeFilter = if (activeFilter == BookshelfFilter.DOWNLOADED) {
                                             BookshelfFilter.ALL
@@ -461,6 +532,7 @@ object FavoritePage : AppDestination {
                                 )
                                 FilterChip(
                                     selected = activeFilter == BookshelfFilter.UPDATES,
+                                    enabled = !editing,
                                     onClick = {
                                         activeFilter = if (activeFilter == BookshelfFilter.UPDATES) {
                                             BookshelfFilter.ALL
@@ -546,6 +618,7 @@ object FavoritePage : AppDestination {
                                 title = stringResource(
                                     when {
                                         activeFilter != BookshelfFilter.ALL -> R.string.bookshelf_empty_filtered
+                                        activeGroup != null -> R.string.group_empty
                                         visible.isEmpty() && entries.isNotEmpty() -> R.string.bookshelf_empty_filtered
                                         else -> R.string.bookshelf_empty
                                     }
@@ -554,6 +627,7 @@ object FavoritePage : AppDestination {
                                     when {
                                         activeFilter == BookshelfFilter.DOWNLOADED -> R.string.download_empty_hint
                                         activeFilter == BookshelfFilter.UPDATES -> R.string.bookshelf_empty_filtered_hint
+                                        activeGroup != null -> R.string.group_empty_hint
                                         visible.isEmpty() && entries.isNotEmpty() -> R.string.bookshelf_empty_filtered_hint
                                         else -> R.string.bookshelf_empty_hint
                                     }
@@ -565,7 +639,7 @@ object FavoritePage : AppDestination {
                         items(
                             rows,
                             key = { "bookshelf_row:${it.first().bookKey}" },
-                            contentType = { if (listView && !editing) "bookshelf_list" else "bookshelf_row:$columns" }
+                            contentType = { if (listView) "bookshelf_list" else "bookshelf_row:$columns" }
                         ) { row ->
                             Row(
                                 Modifier.fillMaxWidth(),
@@ -574,16 +648,22 @@ object FavoritePage : AppDestination {
                                 row.forEach { entry ->
                                     key(entry.bookKey) {
                                         Box(Modifier.weight(1f)) {
-                                            if (listView && !editing) ShelfListItem(
-                                                entry = entry, enabled = !deleting,
-                                                onClick = { openBook(entry) },
+                                            if (listView) ShelfListItem(
+                                                entry = entry, enabled = !deleting && !savingGroup,
+                                                editing = editing,
+                                                selected = entry.bookKey in selected,
+                                                onClick = {
+                                                    if (editing) {
+                                                        selected = if (entry.bookKey in selected) selected - entry.bookKey else selected + entry.bookKey
+                                                    } else openBook(entry)
+                                                },
                                                 onLongClick = { selectBook(entry) }
                                             ) else ShelfCard(
                                                 entry = entry,
                                                 readingActivity = readingIndex.activityFor(entry),
                                                 selected = entry.bookKey in selected,
                                                 editing = editing,
-                                                enabled = !deleting,
+                                                enabled = !deleting && !savingGroup,
                                                 onLongClick = { selectBook(entry) },
                                                 onClick = {
                                                     if (editing) {
@@ -862,11 +942,16 @@ private fun BookshelfUpdateDot(modifier: Modifier = Modifier) {
 private fun ShelfListItem(
     entry: BookshelfEntry,
     enabled: Boolean,
+    editing: Boolean,
+    selected: Boolean,
     onClick: () -> Unit,
     onLongClick: () -> Unit
 ) {
     Row(
-        Modifier.fillMaxWidth().clickable(enabled = enabled, onClick = onClick).padding(vertical = AppSpacing.xs),
+        Modifier.fillMaxWidth().clip(AppShapes.compact)
+            .then(if (editing && selected) Modifier.background(MaterialTheme.colorScheme.secondaryContainer) else Modifier)
+            .combinedClickable(enabled = enabled, onClick = onClick, onLongClick = onLongClick)
+            .padding(vertical = AppSpacing.xs),
         horizontalArrangement = Arrangement.spacedBy(AppSpacing.md), verticalAlignment = Alignment.Top
     ) {
         Box(
@@ -882,6 +967,13 @@ private fun ShelfListItem(
                 entry.title,
                 Modifier.fillMaxSize().clip(AppShapes.compact)
             )
+            if (editing) Surface(
+                modifier = Modifier.align(Alignment.TopStart).padding(AppSpacing.xs),
+                shape = CircleShape,
+                color = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f)
+            ) {
+                Checkbox(checked = selected, onCheckedChange = null, enabled = enabled)
+            }
             if (entry.hasUpdate) {
                 BookshelfUpdateDot(
                     modifier = Modifier

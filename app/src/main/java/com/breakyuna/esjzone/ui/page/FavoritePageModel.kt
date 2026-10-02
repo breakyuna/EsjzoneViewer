@@ -22,6 +22,7 @@ import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
@@ -35,20 +36,58 @@ class FavoritePageModel(private val authorization: Authorization) :
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
     val groupMembers = groupDao.observeMembers(groupScope)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
-    val groupError = MutableStateFlow(false)
-    private fun changeGroup(action: suspend () -> Unit) {
-        viewModelScope.launch(Dispatchers.IO) {
-            try { action() } catch (error: CancellationException) { throw error }
-            catch (_: Exception) { groupError.value = true }
+    sealed interface GroupChange {
+        data class Created(val name: String) : GroupChange
+        data class Renamed(val old: String, val name: String) : GroupChange
+        data class Deleted(val name: String) : GroupChange
+        data class Moved(val name: String?, val count: Int) : GroupChange
+    }
+
+    sealed interface GroupState {
+        data object Idle : GroupState
+        data object Saving : GroupState
+        data class Completed(val change: GroupChange) : GroupState
+        data object Failed : GroupState
+    }
+
+    private val _groupState = MutableStateFlow<GroupState>(GroupState.Idle)
+    val groupState: StateFlow<GroupState> = _groupState
+
+    fun clearGroupResult() {
+        if (_groupState.value != GroupState.Saving) _groupState.value = GroupState.Idle
+    }
+
+    private fun changeGroup(change: GroupChange, action: suspend () -> Unit) {
+        if (_groupState.value == GroupState.Saving) return
+        _groupState.value = GroupState.Saving
+        viewModelScope.launch {
+            try {
+                withContext(Dispatchers.IO) { action() }
+                _groupState.value = GroupState.Completed(change)
+            } catch (error: CancellationException) {
+                _groupState.value = GroupState.Idle
+                throw error
+            } catch (_: Exception) {
+                _groupState.value = GroupState.Failed
+            }
         }
     }
-    fun createGroup(name: String) = changeGroup {
-        require(name.trim().isNotEmpty())
-        groupDao.add(com.breakyuna.esjzone.database.entity.BookshelfGroup(groupScope, name.trim()))
+
+    fun createGroup(name: String) = changeGroup(GroupChange.Created(name.trim())) {
+        groupDao.create(groupScope, name.trim())
     }
-    fun renameGroup(old: String, name: String) = changeGroup { groupDao.rename(groupScope, old, name.trim()) }
-    fun deleteGroup(name: String) = changeGroup { groupDao.remove(groupScope, name) }
-    fun moveToGroup(keys: Set<String>, name: String?) = changeGroup { groupDao.move(groupScope, keys.toList(), name) }
+    fun renameGroup(old: String, name: String) = changeGroup(GroupChange.Renamed(old, name.trim())) {
+        groupDao.rename(groupScope, old, name.trim())
+    }
+    fun deleteGroup(name: String) = changeGroup(GroupChange.Deleted(name)) {
+        groupDao.remove(groupScope, name)
+    }
+    fun moveToGroup(keys: Set<String>, name: String?, create: Boolean = false) =
+        changeGroup(GroupChange.Moved(name?.trim(), keys.size)) {
+            require(keys.isNotEmpty())
+            if (create) groupDao.create(groupScope, requireNotNull(name).trim(), keys.toList())
+            else groupDao.move(groupScope, keys.toList(), name)
+        }
 
     /** Hot snapshots prevent an empty Room frame from resetting the restored shelf position. */
     val entries: StateFlow<List<BookshelfEntry>> = BookshelfRepository.observe(authorization)

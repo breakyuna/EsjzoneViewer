@@ -696,7 +696,7 @@
     <string name="group_delete">删除分组</string>
     <string name="group_name">分组名称</string>
     <string name="group_delete_hint">删除“%1$s”？组内书籍将移至未分组，仍保留在书架中。</string>
-    <string name="group_error">分组操作失败，请检查名称是否重复后重试。</string>
+    <string name="group_error">分组操作失败，已保留输入和选择，请重试。</string>
     <string name="open_source_licenses">开源许可</string>
     <string name="settings_general_section">常规</string>
     <string name="settings_preferences_section">功能与管理</string>
@@ -709,4 +709,22 @@
     <string name="reading_stats_incognito_message">无痕模式开启，暂停记录阅读统计数据</string>
     <string name="reading_stats_show_tags">展开全部标签与占比</string>
     <string name="reading_stats_hide_tags">收起标签列表</string>
+    <string name="group_manage">管理分组</string>
+    <string name="group_local_hint">分组仅保存在本机。</string>
+    <string name="group_manage_empty">新建分组后，长按书籍即可批量移入。</string>
+    <string name="group_rename_named">重命名“%1$s”</string>
+    <string name="group_delete_named">删除分组“%1$s”</string>
+    <string name="group_move_title">移动 %1$d 本书</string>
+    <string name="group_move_hint">选择目标分组后，点击“确认移动”。</string>
+    <string name="group_current">当前所在分组</string>
+    <string name="group_create_and_move">新建并移入</string>
+    <string name="group_move_confirm">确认移动</string>
+    <string name="group_name_duplicate">该分组名称已存在，请换一个名称。</string>
+    <string name="group_name_hint">请输入 1–60 个字符</string>
+    <string name="group_save">保存</string>
+    <string name="group_move_done">已将 %1$d 本书移至“%2$s”</string>
+    <string name="group_delete_done">分组已删除，书籍仍保留在书架中。</string>
+    <string name="group_empty">此分组暂无书籍</string>
+    <string name="group_empty_hint">切换到“全部”，长按书籍后选择“移至分组”；也可检查当前内容筛选设置。</string>
+    <string name="group_done">完成</string>
 </resources>

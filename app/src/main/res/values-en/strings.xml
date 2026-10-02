@@ -695,7 +695,7 @@
     <string name="group_delete">Delete group</string>
     <string name="group_name">Group name</string>
     <string name="group_delete_hint">Delete “%1$s”? Its books will become ungrouped and remain on your bookshelf.</string>
-    <string name="group_error">Could not update groups. Check for a duplicate name and try again.</string>
+    <string name="group_error">Could not save changes. Your input and selection have been kept. Please try again.</string>
     <string name="open_source_licenses">Open source licenses</string>
     <string name="settings_general_section">General</string>
     <string name="settings_preferences_section">Preferences</string>
@@ -708,4 +708,22 @@
     <string name="reading_stats_incognito_message">Incognito mode is on. Reading statistics recording is paused.</string>
     <string name="reading_stats_show_tags">Show all tags and percentages</string>
     <string name="reading_stats_hide_tags">Hide tag list</string>
+    <string name="group_manage">Manage groups</string>
+    <string name="group_local_hint">Groups are saved on this device.</string>
+    <string name="group_manage_empty">Create a group, then long-press books to move them into it.</string>
+    <string name="group_rename_named">Rename %1$s</string>
+    <string name="group_delete_named">Delete group %1$s</string>
+    <string name="group_move_title">Move %1$d books</string>
+    <string name="group_move_hint">Choose a destination, then confirm the move.</string>
+    <string name="group_current">Current group</string>
+    <string name="group_create_and_move">Create and move</string>
+    <string name="group_move_confirm">Confirm move</string>
+    <string name="group_name_duplicate">This group name is already in use.</string>
+    <string name="group_name_hint">1–60 characters</string>
+    <string name="group_save">Save</string>
+    <string name="group_move_done">Moved %1$d books to %2$s</string>
+    <string name="group_delete_done">Group deleted. Books remain on your shelf.</string>
+    <string name="group_empty">No books in this group</string>
+    <string name="group_empty_hint">Switch to All, then long-press books to move them into a group. You can also check your content filters.</string>
+    <string name="group_done">Done</string>
 </resources>
