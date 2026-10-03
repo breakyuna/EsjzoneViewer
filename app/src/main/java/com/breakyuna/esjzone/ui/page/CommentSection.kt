@@ -350,7 +350,8 @@ internal fun CommentListPage(
     model: CommentPageModel,
     titleIndicator: (@Composable () -> Unit)? = null,
     onRefresh: (() -> Unit)? = null,
-    refreshing: Boolean = false
+    refreshing: Boolean = false,
+    onBack: (() -> Unit)? = null
 ) {
     val navigator = LocalBaseNavigator.current
     val state by model.state.collectAsState()
@@ -362,7 +363,7 @@ internal fun CommentListPage(
     ) {
         CommunityTopBar(
             title = title,
-            onBack = { navigator?.pop() },
+            onBack = { if (onBack != null) onBack() else navigator?.pop() },
             titleIndicator = titleIndicator
         )
         PullToRefreshBox(

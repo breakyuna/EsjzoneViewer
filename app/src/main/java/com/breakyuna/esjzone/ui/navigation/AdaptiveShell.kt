@@ -1,7 +1,6 @@
 package com.breakyuna.esjzone.ui.navigation
 
 import androidx.activity.compose.BackHandler
-import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
@@ -82,10 +81,10 @@ import com.breakyuna.esjzone.R
 import com.breakyuna.esjzone.app.PresentationAccess
 import com.breakyuna.esjzone.ui.discovery.DiscoveryScaffold
 import com.breakyuna.esjzone.ui.product.EmptyState
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.scale
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
@@ -508,20 +507,19 @@ private fun AppNavigationBar(
         ) {
             tabs.forEach { tab ->
                 val isSelected = selected == tab
-                val backgroundColor by animateColorAsState(
-                    targetValue = if (isSelected) {
-                        MaterialTheme.colorScheme.secondaryContainer
-                    } else {
-                        Color.Transparent
-                    },
-                    animationSpec = tween(durationMillis = 100),
+                // One progress keeps the background, tint and icon variants in sync.
+                val selectionProgress by animateFloatAsState(
+                    targetValue = if (isSelected) 1f else 0f,
+                    animationSpec = tween(durationMillis = 150),
                     label = "${tab.name}BottomIndicator"
                 )
-                val contentColor = if (isSelected) {
-                    MaterialTheme.colorScheme.primary
-                } else {
-                    MaterialTheme.colorScheme.onSurfaceVariant
-                }
+                val indicatorColor = MaterialTheme.colorScheme.secondaryContainer
+                val backgroundColor = indicatorColor.copy(alpha = indicatorColor.alpha * selectionProgress)
+                val contentColor = lerp(
+                    MaterialTheme.colorScheme.onSurfaceVariant,
+                    MaterialTheme.colorScheme.primary,
+                    selectionProgress
+                )
                 Box(
                     modifier = Modifier.weight(1f),
                     contentAlignment = Alignment.Center
@@ -534,24 +532,36 @@ private fun AppNavigationBar(
                             .selectable(
                                 selected = isSelected,
                                 interactionSource = remember(tab) { MutableInteractionSource() },
-                                indication = ripple(color = contentColor),
+                                indication = ripple(color = MaterialTheme.colorScheme.onSurfaceVariant),
                                 role = Role.Tab,
                                 onClick = { onSelected(tab) }
                             ),
                         horizontalAlignment = Alignment.CenterHorizontally,
                         verticalArrangement = Arrangement.spacedBy(2.dp, Alignment.CenterVertically)
                     ) {
-                        Icon(
-                            imageVector = if (isSelected) tab.filledIcon else tab.outlinedIcon,
-                            contentDescription = null,
-                            tint = contentColor,
-                            modifier = Modifier.size(24.dp)
-                        )
+                        Box(modifier = Modifier.size(24.dp)) {
+                            Icon(
+                                imageVector = tab.outlinedIcon,
+                                contentDescription = null,
+                                tint = contentColor,
+                                modifier = Modifier
+                                    .matchParentSize()
+                                    .graphicsLayer { alpha = 1f - selectionProgress }
+                            )
+                            Icon(
+                                imageVector = tab.filledIcon,
+                                contentDescription = null,
+                                tint = contentColor,
+                                modifier = Modifier
+                                    .matchParentSize()
+                                    .graphicsLayer { alpha = selectionProgress }
+                            )
+                        }
                         Text(
                             text = tabLabel(tab),
                             color = contentColor,
                             style = MaterialTheme.typography.labelMedium,
-                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                            fontWeight = FontWeight.Medium,
                             maxLines = 1
                         )
                     }

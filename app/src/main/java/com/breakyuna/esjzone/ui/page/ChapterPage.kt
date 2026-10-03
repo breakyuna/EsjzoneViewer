@@ -10,8 +10,6 @@ import android.net.Uri
 import android.os.BatteryManager
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
@@ -72,6 +70,8 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.PagerDefaults
+import androidx.compose.foundation.pager.PagerSnapDistance
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.BookmarkBorder
@@ -84,6 +84,10 @@ import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material.icons.filled.Translate
 import androidx.compose.material3.IconButtonDefaults
 import com.breakyuna.esjzone.ui.reader.ReaderTool
+import com.breakyuna.esjzone.ui.reader.ReaderSidePanel
+import com.breakyuna.esjzone.ui.reader.ReaderSidePanels
+import com.breakyuna.esjzone.ui.reader.rememberReaderSidePanelsState
+import androidx.lifecycle.viewmodel.compose.viewModel
 import com.breakyuna.esjzone.ui.reader.ReaderBackground
 import com.breakyuna.esjzone.ui.reader.ReaderBrightness
 import androidx.compose.runtime.Composable
@@ -138,7 +142,6 @@ import com.breakyuna.esjzone.ui.navigation.rememberAppViewModel
 import com.breakyuna.esjzone.ui.navigation.AppDestination
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.debounce
@@ -237,6 +240,8 @@ class ChapterPage(
         val density = LocalDensity.current
         val adaptiveMetrics = rememberAppAdaptiveMetrics()
         val scope = rememberCoroutineScope()
+        val sidePanels = rememberReaderSidePanelsState()
+        var sideCommentChapter by remember { mutableStateOf<Chapter?>(null) }
         val context = LocalContext.current
         val historyState = history.state()
 
@@ -538,6 +543,7 @@ class ChapterPage(
 
         BackHandler(enabled = navigator != null) {
             when {
+                sidePanels.isVisible -> sidePanels.close()
                 showBrightness -> showBrightness = false
                 showReaderSettings -> showReaderSettings = false
                 showReaderContents -> showReaderContents = false
@@ -997,7 +1003,7 @@ class ChapterPage(
         )
         val statisticsBookName = localHistoryPosition.value.novelName
         val statisticsIncognito by PresentationAccess.settings.readingStatisticsIncognitoFlow.collectAsState()
-        val statisticsReady = !statisticsIncognito && ((state as? ChapterPageModel.State.Result)
+        val statisticsReady = !statisticsIncognito && sidePanels.panel != ReaderSidePanel.COMMENTS && ((state as? ChapterPageModel.State.Result)
             ?.chapters?.any { it.document.blocks.isNotEmpty() } == true)
         val statisticsSession = remember(statisticsBookKey, statisticsBookName) {
             ReadingStatisticsSession(statisticsBookKey, statisticsBookName)
@@ -1322,15 +1328,14 @@ class ChapterPage(
             }
         }
 
-        val pageTranslation = remember { Animatable(0f) }
-        val pageAlpha = remember { Animatable(1f) }
         var pageTurnInProgress by pageTurnInProgressForBoundary
 
         fun openReaderContents() {
             showBrightness = false
             dismissProgressPreview()
             showReaderSettings = false
-            showReaderContents = true
+            if (pagedMode) showReaderContents = true
+            else sidePanels.open(ReaderSidePanel.CONTENTS)
         }
         fun openReaderSettings() {
             showBrightness = false
@@ -1344,6 +1349,11 @@ class ChapterPage(
         fun openReaderComments() {
             if (!commentsAvailable) return
             dismissProgressPreview()
+            if (!pagedMode) {
+                sideCommentChapter = commentChapter
+                sidePanels.open(ReaderSidePanel.COMMENTS)
+                return
+            }
             val visible = if (pagedMode) null else scrollState.layoutInfo.visibleItemsInfo
                 .firstOrNull { item -> item.key.toString() in displayByKey }
             val visibleKey = if (pagedMode) {
@@ -1377,17 +1387,18 @@ class ChapterPage(
         val reducedMotion = com.breakyuna.esjzone.ui.designsystem.rememberReaderReducedMotion()
         val readerDialogVisible = showBrightness || passwordRequired != null || wenkuVerificationChapter != null ||
             (pendingWenkuVerification != null && pendingWenkuVerification.url != dismissedWenkuPrompt)
-        val pagingEnabled = readerResumed && paginationReady && (!pagedMode || pagerLayoutReady) &&
+        val readerInteractionEnabled = readerResumed && paginationReady && (!pagedMode || pagerLayoutReady) &&
             state is ChapterPageModel.State.Result &&
             !showReaderSettings && !showReaderContents && !readerDialogVisible
+        val pagingEnabled = readerInteractionEnabled && !sidePanels.isVisible
         com.breakyuna.esjzone.ui.reader.ReaderSystemBars(
-            showChrome = (showToolbar || showReaderSettings || showReaderContents || readerDialogVisible),
+            showChrome = (showToolbar || showReaderSettings || showReaderContents || sidePanels.isVisible || readerDialogVisible),
             showSystemStatusBar = readerSettings.showSystemStatusBar,
             showSystemNavigationBar = readerSettings.showSystemNavigationBar
         )
 
         fun turnReaderPage(forward: Boolean) {
-            if (pageTurnInProgress || !pagingEnabled) return
+            if (pageTurnInProgress || !pagingEnabled || (pagedMode && horizontalPagerState.isScrollInProgress)) return
             pendingBoundaryTurn = null
             val viewportHeight = if (pagedMode) readerViewport.height.toFloat()
                 else scrollState.layoutInfo.viewportSize.height.toFloat()
@@ -1420,63 +1431,19 @@ class ChapterPage(
             }
             // Keep a small overlap so the reader never loses the line at the page boundary.
             val distance = viewportHeight * 0.88f * if (forward) 1f else -1f
-            val viewportWidth = (if (pagedMode) readerViewport.width
-                else scrollState.layoutInfo.viewportSize.width).toFloat().coerceAtLeast(1f)
             pageTurnInProgress = true
             scope.launch {
                 try {
                     if (pagedMode) {
-                        if (reducedMotion) {
-                            horizontalPagerState.scrollToPage(targetPage)
-                        } else when (readerSettings.pageAnimation) {
-                            ReaderPageAnimation.HORIZONTAL_SLIDE -> {
-                                horizontalPagerState.animateScrollToPage(targetPage)
-                            }
-                            ReaderPageAnimation.FADE -> {
-                                pageAlpha.animateTo(0f, tween(140))
-                                horizontalPagerState.scrollToPage(targetPage)
-                                pageAlpha.animateTo(1f, tween(180))
-                            }
-                            ReaderPageAnimation.COVER -> {
-                                horizontalPagerState.scrollToPage(targetPage)
-                                pageTranslation.snapTo(if (forward) viewportWidth else -viewportWidth)
-                                pageTranslation.animateTo(0f, tween(260))
-                            }
-                            ReaderPageAnimation.VERTICAL_SCROLL -> Unit
-                        }
+                        if (reducedMotion) horizontalPagerState.scrollToPage(targetPage)
+                        else horizontalPagerState.animateScrollToPage(targetPage)
                     } else if (reducedMotion) {
                         scrollState.scrollBy(distance)
-                    } else when (readerSettings.pageAnimation) {
-                        ReaderPageAnimation.VERTICAL_SCROLL -> scrollState.animateScrollBy(distance)
-                        ReaderPageAnimation.HORIZONTAL_SLIDE -> {
-                            pageTranslation.animateTo(
-                                if (forward) -viewportWidth else viewportWidth,
-                                tween(180)
-                            )
-                            scrollState.scrollBy(distance)
-                            pageTranslation.snapTo(if (forward) viewportWidth else -viewportWidth)
-                            pageTranslation.animateTo(0f, tween(180))
-                        }
-                        ReaderPageAnimation.FADE -> {
-                            pageAlpha.animateTo(0f, tween(140))
-                            scrollState.scrollBy(distance)
-                            pageAlpha.animateTo(1f, tween(180))
-                        }
-                        ReaderPageAnimation.COVER -> {
-                            scrollState.scrollBy(distance)
-                            pageTranslation.snapTo(if (forward) viewportWidth else -viewportWidth)
-                            pageTranslation.animateTo(0f, tween(260))
-                        }
+                    } else {
+                        scrollState.animateScrollBy(distance)
                     }
                 } finally {
-                    try {
-                        withContext(NonCancellable) {
-                            pageTranslation.snapTo(0f)
-                            pageAlpha.snapTo(1f)
-                        }
-                    } finally {
-                        pageTurnInProgress = false
-                    }
+                    pageTurnInProgress = false
                 }
             }
         }
@@ -1528,17 +1495,43 @@ class ChapterPage(
         }
 
         val readerLoadingDescription = stringResource(R.string.reader_loading)
-        Box(modifier = Modifier.fillMaxSize()) {
+        val readerChapters = chapterPageModel.chapterOrderState.value
+            .ifEmpty { result?.chapterOrder.orEmpty() }
+            .ifEmpty { chapterOrder }
+            .ifEmpty { result?.chapters?.map { it.chapter }.orEmpty() }
+        ReaderSidePanels(
+            state = sidePanels,
+            gesturesEnabled = !pagedMode && readerInteractionEnabled && readerSettings.scrollSideGesturesEnabled,
+            commentsEnabled = commentsAvailable,
+            onOpening = { panel ->
+                dismissProgressPreview()
+                if (panel == ReaderSidePanel.COMMENTS) sideCommentChapter = commentChapter
+            },
+            contents = {
+                ReaderContentsContent(
+                    chapters = readerChapters,
+                    currentChapter = currentReadingChapter,
+                    onChapterSelected = { selected ->
+                        sidePanels.close()
+                        dismissProgressPreview()
+                        openTargetChapter(selected)
+                    },
+                    onDismiss = sidePanels::close
+                )
+            },
+            comments = {
+                sideCommentChapter?.let { target ->
+                    val commentModel = viewModel<CommentPageModel>(key = "reader-comments:${chapterIdentity(target)}") {
+                        CommentPageModel(authorization, target.url)
+                    }
+                    CommentListPage(title = target.name, model = commentModel, onBack = sidePanels::close)
+                }
+            }
+        ) {
             ReaderShell(
                 background = readerSettings.background.containerColor(),
-                horizontalSwipeEnabled = pagingEnabled && if (pagedMode)
-                    readerSettings.pageAnimation != ReaderPageAnimation.HORIZONTAL_SLIDE
-                    else readerSettings.scrollSideGesturesEnabled,
-                deliberateHorizontalSwipe = !pagedMode,
-                onHorizontalSwipe = { left ->
-                    if (pagedMode) turnReaderPage(left)
-                    else if (left) openReaderComments() else openReaderContents()
-                },
+                pagedGesturesEnabled = pagingEnabled && pagedMode,
+                verticalContentScrollable = pagerVisibleItem?.page?.isOversized == true,
                 bookmarkPullEnabled = !updatingBookmark && pagedMode && pagingEnabled && readerSettings.pagedBookmarkGesturesEnabled &&
                     bookmarkStateUrl == bookmarkChapterUrl && pagerVisibleItem?.page?.isOversized == false,
                 onBookmarkPull = { toggleBookmark() },
@@ -1566,10 +1559,6 @@ class ChapterPage(
                             .fillMaxWidth()
                             .widthIn(max = adaptiveMetrics.contentMaxWidth)
                             .align(Alignment.Center)
-                            .graphicsLayer {
-                                translationX = pageTranslation.value
-                                alpha = pageAlpha.value
-                            }
                             .windowInsetsPadding(WindowInsets.displayCutout.only(WindowInsetsSides.Horizontal))
                             .padding(horizontal = readerSettings.horizontalPaddingDp.dp),
                         verticalArrangement = Arrangement.spacedBy(0.dp),
@@ -1830,15 +1819,16 @@ class ChapterPage(
                             ),
                             pageSpacing = readerSettings.horizontalPaddingDp.dp * 2,
                             key = { index -> currentPagedDisplayItems.getOrNull(index)?.key ?: index },
-                            userScrollEnabled = pagingEnabled &&
-                                readerSettings.pageAnimation == ReaderPageAnimation.HORIZONTAL_SLIDE,
+                            userScrollEnabled = pagingEnabled,
+                            beyondViewportPageCount = if (readerSettings.pageAnimation == ReaderPageAnimation.HORIZONTAL_SLIDE) 0 else 1,
+                            flingBehavior = PagerDefaults.flingBehavior(
+                                state = horizontalPagerState,
+                                pagerSnapDistance = PagerSnapDistance.atMost(1),
+                                snapPositionalThreshold = 0.5f
+                            ),
                             modifier = Modifier
                                 .fillMaxSize()
                                 .align(Alignment.Center)
-                                .graphicsLayer {
-                                    translationX = pageTranslation.value
-                                    alpha = pageAlpha.value
-                                }
                                 .windowInsetsPadding(WindowInsets.displayCutout.only(WindowInsetsSides.Horizontal))
                                 .onSizeChanged { size ->
                                     if (readerViewport != size) {
@@ -1852,6 +1842,22 @@ class ChapterPage(
                             currentPagedDisplayItems.getOrNull(pageIndex)?.page?.let { page ->
                                 Box(
                                     Modifier.fillMaxSize()
+                                        .zIndex(if (readerSettings.pageAnimation == ReaderPageAnimation.COVER) pageIndex.toFloat() else 0f)
+                                        .graphicsLayer {
+                                            val offset = horizontalPagerState.currentPage - pageIndex + horizontalPagerState.currentPageOffsetFraction
+                                            val span = horizontalPagerState.layoutInfo.let { it.pageSize + it.pageSpacing }.toFloat()
+                                            translationX = 0f
+                                            alpha = 1f
+                                            when (readerSettings.pageAnimation) {
+                                                ReaderPageAnimation.FADE -> {
+                                                    translationX = offset * span
+                                                    alpha = (1f - kotlin.math.abs(offset)).coerceIn(0f, 1f)
+                                                }
+                                                ReaderPageAnimation.COVER -> translationX = offset.coerceAtLeast(0f) * span
+                                                else -> Unit
+                                            }
+                                        }
+                                        .background(readerSettings.background.containerColor())
                                         .padding(top = pageTopPadding, bottom = pageBottomPadding)
                                 ) {
                                     ReaderPageContent(
@@ -2254,10 +2260,6 @@ class ChapterPage(
                 }
             }
 
-            val readerChapters = chapterPageModel.chapterOrderState.value
-                .ifEmpty { result?.chapterOrder.orEmpty() }
-                .ifEmpty { chapterOrder }
-                .ifEmpty { result?.chapters?.map { it.chapter }.orEmpty() }
             ReaderContentsSheet(
                 visible = showReaderContents,
                 chapters = readerChapters,
@@ -2889,102 +2891,101 @@ private fun ReaderContentsSheet(
     onChapterSelected: (Chapter) -> Unit,
     onDismiss: () -> Unit
 ) {
+    AppSideSheet(visible = visible, edge = AppSideSheetEdge.START, onDismissRequest = onDismiss) {
+        ReaderContentsContent(chapters, currentChapter, onChapterSelected, onDismiss)
+    }
+}
+
+@Composable
+private fun ReaderContentsContent(
+    chapters: List<Chapter>,
+    currentChapter: Chapter,
+    onChapterSelected: (Chapter) -> Unit,
+    onDismiss: () -> Unit
+) {
     val listState = rememberLazyListState()
     val currentChapterKey = chapterIdentity(currentChapter)
-
-    LaunchedEffect(visible, chapters.size, currentChapterKey) {
-        if (!visible) return@LaunchedEffect
-        val currentIndex = chapters.indexOfFirst { chapter ->
-            chapterIdentity(chapter) == currentChapterKey
-        }
-        if (currentIndex >= 0) {
-            listState.scrollToItem(currentIndex)
-        }
+    LaunchedEffect(chapters.size, currentChapterKey) {
+        val currentIndex = chapters.indexOfFirst { chapterIdentity(it) == currentChapterKey }
+        if (currentIndex >= 0) listState.scrollToItem(currentIndex)
     }
-
-    AppSideSheet(
-        visible = visible,
-        edge = AppSideSheetEdge.START,
-        onDismissRequest = onDismiss
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .windowInsetsPadding(WindowInsets.statusBarsIgnoringVisibility.union(WindowInsets.displayCutout).only(WindowInsetsSides.Top))
+            .navigationBarsPadding()
+            .padding(horizontal = AppSpacing.md, vertical = AppSpacing.sm)
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .windowInsetsPadding(WindowInsets.statusBarsIgnoringVisibility.union(WindowInsets.displayCutout).only(WindowInsetsSides.Top))
-                .navigationBarsPadding()
-                .padding(horizontal = AppSpacing.md, vertical = AppSpacing.sm)
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = stringResource(id = R.string.reader_contents),
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier.weight(1f)
+            Text(
+                text = stringResource(id = R.string.reader_contents),
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.weight(1f)
+            )
+            IconButton(onClick = onDismiss) {
+                Icon(
+                    imageVector = Icons.Filled.Close,
+                    contentDescription = stringResource(id = R.string.close)
                 )
-                IconButton(onClick = onDismiss) {
-                    Icon(
-                        imageVector = Icons.Filled.Close,
-                        contentDescription = stringResource(id = R.string.close)
-                    )
-                }
             }
+        }
 
-            if (chapters.isEmpty()) {
-                Text(
-                    text = stringResource(id = R.string.reader_contents_empty),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(vertical = 24.dp)
-                )
-            } else {
-                val contentsDescription = stringResource(R.string.reader_contents)
-                LazyColumn(
-                    state = listState,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .weight(1f)
-                        .semantics {
-                            contentDescription = contentsDescription
+        if (chapters.isEmpty()) {
+            Text(
+                text = stringResource(id = R.string.reader_contents_empty),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(vertical = 24.dp)
+            )
+        } else {
+            val contentsDescription = stringResource(R.string.reader_contents)
+            LazyColumn(
+                state = listState,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f)
+                    .semantics {
+                        contentDescription = contentsDescription
+                    }
+            ) {
+                items(
+                    items = chapters,
+                    key = { chapter -> chapterIdentity(chapter) }
+                ) { item ->
+                    val selected = sameReaderChapter(item, currentChapter)
+                    Surface(
+                        onClick = { onChapterSelected(item) },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = AppSpacing.xxs),
+                        shape = AppShapes.standard,
+                        color = if (selected) {
+                            MaterialTheme.colorScheme.primaryContainer
+                        } else {
+                            Color.Transparent
                         }
-                ) {
-                    items(
-                        items = chapters,
-                        key = { chapter -> chapterIdentity(chapter) }
-                    ) { item ->
-                        val selected = sameReaderChapter(item, currentChapter)
-                        Surface(
-                            onClick = { onChapterSelected(item) },
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = AppSpacing.xxs),
-                            shape = AppShapes.standard,
+                    ) {
+                        Text(
+                            text = item.name,
+                            modifier = Modifier.padding(
+                                horizontal = AppSpacing.md,
+                                vertical = AppSpacing.sm
+                            ),
                             color = if (selected) {
-                                MaterialTheme.colorScheme.primaryContainer
+                                MaterialTheme.colorScheme.onPrimaryContainer
                             } else {
-                                Color.Transparent
-                            }
-                        ) {
-                            Text(
-                                text = item.name,
-                                modifier = Modifier.padding(
-                                    horizontal = AppSpacing.md,
-                                    vertical = AppSpacing.sm
-                                ),
-                                color = if (selected) {
-                                    MaterialTheme.colorScheme.onPrimaryContainer
-                                } else {
-                                    MaterialTheme.colorScheme.onSurface
-                                },
-                                fontWeight = if (selected) {
-                                    FontWeight.Bold
-                                } else {
-                                    FontWeight.Normal
-                                },
-                                maxLines = 2
-                            )
-                        }
+                                MaterialTheme.colorScheme.onSurface
+                            },
+                            fontWeight = if (selected) {
+                                FontWeight.Bold
+                            } else {
+                                FontWeight.Normal
+                            },
+                            maxLines = 2
+                        )
                     }
                 }
             }

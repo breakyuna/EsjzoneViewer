@@ -55,15 +55,13 @@ internal fun readerSwipeDirection(
 fun ReaderShell(
     background: Color,
     onReadingAreaTap: (xFraction: Float, yFraction: Float) -> Unit,
-    horizontalSwipeEnabled: Boolean = false,
-    onHorizontalSwipe: (forward: Boolean) -> Unit = {},
-    deliberateHorizontalSwipe: Boolean = false,
+    pagedGesturesEnabled: Boolean = false,
+    verticalContentScrollable: Boolean = false,
     bookmarkPullEnabled: Boolean = false,
     onBookmarkPull: () -> Unit = {},
     content: @Composable BoxScope.() -> Unit
 ) {
     val currentTap by rememberUpdatedState(onReadingAreaTap)
-    val currentSwipe by rememberUpdatedState(onHorizontalSwipe)
     val currentBookmarkPull by rememberUpdatedState(onBookmarkPull)
     var pullingBookmark by remember { mutableStateOf(false) }
     var pullOffset by remember { mutableFloatStateOf(0f) }
@@ -79,13 +77,10 @@ fun ReaderShell(
         modifier = Modifier
             .fillMaxSize()
             .background(background)
-            .pointerInput(horizontalSwipeEnabled, deliberateHorizontalSwipe, bookmarkPullEnabled) {
+            .pointerInput(pagedGesturesEnabled, verticalContentScrollable, bookmarkPullEnabled) {
                 awaitEachGesture {
                     try {
                         val down = awaitFirstDown(requireUnconsumed = false)
-                        val horizontalThreshold = if (deliberateHorizontalSwipe)
-                            maxOf(72.dp.toPx(), size.width * 0.2f)
-                            else maxOf(32.dp.toPx(), viewConfiguration.touchSlop * 4f)
                         val verticalThreshold = maxOf(96.dp.toPx(), size.height * 0.12f)
                         val start = down.position
                         var last = start
@@ -94,11 +89,11 @@ fun ReaderShell(
                         var maxDistance = 0f
                         var multiTouch = false
                         var duration = 0L
-                        var horizontalAxis: Boolean? = null
+                        var axis: ReaderDragAxis? = null
                         var ownsSwipe = false
                         var longPress = false
                         do {
-                            // Leave small drifts to children; claim only an unconsumed deliberate swipe.
+                            // Lock direction before Pager can claim incidental horizontal drift.
                             val event = awaitPointerEvent(PointerEventPass.Initial)
                             multiTouch = multiTouch || event.changes.size > 1
                             val change = event.changes.firstOrNull { it.id == down.id } ?: break
@@ -106,23 +101,24 @@ fun ReaderShell(
                             last = change.position
                             maxDistance = maxOf(maxDistance, (last - start).getDistance())
                             duration = change.uptimeMillis - down.uptimeMillis
-                            if (!ownsSwipe) {
+                            if (!ownsSwipe && axis == null) {
                                 if (duration >= viewConfiguration.longPressTimeoutMillis) longPress = true
                                 val movement = last - start
                                 if (!childConsumed && !multiTouch && !longPress && change.pressed) {
-                                    if (horizontalSwipeEnabled && readerSwipeDirection(
-                                            movement.x, movement.y, true, horizontalThreshold) != null) {
-                                        horizontalAxis = true
-                                        ownsSwipe = true
+                                    if (pagedGesturesEnabled) {
+                                        axis = readerDragAxis(movement.x, movement.y, viewConfiguration.touchSlop)
+                                        // Horizontal drags belong to Pager. Oversized pages keep their
+                                        // nested vertical scroll; ordinary pages reserve it for bookmarks.
+                                        ownsSwipe = axis == ReaderDragAxis.VERTICAL && !verticalContentScrollable
                                     } else if (bookmarkPullEnabled && readerSwipeDirection(
                                             movement.x, movement.y, false, verticalThreshold) == false) {
-                                        horizontalAxis = false
+                                        axis = ReaderDragAxis.VERTICAL
                                         ownsSwipe = true
                                     }
                                 }
                             }
                             if (ownsSwipe && !childConsumed && !multiTouch) change.consume()
-                            if (ownsSwipe && horizontalAxis == false && !childConsumed && !multiTouch) {
+                            if (ownsSwipe && bookmarkPullEnabled && !childConsumed && !multiTouch) {
                                 pullingBookmark = true
                                 val distance = (last.y - start.y - viewConfiguration.touchSlop).coerceAtLeast(0f)
                                 val limit = 80.dp.toPx()
@@ -138,16 +134,13 @@ fun ReaderShell(
                         } while (event.changes.any { it.pressed })
 
                         val delta = last - start
-                        val horizontalDirection = readerSwipeDirection(delta.x, delta.y, true, horizontalThreshold)
                         val verticalDirection = readerSwipeDirection(
                             delta.x, delta.y, false, verticalThreshold
                         )
                         val release = released
                         val swipeAllowed = ownsSwipe && release != null && !childConsumed && !multiTouch && !longPress
                         when {
-                            swipeAllowed && horizontalAxis == true && horizontalSwipeEnabled && horizontalDirection != null ->
-                                currentSwipe(horizontalDirection)
-                            swipeAllowed && horizontalAxis == false && bookmarkPullEnabled && verticalDirection == false ->
+                            swipeAllowed && axis == ReaderDragAxis.VERTICAL && bookmarkPullEnabled && verticalDirection == false ->
                                 currentBookmarkPull()
                             release != null && !childConsumed && !multiTouch &&
                                 duration < viewConfiguration.longPressTimeoutMillis && maxDistance < viewConfiguration.touchSlop -> {

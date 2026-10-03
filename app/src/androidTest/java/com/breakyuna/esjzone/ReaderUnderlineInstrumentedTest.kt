@@ -1,5 +1,10 @@
 package com.breakyuna.esjzone
 
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.PagerState
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
@@ -96,18 +101,23 @@ class ReaderUnderlineInstrumentedTest {
         var saveLabel = ""
         var removeLabel = ""
         var taps = 0
-        var swipes = 0
+        lateinit var pagerState: PagerState
         composeRule.setContent {
             saveLabel = com.breakyuna.esjzone.ui.designsystem.globalStringResource(R.string.reader_save_underline)
             removeLabel = com.breakyuna.esjzone.ui.designsystem.globalStringResource(R.string.reader_remove_underline)
+            pagerState = rememberPagerState { 2 }
             MaterialTheme {
                 ReaderShell(background = Color.White, onReadingAreaTap = { _, _ -> taps++ },
-                    horizontalSwipeEnabled = true, onHorizontalSwipe = { swipes++ }) {
-                    ReaderUnderlineText(AnnotatedString("Hello reader"), emptyMap(), TextStyle(fontSize = 22.sp),
-                        Color.Black, Modifier.testTag("text"), true, 2, "a".repeat(64), offset = 10,
-                        underlines = marks, onUnderline = { mark, remove ->
-                            marks = ReaderUnderlines.update(marks, mark, remove)
-                        })
+                    pagedGesturesEnabled = true) {
+                    HorizontalPager(state = pagerState, modifier = Modifier.fillMaxSize()) { page ->
+                        if (page == 0) {
+                            ReaderUnderlineText(AnnotatedString("Hello reader"), emptyMap(), TextStyle(fontSize = 22.sp),
+                                Color.Black, Modifier.testTag("text"), true, 2, "a".repeat(64), offset = 10,
+                                underlines = marks, onUnderline = { mark, remove ->
+                                    marks = ReaderUnderlines.update(marks, mark, remove)
+                                })
+                        } else Box(Modifier.fillMaxSize())
+                    }
                 }
             }
         }
@@ -118,7 +128,7 @@ class ReaderUnderlineInstrumentedTest {
             assertEquals(2, marks.single().blockIndex)
             assertTrue(marks.single().start >= 10)
             assertEquals(0, taps)
-            assertEquals(0, swipes)
+            assertEquals(0, pagerState.currentPage)
         }
         composeRule.onNodeWithTag("text").performTouchInput { longClick(center) }
         composeRule.onNodeWithText(removeLabel).performClick()
