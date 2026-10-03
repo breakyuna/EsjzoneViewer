@@ -36,10 +36,10 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.navigationBarsIgnoringVisibility
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.statusBarsIgnoringVisibility
 import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.layout.asPaddingValues
@@ -83,6 +83,8 @@ import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material.icons.filled.Translate
 import androidx.compose.material3.IconButtonDefaults
+import com.breakyuna.esjzone.ui.reader.ReaderPageTurnQueue
+import com.breakyuna.esjzone.ui.reader.animateReaderPageTurn
 import com.breakyuna.esjzone.ui.reader.ReaderTool
 import com.breakyuna.esjzone.ui.reader.ReaderSidePanel
 import com.breakyuna.esjzone.ui.reader.ReaderSidePanels
@@ -589,9 +591,11 @@ class ChapterPage(
         }
         val pagedMode = readerSettings.pageAnimation != ReaderPageAnimation.VERTICAL_SCROLL
         var readerStatusHeightPx by remember { mutableStateOf(0) }
+        // Reserve bars according to reader settings, not temporary toolbar visibility.
+        // Showing chrome must not change page boundaries or restore a different page.
         val pageTopPadding = if (pagedMode) {
-            ReaderLayout.pagedContentPadding + WindowInsets.statusBars.union(WindowInsets.displayCutout)
-                .asPaddingValues().calculateTopPadding()
+            ReaderLayout.pagedContentPadding + if (readerSettings.showSystemStatusBar) stableTopInset
+                else WindowInsets.displayCutout.asPaddingValues().calculateTopPadding()
         } else ReaderLayout.contentTopPadding + stableTopInset
         val pageBottomPadding = if (pagedMode) {
             ReaderLayout.pagedContentPadding + with(density) { readerStatusHeightPx.toDp() }
@@ -622,7 +626,7 @@ class ChapterPage(
         )
         val paginationLayoutKey = listOf(pageContentWidthPx, pageContentHeightPx,
             paginationSettings, readerTextStyle, headingStyle, density, layoutDirection,
-            fontResolver, readerSettings.script, convertedText?.values)
+            fontResolver, readerSettings.script)
         val paginationKey = paginationLayoutKey + listOf(result?.chapters)
         var paginationSnapshot by remember { mutableStateOf<ReaderPaginationSnapshot?>(null) }
         val scriptReady = readerSettings.script == ReaderScript.ORIGINAL ||
@@ -646,6 +650,7 @@ class ChapterPage(
             }
         }
         val pageTurnInProgressForBoundary = remember { mutableStateOf(false) }
+        val pagedTurns = remember { ReaderPageTurnQueue() }
         // A departing Pager may still request keys during a mode switch. Keep its
         // count and provider on the same paginated snapshot, never scroll chunks.
         val currentPagedDisplayItems by rememberUpdatedState(pagedDisplayItems)
@@ -1397,32 +1402,30 @@ class ChapterPage(
             showSystemNavigationBar = readerSettings.showSystemNavigationBar
         )
 
+        val pagedInputEnabled = pagedMode && readerResumed && result != null &&
+            !showReaderSettings && !showReaderContents && !readerDialogVisible &&
+            !isProgrammaticScroll && !resumePending && pendingSeekLocation == null
+        val latestPagingEnabled by rememberUpdatedState(pagingEnabled)
+        val latestPagedResult by rememberUpdatedState(result)
+        val latestPageIndices by rememberUpdatedState(displayIndexByKey)
+        val latestReducedMotion by rememberUpdatedState(reducedMotion)
+
         fun turnReaderPage(forward: Boolean) {
-            if (pageTurnInProgress || !pagingEnabled || (pagedMode && horizontalPagerState.isScrollInProgress)) return
-            pendingBoundaryTurn = null
-            val viewportHeight = if (pagedMode) readerViewport.height.toFloat()
-                else scrollState.layoutInfo.viewportSize.height.toFloat()
-            if (viewportHeight <= 0f) return
-            val targetPage = horizontalPagerState.currentPage + if (forward) 1 else -1
-            if (pagedMode && targetPage !in displayItems.indices) {
-                if ((forward && result?.next != null) || (!forward && result?.previous != null)) {
-                    pendingBoundaryTurn = ReaderBoundaryTurn(
-                        forward = forward,
-                        anchorKey = (if (pagedMode) displayItems.getOrNull(horizontalPagerState.currentPage)
-                            else if (forward) displayItems.lastOrNull() else displayItems.firstOrNull())?.key ?: return,
-                        targetChapterKey = chapterIdentity((if (forward) result.next else result.previous) ?: return)
-                    )
-                    if (forward) chapterPageModel.loadNextChapter() else chapterPageModel.loadPreviousChapter()
+            if (pagedMode) {
+                if (pagedInputEnabled && (pagingEnabled || pagedTurns.hasTurns)) {
+                    pagedTurns.enqueue(forward, android.os.SystemClock.uptimeMillis())
                 }
                 return
             }
-            if (!pagedMode && ((forward && !scrollState.canScrollForward) ||
-                    (!forward && !scrollState.canScrollBackward))) {
+            if (pageTurnInProgress || !pagingEnabled) return
+            pendingBoundaryTurn = null
+            val viewportHeight = scrollState.layoutInfo.viewportSize.height.toFloat()
+            if (viewportHeight <= 0f) return
+            if ((forward && !scrollState.canScrollForward) || (!forward && !scrollState.canScrollBackward)) {
                 if ((forward && result?.next != null) || (!forward && result?.previous != null)) {
                     pendingBoundaryTurn = ReaderBoundaryTurn(
                         forward = forward,
-                        anchorKey = (if (pagedMode) displayItems.getOrNull(horizontalPagerState.currentPage)
-                            else if (forward) displayItems.lastOrNull() else displayItems.firstOrNull())?.key ?: return,
+                        anchorKey = (if (forward) displayItems.lastOrNull() else displayItems.firstOrNull())?.key ?: return,
                         targetChapterKey = chapterIdentity((if (forward) result.next else result.previous) ?: return)
                     )
                     if (forward) chapterPageModel.loadNextChapter() else chapterPageModel.loadPreviousChapter()
@@ -1434,10 +1437,7 @@ class ChapterPage(
             pageTurnInProgress = true
             scope.launch {
                 try {
-                    if (pagedMode) {
-                        if (reducedMotion) horizontalPagerState.scrollToPage(targetPage)
-                        else horizontalPagerState.animateScrollToPage(targetPage)
-                    } else if (reducedMotion) {
+                    if (reducedMotion) {
                         scrollState.scrollBy(distance)
                     } else {
                         scrollState.animateScrollBy(distance)
@@ -1445,6 +1445,64 @@ class ChapterPage(
                 } finally {
                     pageTurnInProgress = false
                 }
+            }
+        }
+
+        LaunchedEffect(pagedInputEnabled, requestedChapter.value.url, readerSettings.pageAnimation,
+            readerViewport, paginationSettings) {
+            if (!pagedInputEnabled) {
+                pagedTurns.clear()
+                return@LaunchedEffect
+            }
+            try {
+                while (true) {
+                    val forward = snapshotFlow {
+                        pagedTurns.next.takeIf { latestPagingEnabled && !horizontalPagerState.isScrollInProgress }
+                    }.filterNotNull().first()
+                    pageTurnInProgress = true
+                    var targetIndex = horizontalPagerState.currentPage + if (forward) 1 else -1
+                    if (targetIndex !in currentPagedDisplayItems.indices) {
+                        val neighbor = if (forward) latestPagedResult?.next else latestPagedResult?.previous
+                        val anchor = currentPagedDisplayItems.getOrNull(horizontalPagerState.currentPage)?.key
+                        if (neighbor == null || anchor == null) {
+                            pagedTurns.complete()
+                            pageTurnInProgress = false
+                            continue
+                        }
+                        val pending = ReaderBoundaryTurn(forward, anchor, chapterIdentity(neighbor))
+                        pendingBoundaryTurn = pending
+                        if (forward) chapterPageModel.loadNextChapter() else chapterPageModel.loadPreviousChapter()
+                        // The boundary effect validates loading, pagination and anchor alignment.
+                        // Keep this turn at the head of the FIFO while new taps append behind it.
+                        snapshotFlow { pendingBoundaryTurn != pending }.first { it }
+                        snapshotFlow { latestPagingEnabled }.first { it }
+                        targetIndex = resolveReaderBoundaryPage(pending,
+                            currentPagedDisplayItems.map { it.key }, currentPagedDisplayItems.map { it.chapterKey }) ?: -1
+                    }
+                    val targetKey = currentPagedDisplayItems.getOrNull(targetIndex)?.key
+                    if (targetKey != null) {
+                        while (true) {
+                            // Wait for pagination/layout without holding the Pager's scroll lock.
+                            snapshotFlow { latestPagingEnabled }.first { it }
+                            val target = latestPageIndices[targetKey]
+                            if (target == null || target !in currentPagedDisplayItems.indices) {
+                                horizontalPagerState.scrollToPage(horizontalPagerState.currentPage)
+                                break
+                            }
+                            if (horizontalPagerState.animateReaderPageTurn(
+                                    targetPage = { if (latestPagingEnabled) latestPageIndices[targetKey] else null },
+                                    durationMillis = { pagedTurns.durationMillis },
+                                    reducedMotion = latestReducedMotion
+                                )) break
+                        }
+                    }
+                    pagedTurns.complete()
+                    pageTurnInProgress = false
+                }
+            } finally {
+                pagedTurns.clear()
+                pendingBoundaryTurn = null
+                pageTurnInProgress = false
             }
         }
 
@@ -1468,9 +1526,6 @@ class ChapterPage(
                     }
                 }.first { it }
                 pendingBoundaryTurn = null
-                if (displayItems.getOrNull(horizontalPagerState.currentPage)?.key == pending.anchorKey) {
-                    turnReaderPage(pending.forward)
-                }
             } else {
                 snapshotFlow {
                     scrollState.layoutInfo.visibleItemsInfo.any { item ->
@@ -1530,7 +1585,7 @@ class ChapterPage(
         ) {
             ReaderShell(
                 background = readerSettings.background.containerColor(),
-                pagedGesturesEnabled = pagingEnabled && pagedMode,
+                pagedGesturesEnabled = pagedMode && (pagingEnabled || pagedTurns.hasTurns),
                 verticalContentScrollable = pagerVisibleItem?.page?.isOversized == true,
                 bookmarkPullEnabled = !updatingBookmark && pagedMode && pagingEnabled && readerSettings.pagedBookmarkGesturesEnabled &&
                     bookmarkStateUrl == bookmarkChapterUrl && pagerVisibleItem?.page?.isOversized == false,
@@ -1819,7 +1874,7 @@ class ChapterPage(
                             ),
                             pageSpacing = readerSettings.horizontalPaddingDp.dp * 2,
                             key = { index -> currentPagedDisplayItems.getOrNull(index)?.key ?: index },
-                            userScrollEnabled = pagingEnabled,
+                            userScrollEnabled = pagingEnabled && !pagedTurns.hasTurns,
                             beyondViewportPageCount = if (readerSettings.pageAnimation == ReaderPageAnimation.HORIZONTAL_SLIDE) 0 else 1,
                             flingBehavior = PagerDefaults.flingBehavior(
                                 state = horizontalPagerState,
@@ -1928,6 +1983,11 @@ class ChapterPage(
                 showTimeBattery = readerSettings.showTimeBattery,
                 modifier = Modifier.align(Alignment.BottomCenter)
                     .onSizeChanged { readerStatusHeightPx = it.height }
+                    .windowInsetsPadding(
+                        (if (readerSettings.showSystemNavigationBar) WindowInsets.navigationBarsIgnoringVisibility
+                        else WindowInsets(0, 0, 0, 0))
+                            .union(WindowInsets.displayCutout).only(WindowInsetsSides.Bottom)
+                    )
             )
 
             if ((state as? ChapterPageModel.State.Result)?.isOffline == true) {
@@ -2523,7 +2583,6 @@ private fun ReaderStatusBar(
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .navigationBarsPadding()
             .windowInsetsPadding(WindowInsets.displayCutout.only(WindowInsetsSides.Horizontal))
             .padding(horizontal = AppSpacing.xl, vertical = AppSpacing.xs)
             .zIndex(1f),

@@ -16,7 +16,6 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.TextLayoutResult
-import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.ViewModelStore
 import androidx.room.Room
@@ -70,18 +69,17 @@ class ReaderUnderlineInstrumentedTest {
         }
     }
 
-    @Test fun selectionMenuAppearsNearTheSelectedLineInALongParagraph() {
+    @Test fun longPressDirectlyUnderlinesTheSelectedWordWithoutPopup() {
         val text = "Line 1\nLine 2\nLine 3\nSelect target\nLine 5\nLine 6\nLine 7\nLine 8"
-        var copyLabel = ""
-        var density = 1f
+        var marks by mutableStateOf(emptyList<ReaderUnderline>())
         composeRule.setContent {
-            copyLabel = com.breakyuna.esjzone.ui.designsystem.globalStringResource(android.R.string.copy)
-            density = androidx.compose.ui.platform.LocalDensity.current.density
             MaterialTheme {
                 ReaderUnderlineText(AnnotatedString(text), emptyMap(),
                     TextStyle(fontSize = 18.sp, lineHeight = 24.sp), Color.Black,
                     Modifier.testTag("text"), true, 0, "a".repeat(64),
-                    underlines = emptyList(), onUnderline = { _, _ -> })
+                    underlines = marks, onUnderline = { mark, remove ->
+                        marks = ReaderUnderlines.update(marks, mark, remove)
+                    })
             }
         }
         val layouts = mutableListOf<TextLayoutResult>()
@@ -90,21 +88,26 @@ class ReaderUnderlineInstrumentedTest {
         }
         val bounds = layouts.single().getBoundingBox(text.indexOf("target"))
         composeRule.onNodeWithTag("text").performTouchInput { longClick(bounds.center) }
-        val paragraphTop = composeRule.onNodeWithTag("text").fetchSemanticsNode().boundsInRoot.top
-        val menuTextTop = composeRule.onNodeWithText(copyLabel).fetchSemanticsNode().boundsInRoot.top
-        assertTrue(menuTextTop >= paragraphTop + bounds.bottom)
-        assertTrue(menuTextTop < paragraphTop + bounds.bottom + 72.dp.value * density)
+        composeRule.onAllNodes(isPopup()).assertCountEquals(0)
+        composeRule.runOnIdle {
+            val start = text.indexOf("target")
+            assertEquals(listOf(ReaderUnderline(0, "a".repeat(64), start, start + "target".length)), marks)
+        }
+        layouts.clear()
+        composeRule.onNodeWithTag("text").performSemanticsAction(SemanticsActions.GetTextLayoutResult) {
+            it(layouts)
+        }
+        assertTrue(layouts.single().layoutInput.text.spanStyles.any {
+            it.item.textDecoration == androidx.compose.ui.text.style.TextDecoration.Underline &&
+                it.start == text.indexOf("target") && it.end == text.indexOf("target") + "target".length
+        })
     }
 
-    @Test fun longPressSavesAndRemovesWithoutTurningPageOrOpeningToolbar() {
+    @Test fun longPressSavesWithoutTurningPageOrOpeningToolbarAndRepeatedPressKeepsUnderline() {
         var marks by mutableStateOf(emptyList<ReaderUnderline>())
-        var saveLabel = ""
-        var removeLabel = ""
         var taps = 0
         lateinit var pagerState: PagerState
         composeRule.setContent {
-            saveLabel = com.breakyuna.esjzone.ui.designsystem.globalStringResource(R.string.reader_save_underline)
-            removeLabel = com.breakyuna.esjzone.ui.designsystem.globalStringResource(R.string.reader_remove_underline)
             pagerState = rememberPagerState { 2 }
             MaterialTheme {
                 ReaderShell(background = Color.White, onReadingAreaTap = { _, _ -> taps++ },
@@ -122,7 +125,7 @@ class ReaderUnderlineInstrumentedTest {
             }
         }
         composeRule.onNodeWithTag("text").performTouchInput { longClick(center) }
-        composeRule.onNodeWithText(saveLabel).performClick()
+        composeRule.onAllNodes(isPopup()).assertCountEquals(0)
         composeRule.runOnIdle {
             assertEquals(1, marks.size)
             assertEquals(2, marks.single().blockIndex)
@@ -131,7 +134,11 @@ class ReaderUnderlineInstrumentedTest {
             assertEquals(0, pagerState.currentPage)
         }
         composeRule.onNodeWithTag("text").performTouchInput { longClick(center) }
-        composeRule.onNodeWithText(removeLabel).performClick()
-        composeRule.runOnIdle { assertTrue(marks.isEmpty()) }
+        composeRule.onAllNodes(isPopup()).assertCountEquals(0)
+        composeRule.runOnIdle {
+            assertEquals(1, marks.size)
+            assertEquals(0, taps)
+            assertEquals(0, pagerState.currentPage)
+        }
     }
 }

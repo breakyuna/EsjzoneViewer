@@ -171,6 +171,7 @@ fun AppReaderZoomableImage(
     state: ZoomableImageState = rememberZoomableImageState(rememberZoomableState()),
     gestures: EnabledZoomGestures = EnabledZoomGestures.ZoomAndPan,
     onClick: ((Offset) -> Unit)? = null,
+    onLongClick: ((Offset) -> Unit)? = null,
     onDoubleClick: DoubleClickToZoomListener = DoubleClickToZoomListener.cycle(),
     loading: @Composable () -> Unit = { AppImageLoading() }
 ) {
@@ -186,6 +187,7 @@ fun AppReaderZoomableImage(
             contentScale = contentScale,
             gestures = gestures,
             onClick = onClick,
+            onLongClick = onLongClick,
             onDoubleClick = onDoubleClick
         )
         if (!state.isImageDisplayed) {
@@ -195,7 +197,7 @@ fun AppReaderZoomableImage(
 }
 
 @Composable
-private fun sharedMirrorImageRequest(model: Any?, allowNetwork: Boolean = true): ImageRequest {
+internal fun sharedMirrorImageRequest(model: Any?, allowNetwork: Boolean = true): ImageRequest {
     val context = LocalContext.current
     val activeDomain = PresentationAccess.settings.domain.value
     return remember(model, context, activeDomain, allowNetwork) {
@@ -226,7 +228,7 @@ private fun sharedMirrorImageRequest(model: Any?, allowNetwork: Boolean = true):
 }
 
 @Composable
-private fun readerImageLoader(model: Any?): ImageLoader {
+internal fun readerImageLoader(model: Any?): ImageLoader {
     val url = model as? String
     val parsed = remember(url) { url?.toHttpUrlOrNull() }
     return if (parsed?.isHttps == true && parsed.host == "www.wenku8.net" &&

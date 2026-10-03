@@ -10,7 +10,8 @@ import org.jsoup.Jsoup
 
 fun EsjzoneClient.getUserProfile(
     authorization: Authorization,
-    forceRefresh: Boolean = false
+    forceRefresh: Boolean = false,
+    coalesceRequests: Boolean = true
 ): UserProfile {
     val responseBody = getPage(
         authorization,
@@ -20,7 +21,8 @@ fun EsjzoneClient.getUserProfile(
         ),
         PageCacheTtl.PROFILE,
         forceRefresh = forceRefresh,
-        pageKind = PageKind.ACCOUNT
+        pageKind = PageKind.ACCOUNT,
+        coalesceRequests = coalesceRequests
     )
 
     val document = Jsoup.parse(responseBody)

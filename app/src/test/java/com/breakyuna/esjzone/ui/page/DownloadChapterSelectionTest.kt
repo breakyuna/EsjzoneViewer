@@ -109,9 +109,8 @@ class DownloadChapterSelectionTest {
         assertTrue(encoded.length < 32_000)
         assertEquals(urls, DownloadChapterSelectionSaver.restore(encoded))
         val oversized = (1..10_000).map { "https://www.esjzone.cc/forum/123/$it.html" }.toSet()
-        val overflow = with(DownloadChapterSelectionSaver) { scope.save(oversized) }!!
-        assertEquals("", overflow)
-        assertEquals(emptySet<String>(), DownloadChapterSelectionSaver.restore(overflow))
+        val overflow = with(DownloadChapterSelectionSaver) { scope.save(oversized) }
+        assertNull(overflow)
         val empty = with(DownloadChapterSelectionSaver) { scope.save(emptySet()) }!!
         assertEquals(emptySet<String>(), DownloadChapterSelectionSaver.restore(empty))
     }

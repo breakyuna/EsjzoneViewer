@@ -98,7 +98,7 @@ internal class DownloadChapterSelection(chapterList: NovelChapterList) {
     }
 }
 
-/** Keep actual URLs across TOC changes without putting thousands of full strings in saved state. */
+/** Oversized selections are not saved, so restoration uses the caller's initial selection. */
 private const val MAX_SAVED_SELECTION_LENGTH = 32_000
 
 internal val DownloadChapterSelectionSaver = Saver<Set<String>, String>(
@@ -108,7 +108,7 @@ internal val DownloadChapterSelectionSaver = Saver<Set<String>, String>(
                 GZIPOutputStream(output).use { it.write(urls.joinToString("\u0000").toByteArray(Charsets.UTF_8)) }
             }.toByteArray()
             Base64.getEncoder().encodeToString(compressed)
-                .takeIf { it.length <= MAX_SAVED_SELECTION_LENGTH }.orEmpty()
+                .takeIf { it.length <= MAX_SAVED_SELECTION_LENGTH }
         }
     },
     restore = { encoded ->

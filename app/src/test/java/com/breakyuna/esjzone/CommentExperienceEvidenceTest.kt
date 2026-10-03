@@ -36,7 +36,8 @@ class CommentExperienceEvidenceTest {
             replyToken = "123-42",
             previousComments = comments,
             authorName = "Current reader",
-            authorAvatarUrl = "/avatar.png"
+            authorAvatarUrl = "/avatar.png",
+            requestSentAt = "2026-10-03 14:05:06"
         )
 
         assertEquals(comments, result.comments.dropLast(1))
@@ -48,6 +49,7 @@ class CommentExperienceEvidenceTest {
         assertEquals("123-42", result.createdComment.replyToken)
         assertEquals("Current reader", result.createdComment.authorName)
         assertEquals("/avatar.png", result.createdComment.authorAvatarUrl)
+        assertEquals("2026-10-03 14:05:06", result.createdComment.createdAt)
         assertEquals("#16", result.createdComment.floor)
         assertEquals(2, result.createdComment.pageGroup)
     }
@@ -61,9 +63,11 @@ class CommentExperienceEvidenceTest {
             previousComments = emptyList(),
             authorName = null,
             authorAvatarUrl = null,
-            createdCommentId = "789"
+            createdCommentId = "789",
+            requestSentAt = "2026-10-03 14:05:06"
         )
         assertEquals("789", result.createdComment.id)
+        assertEquals("2026-10-03 14:05:06", result.createdComment.createdAt)
         assertEquals(listOf(result.createdComment), result.comments)
     }
 }

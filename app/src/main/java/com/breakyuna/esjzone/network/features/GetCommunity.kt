@@ -22,6 +22,7 @@ import com.breakyuna.esjzone.novellibrary.novel.Comment
 import com.breakyuna.esjzone.novellibrary.novel.COMMENT_PAGE_SIZE
 import com.breakyuna.esjzone.util.CommentRequestTiming
 import com.breakyuna.esjzone.util.AppLogger
+import com.breakyuna.esjzone.util.currentDateString
 import com.google.gson.JsonElement
 import com.google.gson.JsonObject
 import com.google.gson.JsonParser
@@ -150,7 +151,8 @@ internal fun EsjzoneClient.submitForumComment(
     content: String,
     replyToken: String? = null,
     preparedForum: ForumCommentPreparation? = null,
-    timing: CommentRequestTiming
+    timing: CommentRequestTiming,
+    onPostStarted: (List<Comment>, String) -> Unit
 ): CommentSubmission {
     val submittedContent = content.trim()
     require(submittedContent.isNotEmpty()) { "Comment content cannot be empty" }
@@ -221,9 +223,16 @@ internal fun EsjzoneClient.submitForumComment(
                     .build()
             )
             .build()
+        var requestSentAt = ""
         val replyResponse = try {
             timing.stage("comment_post") {
-                timing.stage("response_headers") { writeClient.newCall(request).execute() }.use { response ->
+                timing.stage("response_headers") {
+                    val call = writeClient.newCall(request)
+                    requestSentAt = currentDateString()
+                    timing.point("comment_post_started")
+                    onPostStarted(previousComments, requestSentAt)
+                    call.execute()
+                }.use { response ->
                     if (!response.isSuccessful) {
                         throw NetworkHttpException(targetUrl, response.code)
                     }
@@ -265,7 +274,8 @@ internal fun EsjzoneClient.submitForumComment(
                 previousComments = previousComments,
                 authorName = forumPreparation.currentUserName,
                 authorAvatarUrl = forumPreparation.currentUserAvatar,
-                createdCommentId = createdCommentId
+                createdCommentId = createdCommentId,
+                requestSentAt = requestSentAt
             )
         }
     } else {
@@ -295,9 +305,13 @@ internal fun EsjzoneClient.submitForumComment(
         ).ifBlank { targetUrl }.substringBefore('#')
         val responseBody = try {
             timing.stage("guestbook_post") {
-                writeClient.newCall(
+                val call = writeClient.newCall(
                     Request.Builder().url(actionUrl).post(bodyBuilder.build()).headers(headers).build()
-                ).execute().use { response ->
+                )
+                val requestSentAt = currentDateString()
+                timing.point("comment_post_started")
+                onPostStarted(previousComments, requestSentAt)
+                call.execute().use { response ->
                     if (!response.isSuccessful) throw NetworkHttpException(targetUrl, response.code)
                     timing.stage("response_body") { response.body?.readTextBounded().orEmpty() }
                 }
@@ -343,7 +357,8 @@ internal fun localCommentSubmission(
     previousComments: List<Comment>,
     authorName: String?,
     authorAvatarUrl: String?,
-    createdCommentId: String = "$parentId-${System.currentTimeMillis()}"
+    createdCommentId: String = "$parentId-${System.currentTimeMillis()}",
+    requestSentAt: String = currentDateString()
 ): CommentSubmission {
     val createdComment = Comment(
         id = createdCommentId,
@@ -352,7 +367,7 @@ internal fun localCommentSubmission(
         authorName = authorName,
         authorUrl = null,
         floor = "#${previousComments.size + 1}",
-        createdAt = null,
+        createdAt = requestSentAt,
         contentHtml = content,
         contentText = content,
         quotedContentText = null,

@@ -165,18 +165,19 @@
 
 - 先 POST 当前论坛主题或章节页面，Body 为 `plxf=getAuthToken`；从 `<JinJing>...</JinJing>` 提取动态 token。
 - 再 POST `/inc/forum_reply.php`，携带同一 CookieJar、`authorization: {token}`、`X-Requested-With: XMLHttpRequest`、`Origin: https://www.esjzone.cc` 与 URL-encoded form。
-- 客户端获取动态 token、提交评论/回复及留言板提交使用连接超时 5 秒、读取超时 12 秒、单次请求总超时 16 秒；读取和总超时各延长 4 秒。此限制不覆盖发送前的经验值获取、评论页读取或发送后的后台核验，现有核验流程不变。
+- 客户端获取动态 token、提交评论/回复及留言板提交使用连接超时 5 秒、读取超时 12 秒、单次请求总超时 16 秒；读取和总超时各延长 4 秒。此限制不覆盖发送前的经验值获取、评论页读取或并发的经验值校对。
 - HTTP 2xx 不代表写入成功；解析 JSON `status`。`status=200` 成功，其他状态直接展示非空 `msg`。实测 `status=214`、`msg=每日留言次數已超過限制！` 为当日次数上限。
 - 成功响应可带 `anchor="#comment-{commentId}"`，用于定位新评论。业务失败不得刷新或假装评论已发送。
-- 客户端将发送前后可用经验值的增加视为可靠的发送确认：写入超时或页面未核验到新评论时，立即读取最新资料；确认增加后直接追加本地评论、定位新评论并清空草稿、回复和错误状态，无须等待页面再次显示评论。经验值确认使用本地临时评论 ID，真实 ID 由后续页面刷新取得；这是客户端确认策略，不代表本次已观察到网页中的新评论。
-- 经验值首次未增加时保留一次 6 秒后的重查；经验值缺失、持平或下降不确认成功，业务明确拒绝时不启动这条确认路径。核验不自动重发。迟到的恢复结果不能重复追加评论，确认前启动的页面刷新不能覆盖本地成功状态。
+- 客户端先取得发送前经验值基线，在实际发起评论 POST 时并发启动经验值校对，不在获取动态 token 时启动。校对强制刷新资料并独立发起请求，不复用发送前的在途资料请求。发送后经验值增加视为可靠确认：直接追加本地评论、定位新评论并清空草稿、回复和错误状态，无须等待提交响应或页面再次显示评论。若列表已包含此次评论则直接使用，避免重复追加；否则使用本地临时评论 ID，真实 ID 由后续页面刷新取得。这是客户端确认策略，不代表本次已观察到网页中的新评论。
+- 并发经验值校对最多检查 3 次，首次立即读取，后续读取前间隔 6 秒；缺失、持平或下降只表示尚未确认。提交响应超时或页面未核验到评论时，等待剩余校对，再补一次独立资料读取；超时分支同时保留 3 秒后读取评论页的核验。未确认期间保持发送状态，核验全部结束仍未确认时才显示超时或未核验提示。接口成功、经验值增加或页面核验任一路完成后只更新一次；迟到的提交结果不得覆盖成功或较新发送的状态。接口明确拒绝且当前发送尚未确认时停止校对并展示业务错误，不自动重发。确认前启动的页面刷新不能覆盖本地成功状态。
+- 发起评论 POST 时记录设备本地时间（`yyyy-MM-dd HH:mm:ss`），接口成功和经验值确认路径均以该请求发起时间填写本地增量评论的 `createdAt`；校对完成时间不用于评论时间。该时间没有加入请求参数，后续刷新以网页中的服务器评论时间替换。
 
 ### 7.2 客户端评论流程计时日志
 
 - 日志标签为 `CommentTiming`，现有应用日志导出会包含这些记录。`trace` 是进程内递增的本地编号，`operation=load` 表示评论区加载，`operation=submit` 表示一次发送；同一次发送的后台恢复使用相同编号。
 - 每个阶段仅在结束时记录一次结果及耗时，取消逐阶段的 `started` 日志以减少重复输出；保留流程开始/结束和下述明确时间节点。`elapsed_ms` 为该阶段耗时，`total_ms` 为距离流程开始的累计耗时。使用单调时钟，不受系统时间调整影响；异常只记录类型，不记录异常消息、评论正文、请求 URL、响应正文、Cookie 或认证字段。
 - 加载阶段包括 `experience_prefetch`（与评论加载并行）、`initial_comments_read`、`comments_refresh_parse` 和 `comments_publish`。发送阶段包括经验值预取等待/复用/重新获取、页面读取或预取复用、`auth_token`、`comment_post`、`response_headers`（从执行 POST 到收到响应头）、`response_body`、`response_parse`、缓存失效、本地评论构造和 `ui_state_update`。
-- 留言板还记录 `guestbook_post`、`guestbook_refresh` 和 `guestbook_verify`。后台恢复分别记录固定延时与页面/资料请求；发送成功后的资料刷新记录为 `profile_refresh_after_success`。
-- 明确时间节点包括 `before_send_experience_started` / `before_send_experience_ready`（发送前经验值获取或预取复用）、`after_send_experience_started` / `after_send_experience_ready`（发送后资料请求，完成节点在缓存写入之前）、`comment_response_accepted`（评论接口确认接受）和 `new_comment_added_to_list`（新评论写入页面列表状态）。恢复路径另有 `new_comment_added_to_list_after_recovery` / `new_comment_verified_after_refresh`；发送后经验值重查会再次记录同名节点。节点的绝对时间由日志前缀提供，精确到毫秒，`total_ms` 表示距流程开始的相对时间；`available` / `unavailable` 区分是否取得经验值，不记录数值。
+- 留言板还记录 `guestbook_post`、`guestbook_refresh` 和 `guestbook_verify`。并发校对记录 `experience_confirmation_including_delays`、`experience_confirmation_delay` 和 `experience_confirmation_fetch`；页面恢复另记录固定延时与页面请求；发送成功后的资料刷新记录为 `profile_refresh_after_success`。
+- 明确时间节点包括 `before_send_experience_started` / `before_send_experience_ready`（发送前经验值获取或预取复用）、`after_send_experience_started` / `after_send_experience_ready`（发送后资料请求，完成节点在缓存写入之前）、`comment_response_accepted`（评论接口确认接受）、`comment_post_started`（发起评论 POST，同时记录本地显示时间并启动并发校对）和 `new_comment_added_to_list`（新评论写入页面列表状态）。恢复路径另有 `new_comment_added_to_list_after_recovery` / `new_comment_verified_after_refresh`；发送后经验值重查会再次记录同名节点。节点的绝对时间由日志前缀提供，精确到毫秒，`total_ms` 表示距流程开始的相对时间；`available` / `unavailable` 区分是否取得经验值，不记录数值。
 - 经验值确认成功另记录 `comment_experience_confirmed`，紧接 `ui_state_update` 和 `new_comment_added_to_list_after_experience`；资料缓存写入在界面状态更新后进行。个人资料页订阅当前账户的经验值缓存，直接显示此次确认得到的经验值，无须为此再请求资料接口。
-- `stage=flow` 的结束记录表示前台流程结束，发送流程在 `isSubmitting=false` 后记录；后续后台记录不计入此前台耗时。`completed` 只表示该阶段正常返回，发送成功可由流程结果 `accepted` 或后续的 `comment_experience_confirmed`、评论页面核验成功节点确认。嵌套阶段和并行阶段不能直接相加；`ui_state_update` 测量状态写入，不代表屏幕已经完成绘制。
+- `stage=flow` 的结束记录表示发送协程结束；经验值先确认时界面可提前结束发送状态，而提交请求仍等待响应，故该结束记录不一定等于界面等待时长。后续后台记录不计入该协程耗时。`completed` 只表示该阶段正常返回，发送成功可由流程结果 `accepted` 或后续的 `comment_experience_confirmed`、评论页面核验成功节点确认。嵌套阶段和并行阶段不能直接相加；`ui_state_update` 测量状态写入，不代表屏幕已经完成绘制。

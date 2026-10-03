@@ -742,8 +742,11 @@
     <string name="auto_backup_policy">Backs up local data and downloads daily, keeping the latest 3 archives. Excludes sign-in credentials. Uninstalling removes these backups; export copies to keep them.</string>
     <string name="auto_backup_empty">No automatic backups yet</string>
     <string name="reader_long_press_underline">Long-press to underline</string>
-    <string name="reader_save_underline">Underline</string>
-    <string name="reader_remove_underline">Remove underline</string>
     <string name="reader_underlines">Reading underlines</string>
     <string name="reader_underline_failed">Could not save underline</string>
+    <string name="image_save">Save image</string>
+    <string name="image_saved">Saved to Pictures/Esjzone</string>
+    <string name="image_save_failed">Could not save image. Long-press to retry.</string>
+    <string name="novel_export_selected_action">Export %1$d chapters</string>
+    <string name="novel_export_no_chapters">No downloaded chapters available to export</string>
 </resources>

@@ -1,5 +1,6 @@
 package com.breakyuna.esjzone.ui.product
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -186,13 +187,16 @@ fun NovelHero(
     novel: NovelCardModel,
     modifier: Modifier = Modifier,
     onAction: (() -> Unit)? = null,
-    actionLabel: String? = null
+    actionLabel: String? = null,
+    onCoverClick: (() -> Unit)? = null
 ) {
     Row(
         modifier = modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(AppSpacing.md)
     ) {
-        NovelCover(novel.cover, Modifier.width(104.dp))
+        NovelCover(novel.cover, Modifier.width(104.dp).then(
+            if (onCoverClick != null) Modifier.clickable(onClick = onCoverClick) else Modifier
+        ))
         Column(
             modifier = Modifier
                 .weight(1f)

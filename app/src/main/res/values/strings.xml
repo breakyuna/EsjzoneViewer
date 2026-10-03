@@ -743,8 +743,11 @@
     <string name="auto_backup_policy">每天备份一次，保留最近 3 份。包含本地数据和下载，不含登录凭据。卸载应用会删除备份，请按需导出。</string>
     <string name="auto_backup_empty">暂无自动备份</string>
     <string name="reader_long_press_underline">长按划线</string>
-    <string name="reader_save_underline">划线</string>
-    <string name="reader_remove_underline">删除划线</string>
     <string name="reader_underlines">阅读划线</string>
     <string name="reader_underline_failed">划线保存失败</string>
+    <string name="image_save">保存图片</string>
+    <string name="image_saved">已保存到相册 Pictures/Esjzone</string>
+    <string name="image_save_failed">图片保存失败，请长按重试</string>
+    <string name="novel_export_selected_action">导出 %1$d 章</string>
+    <string name="novel_export_no_chapters">暂无可导出的已下载章节</string>
 </resources>

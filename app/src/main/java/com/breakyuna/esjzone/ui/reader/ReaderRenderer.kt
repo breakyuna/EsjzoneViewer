@@ -9,19 +9,12 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.text.selection.DisableSelection
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -45,16 +38,12 @@ import androidx.compose.foundation.text.InlineTextContent
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
 import com.breakyuna.esjzone.R
 import com.breakyuna.esjzone.domain.reader.ReaderBlock
 import com.breakyuna.esjzone.domain.reader.ReaderChapterDocument
+import com.breakyuna.esjzone.ui.designsystem.AppImageViewer
 import com.breakyuna.esjzone.ui.designsystem.AppReaderImage
-import com.breakyuna.esjzone.ui.designsystem.AppReaderZoomableImage
 import com.breakyuna.esjzone.ui.designsystem.AppShapes
-import com.breakyuna.esjzone.ui.designsystem.AppSpacing
-import com.breakyuna.esjzone.ui.designsystem.rememberReaderReducedMotion
 
 /**
  * Domain-AST renderer. The renderer has no dependency on legacy Component
@@ -255,7 +244,6 @@ internal fun ReaderImage(
     contentScale: ContentScale = ContentScale.FillWidth
 ) {
     var expanded by rememberSaveable(url) { mutableStateOf(false) }
-    val reducedMotion = rememberReaderReducedMotion()
     Box(
         modifier = modifier
             .fillMaxWidth()
@@ -274,56 +262,7 @@ internal fun ReaderImage(
     }
 
     if (expanded) {
-        Dialog(
-            onDismissRequest = { expanded = false },
-            properties = DialogProperties(usePlatformDefaultWidth = false)
-        ) {
-            Surface(modifier = Modifier.fillMaxSize(), color = Color.Black) {
-                Box(modifier = Modifier.fillMaxSize()) {
-                    if (reducedMotion) {
-                        // Keep a deterministic, non-animated static viewer for
-                        // users who disable system animations. It still uses
-                        // the shared Coil facade and closes on a single tap.
-                        AppReaderImage(
-                            model = url,
-                            contentDescription = contentDescription,
-                            contentScale = ContentScale.Fit,
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .clickable { expanded = false }
-                        )
-                    } else {
-                        // Telephoto handles double-tap zoom, pinch zoom,
-                        // one-finger panning and high-resolution sub-sampling.
-                        // Its onClick callback is used because Telephoto
-                        // consumes ordinary clickable gestures internally.
-                        AppReaderZoomableImage(
-                            model = url,
-                            contentDescription = contentDescription,
-                            contentScale = ContentScale.Fit,
-                            modifier = Modifier.fillMaxSize(),
-                            onClick = { expanded = false }
-                        )
-                    }
-                    IconButton(
-                        onClick = { expanded = false },
-                        modifier = Modifier
-                            .align(Alignment.TopEnd)
-                            .statusBarsPadding()
-                            .padding(AppSpacing.sm)
-                            .background(
-                                MaterialTheme.colorScheme.surface.copy(alpha = 0.76f),
-                                AppShapes.pill
-                            )
-                    ) {
-                        Icon(
-                            imageVector = Icons.Filled.Close,
-                            contentDescription = stringResource(R.string.close),
-                            tint = MaterialTheme.colorScheme.onSurface
-                        )
-                    }
-                }
-            }
-        }
+        AppImageViewer(model = url, contentDescription = contentDescription,
+            onDismiss = { expanded = false })
     }
 }

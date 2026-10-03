@@ -144,7 +144,9 @@ object EsjzoneClient {
     /**
      * Returns fresh cached HTML when available. Expired HTML is returned immediately while
      * one background refresh updates it for the next read. A forced refresh or a true miss
-     * waits for the shared request for this account and URL. Error pages and redirects to
+     * waits for the shared request for this account and URL. With coalescing disabled,
+     * a fresh network request is issued rather than joining an earlier in-flight read.
+     * Error pages and redirects to
      * login are never written; stale HTML remains a fallback for transient failures.
      */
     fun getPage(
@@ -153,7 +155,8 @@ object EsjzoneClient {
         maxAgeMillis: Long,
         forceRefresh: Boolean = false,
         pageKind: PageKind = PageKind.GENERIC,
-        allowStaleOnError: Boolean = !forceRefresh
+        allowStaleOnError: Boolean = !forceRefresh,
+        coalesceRequests: Boolean = true
     ): String {
         val cacheKey = pageCacheKey(authorization, url)
         val legacyKey = if (authorization.hasCredentials() &&
@@ -196,7 +199,8 @@ object EsjzoneClient {
                         stalePage,
                         requestEpoch,
                         pageKind,
-                        allowStaleOnError
+                        allowStaleOnError,
+                        coalesceRequests
                     )
                 }
             }
@@ -210,7 +214,8 @@ object EsjzoneClient {
             stalePage,
             requestEpoch,
             pageKind,
-            allowStaleOnError
+            allowStaleOnError,
+            coalesceRequests
         )
     }
 
@@ -221,10 +226,11 @@ object EsjzoneClient {
         stalePage: String?,
         requestEpoch: Long,
         pageKind: PageKind,
-        allowStaleOnError: Boolean
+        allowStaleOnError: Boolean,
+        coalesceRequests: Boolean = true
     ): String {
         val owner = CompletableFuture<String>()
-        val existing = inFlightPages.putIfAbsent(cacheKey, owner)
+        val existing = if (coalesceRequests) inFlightPages.putIfAbsent(cacheKey, owner) else null
         if (existing != null) {
             return try {
                 existing.get(35, TimeUnit.SECONDS)
@@ -240,7 +246,8 @@ object EsjzoneClient {
                     // caller is still active. Become a fresh owner instead of surfacing a
                     // false network failure to every remaining waiter.
                     return fetchPageCoalesced(
-                        authorization, url, cacheKey, stalePage, requestEpoch, pageKind, allowStaleOnError
+                        authorization, url, cacheKey, stalePage, requestEpoch, pageKind, allowStaleOnError,
+                        coalesceRequests
                     )
                 }
                 if (cause is Exception) throw cause

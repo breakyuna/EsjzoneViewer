@@ -134,6 +134,7 @@ import com.breakyuna.esjzone.ui.designsystem.appStateColors
 import com.breakyuna.esjzone.ui.designsystem.AppAdaptiveMetrics
 import com.breakyuna.esjzone.ui.designsystem.AppWindowSizeClass
 import com.breakyuna.esjzone.ui.designsystem.rememberAppAdaptiveMetrics
+import com.breakyuna.esjzone.ui.designsystem.AppImageViewer
 import com.breakyuna.esjzone.ui.product.NovelCoverModel
 import com.breakyuna.esjzone.ui.product.NovelHero
 import com.breakyuna.esjzone.ui.product.NovelMetadataModel
@@ -180,13 +181,18 @@ class NovelPage(
         val localShelfEntry by BookshelfRepository.observeEntry(authorization, novel.url)
             .collectAsState(initial = null)
         var showMoreActions by rememberSaveable(novel.url) { mutableStateOf(false) }
+        var exportFormat by rememberSaveable(novel.url) { mutableStateOf<NovelExportFormat?>(null) }
+        var exportSelection by rememberSaveable(novel.url, stateSaver = DownloadChapterSelectionSaver) {
+            mutableStateOf(emptySet<String>())
+        }
         val exportScope = rememberCoroutineScope()
         val detailedForExport = (state as? NovelPageModel.State.Result)?.detailed
 
         fun export(uri: Uri, format: NovelExportFormat, detailed: DetailedNovel) {
+            val selected = exportSelection
             exportScope.launch {
                 val succeeded = try {
-                    exportNovel(context, detailed, uri, format)
+                    exportNovel(context, detailed, uri, format, selected)
                     true
                 } catch (error: CancellationException) {
                     throw error
@@ -220,6 +226,26 @@ class NovelPage(
         ) { uri ->
             val detailed = detailedForExport
             if (uri != null && detailed != null) export(uri, NovelExportFormat.EPUB, detailed)
+        }
+
+        exportFormat?.let { format ->
+            detailedForExport?.let { detailed ->
+                ExportChapterSelectionDialog(
+                    novelUrl = detailed.url,
+                    title = stringResource(if (format == NovelExportFormat.TXT)
+                        R.string.novel_export_txt else R.string.novel_export_epub),
+                    initialSelection = exportSelection.takeIf { it.isNotEmpty() },
+                    onDismiss = { exportFormat = null },
+                    onExport = { selected ->
+                        exportSelection = selected
+                        exportFormat = null
+                        when (format) {
+                            NovelExportFormat.TXT -> txtLauncher.launch(NovelExporter.suggestedFileName(detailed.name, "txt"))
+                            NovelExportFormat.EPUB -> epubLauncher.launch(NovelExporter.suggestedFileName(detailed.name, "epub"))
+                        }
+                    }
+                )
+            }
         }
 
         Column(
@@ -349,10 +375,10 @@ class NovelPage(
                         localReading = localReading,
                         hasHistory = hasHistory,
                         onExportTxt = {
-                            txtLauncher.launch(NovelExporter.suggestedFileName(detailed.name, "txt"))
+                            exportFormat = NovelExportFormat.TXT
                         },
                         onExportEpub = {
-                            epubLauncher.launch(NovelExporter.suggestedFileName(detailed.name, "epub"))
+                            exportFormat = NovelExportFormat.EPUB
                         },
                         favorite = rememberedFavorite,
                         favoritePending = localShelfEntry?.syncState != null &&
@@ -888,6 +914,8 @@ private fun NovelDetailContent(
  * rebuilt token/component layer; networking and domain models stay untouched. */
 @Composable
 private fun RebuiltNovelHero(novel: DetailedNovel, metrics: AppAdaptiveMetrics) {
+    val coverUrl = EsjzoneUrls.coverOrEmpty(novel.coverUrl)
+    var viewingCover by rememberSaveable(coverUrl) { mutableStateOf(false) }
     val adultLabel = stringResource(R.string.adult_badge)
     val metadataDescription = listOfNotNull(
         novel.type.trim().takeIf(String::isNotBlank),
@@ -918,8 +946,7 @@ private fun RebuiltNovelHero(novel: DetailedNovel, metrics: AppAdaptiveMetrics) 
             id = novel.id().ifBlank { novel.url },
             title = novel.name,
             cover = NovelCoverModel(
-                model = EsjzoneUrls.coverOrEmpty(novel.coverUrl)
-                    .takeIf(String::isNotBlank)
+                model = coverUrl.takeIf(String::isNotBlank)
                     ?: R.drawable.missing_cover,
                 contentDescription = novel.name
             ),
@@ -932,10 +959,15 @@ private fun RebuiltNovelHero(novel: DetailedNovel, metrics: AppAdaptiveMetrics) 
                 metrics = stats
             )
         ),
+        onCoverClick = if (coverUrl.isNotBlank()) ({ viewingCover = true }) else null,
         modifier = Modifier
             .fillMaxWidth()
             .padding(vertical = AppSpacing.sm)
     )
+    if (viewingCover && coverUrl.isNotBlank()) {
+        AppImageViewer(model = coverUrl, contentDescription = novel.name,
+            onDismiss = { viewingCover = false })
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -1125,12 +1157,12 @@ private suspend fun exportNovel(
     context: Context,
     novel: DetailedNovel,
     uri: Uri,
-    format: NovelExportFormat
+    format: NovelExportFormat,
+    selectedChapterUrls: Set<String>
 ) {
     withContext(Dispatchers.IO) {
         val manifest = PresentationAccess.downloads.manifest(novel.url)
-            ?.takeIf { it.complete }
-            ?: error("Novel download is incomplete")
+            ?: error("Novel download is unavailable")
         val output = context.contentResolver.openOutputStream(uri, "w")
             ?: error("Unable to open the selected file")
         output.use { stream ->
@@ -1138,14 +1170,15 @@ private suspend fun exportNovel(
                 PresentationAccess.downloads.chapterContent(novel.url, record)
             }
             when (format) {
-                NovelExportFormat.TXT -> NovelExporter.exportTxt(manifest, loader, stream)
+                NovelExportFormat.TXT -> NovelExporter.exportTxt(manifest, loader, stream, selectedChapterUrls)
                 NovelExportFormat.EPUB -> NovelExporter.exportEpub(
                     manifest = manifest,
                     chapterLoader = loader,
                     output = stream,
                     imageLoader = { component ->
                         PresentationAccess.downloads.imageFile(novel.url, component)
-                    }
+                    },
+                    selectedChapterUrls = selectedChapterUrls
                 )
             }
         }
@@ -2046,7 +2079,7 @@ private fun NovelDownloadSheet(
                 }
             }
 
-            if (manifest?.complete == true && !downloading) {
+            if (completed > 0 && !downloading) {
                 RebuiltRule()
                 Text(
                     text = stringResource(R.string.novel_export_title),

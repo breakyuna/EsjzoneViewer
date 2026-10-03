@@ -187,7 +187,6 @@ internal fun ReaderSettingsSheet(
                         if (!ReaderFontStore.isAvailable(draft.font)) {
                             Text(stringResource(R.string.reader_font_downloading), style = MaterialTheme.typography.labelSmall)
                         }
-                        ReaderLayoutSlider(draft, settings, ::commit) { draft = it }
                         Text(stringResource(R.string.reader_script), style = MaterialTheme.typography.titleSmall)
                         ReaderSettingChoices(draft.script, listOf(
                             ReaderScript.ORIGINAL to stringResource(R.string.reader_script_original),
@@ -201,6 +200,7 @@ internal fun ReaderSettingsSheet(
                             ReaderPageAnimation.FADE to stringResource(R.string.reader_page_animation_fade),
                             ReaderPageAnimation.COVER to stringResource(R.string.reader_page_animation_cover)
                         )) { commit(draft.copy(pageAnimation = it)) }
+                        ReaderLayoutSlider(draft, settings, ::commit) { draft = it }
                     } else if (tab == 1) {
                         ReaderToggle(stringResource(R.string.reader_tap_paging), draft.tapPagingEnabled) { commit(draft.copy(tapPagingEnabled = it)) }
                         ReaderToggle(stringResource(R.string.reader_scroll_side_gestures), draft.scrollSideGesturesEnabled) { commit(draft.copy(scrollSideGesturesEnabled = it)) }

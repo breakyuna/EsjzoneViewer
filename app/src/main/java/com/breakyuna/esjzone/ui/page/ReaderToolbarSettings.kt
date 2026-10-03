@@ -6,16 +6,22 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.BrightnessLow
+import androidx.compose.material.icons.filled.BrightnessHigh
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
+import kotlin.math.roundToInt
 import com.breakyuna.esjzone.R
 import com.breakyuna.esjzone.ui.designsystem.GlobalText as Text
 import com.breakyuna.esjzone.ui.designsystem.globalStringResource as stringResource
@@ -67,6 +73,7 @@ internal fun ReaderToolbarSettings(tools: List<ReaderTool>, onChange: (List<Read
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun ReaderBrightnessSheet(
     visible: Boolean,
@@ -75,6 +82,11 @@ internal fun ReaderBrightnessSheet(
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val followsSystem = brightness < 0f
+    val brightnessLabel = stringResource(R.string.reader_brightness)
+    val sliderColors = SliderDefaults.colors(
+        inactiveTrackColor = MaterialTheme.colorScheme.surfaceContainerHighest
+    )
     AnimatedVisibility(
         visible = visible,
         modifier = modifier,
@@ -87,29 +99,65 @@ internal fun ReaderBrightnessSheet(
             color = MaterialTheme.colorScheme.surface,
             shadowElevation = 0.dp
         ) {
-            Column(Modifier.padding(bottom = 8.dp)) {
+            Column(Modifier.padding(bottom = 12.dp)) {
                 Row(
                     Modifier.fillMaxWidth().padding(start = 16.dp, end = 8.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text(stringResource(R.string.reader_brightness),
+                    Text(brightnessLabel,
                         style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+                    FilterChip(
+                        selected = followsSystem,
+                        onClick = { onChange(if (followsSystem) 0.5f else -1f) },
+                        label = { Text(stringResource(R.string.reader_brightness_system)) }
+                    )
                     IconButton(onClick = onDismiss) {
                         Icon(Icons.Default.Close, stringResource(R.string.close))
                     }
                 }
                 Row(
-                    Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                    Modifier.fillMaxWidth().padding(horizontal = 20.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text(stringResource(R.string.reader_brightness_system), modifier = Modifier.weight(1f))
-                    Switch(checked = brightness < 0f, onCheckedChange = { onChange(if (it) -1f else 0.5f) })
+                    val tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = if (followsSystem) 0.38f else 1f)
+                    Icon(Icons.Default.BrightnessLow, contentDescription = null,
+                        tint = tint, modifier = Modifier.size(20.dp))
+                    Slider(
+                        value = if (followsSystem) 0.5f else brightness,
+                        onValueChange = onChange,
+                        valueRange = 0.01f..1f,
+                        enabled = !followsSystem,
+                        colors = sliderColors,
+                        thumb = {
+                            Surface(
+                                modifier = Modifier.size(20.dp),
+                                shape = CircleShape,
+                                color = if (followsSystem) MaterialTheme.colorScheme.outlineVariant
+                                    else MaterialTheme.colorScheme.primary
+                            ) { }
+                        },
+                        track = { state ->
+                            SliderDefaults.Track(
+                                sliderState = state,
+                                modifier = Modifier.height(8.dp),
+                                enabled = !followsSystem,
+                                colors = sliderColors,
+                                thumbTrackGapSize = 0.dp,
+                                drawStopIndicator = null
+                            )
+                        },
+                        modifier = Modifier.weight(1f).semantics { contentDescription = brightnessLabel }
+                    )
+                    Icon(Icons.Default.BrightnessHigh, contentDescription = null,
+                        tint = tint, modifier = Modifier.size(20.dp))
+                    Text(
+                        text = if (followsSystem) "—" else "${(brightness * 100).roundToInt()}%",
+                        modifier = Modifier.width(44.dp),
+                        style = MaterialTheme.typography.labelLarge,
+                        color = tint
+                    )
                 }
-                Slider(
-                    value = if (brightness < 0f) 0.5f else brightness,
-                    onValueChange = onChange, valueRange = 0.01f..1f, enabled = brightness >= 0f,
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp)
-                )
             }
         }
     }

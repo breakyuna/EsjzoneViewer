@@ -18,6 +18,74 @@ import org.junit.Test
 class NovelExporterTest {
 
     @Test
+    fun selectedTxtChaptersFollowDirectoryOrderAndExcludeOtherContent() {
+        val records = (1..3).map { number ->
+            manifest().chapters.single().copy(index = number - 1, name = "Chapter $number", url = "/forum/1/$number.html")
+        }
+        val output = ByteArrayOutputStream()
+        val loaded = mutableListOf<String>()
+        NovelExporter.exportTxt(manifest().copy(chapters = records, complete = false), {
+            loaded += it.url
+            chapter(it)
+        }, output, selectedChapterUrls = linkedSetOf(records[2].url, records[0].url))
+        val text = output.toString(StandardCharsets.UTF_8.name())
+        assertEquals(listOf(records[0].url, records[2].url), loaded)
+        assertTrue(text.indexOf("Chapter 1") < text.indexOf("Chapter 3"))
+        assertTrue(!text.contains("Chapter 2"))
+    }
+
+    @Test
+    fun selectedEpubChaptersLimitContentsSpineAndImages() {
+        val records = (1..3).map { number ->
+            manifest().chapters.single().copy(index = number - 1, name = "Chapter $number", url = "/forum/1/$number.html")
+        }
+        val output = ByteArrayOutputStream()
+        val image = File.createTempFile("selected-chapter", ".png")
+        val loadedImages = mutableListOf<String>()
+        try {
+            image.writeBytes(byteArrayOf(1, 2, 3))
+            NovelExporter.exportEpub(manifest().copy(chapters = records, complete = false), { record ->
+                chapter(record).copy(contentHtml = null, components = listOf(
+                    DownloadedComponent("text", "Body ${record.index}"),
+                    DownloadedComponent("image", "image-${record.index}", mediaType = "image/png")
+                ))
+            }, output, imageLoader = { component ->
+                loadedImages += component.value
+                image
+            }, selectedChapterUrls = linkedSetOf(records[2].url, records[0].url))
+            val entries = mutableMapOf<String, String>()
+            ZipInputStream(ByteArrayInputStream(output.toByteArray())).use { zip ->
+                var entry = zip.nextEntry
+                while (entry != null) {
+                    entries[entry.name] = zip.readBytes().toString(StandardCharsets.UTF_8)
+                    entry = zip.nextEntry
+                }
+            }
+            assertEquals(listOf("image-0", "image-2"), loadedImages)
+            assertTrue(entries.getValue("OEBPS/chapter-1.xhtml").contains("Body 0"))
+            assertTrue(entries.getValue("OEBPS/chapter-2.xhtml").contains("Body 2"))
+            assertTrue(!entries.containsKey("OEBPS/chapter-3.xhtml"))
+            val navigation = entries.getValue("OEBPS/nav.xhtml")
+            assertTrue(!navigation.contains("Chapter 2"))
+            assertTrue(navigation.indexOf("Chapter 1") < navigation.indexOf("Chapter 3"))
+            assertTrue(!entries.getValue("OEBPS/content.opf").contains("chapter-3"))
+            assertEquals(2, entries.keys.count { it.startsWith("OEBPS/images/") })
+        } finally { image.delete() }
+    }
+
+    @Test(expected = IllegalArgumentException::class)
+    fun emptyChapterSelectionIsRejected() {
+        NovelExporter.exportTxt(manifest(), ::chapter, ByteArrayOutputStream(), selectedChapterUrls = emptySet())
+    }
+
+    @Test(expected = IllegalArgumentException::class)
+    fun selectedUndownloadedChapterIsRejected() {
+        val original = manifest()
+        NovelExporter.exportEpub(original.copy(chapters = original.chapters.map { it.copy(downloaded = false) }),
+            ::chapter, ByteArrayOutputStream(), selectedChapterUrls = setOf(original.chapters.single().url))
+    }
+
+    @Test
     fun txtExport_writesMetadataChaptersAndImageReferences() {
         val output = ByteArrayOutputStream()
 

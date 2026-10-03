@@ -31,8 +31,10 @@ object NovelExporter {
     fun exportTxt(
         manifest: DownloadedNovelManifest,
         chapterLoader: (DownloadedChapterRecord) -> DownloadedChapterContent?,
-        output: OutputStream
+        output: OutputStream,
+        selectedChapterUrls: Set<String>? = null
     ) {
+        val records = chaptersForExport(manifest, selectedChapterUrls)
         output.bufferedWriter(StandardCharsets.UTF_8).use { writer ->
             writer.appendLine(manifest.name)
             if (manifest.author.isNotBlank()) writer.appendLine("作者：${manifest.author}")
@@ -41,8 +43,9 @@ object NovelExporter {
                 writer.appendLine(manifest.description)
                 writer.appendLine()
             }
-            manifest.chapters.filter { it.downloaded }.forEach { record ->
-                val chapter = chapterLoader(record) ?: return@forEach
+            records.forEach { record ->
+                val chapter = chapterLoader(record)
+                    ?: error("Downloaded chapter ${record.index + 1} is unavailable for export")
                 writer.appendLine(chapter.name.ifBlank { record.name })
                 writer.appendLine()
                 chapter.components.forEach { component ->
@@ -60,13 +63,15 @@ object NovelExporter {
         manifest: DownloadedNovelManifest,
         chapterLoader: (DownloadedChapterRecord) -> DownloadedChapterContent?,
         output: OutputStream,
-        imageLoader: (DownloadedComponent) -> File? = { null }
+        imageLoader: (DownloadedComponent) -> File? = { null },
+        selectedChapterUrls: Set<String>? = null
     ) {
         // Keep only the TOC and image references in memory, never every chapter body.
         val chapters = mutableListOf<Pair<DownloadedChapterRecord, String>>()
         val images = linkedMapOf<String, EpubImage>()
-        manifest.chapters.filter { it.downloaded }.forEach { record ->
-            val chapter = chapterLoader(record) ?: return@forEach
+        chaptersForExport(manifest, selectedChapterUrls).forEach { record ->
+            val chapter = chapterLoader(record)
+                ?: error("Downloaded chapter ${record.index + 1} is unavailable for export")
             chapters += record to chapter.name.ifBlank { record.name }
             chapter.components.filter { it.type == "image" }.forEach imageLoop@{ component ->
                 val key = component.imageKey()
@@ -99,7 +104,7 @@ object NovelExporter {
             addTextEntry(zip, "OEBPS/nav.xhtml", navigationXhtml(manifest, chapters))
             chapters.forEachIndexed { index, (record, _) ->
                 val chapter = chapterLoader(record)
-                    ?: error("A downloaded chapter disappeared during export")
+                    ?: error("Downloaded chapter ${record.index + 1} disappeared during export")
                 addTextEntry(
                     zip,
                     "OEBPS/chapter-${index + 1}.xhtml",
@@ -110,6 +115,22 @@ object NovelExporter {
                 addBinaryEntry(zip, "OEBPS/${image.href}", image.file)
             }
         }
+    }
+
+    private fun chaptersForExport(
+        manifest: DownloadedNovelManifest,
+        selectedChapterUrls: Set<String>?
+    ): List<DownloadedChapterRecord> {
+        val chapters = manifest.chapters.filter {
+            it.downloaded && (selectedChapterUrls == null || it.url in selectedChapterUrls)
+        }
+        require(chapters.isNotEmpty()) { "No downloaded chapters are available for export" }
+        if (selectedChapterUrls != null) {
+            require(chapters.map { it.url }.toSet() == selectedChapterUrls) {
+                "Selected chapters are no longer available for export"
+            }
+        }
+        return chapters
     }
 
     private fun containerXml() = """<?xml version="1.0" encoding="UTF-8"?>
