@@ -152,6 +152,7 @@ class ReaderSettingsDataStore(
             script = enumOrDefault(this[SCRIPT], defaults.script),
             pageAnimation = enumOrDefault(this[PAGE_ANIMATION], defaults.pageAnimation),
             volumeKeyPaging = this[VOLUME_KEY_PAGING] ?: defaults.volumeKeyPaging,
+            longPressUnderline = this[LONG_PRESS_UNDERLINE] ?: defaults.longPressUnderline,
             tapPagingEnabled = this[TAP_PAGING] ?: defaults.tapPagingEnabled,
             scrollSideGesturesEnabled = this[SCROLL_SIDE_GESTURES] ?: defaults.scrollSideGesturesEnabled,
             pagedBookmarkGesturesEnabled = this[PAGED_BOOKMARK_GESTURES] ?: defaults.pagedBookmarkGesturesEnabled,
@@ -190,6 +191,7 @@ class ReaderSettingsDataStore(
         preferences[SCRIPT] = script.name
         preferences[PAGE_ANIMATION] = pageAnimation.name
         preferences[VOLUME_KEY_PAGING] = volumeKeyPaging
+        preferences[LONG_PRESS_UNDERLINE] = longPressUnderline
         preferences[TAP_PAGING] = tapPagingEnabled
         preferences[SCROLL_SIDE_GESTURES] = scrollSideGesturesEnabled
         preferences[PAGED_BOOKMARK_GESTURES] = pagedBookmarkGesturesEnabled
@@ -249,6 +251,7 @@ class ReaderSettingsDataStore(
         val HORIZONTAL_PADDING = floatPreferencesKey("horizontal_padding")
         val SCRIPT = stringPreferencesKey("script")
         val PAGE_ANIMATION = stringPreferencesKey("page_animation")
+        val LONG_PRESS_UNDERLINE = booleanPreferencesKey("long_press_underline")
         val TAP_PAGING = booleanPreferencesKey("tap_paging")
         val SCROLL_SIDE_GESTURES = booleanPreferencesKey("scroll_side_gestures")
         val PAGED_BOOKMARK_GESTURES = booleanPreferencesKey("paged_bookmark_gestures")

@@ -21,5 +21,6 @@ class EsjzoneApplication : Application() {
         AppLogger.init(this)
         CrashHandler.init(this)
         container = AppContainer(this)
+        container.autoBackup.startScheduling()
     }
 }

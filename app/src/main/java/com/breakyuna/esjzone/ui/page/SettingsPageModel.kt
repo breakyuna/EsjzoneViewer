@@ -25,8 +25,21 @@ class SettingsPageModel : AppStateViewModel<SettingsPageModel.State>(State()) {
         val cacheClearError: Boolean = false,
         val logoutInProgress: Boolean = false,
         val logoutCompleted: Boolean = false,
-        val logoutFailed: Boolean = false
+        val logoutFailed: Boolean = false,
+        val autoBackupFailed: Boolean = false
     )
+
+    fun setAutoBackup(enabled: Boolean, scope: String) {
+        viewModelScope.launch {
+            try {
+                PresentationAccess.autoBackup.setEnabled(enabled, scope)
+                mutableState.value = mutableState.value.copy(autoBackupFailed = false)
+            } catch (error: CancellationException) { throw error
+            } catch (_: Exception) {
+                mutableState.value = mutableState.value.copy(autoBackupFailed = true)
+            }
+        }
+    }
 
     fun persist(key: String, value: String) {
         viewModelScope.launch(Dispatchers.IO) {

@@ -134,6 +134,8 @@ app/src/main/java/com/breakyuna/esjzone/
 
 ### UI、状态与资源
 
+- UI 保持高信息密度和视觉简洁；禁止为含义明确的设置项添加描述、副标题、helper text 或解释小字。只有功能存在歧义或需要警告时才允许添加辅助说明。不要通过增加文字解释 UI，优先通过布局、控件和命名让功能自解释。
+
 - 用户可见文本优先放在 `app/src/main/res/values/strings.xml`，并同步维护 `values-zh-rCN/strings.xml`。
 - Compose 页面应复用现有组件和 Material 3 组件，保持加载、成功和空数据状态完整。
 - 涉及成人内容的列表、分类和主页分区必须遵守 `SettingsRepository.adult` 的 DataStore 状态。

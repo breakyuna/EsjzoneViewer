@@ -36,18 +36,40 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 
 class LocalBackupModel : AppStateViewModel<LocalBackupModel.Status>(Status()) {
-    data class Status(val busy: Boolean = false, val result: Int? = null)
+    data class Status(val busy: Boolean = false, val result: Int? = null, val archives: List<java.io.File> = emptyList())
+    fun refreshArchives() {
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            mutableState.value = state.value.copy(archives = PresentationAccess.autoBackup.archives())
+        }
+    }
+    fun exportArchive(context: Context, file: java.io.File, uri: Uri) {
+        if (state.value.busy) return
+        mutableState.value = state.value.copy(busy = true, result = null)
+        viewModelScope.launch {
+            try {
+                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                    file.inputStream().use { input ->
+                        checkNotNull(context.contentResolver.openOutputStream(uri, "wt")).use { input.copyTo(it) }
+                    }
+                }
+                mutableState.value = state.value.copy(busy = false, result = R.string.backup_done)
+            } catch (error: CancellationException) { throw error
+            } catch (_: Exception) {
+                mutableState.value = state.value.copy(busy = false, result = R.string.backup_failed)
+            }
+        }
+    }
     fun run(context: Context, uri: Uri, scope: String, categories: Set<BackupCategory>, restore: Boolean) {
         if (state.value.busy) return
-        mutableState.value = Status(busy = true)
+        mutableState.value = state.value.copy(busy = true, result = null)
         viewModelScope.launch {
             try {
                 if (restore) LocalBackup.restore(context, uri, PresentationAccess.database, scope, categories)
                 else LocalBackup.export(context, uri, PresentationAccess.database, scope, categories)
-                mutableState.value = Status(result = R.string.backup_done)
+                mutableState.value = state.value.copy(busy = false, result = R.string.backup_done)
             } catch (error: CancellationException) { throw error
             } catch (_: Exception) {
-                mutableState.value = Status(result = R.string.backup_failed)
+                mutableState.value = state.value.copy(busy = false, result = R.string.backup_failed)
             }
         }
     }
@@ -64,6 +86,15 @@ object LocalBackupPage : AppDestination {
         val scope = BookshelfRepository.scopeFor(authorization)
         val model = rememberAppViewModel { LocalBackupModel() }
         val state by model.state.collectAsStateWithLifecycle()
+        val completedAt by PresentationAccess.autoBackup.completedAt.collectAsStateWithLifecycle()
+        LaunchedEffect(completedAt) { model.refreshArchives() }
+        var pendingArchive by rememberSaveable { mutableStateOf<String?>(null) }
+        var restoreArchive by rememberSaveable { mutableStateOf<String?>(null) }
+        val exportArchive = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { uri ->
+            val path = pendingArchive
+            if (uri != null && path != null) model.exportArchive(context, java.io.File(path), uri)
+            pendingArchive = null
+        }
         var selectedNames by rememberSaveable { mutableStateOf(BackupCategory.entries.map { it.name }) }
         var pendingNames by rememberSaveable { mutableStateOf(emptyList<String>()) }
         var pendingScope by rememberSaveable { mutableStateOf("") }
@@ -83,6 +114,28 @@ object LocalBackupPage : AppDestination {
                 verticalArrangement = Arrangement.spacedBy(AppSpacing.lg)) {
                 Text(stringResource(R.string.backup_description), style = AppTypography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(horizontal = AppSpacing.xs))
+                SettingsSection(title = stringResource(R.string.auto_backup)) {
+                    Text(stringResource(R.string.auto_backup_policy), style = AppTypography.bodySmall,
+                        modifier = Modifier.padding(AppSpacing.md), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    if (state.archives.isEmpty()) Text(stringResource(R.string.auto_backup_empty),
+                        modifier = Modifier.padding(AppSpacing.md), style = AppTypography.bodyMedium)
+                    state.archives.forEach { file ->
+                        Column(Modifier.fillMaxWidth().padding(horizontal = AppSpacing.md)) {
+                            Text(java.text.DateFormat.getDateTimeInstance(java.text.DateFormat.SHORT,
+                                java.text.DateFormat.SHORT).format(java.util.Date(
+                                file.name.removePrefix("esjzone-auto-").removeSuffix(".zip").toLongOrNull() ?: 0L)),
+                                style = AppTypography.bodyMedium)
+                            Row(horizontalArrangement = Arrangement.spacedBy(AppSpacing.sm)) {
+                                TextButton(enabled = !state.busy, onClick = { restoreArchive = file.absolutePath }) {
+                                    Text(stringResource(R.string.backup_import))
+                                }
+                                TextButton(enabled = !state.busy, onClick = {
+                                    pendingArchive = file.absolutePath; exportArchive.launch(file.name)
+                                }) { Text(stringResource(R.string.backup_export)) }
+                            }
+                        }
+                    }
+                }
                 SettingsSection {
                     BackupCategory.entries.forEach { category ->
                         Row(Modifier.fillMaxWidth().heightIn(min = 56.dp).padding(horizontal = AppSpacing.xs),
@@ -91,6 +144,7 @@ object LocalBackupPage : AppDestination {
                                 selectedNames = if (checked) selectedNames + category.name else selectedNames - category.name
                             })
                             Text(stringResource(when (category) {
+                                BackupCategory.UNDERLINES -> R.string.reader_underlines
                                 BackupCategory.BOOKMARKS -> R.string.bookmarks
                                 BackupCategory.DOWNLOADS -> R.string.downloads
                                 BackupCategory.READING -> R.string.backup_reading
@@ -125,6 +179,16 @@ object LocalBackupPage : AppDestination {
                 }
             }
         }
+        if (restoreArchive != null) AlertDialog(onDismissRequest = { restoreArchive = null },
+            title = { Text(stringResource(R.string.backup_import)) },
+            text = { Text(stringResource(R.string.backup_merge_hint)) },
+            confirmButton = { TextButton(onClick = {
+                val path = restoreArchive
+                restoreArchive = null
+                if (path != null) model.run(context, Uri.fromFile(java.io.File(path)), scope,
+                    selectedNames.map { BackupCategory.valueOf(it) }.toSet(), true)
+            }, enabled = selectedNames.isNotEmpty()) { Text(stringResource(android.R.string.ok)) } },
+            dismissButton = { TextButton(onClick = { restoreArchive = null }) { Text(stringResource(android.R.string.cancel)) } })
         if (confirmImport) AlertDialog(onDismissRequest = { confirmImport = false },
             title = { Text(stringResource(R.string.backup_import)) },
             text = { Text(stringResource(R.string.backup_merge_hint)) },

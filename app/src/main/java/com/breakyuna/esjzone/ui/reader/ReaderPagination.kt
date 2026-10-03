@@ -1,5 +1,8 @@
 package com.breakyuna.esjzone.ui.reader
 
+import com.breakyuna.esjzone.domain.reader.ReaderUnderline
+import com.breakyuna.esjzone.domain.reader.ReaderUnderlines
+
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Column
@@ -11,6 +14,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.foundation.text.InlineTextContent
 import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.foundation.text.selection.DisableSelection
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
@@ -40,7 +44,10 @@ internal sealed interface ReaderPageSegment {
     data class TextLine(
         val text: AnnotatedString,
         val inlineContent: Map<String, InlineTextContent>,
-        val bottomSpacing: Dp
+        val bottomSpacing: Dp,
+        val blockIndex: Int = 0,
+        val signature: String = "",
+        val startOffset: Int = 0
     ) : ReaderPageSegment
     data class Image(val url: String) : ReaderPageSegment
     data class Gap(val height: Dp) : ReaderPageSegment
@@ -96,6 +103,7 @@ internal fun paginateReaderChapter(
             placeholders = placeholders(text, inline),
             constraints = Constraints(maxWidth = widthPx)
         )
+        val signature = ReaderUnderlines.signature(blocks[blockIndex], text.text)
         var startLine = 0
         while (startLine < layout.lineCount) {
             if (current.isNotEmpty() && usedHeight >= heightPx) flush()
@@ -137,7 +145,7 @@ internal fun paginateReaderChapter(
             val gap = if (last && usedHeight + lineHeight + paragraphGap <= heightPx) {
                 settings.paragraphSpacingDp.dp
             } else 0.dp
-            add(ReaderPageSegment.TextLine(segmentText, inline, gap),
+            add(ReaderPageSegment.TextLine(segmentText, inline, gap, blockIndex, signature, start),
                 lineHeight + with(density) { gap.roundToPx() }, blockIndex + start.toFloat() / text.length)
             startLine = endLine
             if (last && gap == 0.dp && paragraphGap > 0) flush()
@@ -189,9 +197,11 @@ internal fun ReaderPageContent(
     textStyle: TextStyle,
     contentColor: Color,
     textTransform: (String) -> String,
-    availableHeight: Dp
+    availableHeight: Dp,
+    underlines: List<ReaderUnderline> = emptyList(),
+    onUnderline: (ReaderUnderline, Boolean) -> Unit = { _, _ -> }
 ) {
-    SelectionContainer {
+    val content: @Composable () -> Unit = {
         // Ordinary pages keep their unclipped margins. A title or single line
         // taller than the viewport needs scrolling to remain fully readable.
         val contentModifier = if (page.isOversized) {
@@ -204,13 +214,18 @@ internal fun ReaderPageContent(
                     is ReaderPageSegment.Heading -> ReaderChapterHeading(
                         segment.name, settings, contentColor, textTransform, overflow = TextOverflow.Visible
                     )
-                    is ReaderPageSegment.TextLine -> Text(
+                    is ReaderPageSegment.TextLine -> ReaderUnderlineText(
                         text = segment.text,
                         inlineContent = segment.inlineContent,
                         style = textStyle,
                         color = contentColor,
-                        overflow = TextOverflow.Visible,
-                        modifier = Modifier.padding(bottom = segment.bottomSpacing)
+                        modifier = Modifier.padding(bottom = segment.bottomSpacing),
+                        enabled = settings.longPressUnderline,
+                        blockIndex = segment.blockIndex,
+                        signature = segment.signature,
+                        offset = segment.startOffset,
+                        underlines = underlines,
+                        onUnderline = onUnderline
                     )
                     is ReaderPageSegment.Image -> ReaderImage(
                         url = segment.url,
@@ -223,4 +238,5 @@ internal fun ReaderPageContent(
             }
         }
     }
+    if (settings.longPressUnderline) DisableSelection { content() } else SelectionContainer { content() }
 }

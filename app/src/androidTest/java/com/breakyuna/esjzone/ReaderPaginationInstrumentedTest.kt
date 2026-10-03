@@ -38,6 +38,30 @@ import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
 class ReaderPaginationInstrumentedTest {
+    @Test
+    fun transformedFragmentsShareTheFullRenderedParagraphSignature() {
+        val source = "蔿后文 ".repeat(80)
+        val rendered = source.replace("蔿", "𫇭")
+        val block = ReaderBlock.Text(source)
+        val density = Density(1f)
+        val measurer = TextMeasurer(
+            createFontFamilyResolver(ApplicationProvider.getApplicationContext()),
+            density, LayoutDirection.Ltr
+        )
+        val style = TextStyle(fontSize = 18.sp, lineHeight = 24.sp)
+        val pages = paginateReaderChapter("标题", listOf(block), ReaderSettings(), style, style,
+            measurer, density, 220, 145, { it.replace("蔿", "𫇭") })
+        assertTrue(pages.size > 1)
+        val fragments = pages.flatMap { it.segments }.filterIsInstance<ReaderPageSegment.TextLine>()
+        assertEquals(rendered, fragments.joinToString("") { it.text.text })
+        val signature = com.breakyuna.esjzone.domain.reader.ReaderUnderlines.signature(block, rendered)
+        assertTrue(fragments.all { it.signature == signature })
+        fragments.forEach { fragment ->
+            assertEquals(rendered.substring(fragment.startOffset, fragment.startOffset + fragment.text.length),
+                fragment.text.text)
+        }
+    }
+
     @get:Rule
     val composeRule = createComposeRule()
 
@@ -67,6 +91,15 @@ class ReaderPaginationInstrumentedTest {
             assertTrue(pages.size > 1)
             assertEquals(source, pages.flatMap { it.segments }
                 .filterIsInstance<ReaderPageSegment.TextLine>().joinToString("") { it.text.text })
+            var nextOffset = 0
+            pages.flatMap { it.segments }.filterIsInstance<ReaderPageSegment.TextLine>().forEach { segment ->
+                assertEquals(0, segment.blockIndex)
+                assertEquals(nextOffset, segment.startOffset)
+                assertEquals(source.substring(segment.startOffset, segment.startOffset + segment.text.length), segment.text.text)
+                assertEquals(com.breakyuna.esjzone.domain.reader.ReaderUnderlines.signature(
+                    ReaderBlock.Text(source, setOf(ReaderTextStyle.Italic)), source), segment.signature)
+                nextOffset += segment.text.length
+            }
             for (page in pages) {
                 // Measure the final fragments as separate Text nodes, including their
                 // own first/last-line metrics and any trailing hard newline.

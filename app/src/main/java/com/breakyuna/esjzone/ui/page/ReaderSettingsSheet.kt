@@ -204,9 +204,7 @@ internal fun ReaderSettingsSheet(
                     } else if (tab == 1) {
                         ReaderToggle(stringResource(R.string.reader_tap_paging), draft.tapPagingEnabled) { commit(draft.copy(tapPagingEnabled = it)) }
                         ReaderToggle(stringResource(R.string.reader_scroll_side_gestures), draft.scrollSideGesturesEnabled) { commit(draft.copy(scrollSideGesturesEnabled = it)) }
-                        Text(stringResource(R.string.reader_scroll_side_gestures_hint), style = MaterialTheme.typography.bodySmall)
                         ReaderToggle(stringResource(R.string.reader_paged_bookmark_gestures), draft.pagedBookmarkGesturesEnabled) { commit(draft.copy(pagedBookmarkGesturesEnabled = it)) }
-                        Text(stringResource(R.string.reader_paged_bookmark_gestures_hint), style = MaterialTheme.typography.bodySmall)
                         ReaderToggle(stringResource(R.string.reader_volume_paging), draft.volumeKeyPaging) { commit(draft.copy(volumeKeyPaging = it)) }
                         ReaderToggle(stringResource(R.string.settings_auto_resume_reading), draft.autoResumeLastReading) { commit(draft.copy(autoResumeLastReading = it)) }
                         Text(stringResource(R.string.reader_left_tap_action), style = MaterialTheme.typography.titleSmall)

@@ -1,9 +1,16 @@
 package com.breakyuna.esjzone.ui.page
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material.icons.filled.ArrowUpward
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -30,8 +37,8 @@ internal fun ReaderTool.label(): Int = when (this) {
 
 @Composable
 internal fun ReaderToolbarSettings(tools: List<ReaderTool>, onChange: (List<ReaderTool>) -> Unit) {
-    Text(stringResource(R.string.reader_toolbar_hint, tools.size, ReaderTool.MAX_VISIBLE),
-        style = MaterialTheme.typography.bodySmall)
+    Text(stringResource(R.string.reader_toolbar_selected_count, tools.size, ReaderTool.MAX_VISIBLE),
+        style = MaterialTheme.typography.labelLarge)
     val ordered = tools + ReaderTool.entries.filterNot { it in tools }
     ordered.forEach { tool ->
         val index = tools.indexOf(tool)
@@ -61,21 +68,49 @@ internal fun ReaderToolbarSettings(tools: List<ReaderTool>, onChange: (List<Read
 }
 
 @Composable
-internal fun ReaderBrightnessDialog(brightness: Float, onChange: (Float) -> Unit, onDismiss: () -> Unit) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.reader_brightness)) },
-        text = {
-            Column {
-                Row(verticalAlignment = Alignment.CenterVertically) {
+internal fun ReaderBrightnessSheet(
+    visible: Boolean,
+    brightness: Float,
+    onChange: (Float) -> Unit,
+    onDismiss: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    AnimatedVisibility(
+        visible = visible,
+        modifier = modifier,
+        enter = slideInVertically(initialOffsetY = { it }) + fadeIn(),
+        exit = slideOutVertically(targetOffsetY = { it }) + fadeOut()
+    ) {
+        Surface(
+            modifier = Modifier.widthIn(max = 640.dp).fillMaxWidth(),
+            shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
+            color = MaterialTheme.colorScheme.surface,
+            shadowElevation = 0.dp
+        ) {
+            Column(Modifier.padding(bottom = 8.dp)) {
+                Row(
+                    Modifier.fillMaxWidth().padding(start = 16.dp, end = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(stringResource(R.string.reader_brightness),
+                        style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+                    IconButton(onClick = onDismiss) {
+                        Icon(Icons.Default.Close, stringResource(R.string.close))
+                    }
+                }
+                Row(
+                    Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
                     Text(stringResource(R.string.reader_brightness_system), modifier = Modifier.weight(1f))
                     Switch(checked = brightness < 0f, onCheckedChange = { onChange(if (it) -1f else 0.5f) })
                 }
-                Slider(value = if (brightness < 0f) 0.5f else brightness,
-                    onValueChange = onChange, valueRange = 0.01f..1f, enabled = brightness >= 0f)
-                Text(stringResource(R.string.reader_brightness_hint), style = MaterialTheme.typography.bodySmall)
+                Slider(
+                    value = if (brightness < 0f) 0.5f else brightness,
+                    onValueChange = onChange, valueRange = 0.01f..1f, enabled = brightness >= 0f,
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp)
+                )
             }
-        },
-        confirmButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.close)) } }
-    )
+        }
+    }
 }

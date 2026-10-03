@@ -39,6 +39,9 @@ internal fun ReaderMoreSettingsContent(
         onSettingsChange(value)
     }
     SettingsSection(title = stringResource(R.string.reader_more_controls)) {
+        MoreReaderToggle(stringResource(R.string.reader_long_press_underline), draft.longPressUnderline) {
+            commit(draft.copy(longPressUnderline = it))
+        }
         MoreReaderToggle(stringResource(R.string.reader_scroll_side_gestures), draft.scrollSideGesturesEnabled) {
             commit(draft.copy(scrollSideGesturesEnabled = it))
         }

@@ -22,7 +22,6 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.semantics.heading
@@ -36,7 +35,6 @@ import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Download
-import androidx.compose.material.icons.outlined.ErrorOutline
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.MenuBook
 import androidx.compose.material.icons.filled.Reorder
@@ -55,7 +53,6 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
@@ -129,6 +126,7 @@ object SettingsPage : AppDestination {
         val scope = rememberCoroutineScope()
         val model = rememberAppViewModel { SettingsPageModel() }
         val state by model.state.collectAsStateWithLifecycle()
+        val autoBackup by PresentationAccess.autoBackup.enabled.collectAsStateWithLifecycle()
         val adult by PresentationAccess.settings.adult
         val hideHomeRecommendations by PresentationAccess.settings.hideHomeRecommendations
         val domain by PresentationAccess.settings.domain
@@ -231,12 +229,21 @@ object SettingsPage : AppDestination {
                             )
                         }
                     }
+                    SettingsSection {
+                        ToggleRow(stringResource(R.string.auto_backup), autoBackup) {
+                            model.setAutoBackup(it, BookshelfRepository.scopeFor(authorization))
+                        }
+                        LinkRow(Icons.Filled.Download, stringResource(R.string.local_backup)) {
+                            navigator?.pushIfNotCurrent(LocalBackupPage)
+                        }
+                        if (state.autoBackupFailed) Text(stringResource(R.string.backup_failed),
+                            color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(AppSpacing.md))
+                    }
                     SettingsSection(title = stringResource(R.string.settings_content_section)) {
                         ToggleRow(stringResource(R.string.settings_showadultcontent), adult) { PresentationAccess.settings.setAdult(it); model.persist("show_adult", it.toString()) }
                         ToggleRow(
                             stringResource(R.string.settings_hide_home_recommendations),
-                            hideHomeRecommendations,
-                            explanation = stringResource(R.string.settings_hide_home_recommendations_explanation)
+                            hideHomeRecommendations
                         ) { PresentationAccess.settings.setHideHomeRecommendations(it) }
                     }
                     SettingsSection(title = stringResource(R.string.settings_network_section)) {
@@ -716,35 +723,10 @@ private fun SiteSettingRow(
 }
 
 @Composable
-private fun ToggleRow(
-    title: String,
-    checked: Boolean,
-    explanation: String? = null,
-    onCheckedChange: (Boolean) -> Unit
-) {
+private fun ToggleRow(title: String, checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
     Row(Modifier.fillMaxWidth().heightIn(min = 56.dp).padding(horizontal = AppSpacing.md, vertical = AppSpacing.xs),
         horizontalArrangement = Arrangement.spacedBy(AppSpacing.md), verticalAlignment = Alignment.CenterVertically) {
         Text(title, modifier = Modifier.weight(1f), style = AppTypography.bodyMedium)
-        if (explanation != null) {
-            var showExplanation by remember { mutableStateOf(false) }
-            Box {
-                IconButton(onClick = { showExplanation = !showExplanation }) {
-                    Icon(
-                        Icons.Outlined.ErrorOutline,
-                        contentDescription = stringResource(R.string.settings_hide_home_recommendations_info),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(20.dp)
-                    )
-                }
-                DropdownMenu(expanded = showExplanation, onDismissRequest = { showExplanation = false }) {
-                    Text(
-                        explanation,
-                        modifier = Modifier.widthIn(max = 280.dp).padding(AppSpacing.md),
-                        style = AppTypography.bodyMedium
-                    )
-                }
-            }
-        }
         Switch(checked, onCheckedChange)
     }
 }

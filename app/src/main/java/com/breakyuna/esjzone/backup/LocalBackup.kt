@@ -6,6 +6,7 @@ import androidx.room.withTransaction
 import com.breakyuna.esjzone.database.GeneralDatabase
 import com.breakyuna.esjzone.database.entity.*
 import com.breakyuna.esjzone.offline.NovelDownloadStore
+import com.breakyuna.esjzone.domain.reader.ReaderUnderlines
 import com.google.gson.Gson
 import com.google.gson.JsonObject
 import com.google.gson.JsonParser
@@ -16,7 +17,7 @@ import java.util.zip.ZipOutputStream
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
-enum class BackupCategory { BOOKMARKS, DOWNLOADS, READING, HISTORY, SEARCH, GROUPS }
+enum class BackupCategory { UNDERLINES, BOOKMARKS, DOWNLOADS, READING, HISTORY, SEARCH, GROUPS }
 
 data class BackupGroups(val names: List<String>, val members: Map<String, String>)
 
@@ -34,6 +35,8 @@ object LocalBackup {
                 addProperty("version", 1)
             }
             database.withTransaction {
+                if (BackupCategory.UNDERLINES in selected) json.add("underlines", gson.toJsonTree(
+                    database.cacheDao().getReaderUnderlines().associate { it.key to it.value }))
                 if (BackupCategory.BOOKMARKS in selected) json.add("bookmarks", gson.toJsonTree(database.bookmarkDao().getAll()))
                 if (BackupCategory.HISTORY in selected) json.add("history", gson.toJsonTree(database.localReadingActivityDao().getAll()))
                 if (BackupCategory.READING in selected) {
@@ -98,6 +101,7 @@ object LocalBackup {
             val json = JsonParser.parseString(File(staging, "backup.json").readText()).asJsonObject
             require(json["format"]?.asString == "esjzone-local-backup" && json["version"]?.asInt == 1)
             require(selected.any { category -> json.has(when (category) {
+                BackupCategory.UNDERLINES -> "underlines"
                 BackupCategory.BOOKMARKS -> "bookmarks"
                 BackupCategory.DOWNLOADS -> "downloads"
                 BackupCategory.READING -> "reading"
@@ -105,6 +109,11 @@ object LocalBackup {
                 BackupCategory.SEARCH -> "search"
                 BackupCategory.GROUPS -> "groups"
             }) })
+            val underlines = if (BackupCategory.UNDERLINES in selected && json.has("underlines"))
+                json.getAsJsonObject("underlines").entrySet().associate { (key, value) ->
+                    require(key.startsWith(ReaderUnderlines.KEY_PREFIX) && key.length > ReaderUnderlines.KEY_PREFIX.length)
+                    key to ReaderUnderlines.decode(value.asString)
+                } else emptyMap()
             val bookmarks = if (BackupCategory.BOOKMARKS in selected && json.has("bookmarks"))
                 gson.fromJson(json["bookmarks"], Array<Bookmark>::class.java).toList() else emptyList()
             val history = if (BackupCategory.HISTORY in selected && json.has("history"))
@@ -125,6 +134,12 @@ object LocalBackup {
             require(reading.all { it.bookKey.isNotBlank() && it.durationMs >= 0 && runCatching { java.time.LocalDate.parse(it.date) }.isSuccess })
             require(groups == null || (groups.names.all { it.isNotBlank() } && groups.members.values.all { it in groups.names }))
             database.withTransaction {
+                underlines.forEach { (key, incoming) ->
+                    val dao = database.cacheDao()
+                    val existing = ReaderUnderlines.decode(dao.findByKey(key)?.value)
+                    val merged = incoming.fold(existing) { rows, mark -> ReaderUnderlines.update(rows, mark, false) }
+                    dao.putAtomic(key, ReaderUnderlines.encode(merged))
+                }
                 bookmarks.forEach { row ->
                     val old = database.bookmarkDao().findByChapterUrl(row.chapterUrl)
                     if (old == null || row.createdAt > old.createdAt) database.bookmarkDao().insert(row)

@@ -31,6 +31,8 @@ object PresentationAccess {
     private val container: AppContainer
         get() = EsjzoneApplication.instance.container
 
+    val autoBackup get() = container.autoBackup
+
     val database: GeneralDatabase
         get() = container.database
 

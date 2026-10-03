@@ -21,6 +21,7 @@
         <exclude domain="file" path="home_data_snapshot.json" />
         <exclude domain="file" path="bookmark_covers" />
         <exclude domain="file" path="reader_fonts" />
+        <exclude domain="file" path="auto_backups" />
     </cloud-backup>
     <device-transfer>
         <exclude domain="sharedpref" path="esj_session.xml" />
@@ -39,5 +40,6 @@
         <exclude domain="file" path="home_data_snapshot.json" />
         <exclude domain="file" path="bookmark_covers" />
         <exclude domain="file" path="reader_fonts" />
+        <exclude domain="file" path="auto_backups" />
     </device-transfer>
 </data-extraction-rules>

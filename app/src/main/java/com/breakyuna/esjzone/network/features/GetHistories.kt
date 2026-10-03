@@ -44,7 +44,7 @@ internal fun parseHistoryNovels(document: Document): List<HistoryNovel> {
             ?: element.id().takeIf { it.startsWith("view_") }?.removePrefix("view_").orEmpty()
         val novelData = historySelector.first(
             element,
-            ".view-log h5 a[href^='/detail/'], h5 a[href^='/detail/']"
+            ".view-log h5 a[href*='/detail/'], h5 a[href*='/detail/']"
         )
         val chapterData = historySelector.first(
             element,

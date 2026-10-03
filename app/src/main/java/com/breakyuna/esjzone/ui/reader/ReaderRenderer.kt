@@ -1,5 +1,8 @@
 package com.breakyuna.esjzone.ui.reader
 
+import com.breakyuna.esjzone.domain.reader.ReaderUnderline
+import com.breakyuna.esjzone.domain.reader.ReaderUnderlines
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.ui.draw.clip
@@ -12,6 +15,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.foundation.text.selection.DisableSelection
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.Icon
@@ -81,7 +85,10 @@ fun ReaderBlocks(
     textMeasurer: TextMeasurer,
     density: Density,
     contentColor: Color,
-    textTransform: (String) -> String = { it }
+    textTransform: (String) -> String = { it },
+    blockStartIndex: Int = 0,
+    underlines: List<ReaderUnderline> = emptyList(),
+    onUnderline: (ReaderUnderline, Boolean) -> Unit = { _, _ -> }
 ) {
     val textStyle = MaterialTheme.typography.bodyLarge.copy(
         fontFamily = settings.font.family(),
@@ -90,9 +97,9 @@ fun ReaderBlocks(
         letterSpacing = settings.letterSpacingSp.sp
     )
 
-    SelectionContainer {
+    val content: @Composable () -> Unit = {
         Column(modifier = Modifier.fillMaxWidth()) {
-            blocks.forEach { block ->
+            blocks.forEachIndexed { index, block ->
                 when (block) {
                     is ReaderBlock.Paragraph -> ReaderParagraphBlock(
                         block = block,
@@ -101,7 +108,11 @@ fun ReaderBlocks(
                         density = density,
                         textTransform = textTransform,
                         contentColor = contentColor,
-                        paragraphSpacingDp = settings.paragraphSpacingDp
+                        paragraphSpacingDp = settings.paragraphSpacingDp,
+                        enabled = settings.longPressUnderline,
+                        blockIndex = blockStartIndex + index,
+                        underlines = underlines,
+                        onUnderline = onUnderline
                     )
                     is ReaderBlock.Text -> ReaderTextBlock(
                         block = block,
@@ -110,7 +121,11 @@ fun ReaderBlocks(
                         density = density,
                         textTransform = textTransform,
                         contentColor = contentColor,
-                        paragraphSpacingDp = settings.paragraphSpacingDp
+                        paragraphSpacingDp = settings.paragraphSpacingDp,
+                        enabled = settings.longPressUnderline,
+                        blockIndex = blockStartIndex + index,
+                        underlines = underlines,
+                        onUnderline = onUnderline
                     )
                     is ReaderBlock.Image -> ReaderImage(
                         url = block.url,
@@ -124,6 +139,7 @@ fun ReaderBlocks(
             }
         }
     }
+    if (settings.longPressUnderline) DisableSelection { content() } else SelectionContainer { content() }
 }
 
 @Composable
@@ -134,7 +150,11 @@ private fun ReaderParagraphBlock(
     density: Density,
     textTransform: (String) -> String,
     contentColor: Color,
-    paragraphSpacingDp: Float
+    paragraphSpacingDp: Float,
+    enabled: Boolean,
+    blockIndex: Int,
+    underlines: List<ReaderUnderline>,
+    onUnderline: (ReaderUnderline, Boolean) -> Unit
 ) {
     val (paragraph, inlineContent) = remember(block, textStyle, textTransform, density) {
         val inlines = linkedMapOf<String, InlineTextContent>()
@@ -152,12 +172,17 @@ private fun ReaderParagraphBlock(
         }
         annotated to inlines
     }
-    Text(
+    ReaderUnderlineText(
         text = paragraph,
         inlineContent = inlineContent,
         style = textStyle,
         color = contentColor,
-        modifier = Modifier.padding(bottom = paragraphSpacingDp.dp)
+        modifier = Modifier.padding(bottom = paragraphSpacingDp.dp),
+        enabled = enabled,
+        blockIndex = blockIndex,
+        signature = remember(block, paragraph) { ReaderUnderlines.signature(block, paragraph.text) },
+        underlines = underlines,
+        onUnderline = onUnderline
     )
 }
 
@@ -169,7 +194,11 @@ private fun ReaderTextBlock(
     density: Density,
     textTransform: (String) -> String,
     contentColor: Color,
-    paragraphSpacingDp: Float
+    paragraphSpacingDp: Float,
+    enabled: Boolean,
+    blockIndex: Int,
+    underlines: List<ReaderUnderline>,
+    onUnderline: (ReaderUnderline, Boolean) -> Unit
 ) {
     val (text, inlineContent) = remember(block, textStyle, textTransform, density) {
         block.toAnnotatedReaderText(
@@ -179,12 +208,17 @@ private fun ReaderTextBlock(
             textTransform = textTransform
         )
     }
-    Text(
+    ReaderUnderlineText(
         text = text,
         inlineContent = inlineContent,
         style = textStyle,
         color = contentColor,
-        modifier = Modifier.padding(bottom = paragraphSpacingDp.dp)
+        modifier = Modifier.padding(bottom = paragraphSpacingDp.dp),
+        enabled = enabled,
+        blockIndex = blockIndex,
+        signature = remember(block, text) { ReaderUnderlines.signature(block, text.text) },
+        underlines = underlines,
+        onUnderline = onUnderline
     )
 }
 

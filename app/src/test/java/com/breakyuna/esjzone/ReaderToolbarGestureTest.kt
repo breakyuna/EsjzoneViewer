@@ -14,19 +14,20 @@ class ReaderToolbarGestureTest {
         assertEquals(6, ReaderTool.decode(ReaderTool.entries.joinToString(",") { it.name }).size)
     }
 
-    @Test fun sideGesturesRequireDistanceAndClearDirection() {
+    @Test fun sideGesturesRequireDistanceAndClearHorizontalIntent() {
         assertNull(readerSwipeDirection(71f, 0f, true, 72f))
-        assertNull(readerSwipeDirection(80f, 70f, true, 72f))
-        assertEquals(false, readerSwipeDirection(90f, 10f, true, 72f))
-        assertEquals(true, readerSwipeDirection(-90f, 10f, true, 72f))
-        assertNull(readerSwipeDirection(10f, 180f, true, 72f))
+        assertEquals(false, readerSwipeDirection(72f, 40f, true, 72f))
+        assertEquals(true, readerSwipeDirection(-90f, 45f, true, 72f))
+        assertNull(readerSwipeDirection(72f, 48f, true, 72f))
+        assertNull(readerSwipeDirection(90f, 80f, true, 72f))
+        assertNull(readerSwipeDirection(90f, 0f, true, 120f))
     }
 
-    @Test fun bookmarkGesturesRequireLongVerticalMovement() {
+    @Test fun bookmarkGesturesRequireDistanceAndClearVerticalIntent() {
         assertNull(readerSwipeDirection(0f, 95f, false, 96f))
-        assertNull(readerSwipeDirection(90f, 100f, false, 96f))
-        assertEquals(false, readerSwipeDirection(10f, 130f, false, 96f))
-        assertEquals(true, readerSwipeDirection(10f, -130f, false, 96f))
-        assertNull(readerSwipeDirection(180f, 10f, false, 96f))
+        assertEquals(false, readerSwipeDirection(40f, 96f, false, 96f))
+        assertEquals(true, readerSwipeDirection(45f, -120f, false, 96f))
+        assertNull(readerSwipeDirection(64f, 96f, false, 96f))
+        assertNull(readerSwipeDirection(100f, 120f, false, 96f))
     }
 }

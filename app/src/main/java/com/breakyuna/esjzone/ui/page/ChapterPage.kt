@@ -223,6 +223,15 @@ class ChapterPage(
         val navigator = LocalBaseNavigator.current
         val authorization = LocalAuthorization.current
 
+        val underlineModel = rememberAppViewModel { ReaderUnderlinesModel() }
+        val underlines by underlineModel.underlines.collectAsState()
+        val underlineFailed by underlineModel.state.collectAsState()
+        val underlineContext = LocalContext.current
+        val underlineFailureMessage = stringResource(R.string.reader_underline_failed)
+        LaunchedEffect(underlineFailed) {
+            if (underlineFailed) android.widget.Toast.makeText(underlineContext,
+                underlineFailureMessage, android.widget.Toast.LENGTH_SHORT).show()
+        }
         val textMeasurer = rememberTextMeasurer()
         val stableTopInset = WindowInsets.statusBarsIgnoringVisibility.union(WindowInsets.displayCutout).asPaddingValues().calculateTopPadding()
         val density = LocalDensity.current
@@ -518,7 +527,7 @@ class ChapterPage(
         LaunchedEffect(scrollState.isScrollInProgress) {
             if (scrollState.isScrollInProgress && !isProgrammaticScroll) {
                 pendingBoundaryTurn = null
-                if (showToolbar && !showReaderSettings) {
+                if (showToolbar && !showReaderSettings && !showBrightness) {
                     showToolbar = false
                 }
                 if (progressPreview != null) {
@@ -529,6 +538,7 @@ class ChapterPage(
 
         BackHandler(enabled = navigator != null) {
             when {
+                showBrightness -> showBrightness = false
                 showReaderSettings -> showReaderSettings = false
                 showReaderContents -> showReaderContents = false
                 progressPreview != null -> dismissProgressPreview()
@@ -637,7 +647,7 @@ class ChapterPage(
         LaunchedEffect(horizontalPagerState.isScrollInProgress, pagedMode) {
             if (pagedMode && horizontalPagerState.isScrollInProgress) {
                 if (!pageTurnInProgressForBoundary.value && !isProgrammaticScroll) pendingBoundaryTurn = null
-                if (showToolbar && !showReaderSettings) showToolbar = false
+                if (showToolbar && !showReaderSettings && !showBrightness) showToolbar = false
                 if (progressPreview != null) dismissProgressPreview()
             }
         }
@@ -1317,11 +1327,13 @@ class ChapterPage(
         var pageTurnInProgress by pageTurnInProgressForBoundary
 
         fun openReaderContents() {
+            showBrightness = false
             dismissProgressPreview()
             showReaderSettings = false
             showReaderContents = true
         }
         fun openReaderSettings() {
+            showBrightness = false
             dismissProgressPreview()
             showReaderContents = false
             showReaderSettings = true
@@ -1527,9 +1539,9 @@ class ChapterPage(
                     if (pagedMode) turnReaderPage(left)
                     else if (left) openReaderComments() else openReaderContents()
                 },
-                verticalSwipeEnabled = !updatingBookmark && pagedMode && pagingEnabled && readerSettings.pagedBookmarkGesturesEnabled &&
-                    bookmarkStateUrl == bookmarkChapterUrl,
-                onVerticalSwipe = { up -> toggleBookmark(desired = !up) },
+                bookmarkPullEnabled = !updatingBookmark && pagedMode && pagingEnabled && readerSettings.pagedBookmarkGesturesEnabled &&
+                    bookmarkStateUrl == bookmarkChapterUrl && pagerVisibleItem?.page?.isOversized == false,
+                onBookmarkPull = { toggleBookmark() },
                 onReadingAreaTap = { xFraction, _ ->
                     if (progressPreview != null) {
                         dismissProgressPreview()
@@ -1537,7 +1549,8 @@ class ChapterPage(
                         val forward = readerTapPageDirection(
                             xFraction, readerSettings.tapPagingEnabled, readerSettings.leftTapForward
                         )
-                        if (showReaderSettings) showReaderSettings = false
+                        if (showBrightness) showBrightness = false
+                        else if (showReaderSettings) showReaderSettings = false
                         else if (forward == null) showToolbar = !showToolbar
                         else turnReaderPage(forward)
                     }
@@ -1763,7 +1776,10 @@ class ChapterPage(
                                     }
                                 } else {
                                     ReaderBlocks(item.blocks, readerSettings, textMeasurer, density,
-                                        readerContentColor, readerTextTransform)
+                                        readerContentColor, readerTextTransform,
+                                        blockStartIndex = item.ordinal - 1,
+                                        underlines = underlines[item.chapterKey].orEmpty(),
+                                        onUnderline = { mark, remove -> underlineModel.update(item.chapterKey, mark, remove) })
                                 }
                             }
 
@@ -1841,7 +1857,13 @@ class ChapterPage(
                                     ReaderPageContent(
                                         page, readerSettings, readerTextStyle,
                                         readerContentColor, readerTextTransform,
-                                        with(density) { pageContentHeightPx.toDp() }
+                                        with(density) { pageContentHeightPx.toDp() },
+                                        underlines = underlines[currentPagedDisplayItems.getOrNull(pageIndex)?.chapterKey].orEmpty(),
+                                        onUnderline = { mark, remove ->
+                                            currentPagedDisplayItems.getOrNull(pageIndex)?.let { item ->
+                                                underlineModel.update(item.chapterKey, mark, remove)
+                                            }
+                                        }
                                     )
                                 }
                             }
@@ -1992,7 +2014,7 @@ class ChapterPage(
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .then(if (showReaderSettings) Modifier.background(MaterialTheme.colorScheme.surface) else Modifier)
+                        .then(if (showReaderSettings || showBrightness) Modifier.background(MaterialTheme.colorScheme.surface) else Modifier)
                         .navigationBarsPadding(),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
@@ -2005,12 +2027,12 @@ class ChapterPage(
                                 onClick = {}
                             ),
                         spec = com.breakyuna.esjzone.ui.designsystem.glass.AppGlassSpec(
-                            shape = if (showReaderSettings) RoundedCornerShape(0.dp)
+                            shape = if (showReaderSettings || showBrightness) RoundedCornerShape(0.dp)
                                 else RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
-                            alpha = if (showReaderSettings) 1f else 0.94f,
-                            borderAlpha = if (showReaderSettings) 0f else 0.14f,
-                            tintAlpha = if (showReaderSettings) 0f else 0.16f,
-                            specularIntensity = if (showReaderSettings) 0f else 0.4f
+                            alpha = if (showReaderSettings || showBrightness) 1f else 0.94f,
+                            borderAlpha = if (showReaderSettings || showBrightness) 0f else 0.14f,
+                            tintAlpha = if (showReaderSettings || showBrightness) 0f else 0.16f,
+                            specularIntensity = if (showReaderSettings || showBrightness) 0f else 0.4f
                         )
                     ) {
                         Column(
@@ -2126,7 +2148,12 @@ class ChapterPage(
                                                         NovelPage(FavoriteNovel(novelName.ifBlank { novelId.ifBlank { commentChapter.name } }, detailUrl), history)
                                                     )
                                                     ReaderTool.EYE_PROTECTION -> updateReaderSettings(readerSettings.copy(eyeProtectionEnabled = !readerSettings.eyeProtectionEnabled))
-                                                    ReaderTool.BRIGHTNESS -> { showReaderSettings = false; showBrightness = true }
+                                                    ReaderTool.BRIGHTNESS -> {
+                                                        dismissProgressPreview()
+                                                        showReaderSettings = false
+                                                        showReaderContents = false
+                                                        showBrightness = true
+                                                    }
                                                     ReaderTool.DARK_MODE -> {
                                                         if (isLightBackground) {
                                                             lightReaderBackground = readerSettings.background
@@ -2242,10 +2269,13 @@ class ChapterPage(
                 },
                 onDismiss = { showReaderContents = false }
             )
-            if (showBrightness) ReaderBrightnessDialog(
+            ReaderBrightnessSheet(
+                visible = showBrightness,
                 brightness = readerSettings.brightness,
                 onChange = { updateReaderSettings(readerSettings.copy(brightness = it)) },
-                onDismiss = { showBrightness = false }
+                onDismiss = { showBrightness = false },
+                modifier = Modifier.align(Alignment.BottomCenter)
+                    .padding(bottom = with(density) { readerToolbarHeightPx.toDp() })
             )
             ReaderSettingsSheet(
                 visible = showReaderSettings,

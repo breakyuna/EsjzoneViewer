@@ -104,6 +104,7 @@ data class ReaderSettings(
     val script: ReaderScript = ReaderScript.ORIGINAL,
     val pageAnimation: ReaderPageAnimation = ReaderPageAnimation.VERTICAL_SCROLL,
     val volumeKeyPaging: Boolean = false,
+    val longPressUnderline: Boolean = false,
     val tapPagingEnabled: Boolean = true,
     val scrollSideGesturesEnabled: Boolean = true,
     val pagedBookmarkGesturesEnabled: Boolean = true,
