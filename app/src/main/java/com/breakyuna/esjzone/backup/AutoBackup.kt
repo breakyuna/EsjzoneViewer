@@ -24,8 +24,11 @@ class AutoBackup(context: Context) {
     )
     private val enabledKey = booleanPreferencesKey("enabled")
     private val scopeKey = stringPreferencesKey("bookshelf_scope")
+    private val includeDownloadsKey = booleanPreferencesKey("include_downloads")
     private val completedKey = longPreferencesKey("completed_at")
     val enabled = store.data.map { it[enabledKey] ?: false }
+        .stateIn(scope, SharingStarted.Eagerly, false)
+    val includeDownloads = store.data.map { it[includeDownloadsKey] ?: false }
         .stateIn(scope, SharingStarted.Eagerly, false)
     val completedAt = store.data.map { it[completedKey] ?: 0L }
         .stateIn(scope, SharingStarted.Eagerly, 0L)
@@ -51,10 +54,26 @@ class AutoBackup(context: Context) {
         if (it[enabledKey] == true) it[scopeKey] else null
     }
 
+    suspend fun setIncludeDownloads(value: Boolean) {
+        store.edit { it[includeDownloadsKey] = value }
+    }
+
+    suspend fun backupCategories(): Set<BackupCategory> = store.data.first().let { preferences ->
+        BackupCategory.entries.filter {
+            it != BackupCategory.DOWNLOADS || preferences[includeDownloadsKey] == true
+        }.toSet()
+    }
+
     suspend fun completed(time: Long) { store.edit { it[completedKey] = time } }
     fun archives(): List<File> = directory(context).listFiles().orEmpty()
         .filter { it.isFile && it.name.startsWith("esjzone-auto-") && it.extension == "zip" }
         .sortedByDescending { it.name }
+
+    fun deleteArchive(file: File): Boolean {
+        require(file.parentFile?.canonicalFile == directory(context).canonicalFile &&
+            file.name.startsWith("esjzone-auto-") && file.extension == "zip")
+        return !file.exists() || file.delete()
+    }
 
     companion object {
         private const val WORK_NAME = "local-auto-backup"
@@ -73,12 +92,15 @@ class AutoBackupWorker(context: Context, parameters: WorkerParameters) : Corouti
         val pending = File(directory, "pending.zip.part")
         try {
             val bookshelfScope = backup.backupScope() ?: return@withContext Result.success()
+            val categories = backup.backupCategories()
             check(directory.isDirectory || directory.mkdirs())
-            NovelDownloadStore.initialize(applicationContext)
+            if (BackupCategory.DOWNLOADS in categories) NovelDownloadStore.initialize(applicationContext)
             LocalBackup.export(applicationContext, Uri.fromFile(pending), container.database,
-                bookshelfScope, BackupCategory.entries.toSet())
+                bookshelfScope, categories)
             ensureActive()
-            if (backup.backupScope() != bookshelfScope) return@withContext Result.success()
+            if (backup.backupScope() != bookshelfScope || backup.backupCategories() != categories) {
+                return@withContext Result.success()
+            }
             val time = System.currentTimeMillis()
             check(pending.renameTo(File(directory, "esjzone-auto-$time.zip")))
             AutoBackup.obsoleteArchives(backup.archives()).forEach { it.delete() }

@@ -739,8 +739,13 @@
     <string name="reader_bookmark_removed">Bookmark removed</string>
     <string name="reader_bookmark_failed">Could not update bookmark. Try again.</string>
     <string name="auto_backup">Automatic backup</string>
-    <string name="auto_backup_policy">Backs up local data and downloads daily, keeping the latest 3 archives. Excludes sign-in credentials. Uninstalling removes these backups; export copies to keep them.</string>
+    <string name="auto_backup_policy">Backs up local data daily, keeping the latest 3 archives. Downloads are excluded by default and can be enabled. Excludes sign-in credentials. Uninstalling removes these backups; export copies to keep them.</string>
+    <string name="backup_downloads_size_warning">Including downloaded content may significantly increase the backup file size</string>
     <string name="auto_backup_empty">No automatic backups yet</string>
+    <string name="backup_delete">Delete backup</string>
+    <string name="backup_delete_confirm">Delete this automatic backup? This cannot be undone. Current local data and downloaded content will not be affected.</string>
+    <string name="backup_deleted">Backup deleted</string>
+    <string name="backup_delete_failed">Could not delete the backup. Try again.</string>
     <string name="reader_long_press_underline">Long-press to underline</string>
     <string name="reader_underlines">Reading underlines</string>
     <string name="reader_underline_failed">Could not save underline</string>

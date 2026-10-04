@@ -10,12 +10,14 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -40,6 +42,45 @@ class LocalBackupModel : AppStateViewModel<LocalBackupModel.Status>(Status()) {
     fun refreshArchives() {
         viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
             mutableState.value = state.value.copy(archives = PresentationAccess.autoBackup.archives())
+        }
+    }
+    fun setAutoBackupDownloads(value: Boolean) {
+        viewModelScope.launch {
+            try {
+                PresentationAccess.autoBackup.setIncludeDownloads(value)
+                mutableState.value = state.value.copy(result = null)
+            } catch (error: CancellationException) { throw error
+            } catch (_: Exception) {
+                mutableState.value = state.value.copy(result = R.string.backup_failed)
+            }
+        }
+    }
+    fun setAutoBackup(enabled: Boolean, scope: String) {
+        viewModelScope.launch {
+            try {
+                PresentationAccess.autoBackup.setEnabled(enabled, scope)
+                mutableState.value = state.value.copy(result = null)
+            } catch (error: CancellationException) { throw error
+            } catch (_: Exception) {
+                mutableState.value = state.value.copy(result = R.string.backup_failed)
+            }
+        }
+    }
+    fun deleteArchive(file: java.io.File) {
+        if (state.value.busy) return
+        mutableState.value = state.value.copy(busy = true, result = null)
+        viewModelScope.launch {
+            try {
+                val archives = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                    check(PresentationAccess.autoBackup.deleteArchive(file))
+                    PresentationAccess.autoBackup.archives()
+                }
+                mutableState.value = state.value.copy(busy = false, result = R.string.backup_deleted, archives = archives)
+            } catch (error: CancellationException) { throw error
+            } catch (_: Exception) {
+                mutableState.value = state.value.copy(busy = false, result = R.string.backup_delete_failed)
+                refreshArchives()
+            }
         }
     }
     fun exportArchive(context: Context, file: java.io.File, uri: Uri) {
@@ -87,15 +128,20 @@ object LocalBackupPage : AppDestination {
         val model = rememberAppViewModel { LocalBackupModel() }
         val state by model.state.collectAsStateWithLifecycle()
         val completedAt by PresentationAccess.autoBackup.completedAt.collectAsStateWithLifecycle()
+        val autoBackupEnabled by PresentationAccess.autoBackup.enabled.collectAsStateWithLifecycle()
+        val autoBackupDownloads by PresentationAccess.autoBackup.includeDownloads.collectAsStateWithLifecycle()
         LaunchedEffect(completedAt) { model.refreshArchives() }
         var pendingArchive by rememberSaveable { mutableStateOf<String?>(null) }
         var restoreArchive by rememberSaveable { mutableStateOf<String?>(null) }
+        var deleteArchive by rememberSaveable { mutableStateOf<String?>(null) }
         val exportArchive = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { uri ->
             val path = pendingArchive
             if (uri != null && path != null) model.exportArchive(context, java.io.File(path), uri)
             pendingArchive = null
         }
-        var selectedNames by rememberSaveable { mutableStateOf(BackupCategory.entries.map { it.name }) }
+        var selectedNames by rememberSaveable {
+            mutableStateOf(BackupCategory.entries.filter { it != BackupCategory.DOWNLOADS }.map { it.name })
+        }
         var pendingNames by rememberSaveable { mutableStateOf(emptyList<String>()) }
         var pendingScope by rememberSaveable { mutableStateOf("") }
         var confirmImport by rememberSaveable { mutableStateOf(false) }
@@ -114,17 +160,41 @@ object LocalBackupPage : AppDestination {
                 verticalArrangement = Arrangement.spacedBy(AppSpacing.lg)) {
                 Text(stringResource(R.string.backup_description), style = AppTypography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(horizontal = AppSpacing.xs))
-                SettingsSection(title = stringResource(R.string.auto_backup)) {
+                SettingsSection {
+                    Row(Modifier.fillMaxWidth().heightIn(min = 56.dp)
+                        .padding(horizontal = AppSpacing.md, vertical = AppSpacing.xs),
+                        verticalAlignment = Alignment.CenterVertically) {
+                        Text(stringResource(R.string.auto_backup), style = AppTypography.bodyMedium,
+                            modifier = Modifier.weight(1f))
+                        Switch(checked = autoBackupEnabled, enabled = !state.busy,
+                            onCheckedChange = { model.setAutoBackup(it, scope) })
+                    }
                     Text(stringResource(R.string.auto_backup_policy), style = AppTypography.bodySmall,
                         modifier = Modifier.padding(AppSpacing.md), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Row(Modifier.fillMaxWidth().heightIn(min = 56.dp).padding(horizontal = AppSpacing.xs),
+                        verticalAlignment = Alignment.CenterVertically) {
+                        Checkbox(checked = autoBackupDownloads, enabled = !state.busy,
+                            onCheckedChange = model::setAutoBackupDownloads)
+                        Text(stringResource(R.string.downloads), style = AppTypography.bodyMedium,
+                            modifier = Modifier.padding(end = AppSpacing.md))
+                        Text(stringResource(R.string.backup_downloads_size_warning), style = AppTypography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.End,
+                            modifier = Modifier.weight(1f).padding(end = AppSpacing.md, top = AppSpacing.sm, bottom = AppSpacing.sm))
+                    }
                     if (state.archives.isEmpty()) Text(stringResource(R.string.auto_backup_empty),
                         modifier = Modifier.padding(AppSpacing.md), style = AppTypography.bodyMedium)
                     state.archives.forEach { file ->
                         Column(Modifier.fillMaxWidth().padding(horizontal = AppSpacing.md)) {
-                            Text(java.text.DateFormat.getDateTimeInstance(java.text.DateFormat.SHORT,
-                                java.text.DateFormat.SHORT).format(java.util.Date(
-                                file.name.removePrefix("esjzone-auto-").removeSuffix(".zip").toLongOrNull() ?: 0L)),
-                                style = AppTypography.bodyMedium)
+                            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                                Text(java.text.DateFormat.getDateTimeInstance(java.text.DateFormat.SHORT,
+                                    java.text.DateFormat.SHORT).format(java.util.Date(
+                                    file.name.removePrefix("esjzone-auto-").removeSuffix(".zip").toLongOrNull() ?: 0L)),
+                                    style = AppTypography.bodyMedium, modifier = Modifier.weight(1f))
+                                IconButton(enabled = !state.busy, onClick = { deleteArchive = file.absolutePath }) {
+                                    Icon(Icons.Outlined.Delete, stringResource(R.string.backup_delete),
+                                        tint = MaterialTheme.colorScheme.error)
+                                }
+                            }
                             Row(horizontalArrangement = Arrangement.spacedBy(AppSpacing.sm)) {
                                 TextButton(enabled = !state.busy, onClick = { restoreArchive = file.absolutePath }) {
                                     Text(stringResource(R.string.backup_import))
@@ -152,6 +222,11 @@ object LocalBackupPage : AppDestination {
                                 BackupCategory.SEARCH -> R.string.backup_search
                                 BackupCategory.GROUPS -> R.string.shelf_groups
                             }), style = AppTypography.bodyMedium, modifier = Modifier.padding(end = AppSpacing.md))
+                            if (category == BackupCategory.DOWNLOADS) {
+                                Text(stringResource(R.string.backup_downloads_size_warning), style = AppTypography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.End,
+                                    modifier = Modifier.weight(1f).padding(end = AppSpacing.md, top = AppSpacing.sm, bottom = AppSpacing.sm))
+                            }
                         }
                     }
                 }
@@ -179,6 +254,15 @@ object LocalBackupPage : AppDestination {
                 }
             }
         }
+        if (deleteArchive != null) AlertDialog(onDismissRequest = { deleteArchive = null },
+            title = { Text(stringResource(R.string.backup_delete)) },
+            text = { Text(stringResource(R.string.backup_delete_confirm)) },
+            confirmButton = { TextButton(enabled = !state.busy, onClick = {
+                val path = deleteArchive
+                deleteArchive = null
+                if (path != null) model.deleteArchive(java.io.File(path))
+            }) { Text(stringResource(R.string.backup_delete), color = MaterialTheme.colorScheme.error) } },
+            dismissButton = { TextButton(onClick = { deleteArchive = null }) { Text(stringResource(android.R.string.cancel)) } })
         if (restoreArchive != null) AlertDialog(onDismissRequest = { restoreArchive = null },
             title = { Text(stringResource(R.string.backup_import)) },
             text = { Text(stringResource(R.string.backup_merge_hint)) },
