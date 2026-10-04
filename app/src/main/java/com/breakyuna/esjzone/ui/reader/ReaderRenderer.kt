@@ -39,6 +39,7 @@ import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.breakyuna.esjzone.R
+import com.breakyuna.esjzone.domain.reader.sourceText
 import com.breakyuna.esjzone.domain.reader.ReaderBlock
 import com.breakyuna.esjzone.domain.reader.ReaderChapterDocument
 import com.breakyuna.esjzone.ui.designsystem.AppImageViewer
@@ -77,7 +78,12 @@ fun ReaderBlocks(
     textTransform: (String) -> String = { it },
     blockStartIndex: Int = 0,
     underlines: List<ReaderUnderline> = emptyList(),
-    onUnderline: (ReaderUnderline, Boolean) -> Unit = { _, _ -> }
+    onUnderline: (ReaderUnderline, Boolean) -> Unit = { _, _ -> },
+    onTextLayout: (Int, androidx.compose.ui.text.TextLayoutResult) -> Unit = { _, _ -> },
+    highlights: List<com.breakyuna.esjzone.domain.reader.ReaderHighlight> = emptyList(),
+    textOffsets: (ReaderBlock) -> com.breakyuna.esjzone.domain.reader.ReaderTextOffsets = {
+        com.breakyuna.esjzone.domain.reader.ReaderTextOffsets.identity(it.sourceText())
+    }
 ) {
     val textStyle = MaterialTheme.typography.bodyLarge.copy(
         fontFamily = settings.font.family(),
@@ -101,7 +107,12 @@ fun ReaderBlocks(
                         enabled = settings.longPressUnderline,
                         blockIndex = blockStartIndex + index,
                         underlines = underlines,
-                        onUnderline = onUnderline
+                        onUnderline = onUnderline,
+                        onLayout = { onTextLayout(blockStartIndex + index, it) },
+                        highlights = highlights.filter { it.blockIndex == blockStartIndex + index }.map {
+                            val offsets = textOffsets(block)
+                            androidx.compose.ui.text.TextRange(offsets.toDisplay(it.start), offsets.toDisplay(it.end))
+                        }
                     )
                     is ReaderBlock.Text -> ReaderTextBlock(
                         block = block,
@@ -114,11 +125,17 @@ fun ReaderBlocks(
                         enabled = settings.longPressUnderline,
                         blockIndex = blockStartIndex + index,
                         underlines = underlines,
-                        onUnderline = onUnderline
+                        onUnderline = onUnderline,
+                        onLayout = { onTextLayout(blockStartIndex + index, it) },
+                        highlights = highlights.filter { it.blockIndex == blockStartIndex + index }.map {
+                            val offsets = textOffsets(block)
+                            androidx.compose.ui.text.TextRange(offsets.toDisplay(it.start), offsets.toDisplay(it.end))
+                        }
                     )
                     is ReaderBlock.Image -> ReaderImage(
                         url = block.url,
                         contentDescription = stringResource(R.string.reader_open_image),
+                        contentColor = contentColor,
                         modifier = Modifier.padding(vertical = settings.paragraphSpacingDp.dp)
                     )
                     ReaderBlock.LineBreak -> Spacer(
@@ -143,7 +160,9 @@ private fun ReaderParagraphBlock(
     enabled: Boolean,
     blockIndex: Int,
     underlines: List<ReaderUnderline>,
-    onUnderline: (ReaderUnderline, Boolean) -> Unit
+    onUnderline: (ReaderUnderline, Boolean) -> Unit,
+    onLayout: (androidx.compose.ui.text.TextLayoutResult) -> Unit,
+    highlights: List<androidx.compose.ui.text.TextRange>
 ) {
     val (paragraph, inlineContent) = remember(block, textStyle, textTransform, density) {
         val inlines = linkedMapOf<String, InlineTextContent>()
@@ -171,7 +190,9 @@ private fun ReaderParagraphBlock(
         blockIndex = blockIndex,
         signature = remember(block, paragraph) { ReaderUnderlines.signature(block, paragraph.text) },
         underlines = underlines,
-        onUnderline = onUnderline
+        onUnderline = onUnderline,
+        onLayout = onLayout,
+        highlights = highlights
     )
 }
 
@@ -187,7 +208,9 @@ private fun ReaderTextBlock(
     enabled: Boolean,
     blockIndex: Int,
     underlines: List<ReaderUnderline>,
-    onUnderline: (ReaderUnderline, Boolean) -> Unit
+    onUnderline: (ReaderUnderline, Boolean) -> Unit,
+    onLayout: (androidx.compose.ui.text.TextLayoutResult) -> Unit,
+    highlights: List<androidx.compose.ui.text.TextRange>
 ) {
     val (text, inlineContent) = remember(block, textStyle, textTransform, density) {
         block.toAnnotatedReaderText(
@@ -207,7 +230,9 @@ private fun ReaderTextBlock(
         blockIndex = blockIndex,
         signature = remember(block, text) { ReaderUnderlines.signature(block, text.text) },
         underlines = underlines,
-        onUnderline = onUnderline
+        onUnderline = onUnderline,
+        onLayout = onLayout,
+        highlights = highlights
     )
 }
 
@@ -240,9 +265,14 @@ fun ReaderChapterHeading(
 internal fun ReaderImage(
     url: String,
     contentDescription: String,
+    contentColor: Color,
     modifier: Modifier = Modifier,
     contentScale: ContentScale = ContentScale.FillWidth
 ) {
+    if (url.isBlank()) {
+        Text(text = stringResource(R.string.download_image_unavailable), color = contentColor, modifier = modifier)
+        return
+    }
     var expanded by rememberSaveable(url) { mutableStateOf(false) }
     Box(
         modifier = modifier

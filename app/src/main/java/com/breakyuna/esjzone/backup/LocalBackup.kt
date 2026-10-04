@@ -32,7 +32,7 @@ object LocalBackup {
         try {
             val json = JsonObject().apply {
                 addProperty("format", "esjzone-local-backup")
-                addProperty("version", 1)
+                addProperty("version", 2)
             }
             database.withTransaction {
                 if (BackupCategory.UNDERLINES in selected) json.add("underlines", gson.toJsonTree(
@@ -99,7 +99,7 @@ object LocalBackup {
                 }
             }
             val json = JsonParser.parseString(File(staging, "backup.json").readText()).asJsonObject
-            require(json["format"]?.asString == "esjzone-local-backup" && json["version"]?.asInt == 1)
+            require(json["format"]?.asString == "esjzone-local-backup" && json["version"]?.asInt in 1..2)
             require(selected.any { category -> json.has(when (category) {
                 BackupCategory.UNDERLINES -> "underlines"
                 BackupCategory.BOOKMARKS -> "bookmarks"
@@ -130,7 +130,9 @@ object LocalBackup {
             val groups = if (BackupCategory.GROUPS in selected && json.has("groups"))
                 gson.fromJson(json["groups"], BackupGroups::class.java) else null
             require(bookmarks.all { it.chapterUrl.isNotBlank() })
-            require(history.all { it.activityId.isNotBlank() && it.chapterProgress in 0f..1f && it.durationMs >= 0 })
+            require(history.all { it.activityId.isNotBlank() && it.chapterProgress in 0f..1f && it.durationMs >= 0 &&
+                (it.anchor == null || com.breakyuna.esjzone.domain.reader.ReaderAnchor.decode(it.anchor) != null) &&
+                (it.bookProgress == null || it.bookProgress.isFinite() && it.bookProgress in 0f..1f) })
             require(reading.all { it.bookKey.isNotBlank() && it.durationMs >= 0 && runCatching { java.time.LocalDate.parse(it.date) }.isSuccess })
             require(groups == null || (groups.names.all { it.isNotBlank() } && groups.members.values.all { it in groups.names }))
             database.withTransaction {

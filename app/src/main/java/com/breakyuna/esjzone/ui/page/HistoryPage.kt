@@ -110,6 +110,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -586,7 +587,7 @@ private fun LocalHistoryCard(
     selected: Boolean
 ) {
     if (coverUrl.isBlank()) LaunchedEffect(activity.activityId) { onCoverNeeded() }
-    val progress = (fullBookProgress(activity.chapterIndex, activity.totalChapters, activity.chapterProgress) * 100).roundToInt()
+    val progress = ((activity.bookProgress ?: fullBookProgress(activity.chapterIndex, activity.totalChapters, activity.chapterProgress)) * 100).roundToInt()
     val position = if (activity.chapterIndex >= 0 && activity.totalChapters > 0) {
         stringResource(R.string.history_local_position, activity.chapterIndex + 1, activity.totalChapters, progress)
     } else stringResource(R.string.history_local_percent, progress)
@@ -615,7 +616,7 @@ private fun LocalHistoryCard(
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(AppSpacing.xs)) {
                 Text(activity.novelName.ifBlank { activity.novelId }, style = AppTypography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 Text(activity.chapterName, style = AppTypography.bodySmall, color = MaterialTheme.colorScheme.primary, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                androidx.compose.material3.LinearProgressIndicator(progress = fullBookProgress(activity.chapterIndex, activity.totalChapters, activity.chapterProgress), modifier = Modifier.fillMaxWidth())
+                androidx.compose.material3.LinearProgressIndicator(progress = (activity.bookProgress ?: fullBookProgress(activity.chapterIndex, activity.totalChapters, activity.chapterProgress)), modifier = Modifier.fillMaxWidth())
                 Text(position, style = AppTypography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Text(stringResource(R.string.history_local_meta, relative, localDurationText(activity.durationMs)), style = AppTypography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
             }
@@ -841,11 +842,8 @@ private fun HistoryItemSkeleton(modifier: Modifier = Modifier) {
 }
 
 /** Maps a chapter-local fraction to the fraction of the complete book. */
-internal fun fullBookProgress(chapterIndex: Int, totalChapters: Int, chapterProgress: Float): Float {
-    val fraction = chapterProgress.takeIf { it.isFinite() }?.coerceIn(0f, 1f) ?: 0f
-    if (chapterIndex < 0 || totalChapters <= 0) return fraction
-    return ((chapterIndex + fraction) / totalChapters.toFloat()).coerceIn(0f, 1f)
-}
+internal fun fullBookProgress(chapterIndex: Int, totalChapters: Int, chapterProgress: Float): Float =
+    com.breakyuna.esjzone.domain.reader.readerBookProgress(chapterIndex, totalChapters, chapterProgress)
 
 private fun List<HistoryNovel>.filterByHistoryQuery(query: String): List<HistoryNovel> = filter { query.isBlank() || it.name.contains(query, true) || it.chapter.name.contains(query, true) }
 
@@ -880,7 +878,9 @@ class LocalHistoryPageModel(private val authorization: Authorization) : AppState
         observeJob?.cancel()
         observeJob = viewModelScope.launch(Dispatchers.IO) {
             try {
-                PresentationAccess.database.localReadingActivityDao().observeAll().collect { mutableState.value = State.Result(it) }
+                PresentationAccess.database.localReadingActivityDao().observeAll()
+                    .combine(PresentationAccess.downloads.changes) { rows, _ -> rows.map(PresentationAccess.downloads::refreshProgress) }
+                    .collect { mutableState.value = State.Result(it) }
             } catch (e: CancellationException) { throw e }
             catch (e: Exception) { observeStarted = false; mutableState.value = State.Error(e.loadFailureKind()); AppLogger.e("LocalHistoryPageModel", "Failed to load local history", e) }
         }

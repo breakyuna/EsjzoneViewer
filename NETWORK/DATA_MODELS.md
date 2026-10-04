@@ -114,6 +114,16 @@
 | novel_detail_url | string/null | a.view-all |
 | source_url | string | 当前 URL |
 
+### 应用内部正文快照（非网站接口）
+
+`DownloadedChapterContent.schemaVersion = 2` 的 `body` 为显式 `ChapterBody` DTO：`schemaVersion`、`parserVersion`、有序 `blocks`、SHA-256 `fingerprint` 与 UTF-16 `textLength`。块类型为 paragraph/text/image/break；文本片段保存样式标签、数值参数及 ruby 读音。图片原 URL 属于正文身份，下载相对路径及媒体类型仍位于 `components` 资源记录中，不参与指纹。`contentHtml` 仅用于富结构导出。
+
+下载 manifest 版本 2 另存 `catalogComplete`；章节记录包含 `bodyAvailable`、`textLength` 和仅本地保留的 `localOnly`。正文可读与图片齐全分别判断，部分选择不会被标为全本完整。增量提交仅补新章、缺章和缺图，不覆盖有效的已有正文。
+
+本地阅读历史新增可空的字符锚点和全书进度。锚点包含章节键、正文指纹、块序号、UTF-16 偏移或图片内比例；仅匹配同一正文快照，正文不同则采用旧比例恢复，不进行正文版本间重定位。
+
+全书进度显示与滑块选章共用完整目录的字符权重；任一章节字数未知时，两者均回退到章节数权重。滑块仍定位到目标章节开头。历史、书架与阅读器复用按小说缓存的已发布清单，写入、删除、导入和存储初始化时同步更新缓存；并发合并仍读取磁盘最新清单。
+
 ## 6. Comment
 
 | 字段 | 类型 | 说明 |

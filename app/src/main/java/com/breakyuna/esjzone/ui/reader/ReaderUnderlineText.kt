@@ -27,12 +27,14 @@ internal fun ReaderUnderlineText(
     signature: String,
     offset: Int = 0,
     underlines: List<ReaderUnderline>,
-    onUnderline: (ReaderUnderline, Boolean) -> Unit
+    onUnderline: (ReaderUnderline, Boolean) -> Unit,
+    onLayout: (TextLayoutResult) -> Unit = {},
+    highlights: List<TextRange> = emptyList()
 ) {
     var layout by remember { mutableStateOf<TextLayoutResult?>(null) }
     var selection by remember(text, enabled) { mutableStateOf<TextRange?>(null) }
     val currentSave by rememberUpdatedState(onUnderline)
-    val displayed = remember(text, underlines, blockIndex, signature, offset, selection) {
+    val displayed = remember(text, underlines, blockIndex, signature, offset, selection, highlights, color) {
         buildAnnotatedString {
             append(text)
             underlines.filter { it.blockIndex == blockIndex && it.signature == signature }.forEach { mark ->
@@ -40,13 +42,18 @@ internal fun ReaderUnderlineText(
                 val end = (mark.end - offset).coerceAtMost(text.length)
                 if (start < end) addStyle(SpanStyle(textDecoration = TextDecoration.Underline), start, end)
             }
+            highlights.forEach { range ->
+                val start = range.min.coerceIn(0, text.length)
+                val end = range.max.coerceIn(start, text.length)
+                if (start < end) addStyle(SpanStyle(background = color.copy(alpha = 0.18f)), start, end)
+            }
             selection?.let { range ->
                 if (!range.collapsed) addStyle(SpanStyle(textDecoration = TextDecoration.Underline), range.min, range.max)
             }
         }
     }
     Text(text = displayed, inlineContent = inlineContent, style = style, color = color,
-        overflow = TextOverflow.Visible, onTextLayout = { layout = it },
+        overflow = TextOverflow.Visible, onTextLayout = { layout = it; onLayout(it) },
         modifier = modifier.then(if (!enabled) Modifier else Modifier.pointerInput(text, blockIndex, signature, offset) {
             var anchor = TextRange.Zero
             var position = Offset.Zero

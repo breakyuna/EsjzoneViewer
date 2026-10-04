@@ -17,10 +17,8 @@ object ReaderScriptConverter {
         Transliterator.getInstance("Simplified-Traditional")
     }
 
-    private val convertCache = object : LinkedHashMap<Pair<String, ReaderScript>, String>(256, 0.75f, true) {
-        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<Pair<String, ReaderScript>, String>?): Boolean {
-            return size > 4096
-        }
+    private val convertCache = object : LinkedHashMap<Pair<String, ReaderScript>, com.breakyuna.esjzone.domain.reader.ReaderTextOffsets>(256, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<Pair<String, ReaderScript>, com.breakyuna.esjzone.domain.reader.ReaderTextOffsets>?): Boolean = size > 4096
     }
 
     private val transliteratorLock = Any()
@@ -87,35 +85,22 @@ object ReaderScriptConverter {
         return result
     }
 
-    fun convert(text: String, script: ReaderScript): String = when (script) {
-        ReaderScript.ORIGINAL -> text
-        ReaderScript.SIMPLIFIED -> {
-            if (text.isEmpty()) ""
-            else synchronized(convertCache) {
-                convertCache[text to script]
-            } ?: run {
-                val converted = synchronized(transliteratorLock) {
-                    traditionalToSimplified.transliterate(text)
-                }
-                synchronized(convertCache) {
-                    convertCache[text to script] = converted
-                }
-                converted
-            }
+    fun convert(text: String, script: ReaderScript): String = mapping(text, script).text
+
+    fun mapping(text: String, script: ReaderScript): com.breakyuna.esjzone.domain.reader.ReaderTextOffsets {
+        if (script == ReaderScript.ORIGINAL || text.isEmpty()) return com.breakyuna.esjzone.domain.reader.ReaderTextOffsets.identity(text)
+        synchronized(convertCache) { convertCache[text to script] }?.let { return it }
+        val mapped = ReaderMappedText(text)
+        synchronized(transliteratorLock) {
+            (if (script == ReaderScript.SIMPLIFIED) traditionalToSimplified else simplifiedToTraditional).transliterate(mapped)
         }
-        ReaderScript.TRADITIONAL -> {
-            if (text.isEmpty()) ""
-            else synchronized(convertCache) {
-                convertCache[text to script]
-            } ?: run {
-                val converted = synchronized(transliteratorLock) {
-                    simplifiedToTraditional.transliterate(text)
-                }
-                synchronized(convertCache) {
-                    convertCache[text to script] = converted
-                }
-                converted
-            }
-        }
+        return mapped.snapshot().also { synchronized(convertCache) { convertCache[text to script] = it } }
+    }
+
+    fun blockMapping(block: com.breakyuna.esjzone.domain.reader.ReaderBlock, script: ReaderScript): com.breakyuna.esjzone.domain.reader.ReaderTextOffsets = when (block) {
+        is com.breakyuna.esjzone.domain.reader.ReaderBlock.Paragraph -> com.breakyuna.esjzone.domain.reader.ReaderTextOffsets.join(block.parts.map { mapping(it.value, script) })
+        is com.breakyuna.esjzone.domain.reader.ReaderBlock.Text -> mapping(block.value, script)
+        com.breakyuna.esjzone.domain.reader.ReaderBlock.LineBreak -> com.breakyuna.esjzone.domain.reader.ReaderTextOffsets.identity("\n")
+        is com.breakyuna.esjzone.domain.reader.ReaderBlock.Image -> com.breakyuna.esjzone.domain.reader.ReaderTextOffsets.identity("")
     }
 }

@@ -41,8 +41,8 @@ internal object PageCacheInvalidation {
 /**
  * Small disk-backed cache for server-rendered HTML pages.
  *
- * HTML is cached instead of polymorphic UI models so the parser remains the single source
- * of truth and parser fixes take effect without a database migration.
+ * Chapter DTO snapshots share this cache's quota and lifecycle; their timestamps are
+ * inherited from the raw response, and a new response invalidates the derived snapshot.
  */
 internal object PageCache {
 
@@ -65,7 +65,17 @@ internal object PageCache {
         // Novel chapters are useful after an app restart and while offline, so
         // keep their HTML in the app's persistent files area rather than the
         // OS-evictable cache directory.
-        val cacheDirectory = File(context.filesDir, "novel_page_cache")
+        initializeDirectory(File(context.filesDir, "novel_page_cache"))
+
+        // The cache used to live under cacheDir.  Remove those old snapshots so
+        // an account's authenticated HTML cannot survive logout in the legacy
+        // location after the persistent cache is initialized.
+        File(context.cacheDir, "page_cache").listFiles()
+            ?.filter { it.isFile && it.name.startsWith("esj-page-") }
+            ?.forEach { runCatching { it.delete() } }
+    }
+
+    internal fun initializeDirectory(cacheDirectory: File) {
         if (cacheDirectory.isDirectory || cacheDirectory.mkdirs()) {
             directory = cacheDirectory
             // v3 replaces cookie-derived cache keys with a stable session namespace.
@@ -78,13 +88,6 @@ internal object PageCache {
                 ?.forEach { runCatching { it.delete() } }
             refreshStats(cacheDirectory)
         }
-
-        // The cache used to live under cacheDir.  Remove those old snapshots so
-        // an account's authenticated HTML cannot survive logout in the legacy
-        // location after the persistent cache is initialized.
-        File(context.cacheDir, "page_cache").listFiles()
-            ?.filter { it.isFile && it.name.startsWith("esj-page-") }
-            ?.forEach { runCatching { it.delete() } }
     }
 
     fun read(key: String, maxAgeMillis: Long, nowMillis: Long = System.currentTimeMillis()): String? {
@@ -112,6 +115,7 @@ internal object PageCache {
         val file = fileFor(key) ?: return
         runCatching {
             synchronized(ioLock) {
+                if (!key.startsWith("chapter-structured-v2|")) remove(structuredKey(key))
                 val existed = file.isFile
                 val previousSize = if (existed) file.length() else 0L
                 val temporary = File(file.parentFile, "${file.name}.tmp")
@@ -137,10 +141,22 @@ internal object PageCache {
         }
     }
 
+    internal fun structuredKey(key: String): String = "chapter-structured-v2|$key"
+
+    internal fun writeDerived(key: String, sourceBody: String, json: String) = synchronized(ioLock) {
+        val file = fileFor(key) ?: return@synchronized
+        val encoded = runCatching { file.readText(StandardCharsets.UTF_8) }.getOrNull() ?: return@synchronized
+        val split = encoded.indexOf('\n')
+        if (split < 1 || encoded.substring(split + 1) != sourceBody) return@synchronized
+        val fetchedAt = encoded.substring(0, split).toLongOrNull() ?: return@synchronized
+        write(structuredKey(key), json, fetchedAt)
+    }
+
     fun remove(key: String) {
         val file = fileFor(key) ?: return
         runCatching {
             synchronized(ioLock) {
+                if (!key.startsWith("chapter-structured-v2|")) remove(structuredKey(key))
                 val length = file.length()
                 if (file.delete()) {
                     cachedSizeBytes = (cachedSizeBytes - length).coerceAtLeast(0L)

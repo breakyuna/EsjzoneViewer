@@ -1,8 +1,10 @@
 package com.breakyuna.esjzone.offline
 
+import com.breakyuna.esjzone.data.reader.ChapterBody
+import com.breakyuna.esjzone.data.reader.withStructuredBody
+import com.breakyuna.esjzone.domain.reader.sourceText
 import android.content.Context
 import com.breakyuna.esjzone.R
-import android.os.StatFs
 import com.breakyuna.esjzone.app.PresentationAccess
 import com.breakyuna.esjzone.data.settings.SettingsDefaults
 import com.breakyuna.esjzone.network.Authorization
@@ -53,7 +55,7 @@ data class DownloadProgress(
 )
 
 data class DownloadedNovelManifest(
-    val version: Int = 1,
+    val version: Int = 2,
     val name: String,
     val url: String,
     val coverUrl: String,
@@ -71,7 +73,8 @@ data class DownloadedNovelManifest(
     val chapters: List<DownloadedChapterRecord>,
     val downloadedAt: Long,
     val complete: Boolean,
-    val commonPassword: String? = null
+    val commonPassword: String? = null,
+    val catalogComplete: Boolean = false
 ) {
     val pendingPasswordChapters: List<DownloadedChapterRecord>
         get() = chapters.filter { it.requiresPassword && !it.downloaded }
@@ -83,7 +86,10 @@ data class DownloadedChapterRecord(
     val url: String,
     val fileName: String,
     val downloaded: Boolean,
-    val requiresPassword: Boolean = false
+    val requiresPassword: Boolean = false,
+    val textLength: Int? = null,
+    val bodyAvailable: Boolean = false,
+    val localOnly: Boolean = false
 )
 
 data class DownloadedChapterContent(
@@ -91,7 +97,9 @@ data class DownloadedChapterContent(
     val url: String,
     val components: List<DownloadedComponent>,
     val contentHtml: String? = null,
-    val baseUrl: String? = null
+    val baseUrl: String? = null,
+    val schemaVersion: Int = 1,
+    val body: ChapterBody? = null
 )
 
 data class DownloadedComponent(
@@ -119,6 +127,9 @@ data class DownloadedNovelSummary(
  * when the user clears the temporary page cache or when that cache reaches its size limit.
  */
 object NovelDownloadStore {
+    private val mutableChanges = kotlinx.coroutines.flow.MutableStateFlow(0L)
+    val changes: kotlinx.coroutines.flow.StateFlow<Long> = mutableChanges
+
 
     private const val MANIFEST_FILE = "manifest.json"
     private const val TEXT_COMPONENT = "text"
@@ -131,6 +142,8 @@ object NovelDownloadStore {
 
     private val gson = Gson()
     private val ioLock = Any()
+    /** Public readers reuse published manifests; merges still read the latest disk snapshot. */
+    private val manifestCache = HashMap<String, DownloadedNovelManifest?>()
     private val deletionGenerations = HashMap<String, Long>()
     /** Built once per manifest generation, including successful negative lookups. */
     private val chapterIndex = HashMap<String, ChapterMatch>()
@@ -152,7 +165,7 @@ object NovelDownloadStore {
     }
 
     private fun requireFreeSpace(directory: File) {
-        val available = runCatching { StatFs(directory.absolutePath).availableBytes }.getOrDefault(Long.MAX_VALUE)
+        val available = runCatching { directory.usableSpace }.getOrDefault(Long.MAX_VALUE)
         if (available < MIN_FREE_SPACE_BYTES) throw IOException("Insufficient storage space for download")
     }
 
@@ -166,18 +179,18 @@ object NovelDownloadStore {
 
     fun initialize(context: Context) {
         appContext = context.applicationContext
-        val directory = File(context.applicationContext.filesDir, "downloaded_novels")
-        if (directory.isDirectory || directory.mkdirs()) {
-            synchronized(ioLock) {
-                chapterIndex.clear()
-                chapterIndexLoaded = false
-                inventorySnapshot = null
-                dirtyInventorySizes.clear()
-            }
-            rootDirectory = directory
-        } else {
-            AppLogger.e("NovelDownloadStore", "Unable to create the novel download directory")
-        }
+        initializeDirectory(File(context.applicationContext.filesDir, "downloaded_novels"))
+    }
+
+    internal fun initializeDirectory(directory: File) = synchronized(ioLock) {
+        if (!directory.isDirectory && !directory.mkdirs()) throw IOException("Unable to create the novel download directory")
+        chapterIndex.clear()
+        chapterIndexLoaded = false
+        inventorySnapshot = null
+        dirtyInventorySizes.clear()
+        manifestCache.clear()
+        rootDirectory = directory
+        mutableChanges.value += 1
     }
 
     /** Snapshot only persisted content; chapter passwords are deliberately excluded. */
@@ -193,7 +206,7 @@ object NovelDownloadStore {
                     output.parentFile?.mkdirs()
                     file.copyTo(output, overwrite = true)
                 }
-            File(target, MANIFEST_FILE).writeText(gson.toJson(manifest.copy(commonPassword = null)))
+            File(target, MANIFEST_FILE).writeText(gson.toJson(manifest.copy(version = 2, commonPassword = null)))
         }
     }
 
@@ -202,10 +215,15 @@ object NovelDownloadStore {
         val root = checkNotNull(rootDirectory)
         source.listFiles().orEmpty().filter(File::isDirectory).forEach { directory ->
             val manifest = requireNotNull(readManifest(directory))
-            require(manifest.version == 1 && manifest.url.isNotBlank())
+            require(manifest.version in 1..2 && manifest.url.isNotBlank())
             manifest.chapters.forEach { record ->
                 val file = requireNotNull(resolveLocalFile(directory, record.fileName))
-                require(!record.downloaded || file.isFile)
+                require(!(record.downloaded || record.bodyAvailable) || file.isFile)
+                if (file.isFile) {
+                    val chapter = requireNotNull(readJson(file, DownloadedChapterContent::class.java))
+                    require(chapter.schemaVersion in 0..2)
+                    if (chapter.schemaVersion == 2) requireNotNull(chapter.body).validate()
+                }
             }
             val target = File(root, digest(canonicalKey(manifest.url)))
             if (!target.exists()) {
@@ -213,7 +231,7 @@ object NovelDownloadStore {
                 check(staging.delete() && staging.mkdir())
                 try {
                     directory.copyRecursively(staging, overwrite = true)
-                    File(staging, MANIFEST_FILE).writeText(gson.toJson(manifest.copy(commonPassword = null)))
+                    File(staging, MANIFEST_FILE).writeText(gson.toJson(manifest.copy(version = 2, commonPassword = null)))
                     check(staging.renameTo(target))
                 } finally {
                     staging.deleteRecursively()
@@ -223,10 +241,14 @@ object NovelDownloadStore {
         chapterIndex.clear()
         chapterIndexLoaded = false
         inventorySnapshot = null
+        manifestCache.clear()
+        mutableChanges.value += 1
     }
 
     fun manifest(novelUrl: String): DownloadedNovelManifest? = synchronized(ioLock) {
-        readManifest(directoryFor(novelUrl, create = false))
+        val key = canonicalKey(novelUrl)
+        if (manifestCache.containsKey(key)) return@synchronized manifestCache[key]
+        readManifest(directoryFor(novelUrl, create = false)).also { manifestCache[key] = it }
     }
 
     fun findDownloadedCover(novelUrl: String): File? = synchronized(ioLock) {
@@ -270,7 +292,7 @@ object NovelDownloadStore {
             .mapNotNull { directory ->
                 val stored = readManifest(directory) ?: return@mapNotNull null
                 val count = stored.chapters.count { record ->
-                    record.downloaded && resolveLocalFile(directory, record.fileName)?.isFile == true
+                    (record.bodyAvailable || record.downloaded) && resolveLocalFile(directory, record.fileName)?.isFile == true
                 }
                 if (count == 0) return@mapNotNull null
                 DownloadedNovelSummary(
@@ -302,9 +324,11 @@ object NovelDownloadStore {
         cancelActiveWork(novelUrl)
         val directory = directoryFor(novelUrl, create = false) ?: return@synchronized false
         deletionGenerations[directory.absolutePath] = (deletionGenerations[directory.absolutePath] ?: 0L) + 1L
+        manifestCache.remove(canonicalKey(novelUrl))
         chapterIndex.clear()
         chapterIndexLoaded = false
         inventorySnapshot = null
+        mutableChanges.value += 1
         directory.deleteRecursively()
     }
 
@@ -313,11 +337,13 @@ object NovelDownloadStore {
         chapterIndex.clear()
         chapterIndexLoaded = false
         inventorySnapshot = null
+        mutableChanges.value += 1
         novelUrls.distinct()
             .count { url ->
                 cancelActiveWork(url)
                 val directory = directoryFor(url, create = false) ?: return@count false
                 deletionGenerations[directory.absolutePath] = (deletionGenerations[directory.absolutePath] ?: 0L) + 1L
+                manifestCache.remove(canonicalKey(url))
                 directory.deleteRecursively()
             }
     }
@@ -353,8 +379,9 @@ object NovelDownloadStore {
                     complete = false,
                     commonPassword = trimmed
                 )
-            writeManifest(directory, updated, writeGuard)
+            writeManifest(directory, updated, writeGuard, updatePassword = true)
             inventorySnapshot = null
+            mutableChanges.value += 1
             updated
         }
     }
@@ -369,8 +396,9 @@ object NovelDownloadStore {
         return synchronized(ioLock) {
             val manifest = readManifest(directory) ?: return null
             val updated = manifest.copy(commonPassword = trimmed)
-            writeManifest(directory, updated, writeGuard)
+            writeManifest(directory, updated, writeGuard, updatePassword = true)
             inventorySnapshot = null
+            mutableChanges.value += 1
             updated
         }
     }
@@ -398,8 +426,9 @@ object NovelDownloadStore {
                 downloadedAt = System.currentTimeMillis(),
                 complete = false
             )).copy(commonPassword = trimmed)
-            writeManifest(directory, withPw, writeGuard)
+            writeManifest(directory, withPw, writeGuard, updatePassword = true)
             inventorySnapshot = null
+            mutableChanges.value += 1
             withPw
         }
 
@@ -496,7 +525,11 @@ object NovelDownloadStore {
         }
 
         val auth = authorization ?: Authorization("", "", EsjzoneUrls.BaseWithoutProtocol)
-        val imageComponents = detail.content.filterIsInstance<ImageComponent>()
+        val savedContent = synchronized(ioLock) { existingFile?.let { readStoredChapter(directory, it) } }
+        val sourceDetail = savedContent?.let { saved -> DetailedChapter(saved.name,
+            requireNotNull(saved.body).components(), detail.previous, detail.next, saved.contentHtml,
+            saved.baseUrl, saved.body) } ?: detail.withStructuredBody()
+        val imageComponents = sourceDetail.content.filterIsInstance<ImageComponent>()
         val downloadedImages = imageComponents
             .distinctBy { it.url }
             .mapNotNull { component ->
@@ -505,7 +538,7 @@ object NovelDownloadStore {
                     authorization = auth,
                     novelDirectory = directory,
                     rawUrl = component.url,
-                    baseUrl = detail.sourceUrl ?: normalizedNovelUrl,
+                    baseUrl = sourceDetail.sourceUrl ?: normalizedNovelUrl,
                     writeGuard = writeGuard
                 )
                 if (image != null) component.url to image else null
@@ -519,7 +552,7 @@ object NovelDownloadStore {
                 coverUrl = coverUrl,
                 chapterOrder = chapterOrder,
                 chapter = chapter,
-                detail = detail,
+                detail = sourceDetail,
                 downloadedImages = downloadedImages,
                 writeGuard = writeGuard
             )
@@ -579,7 +612,10 @@ object NovelDownloadStore {
                 fileName = old?.fileName ?: chapterFileName(item.url),
                 downloaded = old?.downloaded == true &&
                     resolveLocalFile(directory, old.fileName)?.isFile == true,
-                requiresPassword = old?.requiresPassword == true
+                requiresPassword = old?.requiresPassword == true,
+                textLength = old?.textLength,
+                bodyAvailable = old?.bodyAvailable == true,
+                localOnly = old?.localOnly == true
             )
         }.toMutableList()
         // Preserve old records absent from a temporarily incomplete TOC. A
@@ -616,10 +652,15 @@ object NovelDownloadStore {
                 url = chapter.url,
                 components = storedComponents,
                 contentHtml = detail.contentHtml,
-                baseUrl = detail.sourceUrl ?: chapter.url
+                baseUrl = detail.sourceUrl ?: chapter.url,
+                schemaVersion = 2,
+                body = detail.withStructuredBody().body
             )
-            writeJson(targetFile, storedChapter, writeGuard)
-            records[targetIndex] = target.copy(downloaded = true, requiresPassword = false)
+            val oldContent = readStoredChapter(directory, targetFile)
+            val committed = oldContent?.let { mergeChapterAssets(directory, it, storedChapter) } ?: storedChapter
+            writeJson(targetFile, committed, writeGuard)
+            records[targetIndex] = target.copy(downloaded = committed.hasAllImagesOnDisk(directory),
+                requiresPassword = false, bodyAvailable = true, textLength = committed.body?.textLength)
         }
         val complete = if (chapterOrder.isNotEmpty()) {
             records.all { it.downloaded }
@@ -638,7 +679,7 @@ object NovelDownloadStore {
             complete = complete
         )
         writeManifest(directory, current, writeGuard)
-        return current
+        return readManifest(directory)
     }
 
     /**
@@ -694,7 +735,7 @@ object NovelDownloadStore {
             complete = currentRecords.all { it.downloaded },
             commonPassword = previousCommonPassword
         )
-        synchronized(ioLock) { writeManifest(directory, currentManifest, writeGuard) }
+        synchronized(ioLock) { writeManifest(directory, currentManifest, writeGuard, replaceCatalog = true) }
 
         val targetRecords = currentRecords.filter { selectedKeys == null || chapterKey(it.url) in selectedKeys }
         val totalCount = targetRecords.size
@@ -862,7 +903,7 @@ object NovelDownloadStore {
 
         reportProgress("", force = true)
 
-        return currentManifest
+        return synchronized(ioLock) { readManifest(directory) } ?: currentManifest
     }
 
     private suspend fun downloadSingleChapter(
@@ -873,51 +914,40 @@ object NovelDownloadStore {
         writeGuard: DownloadWriteGuard,
         password: String? = null
     ): DownloadedChapterContent {
-        val detail = if (!password.isNullOrBlank()) {
-            EsjzoneClient.unlockPasswordProtectedChapter(
-                authorization = authorization,
-                chapter = Chapter(record.name, record.url, false),
-                password = password,
-                baseUrl = baseUrl
-            )
+        val chapterFile = File(directory, record.fileName)
+        val existing = synchronized(ioLock) { readStoredChapter(directory, chapterFile) }
+        val chapter = Chapter(record.name, record.url, false)
+        val stored = existing ?: (if (!password.isNullOrBlank()) {
+            EsjzoneClient.unlockPasswordProtectedChapter(authorization, chapter, password, baseUrl)
         } else {
-            EsjzoneClient.getChapterDetail(
-                authorization = authorization,
-                chapter = Chapter(record.name, record.url, false),
-                preferDownloaded = false,
-                forceRefresh = false,
-                baseUrl = baseUrl,
-                allowAutoSolve = false
-            )
+            EsjzoneClient.getChapterDetail(authorization, chapter, preferDownloaded = false,
+                forceRefresh = false, baseUrl = baseUrl, allowAutoSolve = false)
+        }).toStoredContent(chapter)
+        require(stored.body?.blocks?.isNotEmpty() == true) { "Chapter content is empty" }
+        val completed = stored.copy(components = stored.components.map { component ->
+            if (component.type != IMAGE_COMPONENT || component.localFile?.let {
+                    resolveLocalFile(directory, it)?.let { file -> file.isFile && file.length() > 0L }
+                } == true) component
+            else component.withDownloadedImage(downloadImage(authorization, directory, component.value,
+                stored.baseUrl ?: baseUrl, writeGuard))
+        })
+        synchronized(ioLock) {
+            ensureWriteAllowed(writeGuard)
+            val latest = readStoredChapter(directory, chapterFile)
+            val committed = if (latest != null) mergeChapterAssets(directory, latest, completed) else completed
+            if (latest != committed) writeJson(chapterFile, committed, writeGuard)
         }
-        val storedChapter = DownloadedChapterContent(
-            name = detail.name.ifBlank { record.name },
-            url = record.url,
-            components = detail.content.mapNotNull { component ->
-                when (component) {
-                    is TextComponent -> DownloadedComponent(
-                        type = TEXT_COMPONENT,
-                        value = component.plainText()
-                    )
+        if (!completed.hasAllImagesOnDisk(directory)) throw IOException("Chapter images are incomplete")
+        return completed
+    }
 
-                    is ImageComponent -> {
-                        val image = downloadImage(
-                        authorization, directory, component.url, detail.sourceUrl ?: baseUrl, writeGuard
-                        )
-                        DownloadedComponent(
-                            type = IMAGE_COMPONENT,
-                            value = component.url
-                        ).withDownloadedImage(image)
-                    }
-
-                    else -> null
-                }
-            },
-            contentHtml = detail.contentHtml,
-            baseUrl = detail.sourceUrl ?: EsjzoneUrls.resolve(record.url, baseUrl ?: EsjzoneUrls.Base)
-        )
-        writeJson(File(directory, record.fileName), storedChapter, writeGuard)
-        return storedChapter
+    private fun mergeChapterAssets(directory: File, existing: DownloadedChapterContent, incoming: DownloadedChapterContent): DownloadedChapterContent {
+        val images = incoming.components.filter { it.type == IMAGE_COMPONENT }.associateBy { it.value }
+        return existing.copy(components = existing.components.map { component ->
+            if (component.type == IMAGE_COMPONENT && component.localFile?.let { resolveLocalFile(directory, it)?.let { f -> f.isFile && f.length() > 0L } } != true) {
+                images[component.value]?.takeIf { it.localFile != null } ?: component
+            } else component
+        })
     }
 
     /** Returns a downloaded chapter without touching the network. */
@@ -925,16 +955,14 @@ object NovelDownloadStore {
         val match = findChapter(chapterUrl) ?: return@synchronized null
         val chapterFile = resolveLocalFile(match.directory, match.record.fileName)
             ?: return@synchronized null
-        val stored = readJson(
-            chapterFile,
-            DownloadedChapterContent::class.java
-        ) ?: return@synchronized null
-        if (com.breakyuna.esjzone.novellibrary.novel.resolveChapterSource(chapterUrl) ==
-            com.breakyuna.esjzone.novellibrary.novel.ChapterSource.WENKU8 &&
-            com.breakyuna.esjzone.network.external.CloudflareChallenge.hasChallengeDocumentMarkers(
-                stored.contentHtml.orEmpty())) {
-            chapterFile.delete()
-            return@synchronized null
+        val stored = readStoredChapter(match.directory, chapterFile) ?: return@synchronized null
+        if (match.record.textLength != stored.body?.textLength || !match.record.bodyAvailable) {
+            // Optional length metadata must not prevent reading a locally migrated chapter.
+            runCatching {
+                writeManifest(match.directory, match.manifest.copy(chapters = match.manifest.chapters.map {
+                    if (chapterKey(it.url) == chapterKey(chapterUrl)) it.copy(textLength = stored.body?.textLength, bodyAvailable = true) else it
+                }))
+            }
         }
         val previous = match.manifest.chapters.getOrNull(match.record.index - 1)
             ?.toChapter()
@@ -947,7 +975,9 @@ object NovelDownloadStore {
             previous = previous,
             next = next,
             contentHtml = stored.contentHtml,
-            sourceUrl = stored.baseUrl ?: stored.url
+            sourceUrl = stored.baseUrl ?: stored.url,
+            body = stored.body,
+            imageLocations = imageLocations(match.directory, stored)
         )
     }
 
@@ -957,7 +987,7 @@ object NovelDownloadStore {
             ?.takeIf { it.complete }
             ?: return@synchronized null
         val chapters = stored.chapters
-            .filter { it.downloaded }
+            .filter { it.downloaded && !it.localOnly }
             .map { ChapterItem(it.toChapter()) }
 
         DetailedNovel(
@@ -984,13 +1014,48 @@ object NovelDownloadStore {
         )
     }
 
+    /** Recompute displayed history progress after a catalog gains chapters, without moving its anchor. */
+    fun refreshProgress(activity: com.breakyuna.esjzone.database.entity.LocalReadingActivity): com.breakyuna.esjzone.database.entity.LocalReadingActivity {
+        val manifest = manifest(activity.novelUrl) ?: return activity
+        if (!manifest.catalogComplete) return activity
+        val order = manifest.chapters.filterNot { it.localOnly }
+        val key = chapterKey(activity.chapterUrl)
+        val index = order.indexOfFirst { chapterKey(it.url) == key }
+        if (index < 0) return activity
+        return activity.copy(chapterIndex = index, totalChapters = order.size,
+            bookProgress = manifest.textBookProgress(order.map { it.url }, key, activity.chapterProgress)
+                ?: com.breakyuna.esjzone.domain.reader.readerBookProgress(index, order.size, activity.chapterProgress))
+    }
+
     fun chapterContent(
         novelUrl: String,
         record: DownloadedChapterRecord
     ): DownloadedChapterContent? = synchronized(ioLock) {
         val directory = directoryFor(novelUrl, create = false) ?: return@synchronized null
         val file = resolveLocalFile(directory, record.fileName) ?: return@synchronized null
-        readJson(file, DownloadedChapterContent::class.java)
+        readStoredChapter(directory, file)
+    }
+
+    suspend fun searchChapters(
+        novelUrl: String,
+        query: String,
+        mapping: (com.breakyuna.esjzone.domain.reader.ReaderBlock) -> com.breakyuna.esjzone.domain.reader.ReaderTextOffsets = {
+            com.breakyuna.esjzone.domain.reader.ReaderTextOffsets.identity(it.sourceText())
+        },
+        onResults: suspend (List<com.breakyuna.esjzone.domain.reader.ReaderSearchHit>) -> Unit
+    ) = kotlinx.coroutines.withContext(Dispatchers.IO) {
+        if (query.isBlank()) return@withContext
+        val records = manifest(novelUrl)?.chapters.orEmpty()
+        for (record in records) {
+            currentCoroutineContext().ensureActive()
+            val content = chapterContent(novelUrl, record) ?: continue
+            val body = content.body ?: continue
+            val document = com.breakyuna.esjzone.domain.reader.ReaderChapterDocument(
+                com.breakyuna.esjzone.domain.reader.ReaderChapterRef(record.name, record.url),
+                body.readerBlocks(), contentFingerprint = body.fingerprint)
+            val hits = com.breakyuna.esjzone.domain.reader.searchReaderDocument(document, chapterKey(record.url), query, mapping)
+            if (hits.isNotEmpty()) onResults(hits)
+        }
     }
 
     fun imageFile(novelUrl: String, component: DownloadedComponent): File? = synchronized(ioLock) {
@@ -1029,7 +1094,8 @@ object NovelDownloadStore {
         chapters = records,
         downloadedAt = downloadedAt,
         complete = complete,
-        commonPassword = commonPassword
+        commonPassword = commonPassword,
+        catalogComplete = true
     )
 
     private fun manifestFromMetadata(
@@ -1042,7 +1108,7 @@ object NovelDownloadStore {
         complete: Boolean,
         commonPassword: String? = previous?.commonPassword
     ) = DownloadedNovelManifest(
-        version = previous?.version ?: 1,
+        version = 2,
         name = name.trim().ifBlank { previous?.name.orEmpty() },
         url = url,
         coverUrl = coverUrl.trim().ifBlank { previous?.coverUrl.orEmpty() },
@@ -1060,7 +1126,8 @@ object NovelDownloadStore {
         chapters = records,
         downloadedAt = downloadedAt,
         complete = complete,
-        commonPassword = commonPassword
+        commonPassword = commonPassword,
+        catalogComplete = previous?.catalogComplete == true || previous?.complete == true
     )
 
     private fun findChapter(chapterUrl: String): ChapterMatch? {
@@ -1072,7 +1139,7 @@ object NovelDownloadStore {
             ?.filter(File::isDirectory)
             ?.forEach { directory ->
                 val manifest = readManifest(directory) ?: return@forEach
-                manifest.chapters.filter { it.downloaded }.forEach { record ->
+                manifest.chapters.filter { resolveLocalFile(directory, it.fileName)?.isFile == true }.forEach { record ->
                     chapterIndex.putIfAbsent(
                         chapterKey(record.url), ChapterMatch(directory, manifest, record)
                     )
@@ -1082,65 +1149,47 @@ object NovelDownloadStore {
         return chapterIndex[target]
     }
 
-    private fun restoreComponents(
-        novelDirectory: File,
-        stored: DownloadedChapterContent
-    ): List<Component> {
-        val html = stored.contentHtml
-        if (!html.isNullOrBlank()) {
-            val baseUrl = stored.baseUrl ?: EsjzoneUrls.resolve(stored.url)
-            val document = Jsoup.parseBodyFragment(html, baseUrl)
-            val downloadedImages = stored.components
-                .filter { it.type == IMAGE_COMPONENT }
-            document.select("img").forEach { image ->
-                val candidates = IMAGE_URL_ATTRIBUTES.mapNotNull { attribute ->
-                    image.absUrl(attribute)
-                        .ifBlank { image.attr(attribute) }
-                        .trim()
-                        .takeIf(String::isNotBlank)
-                }
-                val saved = downloadedImages.firstOrNull { component ->
-                    candidates.any { candidate ->
-                        component.value == candidate ||
-                            EsjzoneUrls.resolve(candidate, baseUrl) == component.value ||
-                            EsjzoneUrls.canonicalPageKey(candidate) == EsjzoneUrls.canonicalPageKey(component.value)
-                    }
-                }
-                val localImage = saved?.localFile
-                    ?.let { relative -> resolveLocalFile(novelDirectory, relative) }
-                    ?.takeIf { it.isFile && it.length() > 0L }
-                if (localImage != null) {
-                    IMAGE_URL_ATTRIBUTES.forEach(image::removeAttr)
-                    image.removeAttr("srcset")
-                    image.attr("src", localImage.toURI().toString())
-                } else {
-                    val fallbackUrl = saved?.value?.takeIf { it.isNotBlank() }
-                        ?: candidates.firstOrNull()?.let { EsjzoneUrls.resolve(it, baseUrl) }
-                    if (!fallbackUrl.isNullOrBlank()) {
-                        IMAGE_URL_ATTRIBUTES.forEach(image::removeAttr)
-                        image.removeAttr("srcset")
-                        image.attr("src", fallbackUrl)
-                    } else {
-                        image.after("<span></span>")
-                        image.nextElementSibling()?.text(missingImageLabel())
-                        image.remove()
-                    }
-                }
-            }
-            return analyseComponents(document.body())
+    private fun imageLocations(directory: File, stored: DownloadedChapterContent): Map<String, String> =
+        stored.components.filter { it.type == IMAGE_COMPONENT }.associate { image ->
+            image.value to (image.localFile?.let { resolveLocalFile(directory, it) }
+                ?.takeIf { it.isFile && it.length() > 0L }?.toURI()?.toString() ?: image.value)
         }
 
-        return stored.components.map { component ->
-            if (component.type == IMAGE_COMPONENT) {
-                val localImage = component.localFile
-                    ?.let { relative -> resolveLocalFile(novelDirectory, relative) }
-                    ?.takeIf { it.isFile && it.length() > 0L }
-                if (localImage != null) ImageComponent(localImage.toURI().toString())
-                else if (component.value.isNotBlank()) ImageComponent(component.value)
-                else TextComponent(missingImageLabel())
-            } else {
-                TextComponent(component.value)
+    private fun readStoredChapter(directory: File, file: File): DownloadedChapterContent? = synchronized(ioLock) {
+        val stored = readJson(file, DownloadedChapterContent::class.java) ?: return@synchronized null
+        if (stored.schemaVersion == 2) {
+            return@synchronized runCatching { requireNotNull(stored.body).validate(); stored }.getOrNull()
+        }
+        if (stored.schemaVersion !in 0..1) throw IOException("Unsupported downloaded chapter version")
+        val converted = runCatching {
+            val html = stored.contentHtml
+            val components = if (!html.isNullOrBlank()) {
+                val document = Jsoup.parseBodyFragment(html, stored.baseUrl ?: stored.url)
+                require(document.selectFirst("#oops input#pw, input#pw[name=pw]") == null)
+                require(!com.breakyuna.esjzone.network.external.CloudflareChallenge.hasChallengeDocumentMarkers(html))
+                document.select("img").filter { image ->
+                    IMAGE_URL_ATTRIBUTES.none { image.attr(it).isNotBlank() }
+                }.forEach { image ->
+                    image.before(org.jsoup.nodes.Element("span").text(missingImageLabel()))
+                    image.remove()
+                }
+                analyseComponents(document.body())
+            } else stored.components.map { component ->
+                if (component.type == IMAGE_COMPONENT && component.value.isNotBlank()) ImageComponent(component.value)
+                else TextComponent(if (component.type == IMAGE_COMPONENT) missingImageLabel() else component.value)
             }
+            require(components.isNotEmpty())
+            stored.copy(schemaVersion = 2, body = ChapterBody.from(components))
+        }.getOrNull() ?: return@synchronized null
+        // Reading remains possible if storage is full; the original file survives a failed rename.
+        runCatching { writeJson(file, converted, newWriteGuard(directory)) }
+        return@synchronized converted
+    }
+
+    private fun restoreComponents(directory: File, stored: DownloadedChapterContent): List<Component> {
+        val locations = imageLocations(directory, stored)
+        return requireNotNull(stored.body).components { locations[it] ?: it }.map { component ->
+            if (component is ImageComponent && component.url.isBlank()) TextComponent(missingImageLabel()) else component
         }
     }
 
@@ -1153,22 +1202,48 @@ object NovelDownloadStore {
 
     private fun readManifest(directory: File?): DownloadedNovelManifest? {
         if (directory == null) return null
-        return readJson(File(directory, MANIFEST_FILE), DownloadedNovelManifest::class.java)
+        return readJson(File(directory, MANIFEST_FILE), DownloadedNovelManifest::class.java)?.also {
+            if (it.version !in 1..2) throw IOException("Unsupported downloaded novel version")
+        }
     }
 
     private fun writeManifest(
         directory: File,
-        manifest: DownloadedNovelManifest,
-        writeGuard: DownloadWriteGuard? = null
+        incoming: DownloadedNovelManifest,
+        writeGuard: DownloadWriteGuard? = null,
+        replaceCatalog: Boolean = false,
+        updatePassword: Boolean = false
     ) {
+        ensureWriteAllowed(writeGuard)
+        val existing = readManifest(directory)
+        val manifest = mergeDownloadManifest(existing, incoming, replaceCatalog).let { rebased ->
+            val merged = if (updatePassword) rebased.copy(commonPassword = incoming.commonPassword) else rebased
+            val oldRecords = existing?.chapters.orEmpty().associateBy { chapterKey(it.url) }
+            val records = merged.chapters.map { record ->
+                val previous = oldRecords[chapterKey(record.url)]
+                val file = resolveLocalFile(directory, record.fileName)
+                if (!replaceCatalog && previous != null &&
+                    previous.downloaded == record.downloaded && previous.bodyAvailable == record.bodyAvailable &&
+                    previous.textLength == record.textLength && file?.isFile == (previous.bodyAvailable || previous.downloaded)) {
+                    return@map record.copy(requiresPassword = if (record.downloaded) false else record.requiresPassword)
+                }
+                val content = file?.let { readStoredChapter(directory, it) }
+                record.copy(bodyAvailable = content != null, downloaded = content?.hasAllImagesOnDisk(directory) == true,
+                    textLength = content?.body?.textLength, requiresPassword = content == null && record.requiresPassword)
+            }
+            merged.copy(version = 2, chapters = records,
+                complete = merged.catalogComplete && records.any { !it.localOnly } && records.filterNot { it.localOnly }.all { it.downloaded })
+        }
         val previousInventory = inventorySnapshot
         writeJson(File(directory, MANIFEST_FILE), manifest, writeGuard)
+        manifestCache[canonicalKey(manifest.url)] = manifest
+        mutableChanges.value += 1
         chapterIndex.clear()
         chapterIndexLoaded = false
         if (previousInventory != null) {
             // Successful chapter writes precede manifest publication. Avoid filesystem
             // checks here; inventory reconstruction still validates persisted files.
-            val count = manifest.chapters.count { it.downloaded }
+            val count = manifest.chapters.count { it.bodyAvailable || it.downloaded }
             val key = canonicalKey(manifest.url)
             dirtyInventorySizes += key
             val otherNovels = previousInventory.filterNot {
@@ -1365,8 +1440,7 @@ object NovelDownloadStore {
 
     private fun isChapterFullyDownloaded(directory: File, chapterFile: File): Boolean {
         if (!chapterFile.isFile || chapterFile.length() == 0L) return false
-        val content = readJson(chapterFile, DownloadedChapterContent::class.java) ?: return false
-        if (isPasswordProtectedChapterHtml(content.contentHtml.orEmpty())) return false
+        val content = readStoredChapter(directory, chapterFile) ?: return false
         return content.hasAllImagesOnDisk(directory)
     }
 
@@ -1501,7 +1575,9 @@ object NovelDownloadStore {
             }
         },
         contentHtml = contentHtml,
-        baseUrl = sourceUrl ?: chapter.url
+        baseUrl = sourceUrl ?: chapter.url,
+        schemaVersion = 2,
+        body = withStructuredBody().body
     )
 
     private fun DownloadedChapterRecord.toChapter() = Chapter(name, url, false)

@@ -199,6 +199,7 @@ class ChapterPageModel(
                         ?.let { "${EsjzoneUrls.Base}/detail/$it.html" }
                 val localOrder = targetNovelUrl?.let { url ->
                     runCatching { PresentationAccess.downloads.manifest(url)?.chapters
+                        ?.filterNot { it.localOnly }
                         ?.map { Chapter(it.name, it.url, false) } }.getOrNull()
                 }.orEmpty()
                 if (localOrder.isNotEmpty()) {

@@ -915,11 +915,11 @@ private fun ShelfCard(
             text = readingActivity?.let { activity ->
                 stringResource(
                     R.string.reader_book_progress_percent,
-                    (fullBookProgress(
+                    ((activity.bookProgress ?: fullBookProgress(
                         chapterIndex = activity.chapterIndex,
                         totalChapters = activity.totalChapters,
                         chapterProgress = activity.chapterProgress
-                    ) * 100).roundToInt()
+                    )) * 100).roundToInt()
                 )
             } ?: stringResource(R.string.bookshelf_unread),
             style = AppTypography.bodySmall,

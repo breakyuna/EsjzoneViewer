@@ -92,3 +92,13 @@
 
 # Coil 3, Haze, Telephoto, and Lottie use direct APIs here and supply their
 # own consumer rules where needed; broad library keeps are not warranted.
+
+# Versioned chapter snapshots and precise reading locations have stable wire names.
+-keep class com.breakyuna.esjzone.data.reader.ChapterBody { *; }
+-keep class com.breakyuna.esjzone.data.reader.StoredBlock { *; }
+-keep class com.breakyuna.esjzone.data.reader.StoredText { *; }
+-keep class com.breakyuna.esjzone.data.reader.StoredTextStyle { *; }
+-keep class com.breakyuna.esjzone.network.StructuredChapterCache$Snapshot { *; }
+-keep class com.breakyuna.esjzone.novellibrary.novel.Chapter { *; }
+-keep class com.breakyuna.esjzone.domain.reader.ReaderAnchor { *; }
+-keep class com.breakyuna.esjzone.database.entity.LocalReadingActivity { *; }

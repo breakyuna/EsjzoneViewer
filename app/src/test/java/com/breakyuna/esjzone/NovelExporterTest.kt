@@ -18,6 +18,27 @@ import org.junit.Test
 class NovelExporterTest {
 
     @Test
+    fun structuredTxtUsesBodyAndEpubRetainsRichSource() {
+        val record = manifest().chapters.single()
+        val body = com.breakyuna.esjzone.data.reader.ChapterBody.fromBlocks(listOf(
+            com.breakyuna.esjzone.domain.reader.ReaderBlock.Paragraph(listOf(
+                com.breakyuna.esjzone.domain.reader.ReaderBlock.Text("结构化正文")))
+        ))
+        val snapshot = chapter(record).copy(schemaVersion = 2, body = body,
+            components = listOf(DownloadedComponent("text", "旧简化文本")),
+            contentHtml = "<p>结构化正文<a href='https://example.com/reference'>引用</a></p><table><tr><td>表格</td></tr></table>")
+        val txt = ByteArrayOutputStream()
+        NovelExporter.exportTxt(manifest(), { snapshot }, txt)
+        assertTrue(txt.toString("UTF-8").contains("结构化正文"))
+        assertTrue(!txt.toString("UTF-8").contains("旧简化文本"))
+        val epub = ByteArrayOutputStream()
+        NovelExporter.exportEpub(manifest(), { snapshot }, epub)
+        assertTrue(epubChapter(epub).contains("https://example.com/reference"))
+        assertTrue(epubChapter(epub).contains("<table>"))
+    }
+
+
+    @Test
     fun selectedTxtChaptersFollowDirectoryOrderAndExcludeOtherContent() {
         val records = (1..3).map { number ->
             manifest().chapters.single().copy(index = number - 1, name = "Chapter $number", url = "/forum/1/$number.html")

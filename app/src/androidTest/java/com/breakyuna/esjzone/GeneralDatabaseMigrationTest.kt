@@ -41,7 +41,8 @@ class GeneralDatabaseMigrationTest {
             GeneralDatabase.MIGRATION_6_7,
             GeneralDatabase.MIGRATION_7_8,
             GeneralDatabase.MIGRATION_8_9,
-            GeneralDatabase.MIGRATION_9_10
+            GeneralDatabase.MIGRATION_9_10,
+            GeneralDatabase.MIGRATION_10_11
         )
         try {
             val sqlite = database.openHelper.writableDatabase
@@ -72,7 +73,8 @@ class GeneralDatabaseMigrationTest {
             GeneralDatabase.MIGRATION_6_7,
             GeneralDatabase.MIGRATION_7_8,
             GeneralDatabase.MIGRATION_8_9,
-            GeneralDatabase.MIGRATION_9_10
+            GeneralDatabase.MIGRATION_9_10,
+            GeneralDatabase.MIGRATION_10_11
         )
         try {
             val sqlite = database.openHelper.writableDatabase
@@ -105,7 +107,8 @@ class GeneralDatabaseMigrationTest {
             GeneralDatabase.MIGRATION_6_7,
             GeneralDatabase.MIGRATION_7_8,
             GeneralDatabase.MIGRATION_8_9,
-            GeneralDatabase.MIGRATION_9_10
+            GeneralDatabase.MIGRATION_9_10,
+            GeneralDatabase.MIGRATION_10_11
         )
         try {
             val sqlite = database.openHelper.writableDatabase
@@ -138,7 +141,8 @@ class GeneralDatabaseMigrationTest {
             GeneralDatabase.MIGRATION_6_7,
             GeneralDatabase.MIGRATION_7_8,
             GeneralDatabase.MIGRATION_8_9,
-            GeneralDatabase.MIGRATION_9_10
+            GeneralDatabase.MIGRATION_9_10,
+            GeneralDatabase.MIGRATION_10_11
         )
         try {
             val sqlite = database.openHelper.writableDatabase
@@ -243,7 +247,8 @@ class GeneralDatabaseMigrationTest {
             GeneralDatabase.MIGRATION_6_7,
             GeneralDatabase.MIGRATION_7_8,
             GeneralDatabase.MIGRATION_8_9,
-            GeneralDatabase.MIGRATION_9_10
+            GeneralDatabase.MIGRATION_9_10,
+            GeneralDatabase.MIGRATION_10_11
         )
         try {
             val sqlite = database.openHelper.writableDatabase
@@ -305,7 +310,8 @@ class GeneralDatabaseMigrationTest {
             GeneralDatabase.MIGRATION_6_7,
             GeneralDatabase.MIGRATION_7_8,
             GeneralDatabase.MIGRATION_8_9,
-            GeneralDatabase.MIGRATION_9_10
+            GeneralDatabase.MIGRATION_9_10,
+            GeneralDatabase.MIGRATION_10_11
         )
         try {
             val sqlite = database.openHelper.writableDatabase
@@ -369,7 +375,8 @@ class GeneralDatabaseMigrationTest {
             databaseName,
             GeneralDatabase.MIGRATION_7_8,
             GeneralDatabase.MIGRATION_8_9,
-            GeneralDatabase.MIGRATION_9_10
+            GeneralDatabase.MIGRATION_9_10,
+            GeneralDatabase.MIGRATION_10_11
         )
         try {
             val sqlite = database.openHelper.writableDatabase
@@ -426,6 +433,39 @@ class GeneralDatabaseMigrationTest {
         } finally {
             helper.close()
             context.deleteDatabase(databaseName)
+        }
+    }
+
+    @Test
+    fun migration10To11PreservesHistoryAndAddsNullablePrecisePosition() {
+        val name = "general-migration-v10-${System.nanoTime()}"
+        createFixtureDatabase(name, 10) { sqlite ->
+            createVersion1Schema(sqlite)
+            listOf(GeneralDatabase.MIGRATION_1_2, GeneralDatabase.MIGRATION_2_3,
+                GeneralDatabase.MIGRATION_3_4, GeneralDatabase.MIGRATION_4_5,
+                GeneralDatabase.MIGRATION_5_6, GeneralDatabase.MIGRATION_6_7,
+                GeneralDatabase.MIGRATION_7_8, GeneralDatabase.MIGRATION_8_9,
+                GeneralDatabase.MIGRATION_9_10).forEach { it.migrate(sqlite) }
+            insertReadingRow(sqlite, "old-position", 200L, 100L)
+        }
+        val database = openWithMigrations(name, GeneralDatabase.MIGRATION_10_11)
+        try {
+            val sqlite = database.openHelper.writableDatabase
+            sqlite.query("SELECT chapter_progress, content_anchor, book_progress FROM local_reading_history WHERE activity_id = 'old-position'").use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                assertEquals(0.1f, cursor.getFloat(0), 0.0001f)
+                assertTrue(cursor.isNull(1))
+                assertTrue(cursor.isNull(2))
+            }
+            val row = database.localReadingActivityDao().getLatest()!!
+            val anchor = com.breakyuna.esjzone.domain.reader.ReaderAnchor.encode(
+                com.breakyuna.esjzone.domain.reader.ReaderAnchor("/forum/1/1.html", "a".repeat(64), 2, 17))
+            database.localReadingActivityDao().upsertLatest(row.copy(anchor = anchor, bookProgress = 0.25f))
+            assertEquals(anchor, database.localReadingActivityDao().getLatest()!!.anchor)
+            assertEquals(0.25f, database.localReadingActivityDao().getLatest()!!.bookProgress!!, 0f)
+        } finally {
+            database.close()
+            ApplicationProvider.getApplicationContext<android.content.Context>().deleteDatabase(name)
         }
     }
 

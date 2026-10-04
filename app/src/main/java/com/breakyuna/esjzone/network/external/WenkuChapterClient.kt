@@ -2,6 +2,7 @@ package com.breakyuna.esjzone.network.external
 
 import android.content.Context
 import com.breakyuna.esjzone.network.EsjzoneUrls
+import com.breakyuna.esjzone.network.StructuredChapterCache
 import com.breakyuna.esjzone.network.PageCache
 import com.breakyuna.esjzone.network.PageCacheTtl
 import com.breakyuna.esjzone.network.PageKind
@@ -71,8 +72,12 @@ internal class WenkuChapterClient(context: Context, userAgent: String) {
              onSecurityCheck: (() -> Unit)? = null): DetailedChapter {
         if (resolveChapterSource(url) != ChapterSource.WENKU8) throw UnsupportedExternalChapterException()
         val key = cacheKey(url)
+        if (!forceRefresh) StructuredChapterCache.read(key, url)?.let { return it }
         if (!forceRefresh) PageCache.read(key, PageCacheTtl.CHAPTER)?.let { cached ->
-            runCatching { validateAndParse(cached, chapter, url) }.getOrNull()?.let { return it }
+            runCatching { validateAndParse(cached, chapter, url) }.getOrNull()?.let {
+                StructuredChapterCache.write(key, cached, it)
+                return it
+            }
             PageCache.remove(key)
         }
         if (allowAutoSolve && browser.isReady()) {
@@ -119,7 +124,10 @@ internal class WenkuChapterClient(context: Context, userAgent: String) {
     }
 
     private fun cacheChapter(url: String, detail: DetailedChapter): String =
-        ExternalChapterHtml.cacheDocument(detail, url).also { PageCache.write(cacheKey(url), it) }
+        ExternalChapterHtml.cacheDocument(detail, url).also {
+            PageCache.write(cacheKey(url), it)
+            StructuredChapterCache.write(cacheKey(url), it, detail)
+        }
 
     private fun validateAndParse(html: String, chapter: Chapter, url: String): DetailedChapter {
         if (!PageResponsePolicy.validate(200, html, url, kind = PageKind.EXTERNAL_CHAPTER).trusted) {

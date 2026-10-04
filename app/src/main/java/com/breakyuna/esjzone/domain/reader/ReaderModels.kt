@@ -54,7 +54,8 @@ data class ReaderChapterDocument(
     val previous: ReaderChapterRef? = null,
     val next: ReaderChapterRef? = null,
     val contentHtml: String? = null,
-    val sourceUrl: String? = null
+    val sourceUrl: String? = null,
+    val contentFingerprint: String = ""
 )
 
 @Immutable
@@ -71,7 +72,9 @@ data class ReadingProgress(
     val startedAt: Long,
     val lastReadAt: Long,
     val durationMs: Long,
-    val novelCoverUrl: String = ""
+    val novelCoverUrl: String = "",
+    val anchor: String? = null,
+    val bookProgress: Float? = null
 )
 
 @Immutable

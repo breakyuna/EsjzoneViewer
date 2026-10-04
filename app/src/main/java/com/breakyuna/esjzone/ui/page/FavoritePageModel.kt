@@ -19,6 +19,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -115,6 +116,7 @@ class FavoritePageModel(private val authorization: Authorization) :
     // Exclude unread recent additions from the showcase; no remote history or extra requests.
     val readingIndex: StateFlow<ReadingIndex> =
         PresentationAccess.database.localReadingActivityDao().observeAll()
+        .combine(PresentationAccess.downloads.changes) { rows, _ -> rows.map(PresentationAccess.downloads::refreshProgress) }
         .map { activities ->
             val latestByNovelId = HashMap<String, LocalReadingActivity>()
             val latestByBookKey = HashMap<String, LocalReadingActivity>()
@@ -143,7 +145,7 @@ class FavoritePageModel(private val authorization: Authorization) :
             )
         }
         .distinctUntilChanged()
-        .flowOn(Dispatchers.Default)
+        .flowOn(Dispatchers.IO)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), ReadingIndex())
 
     private val _downloadedBookKeys = MutableStateFlow<Set<String>>(emptySet())

@@ -48,7 +48,7 @@ object NovelExporter {
                     ?: error("Downloaded chapter ${record.index + 1} is unavailable for export")
                 writer.appendLine(chapter.name.ifBlank { record.name })
                 writer.appendLine()
-                chapter.components.forEach { component ->
+                chapter.exportComponents().forEach { component ->
                     when (component.type) {
                         "image" -> writer.appendLine("[图片：${component.value}]")
                         else -> writer.appendLine(component.value)
@@ -73,7 +73,7 @@ object NovelExporter {
             val chapter = chapterLoader(record)
                 ?: error("Downloaded chapter ${record.index + 1} is unavailable for export")
             chapters += record to chapter.name.ifBlank { record.name }
-            chapter.components.filter { it.type == "image" }.forEach imageLoop@{ component ->
+            chapter.exportComponents().filter { it.type == "image" }.forEach imageLoop@{ component ->
                 val key = component.imageKey()
                 val file = imageLoader(component)?.takeIf(File::isFile) ?: return@imageLoop
                 // SVG is active XML; do not copy unsanitized remote documents into an EPUB.
@@ -131,6 +131,18 @@ object NovelExporter {
             }
         }
         return chapters
+    }
+
+    private fun DownloadedChapterContent.exportComponents(): List<DownloadedComponent> {
+        val body = body ?: return components
+        val assets = components.filter { it.type == "image" }.associateBy { it.value }
+        return body.blocks.map { block ->
+            when (block.type) {
+                "image" -> assets[block.image] ?: DownloadedComponent("image", block.image.orEmpty())
+                "break" -> DownloadedComponent("text", "\n")
+                else -> DownloadedComponent("text", block.parts.joinToString("") { it.text })
+            }
+        }
     }
 
     private fun containerXml() = """<?xml version="1.0" encoding="UTF-8"?>
@@ -207,7 +219,7 @@ object NovelExporter {
         index: Int,
         images: Map<String, EpubImage>
     ): String {
-        val body = richChapterHtml(chapter, images) ?: chapter.components.joinToString("\n") { component ->
+        val body = richChapterHtml(chapter, images) ?: chapter.exportComponents().joinToString("\n") { component ->
             when (component.type) {
                 "image" -> images[component.imageKey()]?.let { image ->
                     "    <div class=\"image\"><img src=\"${xml(image.href)}\" alt=\"插图\"/></div>"
@@ -288,7 +300,7 @@ object NovelExporter {
                 .forEach { element.removeAttr(it.key) }
         }
 
-        val imageComponents = chapter.components.filter { it.type == "image" }
+        val imageComponents = chapter.exportComponents().filter { it.type == "image" }
         document.select("img").forEach { image ->
             val candidates = IMAGE_URL_ATTRIBUTES.mapNotNull { attribute ->
                 image.absUrl(attribute)

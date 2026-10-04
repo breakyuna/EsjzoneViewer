@@ -1,5 +1,7 @@
 package com.breakyuna.esjzone.network.features
 
+import com.breakyuna.esjzone.data.reader.withStructuredBody
+import com.breakyuna.esjzone.network.StructuredChapterCache
 import com.breakyuna.esjzone.network.Authorization
 import com.breakyuna.esjzone.network.EsjzoneClient
 import com.breakyuna.esjzone.network.EsjzoneUrls
@@ -50,7 +52,6 @@ fun EsjzoneClient.getChapterDetail(
 
     if (preferDownloaded) {
         NovelDownloadStore.readChapter(targetUrl)
-            ?.takeUnless { source == ChapterSource.ESJ_ZONE && isPasswordProtectedChapterHtml(it.contentHtml.orEmpty(), targetUrl) }
             ?.let { downloaded ->
             AppLogger.i("GetChapterDetail", "Using downloaded ${source.name} chapter")
             return downloaded
@@ -67,6 +68,8 @@ fun EsjzoneClient.getChapterDetail(
         }
     }
 
+    val cacheKey = novelDetailCacheKey(authorization, targetUrl)
+    if (!forceRefresh) StructuredChapterCache.read(cacheKey, targetUrl)?.let { return it }
     AppLogger.i("GetChapterDetail", "Fetching ESJ chapter: ${chapter.name} at $targetUrl")
     val responseBody = try {
         getPage(
@@ -78,7 +81,6 @@ fun EsjzoneClient.getChapterDetail(
         )
     } catch (error: Exception) {
         NovelDownloadStore.readChapter(targetUrl)
-            ?.takeUnless { isPasswordProtectedChapterHtml(it.contentHtml.orEmpty(), targetUrl) }
             ?.let { downloaded ->
             AppLogger.w(
                 "GetChapterDetail",
@@ -92,7 +94,9 @@ fun EsjzoneClient.getChapterDetail(
 
     val document = Jsoup.parse(responseBody, targetUrl)
     if (isPasswordProtectedChapterHtml(responseBody, targetUrl)) throw ChapterPasswordRequiredException()
-    return document.toDetailedChapter(chapter, targetUrl)
+    return document.toDetailedChapter(chapter, targetUrl).also {
+        StructuredChapterCache.write(cacheKey, responseBody, it)
+    }
 }
 
 /**
@@ -186,7 +190,7 @@ private fun Document.toDetailedChapter(chapter: Chapter, targetUrl: String): Det
         next,
         contentElement?.html(),
         targetUrl
-    )
+    ).withStructuredBody()
 }
 
 private fun parseChapterNav(element: Element?, targetUrl: String): Chapter? {

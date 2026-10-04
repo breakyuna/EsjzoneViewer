@@ -199,7 +199,9 @@ internal fun ReaderPageContent(
     textTransform: (String) -> String,
     availableHeight: Dp,
     underlines: List<ReaderUnderline> = emptyList(),
-    onUnderline: (ReaderUnderline, Boolean) -> Unit = { _, _ -> }
+    onUnderline: (ReaderUnderline, Boolean) -> Unit = { _, _ -> },
+    highlights: List<com.breakyuna.esjzone.domain.reader.ReaderHighlight> = emptyList(),
+    textOffsets: (Int) -> com.breakyuna.esjzone.domain.reader.ReaderTextOffsets? = { null }
 ) {
     val content: @Composable () -> Unit = {
         // Ordinary pages keep their unclipped margins. A title or single line
@@ -225,11 +227,19 @@ internal fun ReaderPageContent(
                         signature = segment.signature,
                         offset = segment.startOffset,
                         underlines = underlines,
-                        onUnderline = onUnderline
+                        onUnderline = onUnderline,
+                        highlights = highlights.filter { it.blockIndex == segment.blockIndex }.mapNotNull { range ->
+                            textOffsets(segment.blockIndex)?.let { offsets ->
+                                androidx.compose.ui.text.TextRange(
+                                    (offsets.toDisplay(range.start) - segment.startOffset).coerceIn(0, segment.text.length),
+                                    (offsets.toDisplay(range.end) - segment.startOffset).coerceIn(0, segment.text.length))
+                            }
+                        }
                     )
                     is ReaderPageSegment.Image -> ReaderImage(
                         url = segment.url,
                         contentDescription = stringResource(R.string.reader_open_image),
+                        contentColor = contentColor,
                         modifier = Modifier.heightIn(max = availableHeight),
                         contentScale = ContentScale.Fit
                     )

@@ -39,6 +39,26 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 class ReaderPaginationInstrumentedTest {
     @Test
+    fun actualIcuConversionKeepsSourceBoundariesAndSearchPositions() {
+        val source = "蔿后文漢語"
+        val offsets = com.breakyuna.esjzone.ui.reader.ReaderScriptConverter.mapping(source,
+            com.breakyuna.esjzone.ui.reader.ReaderScript.SIMPLIFIED)
+        val expected = android.icu.text.Transliterator.getInstance("Traditional-Simplified").transliterate(source)
+        assertEquals(expected, offsets.text)
+        source.indices.forEach { offset ->
+            assertEquals(offset, offsets.toSource(offsets.toDisplay(offset)))
+        }
+        assertEquals(source.length, offsets.toSource(offsets.text.length))
+        val body = com.breakyuna.esjzone.data.reader.ChapterBody.fromBlocks(listOf(ReaderBlock.Text(source)))
+        val document = com.breakyuna.esjzone.domain.reader.ReaderChapterDocument(
+            com.breakyuna.esjzone.domain.reader.ReaderChapterRef("Chapter", "/forum/1/1.html"),
+            body.readerBlocks(), contentFingerprint = body.fingerprint)
+        val hit = com.breakyuna.esjzone.domain.reader.searchReaderDocument(document, "/forum/1/1.html", "后文") { offsets }.single()
+        assertEquals(1, hit.anchor.offset)
+        assertEquals(3, hit.highlights.single().end)
+    }
+
+    @Test
     fun transformedFragmentsShareTheFullRenderedParagraphSignature() {
         val source = "蔿后文 ".repeat(80)
         val rendered = source.replace("蔿", "𫇭")

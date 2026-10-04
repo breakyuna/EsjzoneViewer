@@ -1,5 +1,6 @@
 package com.breakyuna.esjzone.network.external
 
+import com.breakyuna.esjzone.data.reader.withStructuredBody
 import com.breakyuna.esjzone.network.EsjzoneUrls
 import com.breakyuna.esjzone.novellibrary.component.analyseComponents
 import com.breakyuna.esjzone.novellibrary.novel.Chapter
@@ -67,7 +68,7 @@ internal object ExternalChapterHtml {
         return DetailedChapter(
             title, analyseComponents(content), previous, next,
             content.html(), url
-        )
+        ).withStructuredBody()
     }
 
     fun cacheDocument(detail: DetailedChapter, url: String): String {

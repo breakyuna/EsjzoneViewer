@@ -61,5 +61,7 @@ data class DetailedChapter(
     val previous: Chapter?,
     val next: Chapter?,
     val contentHtml: String? = null,
-    val sourceUrl: String? = null
+    val sourceUrl: String? = null,
+    val body: com.breakyuna.esjzone.data.reader.ChapterBody? = null,
+    val imageLocations: Map<String, String> = emptyMap()
 ) : Serializable

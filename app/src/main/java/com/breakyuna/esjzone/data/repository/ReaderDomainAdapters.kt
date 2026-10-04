@@ -1,34 +1,18 @@
 package com.breakyuna.esjzone.data.repository
 
-import androidx.compose.ui.graphics.Color
 import com.breakyuna.esjzone.database.GeneralDatabase
 import com.breakyuna.esjzone.database.entity.Bookmark
 import com.breakyuna.esjzone.database.entity.LocalReadingActivity
-import com.breakyuna.esjzone.domain.reader.ReaderBlock
 import com.breakyuna.esjzone.domain.reader.ReaderBookmark
 import com.breakyuna.esjzone.domain.reader.ReaderChapterDocument
 import com.breakyuna.esjzone.domain.reader.ReaderChapterRef
 import com.breakyuna.esjzone.domain.reader.ReaderChapterRepository
-import com.breakyuna.esjzone.domain.reader.ReaderRuby
-import com.breakyuna.esjzone.domain.reader.ReaderTextStyle
 import com.breakyuna.esjzone.domain.reader.ReadingProgress
 import com.breakyuna.esjzone.domain.reader.ReadingProgressRepository
 import com.breakyuna.esjzone.domain.reader.ReaderBookmarkRepository
 import com.breakyuna.esjzone.domain.repository.ReaderRepository
 import com.breakyuna.esjzone.network.Authorization
-import com.breakyuna.esjzone.novellibrary.component.BackgroundColorTextStyle
-import com.breakyuna.esjzone.novellibrary.component.BoldTextStyle
-import com.breakyuna.esjzone.novellibrary.component.ColorTextStyle
 import com.breakyuna.esjzone.novellibrary.component.Component
-import com.breakyuna.esjzone.novellibrary.component.FontSizeTextStyle
-import com.breakyuna.esjzone.novellibrary.component.FuriganaTextStyle
-import com.breakyuna.esjzone.novellibrary.component.ImageComponent
-import com.breakyuna.esjzone.novellibrary.component.ItalicTextStyle
-import com.breakyuna.esjzone.novellibrary.component.LineThroughTextStyle
-import com.breakyuna.esjzone.novellibrary.component.NewLineComponent
-import com.breakyuna.esjzone.novellibrary.component.TextComponent
-import com.breakyuna.esjzone.novellibrary.component.TextStyle
-import com.breakyuna.esjzone.novellibrary.component.UnderlineTextStyle
 import com.breakyuna.esjzone.novellibrary.novel.Chapter
 
 /** Adapts the verified legacy chapter loader without moving network or cache policy into domain. */
@@ -41,11 +25,12 @@ class LegacyReaderChapterRepository(
         val detail = delegate.chapter(authorization, source)
         return ReaderChapterDocument(
             chapter = chapter,
-            blocks = detail.content.flatMap(Component::toReaderBlocks),
+            blocks = detail.body?.readerBlocks { detail.imageLocations[it] ?: it } ?: detail.content.flatMap(Component::toReaderBlocks),
             previous = detail.previous?.toReaderRef(),
             next = detail.next?.toReaderRef(),
             contentHtml = detail.contentHtml,
-            sourceUrl = detail.sourceUrl
+            sourceUrl = detail.sourceUrl,
+            contentFingerprint = detail.body?.fingerprint.orEmpty()
         )
     }
 }
@@ -82,55 +67,9 @@ class DatabaseReaderBookmarkRepository(
 
 private fun Chapter.toReaderRef() = ReaderChapterRef(name = name, url = url)
 
-private fun Component.toReaderBlocks(): List<ReaderBlock> = when (this) {
-    is ImageComponent -> listOf(ReaderBlock.Image(url))
-    is NewLineComponent -> listOf(ReaderBlock.LineBreak)
-    is TextComponent -> {
-        ReaderBlock.Paragraph(flattenReaderParts()).let(::listOf)
-    }
-    else -> emptyList()
-}
-
-private fun TextComponent.flattenReaderParts(): List<ReaderBlock.Text> = buildList {
-    fun appendPart(component: TextComponent) {
-        val ruby = component.getStyles().filterIsInstance<FuriganaTextStyle>().firstOrNull()?.readingText()
-        add(
-            ReaderBlock.Text(
-                value = component.text,
-                styles = component.getStyles().mapNotNull(TextStyle::toReaderStyle).toSet(),
-                ruby = ruby?.let { ReaderRuby(base = component.text, reading = it.asPlainText()) }
-            )
-        )
-        component.getExtras().forEach(::appendPart)
-    }
-    appendPart(this@flattenReaderParts)
-}
-
-private fun TextComponent.asPlainText(): String =
-    text + getExtras().joinToString(separator = "") { it.asPlainText() }
-
-private fun TextStyle.toReaderStyle(): ReaderTextStyle? = when {
-    this === BoldTextStyle -> ReaderTextStyle.Bold
-    this === ItalicTextStyle -> ReaderTextStyle.Italic
-    this === UnderlineTextStyle -> ReaderTextStyle.Underline
-    this === LineThroughTextStyle -> ReaderTextStyle.StrikeThrough
-    this is FontSizeTextStyle -> ReaderTextStyle.FontSizePx(size())
-    this is ColorTextStyle -> color().toReaderColor { red, green, blue ->
-        ReaderTextStyle.ForegroundColor(red, green, blue)
-    }
-    this is BackgroundColorTextStyle -> color().toReaderColor { red, green, blue ->
-        ReaderTextStyle.BackgroundColor(red, green, blue)
-    }
-    this is FuriganaTextStyle -> null
-    else -> null
-}
-
-private fun Color.toReaderColor(factory: (Int, Int, Int) -> ReaderTextStyle): ReaderTextStyle =
-    factory((red * 255).toInt(), (green * 255).toInt(), (blue * 255).toInt())
-
 private fun LocalReadingActivity.toDomain() = ReadingProgress(
     activityId, novelId, novelName, novelUrl, chapterUrl, chapterName, chapterIndex, totalChapters,
-    chapterProgress, startedAt, lastReadAt, durationMs, novelCoverUrl
+    chapterProgress, startedAt, lastReadAt, durationMs, novelCoverUrl, anchor, bookProgress
 )
 
 private fun ReadingProgress.toEntity() = LocalReadingActivity(
@@ -146,7 +85,9 @@ private fun ReadingProgress.toEntity() = LocalReadingActivity(
     startedAt = startedAt,
     lastReadAt = lastReadAt,
     durationMs = durationMs,
-    novelCoverUrl = novelCoverUrl
+    novelCoverUrl = novelCoverUrl,
+    anchor = anchor,
+    bookProgress = bookProgress
 )
 
 private fun Bookmark.toDomain() = ReaderBookmark(

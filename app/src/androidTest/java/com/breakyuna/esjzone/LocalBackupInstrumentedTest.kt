@@ -22,6 +22,43 @@ import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
 class LocalBackupInstrumentedTest {
+    @Test fun historyAnchorRoundTripsWithoutDownloadingOrRestoringOtherCategories() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val source = Room.inMemoryDatabaseBuilder(context, GeneralDatabase::class.java).build()
+        val target = Room.inMemoryDatabaseBuilder(context, GeneralDatabase::class.java).build()
+        val file = File.createTempFile("history-backup-", ".zip", context.cacheDir)
+        try {
+            val anchor = com.breakyuna.esjzone.domain.reader.ReaderAnchor("/forum/1/2.html", "a".repeat(64), 3, 12)
+            val row = com.breakyuna.esjzone.database.entity.LocalReadingActivity("local:1", "1", "Novel",
+                "https://www.esjzone.cc/detail/1.html", "/forum/1/2.html", "Chapter", 1, 10, 0.4f,
+                1L, 2L, 100L, anchor = com.breakyuna.esjzone.domain.reader.ReaderAnchor.encode(anchor), bookProgress = 0.14f)
+            source.localReadingActivityDao().upsertLatest(row)
+            val categories = setOf(BackupCategory.HISTORY)
+            LocalBackup.export(context, Uri.fromFile(file), source, "source", categories)
+            java.util.zip.ZipFile(file).use { zip ->
+                val json = com.google.gson.JsonParser.parseString(zip.getInputStream(zip.getEntry("backup.json")).reader().readText()).asJsonObject
+                assertEquals(2, json["version"].asInt)
+            }
+            LocalBackup.restore(context, Uri.fromFile(file), target, "target", categories)
+            assertEquals(row, target.localReadingActivityDao().getAll().single())
+            assertTrue(target.bookmarkDao().getAll().isEmpty())
+            // An old history archive has neither precise-position field.
+            val legacy = java.util.zip.ZipFile(file).use { zip ->
+                com.google.gson.JsonParser.parseString(zip.getInputStream(zip.getEntry("backup.json")).reader().readText()).asJsonObject
+            }
+            legacy.addProperty("version", 1)
+            legacy["history"].asJsonArray[0].asJsonObject.apply { remove("anchor"); remove("bookProgress") }
+            java.util.zip.ZipOutputStream(file.outputStream()).use { zip ->
+                zip.putNextEntry(java.util.zip.ZipEntry("backup.json"))
+                zip.write(legacy.toString().toByteArray(Charsets.UTF_8))
+                zip.closeEntry()
+            }
+            target.localReadingActivityDao().deleteAll()
+            LocalBackup.restore(context, Uri.fromFile(file), target, "target", categories)
+            assertEquals(row.copy(anchor = null, bookProgress = null), target.localReadingActivityDao().getAll().single())
+        } finally { source.close(); target.close(); file.delete() }
+    }
+
     @Test fun selectedCategoriesRoundTripAndGroupsStayLocal() = runBlocking {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val source = Room.inMemoryDatabaseBuilder(context, GeneralDatabase::class.java).build()
