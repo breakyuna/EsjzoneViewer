@@ -84,6 +84,20 @@ class StructuredChapterTest {
     }
 
     @Test
+    fun sameLengthSubstitutionsPreserveExpandedSourceRanges() {
+        val text = ReaderMappedText("甲乙丙")
+        text.replace(1, 2, "乙乙")
+        val before = text.snapshot()
+        text.replace(0, text.length(), "丁戊己庚")
+        val after = text.snapshot()
+        assertEquals("丁戊己庚", after.text)
+        assertArrayEquals(before.sourceStarts, after.sourceStarts)
+        assertArrayEquals(before.sourceEnds, after.sourceEnds)
+        assertEquals(1, after.toSource(2))
+        assertEquals(3, after.toDisplay(2))
+    }
+
+    @Test
     fun searchConvertedTextMapsResultBackToSource() {
         val body = ChapterBody.from(listOf(TextComponent("甲乙丙")))
         val document = ReaderChapterDocument(ReaderChapterRef("标题", "/forum/1/1.html"), body.readerBlocks(), contentFingerprint = body.fingerprint)
@@ -98,5 +112,40 @@ class StructuredChapterTest {
         val document = ReaderChapterDocument(ReaderChapterRef("标题", "/forum/1/1.html"), body.readerBlocks(), contentFingerprint = body.fingerprint)
         assertEquals(0.5f, readerChapterProgress(document, ReaderAnchor("/forum/1/1.html", body.fingerprint, 1, 49)), 0.0001f)
         assertEquals(1f, readerChapterProgress(document, ReaderAnchor("/forum/1/1.html", body.fingerprint, 1, kind = "end")), 0f)
+    }
+
+    @Test
+    fun layoutFallbackUsesSourceCharactersAndPreservesImageFractions() {
+        val document = ReaderChapterDocument(ReaderChapterRef("标题", "/forum/1/1.html"), listOf(
+            ReaderBlock.Paragraph(listOf(ReaderBlock.Text("甲"), ReaderBlock.Text("😀乙"))),
+            ReaderBlock.Image("image.png"), ReaderBlock.Text("下一段")
+        ))
+        val anchor = ReaderAnchor("/forum/1/1.html", "", 0, 3)
+        assertEquals(0.75f, readerContentPosition(document, anchor), 0f)
+        assertEquals(1f, readerContentPosition(document, anchor.copy(offset = 10)), 0f)
+        assertEquals(1.4f, readerContentPosition(document, anchor.copy(blockIndex = 1, kind = "image", fraction = 0.4f)), 0f)
+        assertEquals(-1f, readerContentPosition(document, anchor.copy(blockIndex = -1, kind = "heading")), 0f)
+        assertEquals(3f, readerContentPosition(document, anchor.copy(kind = "end")), 0f)
+    }
+
+    @Test
+    fun repeatedProgressQueriesDoNotTraverseTheDocumentAgain() {
+        val values = listOf(
+            ReaderBlock.Paragraph(listOf(ReaderBlock.Text("甲"), ReaderBlock.Text("😀"))),
+            ReaderBlock.LineBreak, ReaderBlock.Image("image.png"), ReaderBlock.Text("乙".repeat(9))
+        )
+        var reads = 0
+        val blocks = object : AbstractList<ReaderBlock>() {
+            override val size: Int get() = values.size
+            override fun get(index: Int): ReaderBlock { reads++; return values[index] }
+        }
+        val document = ReaderChapterDocument(ReaderChapterRef("标题", "/forum/1/1.html"), blocks)
+        val anchor = ReaderAnchor("/forum/1/1.html", "", 3, 3)
+        assertEquals(0.5f, readerChapterProgress(document, anchor), 0f)
+        val initialReads = reads
+        repeat(100) { assertEquals(0.5f, readerChapterProgress(document, anchor), 0f) }
+        assertEquals(initialReads, reads)
+        val changed = document.copy(blocks = listOf(ReaderBlock.Text("甲".repeat(20))))
+        assertEquals(0.25f, readerChapterProgress(changed, anchor.copy(blockIndex = 0, offset = 5)), 0f)
     }
 }

@@ -99,7 +99,8 @@ class ChapterPageModel(
     private val prefetchedDetails = mutableMapOf<String, DetailedChapter>()
     private val offlineChapterKeys = mutableSetOf<String>()
     private val prefetchJobs = mutableMapOf<String, Job>()
-    private var orderedChapters = normalizeChapterOrder(chapterOrder)
+    private var catalog = ReaderChapterCatalog(chapterOrder)
+    private val orderedChapters: List<Chapter> get() = catalog.chapters
     private var orderResolved = orderedChapters.isNotEmpty()
     val chapterOrderState = mutableStateOf(orderedChapters)
     private var sessionId = 0L
@@ -203,9 +204,10 @@ class ChapterPageModel(
                         ?.map { Chapter(it.name, it.url, false) } }.getOrNull()
                 }.orEmpty()
                 if (localOrder.isNotEmpty()) {
+                    val localCatalog = ReaderChapterCatalog(localOrder)
                     synchronized(lock) {
                         if (isCurrentSessionLocked(currentSession) && orderedChapters.isEmpty()) {
-                            orderedChapters = normalizeChapterOrder(localOrder)
+                            catalog = localCatalog
                             chapterOrderState.value = orderedChapters
                         }
                     }
@@ -253,12 +255,13 @@ class ChapterPageModel(
                 return@launch
             }
 
+            val document = detail.toReaderDocument(chapter)
             synchronized(lock) {
                 if (isCurrentSessionLocked(currentSession)) {
                     val loadedOffline = offlineChapterKeys.remove(chapterKey(chapter))
                     loadedChapters += ReaderChapter(
                         chapter = chapter,
-                        document = detail.toReaderDocument(chapter),
+                        document = document,
                         fallbackPrevious = detail.previous,
                         fallbackNext = detail.next,
                         isOffline = loadedOffline
@@ -306,11 +309,12 @@ class ChapterPageModel(
                 return@launch
             }
             if (!isCurrentSession(currentSession)) return@launch
+            val document = detail.toReaderDocument(target)
             synchronized(lock) {
                 if (isCurrentSessionLocked(currentSession)) {
                     loadedChapters += ReaderChapter(
                         chapter = target,
-                        document = detail.toReaderDocument(target),
+                        document = document,
                         fallbackPrevious = detail.previous,
                         fallbackNext = detail.next
                     )
@@ -357,6 +361,7 @@ class ChapterPageModel(
             try {
                 val detail = loadDetail(chapterToLoad)
                 if (detail != null && isCurrentSession(session)) {
+                    val document = detail.toReaderDocument(chapterToLoad)
                     synchronized(lock) {
                         if (isCurrentSessionLocked(session) &&
                             loadedChapters.none { sameChapter(it.chapter, chapterToLoad) }
@@ -364,7 +369,7 @@ class ChapterPageModel(
                             val loadedOffline = offlineChapterKeys.remove(chapterKey(chapterToLoad))
                             loadedChapters += ReaderChapter(
                                 chapter = chapterToLoad,
-                                document = detail.toReaderDocument(chapterToLoad),
+                                document = document,
                                 fallbackPrevious = detail.previous,
                                 fallbackNext = detail.next,
                                 isOffline = loadedOffline
@@ -444,6 +449,7 @@ class ChapterPageModel(
             try {
                 val detail = loadDetail(chapterToLoad)
                 if (detail != null && isCurrentSession(session)) {
+                    val document = detail.toReaderDocument(chapterToLoad)
                     synchronized(lock) {
                         if (isCurrentSessionLocked(session) &&
                             loadedChapters.none { sameChapter(it.chapter, chapterToLoad) }
@@ -453,7 +459,7 @@ class ChapterPageModel(
                                 0,
                                 ReaderChapter(
                                     chapter = chapterToLoad,
-                                    document = detail.toReaderDocument(chapterToLoad),
+                                    document = document,
                                     fallbackPrevious = detail.previous,
                                     fallbackNext = detail.next,
                                     isOffline = loadedOffline
@@ -693,9 +699,10 @@ class ChapterPageModel(
             emptyList()
         }
 
+        val fetchedCatalog = fetchedOrder.takeIf { it.isNotEmpty() }?.let(::ReaderChapterCatalog)
         synchronized(lock) {
             if (fetchedOrder.isNotEmpty()) {
-                orderedChapters = normalizeChapterOrder(fetchedOrder)
+                catalog = requireNotNull(fetchedCatalog)
                 chapterOrderState.value = orderedChapters
             }
             orderResolved = true
@@ -706,21 +713,7 @@ class ChapterPageModel(
         chapter: Chapter,
         offset: Int,
         fallback: Chapter?
-    ): Chapter? {
-        val (adjacent, currentInCanonicalOrder) = synchronized(lock) {
-            val index = orderedChapters.indexOfFirst { sameChapter(it, chapter) }
-            (if (index >= 0) orderedChapters.getOrNull(index + offset) else null) to
-                (index >= 0)
-        }
-        if (adjacent != null) return adjacent.takeUnless { it.isExternal }
-        // A history record can point to a valid chapter that the refreshed TOC
-        // no longer contains.  In that case the live chapter's previous/next
-        // link is the only usable continuation.  If the chapter is present in
-        // the canonical TOC, keep its boundary authoritative and do not follow
-        // unrelated site navigation links.
-        if (currentInCanonicalOrder) return null
-        return fallback?.takeUnless { it.isExternal }
-    }
+    ): Chapter? = synchronized(lock) { catalog.adjacent(chapter, offset, fallback) }
 
     private fun publish(currentSession: Long? = null) {
         synchronized(lock) {
@@ -738,7 +731,7 @@ class ChapterPageModel(
                 next = last?.let { adjacentChapter(it.chapter, 1, it.fallbackNext) },
                 isLoadingNext = loadingNext,
                 isLoadingPrevious = loadingPrevious,
-                chapterOrder = orderedChapters.toList(),
+                chapterOrder = orderedChapters,
                 isOffline = snapshot.any(ReaderChapter::isOffline),
                 verificationChapter = verificationChapter,
                 verificationWebViewUnavailable = verificationWebViewUnavailable,
@@ -798,12 +791,6 @@ class ChapterPageModel(
         chapterKey(first) == chapterKey(second)
 
     private fun chapterKey(chapter: Chapter): String = chapterIdentity(chapter)
-
-    private fun normalizeChapterOrder(chapters: List<Chapter>): List<Chapter> =
-        chapters.asSequence()
-            .filter { !it.isExternal && chapterKey(it).isNotBlank() }
-            .distinctBy { chapterKey(it) }
-            .toList()
 
     /** Called only while [lock] is held after reading forward near the list end. */
     private fun trimLoadedChaptersFromStart() {

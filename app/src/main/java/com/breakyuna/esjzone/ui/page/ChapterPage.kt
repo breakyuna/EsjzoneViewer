@@ -108,6 +108,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.snapshotFlow
+import androidx.compose.runtime.structuralEqualityPolicy
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.unit.IntSize
@@ -173,6 +174,7 @@ import com.breakyuna.esjzone.ui.navigation.LocalBaseNavigator
 import com.breakyuna.esjzone.ui.navigation.ChapterStateHolder
 import com.breakyuna.esjzone.ui.reader.ReaderScript
 import com.breakyuna.esjzone.ui.reader.ReaderScriptConverter
+import com.breakyuna.esjzone.ui.reader.ReaderScriptSnapshot
 import com.breakyuna.esjzone.ui.reader.ReaderSettings
 import com.breakyuna.esjzone.ui.reader.ReaderChapterHeading
 import com.breakyuna.esjzone.ui.reader.ReaderBlocks
@@ -197,14 +199,17 @@ import com.breakyuna.esjzone.ui.designsystem.rememberAppAdaptiveMetrics
 import com.breakyuna.esjzone.ui.designsystem.glass.AppGlassSurface
 import com.breakyuna.esjzone.domain.reader.ReaderAnchor
 import com.breakyuna.esjzone.domain.reader.readerChapterProgress
-import com.breakyuna.esjzone.offline.textBookProgress
-import com.breakyuna.esjzone.offline.chapterIndexAtTextProgress
+import com.breakyuna.esjzone.domain.reader.readerContentPosition
+import com.breakyuna.esjzone.domain.reader.sourceText
+import com.breakyuna.esjzone.offline.BookTextProgressIndex
+import com.breakyuna.esjzone.offline.textProgressIndex
 import com.breakyuna.esjzone.util.AppLogger
 
 private data class ReaderTextSnapshot(
     val script: ReaderScript,
     val chapters: List<ReaderChapter>?,
-    val values: Map<String, String>
+    val values: Map<String, String>,
+    val blockMappings: Map<ReaderBlock, com.breakyuna.esjzone.domain.reader.ReaderTextOffsets>
 )
 
 class ChapterPage(
@@ -586,17 +591,22 @@ class ChapterPage(
                 convertedText = null
                 return@LaunchedEffect
             }
-            val values = withContext(Dispatchers.Default) {
-                ReaderScriptConverter.snapshot(chapters.map { it.document }, script).toMutableMap().apply {
+            val previous = convertedText?.takeIf { it.script == script }?.let {
+                ReaderScriptSnapshot(it.script, it.values, it.blockMappings)
+            }
+            val snapshot = withContext(Dispatchers.Default) {
+                val prepared = ReaderScriptConverter.snapshot(chapters.map { it.document }, script, previous)
+                val values = prepared.values.toMutableMap().apply {
                     chapters.forEach { entry ->
                         val name = entry.chapter.name
                         if (name.isNotBlank() && name !in this) {
-                            this[name] = ReaderScriptConverter.convert(name, script)
+                            this[name] = previous?.values?.get(name) ?: ReaderScriptConverter.convert(name, script)
                         }
                     }
                 }.toMap()
+                ReaderTextSnapshot(script, chapters, values, prepared.blockMappings)
             }
-            convertedText = ReaderTextSnapshot(script, result?.chapters, values)
+            convertedText = snapshot
         }
         val pagedMode = readerSettings.pageAnimation != ReaderPageAnimation.VERTICAL_SCROLL
         var readerStatusHeightPx by remember { mutableStateOf(0) }
@@ -636,7 +646,7 @@ class ChapterPage(
         val paginationLayoutKey = listOf(pageContentWidthPx, pageContentHeightPx,
             paginationSettings, readerTextStyle, headingStyle, density, layoutDirection,
             fontResolver, readerSettings.script)
-        val textLayouts = remember(paginationLayoutKey, result?.chapters) {
+        val textLayouts = remember(paginationLayoutKey) {
             androidx.compose.runtime.mutableStateMapOf<String, androidx.compose.ui.text.TextLayoutResult>()
         }
         val paginationKey = paginationLayoutKey + listOf(result?.chapters)
@@ -644,8 +654,8 @@ class ChapterPage(
         val scriptReady = readerSettings.script == ReaderScript.ORIGINAL ||
             (convertedText?.script == readerSettings.script && convertedText?.chapters == result?.chapters)
         val paginationReady = !pagedMode || (scriptReady && paginationSnapshot?.key == paginationKey)
-        val pagedDisplayItems = paginationSnapshot?.items.orEmpty().filter {
-            it.entry in result?.chapters.orEmpty()
+        val pagedDisplayItems = remember(paginationSnapshot, result?.chapters) {
+            paginationSnapshot?.items.orEmpty().filter { it.entry in result?.chapters.orEmpty() }
         }
         val displayItems = if (pagedMode) pagedDisplayItems else {
             remember(result?.chapters) {
@@ -830,6 +840,11 @@ class ChapterPage(
         fun searchHighlights(item: ReaderDisplayItem): List<com.breakyuna.esjzone.domain.reader.ReaderHighlight> =
             searchHit?.takeIf { it.anchor.matches(item.chapterKey, item.entry.document) }?.highlights.orEmpty()
 
+        fun textOffsets(block: ReaderBlock): com.breakyuna.esjzone.domain.reader.ReaderTextOffsets? =
+            if (readerSettings.script == ReaderScript.ORIGINAL) {
+                com.breakyuna.esjzone.domain.reader.ReaderTextOffsets.identity(block.sourceText())
+            } else if (scriptReady) convertedText?.blockMappings?.get(block) else null
+
         fun anchorFor(item: ReaderDisplayItem, pixelOffset: Int = 0, itemSize: Int = 1): ReaderAnchor? {
             val document = item.entry.document
             if (document.contentFingerprint.isBlank() || !scriptReady) return null
@@ -843,17 +858,23 @@ class ChapterPage(
                 return ReaderAnchor(item.chapterKey, document.contentFingerprint, blockIndex, kind = "image",
                     fraction = chapterProgressFor(pixelOffset, itemSize) ?: 0f)
             }
-            val offsets = ReaderScriptConverter.blockMapping(block, readerSettings.script)
             val displayOffset = if (page != null) {
                 (page.segments.firstOrNull() as? com.breakyuna.esjzone.ui.reader.ReaderPageSegment.TextLine)?.startOffset ?: 0
             } else {
                 val layout = textLayouts[item.key] ?: return null
                 layout.getLineStart(layout.getLineForVerticalPosition((-pixelOffset).coerceAtLeast(0).toFloat()))
             }
-            return ReaderAnchor(item.chapterKey, document.contentFingerprint, blockIndex, offsets.toSource(displayOffset))
+            val sourceOffset = if (readerSettings.script == ReaderScript.ORIGINAL) displayOffset
+                else textOffsets(block)?.toSource(displayOffset) ?: return null
+            return ReaderAnchor(item.chapterKey, document.contentFingerprint, blockIndex, sourceOffset)
         }
-        val measuredAnchor = if (pagedMode) pagerVisibleItem?.let { anchorFor(it) } else activeChapterItem?.let { visible ->
-            displayByKey[visible.key.toString()]?.let { anchorFor(it, visible.offset, visible.size) }
+        val measuredAnchor by remember(displayByKey, activeChapter, scrollState, pagedMode,
+            horizontalPagerState, textLayouts, scriptReady, readerSettings.script, convertedText) {
+            derivedStateOf(structuralEqualityPolicy()) {
+                if (pagedMode) pagerVisibleItem?.let { anchorFor(it) } else activeChapterItem?.let { visible ->
+                    displayByKey[visible.key.toString()]?.let { anchorFor(it, visible.offset, visible.size) }
+                }
+            }
         }
         val preciseChapterProgress = measuredAnchor?.let { anchor ->
             activeChapter?.document?.let { readerChapterProgress(it, if (isAtEndOfChapter.value) anchor.copy(kind = "end") else anchor) }
@@ -898,6 +919,8 @@ class ChapterPage(
         }
         val measuredContentPosition = if (pagedMode) {
             pagerVisibleItem?.page?.contentPosition
+        } else if (measuredAnchor != null && activeChapter != null) {
+            readerContentPosition(activeChapter.document, measuredAnchor!!)
         } else {
             activeChapterItem?.let { visible ->
                 displayByKey[visible.key.toString()]?.let { item ->
@@ -906,11 +929,13 @@ class ChapterPage(
             }
         }
         val downloadChanges by PresentationAccess.downloads.changes.collectAsState()
-        var progressManifest by remember(novelUrl, novelId) { mutableStateOf<com.breakyuna.esjzone.offline.DownloadedNovelManifest?>(null) }
+        var progressTextIndex by remember(novelUrl, novelId, bookChapterOrder) {
+            mutableStateOf<BookTextProgressIndex?>(null)
+        }
         LaunchedEffect(downloadChanges, novelUrl, novelId, bookChapterOrder) {
-            progressManifest = withContext(Dispatchers.IO) {
+            progressTextIndex = withContext(Dispatchers.IO) {
                 val url = novelUrl.ifBlank { novelId.takeIf(String::isNotBlank)?.let { EsjzoneUrls.resolve("/detail/$it.html") }.orEmpty() }
-                PresentationAccess.downloads.manifest(url)
+                PresentationAccess.downloads.manifest(url)?.textProgressIndex(bookChapterOrder.map { it.url })
             }
         }
         val measuredBookLocation = activeChapter?.chapter
@@ -924,8 +949,7 @@ class ChapterPage(
                     chapterIndices = bookChapterIndices
                 )?.copy(contentPosition = measuredContentPosition,
                     anchor = measuredAnchor?.let { anchor -> if (isAtEndOfChapter.value) anchor.copy(kind = "end") else anchor },
-                    textBookProgress = progressManifest?.textBookProgress(bookChapterOrder.map { chapter -> chapter.url },
-                        chapterIdentity(it), measuredChapterProgress ?: 0f))
+                    textBookProgress = progressTextIndex?.progress(chapterIdentity(it), measuredChapterProgress ?: 0f))
             }
         var retainedBookLocation by remember(requestedChapter.value.url) {
             mutableStateOf<ReaderBookLocation?>(null)
@@ -1051,7 +1075,7 @@ class ChapterPage(
                 chapterIndex = currentBookLocation?.chapterIndex ?: -1,
                 totalChapters = currentBookLocation?.totalChapters ?: bookChapterOrder.size,
                 chapterProgress = currentBookLocation?.chapterProgress ?: measuredChapterProgress ?: 0f,
-                anchor = ReaderAnchor.encode(currentBookLocation?.anchor),
+                anchor = remember(currentBookLocation?.anchor) { ReaderAnchor.encode(currentBookLocation?.anchor) },
                 bookProgress = currentBookLocation?.bookProgress
             )
         )
@@ -1245,7 +1269,7 @@ class ChapterPage(
             progressPreview = readerBookLocationFor(
                 bookProgress = progress,
                 chapterOrder = bookChapterOrder,
-                manifest = progressManifest
+                textIndex = progressTextIndex
             )
         }
 
@@ -1254,7 +1278,7 @@ class ChapterPage(
             progressPreview = readerBookLocationFor(
                 bookProgress = progress,
                 chapterOrder = bookChapterOrder,
-                manifest = progressManifest
+                textIndex = progressTextIndex
             )
         }
 
@@ -1345,9 +1369,14 @@ class ChapterPage(
                     "heading" -> 0
                     "end" -> chapterItems.lastIndex
                     else -> if (!pagedMode) anchor.blockIndex + 1 else {
+                        val block = displayItems[startIndex].entry.document.blocks[anchor.blockIndex]
+                        val offsets = if (readerSettings.script == ReaderScript.ORIGINAL) null else textOffsets(block)
                         chapterItems.indexOfLast { item ->
-                            anchorFor(item)?.let { start ->
-                                start.blockIndex < anchor.blockIndex || start.blockIndex == anchor.blockIndex && start.offset <= anchor.offset
+                            item.page?.let { page ->
+                                val blockIndex = page.contentPosition.toInt()
+                                val startOffset = (page.segments.firstOrNull() as? com.breakyuna.esjzone.ui.reader.ReaderPageSegment.TextLine)?.startOffset ?: 0
+                                blockIndex < anchor.blockIndex || blockIndex == anchor.blockIndex &&
+                                    (offsets?.toSource(startOffset) ?: startOffset) <= anchor.offset
                             } == true
                         }.coerceAtLeast(0)
                     }
@@ -1374,7 +1403,8 @@ class ChapterPage(
                     }
                     val block = displayItems[targetIndex].entry.document.blocks.getOrNull(exactAnchor.blockIndex)
                     if (layout != null && block != null) {
-                        val offset = ReaderScriptConverter.blockMapping(block, readerSettings.script).toDisplay(exactAnchor.offset)
+                        val offset = if (readerSettings.script == ReaderScript.ORIGINAL) exactAnchor.offset
+                            else textOffsets(block)?.toDisplay(exactAnchor.offset) ?: exactAnchor.offset
                         val line = layout.getLineForOffset(offset.coerceIn(0, layout.layoutInput.text.length))
                         scrollState.scrollToItem(readerListIndex(targetIndex), layout.getLineTop(line).roundToInt().coerceAtLeast(0))
                     }
@@ -1914,9 +1944,12 @@ class ChapterPage(
                                         blockStartIndex = item.ordinal - 1,
                                         underlines = underlines[item.chapterKey].orEmpty(),
                                         onUnderline = { mark, remove -> underlineModel.update(item.chapterKey, mark, remove) },
-                                        onTextLayout = { _, layout -> if (textLayouts[item.key] != layout) textLayouts[item.key] = layout },
+                                        onTextLayout = { _, layout ->
+                                            if (layout == null) textLayouts.remove(item.key)
+                                            else if (textLayouts[item.key] != layout) textLayouts[item.key] = layout
+                                        },
                                         highlights = searchHighlights(item),
-                                        textOffsets = { ReaderScriptConverter.blockMapping(it, readerSettings.script) })
+                                        textOffsets = { textOffsets(it) ?: com.breakyuna.esjzone.domain.reader.ReaderTextOffsets.identity(it.sourceText()) })
                                 }
                             }
 
@@ -2021,7 +2054,7 @@ class ChapterPage(
                                         highlights = currentPagedDisplayItems.getOrNull(pageIndex)?.let(::searchHighlights).orEmpty(),
                                         textOffsets = { blockIndex ->
                                             currentPagedDisplayItems.getOrNull(pageIndex)?.entry?.document?.blocks?.getOrNull(blockIndex)
-                                                ?.let { ReaderScriptConverter.blockMapping(it, readerSettings.script) }
+                                                ?.let(::textOffsets)
                                         }
                                     )
                                 }
@@ -2630,13 +2663,12 @@ private fun readerBookLocationFor(
 private fun readerBookLocationFor(
     bookProgress: Float,
     chapterOrder: List<Chapter>,
-    manifest: com.breakyuna.esjzone.offline.DownloadedNovelManifest?
+    textIndex: BookTextProgressIndex?
 ): ReaderBookLocation? {
     if (chapterOrder.isEmpty()) return null
     val clampedProgress = bookProgress.coerceIn(0f, 1f)
     val scaledProgress = clampedProgress * chapterOrder.size
-    val order = chapterOrder.map { it.url }
-    val index = manifest?.chapterIndexAtTextProgress(order, clampedProgress) ?: if (clampedProgress >= 1f) {
+    val index = textIndex?.chapterIndex(clampedProgress) ?: if (clampedProgress >= 1f) {
         chapterOrder.lastIndex
     } else {
         scaledProgress.toInt().coerceIn(0, chapterOrder.lastIndex)
@@ -2649,7 +2681,7 @@ private fun readerBookLocationFor(
         // in the middle of a chapter to scroll to that same middle fraction.
         chapterProgress = 0f,
         totalChapters = chapterOrder.size,
-        textBookProgress = manifest?.textBookProgress(order, chapterIdentity(chapterOrder[index]), 0f)
+        textBookProgress = textIndex?.progress(index, 0f)
     )
 }
 

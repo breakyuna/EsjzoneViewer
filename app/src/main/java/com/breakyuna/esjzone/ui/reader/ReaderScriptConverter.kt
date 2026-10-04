@@ -1,6 +1,14 @@
 package com.breakyuna.esjzone.ui.reader
 
 import android.icu.text.Transliterator
+import com.breakyuna.esjzone.domain.reader.ReaderBlock
+import com.breakyuna.esjzone.domain.reader.ReaderTextOffsets
+
+internal data class ReaderScriptSnapshot(
+    val script: ReaderScript,
+    val values: Map<String, String>,
+    val blockMappings: Map<ReaderBlock, ReaderTextOffsets>
+)
 
 /**
  * Converts the reader's source text on demand so the original parsed chapter model
@@ -57,14 +65,19 @@ object ReaderScriptConverter {
     }
 
     /** Builds a complete immutable transform table before a reader window is rendered. */
-    fun snapshot(
+    internal fun snapshot(
         documents: Iterable<com.breakyuna.esjzone.domain.reader.ReaderChapterDocument>,
-        script: ReaderScript
-    ): Map<String, String> {
-        if (script == ReaderScript.ORIGINAL) return emptyMap()
+        script: ReaderScript,
+        previous: ReaderScriptSnapshot? = null
+    ): ReaderScriptSnapshot {
+        if (script == ReaderScript.ORIGINAL) return ReaderScriptSnapshot(script, emptyMap(), emptyMap())
+        val reusable = previous?.takeIf { it.script == script }
         val result = HashMap<String, String>()
+        val blocks = HashMap<ReaderBlock, ReaderTextOffsets>()
         fun add(value: String?) {
-            if (!value.isNullOrEmpty() && value !in result) result[value] = convert(value, script)
+            if (!value.isNullOrEmpty() && value !in result) {
+                result[value] = reusable?.values?.get(value) ?: convert(value, script)
+            }
         }
         documents.forEach { document ->
             add(document.chapter.name)
@@ -80,9 +93,10 @@ object ReaderScriptConverter {
                     }
                     else -> Unit
                 }
+                blocks[block] = reusable?.blockMappings?.get(block) ?: blockMapping(block, script)
             }
         }
-        return result
+        return ReaderScriptSnapshot(script, result, blocks)
     }
 
     fun convert(text: String, script: ReaderScript): String = mapping(text, script).text

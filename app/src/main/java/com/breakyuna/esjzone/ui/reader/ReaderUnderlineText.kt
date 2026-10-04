@@ -28,12 +28,16 @@ internal fun ReaderUnderlineText(
     offset: Int = 0,
     underlines: List<ReaderUnderline>,
     onUnderline: (ReaderUnderline, Boolean) -> Unit,
-    onLayout: (TextLayoutResult) -> Unit = {},
+    onLayout: (TextLayoutResult?) -> Unit = {},
     highlights: List<TextRange> = emptyList()
 ) {
     var layout by remember { mutableStateOf<TextLayoutResult?>(null) }
     var selection by remember(text, enabled) { mutableStateOf<TextRange?>(null) }
     val currentSave by rememberUpdatedState(onUnderline)
+    val currentLayout by rememberUpdatedState(onLayout)
+    DisposableEffect(Unit) {
+        onDispose { currentLayout(null) }
+    }
     val displayed = remember(text, underlines, blockIndex, signature, offset, selection, highlights, color) {
         buildAnnotatedString {
             append(text)

@@ -79,7 +79,7 @@ fun ReaderBlocks(
     blockStartIndex: Int = 0,
     underlines: List<ReaderUnderline> = emptyList(),
     onUnderline: (ReaderUnderline, Boolean) -> Unit = { _, _ -> },
-    onTextLayout: (Int, androidx.compose.ui.text.TextLayoutResult) -> Unit = { _, _ -> },
+    onTextLayout: (Int, androidx.compose.ui.text.TextLayoutResult?) -> Unit = { _, _ -> },
     highlights: List<com.breakyuna.esjzone.domain.reader.ReaderHighlight> = emptyList(),
     textOffsets: (ReaderBlock) -> com.breakyuna.esjzone.domain.reader.ReaderTextOffsets = {
         com.breakyuna.esjzone.domain.reader.ReaderTextOffsets.identity(it.sourceText())
@@ -161,7 +161,7 @@ private fun ReaderParagraphBlock(
     blockIndex: Int,
     underlines: List<ReaderUnderline>,
     onUnderline: (ReaderUnderline, Boolean) -> Unit,
-    onLayout: (androidx.compose.ui.text.TextLayoutResult) -> Unit,
+    onLayout: (androidx.compose.ui.text.TextLayoutResult?) -> Unit,
     highlights: List<androidx.compose.ui.text.TextRange>
 ) {
     val (paragraph, inlineContent) = remember(block, textStyle, textTransform, density) {
@@ -209,7 +209,7 @@ private fun ReaderTextBlock(
     blockIndex: Int,
     underlines: List<ReaderUnderline>,
     onUnderline: (ReaderUnderline, Boolean) -> Unit,
-    onLayout: (androidx.compose.ui.text.TextLayoutResult) -> Unit,
+    onLayout: (androidx.compose.ui.text.TextLayoutResult?) -> Unit,
     highlights: List<androidx.compose.ui.text.TextRange>
 ) {
     val (text, inlineContent) = remember(block, textStyle, textTransform, density) {

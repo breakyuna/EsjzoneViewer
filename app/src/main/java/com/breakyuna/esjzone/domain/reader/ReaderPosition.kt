@@ -18,7 +18,7 @@ data class ReaderAnchor(
                 "heading" -> blockIndex == -1
                 "end" -> true
                 "text" -> document.blocks.getOrNull(blockIndex).let { it is ReaderBlock.Paragraph || it is ReaderBlock.Text } &&
-                    offset in 0..document.blocks[blockIndex].sourceText().length
+                    offset in 0..(document.textPrefixLengths[blockIndex + 1] - document.textPrefixLengths[blockIndex])
                 "image" -> document.blocks.getOrNull(blockIndex).let { it is ReaderBlock.Image || it == ReaderBlock.LineBreak }
                 else -> false
             }
@@ -60,6 +60,7 @@ data class ReaderTextOffsets(val text: String, val sourceStarts: IntArray, val s
     companion object {
         fun identity(text: String) = ReaderTextOffsets(text, IntArray(text.length) { it }, IntArray(text.length) { it + 1 }, text.length)
         fun join(parts: List<ReaderTextOffsets>): ReaderTextOffsets {
+            if (parts.size == 1) return parts[0]
             val text = parts.joinToString("") { it.text }
             val starts = IntArray(text.length)
             val ends = IntArray(text.length)
@@ -85,13 +86,27 @@ fun readerBookProgress(chapterIndex: Int, totalChapters: Int, chapterProgress: F
 fun readerChapterProgress(document: ReaderChapterDocument, anchor: ReaderAnchor): Float {
     if (anchor.kind == "end") return 1f
     if (anchor.kind == "heading") return 0f
-    val lengths = document.blocks.map { if (it is ReaderBlock.LineBreak) 0 else it.sourceText().length }
-    val total = lengths.sum()
+    val prefix = document.textPrefixLengths
+    val total = prefix.last()
     if (total > 0) {
-        val before = lengths.take(anchor.blockIndex).sum()
-        return ((before + anchor.offset.coerceIn(0, lengths.getOrElse(anchor.blockIndex) { 0 })).toFloat() / total).coerceIn(0f, 1f)
+        val index = anchor.blockIndex.coerceIn(0, document.blocks.size)
+        val before = prefix[index]
+        val length = if (index < document.blocks.size) prefix[index + 1] - before else 0
+        return ((before + anchor.offset.coerceIn(0, length)).toFloat() / total).coerceIn(0f, 1f)
     }
     return ((anchor.blockIndex + anchor.fraction) / document.blocks.size.coerceAtLeast(1)).coerceIn(0f, 1f)
+}
+
+/** Approximate layout fallback follows the same source boundary as the precise anchor. */
+fun readerContentPosition(document: ReaderChapterDocument, anchor: ReaderAnchor): Float {
+    if (anchor.kind == "heading") return -1f
+    if (anchor.kind == "end") return document.blocks.size.toFloat()
+    val index = anchor.blockIndex.coerceIn(0, document.blocks.size)
+    val prefix = document.textPrefixLengths
+    val length = if (index < document.blocks.size) prefix[index + 1] - prefix[index] else 0
+    val fraction = if (length > 0) anchor.offset.coerceIn(0, length).toFloat() / length
+        else anchor.fraction
+    return index + fraction
 }
 
 /** Highlight ranges refer to source blocks, before pagination or script conversion. */

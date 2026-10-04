@@ -20,10 +20,16 @@ internal class ReaderMappedText(private val source: String) : Replaceable {
         replace(start, limit, String(chars, charsStart, charsLen))
     override fun replace(start: Int, limit: Int, text: String) {
         if (value.substring(start, limit) == text) return
+        // Most script substitutions preserve length and every source boundary.
+        // Updating in place avoids shifting the whole metadata tail twice.
+        if (limit - start == text.length) {
+            text.forEachIndexed { index, char -> value.setCharAt(start + index, char) }
+            return
+        }
         val first = starts.getOrNull(start) ?: source.length
         val last = if (limit > start) ends[limit - 1] else first
-        val newStarts = if (limit - start == text.length) starts.subList(start, limit).toList() else List(text.length) { first }
-        val newEnds = if (limit - start == text.length) ends.subList(start, limit).toList() else List(text.length) { last }
+        val newStarts = List(text.length) { first }
+        val newEnds = List(text.length) { last }
         value.replace(start, limit, text)
         starts.subList(start, limit).clear()
         ends.subList(start, limit).clear()

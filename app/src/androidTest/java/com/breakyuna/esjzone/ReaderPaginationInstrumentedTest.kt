@@ -3,6 +3,7 @@ package com.breakyuna.esjzone
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalDensity
@@ -14,6 +15,7 @@ import androidx.compose.ui.test.onFirst
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.TextMeasurer
+import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.createFontFamilyResolver
 import androidx.compose.ui.text.style.LineHeightStyle
@@ -29,6 +31,7 @@ import com.breakyuna.esjzone.domain.reader.ReaderTextStyle
 import com.breakyuna.esjzone.ui.reader.ReaderPageContent
 import com.breakyuna.esjzone.ui.reader.ReaderPageSegment
 import com.breakyuna.esjzone.ui.reader.ReaderSettings
+import com.breakyuna.esjzone.ui.reader.ReaderBlocks
 import com.breakyuna.esjzone.ui.reader.paginateReaderChapter
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -38,6 +41,34 @@ import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
 class ReaderPaginationInstrumentedTest {
+    @Test
+    fun readerSnapshotRetainsParagraphMappingsAfterConversionCacheEviction() {
+        val block = ReaderBlock.Paragraph(listOf(ReaderBlock.Text("漢"), ReaderBlock.Text("語蔿")))
+        val document = com.breakyuna.esjzone.domain.reader.ReaderChapterDocument(
+            com.breakyuna.esjzone.domain.reader.ReaderChapterRef("标题", "/forum/1/1.html"), listOf(block))
+        val script = com.breakyuna.esjzone.ui.reader.ReaderScript.SIMPLIFIED
+        val snapshot = com.breakyuna.esjzone.ui.reader.ReaderScriptConverter.snapshot(listOf(document), script)
+        val offsets = snapshot.blockMappings[block]!!
+        assertEquals(snapshot.values["漢"] + snapshot.values["語蔿"], offsets.text)
+        com.breakyuna.esjzone.ui.reader.ReaderScriptConverter.preload((0..4096).map { "漢語$it" }, script)
+        assertTrue(offsets === snapshot.blockMappings[block.copy(parts = block.parts.toList())])
+        assertEquals(0, offsets.toSource(0))
+        assertEquals(3, offsets.toSource(offsets.text.length))
+        val added = ReaderBlock.Text("龍馬")
+        val updated = com.breakyuna.esjzone.ui.reader.ReaderScriptConverter.snapshot(
+            listOf(document.copy(blocks = listOf(block.copy(parts = block.parts.toList()), added))), script, snapshot)
+        assertTrue(offsets === updated.blockMappings[block])
+        assertEquals("龙马", updated.blockMappings[added]!!.text)
+        val trimmed = com.breakyuna.esjzone.ui.reader.ReaderScriptConverter.snapshot(
+            listOf(document.copy(blocks = listOf(added))), script, updated)
+        assertTrue(block !in trimmed.blockMappings)
+        assertTrue("漢" !in trimmed.values)
+        val traditional = com.breakyuna.esjzone.ui.reader.ReaderScriptConverter.snapshot(
+            listOf(document.copy(blocks = listOf(added))),
+            com.breakyuna.esjzone.ui.reader.ReaderScript.TRADITIONAL, trimmed)
+        assertEquals("龍馬", traditional.blockMappings[added]!!.text)
+    }
+
     @Test
     fun actualIcuConversionKeepsSourceBoundariesAndSearchPositions() {
         val source = "蔿后文漢語"
@@ -84,6 +115,36 @@ class ReaderPaginationInstrumentedTest {
 
     @get:Rule
     val composeRule = createComposeRule()
+
+    @Test
+    fun disposedReaderParagraphReleasesItsLayoutFromTheCurrentCache() {
+        val visible = mutableStateOf(true)
+        val replaced = mutableStateOf(false)
+        val initialCache = mutableMapOf<Int, TextLayoutResult>()
+        val currentCache = mutableMapOf<Int, TextLayoutResult>()
+        composeRule.setContent {
+            val measurer = rememberTextMeasurer()
+            val density = LocalDensity.current
+            val cache = if (replaced.value) currentCache else initialCache
+            if (visible.value) {
+                ReaderBlocks(listOf(ReaderBlock.Paragraph(listOf(ReaderBlock.Text("正文排版结果")))), ReaderSettings(),
+                    measurer, density, Color.Black, onTextLayout = { index, layout ->
+                        if (layout == null) cache.remove(index) else cache[index] = layout
+                    })
+            }
+        }
+        composeRule.runOnIdle { assertTrue(initialCache.isNotEmpty()) }
+        // Replacing the cache must update the disposal callback even if text is unchanged.
+        composeRule.runOnIdle {
+            currentCache.putAll(initialCache)
+            replaced.value = true
+        }
+        composeRule.runOnIdle {
+            assertTrue(currentCache.isNotEmpty())
+            visible.value = false
+        }
+        composeRule.runOnIdle { assertTrue(currentCache.isEmpty()) }
+    }
 
     @Test
     fun renderedFragmentsFitWithoutLosingTextAcrossPageBreaks() {

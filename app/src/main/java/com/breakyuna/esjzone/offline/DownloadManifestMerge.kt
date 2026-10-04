@@ -29,32 +29,52 @@ internal fun mergeDownloadManifest(
 
 /** All requested chapter lengths must be known; partial downloads never become the book denominator. */
 fun DownloadedNovelManifest.textBookProgress(order: List<String>, chapterKey: String, chapterProgress: Float): Float? {
-    val index = order.indexOfFirst { NovelDownloadStore.chapterKey(it) == chapterKey }
-    if (index < 0) return null
-    val values = textChapterLengths(order) ?: return null
-    val total = values.sumOf { it.toLong() }
-    if (total <= 0L) return null
-    val before = values.take(index).sumOf { it.toLong() }
-    return ((before + values[index] * chapterProgress.coerceIn(0f, 1f)) / total.toFloat()).coerceIn(0f, 1f)
+    return textProgressIndex(order)?.progress(chapterKey, chapterProgress)
 }
 
 /** Inverse of textBookProgress, with the same full-catalog length requirement. */
 fun DownloadedNovelManifest.chapterIndexAtTextProgress(order: List<String>, bookProgress: Float): Int? {
-    val values = textChapterLengths(order) ?: return null
-    val total = values.sumOf { it.toLong() }
-    if (total <= 0L) return null
-    val progress = bookProgress.coerceIn(0f, 1f)
-    if (progress >= 1f) return values.lastIndex
-    var end = 0L
-    values.forEachIndexed { index, length ->
-        end += length
-        if (progress < end / total.toFloat()) return index
-    }
-    return values.lastIndex
+    return textProgressIndex(order)?.chapterIndex(bookProgress)
 }
 
-private fun DownloadedNovelManifest.textChapterLengths(order: List<String>): List<Int>? {
+/** Prepared with the catalog/manifest snapshot, never rebuilt for a scroll offset. */
+internal class BookTextProgressIndex(
+    private val indices: Map<String, Int>,
+    private val prefix: LongArray
+) {
+    fun progress(chapterKey: String, chapterProgress: Float): Float? =
+        indices[chapterKey]?.let { progress(it, chapterProgress) }
+
+    fun progress(index: Int, chapterProgress: Float): Float =
+        ((prefix[index] + (prefix[index + 1] - prefix[index]) * chapterProgress.coerceIn(0f, 1f)) /
+            prefix.last().toFloat()).coerceIn(0f, 1f)
+
+    fun chapterIndex(bookProgress: Float): Int {
+        val progress = bookProgress.coerceIn(0f, 1f)
+        val lastIndex = prefix.size - 2
+        if (progress >= 1f) return lastIndex
+        var low = 0
+        var high = lastIndex
+        while (low < high) {
+            val middle = (low + high) ushr 1
+            if (progress < prefix[middle + 1] / prefix.last().toFloat()) high = middle
+            else low = middle + 1
+        }
+        return low
+    }
+}
+
+internal fun DownloadedNovelManifest.textProgressIndex(order: List<String>): BookTextProgressIndex? {
     if (order.isEmpty()) return null
     val lengths = chapters.associate { NovelDownloadStore.chapterKey(it.url) to it.textLength }
-    return order.map { lengths[NovelDownloadStore.chapterKey(it)] ?: return null }
+    val prefix = LongArray(order.size + 1)
+    val indices = HashMap<String, Int>()
+    order.forEachIndexed { index, url ->
+        val key = NovelDownloadStore.chapterKey(url)
+        val length = lengths[key] ?: return null
+        indices.putIfAbsent(key, index)
+        prefix[index + 1] = prefix[index] + length
+    }
+    if (prefix.last() <= 0L) return null
+    return BookTextProgressIndex(indices, prefix)
 }

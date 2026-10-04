@@ -56,7 +56,21 @@ data class ReaderChapterDocument(
     val contentHtml: String? = null,
     val sourceUrl: String? = null,
     val contentFingerprint: String = ""
-)
+) {
+    /** Derived once per immutable document, without allocating paragraph strings. */
+    internal val textPrefixLengths: IntArray by lazy {
+        IntArray(blocks.size + 1).also { prefix ->
+            blocks.forEachIndexed { index, block ->
+                val length = when (block) {
+                    is ReaderBlock.Paragraph -> block.parts.sumOf { it.value.length }
+                    is ReaderBlock.Text -> block.value.length
+                    else -> 0
+                }
+                prefix[index + 1] = prefix[index] + length
+            }
+        }
+    }
+}
 
 @Immutable
 data class ReadingProgress(

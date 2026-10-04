@@ -67,4 +67,24 @@ class DownloadManifestMergeTest {
         val emptyText = book.copy(chapters = book.chapters.map { it.copy(textLength = 0) })
         assertNull(emptyText.chapterIndexAtTextProgress(urls, 0.5f))
     }
+
+    @Test
+    fun preparedProgressIndexSkipsEmptyChaptersAndKeepsItsManifestSnapshot() {
+        val book = manifest(listOf(0, 10, 0, 90).mapIndexed { index, length ->
+            record(index + 1, true).copy(textLength = length)
+        })
+        val urls = book.chapters.map { it.url }
+        val index = book.textProgressIndex(urls)!!
+        assertEquals(1, index.chapterIndex(0f))
+        assertEquals(3, index.chapterIndex(0.1f))
+        assertEquals(3, index.chapterIndex(1f))
+        assertEquals(0.05f, index.progress(NovelDownloadStore.chapterKey(urls[1]), 0.5f)!!, 0f)
+        assertEquals(0.55f, index.progress(3, 0.5f), 0.0001f)
+        val updated = book.copy(chapters = book.chapters.mapIndexed { position, chapter ->
+            chapter.copy(textLength = listOf(0, 90, 0, 10)[position])
+        }).textProgressIndex(urls)!!
+        assertEquals(1, updated.chapterIndex(0.1f))
+        assertEquals(3, index.chapterIndex(0.1f))
+        assertNull(book.copy(chapters = book.chapters.map { it.copy(textLength = null) }).textProgressIndex(urls))
+    }
 }
