@@ -1229,23 +1229,26 @@ private fun NovelDownloadActions(
     LaunchedEffect(novel.url, requestedWorkId) {
         NovelDownloadManager.statusFlow(context, novel.url).collect { status ->
             downloadStatus = status
-            status?.progress?.let { progress = it }
+            if (!preflighting) progress = status?.progress
             if (status?.running != true) {
                 pausing = false
             }
             val waitingForEnqueue = requestedWorkId != null &&
-                (status == null || status.id != requestedWorkId)
+                (status == null || (status.id != requestedWorkId && !status.running))
             downloading = preflighting || (status?.running == true && !pausing) || waitingForEnqueue
             // WorkManager keeps an already-running unique job when enqueue is
             // called again. In that case the returned request id can differ
             // from the job currently reported for this novel; the unique-job
             // status is still the source of truth for this page.
-            if (status?.finished == true && requestedWorkId != null) {
+            if (status?.running == true && requestedWorkId != null && status.id != requestedWorkId) {
+                requestedWorkId = status.id
+            }
+            if (status?.finished == true) {
                 val updated = withContext(Dispatchers.IO) {
                     PresentationAccess.downloads.manifest(novel.url)
                 }
                 onDownloadedChange(updated)
-                if (!status.cancelled) {
+                if (requestedWorkId == status.id && !status.cancelled) {
                     val pendingPasswordCount = updated?.pendingPasswordChapters?.size ?: 0
                     if (status.succeeded && pendingPasswordCount > 0) {
                         Toast.makeText(
@@ -1262,8 +1265,10 @@ private fun NovelDownloadActions(
                         ).show()
                     }
                 }
-                requestedWorkId = null
-                downloading = false
+                if (requestedWorkId == status.id) {
+                    requestedWorkId = null
+                    downloading = preflighting
+                }
             }
         }
     }
@@ -1271,13 +1276,16 @@ private fun NovelDownloadActions(
     fun enqueueDownload(selectedUrls: Set<String>? = null) {
         if (downloading || preflighting || novel.chapterList.orderedChapters.isEmpty()) return
         pausing = false
+        val selectedKeys = selectedUrls?.map(com.breakyuna.esjzone.offline.NovelDownloadStore::chapterKey)?.toSet()
         val targetChapters = novel.chapterList.orderedChapters.filter { chapter ->
-            !chapter.isExternal && (selectedUrls == null || chapter.url in selectedUrls)
+            !chapter.isExternal && (selectedKeys == null ||
+                com.breakyuna.esjzone.offline.NovelDownloadStore.chapterKey(chapter.url) in selectedKeys)
         }.distinctBy { com.breakyuna.esjzone.offline.NovelDownloadStore.chapterKey(it.url) }
         if (targetChapters.isEmpty()) return
-        val existingCompleted = downloaded?.chapters?.count { record ->
-            record.downloaded && (selectedUrls == null || record.url in selectedUrls)
-        } ?: 0
+        val targetKeys = targetChapters.map { com.breakyuna.esjzone.offline.NovelDownloadStore.chapterKey(it.url) }.toSet()
+        val existingCompleted = downloaded?.chapters.orEmpty().filter { record ->
+            record.downloaded && com.breakyuna.esjzone.offline.NovelDownloadStore.chapterKey(record.url) in targetKeys
+        }.distinctBy { com.breakyuna.esjzone.offline.NovelDownloadStore.chapterKey(it.url) }.size
         progress = DownloadProgress(
             completed = existingCompleted,
             total = targetChapters.size,
@@ -1795,14 +1803,16 @@ private fun NovelDownloadSheet(
                 Column(modifier = Modifier.padding(AppSpacing.lg), verticalArrangement = Arrangement.spacedBy(AppSpacing.sm)) {
                     when {
                         downloading -> {
+                            val current = progress ?: DownloadProgress(completed, actualTotal, "")
                             Text(
-                                text = stringResource(R.string.novel_downloading_count,
-                                    progress?.completed ?: 0,
-                                    progress?.total ?: total),
+                                text = stringResource(
+                                    if (status?.waiting == true) R.string.novel_download_waiting_count
+                                    else R.string.novel_downloading_count,
+                                    current.completed,
+                                    current.total),
                                 style = AppTypography.titleMedium
                             )
-                            val current = progress
-                            if (current != null && current.total > 0) {
+                            if (current.total > 0) {
                                 androidx.compose.material3.LinearProgressIndicator(
                                     progress = (current.completed.toFloat() / current.total.toFloat())
                                         .coerceIn(0f, 1f),

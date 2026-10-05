@@ -156,6 +156,7 @@
     <string name="novel_download_update">检查新章节</string>
     <string name="novel_downloading">正在下载 %1$d/%2$d · %3$s</string>
     <string name="novel_downloading_count">正在下载 %1$d/%2$d</string>
+    <string name="novel_download_waiting_count">等待下载 %1$d/%2$d</string>
     <string name="novel_download_success">下载任务已完成</string>
     <string name="novel_download_failed">下载失败，已完成的章节会保留</string>
     <string name="novel_download_channel">小说下载</string>
@@ -748,6 +749,9 @@
     <string name="backup_deleted">备份已删除</string>
     <string name="backup_delete_failed">删除备份失败，请重试。</string>
     <string name="reader_long_press_underline">长按划线</string>
+    <string name="reader_underline_tab">划线</string>
+    <string name="reader_underlines_empty">暂无划线</string>
+    <string name="reader_underline_position">第 %1$d 段 · 第 %2$d–%3$d 字</string>
     <string name="reader_underlines">阅读划线</string>
     <string name="reader_underline_failed">划线保存失败</string>
     <string name="image_save">保存图片</string>

@@ -51,15 +51,22 @@ object LocalBackup {
                 }
             }
             if (BackupCategory.DOWNLOADS in selected) {
-                NovelDownloadStore.exportBackup(File(staging, "downloads"))
                 json.addProperty("downloads", true)
             }
             File(staging, "backup.json").writeText(gson.toJson(json))
             ZipOutputStream(checkNotNull(context.contentResolver.openOutputStream(uri, "wt"))).use { zip ->
-                staging.walkTopDown().filter(File::isFile).forEach { file ->
+                fun appendFile(file: File) {
                     zip.putNextEntry(ZipEntry(file.relativeTo(staging).invariantSeparatorsPath))
                     file.inputStream().use { it.copyTo(zip) }
                     zip.closeEntry()
+                }
+                appendFile(File(staging, "backup.json"))
+                if (BackupCategory.DOWNLOADS in selected) {
+                    NovelDownloadStore.exportBackup(File(staging, "downloads")) { snapshot ->
+                        try {
+                            snapshot.walkTopDown().filter(File::isFile).forEach(::appendFile)
+                        } finally { snapshot.deleteRecursively() }
+                    }
                 }
             }
         } finally { staging.deleteRecursively() }

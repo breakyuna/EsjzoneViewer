@@ -14,6 +14,11 @@ import com.breakyuna.esjzone.database.entity.Bookmark
 import com.breakyuna.esjzone.database.entity.BookshelfGroup
 import com.breakyuna.esjzone.database.entity.BookshelfGroupMember
 import com.breakyuna.esjzone.database.entity.ReadingStat
+import com.breakyuna.esjzone.network.Authorization
+import com.breakyuna.esjzone.novellibrary.component.TextComponent
+import com.breakyuna.esjzone.novellibrary.novel.Chapter
+import com.breakyuna.esjzone.novellibrary.novel.DetailedChapter
+import com.breakyuna.esjzone.offline.NovelDownloadStore
 import java.io.File
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.*
@@ -22,6 +27,53 @@ import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
 class LocalBackupInstrumentedTest {
+    @Test fun downloadedNovelsRoundTripThroughIncrementalZipSnapshots() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val database = Room.inMemoryDatabaseBuilder(context, GeneralDatabase::class.java).build()
+        val root = java.nio.file.Files.createTempDirectory(context.cacheDir.toPath(), "backup-downloads-").toFile()
+        val restored = java.nio.file.Files.createTempDirectory(context.cacheDir.toPath(), "restored-downloads-").toFile()
+        val file = File.createTempFile("downloads-backup-", ".zip", context.cacheDir)
+        val authorization = Authorization("", "", "www.esjzone.cc")
+        val chapters = (9001..9002).map { Chapter("Chapter", "https://www.esjzone.cc/forum/$it/1.html", false) }
+        NovelDownloadStore.initialize(context)
+        NovelDownloadStore.initializeDirectory(root)
+        try {
+            chapters.forEachIndexed { index, chapter ->
+                val novelUrl = "https://www.esjzone.cc/detail/${9001 + index}.html"
+                NovelDownloadStore.saveChapter("Novel", novelUrl, "", listOf(chapter), chapter,
+                    DetailedChapter("Chapter", listOf(TextComponent("正文 $index")), null, null,
+                        "<p>正文 $index</p>", chapter.url), authorization)
+                NovelDownloadStore.updateCommonPassword(novelUrl, "fixture")
+            }
+            val selected = setOf(BackupCategory.DOWNLOADS)
+            LocalBackup.export(context, Uri.fromFile(file), database, "source", selected)
+            java.util.zip.ZipFile(file).use { zip ->
+                val entries = zip.entries().asSequence().map { it.name }.toList()
+                assertTrue("backup.json" in entries)
+                assertEquals(2, entries.count { it.startsWith("downloads/") && it.endsWith("/manifest.json") })
+                assertEquals(2, entries.count { it.startsWith("downloads/") && it.substringAfterLast('/').startsWith("chapter-") })
+                entries.filter { it.endsWith("/manifest.json") }.forEach { name ->
+                    val manifest = zip.getInputStream(zip.getEntry(name)).reader().use {
+                        com.google.gson.JsonParser.parseReader(it).asJsonObject
+                    }
+                    assertFalse(manifest.has("commonPassword"))
+                }
+            }
+            NovelDownloadStore.initializeDirectory(restored)
+            LocalBackup.restore(context, Uri.fromFile(file), database, "target", selected)
+            chapters.forEachIndexed { index, chapter ->
+                assertEquals("正文 $index", NovelDownloadStore.readChapter(chapter.url)!!.content
+                    .filterIsInstance<TextComponent>().single().text)
+            }
+        } finally {
+            database.close()
+            file.delete()
+            root.deleteRecursively()
+            restored.deleteRecursively()
+            NovelDownloadStore.initialize(context)
+        }
+    }
+
     @Test fun historyAnchorRoundTripsWithoutDownloadingOrRestoringOtherCategories() = runBlocking {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val source = Room.inMemoryDatabaseBuilder(context, GeneralDatabase::class.java).build()

@@ -148,7 +148,8 @@ class ReaderGestureInstrumentedTest {
                 }
             }
             composeRule.onNodeWithTag("reader").performTouchInput {
-                swipe(center + Offset(60f * direction, 0f) * density, center - Offset(60f * direction, 0f) * density, 300)
+                if (side == ReaderSidePanel.CONTENTS) click(Offset(width - 1f, centerY))
+                else swipe(center + Offset(60f * direction, 0f) * density, center - Offset(60f * direction, 0f) * density, 300)
             }
             composeRule.waitForIdle()
             composeRule.runOnIdle { assertEquals(null, panels.panel) }

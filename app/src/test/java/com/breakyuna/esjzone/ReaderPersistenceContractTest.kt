@@ -2,9 +2,16 @@ package com.breakyuna.esjzone
 
 import com.breakyuna.esjzone.database.entity.Bookmark
 import com.breakyuna.esjzone.database.entity.LocalReadingActivity
+import com.breakyuna.esjzone.domain.reader.ReaderAnchor
+import com.breakyuna.esjzone.domain.reader.ReaderBlock
+import com.breakyuna.esjzone.domain.reader.ReaderChapterDocument
+import com.breakyuna.esjzone.domain.reader.ReaderChapterRef
+import com.breakyuna.esjzone.domain.reader.readerChapterProgress
 import com.breakyuna.esjzone.network.EsjzoneUrls
 import com.breakyuna.esjzone.novellibrary.novel.Chapter
+import com.breakyuna.esjzone.offline.BookTextProgressIndex
 import com.breakyuna.esjzone.ui.page.chapterIdentity
+import com.breakyuna.esjzone.ui.page.readerBookLocationFor
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -21,6 +28,28 @@ class ReaderPersistenceContractTest {
 
         assertEquals(chapterIdentity(first), chapterIdentity(sameOnMirror))
         assertTrue(chapterIdentity(first) != chapterIdentity(second))
+    }
+
+    @Test
+    fun underlineTargetProgressUsesItsAnchorAndFullCatalogAcrossMirrors() {
+        val order = (1..3).map { Chapter("Chapter $it", "https://www.esjzone.cc/forum/9001/$it.html", false) }
+        val target = Chapter("Chapter 2", "https://www.esjzone.one/forum/9001/2.html", false)
+        val indices = order.mapIndexed { index, chapter -> chapterIdentity(chapter) to index }.toMap()
+        val document = ReaderChapterDocument(ReaderChapterRef(target.name, target.url),
+            listOf(ReaderBlock.Text("abcd"), ReaderBlock.Text("abcdefgh")))
+        val anchor = ReaderAnchor(chapterIdentity(target), document.contentFingerprint, 1, 2)
+        val chapterProgress = readerChapterProgress(document, anchor)
+
+        val fallback = requireNotNull(readerBookLocationFor(target, chapterProgress, order, indices))
+        assertEquals(order[1], fallback.chapter)
+        assertEquals(1, fallback.chapterIndex)
+        assertEquals(3, fallback.totalChapters)
+        assertEquals(0.5f, fallback.chapterProgress, 0.0001f)
+        assertEquals(0.5f, fallback.bookProgress, 0.0001f)
+
+        val textIndex = BookTextProgressIndex(indices, longArrayOf(0L, 100L, 700L, 1000L))
+        val weighted = requireNotNull(readerBookLocationFor(target, chapterProgress, order, indices, textIndex))
+        assertEquals(0.4f, weighted.bookProgress, 0.0001f)
     }
 
     @Test

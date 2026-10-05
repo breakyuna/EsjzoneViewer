@@ -1,6 +1,8 @@
 package com.breakyuna.esjzone
 
 import com.breakyuna.esjzone.network.features.isPasswordProtectedChapterHtml
+import com.breakyuna.esjzone.network.features.isPasswordProtectedChapter
+import org.jsoup.Jsoup
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -24,5 +26,9 @@ class ChapterPasswordProtectionTest {
 
         assertTrue(isPasswordProtectedChapterHtml(protected))
         assertFalse(isPasswordProtectedChapterHtml(ordinary))
+        val document = Jsoup.parse(protected)
+        assertTrue(document.isPasswordProtectedChapter())
+        document.selectFirst(".forum-content")!!.html("<p>解锁后的正文</p>")
+        assertFalse(document.isPasswordProtectedChapter())
     }
 }

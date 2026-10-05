@@ -1,6 +1,8 @@
 package com.breakyuna.esjzone.network
 
 import android.content.Context
+import com.breakyuna.esjzone.util.storedTextReader
+import com.breakyuna.esjzone.util.writeCompressedText
 import java.io.File
 import java.nio.charset.StandardCharsets
 import java.nio.file.Files
@@ -95,15 +97,15 @@ internal object PageCache {
         val file = fileFor(key) ?: return null
         if (!file.isFile) return null
         return try {
-            val encoded = file.readText(StandardCharsets.UTF_8)
-            val separator = encoded.indexOf('\n')
-            if (separator <= 0) return null
-            val fetchedAt = encoded.substring(0, separator).toLongOrNull() ?: return null
-            if (fetchedAt > nowMillis || nowMillis - fetchedAt > maxAgeMillis) return null
-            if (nowMillis - file.lastModified() >= ACCESS_TOUCH_INTERVAL_MILLIS) {
-                file.setLastModified(nowMillis)
+            file.storedTextReader().use { reader ->
+                val fetchedAt = reader.readLine()?.toLongOrNull() ?: return null
+                if (fetchedAt > nowMillis || nowMillis - fetchedAt > maxAgeMillis) return null
+                val body = reader.readText()
+                if (nowMillis - file.lastModified() >= ACCESS_TOUCH_INTERVAL_MILLIS) {
+                    file.setLastModified(nowMillis)
+                }
+                body
             }
-            encoded.substring(separator + 1)
         } catch (_: Exception) {
             null
         }
@@ -119,7 +121,11 @@ internal object PageCache {
                 val existed = file.isFile
                 val previousSize = if (existed) file.length() else 0L
                 val temporary = File(file.parentFile, "${file.name}.tmp")
-                temporary.writeText("$nowMillis\n$body", StandardCharsets.UTF_8)
+                temporary.writeCompressedText { writer ->
+                    writer.write(nowMillis.toString())
+                    writer.write("\n")
+                    writer.write(body)
+                }
                 try {
                     Files.move(
                         temporary.toPath(),
@@ -145,10 +151,12 @@ internal object PageCache {
 
     internal fun writeDerived(key: String, sourceBody: String, json: String) = synchronized(ioLock) {
         val file = fileFor(key) ?: return@synchronized
-        val encoded = runCatching { file.readText(StandardCharsets.UTF_8) }.getOrNull() ?: return@synchronized
-        val split = encoded.indexOf('\n')
-        if (split < 1 || encoded.substring(split + 1) != sourceBody) return@synchronized
-        val fetchedAt = encoded.substring(0, split).toLongOrNull() ?: return@synchronized
+        val fetchedAt = runCatching {
+            file.storedTextReader().use { reader ->
+                val timestamp = reader.readLine()?.toLongOrNull()
+                timestamp?.takeIf { reader.readText() == sourceBody }
+            }
+        }.getOrNull() ?: return@synchronized
         write(structuredKey(key), json, fetchedAt)
     }
 

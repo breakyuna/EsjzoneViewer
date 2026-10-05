@@ -2,6 +2,8 @@ package com.breakyuna.esjzone
 
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.background
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.PagerState
 import androidx.compose.foundation.pager.rememberPagerState
@@ -9,6 +11,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toPixelMap
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.*
@@ -17,6 +20,7 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModelStore
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
@@ -34,6 +38,7 @@ import org.junit.Assert.*
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
+import kotlin.math.roundToInt
 
 @RunWith(AndroidJUnit4::class)
 class ReaderUnderlineInstrumentedTest {
@@ -69,7 +74,7 @@ class ReaderUnderlineInstrumentedTest {
         }
     }
 
-    @Test fun longPressDirectlyUnderlinesTheSelectedWordWithoutPopup() {
+    @Test fun longPressDirectlyUnderlinesOneCharacterInRedWithoutPopup() {
         val text = "Line 1\nLine 2\nLine 3\nSelect target\nLine 5\nLine 6\nLine 7\nLine 8"
         var marks by mutableStateOf(emptyList<ReaderUnderline>())
         composeRule.setContent {
@@ -91,16 +96,13 @@ class ReaderUnderlineInstrumentedTest {
         composeRule.onAllNodes(isPopup()).assertCountEquals(0)
         composeRule.runOnIdle {
             val start = text.indexOf("target")
-            assertEquals(listOf(ReaderUnderline(0, "a".repeat(64), start, start + "target".length)), marks)
+            assertEquals(listOf(ReaderUnderline(0, "a".repeat(64), start, start + 1)), marks)
         }
-        layouts.clear()
-        composeRule.onNodeWithTag("text").performSemanticsAction(SemanticsActions.GetTextLayoutResult) {
-            it(layouts)
-        }
-        assertTrue(layouts.single().layoutInput.text.spanStyles.any {
-            it.item.textDecoration == androidx.compose.ui.text.style.TextDecoration.Underline &&
-                it.start == text.indexOf("target") && it.end == text.indexOf("target") + "target".length
-        })
+        val pixels = composeRule.onNodeWithTag("text").captureToImage().toPixelMap()
+        assertTrue((0 until pixels.height).any { y -> (0 until pixels.width).any { x ->
+            val color = pixels[x, y]
+            color.red > 0.8f && color.green < 0.2f && color.blue < 0.2f
+        } })
     }
 
     @Test fun longPressSavesWithoutTurningPageOrOpeningToolbarAndRepeatedPressKeepsUnderline() {
@@ -140,5 +142,123 @@ class ReaderUnderlineInstrumentedTest {
             assertEquals(0, taps)
             assertEquals(0, pagerState.currentPage)
         }
+    }
+
+    @Test fun draggingCanEndInsideAWordReverseDirectionAndShrinkTheRange() {
+        val text = "target\nreader"
+        var marks by mutableStateOf(emptyList<ReaderUnderline>())
+        composeRule.setContent {
+            MaterialTheme {
+                ReaderUnderlineText(AnnotatedString(text), emptyMap(), TextStyle(fontSize = 22.sp, lineHeight = 28.sp),
+                    Color.Black, Modifier.testTag("text"), true, 0, "a".repeat(64), offset = 10,
+                    underlines = marks, onUnderline = { mark, remove ->
+                        marks = ReaderUnderlines.update(marks, mark, remove)
+                    })
+            }
+        }
+        val layouts = mutableListOf<TextLayoutResult>()
+        composeRule.onNodeWithTag("text").performSemanticsAction(SemanticsActions.GetTextLayoutResult) { it(layouts) }
+        val layout = layouts.single()
+        composeRule.onNodeWithTag("text").performTouchInput {
+            down(layout.getBoundingBox(2).center)
+            advanceEventTime(1000)
+            moveTo(layout.getBoundingBox(10).center, delayMillis = 150)
+            moveTo(layout.getBoundingBox(3).center, delayMillis = 150)
+            up()
+        }
+        composeRule.runOnIdle { assertEquals(listOf(ReaderUnderline(0, "a".repeat(64), 12, 14)), marks) }
+        composeRule.runOnIdle { marks = emptyList() }
+        composeRule.onNodeWithTag("text").performTouchInput {
+            down(layout.getBoundingBox(10).center)
+            advanceEventTime(1000)
+            moveTo(layout.getBoundingBox(1).center, delayMillis = 150)
+            up()
+        }
+        composeRule.runOnIdle { assertEquals(listOf(ReaderUnderline(0, "a".repeat(64), 11, 21)), marks) }
+    }
+
+    @Test fun dragPreviewShrinksAndCancelsWithoutChangingTextLayoutOrSavedMarks() {
+        val text = AnnotatedString("甲乙丙丁戊己庚辛\nabcdefgh")
+        val saved = listOf(ReaderUnderline(0, "a".repeat(64), 0, 1))
+        var layouts = 0
+        var saves = 0
+        composeRule.setContent {
+            MaterialTheme {
+                ReaderUnderlineText(text, emptyMap(), TextStyle(fontSize = 22.sp, lineHeight = 32.sp),
+                    Color.Black, Modifier.background(Color.White).testTag("text"), true, 0, "a".repeat(64),
+                    underlines = saved, onUnderline = { _, _ -> saves++ },
+                    onLayout = { if (it != null) layouts++ })
+            }
+        }
+        val node = composeRule.onNodeWithTag("text")
+        val initialLayouts = mutableListOf<TextLayoutResult>()
+        node.performSemanticsAction(SemanticsActions.GetTextLayoutResult) { it(initialLayouts) }
+        val layout = initialLayouts.single()
+        val initialLayoutCount = layouts
+        fun redPixelCount(): Int {
+            val pixels = node.captureToImage().toPixelMap()
+            var count = 0
+            for (y in 0 until pixels.height) for (x in 0 until pixels.width) {
+                val color = pixels[x, y]
+                if (color.red > 0.8f && color.green < 0.2f && color.blue < 0.2f) count++
+            }
+            return count
+        }
+        val savedPixels = redPixelCount()
+        assertTrue(savedPixels > 0)
+        node.performTouchInput { down(layout.getBoundingBox(2).center) }
+        composeRule.mainClock.advanceTimeBy(1000)
+        node.performTouchInput { moveTo(layout.getBoundingBox(5).center, delayMillis = 150) }
+        val expandedPixels = redPixelCount()
+        assertTrue(expandedPixels > savedPixels)
+        node.performTouchInput { moveTo(layout.getBoundingBox(3).center, delayMillis = 150) }
+        val shrunkPixels = redPixelCount()
+        assertTrue(shrunkPixels > savedPixels && shrunkPixels < expandedPixels)
+        val previewLayouts = mutableListOf<TextLayoutResult>()
+        node.performSemanticsAction(SemanticsActions.GetTextLayoutResult) { it(previewLayouts) }
+        assertEquals(layout, previewLayouts.single())
+        node.performTouchInput { cancel() }
+        assertEquals(savedPixels, redPixelCount())
+        composeRule.runOnIdle {
+            assertEquals(initialLayoutCount, layouts)
+            assertEquals(0, saves)
+        }
+    }
+
+    @Test fun savedUnderlineFollowsWrappingChangesAndMixedTextDirections() {
+        val text = "甲乙丙 abc אבג דהו xyz\n丁戊己"
+        var width by mutableStateOf(240.dp)
+        composeRule.setContent {
+            MaterialTheme {
+                ReaderUnderlineText(AnnotatedString(text), emptyMap(),
+                    TextStyle(fontSize = 22.sp, lineHeight = 32.sp), Color.Black,
+                    Modifier.width(width).background(Color.White).testTag("text"), false, 0, "a".repeat(64),
+                    underlines = listOf(ReaderUnderline(0, "a".repeat(64), 0, text.length)),
+                    onUnderline = { _, _ -> })
+            }
+        }
+        fun assertUnderlineMatchesLayout(): Int {
+            val node = composeRule.onNodeWithTag("text")
+            val layouts = mutableListOf<TextLayoutResult>()
+            node.performSemanticsAction(SemanticsActions.GetTextLayoutResult) { it(layouts) }
+            val layout = layouts.single()
+            val pixels = node.captureToImage().toPixelMap()
+            val lineOffset = with(composeRule.density) { 2.dp.toPx() }
+            for (index in text.indices) {
+                if (text[index] == '\n') continue
+                val bounds = layout.getBoundingBox(index)
+                if (bounds.width <= 1f) continue
+                val x = bounds.center.x.roundToInt().coerceIn(0, pixels.width - 1)
+                val y = (layout.getLineBaseline(layout.getLineForOffset(index)) + lineOffset)
+                    .roundToInt().coerceIn(0, pixels.height - 1)
+                val color = pixels[x, y]
+                assertTrue("Missing underline at character $index",
+                    color.red > 0.8f && color.green < 0.2f && color.blue < 0.2f)
+            }
+            return layout.lineCount
+        }
+        val wideLines = assertUnderlineMatchesLayout()
+        composeRule.runOnIdle { width = 120.dp }
+        assertTrue(assertUnderlineMatchesLayout() > wideLines)
     }
 }

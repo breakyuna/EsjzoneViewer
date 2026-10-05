@@ -3,6 +3,8 @@ package com.breakyuna.esjzone
 import com.breakyuna.esjzone.domain.reader.ReaderBlock
 import com.breakyuna.esjzone.domain.reader.ReaderUnderline
 import com.breakyuna.esjzone.domain.reader.ReaderUnderlines
+import androidx.compose.ui.text.TextRange
+import com.breakyuna.esjzone.ui.reader.readerUnderlineCharacterRange
 import org.junit.Assert.*
 import org.junit.Test
 
@@ -48,5 +50,23 @@ class ReaderUnderlinesTest {
             assertThrows(IllegalArgumentException::class.java) { ReaderUnderlines.decode(value) }
         }
         assertThrows(com.google.gson.JsonParseException::class.java) { ReaderUnderlines.decode("{") }
+    }
+
+    @Test fun characterSelectionDoesNotExpandToWordsOrSplitSupplementaryCharacters() {
+        assertEquals(TextRange(2, 3), readerUnderlineCharacterRange("target", 2))
+        assertEquals(TextRange(1, 3), readerUnderlineCharacterRange("甲𫇭乙", 1))
+        assertEquals(TextRange(1, 3), readerUnderlineCharacterRange("甲𫇭乙", 2))
+        assertEquals(TextRange(3, 4), readerUnderlineCharacterRange("甲𫇭乙", 3))
+    }
+
+    @Test fun mergedQuoteContainsEntireSavedRangeAndSurvivesSerialization() {
+        val text = "任意选择划线范围"
+        val first = ReaderUnderlines.update(emptyList(), mark(1, 3), false, text)
+        val merged = ReaderUnderlines.update(first, mark(2, 6), false, text)
+        assertEquals(listOf(mark(1, 6).copy(quote = text.substring(1, 6))), merged)
+        val restored = ReaderUnderlines.decode(ReaderUnderlines.encode(merged))
+        assertEquals(merged, restored)
+        assertEquals(merged, ReaderUnderlines.update(restored, mark(2, 4), false))
+        assertNull(ReaderUnderlines.decode("[{\"blockIndex\":0,\"signature\":\"$signature\",\"start\":1,\"end\":3}]").single().quote)
     }
 }

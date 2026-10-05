@@ -1,6 +1,7 @@
 package com.breakyuna.esjzone
 
 import com.breakyuna.esjzone.offline.DownloadedChapterRecord
+import com.breakyuna.esjzone.offline.DownloadProgress
 import com.breakyuna.esjzone.offline.DownloadedNovelManifest
 import com.breakyuna.esjzone.offline.NovelDownloadManager
 import com.breakyuna.esjzone.offline.ChapterSelectionCodec
@@ -13,6 +14,50 @@ import org.junit.Test
 
 /** Pure contracts for resumable manifests and WorkManager's unique-work key. */
 class NovelDownloadContractTest {
+
+    private fun progressRecord(number: Int, downloaded: Boolean) = DownloadedChapterRecord(
+        number - 1, "Chapter $number", "/forum/9001/$number.html", "chapter-$number.json", downloaded)
+
+    @Test
+    fun queuedDownload_restoresCompletedChaptersWithoutWorkerProgress() {
+        val chapters = listOf(progressRecord(1, true), progressRecord(2, true), progressRecord(3, false))
+        val tags = setOf(NovelDownloadManager.TOTAL_TAG_PREFIX + 3,
+            NovelDownloadManager.SELECTION_TAG_PREFIX)
+        assertEquals(DownloadProgress(2, 3, ""), NovelDownloadManager.restoredProgress(tags, chapters))
+        assertEquals(DownloadProgress(3, 3, ""),
+            NovelDownloadManager.restoredProgress(tags, chapters.map { it.copy(downloaded = true) }))
+    }
+
+    @Test
+    fun queuedSelection_restoresItsOwnScopeAcrossMirrorAliases() {
+        val selected = setOf("https://www.esjzone.one/forum/9001/1.html", "/forum/9001/3.html")
+        val tags = setOf(NovelDownloadManager.TOTAL_TAG_PREFIX + 2,
+            NovelDownloadManager.SELECTION_TAG_PREFIX + ChapterSelectionCodec.encode(selected))
+        val chapters = listOf(progressRecord(1, true), progressRecord(2, true), progressRecord(3, false))
+        assertEquals(DownloadProgress(1, 2, ""), NovelDownloadManager.restoredProgress(tags, chapters))
+    }
+
+    @Test
+    fun queuedDownload_keepsTotalBeforeAnyChapterHasBeenSaved() {
+        val tags = setOf(NovelDownloadManager.TOTAL_TAG_PREFIX + 12,
+            NovelDownloadManager.SELECTION_TAG_PREFIX)
+        assertEquals(DownloadProgress(0, 12, ""), NovelDownloadManager.restoredProgress(tags, emptyList()))
+    }
+
+    @Test
+    fun interruptedFullDownload_keepsRefreshedCatalogProgress() {
+        val tags = setOf(NovelDownloadManager.TOTAL_TAG_PREFIX + 2,
+            NovelDownloadManager.SELECTION_TAG_PREFIX)
+        val chapters = listOf(progressRecord(1, true), progressRecord(2, true), progressRecord(3, false))
+        assertEquals(DownloadProgress(2, 3, ""), NovelDownloadManager.restoredProgress(tags, chapters))
+    }
+
+    @Test
+    fun queuedDownload_doesNotCountIncompleteImagesOrChaptersOutsideCatalog() {
+        val chapters = listOf(progressRecord(1, true), progressRecord(1, true),
+            progressRecord(2, false).copy(bodyAvailable = true), progressRecord(3, true).copy(localOnly = true))
+        assertEquals(DownloadProgress(1, 2, ""), NovelDownloadManager.restoredProgress(emptySet(), chapters))
+    }
 
     @Test
     fun chapterSelection_survivesCompactWorkerInputForLargeTableOfContents() {

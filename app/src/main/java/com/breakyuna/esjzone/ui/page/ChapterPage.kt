@@ -169,6 +169,9 @@ import com.breakyuna.esjzone.network.LocalAuthorization
 import com.breakyuna.esjzone.novellibrary.novel.Chapter
 import com.breakyuna.esjzone.novellibrary.novel.FavoriteNovel
 import com.breakyuna.esjzone.domain.reader.ReaderBlock
+import com.breakyuna.esjzone.domain.reader.ReaderUnderline
+import com.breakyuna.esjzone.domain.reader.ReaderUnderlines
+import com.breakyuna.esjzone.ui.reader.renderedReaderText
 import com.breakyuna.esjzone.ui.reader.ReaderPageAnimation
 import com.breakyuna.esjzone.ui.navigation.LocalBaseNavigator
 import com.breakyuna.esjzone.ui.navigation.ChapterStateHolder
@@ -190,8 +193,6 @@ import com.breakyuna.esjzone.ui.reader.paginateReaderChapter
 import com.breakyuna.esjzone.ui.reader.ReaderShell
 import com.breakyuna.esjzone.ui.reader.readerTapPageDirection
 import com.breakyuna.esjzone.ui.reader.ReaderVolumeKeyDispatcher
-import com.breakyuna.esjzone.ui.designsystem.AppSideSheet
-import com.breakyuna.esjzone.ui.designsystem.AppSideSheetEdge
 import com.breakyuna.esjzone.ui.designsystem.AppFeedback
 import com.breakyuna.esjzone.ui.designsystem.AppShapes
 import com.breakyuna.esjzone.ui.designsystem.AppSpacing
@@ -240,6 +241,7 @@ class ChapterPage(
 
         val underlineModel = rememberAppViewModel { ReaderUnderlinesModel() }
         val underlines by underlineModel.underlines.collectAsState()
+        val readerBookmarks by underlineModel.bookmarks.collectAsState()
         val underlineFailed by underlineModel.state.collectAsState()
         val underlineContext = LocalContext.current
         val underlineFailureMessage = stringResource(R.string.reader_underline_failed)
@@ -310,6 +312,7 @@ class ChapterPage(
         var isBookmarked by rememberSaveable { mutableStateOf(false) }
         var bookmarkStateUrl by remember { mutableStateOf<String?>(null) }
         var updatingBookmark by remember { mutableStateOf(false) }
+        var pendingBookmarkDesired by remember { mutableStateOf<Boolean?>(null) }
         var lastPagedAnimation by rememberSaveable {
             mutableStateOf(ReaderPageAnimation.HORIZONTAL_SLIDE)
         }
@@ -499,6 +502,7 @@ class ChapterPage(
         var progressPreview by remember { mutableStateOf<ReaderBookLocation?>(null) }
         var progressReturnLocation by remember { mutableStateOf<ReaderBookLocation?>(null) }
         var pendingSeekLocation by remember { mutableStateOf<ReaderBookLocation?>(null) }
+        var pendingUnderline by remember { mutableStateOf<Pair<Chapter, ReaderUnderline>?>(null) }
         var resolvedResumeProgress by remember(chapter.url) { mutableStateOf(resumeChapterProgress ?: searchHit?.let { 0f }) }
         var resolvedResumeAnchor by remember(chapter.url) { mutableStateOf(searchHit?.anchor) }
         var restoreLookupPending by remember(chapter.url) { mutableStateOf(searchHit == null && (restoreFromLocalHistory || resumeChapterProgress != null)) }
@@ -1142,6 +1146,7 @@ class ChapterPage(
             val currentNovelUrl = novelUrl.ifBlank { localHistoryPosition.value.novelUrl }
             // Acquire on the UI thread before launching, including callers from gestures.
             updatingBookmark = true
+            pendingBookmarkDesired = desired
             scope.launch {
                 try {
                     withContext(Dispatchers.IO) {
@@ -1193,6 +1198,7 @@ class ChapterPage(
                         android.widget.Toast.LENGTH_SHORT).show()
                     AppLogger.e("ChapterPage", "Failed to update local bookmark", error)
                 } finally {
+                    pendingBookmarkDesired = null
                     updatingBookmark = false
                 }
             }
@@ -1247,6 +1253,7 @@ class ChapterPage(
         }
 
         fun seekTo(location: ReaderBookLocation) {
+            pendingUnderline = null
             pendingBoundaryTurn = null
             pendingSeekLocation = location
             val current = currentReadingChapter
@@ -1353,6 +1360,27 @@ class ChapterPage(
             )
         }
 
+        LaunchedEffect(pendingUnderline, result?.chapters, scriptReady, readerSettings.script,
+            bookChapterOrder, progressTextIndex) {
+            val (target, mark) = pendingUnderline ?: return@LaunchedEffect
+            if (!scriptReady) return@LaunchedEffect
+            val entry = result?.chapters?.firstOrNull { sameReaderChapter(it.chapter, target) }
+                ?: return@LaunchedEffect
+            val block = entry.document.blocks.getOrNull(mark.blockIndex)
+            val rendered = block?.renderedReaderText(readerTextTransform)
+            val valid = block != null && rendered != null && mark.end <= rendered.length &&
+                ReaderUnderlines.signature(block, rendered) == mark.signature
+            val anchor = if (valid) ReaderAnchor(chapterIdentity(target), entry.document.contentFingerprint,
+                mark.blockIndex, textOffsets(block!!)?.toSource(mark.start) ?: mark.start) else null
+            val chapterProgress = anchor?.let { readerChapterProgress(entry.document, it) } ?: 0f
+            val location = readerBookLocationFor(target, chapterProgress, bookChapterOrder,
+                bookChapterIndices, progressTextIndex)
+                ?: ReaderBookLocation(target, -1, chapterProgress, bookChapterOrder.size)
+            pendingSeekLocation = location.copy(anchor = anchor,
+                contentPosition = if (valid) mark.blockIndex + mark.start.toFloat() / rendered!!.length else null)
+            pendingUnderline = null
+        }
+
         LaunchedEffect(pendingSeekLocation, displayItems, paginationReady, scriptReady, hasPreviousVerification) {
             if (!paginationReady || !scriptReady) return@LaunchedEffect
             val target = pendingSeekLocation ?: return@LaunchedEffect
@@ -1436,6 +1464,7 @@ class ChapterPage(
         }
 
         fun openTargetChapter(target: Chapter) {
+            pendingUnderline = null
             pendingBoundaryTurn = null
             requestedChapter.value = target
             pendingSeekLocation = null
@@ -1451,6 +1480,12 @@ class ChapterPage(
                     isProgrammaticScroll = false
                 }
             }
+        }
+
+        fun openUnderline(target: Chapter, mark: ReaderUnderline) {
+            dismissProgressPreview()
+            openTargetChapter(target)
+            pendingUnderline = target to mark
         }
 
         var pageTurnInProgress by pageTurnInProgressForBoundary
@@ -1686,6 +1721,13 @@ class ChapterPage(
                 ReaderContentsContent(
                     chapters = readerChapters,
                     currentChapter = currentReadingChapter,
+                    novelId = novelId.ifBlank { currentReadingChapter.novelId() },
+                    bookmarks = readerBookmarks,
+                    underlines = underlines,
+                    onUnderlineSelected = { target, mark ->
+                        sidePanels.close()
+                        openUnderline(target, mark)
+                    },
                     onChapterSelected = { selected ->
                         sidePanels.close()
                         dismissProgressPreview()
@@ -1943,7 +1985,10 @@ class ChapterPage(
                                         readerContentColor, readerTextTransform,
                                         blockStartIndex = item.ordinal - 1,
                                         underlines = underlines[item.chapterKey].orEmpty(),
-                                        onUnderline = { mark, remove -> underlineModel.update(item.chapterKey, mark, remove) },
+                                        onUnderline = { mark, remove ->
+                                            underlineModel.update(item.chapterKey, mark, remove,
+                                                item.entry.document.blocks.getOrNull(mark.blockIndex)?.renderedReaderText(readerTextTransform))
+                                        },
                                         onTextLayout = { _, layout ->
                                             if (layout == null) textLayouts.remove(item.key)
                                             else if (textLayouts[item.key] != layout) textLayouts[item.key] = layout
@@ -2048,7 +2093,8 @@ class ChapterPage(
                                         underlines = underlines[currentPagedDisplayItems.getOrNull(pageIndex)?.chapterKey].orEmpty(),
                                         onUnderline = { mark, remove ->
                                             currentPagedDisplayItems.getOrNull(pageIndex)?.let { item ->
-                                                underlineModel.update(item.chapterKey, mark, remove)
+                                                underlineModel.update(item.chapterKey, mark, remove,
+                                                    item.entry.document.blocks.getOrNull(mark.blockIndex)?.renderedReaderText(readerTextTransform))
                                             }
                                         },
                                         highlights = currentPagedDisplayItems.getOrNull(pageIndex)?.let(::searchHighlights).orEmpty(),
@@ -2096,6 +2142,18 @@ class ChapterPage(
                                 }, strokeWidth = 2.5.dp
                             )
                         }
+                    }
+                    if (pagedMode && bookmarkStateUrl == bookmarkChapterUrl &&
+                        (pendingBookmarkDesired ?: isBookmarked)) {
+                        Icon(
+                            imageVector = Icons.Filled.Bookmark,
+                            contentDescription = stringResource(R.string.reader_bookmark_added),
+                            tint = Color(0xFFE53935),
+                            modifier = Modifier.align(Alignment.TopEnd)
+                                .windowInsetsPadding(WindowInsets.displayCutout.only(WindowInsetsSides.Horizontal))
+                                .padding(top = pageTopPadding, end = 8.dp)
+                                .size(32.dp)
+                        )
                     }
                 }
             }
@@ -2455,6 +2513,13 @@ class ChapterPage(
                 visible = showReaderContents,
                 chapters = readerChapters,
                 currentChapter = currentReadingChapter,
+                novelId = novelId.ifBlank { currentReadingChapter.novelId() },
+                bookmarks = readerBookmarks,
+                underlines = underlines,
+                onUnderlineSelected = { target, mark ->
+                    showReaderContents = false
+                    openUnderline(target, mark)
+                },
                 onChapterSelected = { selectedChapter ->
                     showReaderContents = false
                     dismissProgressPreview()
@@ -2595,7 +2660,7 @@ private data class ReaderDisplayItem(
     val page: ReaderPage? = null
 )
 
-private data class ReaderBookLocation(
+internal data class ReaderBookLocation(
     val chapter: Chapter,
     val chapterIndex: Int,
     val chapterProgress: Float,
@@ -2644,11 +2709,12 @@ private fun LocalReadingPosition.toLocalReadingActivity(
     bookProgress = bookProgress
 )
 
-private fun readerBookLocationFor(
+internal fun readerBookLocationFor(
     activeChapter: Chapter,
     chapterProgress: Float,
     chapterOrder: List<Chapter>,
-    chapterIndices: Map<String, Int>
+    chapterIndices: Map<String, Int>,
+    textIndex: BookTextProgressIndex? = null
 ): ReaderBookLocation? {
     val index = chapterIndices[chapterIdentity(activeChapter)] ?: -1
     if (index < 0) return null
@@ -2656,7 +2722,8 @@ private fun readerBookLocationFor(
         chapter = chapterOrder[index],
         chapterIndex = index,
         chapterProgress = chapterProgress.coerceIn(0f, 1f),
-        totalChapters = chapterOrder.size
+        totalChapters = chapterOrder.size,
+        textBookProgress = textIndex?.progress(chapterIdentity(activeChapter), chapterProgress)
     )
 }
 
@@ -3073,116 +3140,6 @@ private fun ReaderToolButton(
             imageVector = icon,
             contentDescription = contentDescription
         )
-    }
-}
-
-@Composable
-private fun ReaderContentsSheet(
-    visible: Boolean,
-    chapters: List<Chapter>,
-    currentChapter: Chapter,
-    onChapterSelected: (Chapter) -> Unit,
-    onDismiss: () -> Unit
-) {
-    AppSideSheet(visible = visible, edge = AppSideSheetEdge.START, onDismissRequest = onDismiss) {
-        ReaderContentsContent(chapters, currentChapter, onChapterSelected, onDismiss)
-    }
-}
-
-@Composable
-private fun ReaderContentsContent(
-    chapters: List<Chapter>,
-    currentChapter: Chapter,
-    onChapterSelected: (Chapter) -> Unit,
-    onDismiss: () -> Unit
-) {
-    val listState = rememberLazyListState()
-    val currentChapterKey = chapterIdentity(currentChapter)
-    LaunchedEffect(chapters.size, currentChapterKey) {
-        val currentIndex = chapters.indexOfFirst { chapterIdentity(it) == currentChapterKey }
-        if (currentIndex >= 0) listState.scrollToItem(currentIndex)
-    }
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .windowInsetsPadding(WindowInsets.statusBarsIgnoringVisibility.union(WindowInsets.displayCutout).only(WindowInsetsSides.Top))
-            .navigationBarsPadding()
-            .padding(horizontal = AppSpacing.md, vertical = AppSpacing.sm)
-    ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                text = stringResource(id = R.string.reader_contents),
-                style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.Bold,
-                modifier = Modifier.weight(1f)
-            )
-            IconButton(onClick = onDismiss) {
-                Icon(
-                    imageVector = Icons.Filled.Close,
-                    contentDescription = stringResource(id = R.string.close)
-                )
-            }
-        }
-
-        if (chapters.isEmpty()) {
-            Text(
-                text = stringResource(id = R.string.reader_contents_empty),
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(vertical = 24.dp)
-            )
-        } else {
-            val contentsDescription = stringResource(R.string.reader_contents)
-            LazyColumn(
-                state = listState,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .weight(1f)
-                    .semantics {
-                        contentDescription = contentsDescription
-                    }
-            ) {
-                items(
-                    items = chapters,
-                    key = { chapter -> chapterIdentity(chapter) }
-                ) { item ->
-                    val selected = sameReaderChapter(item, currentChapter)
-                    Surface(
-                        onClick = { onChapterSelected(item) },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = AppSpacing.xxs),
-                        shape = AppShapes.standard,
-                        color = if (selected) {
-                            MaterialTheme.colorScheme.primaryContainer
-                        } else {
-                            Color.Transparent
-                        }
-                    ) {
-                        Text(
-                            text = item.name,
-                            modifier = Modifier.padding(
-                                horizontal = AppSpacing.md,
-                                vertical = AppSpacing.sm
-                            ),
-                            color = if (selected) {
-                                MaterialTheme.colorScheme.onPrimaryContainer
-                            } else {
-                                MaterialTheme.colorScheme.onSurface
-                            },
-                            fontWeight = if (selected) {
-                                FontWeight.Bold
-                            } else {
-                                FontWeight.Normal
-                            },
-                            maxLines = 2
-                        )
-                    }
-                }
-            }
-        }
     }
 }
 

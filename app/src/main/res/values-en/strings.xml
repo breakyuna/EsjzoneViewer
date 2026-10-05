@@ -156,6 +156,7 @@
     <string name="novel_download_update">Check for new chapters</string>
     <string name="novel_downloading">Downloading %1$d/%2$d · %3$s</string>
     <string name="novel_downloading_count">Downloading %1$d/%2$d</string>
+    <string name="novel_download_waiting_count">Waiting to download %1$d/%2$d</string>
     <string name="novel_download_success">Download task completed</string>
     <string name="novel_download_failed">Download failed; completed chapters were kept</string>
     <string name="novel_download_channel">Novel downloads</string>
@@ -747,6 +748,9 @@
     <string name="backup_deleted">Backup deleted</string>
     <string name="backup_delete_failed">Could not delete the backup. Try again.</string>
     <string name="reader_long_press_underline">Long-press to underline</string>
+    <string name="reader_underline_tab">Underlines</string>
+    <string name="reader_underlines_empty">No underlines yet</string>
+    <string name="reader_underline_position">Paragraph %1$d · Characters %2$d–%3$d</string>
     <string name="reader_underlines">Reading underlines</string>
     <string name="reader_underline_failed">Could not save underline</string>
     <string name="image_save">Save image</string>

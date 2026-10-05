@@ -43,7 +43,9 @@ import java.util.zip.GZIPOutputStream
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 
 data class BackgroundDownloadStatus(
@@ -52,7 +54,8 @@ data class BackgroundDownloadStatus(
     val finished: Boolean,
     val succeeded: Boolean,
     val progress: DownloadProgress?,
-    val cancelled: Boolean = false
+    val cancelled: Boolean = false,
+    val waiting: Boolean = false
 )
 
 /** Compresses large tables of contents to fit WorkManager's 10 KiB input limit. */
@@ -72,6 +75,8 @@ internal object ChapterSelectionCodec {
 
 /** Schedules resumable novel downloads independently from any Compose page. */
 object NovelDownloadManager {
+    internal const val TOTAL_TAG_PREFIX = "novel-download-total:"
+    internal const val SELECTION_TAG_PREFIX = "novel-download-selection:"
 
     fun enqueue(
         context: Context,
@@ -90,6 +95,11 @@ object NovelDownloadManager {
         val concurrency = runCatching {
             EsjzoneApplication.instance.container.settings.downloadConcurrency.value
         }.getOrDefault(NovelDownloadStore.DEFAULT_DOWNLOAD_CONCURRENCY)
+        val encodedSelection = selectedChapterUrls?.let(ChapterSelectionCodec::encode).orEmpty()
+        val selectedKeys = selectedChapterUrls?.map(NovelDownloadStore::chapterKey)?.toSet()
+        val total = novel.chapterList.orderedChapters
+            .filter { !it.isExternal && (selectedKeys == null || NovelDownloadStore.chapterKey(it.url) in selectedKeys) }
+            .distinctBy { NovelDownloadStore.chapterKey(it.url) }.size
         val request = OneTimeWorkRequestBuilder<NovelDownloadWorker>()
             .setConstraints(
                 Constraints.Builder()
@@ -103,10 +113,14 @@ object NovelDownloadManager {
                     NovelDownloadWorker.KEY_FORUM_URL to novel.forumUrl,
                     NovelDownloadWorker.KEY_DOMAIN to domain,
                     NovelDownloadWorker.KEY_CONCURRENCY to concurrency,
-                    NovelDownloadWorker.KEY_SELECTED_CHAPTERS to selectedChapterUrls?.let(ChapterSelectionCodec::encode).orEmpty()
+                    NovelDownloadWorker.KEY_SELECTED_CHAPTERS to encodedSelection
                 )
             )
             .addTag(TAG)
+            // WorkInfo exposes tags but not inputData. Keep the queued scope available
+            // before the worker can publish progress, including after an offline restart.
+            .addTag(TOTAL_TAG_PREFIX + total)
+            .addTag(SELECTION_TAG_PREFIX + encodedSelection)
             .build()
         WorkManager.getInstance(context.applicationContext).enqueueUniqueWork(
             uniqueWorkName(novel.url),
@@ -130,23 +144,7 @@ object NovelDownloadManager {
         val info = infos.lastOrNull { !it.state.isFinished }
             ?: infos.lastOrNull()
             ?: return null
-        val total = info.progress.getInt(NovelDownloadWorker.KEY_TOTAL, 0)
-        val completed = info.progress.getInt(NovelDownloadWorker.KEY_COMPLETED, 0)
-        val chapterName = info.progress.getString(NovelDownloadWorker.KEY_CHAPTER).orEmpty()
-        return BackgroundDownloadStatus(
-            id = info.id.toString(),
-            running = info.state == WorkInfo.State.ENQUEUED ||
-                info.state == WorkInfo.State.BLOCKED ||
-                info.state == WorkInfo.State.RUNNING,
-            finished = info.state.isFinished,
-            succeeded = info.state == WorkInfo.State.SUCCEEDED,
-            progress = if (total > 0) {
-                DownloadProgress(completed, total, chapterName)
-            } else {
-                null
-            },
-            cancelled = info.state == WorkInfo.State.CANCELLED
-        )
+        return info.toDownloadStatus(novelUrl)
     }
 
     fun statusFlow(context: Context, novelUrl: String): Flow<BackgroundDownloadStatus?> {
@@ -156,24 +154,45 @@ object NovelDownloadManager {
                 val info = infos.lastOrNull { !it.state.isFinished }
                     ?: infos.lastOrNull()
                     ?: return@map null
-                val total = info.progress.getInt(NovelDownloadWorker.KEY_TOTAL, 0)
-                val completed = info.progress.getInt(NovelDownloadWorker.KEY_COMPLETED, 0)
-                val chapterName = info.progress.getString(NovelDownloadWorker.KEY_CHAPTER).orEmpty()
-                BackgroundDownloadStatus(
-                    id = info.id.toString(),
-                    running = info.state == WorkInfo.State.ENQUEUED ||
-                        info.state == WorkInfo.State.BLOCKED ||
-                        info.state == WorkInfo.State.RUNNING,
-                    finished = info.state.isFinished,
-                    succeeded = info.state == WorkInfo.State.SUCCEEDED,
-                    progress = if (total > 0) {
-                        DownloadProgress(completed, total, chapterName)
-                    } else {
-                        null
-                    },
-                    cancelled = info.state == WorkInfo.State.CANCELLED
-                )
+                info.toDownloadStatus(novelUrl)
             }
+            .flowOn(Dispatchers.IO)
+    }
+
+    private fun WorkInfo.toDownloadStatus(novelUrl: String): BackgroundDownloadStatus {
+        val active = state == WorkInfo.State.ENQUEUED || state == WorkInfo.State.BLOCKED ||
+            state == WorkInfo.State.RUNNING
+        val total = progress.getInt(NovelDownloadWorker.KEY_TOTAL, 0)
+        val current = if (state == WorkInfo.State.RUNNING && total > 0) {
+            DownloadProgress(progress.getInt(NovelDownloadWorker.KEY_COMPLETED, 0), total,
+                progress.getString(NovelDownloadWorker.KEY_CHAPTER).orEmpty())
+        } else {
+            restoredProgress(tags, NovelDownloadStore.manifest(novelUrl)?.chapters.orEmpty())
+        }
+        return BackgroundDownloadStatus(
+            id = id.toString(),
+            running = active,
+            finished = state.isFinished,
+            succeeded = state == WorkInfo.State.SUCCEEDED,
+            progress = current,
+            cancelled = state == WorkInfo.State.CANCELLED,
+            waiting = active && state != WorkInfo.State.RUNNING)
+    }
+
+    internal fun restoredProgress(tags: Set<String>, chapters: List<DownloadedChapterRecord>): DownloadProgress? {
+        val encoded = tags.firstOrNull { it.startsWith(SELECTION_TAG_PREFIX) }
+            ?.removePrefix(SELECTION_TAG_PREFIX).orEmpty()
+        val selectedKeys = encoded.takeIf(String::isNotEmpty)?.let(ChapterSelectionCodec::decode)
+            ?.map(NovelDownloadStore::chapterKey)?.toSet()
+        val targets = chapters.filter {
+            !it.localOnly && (selectedKeys == null || NovelDownloadStore.chapterKey(it.url) in selectedKeys)
+        }.distinctBy { NovelDownloadStore.chapterKey(it.url) }
+        val queuedTotal = tags.firstOrNull { it.startsWith(TOTAL_TAG_PREFIX) }
+            ?.removePrefix(TOTAL_TAG_PREFIX)?.toIntOrNull() ?: targets.size
+        // Full downloads refresh the catalog when they start. Keep that newer
+        // denominator if the worker is subsequently stopped while offline.
+        val total = if (selectedKeys == null) maxOf(queuedTotal, targets.size) else queuedTotal
+        return if (total > 0) DownloadProgress(targets.count { it.downloaded }.coerceAtMost(total), total, "") else null
     }
 
     /**

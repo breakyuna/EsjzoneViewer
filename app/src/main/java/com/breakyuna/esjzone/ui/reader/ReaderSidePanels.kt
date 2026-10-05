@@ -149,7 +149,9 @@ internal fun ReaderSidePanels(
                     val existingPanel = state.panel
                     var axis: ReaderDragAxis? = null
                     var draggingPanel: ReaderSidePanel? = null
-                    var rejected = down.isConsumed || (!gesturesEnabled && existingPanel == null)
+                    // Horizontal gestures inside the open contents panel belong to its tabs.
+                    var rejected = down.isConsumed || (!gesturesEnabled && existingPanel == null) ||
+                        (wasOpen && existingPanel == ReaderSidePanel.CONTENTS && start.x <= state.contentsWidth)
                     var released = false
                     var dx = 0f
                     val velocity = VelocityTracker().apply { addPosition(down.uptimeMillis, start) }

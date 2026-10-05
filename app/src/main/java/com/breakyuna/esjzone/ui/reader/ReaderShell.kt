@@ -21,6 +21,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.unit.dp
@@ -73,10 +74,11 @@ fun ReaderShell(
         ),
         label = "readerBookmarkPull"
     )
+    val pullBackground = if (background.luminance() > 0.5f) Color(0xFFE0E0E0) else Color(0xFF303030)
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(background)
+            .background(pullBackground)
             .pointerInput(pagedGesturesEnabled, verticalContentScrollable, bookmarkPullEnabled) {
                 awaitEachGesture {
                     try {
@@ -158,7 +160,9 @@ fun ReaderShell(
             }
     ) {
         Box(
-            modifier = Modifier.fillMaxSize().graphicsLayer { translationY = pullTranslation },
+            modifier = Modifier.fillMaxSize()
+                .graphicsLayer { translationY = pullTranslation }
+                .background(background),
             content = content
         )
     }

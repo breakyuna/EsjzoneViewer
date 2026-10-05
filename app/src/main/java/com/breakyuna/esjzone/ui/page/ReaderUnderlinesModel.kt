@@ -15,6 +15,8 @@ import kotlinx.coroutines.launch
 class ReaderUnderlinesModel(
     private val database: GeneralDatabase = PresentationAccess.database
 ) : AppStateViewModel<Boolean>(false) {
+    val bookmarks = database.bookmarkDao().observeAll()
+        .flowOn(Dispatchers.IO).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
     val underlines = database.cacheDao().observeReaderUnderlines().map { rows ->
         rows.associate { row ->
             row.key.removePrefix(ReaderUnderlines.KEY_PREFIX) to
@@ -22,13 +24,13 @@ class ReaderUnderlinesModel(
         }
     }.flowOn(Dispatchers.IO).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
 
-    fun update(chapterKey: String, selection: ReaderUnderline, remove: Boolean) {
+    fun update(chapterKey: String, selection: ReaderUnderline, remove: Boolean, renderedText: String? = null) {
         viewModelScope.launch(Dispatchers.IO) {
             try {
                 database.withTransaction {
                     val dao = database.cacheDao()
                     val key = ReaderUnderlines.KEY_PREFIX + chapterKey
-                    val updated = ReaderUnderlines.update(ReaderUnderlines.decode(dao.findByKey(key)?.value), selection, remove)
+                    val updated = ReaderUnderlines.update(ReaderUnderlines.decode(dao.findByKey(key)?.value), selection, remove, renderedText)
                     if (updated.isEmpty()) dao.deleteByKey(key) else dao.putAtomic(key, ReaderUnderlines.encode(updated))
                 }
                 mutableState.value = false

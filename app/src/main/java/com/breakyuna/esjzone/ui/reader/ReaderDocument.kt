@@ -54,6 +54,13 @@ private data class RubyMeasureKey(
     val fontScale: Float
 )
 
+/** Ruby inline content retains its base text as the annotated string's alternate text. */
+internal fun ReaderBlock.renderedReaderText(textTransform: (String) -> String): String = when (this) {
+    is ReaderBlock.Paragraph -> parts.joinToString("") { it.renderedReaderText(textTransform) }
+    is ReaderBlock.Text -> textTransform(value)
+    else -> ""
+}
+
 private val rubyMeasureCache = object : LinkedHashMap<RubyMeasureKey, Pair<androidx.compose.ui.unit.TextUnit, androidx.compose.ui.unit.TextUnit>>(128, 0.75f, true) {
     override fun removeEldestEntry(eldest: MutableMap.MutableEntry<RubyMeasureKey, Pair<androidx.compose.ui.unit.TextUnit, androidx.compose.ui.unit.TextUnit>>?): Boolean {
         return size > 256

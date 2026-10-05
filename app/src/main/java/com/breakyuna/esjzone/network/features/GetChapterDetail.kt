@@ -93,7 +93,7 @@ fun EsjzoneClient.getChapterDetail(
     }
 
     val document = Jsoup.parse(responseBody, targetUrl)
-    if (isPasswordProtectedChapterHtml(responseBody, targetUrl)) throw ChapterPasswordRequiredException()
+    if (document.isPasswordProtectedChapter()) throw ChapterPasswordRequiredException()
     return document.toDetailedChapter(chapter, targetUrl).also {
         StructuredChapterCache.write(cacheKey, responseBody, it)
     }
@@ -116,7 +116,7 @@ fun EsjzoneClient.unlockPasswordProtectedChapter(
         allowStaleOnError = false
     )
     val document = Jsoup.parse(page, targetUrl)
-    if (!isPasswordProtectedChapterHtml(page, targetUrl)) return document.toDetailedChapter(chapter, targetUrl)
+    if (!document.isPasswordProtectedChapter()) return document.toDetailedChapter(chapter, targetUrl)
 
     val token = requestAuthToken(authorization, targetUrl)
         .takeIf { it.isNotBlank() }
@@ -146,7 +146,7 @@ fun EsjzoneClient.unlockPasswordProtectedChapter(
     val content = chapterSelector.first(document, ".forum-content.mt-3, .forum-content")
         ?: throw IOException("Chapter content container was missing")
     content.html(unlockedHtml)
-    if (isPasswordProtectedChapterHtml(document.outerHtml(), targetUrl)) {
+    if (document.isPasswordProtectedChapter()) {
         throw IOException("Chapter remained password protected")
     }
     // A previously cached password gate must not keep masking the new ESJ cookie grant.
@@ -154,9 +154,11 @@ fun EsjzoneClient.unlockPasswordProtectedChapter(
     return document.toDetailedChapter(chapter, targetUrl)
 }
 
-internal fun isPasswordProtectedChapterHtml(html: String, baseUrl: String = ""): Boolean {
-    val document = Jsoup.parse(html, baseUrl)
-    val content = chapterSelector.first(document, ".forum-content.mt-3, .forum-content") ?: return false
+internal fun isPasswordProtectedChapterHtml(html: String, baseUrl: String = ""): Boolean =
+    Jsoup.parse(html, baseUrl).isPasswordProtectedChapter()
+
+internal fun Document.isPasswordProtectedChapter(): Boolean {
+    val content = chapterSelector.first(this, ".forum-content.mt-3, .forum-content") ?: return false
     return content.selectFirst("#oops") != null &&
         content.selectFirst("input#pw[name=pw]") != null &&
         content.selectFirst(".btn-send-pw") != null

@@ -4,7 +4,8 @@ import com.google.gson.Gson
 import java.security.MessageDigest
 
 /** Offsets refer to one rendered AST block, before page splitting. */
-data class ReaderUnderline(val blockIndex: Int, val signature: String, val start: Int, val end: Int)
+data class ReaderUnderline(val blockIndex: Int, val signature: String, val start: Int, val end: Int,
+    val quote: String? = null)
 
 object ReaderUnderlines {
     const val KEY_PREFIX = "reader_underlines:"
@@ -24,12 +25,17 @@ object ReaderUnderlines {
     fun encode(rows: List<ReaderUnderline>): String = gson.toJson(rows)
     fun overlaps(a: ReaderUnderline, b: ReaderUnderline) = a.blockIndex == b.blockIndex &&
         a.signature == b.signature && a.start < b.end && b.start < a.end
-    fun update(rows: List<ReaderUnderline>, selection: ReaderUnderline, remove: Boolean): List<ReaderUnderline> {
+    fun update(rows: List<ReaderUnderline>, selection: ReaderUnderline, remove: Boolean,
+        renderedText: String? = null): List<ReaderUnderline> {
         val overlapping = rows.filter { overlaps(it, selection) }
         val remaining = rows - overlapping.toSet()
-        return if (remove) remaining else remaining + selection.copy(
-            start = minOf(selection.start, overlapping.minOfOrNull { it.start } ?: selection.start),
-            end = maxOf(selection.end, overlapping.maxOfOrNull { it.end } ?: selection.end)
-        )
+        if (remove) return remaining
+        val start = minOf(selection.start, overlapping.minOfOrNull { it.start } ?: selection.start)
+        val end = maxOf(selection.end, overlapping.maxOfOrNull { it.end } ?: selection.end)
+        val quote = if (renderedText != null && end <= renderedText.length) renderedText.substring(start, end)
+            else (listOf(selection) + overlapping).firstOrNull {
+                it.start == start && it.end == end && it.quote != null
+            }?.quote
+        return remaining + selection.copy(start = start, end = end, quote = quote)
     }
 }
