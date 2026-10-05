@@ -752,6 +752,7 @@
     <string name="reader_underlines_empty">No underlines yet</string>
     <string name="reader_underline_position">Paragraph %1$d · Characters %2$d–%3$d</string>
     <string name="reader_underlines">Reading underlines</string>
+    <string name="reader_remove_underline">Remove underline</string>
     <string name="reader_underline_failed">Could not save underline</string>
     <string name="image_save">Save image</string>
     <string name="image_saved">Saved to Pictures/Esjzone</string>

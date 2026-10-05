@@ -16,6 +16,8 @@ import androidx.compose.foundation.text.InlineTextContent
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.text.selection.DisableSelection
 import androidx.compose.material3.Text
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -248,5 +250,8 @@ internal fun ReaderPageContent(
             }
         }
     }
-    if (settings.longPressUnderline) DisableSelection { content() } else SelectionContainer { content() }
+    val underlineSelection = remember(page) { ReaderUnderlineSelection() }
+    CompositionLocalProvider(LocalReaderUnderlineSelection provides underlineSelection) {
+        if (settings.longPressUnderline) DisableSelection { content() } else SelectionContainer { content() }
+    }
 }

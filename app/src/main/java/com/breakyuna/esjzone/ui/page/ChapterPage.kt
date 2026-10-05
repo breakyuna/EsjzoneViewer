@@ -180,6 +180,7 @@ import com.breakyuna.esjzone.ui.reader.ReaderScriptConverter
 import com.breakyuna.esjzone.ui.reader.ReaderScriptSnapshot
 import com.breakyuna.esjzone.ui.reader.ReaderSettings
 import com.breakyuna.esjzone.ui.reader.ReaderChapterHeading
+import com.breakyuna.esjzone.ui.reader.ReaderUnderlineSelection
 import com.breakyuna.esjzone.ui.reader.ReaderBlocks
 import com.breakyuna.esjzone.ui.reader.ReaderPage
 import com.breakyuna.esjzone.ui.reader.ReaderBoundaryTurn
@@ -241,6 +242,7 @@ class ChapterPage(
 
         val underlineModel = rememberAppViewModel { ReaderUnderlinesModel() }
         val underlines by underlineModel.underlines.collectAsState()
+        val underlineSelection = remember { ReaderUnderlineSelection() }
         val readerBookmarks by underlineModel.bookmarks.collectAsState()
         val underlineFailed by underlineModel.state.collectAsState()
         val underlineContext = LocalContext.current
@@ -294,13 +296,6 @@ class ChapterPage(
             }
         }
 
-        LaunchedEffect(isLightBackground, appThemeMode, systemDark, window, view) {
-            window?.let {
-                val controller = WindowCompat.getInsetsController(it, view)
-                controller.isAppearanceLightStatusBars = isLightBackground
-                controller.isAppearanceLightNavigationBars = isLightBackground
-            }
-        }
         var showReaderSettings by rememberSaveable {
             mutableStateOf(false)
         }
@@ -473,6 +468,16 @@ class ChapterPage(
         }
         LaunchedEffect(showReaderSettings) {
             if (showReaderSettings) showToolbar = true
+        }
+        val systemBarBackgroundIsLight = if (showToolbar) {
+            MaterialTheme.colorScheme.surface.luminance() > 0.5f
+        } else isLightBackground
+        LaunchedEffect(systemBarBackgroundIsLight, appThemeMode, systemDark, window, view) {
+            window?.let {
+                val controller = WindowCompat.getInsetsController(it, view)
+                controller.isAppearanceLightStatusBars = systemBarBackgroundIsLight
+                controller.isAppearanceLightNavigationBars = systemBarBackgroundIsLight
+            }
         }
         var readerToolbarHeightPx by remember { mutableIntStateOf(0) }
 
@@ -1984,6 +1989,8 @@ class ChapterPage(
                                     ReaderBlocks(item.blocks, readerSettings, textMeasurer, density,
                                         readerContentColor, readerTextTransform,
                                         blockStartIndex = item.ordinal - 1,
+                                        underlineSelection = underlineSelection,
+                                        chapterKey = item.chapterKey,
                                         underlines = underlines[item.chapterKey].orEmpty(),
                                         onUnderline = { mark, remove ->
                                             underlineModel.update(item.chapterKey, mark, remove,
@@ -2263,32 +2270,27 @@ class ChapterPage(
                 exit = slideOutVertically(targetOffsetY = { it }) + fadeOut(),
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
-                    .windowInsetsPadding(WindowInsets.displayCutout.only(WindowInsetsSides.Horizontal))
                     .onSizeChanged { readerToolbarHeightPx = it.height }
             ) {
-                Column(
+                Surface(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .then(if (showReaderSettings || showBrightness) Modifier.background(MaterialTheme.colorScheme.surface) else Modifier)
-                        .navigationBarsPadding(),
-                    horizontalAlignment = Alignment.CenterHorizontally
+                        .clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null,
+                            onClick = {}
+                        ),
+                    shape = if (showReaderSettings || showBrightness) RoundedCornerShape(0.dp)
+                        else RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
+                    color = MaterialTheme.colorScheme.surface,
+                    contentColor = MaterialTheme.colorScheme.onSurface
                 ) {
-                    AppGlassSurface(
+                    Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clickable(
-                                interactionSource = remember { MutableInteractionSource() },
-                                indication = null,
-                                onClick = {}
-                            ),
-                        spec = com.breakyuna.esjzone.ui.designsystem.glass.AppGlassSpec(
-                            shape = if (showReaderSettings || showBrightness) RoundedCornerShape(0.dp)
-                                else RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
-                            alpha = if (showReaderSettings || showBrightness) 1f else 0.94f,
-                            borderAlpha = if (showReaderSettings || showBrightness) 0f else 0.14f,
-                            tintAlpha = if (showReaderSettings || showBrightness) 0f else 0.16f,
-                            specularIntensity = if (showReaderSettings || showBrightness) 0f else 0.4f
-                        )
+                            .windowInsetsPadding(WindowInsets.displayCutout.only(WindowInsetsSides.Horizontal))
+                            .navigationBarsPadding(),
+                        horizontalAlignment = Alignment.CenterHorizontally
                     ) {
                         Column(
                             modifier = Modifier
@@ -2448,12 +2450,9 @@ class ChapterPage(
                 modifier = Modifier
                     .align(Alignment.TopCenter)
                     .fillMaxWidth()
-                    .windowInsetsPadding(WindowInsets.statusBarsIgnoringVisibility.union(WindowInsets.displayCutout).only(WindowInsetsSides.Top))
-                    .windowInsetsPadding(WindowInsets.displayCutout.only(WindowInsetsSides.Horizontal))
-                    .padding(top = 4.dp)
                     .zIndex(2f)
             ) {
-                AppGlassSurface(
+                Surface(
                     modifier = Modifier
                         .fillMaxWidth()
                         .clickable(
@@ -2461,14 +2460,15 @@ class ChapterPage(
                             indication = null,
                             onClick = {}
                         ),
-                    spec = com.breakyuna.esjzone.ui.designsystem.glass.AppGlassSpec(
-                        shape = RoundedCornerShape(bottomStart = 24.dp, bottomEnd = 24.dp),
-                        alpha = 0.94f
-                    )
+                    shape = RoundedCornerShape(bottomStart = 24.dp, bottomEnd = 24.dp),
+                    color = MaterialTheme.colorScheme.surface,
+                    contentColor = MaterialTheme.colorScheme.onSurface
                 ) {
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
+                            .windowInsetsPadding(WindowInsets.statusBarsIgnoringVisibility.union(WindowInsets.displayCutout).only(WindowInsetsSides.Top))
+                            .windowInsetsPadding(WindowInsets.displayCutout.only(WindowInsetsSides.Horizontal))
                             .padding(horizontal = AppSpacing.sm, vertical = AppSpacing.xs),
                         verticalAlignment = Alignment.CenterVertically
                     ) {

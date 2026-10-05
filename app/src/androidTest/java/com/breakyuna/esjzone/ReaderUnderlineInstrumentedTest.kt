@@ -1,5 +1,6 @@
 package com.breakyuna.esjzone
 
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.width
@@ -19,6 +20,7 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.TextLayoutResult
+import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModelStore
@@ -31,6 +33,9 @@ import com.breakyuna.esjzone.database.GeneralDatabase
 import com.breakyuna.esjzone.ui.page.ReaderUnderlinesModel
 import com.breakyuna.esjzone.ui.reader.ReaderShell
 import com.breakyuna.esjzone.ui.reader.ReaderUnderlineText
+import com.breakyuna.esjzone.ui.reader.ReaderUnderlineSelection
+import com.breakyuna.esjzone.ui.reader.LocalReaderUnderlineSelection
+import androidx.compose.ui.geometry.Offset
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
@@ -223,6 +228,128 @@ class ReaderUnderlineInstrumentedTest {
             assertEquals(initialLayoutCount, layouts)
             assertEquals(0, saves)
         }
+    }
+
+    @Test fun dragAcrossParagraphsPreviewsBothAndCanShrinkBackBeforeSaving() {
+        val selection = ReaderUnderlineSelection()
+        var marks by mutableStateOf(emptyList<ReaderUnderline>())
+        composeRule.setContent {
+            MaterialTheme {
+                CompositionLocalProvider(LocalReaderUnderlineSelection provides selection) {
+                    Column {
+                        listOf("甲乙丙丁戊己庚辛壬癸", "戊己庚辛").forEachIndexed { index, text ->
+                            ReaderUnderlineText(AnnotatedString(text), emptyMap(),
+                                TextStyle(fontSize = 22.sp, lineHeight = 32.sp), Color.Black,
+                                Modifier.testTag("paragraph$index"), true, index, "a".repeat(64),
+                                underlines = marks, onUnderline = { mark, remove ->
+                                    marks = ReaderUnderlines.update(marks, mark, remove)
+                                })
+                        }
+                    }
+                }
+            }
+        }
+        fun point(tag: String, index: Int): Offset {
+            val node = composeRule.onNodeWithTag(tag)
+            val layouts = mutableListOf<TextLayoutResult>()
+            node.performSemanticsAction(SemanticsActions.GetTextLayoutResult) { it(layouts) }
+            return node.fetchSemanticsNode().boundsInRoot.topLeft + layouts.single().getBoundingBox(index).center
+        }
+        val first = composeRule.onNodeWithTag("paragraph0")
+        val origin = first.fetchSemanticsNode().boundsInRoot.topLeft
+        val start = point("paragraph0", 1) - origin
+        val end = point("paragraph1", 2) - origin
+        val trailingWhitespace = Offset((point("paragraph0", 8) - origin).x, end.y)
+        first.performTouchInput { down(start) }
+        composeRule.mainClock.advanceTimeBy(1000)
+        first.performTouchInput { moveTo(trailingWhitespace, delayMillis = 150) }
+        composeRule.runOnIdle {
+            assertEquals(1, selection.target!!.first.block)
+            assertEquals(setOf(TextRange(1, 10), TextRange(0, 4)), selection.ranges.values.toSet())
+        }
+        first.performTouchInput { moveTo(end, delayMillis = 150) }
+        composeRule.runOnIdle {
+            assertEquals(setOf(TextRange(1, 10), TextRange(0, 3)), selection.ranges.values.toSet())
+            assertEquals(1, selection.target!!.first.block)
+            assertTrue(marks.isEmpty())
+        }
+        first.performTouchInput { moveTo(start, delayMillis = 150) }
+        composeRule.runOnIdle {
+            assertEquals(listOf(TextRange(1, 2)), selection.ranges.values.toList())
+            assertEquals(0, selection.target!!.first.block)
+        }
+        first.performTouchInput { moveTo(end, delayMillis = 150); up() }
+        composeRule.runOnIdle {
+            assertEquals(setOf(ReaderUnderline(0, "a".repeat(64), 1, 10),
+                ReaderUnderline(1, "a".repeat(64), 0, 3)), marks.toSet())
+            assertNull(selection.target)
+            assertTrue(selection.ranges.isEmpty())
+        }
+    }
+
+    @Test fun reverseDragAcrossPageFragmentsSavesFullParagraphOffsetsAsOneMark() {
+        val selection = ReaderUnderlineSelection()
+        val saved = mutableListOf<ReaderUnderline>()
+        composeRule.setContent {
+            MaterialTheme {
+                CompositionLocalProvider(LocalReaderUnderlineSelection provides selection) {
+                    Column {
+                        listOf("甲乙丙丁", "戊己庚辛").forEachIndexed { index, text ->
+                            ReaderUnderlineText(AnnotatedString(text), emptyMap(),
+                                TextStyle(fontSize = 22.sp, lineHeight = 32.sp), Color.Black,
+                                Modifier.testTag("fragment$index"), true, 3, "a".repeat(64), offset = 10 + index * 4,
+                                underlines = emptyList(), onUnderline = { mark, _ -> saved += mark })
+                        }
+                    }
+                }
+            }
+        }
+        val first = composeRule.onNodeWithTag("fragment0")
+        val last = composeRule.onNodeWithTag("fragment1")
+        val layouts = mutableListOf<TextLayoutResult>()
+        last.performSemanticsAction(SemanticsActions.GetTextLayoutResult) { it(layouts) }
+        val start = layouts.single().getBoundingBox(2).center
+        layouts.clear()
+        first.performSemanticsAction(SemanticsActions.GetTextLayoutResult) { it(layouts) }
+        val end = first.fetchSemanticsNode().boundsInRoot.topLeft + layouts.single().getBoundingBox(1).center -
+            last.fetchSemanticsNode().boundsInRoot.topLeft
+        last.performTouchInput {
+            down(start)
+            advanceEventTime(1000)
+            moveTo(end, delayMillis = 150)
+            up()
+        }
+        composeRule.runOnIdle {
+            assertEquals(listOf(ReaderUnderline(3, "a".repeat(64), 11, 17)), saved)
+        }
+    }
+
+    @Test fun tappingSavedUnderlineOffersRemovalEvenWhenCreationIsDisabled() {
+        val mark = ReaderUnderline(0, "a".repeat(64), 1, 3)
+        var marks by mutableStateOf(listOf(mark))
+        var taps = 0
+        composeRule.setContent {
+            MaterialTheme {
+                ReaderShell(background = Color.White, onReadingAreaTap = { _, _ -> taps++ }) {
+                    ReaderUnderlineText(AnnotatedString("甲乙丙丁"), emptyMap(), TextStyle(fontSize = 22.sp),
+                        Color.Black, Modifier.testTag("text"), false, 0, "a".repeat(64),
+                        underlines = marks, onUnderline = { selected, remove ->
+                            marks = ReaderUnderlines.update(marks, selected, remove)
+                        })
+                }
+            }
+        }
+        val layouts = mutableListOf<TextLayoutResult>()
+        val node = composeRule.onNodeWithTag("text")
+        node.performSemanticsAction(SemanticsActions.GetTextLayoutResult) { it(layouts) }
+        node.performTouchInput { click(layouts.single().getBoundingBox(1).center) }
+        composeRule.onNode(isPopup()).assertExists()
+        composeRule.runOnIdle { assertEquals(listOf(mark), marks); assertEquals(0, taps) }
+        composeRule.onNode(hasClickAction() and hasAnyAncestor(isPopup())).performClick()
+        composeRule.onAllNodes(isPopup()).assertCountEquals(0)
+        composeRule.runOnIdle { assertTrue(marks.isEmpty()); assertEquals(0, taps) }
+        node.performTouchInput { click(layouts.single().getBoundingBox(1).center) }
+        composeRule.runOnIdle { assertEquals(1, taps) }
     }
 
     @Test fun savedUnderlineFollowsWrappingChangesAndMixedTextDirections() {

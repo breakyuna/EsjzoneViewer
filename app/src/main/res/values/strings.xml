@@ -753,6 +753,7 @@
     <string name="reader_underlines_empty">暂无划线</string>
     <string name="reader_underline_position">第 %1$d 段 · 第 %2$d–%3$d 字</string>
     <string name="reader_underlines">阅读划线</string>
+    <string name="reader_remove_underline">取消划线</string>
     <string name="reader_underline_failed">划线保存失败</string>
     <string name="image_save">保存图片</string>
     <string name="image_saved">已保存到相册 Pictures/Esjzone</string>

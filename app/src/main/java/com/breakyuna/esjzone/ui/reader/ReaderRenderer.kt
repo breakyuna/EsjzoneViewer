@@ -16,6 +16,7 @@ import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.text.selection.DisableSelection
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -77,6 +78,8 @@ fun ReaderBlocks(
     contentColor: Color,
     textTransform: (String) -> String = { it },
     blockStartIndex: Int = 0,
+    underlineSelection: ReaderUnderlineSelection = remember { ReaderUnderlineSelection() },
+    chapterKey: String = "",
     underlines: List<ReaderUnderline> = emptyList(),
     onUnderline: (ReaderUnderline, Boolean) -> Unit = { _, _ -> },
     onTextLayout: (Int, androidx.compose.ui.text.TextLayoutResult?) -> Unit = { _, _ -> },
@@ -145,7 +148,10 @@ fun ReaderBlocks(
             }
         }
     }
-    if (settings.longPressUnderline) DisableSelection { content() } else SelectionContainer { content() }
+    CompositionLocalProvider(LocalReaderUnderlineSelection provides underlineSelection,
+        LocalReaderUnderlineChapter provides chapterKey) {
+        if (settings.longPressUnderline) DisableSelection { content() } else SelectionContainer { content() }
+    }
 }
 
 @Composable

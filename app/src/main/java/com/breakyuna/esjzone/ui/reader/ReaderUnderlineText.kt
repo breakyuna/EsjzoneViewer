@@ -3,6 +3,25 @@ package com.breakyuna.esjzone.ui.reader
 import com.breakyuna.esjzone.domain.reader.ReaderUnderline
 
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.waitForUpOrCancellation
+import androidx.compose.foundation.magnifier
+import androidx.compose.material3.Surface
+import androidx.compose.material3.TextButton
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.unit.DpSize
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntRect
+import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.unit.LayoutDirection
+import androidx.compose.ui.window.Popup
+import androidx.compose.ui.window.PopupPositionProvider
+import androidx.compose.ui.window.PopupProperties
+import com.breakyuna.esjzone.R
+import com.breakyuna.esjzone.ui.designsystem.globalStringResource
+import kotlin.math.roundToInt
 import androidx.compose.foundation.text.InlineTextContent
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
@@ -36,9 +55,22 @@ internal fun ReaderUnderlineText(
     highlights: List<TextRange> = emptyList()
 ) {
     var layout by remember { mutableStateOf<TextLayoutResult?>(null) }
-    var selection by remember(text, enabled) { mutableStateOf<TextRange?>(null) }
+    val sharedSelection = LocalReaderUnderlineSelection.current
+    val selection = sharedSelection ?: remember { ReaderUnderlineSelection() }
+    val chapter = LocalReaderUnderlineChapter.current
+    var menu by remember(text, enabled) { mutableStateOf<Pair<ReaderUnderline, Offset>?>(null) }
     val currentSave by rememberUpdatedState(onUnderline)
     val currentLayout by rememberUpdatedState(onLayout)
+    val currentUnderlines by rememberUpdatedState(underlines)
+    val segment = remember(selection, chapter, text, blockIndex, signature, offset) {
+        ReaderUnderlineSelection.Segment(chapter, blockIndex, signature, offset, text.text) { mark, remove ->
+            currentSave(mark, remove)
+        }
+    }
+    DisposableEffect(selection, segment, enabled) {
+        if (enabled) selection.register(segment)
+        onDispose { selection.unregister(segment) }
+    }
     DisposableEffect(Unit) {
         onDispose { currentLayout(null) }
     }
@@ -60,8 +92,18 @@ internal fun ReaderUnderlineText(
         }
     }
     Text(text = displayed, inlineContent = inlineContent, style = style, color = color,
-        overflow = TextOverflow.Visible, onTextLayout = { layout = it; onLayout(it) },
-        modifier = modifier.drawWithCache {
+        overflow = TextOverflow.Visible, onTextLayout = { layout = it; segment.layout = it; onLayout(it) },
+        modifier = modifier.onGloballyPositioned { segment.coordinates = it }
+            .magnifier(
+                sourceCenter = { selection.target?.takeIf { it.first == segment }?.second ?: Offset.Unspecified },
+                magnifierCenter = {
+                    selection.target?.takeIf { it.first == segment }?.second?.let { source ->
+                        val windowY = segment.coordinates?.localToWindow(source)?.y ?: 0f
+                        source + Offset(0f, if (windowY >= 96.dp.toPx()) -64.dp.toPx() else 64.dp.toPx())
+                    } ?: Offset.Unspecified
+                },
+                zoom = 1.8f, size = DpSize(112.dp, 48.dp), cornerRadius = 12.dp
+            ).drawWithCache {
             val result = layout
             val lineOffset = 2.dp.toPx()
             val stroke = Stroke(width = lineOffset, cap = StrokeCap.Round)
@@ -97,7 +139,7 @@ internal fun ReaderUnderlineText(
             onDrawWithContent {
                 // Read drag state here so selection updates only invalidate drawing,
                 // without rebuilding Text or the saved underline geometry.
-                val range = selection
+                val range = selection.ranges[segment]
                 if (range != previewRange) {
                     previewRange = range
                     previewUnderline.reset()
@@ -109,43 +151,72 @@ internal fun ReaderUnderlineText(
                 drawPath(savedUnderline, Color.Red, style = stroke)
                 drawPath(previewUnderline, Color.Red, style = stroke)
             }
-        }.then(if (!enabled) Modifier else Modifier.pointerInput(text, blockIndex, signature, offset) {
-            var anchor = TextRange.Zero
-            var position = Offset.Zero
-            fun characterAt(result: TextLayoutResult, point: Offset): TextRange {
-                var index = result.getOffsetForPosition(point).coerceIn(0, text.lastIndex)
-                // Hit testing returns a caret boundary. Use the glyph actually touched,
-                // including its right half, instead of selecting the next character.
-                if (index > 0 && !result.getBoundingBox(index).contains(point) &&
-                    result.getBoundingBox(index - 1).contains(point)) index--
-                return readerUnderlineCharacterRange(text.text, index)
+        }.pointerInput(text, blockIndex, signature, offset, enabled) {
+            // Only consume a completed tap on a saved mark, leaving ordinary reader taps alone.
+            awaitEachGesture {
+                val down = awaitFirstDown(requireUnconsumed = false)
+                val result = layout ?: return@awaitEachGesture
+                if (text.isEmpty()) return@awaitEachGesture
+                val character = readerUnderlineCharacterAt(result, down.position)
+                val bounds = result.getBoundingBox(character.min)
+                val mark = currentUnderlines.firstOrNull {
+                    it.blockIndex == blockIndex && it.signature == signature &&
+                        offset + character.min in it.start until it.end
+                }
+                val up = waitForUpOrCancellation()
+                if (mark != null && bounds.inflate(4.dp.toPx()).contains(down.position) && up != null &&
+                    (up.position - down.position).getDistance() < viewConfiguration.touchSlop &&
+                    up.uptimeMillis - down.uptimeMillis < viewConfiguration.longPressTimeoutMillis) {
+                    up.consume()
+                    menu = mark to bounds.center
+                }
             }
-            detectDragGesturesAfterLongPress(
-                onDragStart = { point ->
-                    layout?.takeIf { text.isNotEmpty() }?.let { result ->
+        }.then(if (!enabled) Modifier else Modifier.pointerInput(segment, selection) {
+            var position = Offset.Zero
+            try {
+                detectDragGesturesAfterLongPress(
+                    onDragStart = { point ->
+                        menu = null
                         position = point
-                        anchor = characterAt(result, point)
-                        selection = anchor
-                    }
-                },
-                onDrag = { change, amount ->
-                    change.consume()
-                    position += amount
-                    layout?.takeIf { text.isNotEmpty() }?.let { result ->
-                        val target = characterAt(result, position)
-                        selection = TextRange(minOf(anchor.min, target.min), maxOf(anchor.max, target.max))
-                    }
-                },
-                onDragEnd = {
-                    selection?.takeUnless { it.collapsed }?.let { range ->
-                        currentSave(ReaderUnderline(blockIndex, signature,
-                            offset + range.min, offset + range.max), false)
-                    }
-                    selection = null
-                },
-                onDragCancel = { selection = null }
-            )
+                        selection.start(segment, point)
+                    },
+                    onDrag = { change, amount ->
+                        change.consume()
+                        position += amount
+                        selection.move(segment, position)
+                    },
+                    onDragEnd = { selection.finish() },
+                    onDragCancel = { selection.cancel() }
+                )
+            } finally {
+                selection.cancel()
+            }
         }))
+    menu?.let { (mark, point) ->
+        Popup(
+            popupPositionProvider = remember(segment, point) {
+                object : PopupPositionProvider {
+                    override fun calculatePosition(anchorBounds: IntRect, windowSize: IntSize,
+                        layoutDirection: LayoutDirection, popupContentSize: IntSize): IntOffset {
+                        val anchor = segment.coordinates?.takeIf { it.isAttached }?.localToWindow(point) ?: Offset.Zero
+                        val x = (anchor.x - popupContentSize.width / 2).roundToInt()
+                        val y = (anchor.y - popupContentSize.height - 24).roundToInt()
+                        return IntOffset(x.coerceIn(0, (windowSize.width - popupContentSize.width).coerceAtLeast(0)),
+                            (if (y >= 0) y else (anchor.y + 24).roundToInt())
+                                .coerceIn(0, (windowSize.height - popupContentSize.height).coerceAtLeast(0)))
+                    }
+                }
+            },
+            onDismissRequest = { menu = null },
+            properties = PopupProperties(focusable = true)
+        ) {
+            Surface(shape = RoundedCornerShape(12.dp), shadowElevation = 6.dp) {
+                TextButton(onClick = { currentSave(mark, true); menu = null }) {
+                    Text(globalStringResource(R.string.reader_remove_underline))
+                }
+            }
+        }
+    }
 }
 
 internal fun readerUnderlineCharacterRange(text: String, index: Int): TextRange {
