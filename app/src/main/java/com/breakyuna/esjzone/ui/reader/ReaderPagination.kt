@@ -6,6 +6,7 @@ import com.breakyuna.esjzone.domain.reader.ReaderUnderlines
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -230,6 +231,7 @@ internal fun ReaderPageContent(
                         offset = segment.startOffset,
                         underlines = underlines,
                         onUnderline = onUnderline,
+                        showMagnifier = false,
                         highlights = highlights.filter { it.blockIndex == segment.blockIndex }.mapNotNull { range ->
                             textOffsets(segment.blockIndex)?.let { offsets ->
                                 androidx.compose.ui.text.TextRange(
@@ -252,6 +254,9 @@ internal fun ReaderPageContent(
     }
     val underlineSelection = remember(page) { ReaderUnderlineSelection() }
     CompositionLocalProvider(LocalReaderUnderlineSelection provides underlineSelection) {
-        if (settings.longPressUnderline) DisableSelection { content() } else SelectionContainer { content() }
+        Box {
+            if (settings.longPressUnderline) DisableSelection { content() } else SelectionContainer { content() }
+            ReaderUnderlineMagnifier(underlineSelection, Modifier.matchParentSize())
+        }
     }
 }

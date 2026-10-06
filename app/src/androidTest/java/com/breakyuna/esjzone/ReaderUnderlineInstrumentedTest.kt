@@ -4,6 +4,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.background
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.PagerState
@@ -28,6 +29,7 @@ import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.breakyuna.esjzone.domain.reader.ReaderUnderline
+import com.breakyuna.esjzone.domain.reader.ReaderUnderlineRange
 import com.breakyuna.esjzone.domain.reader.ReaderUnderlines
 import com.breakyuna.esjzone.database.GeneralDatabase
 import com.breakyuna.esjzone.ui.page.ReaderUnderlinesModel
@@ -35,7 +37,12 @@ import com.breakyuna.esjzone.ui.reader.ReaderShell
 import com.breakyuna.esjzone.ui.reader.ReaderUnderlineText
 import com.breakyuna.esjzone.ui.reader.ReaderUnderlineSelection
 import com.breakyuna.esjzone.ui.reader.LocalReaderUnderlineSelection
+import com.breakyuna.esjzone.ui.reader.ReaderPage
+import com.breakyuna.esjzone.ui.reader.ReaderPageContent
+import com.breakyuna.esjzone.ui.reader.ReaderPageSegment
+import com.breakyuna.esjzone.ui.reader.ReaderSettings
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.isSpecified
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
@@ -182,6 +189,122 @@ class ReaderUnderlineInstrumentedTest {
         composeRule.runOnIdle { assertEquals(listOf(ReaderUnderline(0, "a".repeat(64), 11, 21)), marks) }
     }
 
+    @Test fun pagedMagnifierTracksTheGlyphAcrossParagraphsAndDisappearsAfterReleaseOrCancel() {
+        val saved = mutableListOf<ReaderUnderline>()
+        lateinit var pagerState: PagerState
+        composeRule.setContent {
+            pagerState = rememberPagerState(initialPage = 1) { 3 }
+            val page = remember {
+                ReaderPage(listOf(
+                    ReaderPageSegment.TextLine(AnnotatedString("甲乙丙丁"), emptyMap(), 12.dp, 0, "a".repeat(64)),
+                    ReaderPageSegment.TextLine(AnnotatedString("戊己庚辛"), emptyMap(), 0.dp, 1, "b".repeat(64))
+                ), 0f)
+            }
+            MaterialTheme {
+                ReaderShell(background = Color.White, onReadingAreaTap = { _, _ -> }, pagedGesturesEnabled = true) {
+                    HorizontalPager(state = pagerState, beyondViewportPageCount = 1,
+                        modifier = Modifier.fillMaxSize().padding(horizontal = 18.dp, vertical = 24.dp)) { index ->
+                        if (index == 1) {
+                            ReaderPageContent(page, ReaderSettings(longPressUnderline = true),
+                                TextStyle(fontSize = 22.sp, lineHeight = 32.sp), Color.Black, { it }, 300.dp,
+                                onUnderline = { mark, _ -> saved += mark })
+                        } else Box(Modifier.fillMaxSize())
+                    }
+                }
+            }
+        }
+        // Read the platform modifier's source position without exposing a production test API.
+        val lens = SemanticsMatcher("underline magnifier") { node ->
+            node.config.iterator().asSequence().any { it.key.name == "MagnifierPositionInRoot" }
+        }
+        fun assertLensAt(expected: Offset) {
+            composeRule.onAllNodes(lens, useUnmergedTree = true).assertCountEquals(1)
+            val entry = composeRule.onNode(lens, useUnmergedTree = true).fetchSemanticsNode()
+                .config.iterator().asSequence().single { it.key.name == "MagnifierPositionInRoot" }
+            @Suppress("UNCHECKED_CAST")
+            val position = (entry.value as () -> Offset).invoke()
+            assertTrue(position.isSpecified)
+            assertTrue("Lens source $position differs from glyph $expected", (position - expected).getDistance() < 1f)
+        }
+        fun point(text: String, index: Int): Offset {
+            val node = composeRule.onNodeWithText(text)
+            val layouts = mutableListOf<TextLayoutResult>()
+            node.performSemanticsAction(SemanticsActions.GetTextLayoutResult) { it(layouts) }
+            return node.fetchSemanticsNode().boundsInRoot.topLeft + layouts.single().getBoundingBox(index).center
+        }
+        val first = composeRule.onNodeWithText("甲乙丙丁")
+        val origin = first.fetchSemanticsNode().boundsInRoot.topLeft
+        val start = point("甲乙丙丁", 1)
+        val end = point("戊己庚辛", 2)
+        first.performTouchInput { down(start - origin) }
+        composeRule.mainClock.advanceTimeBy(1000)
+        assertLensAt(start)
+        first.performTouchInput { moveTo(end - origin, delayMillis = 150) }
+        assertLensAt(end)
+        composeRule.runOnIdle { assertEquals(1, pagerState.currentPage); assertTrue(saved.isEmpty()) }
+        first.performTouchInput { up() }
+        composeRule.onAllNodes(lens, useUnmergedTree = true).assertCountEquals(0)
+        composeRule.runOnIdle {
+            assertEquals(listOf(ReaderUnderline(0, "a".repeat(64), 1, 4,
+                continuation = listOf(ReaderUnderlineRange(1, "b".repeat(64), 0, 3)))), saved)
+        }
+        first.performTouchInput { down(start - origin) }
+        composeRule.mainClock.advanceTimeBy(1000)
+        assertLensAt(start)
+        first.performTouchInput { cancel() }
+        composeRule.onAllNodes(lens, useUnmergedTree = true).assertCountEquals(0)
+        composeRule.runOnIdle { assertEquals(1, saved.size); assertEquals(1, pagerState.currentPage) }
+    }
+
+    @Test fun savedAndPreviewUnderlinesStopBeforeTrailingWhitespaceAndLeaveBlankLinesClear() {
+        val text = "甲乙   \n　　\n丙丁　 \n戊己 abc xyz   "
+        var marks by mutableStateOf(listOf(ReaderUnderline(0, "a".repeat(64), 0, text.length)))
+        composeRule.setContent {
+            MaterialTheme {
+                ReaderUnderlineText(AnnotatedString(text), emptyMap(),
+                    TextStyle(fontSize = 22.sp, lineHeight = 32.sp), Color.Black,
+                    Modifier.width(240.dp).background(Color.White).testTag("text"), true, 0, "a".repeat(64),
+                    underlines = marks, onUnderline = { mark, remove -> marks = ReaderUnderlines.update(marks, mark, remove) })
+            }
+        }
+        val node = composeRule.onNodeWithTag("text")
+        val layouts = mutableListOf<TextLayoutResult>()
+        node.performSemanticsAction(SemanticsActions.GetTextLayoutResult) { it(layouts) }
+        val layout = layouts.single()
+        assertEquals(4, layout.lineCount)
+        fun assertVisibleTextOnly() {
+            val pixels = node.captureToImage().toPixelMap()
+            val stroke = with(composeRule.density) { 2.dp.toPx() }
+            fun redAt(x: Int, y: Int): Boolean {
+                val color = pixels[x, y]
+                return color.red > 0.8f && color.green < 0.2f && color.blue < 0.2f
+            }
+            listOf(0 to 1, 2 to text.indexOf('丁'), 3 to text.indexOf("xyz") + 2).forEach { (line, last) ->
+                val bounds = layout.getBoundingBox(last)
+                val y = (layout.getLineBaseline(line) + stroke).roundToInt()
+                assertTrue(redAt(bounds.center.x.roundToInt(), y))
+                for (x in (bounds.right + stroke * 2).roundToInt() until pixels.width) {
+                    assertFalse("Underline extends into trailing whitespace on line $line", redAt(x, y))
+                }
+            }
+            val blankY = (layout.getLineBaseline(1) + stroke).roundToInt()
+            for (x in 0 until pixels.width) assertFalse("Blank line was underlined", redAt(x, blankY))
+            val space = text.indexOf(" abc")
+            val spaceBounds = layout.getBoundingBox(space)
+            assertTrue("Interior spaces should remain within the underline",
+                redAt(spaceBounds.center.x.roundToInt(), (layout.getLineBaseline(3) + stroke).roundToInt()))
+        }
+        assertVisibleTextOnly()
+        composeRule.runOnIdle { marks = emptyList() }
+        node.performTouchInput { down(layout.getBoundingBox(0).center) }
+        composeRule.mainClock.advanceTimeBy(1000)
+        node.performTouchInput { moveTo(layout.getBoundingBox(text.lastIndex).center, delayMillis = 150) }
+        assertVisibleTextOnly()
+        node.performTouchInput { up() }
+        assertVisibleTextOnly()
+        composeRule.runOnIdle { assertEquals(2, marks.size); assertEquals(text.length, marks.last().end) }
+    }
+
     @Test fun dragPreviewShrinksAndCancelsWithoutChangingTextLayoutOrSavedMarks() {
         val text = AnnotatedString("甲乙丙丁戊己庚辛\nabcdefgh")
         val saved = listOf(ReaderUnderline(0, "a".repeat(64), 0, 1))
@@ -280,8 +403,72 @@ class ReaderUnderlineInstrumentedTest {
         }
         first.performTouchInput { moveTo(end, delayMillis = 150); up() }
         composeRule.runOnIdle {
-            assertEquals(setOf(ReaderUnderline(0, "a".repeat(64), 1, 10),
-                ReaderUnderline(1, "a".repeat(64), 0, 3)), marks.toSet())
+            assertEquals(listOf(ReaderUnderline(0, "a".repeat(64), 1, 10,
+                continuation = listOf(ReaderUnderlineRange(1, "a".repeat(64), 0, 3)))), marks)
+            assertNull(selection.target)
+            assertTrue(selection.ranges.isEmpty())
+        }
+        val second = composeRule.onNodeWithTag("paragraph1")
+        val tap = point("paragraph1", 1) - second.fetchSemanticsNode().boundsInRoot.topLeft
+        second.performTouchInput { click(tap) }
+        composeRule.onNode(hasClickAction() and hasAnyAncestor(isPopup())).performClick()
+        composeRule.runOnIdle { assertTrue(marks.isEmpty()) }
+    }
+
+    @Test fun dragIncludesNewlyMountedParagraphAndKeepsFollowingMovedEndpoint() {
+        val selection = ReaderUnderlineSelection()
+        val saved = mutableListOf<ReaderUnderline>()
+        var showMiddle by mutableStateOf(false)
+        val paragraphs = listOf("甲乙丙丁", "戊己庚辛", "壬癸子丑")
+        composeRule.setContent {
+            MaterialTheme {
+                CompositionLocalProvider(LocalReaderUnderlineSelection provides selection) {
+                    Column {
+                        (if (showMiddle) listOf(0, 1, 2) else listOf(0, 2)).forEach { index ->
+                            key(index) {
+                                ReaderUnderlineText(AnnotatedString(paragraphs[index]), emptyMap(),
+                                    TextStyle(fontSize = 22.sp, lineHeight = 32.sp), Color.Black,
+                                    Modifier.testTag("mounted$index"), true, index, "a".repeat(64),
+                                    underlines = emptyList(), onUnderline = { mark, _ -> saved += mark })
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        fun point(block: Int, index: Int): Offset {
+            val node = composeRule.onNodeWithTag("mounted$block")
+            val layouts = mutableListOf<TextLayoutResult>()
+            node.performSemanticsAction(SemanticsActions.GetTextLayoutResult) { it(layouts) }
+            return node.fetchSemanticsNode().boundsInRoot.topLeft + layouts.single().getBoundingBox(index).center
+        }
+        fun selectedRanges() = selection.ranges.entries.associate { it.key.block to it.value }
+        val first = composeRule.onNodeWithTag("mounted0")
+        val origin = first.fetchSemanticsNode().boundsInRoot.topLeft
+        val start = point(0, 1) - origin
+        first.performTouchInput { down(start) }
+        composeRule.mainClock.advanceTimeBy(1000)
+        val initialEnd = point(2, 2) - origin
+        first.performTouchInput { moveTo(initialEnd, delayMillis = 150) }
+        composeRule.runOnIdle {
+            assertEquals(mapOf(0 to TextRange(1, 4), 2 to TextRange(0, 3)), selectedRanges())
+            showMiddle = true
+        }
+        // The same final character now sits below a newly mounted middle paragraph.
+        val movedEnd = point(2, 2) - origin
+        assertTrue(movedEnd.y > initialEnd.y)
+        first.performTouchInput { moveTo(movedEnd, delayMillis = 150) }
+        composeRule.runOnIdle {
+            assertEquals(mapOf(0 to TextRange(1, 4), 1 to TextRange(0, 4), 2 to TextRange(0, 3)), selectedRanges())
+            assertEquals(2, selection.target!!.first.block)
+            assertTrue(saved.isEmpty())
+        }
+        first.performTouchInput { moveTo(start, delayMillis = 150) }
+        composeRule.runOnIdle { assertEquals(mapOf(0 to TextRange(1, 2)), selectedRanges()) }
+        first.performTouchInput { moveTo(movedEnd, delayMillis = 150); up() }
+        composeRule.runOnIdle {
+            assertEquals(listOf(ReaderUnderline(0, "a".repeat(64), 1, 4, continuation = listOf(
+                ReaderUnderlineRange(1, "a".repeat(64), 0, 4), ReaderUnderlineRange(2, "a".repeat(64), 0, 3)))), saved)
             assertNull(selection.target)
             assertTrue(selection.ranges.isEmpty())
         }
@@ -372,7 +559,7 @@ class ReaderUnderlineInstrumentedTest {
             val pixels = node.captureToImage().toPixelMap()
             val lineOffset = with(composeRule.density) { 2.dp.toPx() }
             for (index in text.indices) {
-                if (text[index] == '\n') continue
+                if (text[index].isWhitespace()) continue
                 val bounds = layout.getBoundingBox(index)
                 if (bounds.width <= 1f) continue
                 val x = bounds.center.x.roundToInt().coerceIn(0, pixels.width - 1)

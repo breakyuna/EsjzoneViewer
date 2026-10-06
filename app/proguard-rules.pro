@@ -101,4 +101,6 @@
 -keep class com.breakyuna.esjzone.network.StructuredChapterCache$Snapshot { *; }
 -keep class com.breakyuna.esjzone.novellibrary.novel.Chapter { *; }
 -keep class com.breakyuna.esjzone.domain.reader.ReaderAnchor { *; }
+-keep class com.breakyuna.esjzone.domain.reader.ReaderUnderline { *; }
+-keep class com.breakyuna.esjzone.domain.reader.ReaderUnderlineRange { *; }
 -keep class com.breakyuna.esjzone.database.entity.LocalReadingActivity { *; }

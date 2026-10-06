@@ -24,7 +24,8 @@ class ReaderUnderlinesModel(
         }
     }.flowOn(Dispatchers.IO).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
 
-    fun update(chapterKey: String, selection: ReaderUnderline, remove: Boolean, renderedText: String? = null) {
+    fun update(chapterKey: String, selection: ReaderUnderline, remove: Boolean,
+        renderedText: (Int) -> String? = { null }) {
         viewModelScope.launch(Dispatchers.IO) {
             try {
                 database.withTransaction {

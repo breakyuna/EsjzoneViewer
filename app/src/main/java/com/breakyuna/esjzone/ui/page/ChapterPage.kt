@@ -1993,8 +1993,9 @@ class ChapterPage(
                                         chapterKey = item.chapterKey,
                                         underlines = underlines[item.chapterKey].orEmpty(),
                                         onUnderline = { mark, remove ->
-                                            underlineModel.update(item.chapterKey, mark, remove,
-                                                item.entry.document.blocks.getOrNull(mark.blockIndex)?.renderedReaderText(readerTextTransform))
+                                            underlineModel.update(item.chapterKey, mark, remove) { blockIndex ->
+                                                item.entry.document.blocks.getOrNull(blockIndex)?.renderedReaderText(readerTextTransform)
+                                            }
                                         },
                                         onTextLayout = { _, layout ->
                                             if (layout == null) textLayouts.remove(item.key)
@@ -2044,13 +2045,15 @@ class ChapterPage(
                     }
                 }
                     } else {
+                        val coverAnimation = readerSettings.pageAnimation == ReaderPageAnimation.COVER
                         HorizontalPager(
                             state = horizontalPagerState,
-                            // Keep glyph overhang inside the pager's outer clip, in the page margins.
+                            // Cover pages carry their margins inside the animated background.
+                            // Other modes keep glyph overhang in the pager's outer margins.
                             contentPadding = androidx.compose.foundation.layout.PaddingValues(
-                                horizontal = readerSettings.horizontalPaddingDp.dp
+                                horizontal = if (coverAnimation) 0.dp else readerSettings.horizontalPaddingDp.dp
                             ),
-                            pageSpacing = readerSettings.horizontalPaddingDp.dp * 2,
+                            pageSpacing = if (coverAnimation) 0.dp else readerSettings.horizontalPaddingDp.dp * 2,
                             key = { index -> currentPagedDisplayItems.getOrNull(index)?.key ?: index },
                             userScrollEnabled = pagingEnabled && !pagedTurns.hasTurns,
                             beyondViewportPageCount = if (readerSettings.pageAnimation == ReaderPageAnimation.HORIZONTAL_SLIDE) 0 else 1,
@@ -2075,7 +2078,7 @@ class ChapterPage(
                             currentPagedDisplayItems.getOrNull(pageIndex)?.page?.let { page ->
                                 Box(
                                     Modifier.fillMaxSize()
-                                        .zIndex(if (readerSettings.pageAnimation == ReaderPageAnimation.COVER) pageIndex.toFloat() else 0f)
+                                        .zIndex(if (coverAnimation) pageIndex.toFloat() else 0f)
                                         .graphicsLayer {
                                             val offset = horizontalPagerState.currentPage - pageIndex + horizontalPagerState.currentPageOffsetFraction
                                             val span = horizontalPagerState.layoutInfo.let { it.pageSize + it.pageSpacing }.toFloat()
@@ -2091,7 +2094,12 @@ class ChapterPage(
                                             }
                                         }
                                         .background(readerSettings.background.containerColor())
-                                        .padding(top = pageTopPadding, bottom = pageBottomPadding)
+                                        .padding(
+                                            start = if (coverAnimation) readerSettings.horizontalPaddingDp.dp else 0.dp,
+                                            end = if (coverAnimation) readerSettings.horizontalPaddingDp.dp else 0.dp,
+                                            top = pageTopPadding,
+                                            bottom = pageBottomPadding
+                                        )
                                 ) {
                                     ReaderPageContent(
                                         page, readerSettings, readerTextStyle,
@@ -2100,8 +2108,9 @@ class ChapterPage(
                                         underlines = underlines[currentPagedDisplayItems.getOrNull(pageIndex)?.chapterKey].orEmpty(),
                                         onUnderline = { mark, remove ->
                                             currentPagedDisplayItems.getOrNull(pageIndex)?.let { item ->
-                                                underlineModel.update(item.chapterKey, mark, remove,
-                                                    item.entry.document.blocks.getOrNull(mark.blockIndex)?.renderedReaderText(readerTextTransform))
+                                                underlineModel.update(item.chapterKey, mark, remove) { blockIndex ->
+                                                    item.entry.document.blocks.getOrNull(blockIndex)?.renderedReaderText(readerTextTransform)
+                                                }
                                             }
                                         },
                                         highlights = currentPagedDisplayItems.getOrNull(pageIndex)?.let(::searchHighlights).orEmpty(),

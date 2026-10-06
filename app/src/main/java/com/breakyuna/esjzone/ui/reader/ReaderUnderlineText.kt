@@ -7,10 +7,12 @@ import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.foundation.magnifier
+import androidx.compose.foundation.layout.Box
 import androidx.compose.material3.Surface
 import androidx.compose.material3.TextButton
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntRect
@@ -27,6 +29,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.isSpecified
 import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
@@ -52,7 +55,8 @@ internal fun ReaderUnderlineText(
     underlines: List<ReaderUnderline>,
     onUnderline: (ReaderUnderline, Boolean) -> Unit,
     onLayout: (TextLayoutResult?) -> Unit = {},
-    highlights: List<TextRange> = emptyList()
+    highlights: List<TextRange> = emptyList(),
+    showMagnifier: Boolean = true
 ) {
     var layout by remember { mutableStateOf<TextLayoutResult?>(null) }
     val sharedSelection = LocalReaderUnderlineSelection.current
@@ -67,6 +71,9 @@ internal fun ReaderUnderlineText(
             currentSave(mark, remove)
         }
     }
+    val selectedRange by remember(selection, segment) {
+        derivedStateOf(structuralEqualityPolicy()) { selection.ranges[segment] }
+    }
     DisposableEffect(selection, segment, enabled) {
         if (enabled) selection.register(segment)
         onDispose { selection.unregister(segment) }
@@ -75,7 +82,7 @@ internal fun ReaderUnderlineText(
         onDispose { currentLayout(null) }
     }
     val underlineRanges = remember(text, underlines, blockIndex, signature, offset) {
-        underlines.filter { it.blockIndex == blockIndex && it.signature == signature }.mapNotNull { mark ->
+        underlines.flatMap { it.ranges() }.filter { it.blockIndex == blockIndex && it.signature == signature }.mapNotNull { mark ->
             val start = (mark.start - offset).coerceAtLeast(0)
             val end = (mark.end - offset).coerceAtMost(text.length)
             if (start < end) TextRange(start, end) else null
@@ -91,39 +98,60 @@ internal fun ReaderUnderlineText(
             }
         }
     }
+    val magnifierModifier = if (!showMagnifier) Modifier else {
+        val source by remember(selection, segment) {
+            derivedStateOf(structuralEqualityPolicy()) {
+                selection.target?.takeIf { it.first == segment }?.second ?: Offset.Unspecified
+            }
+        }
+        Modifier.magnifier(
+            sourceCenter = { source },
+            magnifierCenter = {
+                val point = source
+                if (!point.isSpecified) Offset.Unspecified else {
+                    val windowY = segment.coordinates?.localToWindow(point)?.y ?: 0f
+                    point + Offset(0f, if (windowY >= 96.dp.toPx()) -64.dp.toPx() else 64.dp.toPx())
+                }
+            },
+            zoom = 1.8f, size = DpSize(112.dp, 48.dp), cornerRadius = 12.dp
+        )
+    }
     Text(text = displayed, inlineContent = inlineContent, style = style, color = color,
         overflow = TextOverflow.Visible, onTextLayout = { layout = it; segment.layout = it; onLayout(it) },
         modifier = modifier.onGloballyPositioned { segment.coordinates = it }
-            .magnifier(
-                sourceCenter = { selection.target?.takeIf { it.first == segment }?.second ?: Offset.Unspecified },
-                magnifierCenter = {
-                    selection.target?.takeIf { it.first == segment }?.second?.let { source ->
-                        val windowY = segment.coordinates?.localToWindow(source)?.y ?: 0f
-                        source + Offset(0f, if (windowY >= 96.dp.toPx()) -64.dp.toPx() else 64.dp.toPx())
-                    } ?: Offset.Unspecified
-                },
-                zoom = 1.8f, size = DpSize(112.dp, 48.dp), cornerRadius = 12.dp
-            ).drawWithCache {
+            .then(magnifierModifier).drawWithCache {
             val result = layout
             val lineOffset = 2.dp.toPx()
             val stroke = Stroke(width = lineOffset, cap = StrokeCap.Round)
             val previewColor = color.copy(alpha = 0.18f)
             // These caches live only as long as this text layout and drawing cache.
             val baselines = mutableMapOf<Int, Float>()
+            val visibleLineEnds = mutableMapOf<Int, Int>()
             val glyphs = mutableMapOf<Int, Pair<Offset, Offset>>()
+            val skippedGlyph = Offset.Unspecified to Offset.Unspecified
             fun appendUnderline(path: Path, range: TextRange) {
                 if (result == null) return
                 var previousEnd: Offset? = null
                 for (index in range.min until range.max) {
-                    if (text[index] == '\n' || text[index] == '\r') {
-                        previousEnd = null
-                        continue
-                    }
                     val (start, end) = glyphs.getOrPut(index) {
-                        val bounds = result.getBoundingBox(index)
+                        if (text[index] == '\n' || text[index] == '\r') return@getOrPut skippedGlyph
                         val line = result.getLineForOffset(index)
+                        val visibleEnd = visibleLineEnds.getOrPut(line) {
+                            var end = result.getLineEnd(line, visibleEnd = true)
+                            val start = result.getLineStart(line)
+                            // Include Unicode whitespace and a final line without a newline.
+                            while (end > start && text[end - 1].isWhitespace()) end--
+                            end
+                        }
+                        if (index >= visibleEnd) return@getOrPut skippedGlyph
+                        val bounds = result.getBoundingBox(index)
+                        if (bounds.left >= bounds.right) return@getOrPut skippedGlyph
                         val y = baselines.getOrPut(line) { result.getLineBaseline(line) + lineOffset }
                         Offset(bounds.left, y) to Offset(bounds.right, y)
+                    }
+                    if (!start.isSpecified) {
+                        previousEnd = null
+                        continue
                     }
                     // Join only touching glyph boxes on the same baseline. Other
                     // directions and inline placeholders keep their actual boxes.
@@ -139,7 +167,7 @@ internal fun ReaderUnderlineText(
             onDrawWithContent {
                 // Read drag state here so selection updates only invalidate drawing,
                 // without rebuilding Text or the saved underline geometry.
-                val range = selection.ranges[segment]
+                val range = selectedRange
                 if (range != previewRange) {
                     previewRange = range
                     previewUnderline.reset()
@@ -160,8 +188,8 @@ internal fun ReaderUnderlineText(
                 val character = readerUnderlineCharacterAt(result, down.position)
                 val bounds = result.getBoundingBox(character.min)
                 val mark = currentUnderlines.firstOrNull {
-                    it.blockIndex == blockIndex && it.signature == signature &&
-                        offset + character.min in it.start until it.end
+                    it.ranges().any { range -> range.blockIndex == blockIndex && range.signature == signature &&
+                        offset + character.min in range.start until range.end }
                 }
                 val up = waitForUpOrCancellation()
                 if (mark != null && bounds.inflate(4.dp.toPx()).contains(down.position) && up != null &&
@@ -217,6 +245,34 @@ internal fun ReaderUnderlineText(
             }
         }
     }
+}
+
+/** A page owns one lens outside its split text nodes and converts the active glyph to its canvas. */
+@Composable
+internal fun ReaderUnderlineMagnifier(selection: ReaderUnderlineSelection, modifier: Modifier) {
+    val visible by remember(selection) {
+        derivedStateOf(structuralEqualityPolicy()) { selection.target != null }
+    }
+    if (!visible) return
+    var coordinates by remember(selection) { mutableStateOf<LayoutCoordinates?>(null) }
+    fun sourceCenter(): Offset {
+        val target = selection.target ?: return Offset.Unspecified
+        val canvas = coordinates?.takeIf { it.isAttached } ?: return Offset.Unspecified
+        val text = target.first.coordinates?.takeIf { it.isAttached } ?: return Offset.Unspecified
+        return canvas.localPositionOf(text, target.second)
+    }
+    Box(modifier.onGloballyPositioned { coordinates = it }.magnifier(
+        sourceCenter = { sourceCenter() },
+        magnifierCenter = {
+            val target = selection.target
+            val source = sourceCenter()
+            if (target == null || !source.isSpecified) Offset.Unspecified else {
+                val windowY = target.first.coordinates?.takeIf { it.isAttached }?.localToWindow(target.second)?.y ?: 0f
+                source + Offset(0f, if (windowY >= 96.dp.toPx()) -64.dp.toPx() else 64.dp.toPx())
+            }
+        },
+        zoom = 1.8f, size = DpSize(112.dp, 48.dp), cornerRadius = 12.dp
+    ))
 }
 
 internal fun readerUnderlineCharacterRange(text: String, index: Int): TextRange {

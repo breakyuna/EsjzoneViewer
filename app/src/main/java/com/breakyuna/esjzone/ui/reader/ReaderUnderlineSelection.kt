@@ -10,6 +10,8 @@ import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.TextRange
 import com.breakyuna.esjzone.domain.reader.ReaderUnderline
+import com.breakyuna.esjzone.domain.reader.ReaderUnderlineRange
+import com.breakyuna.esjzone.domain.reader.ReaderUnderlines
 
 internal val LocalReaderUnderlineSelection = staticCompositionLocalOf<ReaderUnderlineSelection?> { null }
 internal val LocalReaderUnderlineChapter = staticCompositionLocalOf { "" }
@@ -29,15 +31,22 @@ class ReaderUnderlineSelection {
     }
 
     private val segments = mutableSetOf<Segment>()
+    private var orderedSegments: List<Segment>? = null
+    private val candidates = mutableListOf<Segment>()
+    private val previousCandidates = mutableListOf<Segment>()
     private var anchor: Pair<Segment, TextRange>? = null
+    private var lastSegment: Segment? = null
+    private var lastRange: TextRange? = null
     internal var ranges by mutableStateOf<Map<Segment, TextRange>>(emptyMap())
         private set
     internal var target by mutableStateOf<Pair<Segment, Offset>?>(null)
         private set
 
-    internal fun register(segment: Segment) { segments += segment }
+    internal fun register(segment: Segment) {
+        if (segments.add(segment)) orderedSegments = null
+    }
     internal fun unregister(segment: Segment) {
-        segments -= segment
+        if (segments.remove(segment)) orderedSegments = null
         if (anchor?.first == segment || target?.first == segment) cancel()
     }
 
@@ -53,55 +62,86 @@ class ReaderUnderlineSelection {
         val (first, firstRange) = anchor ?: return
         val originCoordinates = origin.coordinates?.takeIf { it.isAttached } ?: return
         val windowPoint = originCoordinates.localToWindow(point)
-        val candidates = segments.filter {
-            it.chapter == first.chapter && it.text.isNotEmpty() && it.layout != null &&
-                it.coordinates?.isAttached == true && !it.coordinates!!.boundsInWindow().isEmpty
-        }
+        candidates.clear()
+        var nearest: Segment? = null
+        var nearestY = Float.POSITIVE_INFINITY
+        var nearestX = Float.POSITIVE_INFINITY
         // Paragraphs are stacked vertically. A short line must still receive a
         // drag in its trailing whitespace instead of snapping to a longer line above.
-        val last = candidates.minWithOrNull(compareBy<Segment> {
-            val bounds = it.coordinates!!.boundsInWindow()
+        // Query each current bound once, retaining registration order for tied distances.
+        for (segment in segments) {
+            if (segment.chapter != first.chapter || segment.text.isEmpty() || segment.layout == null) continue
+            val coordinates = segment.coordinates?.takeIf { it.isAttached } ?: continue
+            val bounds = coordinates.boundsInWindow()
+            if (bounds.isEmpty) continue
+            candidates += segment
             val dy = windowPoint.y - windowPoint.y.coerceIn(bounds.top, bounds.bottom)
-            dy * dy
-        }.thenBy {
-            val bounds = it.coordinates!!.boundsInWindow()
             val dx = windowPoint.x - windowPoint.x.coerceIn(bounds.left, bounds.right)
-            dx * dx
-        }) ?: return
+            val distanceY = dy * dy
+            val distanceX = dx * dx
+            if (nearest == null || distanceY < nearestY || distanceY == nearestY && distanceX < nearestX) {
+                nearest = segment
+                nearestY = distanceY
+                nearestX = distanceX
+            }
+        }
+        val last = nearest ?: return
         val local = last.coordinates!!.windowToLocal(windowPoint)
-        val lastRange = readerUnderlineCharacterAt(last.layout!!, local)
-        val ordered = candidates.sortedWith(compareBy({ it.block }, { it.offset }))
-        val firstIndex = ordered.indexOf(first)
-        val lastIndex = ordered.indexOf(last)
-        if (firstIndex < 0) return
-        val forward = firstIndex <= lastIndex
-        ranges = ordered.slice(minOf(firstIndex, lastIndex)..maxOf(firstIndex, lastIndex))
-            .associateWith { segment ->
-                when {
-                    first == last -> TextRange(minOf(firstRange.min, lastRange.min), maxOf(firstRange.max, lastRange.max))
-                    segment == first -> if (forward) TextRange(firstRange.min, segment.text.length) else TextRange(0, firstRange.max)
-                    segment == last -> if (forward) TextRange(0, lastRange.max) else TextRange(lastRange.min, segment.text.length)
-                    else -> TextRange(0, segment.text.length)
+        val endRange = readerUnderlineCharacterAt(last.layout!!, local)
+        val candidatesChanged = orderedSegments == null || candidates != previousCandidates
+        if (last != lastSegment || endRange != lastRange || candidatesChanged) {
+            // Visibility may change during scrolling, so cache only the ordering, not bounds.
+            val ordered = if (candidatesChanged) candidates.sortedWith(compareBy({ it.block }, { it.offset }))
+                .also { orderedSegments = it } else orderedSegments!!
+            val firstIndex = ordered.indexOf(first)
+            val lastIndex = ordered.indexOf(last)
+            if (firstIndex < 0) return
+            val forward = firstIndex <= lastIndex
+            ranges = buildMap {
+                for (index in minOf(firstIndex, lastIndex)..maxOf(firstIndex, lastIndex)) {
+                    val segment = ordered[index]
+                    put(segment, when {
+                        first == last -> TextRange(minOf(firstRange.min, endRange.min), maxOf(firstRange.max, endRange.max))
+                        segment == first -> if (forward) TextRange(firstRange.min, segment.text.length) else TextRange(0, firstRange.max)
+                        segment == last -> if (forward) TextRange(0, endRange.max) else TextRange(endRange.min, segment.text.length)
+                        else -> TextRange(0, segment.text.length)
+                    })
                 }
             }
+            lastSegment = last
+            lastRange = endRange
+            if (candidatesChanged) {
+                previousCandidates.clear()
+                previousCandidates.addAll(candidates)
+            }
+        }
         // Snap the lens to the touched glyph so its preview and selection agree.
-        target = last to last.layout!!.getBoundingBox(lastRange.min).center
+        val center = last.layout!!.getBoundingBox(endRange.min).center
+        if (target?.first != last || target?.second != center) target = last to center
     }
 
     internal fun finish() {
         val selected = ranges.entries.toList()
         cancel()
-        // Page fragments use full-paragraph offsets and must persist as one range.
-        selected.groupBy { it.key.block to it.key.signature }.values.forEach { group ->
+        // Reassemble page fragments before finding blank lines and joining adjacent paragraphs.
+        val parts = selected.groupBy { it.key.block to it.key.signature }.values.map { group ->
             val segment = group.first().key
-            segment.save(ReaderUnderline(segment.block, segment.signature,
+            ReaderUnderlineRange(segment.block, segment.signature,
                 group.minOf { it.key.offset + it.value.min },
-                group.maxOf { it.key.offset + it.value.max }), false)
+                group.maxOf { it.key.offset + it.value.max }) to
+                group.sortedBy { it.key.offset }.joinToString("") { it.key.text.substring(it.value.min, it.value.max) }
+        }
+        ReaderUnderlines.selection(parts).forEach { mark ->
+            selected.first { it.key.block == mark.blockIndex }.key.save(mark, false)
         }
     }
 
     internal fun cancel() {
         anchor = null
+        lastSegment = null
+        lastRange = null
+        candidates.clear()
+        previousCandidates.clear()
         ranges = emptyMap()
         target = null
     }
