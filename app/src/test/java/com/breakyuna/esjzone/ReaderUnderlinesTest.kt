@@ -118,4 +118,52 @@ class ReaderUnderlinesTest {
             extended.single().ranges())
         assertTrue(ReaderUnderlines.update(extended, mark(2, 3, 1), true).isEmpty())
     }
+
+    @Test fun overlappingCrossParagraphMarksFromDifferentScriptsRemainReadable() {
+        val changed = ReaderBlock.Text("頭髮")
+        val stable = ReaderBlock.Text("甲乙")
+        val original = ReaderUnderlines.signature(changed, "頭髮")
+        val simplified = ReaderUnderlines.signature(changed, "头发")
+        val unchanged = ReaderUnderlines.signature(stable, "甲乙")
+        val continuation = listOf(ReaderUnderlineRange(1, unchanged, 0, 2))
+        val old = ReaderUnderline(0, original, 0, 2, continuation = continuation)
+        val selected = ReaderUnderline(0, simplified, 0, 2, continuation = continuation)
+        val saved = ReaderUnderlines.update(listOf(old), selected, false) { if (it == 0) "头发" else "甲乙" }
+        assertEquals(2, saved.size)
+        assertTrue(old in saved)
+        assertEquals(selected.copy(quote = "头发\n甲乙"), saved.last())
+        assertEquals(saved, ReaderUnderlines.decode(ReaderUnderlines.encode(saved)))
+
+        // A later selection of only the unchanged block also touches both versions.
+        val next = ReaderUnderlines.update(saved, ReaderUnderline(1, unchanged, 0, 1), false)
+        assertEquals(saved.toSet(), next.toSet())
+        assertEquals(next, ReaderUnderlines.decode(ReaderUnderlines.encode(next)))
+    }
+
+    @Test fun legacyMixedSourceRecordRecoversAllRangesAndPreservesOtherMarks() {
+        val legacy = mark(0, 2).copy(quote = "ambiguous legacy quote", continuation = listOf(
+            ReaderUnderlineRange(0, "a".repeat(64), 0, 2), ReaderUnderlineRange(1, signature, 0, 3)))
+        val other = mark(1, 4, 4).copy(quote = "unchanged")
+        var repairs = 0
+        val restored = ReaderUnderlines.decode(ReaderUnderlines.encode(listOf(legacy, other))) { repairs++ }
+        assertEquals(1, repairs)
+        assertEquals(legacy.ranges(), restored.dropLast(1).flatMap { it.ranges() })
+        assertTrue(restored.dropLast(1).all { it.quote == null })
+        assertEquals(other, restored.last())
+        assertEquals(restored, ReaderUnderlines.decode(ReaderUnderlines.encode(restored)) { repairs++ })
+        assertEquals(1, repairs)
+        val updated = ReaderUnderlines.update(restored, mark(1, 2, 1), false)
+        assertEquals(updated, ReaderUnderlines.decode(ReaderUnderlines.encode(updated)))
+        assertTrue(other in updated)
+    }
+
+    @Test fun repairStillRejectsReorderedBlocksAndRepeatedIdenticalSources() {
+        val reordered = mark(0, 2, 2).copy(continuation = listOf(ReaderUnderlineRange(1, signature, 0, 2)))
+        val repeated = mark(0, 2).copy(continuation = listOf(ReaderUnderlineRange(0, signature, 1, 3)))
+        for (invalid in listOf(reordered, repeated)) {
+            assertThrows(IllegalArgumentException::class.java) {
+                ReaderUnderlines.decode(ReaderUnderlines.encode(listOf(invalid)))
+            }
+        }
+    }
 }

@@ -244,11 +244,11 @@ class ChapterPage(
         val underlines by underlineModel.underlines.collectAsState()
         val underlineSelection = remember { ReaderUnderlineSelection() }
         val readerBookmarks by underlineModel.bookmarks.collectAsState()
-        val underlineFailed by underlineModel.state.collectAsState()
+        val underlineFailureCount by underlineModel.state.collectAsState()
         val underlineContext = LocalContext.current
         val underlineFailureMessage = stringResource(R.string.reader_underline_failed)
-        LaunchedEffect(underlineFailed) {
-            if (underlineFailed) android.widget.Toast.makeText(underlineContext,
+        LaunchedEffect(underlineFailureCount) {
+            if (underlineFailureCount > 0) android.widget.Toast.makeText(underlineContext,
                 underlineFailureMessage, android.widget.Toast.LENGTH_SHORT).show()
         }
         val textMeasurer = rememberTextMeasurer()

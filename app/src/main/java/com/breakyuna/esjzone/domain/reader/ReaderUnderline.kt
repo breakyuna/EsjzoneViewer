@@ -18,19 +18,37 @@ object ReaderUnderlines {
     private val blankLine = Regex("\\r?\\n[\\t\\x0B\\f\\p{Zs}]*\\r?\\n")
     fun signature(block: ReaderBlock, renderedText: String): String = MessageDigest.getInstance("SHA-256")
         .digest("$block\u0000$renderedText".toByteArray(Charsets.UTF_8)).joinToString("") { "%02x".format(it) }
-    fun decode(value: String?): List<ReaderUnderline> {
+    fun decode(value: String?, onRepair: () -> Unit = {}): List<ReaderUnderline> {
         if (value == null) return emptyList()
         require(value.isNotBlank()) { "Invalid underline data" }
-        return requireNotNull(gson.fromJson(value, Array<ReaderUnderline>::class.java)) {
+        val rows = requireNotNull(gson.fromJson(value, Array<ReaderUnderline>::class.java)) {
             "Invalid underline data"
-        }.toList().also { rows ->
-            require(rows.all { mark ->
-                val ranges = mark.ranges()
-                ranges.all { it.blockIndex >= 0 && it.start >= 0 && it.end > it.start &&
-                    it.signature.matches(Regex("[0-9a-f]{64}")) } &&
-                    ranges.zipWithNext().all { (a, b) -> a.blockIndex < b.blockIndex }
-            })
         }
+        var repaired = false
+        val decoded = rows.flatMap { mark ->
+            val ranges = mark.ranges()
+            require(ranges.all { it.blockIndex >= 0 && it.start >= 0 && it.end > it.start &&
+                it.signature.matches(Regex("[0-9a-f]{64}")) })
+            if (ranges.zipWithNext().all { (a, b) -> a.blockIndex < b.blockIndex }) listOf(mark) else {
+                // Older merges could combine two scripts at the same block index.
+                // Keep every valid range, splitting the record at duplicate blocks.
+                require(ranges.zipWithNext().all { (a, b) -> a.blockIndex <= b.blockIndex } &&
+                    ranges.distinctBy { it.blockIndex to it.signature }.size == ranges.size)
+                repaired = true
+                val groups = mutableListOf<ReaderUnderline>()
+                val group = mutableListOf<ReaderUnderlineRange>()
+                ranges.forEach { range ->
+                    if (group.lastOrNull()?.blockIndex == range.blockIndex) {
+                        groups += fromRanges(group.toList())
+                        group.clear()
+                    }
+                    group += range
+                }
+                groups + fromRanges(group.toList())
+            }
+        }
+        if (repaired) onRepair()
+        return decoded
     }
     fun encode(rows: List<ReaderUnderline>): String = gson.toJson(rows)
     fun overlaps(a: ReaderUnderline, b: ReaderUnderline) = a.ranges().any { first ->
@@ -77,9 +95,18 @@ object ReaderUnderlines {
     fun update(rows: List<ReaderUnderline>, selection: ReaderUnderline, remove: Boolean,
         renderedText: (Int) -> String? = { null }): List<ReaderUnderline> {
         val overlapping = rows.filter { overlaps(it, selection) }
-        val remaining = rows - overlapping.toSet()
-        if (remove) return remaining
-        val marks = listOf(selection) + overlapping
+        if (remove) return rows - overlapping.toSet()
+        val sources = selection.ranges().associate { it.blockIndex to it.signature }.toMutableMap()
+        val compatible = overlapping.filter { mark ->
+            val ranges = mark.ranges()
+            if (ranges.any { sources[it.blockIndex]?.let { source -> source != it.signature } == true }) false
+            else {
+                ranges.forEach { sources[it.blockIndex] = it.signature }
+                true
+            }
+        }
+        val remaining = rows - compatible.toSet()
+        val marks = listOf(selection) + compatible
         val ranges = marks.flatMap { it.ranges() }.groupBy { it.blockIndex to it.signature }.values.map { group ->
             group.first().copy(start = group.minOf { it.start }, end = group.maxOf { it.end })
         }.sortedWith(compareBy({ it.blockIndex }, { it.start }))
