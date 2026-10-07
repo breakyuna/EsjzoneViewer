@@ -67,7 +67,10 @@ class StructuredDownloadStoreTest {
         try {
             val work = order.mapIndexed { index, _ -> executor.submit<DownloadedNovelManifest> { save(index + 1, order) } }
             work.forEach { it.get() }
-        } finally { executor.shutdown() }
+        } finally {
+            executor.shutdown()
+            executor.awaitTermination(10, TimeUnit.SECONDS)
+        }
         val manifest = requireNotNull(NovelDownloadStore.manifest(novelUrl))
         assertEquals(12, manifest.chapters.count { it.downloaded })
         assertEquals(order.map { NovelDownloadStore.chapterKey(it.url) }, manifest.chapters.map { NovelDownloadStore.chapterKey(it.url) })

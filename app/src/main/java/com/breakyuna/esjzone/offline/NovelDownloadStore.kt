@@ -1232,7 +1232,7 @@ object NovelDownloadStore {
         val root = rootDirectory ?: return null
         val directory = File(root, digest(canonicalKey(novelUrl)))
         if (directory.isDirectory) return directory
-        return if (create && directory.mkdirs()) directory else null
+        return if (create && (directory.mkdirs() || directory.isDirectory)) directory else null
     }
 
     private fun readManifest(directory: File?): DownloadedNovelManifest? {
