@@ -24,6 +24,10 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
@@ -84,6 +88,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewModelScope
 import com.breakyuna.esjzone.R
@@ -200,35 +205,30 @@ object ReadingStatisticsPage : AppDestination {
                         verticalArrangement = Arrangement.spacedBy(AppSpacing.md)
                     ) {
                         item {
-                            StatCard {
-                                Row(horizontalArrangement = Arrangement.spacedBy(AppSpacing.md)) {
-                                    StatValue(stringResource(R.string.reading_stats_total), formatDuration(summary.totalMs), Modifier.weight(1f), emphasized = true)
-                                    StatValue(stringResource(R.string.reading_stats_today), formatDuration(summary.todayMs), Modifier.weight(1f))
-                                }
-                                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = .5f))
-                                Row(horizontalArrangement = Arrangement.spacedBy(AppSpacing.md)) {
-                                    StatValue(stringResource(R.string.reading_stats_week), formatDuration(summary.weekMs), Modifier.weight(1f))
-                                    StatValue(stringResource(R.string.reading_stats_streak), stringResource(R.string.reading_stats_days, summary.streakDays), Modifier.weight(1f))
-                                }
-                                if (summary.totalMs == 0L) {
-                                    Text(stringResource(R.string.reading_stats_empty), style = AppTypography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                }
-                            }
-                            Text(stringResource(R.string.reading_stats_local_note), style = AppTypography.bodySmall,
-                                modifier = Modifier.padding(horizontal = AppSpacing.xs, vertical = AppSpacing.sm),
-                                color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            StatisticsOverview(summary)
                         }
                         item {
-                            StatCard {
-                                StatSectionTitle(stringResource(R.string.reading_stats_activity))
-                                ReadingHeatmap(summary, selectedDate) { selectedDate = it }
-                                Text(
-                                    stringResource(R.string.reading_stats_day_detail, selectedDate.toString(), formatDuration(summary.daily[selectedDate] ?: 0L)),
-                                    style = AppTypography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.fillMaxWidth()
-                                )
+                            StatisticsPanel(stringResource(R.string.reading_stats_activity)) {
+                                Row(
+                                    Modifier.fillMaxWidth().semantics(mergeDescendants = true) {},
+                                    horizontalArrangement = Arrangement.spacedBy(AppSpacing.md),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(selectedDate.toString(), modifier = Modifier.weight(1f),
+                                        style = AppTypography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    Text(formatDuration(summary.daily[selectedDate] ?: 0L),
+                                        modifier = Modifier.weight(1f), textAlign = TextAlign.End,
+                                        style = AppTypography.titleMedium)
+                                }
+                                Column(
+                                    Modifier.fillMaxWidth().clip(AppShapes.standard)
+                                        .background(MaterialTheme.colorScheme.surfaceContainerLow)
+                                        .padding(AppSpacing.md),
+                                    verticalArrangement = Arrangement.spacedBy(AppSpacing.md)
+                                ) {
+                                    ReadingHeatmap(summary, selectedDate) { selectedDate = it }
+                                }
                             }
                         }
                         item {
@@ -261,13 +261,11 @@ object ReadingStatisticsPage : AppDestination {
                             }
                         }
                         item {
-                            StatCard {
-                                StatSectionTitle(stringResource(R.string.reading_stats_ranking))
-                                StatPeriodFilter(listOf(7, 30, null), rankingDays) { rankingDays = it }
+                            StatisticsPanel(stringResource(R.string.reading_stats_ranking)) {
+                                StatisticsPeriodSelector(rankingDays) { rankingDays = it }
                                 val topBooks = current.rankings[rankingDays].orEmpty()
                                 if (topBooks.isEmpty()) {
-                                    Text(stringResource(R.string.reading_stats_no_books), style = AppTypography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    StatisticsEmptyState(stringResource(R.string.reading_stats_no_books))
                                 } else {
                                     topBooks.forEachIndexed { index, book ->
                                         BookRank(index + 1, book, topBooks.first().durationMs)
@@ -276,13 +274,11 @@ object ReadingStatisticsPage : AppDestination {
                             }
                         }
                         item {
-                            StatCard {
-                                StatSectionTitle(stringResource(R.string.reading_stats_tags))
-                                StatPeriodFilter(listOf(7, 30, null), tagDays) { tagDays = it }
+                            StatisticsPanel(stringResource(R.string.reading_stats_tags)) {
+                                StatisticsPeriodSelector(tagDays) { tagDays = it }
                                 val tags = current.tagRankings[tagDays].orEmpty()
                                 if (tags.isEmpty()) {
-                                    Text(stringResource(R.string.reading_stats_no_tags), style = AppTypography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    StatisticsEmptyState(stringResource(R.string.reading_stats_no_tags))
                                 } else {
                                     val dark = MaterialTheme.colorScheme.surface.luminance() < .5f
                                     val otherColor = MaterialTheme.colorScheme.outline
@@ -306,6 +302,105 @@ object ReadingStatisticsPage : AppDestination {
 }
 
 @Composable
+private fun StatisticsOverview(summary: ReadingStatisticsSummary) {
+    val colors = MaterialTheme.colorScheme
+    Column(verticalArrangement = Arrangement.spacedBy(AppSpacing.md)) {
+        Column(
+            Modifier.fillMaxWidth().clip(AppShapes.prominent)
+                .background(Brush.linearGradient(listOf(colors.primaryContainer, colors.surfaceContainerHigh)))
+                .padding(AppSpacing.xl),
+            verticalArrangement = Arrangement.spacedBy(AppSpacing.lg)
+        ) {
+            Column(verticalArrangement = Arrangement.spacedBy(AppSpacing.sm),
+                modifier = Modifier.semantics(mergeDescendants = true) {}) {
+                Text(stringResource(R.string.reading_stats_total), style = AppTypography.labelLarge,
+                    color = colors.onPrimaryContainer.copy(alpha = .7f))
+                Text(formatDuration(summary.totalMs), style = AppTypography.displayLarge,
+                    color = colors.onPrimaryContainer)
+            }
+            HorizontalDivider(color = colors.onPrimaryContainer.copy(alpha = .12f))
+            BoxWithConstraints(Modifier.fillMaxWidth()) {
+                val stacked = maxWidth / LocalConfiguration.current.fontScale < 260.dp
+                FlowRow(
+                    maxItemsInEachRow = if (stacked) 1 else 3,
+                    horizontalArrangement = Arrangement.spacedBy(AppSpacing.lg),
+                    verticalArrangement = Arrangement.spacedBy(AppSpacing.md)
+                ) {
+                    listOf(
+                        stringResource(R.string.reading_stats_today) to formatDuration(summary.todayMs),
+                        stringResource(R.string.reading_stats_week) to formatDuration(summary.weekMs),
+                        stringResource(R.string.reading_stats_streak) to stringResource(R.string.reading_stats_days, summary.streakDays)
+                    ).forEach { (label, value) ->
+                        Column(Modifier.weight(1f).semantics(mergeDescendants = true) {},
+                            verticalArrangement = Arrangement.spacedBy(AppSpacing.xs)) {
+                            Text(label, style = AppTypography.bodySmall,
+                                color = colors.onPrimaryContainer.copy(alpha = .7f))
+                            Text(value, style = AppTypography.labelLarge, color = colors.onPrimaryContainer)
+                        }
+                    }
+                }
+            }
+            if (summary.totalMs == 0L) {
+                Text(stringResource(R.string.reading_stats_empty), style = AppTypography.bodySmall,
+                    color = colors.onPrimaryContainer.copy(alpha = .7f))
+            }
+        }
+        Text(stringResource(R.string.reading_stats_local_note), style = AppTypography.bodySmall,
+            modifier = Modifier.padding(horizontal = AppSpacing.xs), color = colors.onSurfaceVariant)
+    }
+}
+
+@Composable
+private fun StatisticsPanel(
+    title: String,
+    content: @Composable androidx.compose.foundation.layout.ColumnScope.() -> Unit
+) {
+    Column(
+        Modifier.fillMaxWidth().clip(AppShapes.prominent)
+            .background(MaterialTheme.colorScheme.surface).padding(AppSpacing.lg),
+        verticalArrangement = Arrangement.spacedBy(AppSpacing.lg)
+    ) {
+        Text(title, style = AppTypography.labelLarge, modifier = Modifier.semantics { heading() })
+        content()
+    }
+}
+
+@Composable
+private fun StatisticsPeriodSelector(selected: Int?, onSelect: (Int?) -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().selectableGroup().clip(AppShapes.pill)
+            .background(MaterialTheme.colorScheme.surfaceContainerLow).padding(AppSpacing.xs),
+        horizontalArrangement = Arrangement.spacedBy(AppSpacing.xs)
+    ) {
+        listOf(7, 30, null).forEach { days ->
+            val active = selected == days
+            Box(
+                Modifier.weight(1f).clip(AppShapes.pill)
+                    .background(if (active) MaterialTheme.colorScheme.primary else Color.Transparent)
+                    .selectable(selected = active, role = Role.RadioButton, onClick = { onSelect(days) })
+                    .heightIn(min = 48.dp).padding(horizontal = AppSpacing.sm, vertical = AppSpacing.sm),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(stringResource(when (days) {
+                    7 -> R.string.reading_stats_7_days
+                    30 -> R.string.reading_stats_30_days
+                    else -> R.string.reading_stats_all
+                }), style = AppTypography.labelMedium, textAlign = TextAlign.Center,
+                    color = if (active) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+    }
+}
+
+@Composable
+private fun StatisticsEmptyState(message: String) {
+    Text(message, modifier = Modifier.fillMaxWidth().clip(AppShapes.standard)
+        .background(MaterialTheme.colorScheme.surfaceContainerLow).padding(AppSpacing.xl),
+        style = AppTypography.bodyMedium, textAlign = TextAlign.Center,
+        color = MaterialTheme.colorScheme.onSurfaceVariant)
+}
+
+@Composable
 private fun ReadingStatisticsIncognitoState(modifier: Modifier = Modifier) {
     val transition = rememberInfiniteTransition(label = "IncognitoGhost")
     val floatOffset = transition.animateFloat(
@@ -322,14 +417,21 @@ private fun ReadingStatisticsIncognitoState(modifier: Modifier = Modifier) {
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
-        Icon(
-            painter = painterResource(R.drawable.ic_reading_incognito_ghost),
-            contentDescription = null,
-            tint = MaterialTheme.colorScheme.primary,
-            modifier = Modifier.size(192.dp).graphicsLayer {
-                translationY = floatOffset.value.dp.toPx()
-            }
-        )
+        Box(
+            Modifier.size(240.dp).background(
+                Brush.radialGradient(listOf(MaterialTheme.colorScheme.surfaceContainerHigh, Color.Transparent)),
+                CircleShape
+            ), contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                painter = painterResource(R.drawable.ic_reading_incognito_ghost),
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(192.dp).graphicsLayer {
+                    translationY = floatOffset.value.dp.toPx()
+                }
+            )
+        }
         Text(
             text = stringResource(R.string.reading_stats_incognito_message),
             modifier = Modifier.padding(top = 32.dp),
@@ -348,7 +450,7 @@ private fun TagDonutChart(tags: List<ReadingTagTotal>, tagColors: Map<String?, C
         java.text.NumberFormat.getPercentInstance(locale).apply { maximumFractionDigits = 1 }
     }
     val colors = tags.map { tagColors.getValue(it.tag) }
-    val chartBackground = MaterialTheme.colorScheme.surface
+    val chartBackground = MaterialTheme.colorScheme.surfaceContainerLow
     val middleAngles = tags.runningFold(-90f) { angle, tag ->
         angle + (tag.durationMs / total * 360).toFloat()
     }.let { boundaries ->
@@ -356,8 +458,8 @@ private fun TagDonutChart(tags: List<ReadingTagTotal>, tagColors: Map<String?, C
     }
     val chartHeight = maxOf(300, tags.size * 28).dp
     BoxWithConstraints(Modifier.fillMaxWidth().height(chartHeight)) {
-        val labelWidth = 72.dp
-        val labelGap = 12.dp
+        val labelWidth = 64.dp
+        val labelGap = 8.dp
         val labelRadiusX = maxWidth / 2 - labelWidth - labelGap
         val labelRadiusY = chartHeight / 2 - 28.dp
         val radius = minOf(80.dp, maxWidth * .21f, labelRadiusX - labelGap)
@@ -380,18 +482,17 @@ private fun TagDonutChart(tags: List<ReadingTagTotal>, tagColors: Map<String?, C
         Canvas(Modifier.fillMaxSize()) {
             val center = Offset(size.width / 2, size.height / 2)
             val outerRadius = radius.toPx()
-            val stroke = 24.dp.toPx()
+            val stroke = 18.dp.toPx()
+            drawCircle(chartBackground, radius = outerRadius - stroke - 6.dp.toPx(), center = center)
             val arcRadius = outerRadius - stroke / 2
             val arcTopLeft = center - Offset(arcRadius, arcRadius)
             val arcSize = Size(arcRadius * 2, arcRadius * 2)
             var startAngle = -90f
             tags.forEachIndexed { index, tag ->
                 val sweep = (tag.durationMs / total * 360).toFloat()
-                drawArc(colors[index], startAngle, sweep, false, arcTopLeft, arcSize, style = Stroke(stroke))
-                if (tags.size > 1) {
-                    drawArc(chartBackground, startAngle, minOf(1.5f, sweep / 4), false,
-                        arcTopLeft, arcSize, style = Stroke(stroke))
-                }
+                val gap = if (tags.size > 1) minOf(3f, sweep / 4) else 0f
+                drawArc(colors[index], startAngle + gap / 2, sweep - gap, false,
+                    arcTopLeft, arcSize, style = Stroke(stroke))
                 val angle = Math.toRadians(middleAngles[index].toDouble())
                 val direction = Offset(kotlin.math.cos(angle).toFloat(), kotlin.math.sin(angle).toFloat())
                 val start = center + direction * outerRadius
@@ -447,21 +548,41 @@ private fun TagDistributionList(
         java.text.NumberFormat.getPercentInstance(locale).apply { maximumFractionDigits = 1 }
     }
     val total = tags.sumOf { it.durationMs }.toDouble()
-    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(AppSpacing.sm)) {
-        TextButton(onClick = { expanded = !expanded }, modifier = Modifier.fillMaxWidth()) {
+    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(AppSpacing.md)) {
+        TextButton(
+            onClick = { expanded = !expanded },
+            modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+            shape = AppShapes.standard,
+            colors = androidx.compose.material3.ButtonDefaults.textButtonColors(
+                containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+                contentColor = MaterialTheme.colorScheme.onSurface
+            ),
+            contentPadding = PaddingValues(horizontal = AppSpacing.lg, vertical = AppSpacing.sm)
+        ) {
             Text(stringResource(if (expanded) R.string.reading_stats_hide_tags else R.string.reading_stats_show_tags),
-                modifier = Modifier.weight(1f), textAlign = TextAlign.Start)
-            Icon(if (expanded) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore, contentDescription = null)
+                modifier = Modifier.weight(1f), style = AppTypography.labelLarge, textAlign = TextAlign.Start)
+            Icon(if (expanded) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore, contentDescription = null,
+                modifier = Modifier.size(20.dp))
         }
         if (expanded) {
             tags.forEach { tag ->
                 val color = tagColors[tag.tag] ?: otherColor
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(AppSpacing.md),
-                    verticalAlignment = Alignment.CenterVertically) {
-                    Text(tag.tag.orEmpty(), modifier = Modifier.weight(1f), style = AppTypography.bodyLarge,
-                        color = color)
-                    Text(percentFormat.format(tag.durationMs / total), style = AppTypography.bodyLarge,
-                        color = color)
+                val fraction = (tag.durationMs / total).toFloat().coerceIn(0f, 1f)
+                Column(Modifier.fillMaxWidth().padding(horizontal = AppSpacing.xs)
+                    .semantics(mergeDescendants = true) {},
+                    verticalArrangement = Arrangement.spacedBy(AppSpacing.sm)) {
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(AppSpacing.md),
+                        verticalAlignment = Alignment.CenterVertically) {
+                        Box(Modifier.size(AppSpacing.sm).background(color, CircleShape))
+                        Text(tag.tag.orEmpty(), modifier = Modifier.weight(1f), style = AppTypography.bodyLarge,
+                            color = color)
+                        Text(percentFormat.format(tag.durationMs / total), style = AppTypography.bodyLarge,
+                            color = color)
+                    }
+                    Box(Modifier.fillMaxWidth().height(4.dp).clip(AppShapes.pill)
+                        .background(color.copy(alpha = .1f))) {
+                        Box(Modifier.fillMaxWidth(fraction).height(4.dp).clip(AppShapes.pill).background(color))
+                    }
                 }
             }
         }
@@ -544,14 +665,14 @@ private fun ReadingHeatmap(summary: ReadingStatisticsSummary, selectedDate: Loca
     }
     val heatColor = if (MaterialTheme.colorScheme.surface.luminance() < .5f) Color(0xFF82B1FF) else Color(0xFF2563EB)
     val shades = listOf(
-        MaterialTheme.colorScheme.surfaceVariant,
+        MaterialTheme.colorScheme.outlineVariant.copy(alpha = .45f),
         heatColor.copy(alpha = .25f),
         heatColor.copy(alpha = .5f),
         heatColor.copy(alpha = .75f),
         heatColor
     )
     Column(Modifier.fillMaxWidth().horizontalScroll(scrollState)) {
-        Box(Modifier.width((weekCount * 20 - 4).dp).height(24.dp)) {
+        Box(Modifier.width((weekCount * 22 - 4).dp).height(24.dp)) {
             repeat(weekCount) { week ->
                 val start = firstWeek.plusWeeks(week.toLong())
                 val monthStart = (0L..6L).map { start.plusDays(it) }
@@ -559,7 +680,7 @@ private fun ReadingHeatmap(summary: ReadingStatisticsSummary, selectedDate: Loca
                 if (monthStart != null) {
                     Text(
                         monthStart.month.getDisplayName(TextStyle.SHORT, locale),
-                        modifier = Modifier.offset(x = (week * 20).dp),
+                        modifier = Modifier.offset(x = (week * 22).dp),
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -575,7 +696,7 @@ private fun ReadingHeatmap(summary: ReadingStatisticsSummary, selectedDate: Loca
                         val duration = summary.daily[date] ?: 0L
                         val shade = when {
                             !inRange -> Color.Transparent
-                            duration <= 0L -> MaterialTheme.colorScheme.surfaceVariant
+                            duration <= 0L -> MaterialTheme.colorScheme.outlineVariant.copy(alpha = .45f)
                             else -> when (duration.toDouble() / maximumDuration) {
                                 in 0.0..0.25 -> shades[1]
                                 in 0.25..0.5 -> shades[2]
@@ -585,7 +706,7 @@ private fun ReadingHeatmap(summary: ReadingStatisticsSummary, selectedDate: Loca
                         }
                         val description = stringResource(R.string.reading_stats_day_detail, date.toString(), formatDuration(duration))
                         Box(
-                            Modifier.size(16.dp).clip(RoundedCornerShape(3.dp))
+                            Modifier.size(18.dp).clip(RoundedCornerShape(3.dp))
                                 .background(shade)
                                 .then(if (inRange) Modifier
                                     .clickable { onSelect(date) }
@@ -732,22 +853,33 @@ private fun TrendChart(summary: ReadingStatisticsSummary, days: Int, lineChart: 
 
 @Composable
 private fun BookRank(rank: Int, book: ReadingBookTotal, maximumDuration: Long) {
-    Row(Modifier.fillMaxWidth().padding(vertical = AppSpacing.xs).semantics(mergeDescendants = true) {},
-        horizontalArrangement = Arrangement.spacedBy(AppSpacing.md), verticalAlignment = Alignment.Top) {
-        Text(rank.toString().padStart(2, '0'), modifier = Modifier.width(AppSpacing.xl),
-            style = AppTypography.labelLarge,
-            color = if (rank == 1) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant)
+    val colors = MaterialTheme.colorScheme
+    val leading = rank == 1
+    val fraction = (book.durationMs.toDouble() / maximumDuration.coerceAtLeast(1L)).toFloat().coerceIn(0f, 1f)
+    Row(
+        Modifier.fillMaxWidth().clip(AppShapes.standard)
+            .background(if (leading) colors.primaryContainer else colors.surfaceContainerLow)
+            .padding(AppSpacing.md).semantics(mergeDescendants = true) {},
+        horizontalArrangement = Arrangement.spacedBy(AppSpacing.md),
+        verticalAlignment = Alignment.Top
+    ) {
+        Box(
+            Modifier.size(32.dp).clip(AppShapes.compact)
+                .background(if (leading) colors.primary else colors.surface),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(rank.toString().padStart(2, '0'), style = AppTypography.labelLarge,
+                color = if (leading) colors.onPrimary else colors.onSurfaceVariant)
+        }
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(AppSpacing.sm)) {
-            Text(book.bookName, style = AppTypography.bodyMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
-            Row(horizontalArrangement = Arrangement.spacedBy(AppSpacing.md), verticalAlignment = Alignment.CenterVertically) {
-                Box(Modifier.weight(1f).height(3.dp).clip(AppShapes.pill)
-                    .background(MaterialTheme.colorScheme.surfaceVariant)) {
-                    Box(Modifier.fillMaxWidth((book.durationMs.toDouble() / maximumDuration.coerceAtLeast(1L)).toFloat().coerceIn(0f, 1f))
-                        .height(3.dp).clip(AppShapes.pill)
-                        .background(MaterialTheme.colorScheme.primary.copy(alpha = if (rank == 1) .8f else .4f)))
-                }
-                Text(formatDuration(book.durationMs), style = AppTypography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(book.bookName, style = AppTypography.labelLarge, maxLines = 2, overflow = TextOverflow.Ellipsis,
+                color = if (leading) colors.onPrimaryContainer else colors.onSurface)
+            Text(formatDuration(book.durationMs), style = AppTypography.bodySmall,
+                color = if (leading) colors.onPrimaryContainer.copy(alpha = .7f) else colors.onSurfaceVariant)
+            Box(Modifier.fillMaxWidth().height(4.dp).clip(AppShapes.pill)
+                .background(colors.onSurface.copy(alpha = .06f))) {
+                Box(Modifier.fillMaxWidth(fraction).height(4.dp).clip(AppShapes.pill)
+                    .background(colors.primary.copy(alpha = if (leading) .85f else .35f)))
             }
         }
     }

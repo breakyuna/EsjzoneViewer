@@ -289,8 +289,8 @@ class ReaderUnderlineInstrumentedTest {
         composeRule.runOnIdle { assertEquals(1, saved.size); assertEquals(1, pagerState.currentPage) }
     }
 
-    @Test fun savedAndPreviewUnderlinesStopBeforeTrailingWhitespaceAndLeaveBlankLinesClear() {
-        val text = "甲乙   \n　　\n丙丁　 \n戊己 abc xyz   "
+    @Test fun savedAndPreviewUnderlinesSkipIndentationInteriorAndTrailingWhitespace() {
+        val text = "\u3000\u3000甲乙   \n　\t \n  丙丁　 \n戊己 abc\u00a0xyz\u2002   "
         var marks by mutableStateOf(listOf(ReaderUnderline(0, "a".repeat(64), 0, text.length)))
         composeRule.setContent {
             MaterialTheme {
@@ -312,7 +312,7 @@ class ReaderUnderlineInstrumentedTest {
                 val color = pixels[x, y]
                 return color.red > 0.8f && color.green < 0.2f && color.blue < 0.2f
             }
-            listOf(0 to 1, 2 to text.indexOf('丁'), 3 to text.indexOf("xyz") + 2).forEach { (line, last) ->
+            listOf(0 to text.indexOf('乙'), 2 to text.indexOf('丁'), 3 to text.indexOf("xyz") + 2).forEach { (line, last) ->
                 val bounds = layout.getBoundingBox(last)
                 val y = (layout.getLineBaseline(line) + stroke).roundToInt()
                 assertTrue(redAt(bounds.center.x.roundToInt(), y))
@@ -322,10 +322,14 @@ class ReaderUnderlineInstrumentedTest {
             }
             val blankY = (layout.getLineBaseline(1) + stroke).roundToInt()
             for (x in 0 until pixels.width) assertFalse("Blank line was underlined", redAt(x, blankY))
-            val space = text.indexOf(" abc")
-            val spaceBounds = layout.getBoundingBox(space)
-            assertTrue("Interior spaces should remain within the underline",
-                redAt(spaceBounds.center.x.roundToInt(), (layout.getLineBaseline(3) + stroke).roundToInt()))
+            for (index in text.indices) {
+                if (!text[index].isWhitespace() || text[index] == '\n' || text[index] == '\r') continue
+                val bounds = layout.getBoundingBox(index)
+                val x = bounds.center.x.roundToInt()
+                if (bounds.width <= stroke * 2 || x !in 0 until pixels.width) continue
+                val y = (layout.getLineBaseline(layout.getLineForOffset(index)) + stroke).roundToInt()
+                assertFalse("Whitespace at character $index was underlined", redAt(x, y))
+            }
         }
         assertVisibleTextOnly()
         composeRule.runOnIdle { marks = emptyList() }

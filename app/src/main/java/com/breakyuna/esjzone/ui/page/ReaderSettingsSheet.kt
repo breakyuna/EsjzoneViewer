@@ -202,22 +202,23 @@ internal fun ReaderSettingsSheet(
                         )) { commit(draft.copy(pageAnimation = it)) }
                         ReaderLayoutSlider(draft, settings, ::commit) { draft = it }
                     } else if (tab == 1) {
+                        ReaderToggle(stringResource(R.string.reader_show_system_status), draft.showSystemStatusBar) { commit(draft.copy(showSystemStatusBar = it)) }
+                        ReaderToggle(stringResource(R.string.reader_show_system_navigation), draft.showSystemNavigationBar) { commit(draft.copy(showSystemNavigationBar = it)) }
+                        ReaderToggle(stringResource(R.string.reader_show_chapter_name), draft.showChapterName) { commit(draft.copy(showChapterName = it)) }
+                        ReaderToggle(stringResource(R.string.reader_show_time_battery), draft.showTimeBattery) { commit(draft.copy(showTimeBattery = it)) }
+                        ReaderToggle(stringResource(R.string.settings_auto_resume_reading), draft.autoResumeLastReading) { commit(draft.copy(autoResumeLastReading = it)) }
+                        HorizontalDivider(Modifier.padding(vertical = 8.dp))
+                        ReaderToggle(stringResource(R.string.reader_long_press_underline), draft.longPressUnderline) { commit(draft.copy(longPressUnderline = it)) }
                         ReaderToggle(stringResource(R.string.reader_tap_paging), draft.tapPagingEnabled) { commit(draft.copy(tapPagingEnabled = it)) }
                         ReaderToggle(stringResource(R.string.reader_scroll_side_gestures), draft.scrollSideGesturesEnabled) { commit(draft.copy(scrollSideGesturesEnabled = it)) }
                         ReaderToggle(stringResource(R.string.reader_paged_bookmark_gestures), draft.pagedBookmarkGesturesEnabled) { commit(draft.copy(pagedBookmarkGesturesEnabled = it)) }
                         ReaderToggle(stringResource(R.string.reader_volume_paging), draft.volumeKeyPaging) { commit(draft.copy(volumeKeyPaging = it)) }
-                        ReaderToggle(stringResource(R.string.settings_auto_resume_reading), draft.autoResumeLastReading) { commit(draft.copy(autoResumeLastReading = it)) }
+                        ReaderToggle(stringResource(R.string.reader_eye_protection), draft.eyeProtectionEnabled) { commit(draft.copy(eyeProtectionEnabled = it)) }
                         Text(stringResource(R.string.reader_left_tap_action), style = MaterialTheme.typography.titleSmall)
                         ReaderSettingChoices(draft.leftTapForward, listOf(
                             false to stringResource(R.string.reader_left_tap_previous),
                             true to stringResource(R.string.reader_left_tap_next)
                         )) { commit(draft.copy(leftTapForward = it)) }
-                        HorizontalDivider(Modifier.padding(vertical = 8.dp))
-                        ReaderToggle(stringResource(R.string.reader_eye_protection), draft.eyeProtectionEnabled) { commit(draft.copy(eyeProtectionEnabled = it)) }
-                        ReaderToggle(stringResource(R.string.reader_show_system_status), draft.showSystemStatusBar) { commit(draft.copy(showSystemStatusBar = it)) }
-                        ReaderToggle(stringResource(R.string.reader_show_system_navigation), draft.showSystemNavigationBar) { commit(draft.copy(showSystemNavigationBar = it)) }
-                        ReaderToggle(stringResource(R.string.reader_show_chapter_name), draft.showChapterName) { commit(draft.copy(showChapterName = it)) }
-                        ReaderToggle(stringResource(R.string.reader_show_time_battery), draft.showTimeBattery) { commit(draft.copy(showTimeBattery = it)) }
                     } else {
                         ReaderToolbarSettings(draft.toolbarTools) { commit(draft.copy(toolbarTools = it)) }
                     }

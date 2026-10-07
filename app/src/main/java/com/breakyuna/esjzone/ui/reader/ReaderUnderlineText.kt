@@ -135,7 +135,7 @@ internal fun ReaderUnderlineText(
                 var previousEnd: Offset? = null
                 for (index in range.min until range.max) {
                     val (start, end) = glyphs.getOrPut(index) {
-                        if (text[index] == '\n' || text[index] == '\r') return@getOrPut skippedGlyph
+                        if (text[index].isWhitespace()) return@getOrPut skippedGlyph
                         val line = result.getLineForOffset(index)
                         val visibleEnd = visibleLineEnds.getOrPut(line) {
                             var end = result.getLineEnd(line, visibleEnd = true)
