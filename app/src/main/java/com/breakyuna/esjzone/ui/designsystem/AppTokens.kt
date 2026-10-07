@@ -111,7 +111,7 @@ object AppTouchTarget {
 
 /**
  * Semantic colors for states that are not represented by a single Material role.
- * They intentionally derive from the active Material color scheme so
+ * They intentionally derive from the active monochrome Material color scheme so
  * light and dark mode remain coherent.
  */
 
@@ -166,7 +166,7 @@ fun appSurfaceColors(): AppSurfaceColors {
     }
 }
 
-/** R18 retains its recognizable red content marker independently of action colors. */
+/** R18 is the only content marker which intentionally keeps a red semantic accent. */
 @Immutable
 data class AppAdultColors(
     val content: Color,

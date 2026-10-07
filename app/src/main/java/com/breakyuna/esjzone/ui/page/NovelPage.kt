@@ -1,7 +1,4 @@
 package com.breakyuna.esjzone.ui.page
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
-import com.breakyuna.esjzone.ui.designsystem.appAccentColors
 import com.breakyuna.esjzone.app.PresentationAccess
 import com.breakyuna.esjzone.network.features.getChapterDetail
 import com.breakyuna.esjzone.network.cancellablePageRequest
@@ -603,8 +600,10 @@ private fun NovelDetailContent(
                                 .heightIn(min = AppTouchTarget.minimum),
                             shape = AppShapes.standard,
                             colors = ButtonDefaults.buttonColors(
-                                containerColor = MaterialTheme.colorScheme.primary,
-                                contentColor = MaterialTheme.colorScheme.onPrimary
+                                containerColor = Color(0xFF1976D2),
+                                contentColor = Color.White,
+                                disabledContainerColor = Color(0xFF1976D2).copy(alpha = 0.38f),
+                                disabledContentColor = Color.White.copy(alpha = 0.38f)
                             ),
                             contentPadding = PaddingValues(horizontal = AppSpacing.sm, vertical = AppSpacing.sm)
                         ) {
@@ -629,8 +628,8 @@ private fun NovelDetailContent(
                                 .heightIn(min = AppTouchTarget.minimum),
                             shape = AppShapes.standard,
                             colors = ButtonDefaults.buttonColors(
-                                containerColor = if (favorite) appAccentColors().favoriteContainer else MaterialTheme.colorScheme.surfaceContainer,
-                                contentColor = if (favorite) appAccentColors().favorite else MaterialTheme.colorScheme.onSurfaceVariant
+                                containerColor = Color(0xFFE53935),
+                                contentColor = Color.White
                             ),
                             contentPadding = PaddingValues(horizontal = AppSpacing.sm, vertical = AppSpacing.sm)
                         ) {
@@ -963,9 +962,7 @@ private fun RebuiltNovelHero(novel: DetailedNovel, metrics: AppAdaptiveMetrics) 
         onCoverClick = if (coverUrl.isNotBlank()) ({ viewingCover = true }) else null,
         modifier = Modifier
             .fillMaxWidth()
-            .clip(AppShapes.prominent)
-            .background(Brush.horizontalGradient(listOf(MaterialTheme.colorScheme.primaryContainer, MaterialTheme.colorScheme.surface)))
-            .padding(AppSpacing.md)
+            .padding(vertical = AppSpacing.sm)
     )
     if (viewingCover && coverUrl.isNotBlank()) {
         AppImageViewer(model = coverUrl, contentDescription = novel.name,
@@ -1123,10 +1120,10 @@ private fun RebuiltChapterRow(
                             Text(
                                 text = stringResource(R.string.chapter_password_required_badge),
                                 style = MaterialTheme.typography.labelSmall,
-                                color = appAccentColors().warning,
+                                color = MaterialTheme.colorScheme.error,
                                 modifier = Modifier
                                     .background(
-                                        appAccentColors().warningContainer,
+                                        MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.5f),
                                         shape = AppShapes.compact
                                     )
                                     .padding(horizontal = 6.dp, vertical = 2.dp)
@@ -1813,15 +1810,13 @@ private fun NovelDownloadSheet(
                                     else R.string.novel_downloading_count,
                                     current.completed,
                                     current.total),
-                                style = AppTypography.titleMedium,
-                                color = if (status?.waiting == true) appAccentColors().warning else MaterialTheme.colorScheme.primary
+                                style = AppTypography.titleMedium
                             )
                             if (current.total > 0) {
                                 androidx.compose.material3.LinearProgressIndicator(
                                     progress = (current.completed.toFloat() / current.total.toFloat())
                                         .coerceIn(0f, 1f),
-                                    modifier = Modifier.fillMaxWidth(),
-                                    color = if (status?.waiting == true) appAccentColors().warning else MaterialTheme.colorScheme.primary
+                                    modifier = Modifier.fillMaxWidth()
                                 )
                                 current.chapterName.takeIf(String::isNotBlank)?.let {
                                     Text(
@@ -1868,7 +1863,7 @@ private fun NovelDownloadSheet(
                                 Icon(
                                     imageVector = Icons.Filled.CheckCircle,
                                     contentDescription = null,
-                                    tint = appAccentColors().success,
+                                    tint = MaterialTheme.colorScheme.primary,
                                     modifier = Modifier.size(21.dp)
                                 )
                                 Spacer(modifier = Modifier.width(8.dp))

@@ -66,7 +66,7 @@ fun AppBookshelfRecentReads(
                     close()
                 }
                 val finish = Brush.verticalGradient(
-                    listOf(colors.primaryContainer, colors.surfaceContainerLow)
+                    listOf(colors.surfaceContainerHighest, colors.surfaceContainerLow)
                 )
                 onDrawBehind { drawPath(platform, finish) }
             })

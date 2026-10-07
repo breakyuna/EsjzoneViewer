@@ -2,33 +2,6 @@
 
 This package is the only presentation entry point for the rebuilt visual system.
 
-## Paper and ink-green appearance
-
-`AppTheme` owns paired warm-paper light and ink-green dark palettes, including
-inverse surfaces and error roles. `appAccentColors()` owns success, warning,
-information and favorite colors with matching containers. Use a status label or
-icon with its color. R18 badges and reader underlines retain their content colors;
-reader paper/mint/lavender/night backgrounds remain independent of app controls.
-
-Use neutral surfaces for normal lists, primary containers for selected rows,
-primary for the main action and tertiary containers for small rank/level accents.
-Favorites use the rose pair. Category icons and profile tools may use a small
-colored container; avoid coloring entire lists or setting descriptions.
-
-The active shell uses an opaque Material bottom bar / navigation rail with a
-primary-container indicator behind the selected icon. The glass components below
-are retained experimental components, not the current shell implementation.
-
-Theme mode is available directly in Settings and reuses the existing persisted
-SYSTEM/LIGHT/DARK preference. Statistics use green activity/trend colors and a
-fixed identity-based tag palette, so changes in rank do not reassign tag colors.
-
-`AppThemePreview.kt` offers light, dark and large-text component previews without
-network data. `AppThemeContrastTest` checks text/action color pairs, semantic
-containers and chart label identity. These checks do not render the application.
-Device acceptance must cover bright/dark covers, large text, selected/disabled/error
-states, reader background choices, system bars and both navigation orientations.
-
 ## Stable feature-facing APIs
 
 - `AppTheme`: color, typography, and shape ownership.
@@ -115,11 +88,9 @@ remain independent.
 Official pinned references: [Glass guide](https://github.com/chrisbanes/haze/blob/2.0.0-beta02/docs/effects/glass.md)
 and [fixed optics contract](https://github.com/chrisbanes/haze/blob/2.0.0-beta02/haze-glass/src/commonMain/kotlin/dev/chrisbanes/haze/glass/GlassOptics.kt).
 
-Current static check: `python3 tools/qa/verify_static_contracts.py`. This does **not**
-compile Kotlin or render the app. `verify_navigation_glass.py` retains historical
-glass-shell integration checks and is not an acceptance gate for the current
-Material navigation shell.
-The palette model checks **halo centers only** across the paper light and dark schemes against
+Static checks: `python3 tools/qa/verify_navigation_glass.py` and
+`python3 tools/qa/verify_static_contracts.py`. These do **not** compile Kotlin or render Haze.
+The palette model checks **halo centers only** across the monochrome light and dark schemes against
 uniform black/white inputs, both with and without the moving lens under each glyph group.
 It does not prove whole-label contrast: feathered edges deliberately
 stay transparent, and high-detail photography still requires visual acceptance on-device.

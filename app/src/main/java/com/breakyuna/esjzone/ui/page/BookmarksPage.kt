@@ -1,6 +1,5 @@
 package com.breakyuna.esjzone.ui.page
 
-import androidx.compose.foundation.background
 import androidx.lifecycle.viewModelScope
 
 import androidx.compose.ui.draw.clip
@@ -244,8 +243,7 @@ private fun BookmarkCard(
         modifier = Modifier
             .fillMaxWidth()
             .clip(AppShapes.standard)
-            .then(if (selected) Modifier.background(MaterialTheme.colorScheme.primaryContainer)
-                .border(2.dp, MaterialTheme.colorScheme.primary, AppShapes.standard) else Modifier)
+            .then(if (selected) Modifier.border(2.dp, MaterialTheme.colorScheme.primary, AppShapes.standard) else Modifier)
             .clickable(onClick = onOpen)
             .semantics { role = Role.Button }
             .padding(vertical = AppSpacing.sm, horizontal = AppSpacing.xs),
@@ -265,7 +263,7 @@ private fun BookmarkCard(
             Icon(
                 if (selected) Icons.Filled.Check else Icons.Filled.BookmarkBorder,
                 contentDescription = null,
-                tint = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.tertiary
+                tint = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
             )
         } else {
             IconButton(onClick = onDelete) {

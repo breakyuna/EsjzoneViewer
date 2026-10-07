@@ -1,7 +1,5 @@
 package com.breakyuna.esjzone.ui.page
 
-import androidx.compose.foundation.border
-import com.breakyuna.esjzone.ui.designsystem.appChartColor
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
@@ -72,6 +70,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathEffect
@@ -281,11 +280,15 @@ object ReadingStatisticsPage : AppDestination {
                                 if (tags.isEmpty()) {
                                     StatisticsEmptyState(stringResource(R.string.reading_stats_no_tags))
                                 } else {
+                                    val dark = MaterialTheme.colorScheme.surface.luminance() < .5f
                                     val otherColor = MaterialTheme.colorScheme.outline
-                                    val allTags = current.allTagRankings[tagDays].orEmpty()
-                                    val tagColors = (tags + allTags).associate { tag ->
-                                        tag.tag to (tag.tag?.let { appChartColor(it) } ?: otherColor)
-                                    }
+                                    val tagColors = tags.mapIndexed { index, tag ->
+                                        tag.tag to if (tag.tag == null) otherColor else Color.hsv(
+                                            (index * 137.508f + 215f) % 360f,
+                                            if (dark) .55f else .65f,
+                                            if (dark) .9f else .8f
+                                        )
+                                    }.toMap()
                                     TagDonutChart(tags, tagColors)
                                     TagDistributionList(current.allTagRankings[tagDays].orEmpty(), tagColors, otherColor)
                                 }
@@ -660,7 +663,7 @@ private fun ReadingHeatmap(summary: ReadingStatisticsSummary, selectedDate: Loca
             .maxOf { summary.daily[firstDate.plusDays(it)] ?: 0L }
             .coerceAtLeast(1L)
     }
-    val heatColor = MaterialTheme.colorScheme.primary
+    val heatColor = if (MaterialTheme.colorScheme.surface.luminance() < .5f) Color(0xFF82B1FF) else Color(0xFF2563EB)
     val shades = listOf(
         MaterialTheme.colorScheme.outlineVariant.copy(alpha = .45f),
         heatColor.copy(alpha = .25f),
@@ -705,7 +708,6 @@ private fun ReadingHeatmap(summary: ReadingStatisticsSummary, selectedDate: Loca
                         Box(
                             Modifier.size(18.dp).clip(RoundedCornerShape(3.dp))
                                 .background(shade)
-                                .then(if (inRange && date == selectedDate) Modifier.border(2.dp, MaterialTheme.colorScheme.tertiary, RoundedCornerShape(3.dp)) else Modifier)
                                 .then(if (inRange) Modifier
                                     .clickable { onSelect(date) }
                                     .semantics {
@@ -747,8 +749,9 @@ private fun TrendChart(summary: ReadingStatisticsSummary, days: Int, lineChart: 
         .coerceAtLeast(1L)) * tickStep
     val scaleMs = halfScaleMinutes * 2 * 60_000L
     val colors = MaterialTheme.colorScheme
-    val accent = colors.primary
-    val barBase = colors.primary.copy(alpha = 0.45f)
+    val darkBackground = colors.surface.luminance() < .5f
+    val accent = if (darkBackground) Color(0xFF82B1FF) else Color(0xFF2563EB)
+    val barBase = if (darkBackground) Color(0xFF38BDF8) else Color(0xFF7DD3FC)
     val muted = colors.onSurfaceVariant
     val grid = colors.outlineVariant.copy(alpha = .5f)
     val locale = LocalConfiguration.current.locales[0]

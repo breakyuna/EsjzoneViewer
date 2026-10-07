@@ -564,10 +564,16 @@ private fun ForumCategoryCard(
     val cardShape = AppShapes.standard
     Card(
         onClick = onClick,
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .border(
+                width = 1.dp,
+                color = MaterialTheme.colorScheme.outlineVariant,
+                shape = cardShape
+            ),
         shape = cardShape,
         colors = CardDefaults.cardColors(containerColor = appStateColors().containerRaised),
-        elevation = CardDefaults.cardElevation(defaultElevation = AppElevation.flat)
+        elevation = CardDefaults.cardElevation(defaultElevation = AppElevation.raised)
     ) {
         Row(
             modifier = Modifier.padding(AppSpacing.lg),
@@ -577,8 +583,7 @@ private fun ForumCategoryCard(
             Surface(
                 modifier = Modifier.size(AppTouchTarget.minimum),
                 shape = AppShapes.standard,
-                color = MaterialTheme.colorScheme.primaryContainer,
-                contentColor = MaterialTheme.colorScheme.onPrimaryContainer
+                color = MaterialTheme.colorScheme.surfaceContainer
             ) {
                 Box(contentAlignment = Alignment.Center) {
                     Icon(
@@ -635,7 +640,7 @@ private fun ForumThreadCard(thread: ForumThread, onClick: () -> Unit) {
         shape = AppShapes.standard,
         colors = CardDefaults.cardColors(containerColor = appStateColors().containerRaised),
         border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-        elevation = CardDefaults.cardElevation(defaultElevation = AppElevation.flat)
+        elevation = CardDefaults.cardElevation(defaultElevation = AppElevation.raised)
     ) {
         Column(modifier = Modifier.padding(AppSpacing.lg)) {
             Text(
@@ -742,7 +747,7 @@ private fun ForumNovelBoardContent(
                     1.dp,
                     MaterialTheme.colorScheme.outlineVariant
                 ),
-                elevation = CardDefaults.cardElevation(defaultElevation = AppElevation.flat)
+                elevation = CardDefaults.cardElevation(defaultElevation = AppElevation.raised)
             ) {
                 Column(modifier = Modifier.padding(AppSpacing.lg)) {
                     Text(
@@ -800,7 +805,7 @@ private fun ForumTopicCard(topic: ForumTopic, onClick: () -> Unit) {
         shape = AppShapes.standard,
         colors = CardDefaults.cardColors(containerColor = appStateColors().containerRaised),
         border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-        elevation = CardDefaults.cardElevation(defaultElevation = AppElevation.flat)
+        elevation = CardDefaults.cardElevation(defaultElevation = AppElevation.raised)
     ) {
         Column(modifier = Modifier.padding(AppSpacing.lg)) {
             Text(

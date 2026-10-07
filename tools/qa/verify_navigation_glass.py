@@ -173,9 +173,9 @@ class NavigationGlassContract(unittest.TestCase):
         # transitions and GPU lighting must be checked on-device, including fallback.
         source = (UI / "designsystem/AppTheme.kt").read_text()
         schemes = [
-            ("Paper", mode, body)
+            ("Monochrome", mode, body)
             for mode, body in re.findall(
-                r"internal val Paper(Light|Dark)Colors = (?:light|dark)ColorScheme\((.*?)\n\)",
+                r"private val Monochrome(Light|Dark)Colors = (?:light|dark)ColorScheme\((.*?)\n\)",
                 source,
                 re.S,
             )

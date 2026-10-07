@@ -2,7 +2,6 @@
 
 package com.breakyuna.esjzone.ui.tab
 
-import com.breakyuna.esjzone.ui.designsystem.appAccentColors
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -219,10 +218,7 @@ private fun profileMenuItems(): List<ProfileMenuItem> = listOf(
 
 @Composable
 private fun ProfileHero(profile: UserProfile?, domain: String, loading: Boolean, onRetry: () -> Unit) {
-    Card(shape = AppShapes.prominent, colors = CardDefaults.cardColors(
-        containerColor = MaterialTheme.colorScheme.primaryContainer,
-        contentColor = MaterialTheme.colorScheme.onPrimaryContainer
-    )) {
+    Card(shape = AppShapes.prominent, colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
         Row(Modifier.fillMaxWidth().padding(AppSpacing.xl), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(AppSpacing.lg)) {
             if (profile == null && loading) {
                 AppShimmerPlaceholder(
@@ -277,9 +273,7 @@ private fun ProfileHero(profile: UserProfile?, domain: String, loading: Boolean,
                         Text(
                             text = it.trim(),
                             style = AppTypography.bodySmall,
-                            color = MaterialTheme.colorScheme.onTertiaryContainer,
-                            modifier = Modifier.background(MaterialTheme.colorScheme.tertiaryContainer, AppShapes.pill)
-                                .padding(horizontal = AppSpacing.sm, vertical = AppSpacing.xxs),
+                            color = MaterialTheme.colorScheme.primary,
                             maxLines = 1
                         )
                     }
@@ -299,16 +293,8 @@ private fun ProfileAction(item: ProfileMenuItem, modifier: Modifier = Modifier, 
         ) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically) {
-                val accents = appAccentColors()
-                val (container, content) = when (item.id) {
-                    "reading_stats" -> MaterialTheme.colorScheme.primaryContainer to MaterialTheme.colorScheme.onPrimaryContainer
-                    "bookmarks" -> MaterialTheme.colorScheme.tertiaryContainer to MaterialTheme.colorScheme.onTertiaryContainer
-                    "downloads" -> accents.infoContainer to accents.info
-                    else -> MaterialTheme.colorScheme.surfaceContainer to MaterialTheme.colorScheme.onSurfaceVariant
-                }
-                Surface(shape = AppShapes.compact, color = container, contentColor = content) {
-                    Icon(item.icon, contentDescription = null, modifier = Modifier.padding(9.dp).size(22.dp))
-                }
+                Icon(item.icon, contentDescription = null, modifier = Modifier.size(22.dp),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant)
                 Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null,
                     tint = MaterialTheme.colorScheme.outline, modifier = Modifier.size(18.dp))
             }

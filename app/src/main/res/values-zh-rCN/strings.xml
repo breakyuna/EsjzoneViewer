@@ -763,10 +763,4 @@
     <string name="image_save_failed">图片保存失败，请长按重试</string>
     <string name="novel_export_selected_action">导出 %1$d 章</string>
     <string name="novel_export_no_chapters">暂无可导出的已下载章节</string>
-    <string name="settings_appearance">外观</string>
-    <string name="settings_theme_mode">主题模式</string>
-    <string name="settings_theme_system">跟随系统</string>
-    <string name="settings_theme_light">浅色</string>
-    <string name="settings_theme_dark">深色</string>
-    <string name="reader_color_sample">字</string>
 </resources>

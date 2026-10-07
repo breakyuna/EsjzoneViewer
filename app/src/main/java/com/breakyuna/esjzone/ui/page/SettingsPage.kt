@@ -1,6 +1,5 @@
 package com.breakyuna.esjzone.ui.page
 
-import com.breakyuna.esjzone.AppThemeMode
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedContentTransitionScope
@@ -132,7 +131,6 @@ object SettingsPage : AppDestination {
         val hideHomeRecommendations by PresentationAccess.settings.hideHomeRecommendations
         val domain by PresentationAccess.settings.domain
         val language by PresentationAccess.settings.language
-        val themeMode by PresentationAccess.settings.themeMode
         val autoSave by PresentationAccess.settings.readerAutoSave
         val downloadConcurrency by PresentationAccess.settings.downloadConcurrency
         val navigationOrder by PresentationAccess.settings.navigationOrder
@@ -201,17 +199,6 @@ object SettingsPage : AppDestination {
                 verticalArrangement = Arrangement.spacedBy(AppSpacing.lg)
             ) {
                 if (displayedSection == "MAIN") {
-                    SettingsSection(title = stringResource(R.string.settings_appearance)) {
-                        InlineSettingRow(
-                            title = stringResource(R.string.settings_theme_mode),
-                            options = listOf(
-                                stringResource(R.string.settings_theme_system),
-                                stringResource(R.string.settings_theme_light),
-                                stringResource(R.string.settings_theme_dark)
-                            ),
-                            selectedIndex = themeMode.ordinal
-                        ) { index -> PresentationAccess.settings.setThemeMode(AppThemeMode.entries[index]) }
-                    }
                     SettingsSection(title = stringResource(R.string.settings_general_section)) {
                         InlineSettingRow(
                             title = stringResource(R.string.settings_language_section),
@@ -309,8 +296,7 @@ object SettingsPage : AppDestination {
                             Icons.AutoMirrored.Filled.Logout,
                             stringResource(R.string.settings_logout_title),
                             subtitle = null,
-                            centered = true,
-                            contentColor = MaterialTheme.colorScheme.error
+                            centered = true
                         ) { if (!state.logoutInProgress) showLogout = true }
                     }
                 }
@@ -674,7 +660,7 @@ private fun InlineSettingRow(
         modifier = Modifier.fillMaxWidth().padding(AppSpacing.md),
         verticalArrangement = Arrangement.spacedBy(AppSpacing.sm)
     ) {
-        Text(title, style = AppTypography.bodyLarge)
+        Text(title, style = AppTypography.bodyMedium)
         Surface(
             shape = AppShapes.compact,
             color = MaterialTheme.colorScheme.surfaceContainerLow
@@ -686,7 +672,7 @@ private fun InlineSettingRow(
                     Box(
                         modifier = Modifier.weight(1f).heightIn(min = 48.dp)
                             .clip(AppShapes.compact)
-                            .background(if (index == selectedIndex) MaterialTheme.colorScheme.primaryContainer else Color.Transparent)
+                            .background(if (index == selectedIndex) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent)
                             .selectable(
                                 selected = index == selectedIndex,
                                 role = Role.RadioButton,
@@ -695,7 +681,7 @@ private fun InlineSettingRow(
                         contentAlignment = Alignment.Center
                     ) {
                         Text(option, style = AppTypography.labelMedium, textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                            color = if (index == selectedIndex) MaterialTheme.colorScheme.onPrimaryContainer
+                            color = if (index == selectedIndex) MaterialTheme.colorScheme.onSecondaryContainer
                                 else MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
@@ -740,7 +726,7 @@ private fun SiteSettingRow(
 private fun ToggleRow(title: String, checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
     Row(Modifier.fillMaxWidth().heightIn(min = 56.dp).padding(horizontal = AppSpacing.md, vertical = AppSpacing.xs),
         horizontalArrangement = Arrangement.spacedBy(AppSpacing.md), verticalAlignment = Alignment.CenterVertically) {
-        Text(title, modifier = Modifier.weight(1f), style = AppTypography.bodyLarge)
+        Text(title, modifier = Modifier.weight(1f), style = AppTypography.bodyMedium)
         Switch(checked, onCheckedChange)
     }
 }
@@ -749,7 +735,7 @@ private fun ToggleRow(title: String, checked: Boolean, onCheckedChange: (Boolean
 private fun CacheRow(title: String, value: String, busy: Boolean, action: String, onClick: () -> Unit) {
     Row(Modifier.fillMaxWidth().heightIn(min = 64.dp).padding(AppSpacing.md), horizontalArrangement = Arrangement.spacedBy(AppSpacing.md), verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(AppSpacing.xs)) {
-            Text(title, style = AppTypography.bodyLarge)
+            Text(title, style = AppTypography.bodyMedium)
             Text(value, style = AppTypography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         Button(
@@ -758,8 +744,8 @@ private fun CacheRow(title: String, value: String, busy: Boolean, action: String
             shape = AppShapes.compact,
             contentPadding = PaddingValues(horizontal = AppSpacing.md, vertical = AppSpacing.sm),
             colors = ButtonDefaults.buttonColors(
-                containerColor = MaterialTheme.colorScheme.errorContainer,
-                contentColor = MaterialTheme.colorScheme.onErrorContainer
+                containerColor = MaterialTheme.colorScheme.primaryContainer,
+                contentColor = MaterialTheme.colorScheme.onPrimaryContainer
             )
         ) {
             Text(action, style = AppTypography.labelMedium)
@@ -774,7 +760,6 @@ private fun LinkRow(
     subtitle: String? = null,
     enabled: Boolean = true,
     centered: Boolean = false,
-    contentColor: Color = MaterialTheme.colorScheme.onSurface,
     onClick: () -> Unit
 ) {
     Surface(onClick = onClick, enabled = enabled, color = Color.Transparent, modifier = Modifier.fillMaxWidth()) {
@@ -786,17 +771,17 @@ private fun LinkRow(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = if (centered) Arrangement.Center else Arrangement.Start
         ) {
-            Icon(icon, null, tint = if (centered) contentColor else MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
+            Icon(icon, null, tint = MaterialTheme.colorScheme.onSurface, modifier = Modifier.size(20.dp))
             if (centered) {
                 Text(
                     title,
                     style = AppTypography.labelLarge,
-                    color = contentColor,
+                    color = MaterialTheme.colorScheme.onSurface,
                     modifier = Modifier.padding(start = AppSpacing.sm)
                 )
             } else {
                 Column(Modifier.weight(1f).padding(horizontal = AppSpacing.md)) {
-                    Text(title, style = AppTypography.bodyLarge, color = MaterialTheme.colorScheme.onSurface)
+                    Text(title, style = AppTypography.bodyMedium, color = MaterialTheme.colorScheme.onSurface)
                     subtitle?.let {
                         Text(it, style = AppTypography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
                     }

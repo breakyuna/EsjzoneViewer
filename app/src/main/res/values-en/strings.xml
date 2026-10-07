@@ -762,10 +762,4 @@
     <string name="image_save_failed">Could not save image. Long-press to retry.</string>
     <string name="novel_export_selected_action">Export %1$d chapters</string>
     <string name="novel_export_no_chapters">No downloaded chapters available to export</string>
-    <string name="settings_appearance">Appearance</string>
-    <string name="settings_theme_mode">Theme</string>
-    <string name="settings_theme_system">System</string>
-    <string name="settings_theme_light">Light</string>
-    <string name="settings_theme_dark">Dark</string>
-    <string name="reader_color_sample">Aa</string>
 </resources>

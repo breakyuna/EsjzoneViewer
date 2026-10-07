@@ -226,8 +226,8 @@ private fun DownloadCard(
             .then(
                 if (selected) {
                     Modifier
-                        .background(MaterialTheme.colorScheme.primaryContainer, AppShapes.standard)
-                        .border(1.dp, MaterialTheme.colorScheme.primary, AppShapes.standard)
+                        .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.08f), AppShapes.standard)
+                        .border(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.62f), AppShapes.standard)
                 } else Modifier
             )
             .then(if (editing && !deleting) Modifier.clickable { onToggle() } else Modifier)

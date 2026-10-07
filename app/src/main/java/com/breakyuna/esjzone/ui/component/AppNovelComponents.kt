@@ -2,6 +2,7 @@ package com.breakyuna.esjzone.ui.component
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.Arrangement
@@ -262,8 +263,8 @@ fun AppNovelListItem(
     Column(
         modifier = modifier
             .fillMaxWidth()
-            .clip(AppShapes.standard)
-            .background(MaterialTheme.colorScheme.surface)
+            .background(MaterialTheme.colorScheme.surface, AppShapes.standard)
+            .border(1.dp, MaterialTheme.colorScheme.outlineVariant, AppShapes.standard)
             .then(novelClickModifier(onClick))
     ) {
         Row(
@@ -329,8 +330,8 @@ fun AppNovelPreviewCard(
     Column(
         modifier = modifier
             .fillMaxWidth()
-            .clip(AppShapes.standard)
-            .background(MaterialTheme.colorScheme.surface)
+            .background(MaterialTheme.colorScheme.surface, AppShapes.standard)
+            .border(1.dp, MaterialTheme.colorScheme.outlineVariant, AppShapes.standard)
             .then(novelClickModifier(onClick))
     ) {
         Row(

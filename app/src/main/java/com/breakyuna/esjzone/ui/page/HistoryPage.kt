@@ -474,7 +474,7 @@ private fun HistoryCloudSyncStatusIndicator(
                 .clickable(onClickLabel = stringResource(statusRes)) { onExpandedChange(true) },
             contentAlignment = Alignment.Center
         ) {
-            AppSyncStatusDot(syncing = syncing, isSuccess = isSuccess, failed = failed)
+            AppSyncStatusDot(syncing = syncing, isSuccess = isSuccess)
         }
         DropdownMenu(
             expanded = expanded,
@@ -486,7 +486,7 @@ private fun HistoryCloudSyncStatusIndicator(
                 verticalArrangement = Arrangement.spacedBy(AppSpacing.sm)
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(AppSpacing.sm)) {
-                    AppSyncStatusDot(syncing = syncing, isSuccess = isSuccess, failed = failed)
+                    AppSyncStatusDot(syncing = syncing, isSuccess = isSuccess)
                     Text(
                         text = stringResource(statusRes),
                         style = AppTypography.labelLarge,
@@ -615,7 +615,7 @@ private fun LocalHistoryCard(
             )
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(AppSpacing.xs)) {
                 Text(activity.novelName.ifBlank { activity.novelId }, style = AppTypography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                Text(activity.chapterName, style = AppTypography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(activity.chapterName, style = AppTypography.bodySmall, color = MaterialTheme.colorScheme.primary, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 androidx.compose.material3.LinearProgressIndicator(progress = (activity.bookProgress ?: fullBookProgress(activity.chapterIndex, activity.totalChapters, activity.chapterProgress)), modifier = Modifier.fillMaxWidth())
                 Text(position, style = AppTypography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Text(stringResource(R.string.history_local_meta, relative, localDurationText(activity.durationMs)), style = AppTypography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)

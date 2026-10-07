@@ -1,6 +1,7 @@
 package com.breakyuna.esjzone.ui.tab
 
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -34,6 +35,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import com.breakyuna.esjzone.ui.designsystem.globalStringResource as stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -166,7 +168,7 @@ private fun WeeklyPopularCard(
         shape = RoundedCornerShape(26.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
-        border = null
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f))
     ) {
         Row(
             modifier = Modifier
@@ -174,7 +176,7 @@ private fun WeeklyPopularCard(
                 .background(
                     Brush.horizontalGradient(
                         listOf(
-                            MaterialTheme.colorScheme.primaryContainer,
+                            MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.42f),
                             MaterialTheme.colorScheme.surfaceContainer,
                             MaterialTheme.colorScheme.surfaceContainerLow
                         )
@@ -199,12 +201,12 @@ private fun WeeklyPopularCard(
                     text = stringResource(R.string.home_weekly_popular_badge, novel.rank),
                     style = MaterialTheme.typography.labelSmall,
                     fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onTertiaryContainer,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer,
                     modifier = Modifier
                         .align(Alignment.TopStart)
                         .padding(8.dp)
                         .clip(RoundedCornerShape(7.dp))
-                        .background(MaterialTheme.colorScheme.tertiaryContainer)
+                        .background(MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.92f))
                         .padding(horizontal = 7.dp, vertical = 4.dp)
                 )
             }
@@ -254,8 +256,8 @@ private fun WeeklyPopularCard(
                 Card(
                     shape = RoundedCornerShape(8.dp),
                     colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.tertiaryContainer,
-                        contentColor = MaterialTheme.colorScheme.onTertiaryContainer
+                        containerColor = Color(162, 25, 23),
+                        contentColor = Color.White
                     )
                 ) {
                     Row(
@@ -265,7 +267,7 @@ private fun WeeklyPopularCard(
                         Icon(
                             imageVector = Icons.Filled.Whatshot,
                             contentDescription = null,
-                            tint = MaterialTheme.colorScheme.onTertiaryContainer,
+                            tint = Color.White,
                             modifier = Modifier.size(13.dp)
                         )
                         Spacer(Modifier.width(3.dp))
@@ -276,7 +278,7 @@ private fun WeeklyPopularCard(
                             ),
                             style = MaterialTheme.typography.labelMedium,
                             fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onTertiaryContainer
+                            color = Color.White
                         )
                     }
                 }

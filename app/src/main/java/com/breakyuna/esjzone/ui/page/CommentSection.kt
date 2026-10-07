@@ -2,7 +2,6 @@
 
 package com.breakyuna.esjzone.ui.page
 
-import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.lifecycle.viewModelScope
 import com.breakyuna.esjzone.app.PresentationAccess
@@ -209,7 +208,7 @@ internal fun CommunitySyncStatusIndicator(
                 ) { onExpandedChange(true) },
             contentAlignment = Alignment.Center
         ) {
-            AppSyncStatusDot(syncing = syncing, isSuccess = isSyncSuccess, failed = isSyncFailed)
+            AppSyncStatusDot(syncing = syncing, isSuccess = isSyncSuccess)
         }
         DropdownMenu(
             expanded = expanded,
@@ -224,7 +223,7 @@ internal fun CommunitySyncStatusIndicator(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(AppSpacing.sm)
                 ) {
-                    AppSyncStatusDot(syncing = syncing, isSuccess = isSyncSuccess, failed = isSyncFailed)
+                    AppSyncStatusDot(syncing = syncing, isSuccess = isSyncSuccess)
                     Text(
                         text = stringResource(statusLabelRes),
                         style = AppTypography.labelLarge,
@@ -691,7 +690,7 @@ private fun CommentComposer(
         tonalElevation = 0.dp,
         shadowElevation = AppElevation.raised,
         shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
-        border = null
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
     ) {
         Column(
             modifier = Modifier
@@ -764,7 +763,6 @@ private fun CommentComposer(
                     textStyle = AppTypography.bodyMedium.copy(
                         color = MaterialTheme.colorScheme.onSurface
                     ),
-                    cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
                     decorationBox = { innerTextField ->
                         Box(
                             modifier = Modifier
@@ -774,7 +772,7 @@ private fun CommentComposer(
                                     max = AppTouchTarget.minimum
                                 )
                                 .clip(AppShapes.standard)
-                                .background(MaterialTheme.colorScheme.surfaceContainerLow)
+                                .background(MaterialTheme.colorScheme.surface)
                                 .padding(horizontal = AppSpacing.md),
                             contentAlignment = Alignment.CenterStart
                         ) {
@@ -891,7 +889,7 @@ private fun CommentPager(
             .padding(vertical = AppSpacing.sm),
         shape = AppShapes.standard,
         color = MaterialTheme.colorScheme.surface,
-        border = null,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
         shadowElevation = AppElevation.raised
     ) {
         Row(
@@ -946,7 +944,7 @@ private fun CommentCard(comment: Comment, onReply: (() -> Unit)?) {
             .padding(vertical = AppSpacing.xs),
         shape = AppShapes.standard,
         color = appStateColors().containerRaised,
-        border = null,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
         shadowElevation = AppElevation.raised
     ) {
         Column(
