@@ -13,43 +13,37 @@ data class ReaderUnderline(val blockIndex: Int, val signature: String, val start
 }
 
 object ReaderUnderlines {
-    const val KEY_PREFIX = "reader_underlines:"
+    const val KEY_PREFIX = "reader_underlines_v2:"
     private val gson = Gson()
+    private val signaturePattern = Regex("[0-9a-f]{64}")
     private val blankLine = Regex("\\r?\\n[\\t\\x0B\\f\\p{Zs}]*\\r?\\n")
     fun signature(block: ReaderBlock, renderedText: String): String = MessageDigest.getInstance("SHA-256")
         .digest("$block\u0000$renderedText".toByteArray(Charsets.UTF_8)).joinToString("") { "%02x".format(it) }
-    fun decode(value: String?, onRepair: () -> Unit = {}): List<ReaderUnderline> {
+    fun decode(value: String?): List<ReaderUnderline> {
         if (value == null) return emptyList()
         require(value.isNotBlank()) { "Invalid underline data" }
-        val rows = requireNotNull(gson.fromJson(value, Array<ReaderUnderline>::class.java)) {
+        val rows: List<ReaderUnderline?> = requireNotNull(gson.fromJson(value, Array<ReaderUnderline>::class.java)) {
             "Invalid underline data"
-        }
-        var repaired = false
-        val decoded = rows.flatMap { mark ->
-            val ranges = mark.ranges()
-            require(ranges.all { it.blockIndex >= 0 && it.start >= 0 && it.end > it.start &&
-                it.signature.matches(Regex("[0-9a-f]{64}")) })
-            if (ranges.zipWithNext().all { (a, b) -> a.blockIndex < b.blockIndex }) listOf(mark) else {
-                // Older merges could combine two scripts at the same block index.
-                // Keep every valid range, splitting the record at duplicate blocks.
-                require(ranges.zipWithNext().all { (a, b) -> a.blockIndex <= b.blockIndex } &&
-                    ranges.distinctBy { it.blockIndex to it.signature }.size == ranges.size)
-                repaired = true
-                val groups = mutableListOf<ReaderUnderline>()
-                val group = mutableListOf<ReaderUnderlineRange>()
-                ranges.forEach { range ->
-                    if (group.lastOrNull()?.blockIndex == range.blockIndex) {
-                        groups += fromRanges(group.toList())
-                        group.clear()
-                    }
-                    group += range
-                }
-                groups + fromRanges(group.toList())
+        }.toList()
+        return rows.map { row ->
+            val mark = requireNotNull(row) { "Invalid underline record" }
+            // Gson can bypass Kotlin constructors, so validate before constructing ranges.
+            require(validRange(mark.blockIndex, mark.signature, mark.start, mark.end)) {
+                "Invalid underline range"
             }
+            val continuation: List<ReaderUnderlineRange?> = mark.continuation.orEmpty()
+            require(continuation.all { range -> range != null &&
+                validRange(range.blockIndex, range.signature, range.start, range.end) }) {
+                "Invalid underline continuation"
+            }
+            require(mark.ranges().zipWithNext().all { (a, b) -> a.blockIndex < b.blockIndex })
+            mark
         }
-        if (repaired) onRepair()
-        return decoded
     }
+
+    private fun validRange(blockIndex: Int, signature: String?, start: Int, end: Int): Boolean =
+        blockIndex >= 0 && start >= 0 && end > start && signature != null && signaturePattern.matches(signature)
+
     fun encode(rows: List<ReaderUnderline>): String = gson.toJson(rows)
     fun overlaps(a: ReaderUnderline, b: ReaderUnderline) = a.ranges().any { first ->
         b.ranges().any { second -> first.blockIndex == second.blockIndex &&

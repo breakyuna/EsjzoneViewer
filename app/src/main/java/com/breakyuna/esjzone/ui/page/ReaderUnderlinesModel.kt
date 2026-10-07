@@ -21,7 +21,7 @@ class ReaderUnderlinesModel(
     val underlines = database.cacheDao().observeReaderUnderlines().map { rows ->
         rows.associate { row ->
             val chapterKey = row.key.removePrefix(ReaderUnderlines.KEY_PREFIX)
-            chapterKey to runCatching { decode(chapterKey, row.value) }.getOrElse { error ->
+            chapterKey to runCatching { ReaderUnderlines.decode(row.value) }.getOrElse { error ->
                 AppLogger.w("ReaderUnderlinesModel",
                     "Could not read saved underlines; chapter=${chapterKey.hashCode().toUInt().toString(16)}", error)
                 emptyList()
@@ -36,7 +36,7 @@ class ReaderUnderlinesModel(
                 database.withTransaction {
                     val dao = database.cacheDao()
                     val key = ReaderUnderlines.KEY_PREFIX + chapterKey
-                    val updated = ReaderUnderlines.update(decode(chapterKey, dao.findByKey(key)?.value), selection, remove, renderedText)
+                    val updated = ReaderUnderlines.update(ReaderUnderlines.decode(dao.findByKey(key)?.value), selection, remove, renderedText)
                     if (updated.isEmpty()) dao.deleteByKey(key) else dao.putAtomic(key, ReaderUnderlines.encode(updated))
                 }
             } catch (error: CancellationException) { throw error
@@ -49,10 +49,5 @@ class ReaderUnderlinesModel(
                 mutableState.update { it + 1 }
             }
         }
-    }
-
-    private fun decode(chapterKey: String, value: String?): List<ReaderUnderline> = ReaderUnderlines.decode(value) {
-        AppLogger.w("ReaderUnderlinesModel",
-            "Recovered mixed-source underline ranges; chapter=${chapterKey.hashCode().toUInt().toString(16)}")
     }
 }

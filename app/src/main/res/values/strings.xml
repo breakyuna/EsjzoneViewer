@@ -602,6 +602,9 @@
     <string name="reading_stats_days">%1$d 天</string>
     <string name="reading_stats_day_detail">%1$s · %2$s</string>
     <string name="reading_stats_trend">阅读趋势</string>
+    <string name="reading_stats_period_total">区间总时长</string>
+    <string name="reading_stats_daily_average">日均时长</string>
+    <string name="reading_stats_axis_minutes">分钟</string>
     <string name="reading_stats_other">其它</string>
     <string name="reading_stats_tags">标签阅读分布</string>
     <string name="reading_stats_no_tags">这段时间暂无可统计的标签，打开书籍详情可补充标签。</string>
@@ -656,7 +659,7 @@
     <string name="novel_download_range_confirm">确定</string>
     <string name="novel_download_selection_too_large">所选章节超过单次任务容量，请缩小范围分批下载；输入完整目录范围可下载全书。</string>
     <string name="reader_tab_appearance">常规</string>
-    <string name="reader_tab_controls">操作</string>
+    <string name="reader_tab_controls">更多</string>
     <string name="reader_font_source_serif">思源宋体</string>
     <string name="reader_font_source_sans">思源黑体</string>
     <string name="reader_font_wenkai">霞鹜文楷</string>
@@ -734,8 +737,8 @@
     <string name="reader_toolbar_selected_count">已選 %1$d / %2$d 個</string>
     <string name="reader_tool_move_before">向前移動</string>
     <string name="reader_tool_move_after">向後移動</string>
-    <string name="reader_scroll_side_gestures">上下佈局：右滑目錄，左滑評論</string>
-    <string name="reader_paged_bookmark_gestures">左右佈局：下拉新增／取消書籤</string>
+    <string name="reader_scroll_side_gestures">上下翻頁：右滑目錄，左滑評論</string>
+    <string name="reader_paged_bookmark_gestures">左右翻頁：下拉新增／取消書籤</string>
     <string name="reader_brightness_system">跟隨系統亮度</string>
     <string name="reader_bookmark_added">已新增書籤</string>
     <string name="reader_bookmark_removed">已取消書籤</string>

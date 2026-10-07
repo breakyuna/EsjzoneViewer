@@ -3,6 +3,7 @@ package com.breakyuna.esjzone.ui.page
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
@@ -30,6 +31,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.DeleteOutline
+import androidx.compose.material.icons.filled.BarChart
+import androidx.compose.material.icons.filled.ShowChart
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material3.AlertDialog
@@ -41,6 +44,7 @@ import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.IconToggleButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Scaffold
@@ -65,9 +69,12 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.drawText
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalConfiguration
@@ -98,6 +105,7 @@ import com.breakyuna.esjzone.ui.navigation.rememberAppViewModel
 import com.breakyuna.esjzone.util.AppLogger
 import java.time.LocalDate
 import java.time.format.TextStyle
+import java.time.format.DateTimeFormatter
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -225,22 +233,30 @@ object ReadingStatisticsPage : AppDestination {
                         }
                         item {
                             StatCard {
-                                StatSectionTitle(stringResource(R.string.reading_stats_trend))
-                                FlowRow(horizontalArrangement = Arrangement.spacedBy(AppSpacing.lg)) {
-                                    StatPeriodFilter(listOf(7, 30), trendDays) { trendDays = it ?: 7 }
-                                    Row(horizontalArrangement = Arrangement.spacedBy(AppSpacing.xs)) {
-                                        StatFilterChip(
-                                            selected = !trendLineChart,
-                                            onClick = { trendLineChart = false },
-                                            label = stringResource(R.string.reading_stats_bar_chart)
-                                        )
-                                        StatFilterChip(
-                                            selected = trendLineChart,
-                                            onClick = { trendLineChart = true },
-                                            label = stringResource(R.string.reading_stats_line_chart)
-                                        )
+                                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically) {
+                                    StatSectionTitle(stringResource(R.string.reading_stats_trend))
+                                    Row(Modifier.clip(AppShapes.pill)
+                                        .background(MaterialTheme.colorScheme.surfaceContainerLow)) {
+                                        listOf(false, true).forEach { line ->
+                                            val active = trendLineChart == line
+                                            IconToggleButton(
+                                                checked = active,
+                                                onCheckedChange = { trendLineChart = line },
+                                                modifier = Modifier.size(48.dp).padding(4.dp).clip(AppShapes.pill)
+                                                    .background(if (active) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent)
+                                            ) {
+                                                Icon(
+                                                    if (line) Icons.Filled.ShowChart else Icons.Filled.BarChart,
+                                                    stringResource(if (line) R.string.reading_stats_line_chart else R.string.reading_stats_bar_chart),
+                                                    modifier = Modifier.size(20.dp),
+                                                    tint = if (active) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
+                                                )
+                                            }
+                                        }
                                     }
                                 }
+                                StatPeriodFilter(listOf(7, 30), trendDays) { trendDays = it ?: 7 }
                                 TrendChart(summary, trendDays, trendLineChart)
                             }
                         }
@@ -594,58 +610,122 @@ private fun ReadingHeatmap(summary: ReadingStatisticsSummary, selectedDate: Loca
 
 @Composable
 private fun TrendChart(summary: ReadingStatisticsSummary, days: Int, lineChart: Boolean) {
-    val values = (days - 1 downTo 0).map { summary.daily[summary.today.minusDays(it.toLong())] ?: 0L }
-    val maximum = values.maxOrNull()?.coerceAtLeast(1L) ?: 1L
-    val lineColor = MaterialTheme.colorScheme.primary
-    val gridColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = .45f)
-    val mutedColor = MaterialTheme.colorScheme.onSurfaceVariant
+    val dates = remember(summary.today, days) {
+        (days - 1 downTo 0).map { summary.today.minusDays(it.toLong()) }
+    }
+    val values = remember(summary, dates) { dates.map { summary.daily[it] ?: 0L } }
+    val total = values.sum()
+    val maximum = values.maxOrNull() ?: 0L
+    // Two equal intervals, rounded up to readable whole-minute ticks.
+    val peakMinutes = maximum / 60_000.0
+    val tickStep = when {
+        peakMinutes <= 10 -> 1L
+        peakMinutes <= 60 -> 5L
+        peakMinutes <= 180 -> 15L
+        else -> 30L
+    }
+    val halfScaleMinutes = (kotlin.math.ceil(peakMinutes / (2 * tickStep)).toLong()
+        .coerceAtLeast(1L)) * tickStep
+    val scaleMs = halfScaleMinutes * 2 * 60_000L
+    val colors = MaterialTheme.colorScheme
+    val darkBackground = colors.surface.luminance() < .5f
+    val accent = if (darkBackground) Color(0xFF82B1FF) else Color(0xFF2563EB)
+    val barBase = if (darkBackground) Color(0xFF38BDF8) else Color(0xFF7DD3FC)
+    val muted = colors.onSurfaceVariant
+    val grid = colors.outlineVariant.copy(alpha = .5f)
+    val locale = LocalConfiguration.current.locales[0]
+    val formatter = remember(locale) { DateTimeFormatter.ofPattern("M/d", locale) }
+    val numberFormat = remember(locale) { java.text.NumberFormat.getIntegerInstance(locale) }
+    val textMeasurer = rememberTextMeasurer()
+    val labelStyle = MaterialTheme.typography.labelSmall.copy(color = muted, fontFeatureSettings = "tnum")
+    val tickLabels = listOf(halfScaleMinutes * 2, halfScaleMinutes, 0L).map {
+        textMeasurer.measure(numberFormat.format(it), labelStyle)
+    }
+    val dateIndices = if (days == 7) listOf(0, 2, 4, 6) else listOf(0, 7, 14, 21, 29)
+    val dateLabels = dateIndices.map { textMeasurer.measure(dates[it].format(formatter), labelStyle) }
+    // Provide actual daily values to accessibility, including days without reading.
+    val dailyDescriptions = dates.indices.map { index ->
+        stringResource(R.string.reading_stats_day_detail, dates[index].toString(), formatDuration(values[index]))
+    }.joinToString("; ")
+    val reveal = remember(days, lineChart, values) { Animatable(0f) }
+    LaunchedEffect(reveal) { reveal.animateTo(1f, tween(420, easing = FastOutSlowInEasing)) }
     Column(verticalArrangement = Arrangement.spacedBy(AppSpacing.sm)) {
-        Text(formatDuration(values.maxOrNull() ?: 0L), style = AppTypography.labelMedium, color = mutedColor)
-        Canvas(Modifier.fillMaxWidth().height(96.dp)) {
-            val inset = 4.dp.toPx()
-            val chartWidth = (size.width - inset * 2).coerceAtLeast(0f)
-            val chartHeight = (size.height - inset * 2).coerceAtLeast(0f)
-            val baseline = inset + chartHeight
-            repeat(3) { index ->
-                val y = inset + chartHeight * index / 2
-                drawLine(gridColor, Offset(inset, y), Offset(inset + chartWidth, y), 1.dp.toPx())
-            }
-            if (lineChart) {
-                val points = values.mapIndexed { index, value ->
-                    Offset(
-                        inset + chartWidth * index / (values.size - 1).coerceAtLeast(1),
-                        baseline - chartHeight * (value.toDouble() / maximum).toFloat()
-                    )
-                }
-                val fill = Path().apply {
-                    moveTo(points.first().x, baseline)
-                    points.forEach { lineTo(it.x, it.y) }
-                    lineTo(points.last().x, baseline)
-                    close()
-                }
-                drawPath(fill, Brush.verticalGradient(listOf(lineColor.copy(alpha = .12f), Color.Transparent)))
-                points.zipWithNext().forEach { (start, end) ->
-                    drawLine(lineColor, start, end, strokeWidth = 2.dp.toPx(), cap = StrokeCap.Round)
-                }
-                points.forEach { point -> drawCircle(lineColor, radius = 2.dp.toPx(), center = point) }
-            } else {
-                val slotWidth = chartWidth / values.size
-                val barWidth = minOf(16.dp.toPx(), slotWidth * .65f)
-                values.forEachIndexed { index, value ->
-                    val barHeight = maxOf(2.dp.toPx(), chartHeight * (value.toDouble() / maximum).toFloat())
-                    drawRoundRect(
-                        color = if (value == 0L) gridColor else lineColor.copy(alpha = if (index == values.lastIndex) .9f else .5f),
-                        topLeft = Offset(inset + slotWidth * index + (slotWidth - barWidth) / 2, baseline - barHeight),
-                        size = Size(barWidth, barHeight),
-                        cornerRadius = androidx.compose.ui.geometry.CornerRadius(2.dp.toPx())
-                    )
-                }
-            }
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(AppSpacing.md)) {
+            StatValue(stringResource(R.string.reading_stats_period_total), formatDuration(total), Modifier.weight(1f))
+            StatValue(stringResource(R.string.reading_stats_daily_average), formatDuration(total / days), Modifier.weight(1f))
         }
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text(summary.today.minusDays(days.toLong() - 1L).toString(),
-                style = MaterialTheme.typography.labelSmall, color = mutedColor)
-            Text(summary.today.toString(), style = MaterialTheme.typography.labelSmall, color = mutedColor)
+        Text(stringResource(R.string.reading_stats_axis_minutes), style = MaterialTheme.typography.labelSmall, color = muted)
+        Box(Modifier.fillMaxWidth()) {
+            Canvas(Modifier.fillMaxWidth().height(184.dp).semantics { contentDescription = dailyDescriptions }) {
+                val top = tickLabels.maxOf { it.size.height } / 2f + 4.dp.toPx()
+                val left = tickLabels.maxOf { it.size.width } + 12.dp.toPx()
+                val right = size.width - 8.dp.toPx()
+                val baseline = size.height - dateLabels.maxOf { it.size.height } - 16.dp.toPx()
+                val plotHeight = (baseline - top).coerceAtLeast(0f)
+                val plotWidth = (right - left).coerceAtLeast(0f)
+                val slot = plotWidth / days
+                val points = values.mapIndexed { index, value ->
+                    Offset(left + slot * (index + .5f), baseline - plotHeight * (value.toDouble() / scaleMs).toFloat() * reveal.value)
+                }
+                tickLabels.forEachIndexed { index, label ->
+                    val y = top + plotHeight * index / 2
+                    drawText(label, topLeft = Offset(left - 12.dp.toPx() - label.size.width, y - label.size.height / 2f))
+                    drawLine(grid, Offset(left, y), Offset(right, y), strokeWidth = 1.dp.toPx(),
+                        pathEffect = if (index == 2) null else PathEffect.dashPathEffect(floatArrayOf(3.dp.toPx(), 5.dp.toPx())))
+                }
+                dateIndices.forEachIndexed { labelIndex, dayIndex ->
+                    val label = dateLabels[labelIndex]
+                    drawText(label, topLeft = Offset(
+                        (points[dayIndex].x - label.size.width / 2f).coerceIn(left, maxOf(left, size.width - label.size.width)),
+                        baseline + 12.dp.toPx()
+                    ))
+                }
+                if (maximum > 0L && lineChart) {
+                    val line = Path().apply {
+                        moveTo(points.first().x, points.first().y)
+                        points.zipWithNext().forEach { (start, end) ->
+                            // Horizontal tangents keep each curve between its daily values, including zero.
+                            val middle = (start.x + end.x) / 2
+                            cubicTo(middle, start.y, middle, end.y, end.x, end.y)
+                        }
+                    }
+                    val area = Path().apply {
+                        addPath(line)
+                        lineTo(points.last().x, baseline)
+                        lineTo(points.first().x, baseline)
+                        close()
+                    }
+                    drawPath(area, Brush.verticalGradient(
+                        listOf(accent.copy(alpha = .22f), accent.copy(alpha = .015f)), startY = top, endY = baseline))
+                    drawPath(line, accent, style = Stroke(width = 2.5.dp.toPx(), cap = StrokeCap.Round))
+                    val markerIndices = if (days == 7) values.indices.toList() else listOf(values.indexOf(maximum), values.lastIndex).distinct()
+                    markerIndices.forEach { index ->
+                        drawCircle(colors.surface, 4.dp.toPx(), points[index])
+                        drawCircle(accent, 2.5.dp.toPx(), points[index])
+                    }
+                } else if (maximum > 0L) {
+                    val barWidth = minOf(if (days == 7) 24.dp.toPx() else 8.dp.toPx(), slot * .6f)
+                    values.forEachIndexed { index, value ->
+                        val height = baseline - points[index].y
+                        if (value > 0L && height > 0f) {
+                            drawRoundRect(
+                                brush = Brush.verticalGradient(
+                                    listOf(accent.copy(alpha = if (value == maximum) 1f else .78f), barBase.copy(alpha = .65f)),
+                                    startY = points[index].y, endY = baseline
+                                ),
+                                topLeft = Offset(points[index].x - barWidth / 2, points[index].y),
+                                size = Size(barWidth, height),
+                                cornerRadius = androidx.compose.ui.geometry.CornerRadius(minOf(barWidth / 2, height / 2, 5.dp.toPx()))
+                            )
+                        }
+                    }
+                }
+            }
+            if (maximum == 0L) {
+                Text(stringResource(R.string.reading_stats_no_books), style = AppTypography.bodySmall,
+                    color = muted, modifier = Modifier.align(Alignment.Center)
+                        .background(colors.surface, AppShapes.compact).padding(AppSpacing.sm))
+            }
         }
     }
 }

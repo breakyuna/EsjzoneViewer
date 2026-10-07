@@ -140,24 +140,7 @@ class ReaderUnderlinesTest {
         assertEquals(next, ReaderUnderlines.decode(ReaderUnderlines.encode(next)))
     }
 
-    @Test fun legacyMixedSourceRecordRecoversAllRangesAndPreservesOtherMarks() {
-        val legacy = mark(0, 2).copy(quote = "ambiguous legacy quote", continuation = listOf(
-            ReaderUnderlineRange(0, "a".repeat(64), 0, 2), ReaderUnderlineRange(1, signature, 0, 3)))
-        val other = mark(1, 4, 4).copy(quote = "unchanged")
-        var repairs = 0
-        val restored = ReaderUnderlines.decode(ReaderUnderlines.encode(listOf(legacy, other))) { repairs++ }
-        assertEquals(1, repairs)
-        assertEquals(legacy.ranges(), restored.dropLast(1).flatMap { it.ranges() })
-        assertTrue(restored.dropLast(1).all { it.quote == null })
-        assertEquals(other, restored.last())
-        assertEquals(restored, ReaderUnderlines.decode(ReaderUnderlines.encode(restored)) { repairs++ })
-        assertEquals(1, repairs)
-        val updated = ReaderUnderlines.update(restored, mark(1, 2, 1), false)
-        assertEquals(updated, ReaderUnderlines.decode(ReaderUnderlines.encode(updated)))
-        assertTrue(other in updated)
-    }
-
-    @Test fun repairStillRejectsReorderedBlocksAndRepeatedIdenticalSources() {
+    @Test fun decodeRejectsReorderedBlocksAndRepeatedIdenticalSources() {
         val reordered = mark(0, 2, 2).copy(continuation = listOf(ReaderUnderlineRange(1, signature, 0, 2)))
         val repeated = mark(0, 2).copy(continuation = listOf(ReaderUnderlineRange(0, signature, 1, 3)))
         for (invalid in listOf(reordered, repeated)) {

@@ -12,11 +12,14 @@ import com.breakyuna.esjzone.database.entity.Cache
 @Dao
 interface CacheDao {
 
-    @Query("SELECT * FROM cache WHERE cache_key GLOB 'reader_underlines:*'")
+    @Query("SELECT * FROM cache WHERE cache_key GLOB 'reader_underlines_v2:*'")
     fun observeReaderUnderlines(): kotlinx.coroutines.flow.Flow<List<Cache>>
 
-    @Query("SELECT * FROM cache WHERE cache_key GLOB 'reader_underlines:*'")
+    @Query("SELECT * FROM cache WHERE cache_key GLOB 'reader_underlines_v2:*'")
     fun getReaderUnderlines(): List<Cache>
+
+    @Query("DELETE FROM cache WHERE cache_key GLOB 'reader_underlines:*'")
+    fun deleteObsoleteReaderUnderlines()
 
     @Query("SELECT * FROM cache WHERE cache_key GLOB 'reading_stats_tags:*'")
     fun observeReadingTags(): kotlinx.coroutines.flow.Flow<List<Cache>>

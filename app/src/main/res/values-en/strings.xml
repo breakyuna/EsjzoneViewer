@@ -602,6 +602,9 @@
     <string name="reading_stats_days">%1$d days</string>
     <string name="reading_stats_day_detail">%1$s · %2$s</string>
     <string name="reading_stats_trend">Reading trend</string>
+    <string name="reading_stats_period_total">Period total</string>
+    <string name="reading_stats_daily_average">Daily average</string>
+    <string name="reading_stats_axis_minutes">Minutes</string>
     <string name="reading_stats_other">Other</string>
     <string name="reading_stats_tags">Reading by tag</string>
     <string name="reading_stats_no_tags">No tagged reading in this period. Open a book’s details to add its tags.</string>
@@ -656,7 +659,7 @@
     <string name="novel_download_range_confirm">Confirm</string>
     <string name="novel_download_selection_too_large">This selection exceeds the task limit. Download smaller ranges separately, or enter the full table of contents range to download the whole book.</string>
     <string name="reader_tab_appearance">General</string>
-    <string name="reader_tab_controls">Controls</string>
+    <string name="reader_tab_controls">More</string>
     <string name="reader_font_source_serif">Source Han Serif</string>
     <string name="reader_font_source_sans">Source Han Sans</string>
     <string name="reader_font_wenkai">LXGW WenKai</string>

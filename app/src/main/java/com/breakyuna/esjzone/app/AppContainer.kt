@@ -117,6 +117,7 @@ class AppContainer(context: Context) {
     val reader: ReaderRepository = novel as ReaderRepository
 
     suspend fun initializeAsync() = withContext(Dispatchers.IO) {
+        database.cacheDao().deleteObsoleteReaderUnderlines()
         CoverLoadingPolicy.initialize(appContext)
         coroutineScope {
             val clientJob = launch { EsjzoneClient.initialize(appContext) }

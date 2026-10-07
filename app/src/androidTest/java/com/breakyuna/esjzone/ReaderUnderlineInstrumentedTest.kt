@@ -88,43 +88,6 @@ class ReaderUnderlineInstrumentedTest {
         }
     }
 
-    @Test fun legacyMixedSourceRecordIsObservedAndSavedAgainWithARecoveryWarning() {
-        val database = Room.inMemoryDatabaseBuilder(ApplicationProvider.getApplicationContext(),
-            GeneralDatabase::class.java).build()
-        val model = ReaderUnderlinesModel(database)
-        val owner = ViewModelStore().apply { put("underlines", model) }
-        val key = ReaderUnderlines.KEY_PREFIX + "mixed-source"
-        val legacy = ReaderUnderline(0, "a".repeat(64), 0, 2, continuation = listOf(
-            ReaderUnderlineRange(0, "b".repeat(64), 0, 2), ReaderUnderlineRange(1, "c".repeat(64), 0, 2)))
-        val other = ReaderUnderline(4, "d".repeat(64), 0, 2)
-        val value = ReaderUnderlines.encode(listOf(legacy, other))
-        val logStart = AppLogger.logsFlow.value.lastOrNull()?.id ?: 0L
-        var observed = emptyMap<String, List<ReaderUnderline>>()
-        try {
-            runBlocking(Dispatchers.IO) { database.cacheDao().putAtomic(key, value) }
-            composeRule.setContent {
-                val rows by model.underlines.collectAsState()
-                observed = rows
-            }
-            composeRule.waitUntil(5_000) { observed["mixed-source"]?.size == 3 }
-            composeRule.runOnIdle {
-                assertTrue(AppLogger.logsFlow.value.any { it.id > logStart && it.level == LogLevel.WARN &&
-                    it.tag == "ReaderUnderlinesModel" && it.message.contains("Recovered mixed-source") })
-            }
-            model.update("mixed-source", ReaderUnderline(1, "c".repeat(64), 0, 1), false)
-            composeRule.waitUntil(5_000) {
-                runBlocking(Dispatchers.IO) { database.cacheDao().findByKey(key)?.value != value }
-            }
-            val stored = runBlocking(Dispatchers.IO) { database.cacheDao().findByKey(key)!!.value }
-            val saved = ReaderUnderlines.decode(stored)
-            assertEquals((legacy.ranges() + other.ranges()).toSet(), saved.flatMap { it.ranges() }.toSet())
-            assertEquals(0, model.state.value)
-        } finally {
-            composeRule.runOnIdle { owner.clear() }
-            database.close()
-        }
-    }
-
     @Test fun repeatedSaveFailuresLogWarningsAndErrorsWithoutReplacingStoredData() {
         val database = Room.inMemoryDatabaseBuilder(ApplicationProvider.getApplicationContext(),
             GeneralDatabase::class.java).build()

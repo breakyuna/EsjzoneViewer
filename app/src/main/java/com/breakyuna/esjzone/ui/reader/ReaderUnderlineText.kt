@@ -13,6 +13,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.LayoutCoordinates
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntRect
@@ -221,16 +222,17 @@ internal fun ReaderUnderlineText(
             }
         }))
     menu?.let { (mark, point) ->
+        val popupSpacing = with(LocalDensity.current) { 24.dp.toPx() }
         Popup(
-            popupPositionProvider = remember(segment, point) {
+            popupPositionProvider = remember(segment, point, popupSpacing) {
                 object : PopupPositionProvider {
                     override fun calculatePosition(anchorBounds: IntRect, windowSize: IntSize,
                         layoutDirection: LayoutDirection, popupContentSize: IntSize): IntOffset {
                         val anchor = segment.coordinates?.takeIf { it.isAttached }?.localToWindow(point) ?: Offset.Zero
                         val x = (anchor.x - popupContentSize.width / 2).roundToInt()
-                        val y = (anchor.y - popupContentSize.height - 24).roundToInt()
+                        val y = (anchor.y - popupContentSize.height - popupSpacing).roundToInt()
                         return IntOffset(x.coerceIn(0, (windowSize.width - popupContentSize.width).coerceAtLeast(0)),
-                            (if (y >= 0) y else (anchor.y + 24).roundToInt())
+                            (if (y >= 0) y else (anchor.y + popupSpacing).roundToInt())
                                 .coerceIn(0, (windowSize.height - popupContentSize.height).coerceAtLeast(0)))
                     }
                 }
