@@ -1,5 +1,6 @@
 package com.breakyuna.esjzone.ui.navigation
 
+import com.breakyuna.esjzone.ui.designsystem.AppShapes
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.Spring
@@ -18,6 +19,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.only
@@ -501,7 +503,7 @@ private fun AppNavigationBar(
             modifier = Modifier
                 .fillMaxWidth()
                 .windowInsetsPadding(windowInsets)
-                .height(BottomBarHeight)
+                .heightIn(min = BottomBarHeight)
                 .selectableGroup(),
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -513,7 +515,7 @@ private fun AppNavigationBar(
                     animationSpec = tween(durationMillis = 150),
                     label = "${tab.name}BottomIndicator"
                 )
-                val indicatorColor = MaterialTheme.colorScheme.secondaryContainer
+                val indicatorColor = MaterialTheme.colorScheme.primaryContainer
                 val backgroundColor = indicatorColor.copy(alpha = indicatorColor.alpha * selectionProgress)
                 val contentColor = lerp(
                     MaterialTheme.colorScheme.onSurfaceVariant,
@@ -526,9 +528,8 @@ private fun AppNavigationBar(
                 ) {
                     Column(
                         modifier = Modifier
-                            .size(BottomBarSelectionSize)
-                            .clip(CircleShape)
-                            .background(backgroundColor)
+                            .width(BottomBarSelectionSize).heightIn(min = BottomBarSelectionSize)
+                            .clip(AppShapes.standard)
                             .selectable(
                                 selected = isSelected,
                                 interactionSource = remember(tab) { MutableInteractionSource() },
@@ -539,13 +540,17 @@ private fun AppNavigationBar(
                         horizontalAlignment = Alignment.CenterHorizontally,
                         verticalArrangement = Arrangement.spacedBy(2.dp, Alignment.CenterVertically)
                     ) {
-                        Box(modifier = Modifier.size(24.dp)) {
+                        Box(
+                            modifier = Modifier.size(width = 56.dp, height = 32.dp)
+                                .clip(AppShapes.pill).background(backgroundColor),
+                            contentAlignment = Alignment.Center
+                        ) {
                             Icon(
                                 imageVector = tab.outlinedIcon,
                                 contentDescription = null,
                                 tint = contentColor,
                                 modifier = Modifier
-                                    .matchParentSize()
+                                    .size(24.dp)
                                     .graphicsLayer { alpha = 1f - selectionProgress }
                             )
                             Icon(
@@ -553,7 +558,7 @@ private fun AppNavigationBar(
                                 contentDescription = null,
                                 tint = contentColor,
                                 modifier = Modifier
-                                    .matchParentSize()
+                                    .size(24.dp)
                                     .graphicsLayer { alpha = selectionProgress }
                             )
                         }
@@ -608,7 +613,7 @@ private fun AppSideNavigationBar(
                 colors = NavigationRailItemDefaults.colors(
                     selectedIconColor = MaterialTheme.colorScheme.primary,
                     selectedTextColor = MaterialTheme.colorScheme.primary,
-                    indicatorColor = MaterialTheme.colorScheme.secondaryContainer,
+                    indicatorColor = MaterialTheme.colorScheme.primaryContainer,
                     unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
                     unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant
                 )

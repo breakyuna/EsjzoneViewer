@@ -177,7 +177,7 @@ object AppLogger {
             appendLine("Device: ${Build.MANUFACTURER} ${Build.MODEL} (${Build.DEVICE})")
             appendLine("Android OS: ${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT})")
             appendLine("Current Domain: ${currentDomain()}")
-            appendLine("Current Theme: Monochrome/System")
+            appendLine("Theme Palette: Paper")
             appendLine("Adult Content Enabled: ${currentAdultContentEnabled()}")
             val runtime = Runtime.getRuntime()
             appendLine("Memory Usage: ${(runtime.totalMemory() - runtime.freeMemory()) / 1024 / 1024}MB / ${runtime.maxMemory() / 1024 / 1024}MB")

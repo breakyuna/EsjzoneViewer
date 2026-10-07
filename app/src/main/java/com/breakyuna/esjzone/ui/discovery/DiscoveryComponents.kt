@@ -1,5 +1,7 @@
 package com.breakyuna.esjzone.ui.discovery
 
+import com.breakyuna.esjzone.ui.designsystem.appAccentColors
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -241,7 +243,7 @@ fun DiscoveryCategoryCard(
     val accent = if (isAdult) adultColors.content else when (index % 3) {
         0 -> colors.primary
         1 -> colors.tertiary
-        else -> colors.secondary
+        else -> appAccentColors().info
     }
     val accentContainer = if (isAdult) adultColors.container else accent.copy(alpha = 0.14f)
     Card(
@@ -254,8 +256,8 @@ fun DiscoveryCategoryCard(
                 role = Role.Button
             },
         shape = AppShapes.prominent,
-        colors = CardDefaults.cardColors(containerColor = colors.surfaceContainer),
-        border = BorderStroke(1.dp, if (isAdult) adultColors.outline else accent.copy(alpha = 0.26f))
+        colors = CardDefaults.cardColors(containerColor = colors.surface),
+        border = if (isAdult) BorderStroke(1.dp, adultColors.outline) else null
     ) {
         Column(
             modifier = Modifier
@@ -408,7 +410,12 @@ fun DiscoverySearchField(
         placeholder = { Text(placeholder) },
         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
         keyboardActions = KeyboardActions(onSearch = { submitSearch() }),
-        shape = AppShapes.standard
+        shape = AppShapes.standard,
+        colors = OutlinedTextFieldDefaults.colors(
+            focusedContainerColor = MaterialTheme.colorScheme.surface,
+            unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+            unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant
+        )
     )
 }
 
@@ -448,7 +455,7 @@ fun DiscoveryEmptyState(
     message: String,
     modifier: Modifier = Modifier,
     onAction: (() -> Unit)? = null,
-    actionLabel: String = "重试"
+    actionLabel: String = stringResource(R.string.retry)
 ) {
     Column(
         modifier = modifier
@@ -457,7 +464,10 @@ fun DiscoveryEmptyState(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(AppSpacing.md)
     ) {
-        Icon(Icons.Filled.AutoStories, contentDescription = null, modifier = Modifier.size(40.dp))
+        Surface(shape = AppShapes.prominent, color = MaterialTheme.colorScheme.primaryContainer) {
+            Icon(Icons.Filled.AutoStories, contentDescription = null, tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                modifier = Modifier.padding(14.dp).size(32.dp))
+        }
         Text(title, style = AppTypography.titleMedium)
         Text(message, style = AppTypography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         if (onAction != null) TextButton(onClick = onAction) { Text(actionLabel) }
@@ -470,11 +480,12 @@ fun DiscoveryErrorState(
     modifier: Modifier = Modifier,
     onRetry: (() -> Unit)? = null
 ) {
-    DiscoveryEmptyState(
-        title = com.breakyuna.esjzone.ui.designsystem.globalStringResource(R.string.load_failed),
+    com.breakyuna.esjzone.ui.designsystem.AppErrorState(
+        title = stringResource(R.string.load_failed),
         message = message,
         modifier = modifier,
-        onAction = onRetry
+        retryLabel = stringResource(R.string.retry),
+        onRetry = onRetry
     )
 }
 
@@ -482,7 +493,8 @@ fun DiscoveryErrorState(
 fun DiscoveryOfflineBanner(modifier: Modifier = Modifier) {
     Surface(
         modifier = modifier.fillMaxWidth(),
-        color = MaterialTheme.colorScheme.secondaryContainer,
+        color = appAccentColors().infoContainer,
+        contentColor = appAccentColors().info,
         shape = AppShapes.compact
     ) {
         Text(

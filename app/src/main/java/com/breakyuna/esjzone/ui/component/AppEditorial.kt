@@ -240,7 +240,7 @@ fun AppSearchHeader(
                     focusedContainerColor = MaterialTheme.colorScheme.surfaceContainerLow,
                     unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainerLow,
                     disabledContainerColor = MaterialTheme.colorScheme.surfaceContainer,
-                    focusedIndicatorColor = Color.Transparent,
+                    focusedIndicatorColor = MaterialTheme.colorScheme.primary,
                     unfocusedIndicatorColor = Color.Transparent,
                     disabledIndicatorColor = Color.Transparent
                 )
@@ -277,7 +277,7 @@ fun AppSectionHeader(
         )
         Text(
             text = title,
-            style = AppTypography.titleLarge,
+            style = AppTypography.titleMedium,
             color = MaterialTheme.colorScheme.onSurface,
             modifier = Modifier.weight(1f).padding(start = AppSpacing.md)
         )

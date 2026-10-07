@@ -1,5 +1,10 @@
 package com.breakyuna.esjzone.ui.page
 
+import com.breakyuna.esjzone.ui.designsystem.AppShapes
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -133,7 +138,7 @@ internal fun ReaderSettingsSheet(
                                 },
                                 modifier = Modifier.size(48.dp),
                                 shape = CircleShape,
-                                color = if (darkTheme) Color(0xFF333333) else Color(0xFFEAEAEA),
+                                color = MaterialTheme.colorScheme.surfaceContainerHigh,
                                 border = BorderStroke(
                                     if (draft.background == ReaderBackground.SYSTEM && themeMode != AppThemeMode.SYSTEM) 2.dp else 1.dp,
                                     if (draft.background == ReaderBackground.SYSTEM && themeMode != AppThemeMode.SYSTEM)
@@ -146,24 +151,40 @@ internal fun ReaderSettingsSheet(
                                         contentDescription = stringResource(
                                             if (darkTheme) R.string.reader_theme_switch_light else R.string.reader_theme_switch_dark
                                         ),
-                                        tint = if (darkTheme) Color.White else Color.Black,
+                                        tint = MaterialTheme.colorScheme.onSurface,
                                         modifier = Modifier.size(24.dp)
                                     )
                                 }
                             }
                             ReaderBackground.entries.filterNot { it == ReaderBackground.SYSTEM }.forEach { background ->
-                                FilterChip(
-                                    selected = draft.background == background,
+                                val selected = draft.background == background
+                                Surface(
                                     onClick = { commit(draft.copy(background = background)) },
-                                    label = { Text(stringResource(background.label())) },
-                                    leadingIcon = {
+                                    modifier = Modifier.width(76.dp).semantics { this.selected = selected },
+                                    shape = AppShapes.compact,
+                                    color = if (selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerLow,
+                                    border = BorderStroke(
+                                        if (selected) 2.dp else 1.dp,
+                                        if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant
+                                    )
+                                ) {
+                                    Column(Modifier.padding(6.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                                         Surface(
+                                            modifier = Modifier.fillMaxWidth().height(36.dp),
                                             color = background.containerColor(),
-                                            border = BorderStroke(1.dp, background.contentColor().copy(alpha = 0.3f)),
-                                            shape = RoundedCornerShape(50)
-                                        ) { Spacer(Modifier.size(18.dp)) }
+                                            contentColor = background.contentColor(),
+                                            shape = AppShapes.compact
+                                        ) {
+                                            Box(contentAlignment = Alignment.Center) {
+                                                Text(stringResource(R.string.reader_color_sample), style = MaterialTheme.typography.titleMedium)
+                                                if (selected) Icon(Icons.Default.Check, null, Modifier.align(Alignment.TopEnd).padding(2.dp).size(12.dp))
+                                            }
+                                        }
+                                        Text(stringResource(background.label()), style = MaterialTheme.typography.labelSmall,
+                                            modifier = Modifier.padding(top = 4.dp), maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis)
                                     }
-                                )
+                                }
                             }
                         }
                         Text(stringResource(R.string.reader_font), style = MaterialTheme.typography.titleSmall)

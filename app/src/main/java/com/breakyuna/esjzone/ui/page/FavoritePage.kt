@@ -821,7 +821,7 @@ private fun BookshelfSyncStatusIndicator(
                 ) { onExpandedChange(true) },
             contentAlignment = Alignment.Center
         ) {
-            AppSyncStatusDot(syncing = syncing, isSuccess = isSyncSuccess)
+            AppSyncStatusDot(syncing = syncing, isSuccess = isSyncSuccess, failed = isSyncFailed)
         }
         DropdownMenu(
             expanded = expanded,
@@ -833,7 +833,7 @@ private fun BookshelfSyncStatusIndicator(
                 verticalArrangement = Arrangement.spacedBy(AppSpacing.sm)
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(AppSpacing.sm)) {
-                    AppSyncStatusDot(syncing = syncing, isSuccess = isSyncSuccess)
+                    AppSyncStatusDot(syncing = syncing, isSuccess = isSyncSuccess, failed = isSyncFailed)
                     Text(
                         text = stringResource(statusLabelRes),
                         style = AppTypography.labelLarge,
@@ -865,7 +865,8 @@ private fun ShelfCard(
     val shape = AppShapes.compact
     Column(
         Modifier.fillMaxWidth().clip(shape).then(
-            if (selected && editing) Modifier.border(2.dp, MaterialTheme.colorScheme.primary, shape) else Modifier
+            if (selected && editing) Modifier.background(MaterialTheme.colorScheme.primaryContainer)
+                .border(2.dp, MaterialTheme.colorScheme.primary, shape) else Modifier
         ).clickable(enabled = enabled, onClick = onClick).padding(if (selected && editing) AppSpacing.xs else AppSpacing.zero),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
@@ -936,7 +937,7 @@ private fun BookshelfUpdateDot(modifier: Modifier = Modifier) {
     Box(
         modifier = modifier
             .size(AppSpacing.sm)
-            .background(Color(0xFF22C55E), CircleShape)
+            .background(MaterialTheme.colorScheme.tertiary, CircleShape)
     )
 }
 
@@ -951,7 +952,7 @@ private fun ShelfListItem(
 ) {
     Row(
         Modifier.fillMaxWidth().clip(AppShapes.compact)
-            .then(if (editing && selected) Modifier.background(MaterialTheme.colorScheme.secondaryContainer) else Modifier)
+            .then(if (editing && selected) Modifier.background(MaterialTheme.colorScheme.primaryContainer) else Modifier)
             .combinedClickable(enabled = enabled, onClick = onClick, onLongClick = onLongClick)
             .padding(vertical = AppSpacing.xs),
         horizontalArrangement = Arrangement.spacedBy(AppSpacing.md), verticalAlignment = Alignment.Top
@@ -985,7 +986,7 @@ private fun ShelfListItem(
             }
         }
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(AppSpacing.xs)) {
-            Text(entry.title, style = AppTypography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            Text(entry.title, style = AppTypography.bodyLarge, maxLines = 2, overflow = TextOverflow.Ellipsis)
             entry.latestChapterTitle.takeIf { it.isNotBlank() }?.let { Text(stringResource(R.string.bookshelf_entry_latest, it), style = AppTypography.bodyMedium, maxLines = 2, overflow = TextOverflow.Ellipsis) }
             entry.remoteUpdatedAt.takeIf { it.isNotBlank() }?.let { Text(stringResource(R.string.bookshelf_entry_updated_at, it), style = AppTypography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
             entry.remoteLastViewedTitle.takeIf { it.isNotBlank() }?.let { Text(stringResource(R.string.bookshelf_entry_last_viewed, it), style = AppTypography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis) }

@@ -2839,8 +2839,8 @@ private fun ReaderProgressLens(
             .width(280.dp)
             .height(56.dp),
         shape = RoundedCornerShape(12.dp),
-        color = Color(0xEE222222),
-        contentColor = Color.White,
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        contentColor = MaterialTheme.colorScheme.onSurface,
         shadowElevation = 6.dp
     ) {
         Row(
@@ -2857,7 +2857,7 @@ private fun ReaderProgressLens(
                 Text(
                     text = location.chapter.name,
                     style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium),
-                    color = Color.White,
+                    color = MaterialTheme.colorScheme.onSurface,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
@@ -2870,7 +2870,7 @@ private fun ReaderProgressLens(
                 Text(
                     text = progressText,
                     style = MaterialTheme.typography.bodySmall,
-                    color = Color.White.copy(alpha = 0.72f),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1
                 )
             }
@@ -2878,7 +2878,7 @@ private fun ReaderProgressLens(
                 modifier = Modifier
                     .width(1.dp)
                     .fillMaxHeight()
-                    .background(Color.White.copy(alpha = 0.18f))
+                    .background(MaterialTheme.colorScheme.outlineVariant)
             )
             IconButton(
                 onClick = onReturn,
@@ -2890,7 +2890,7 @@ private fun ReaderProgressLens(
                 Icon(
                     imageVector = Icons.AutoMirrored.Filled.Undo,
                     contentDescription = stringResource(R.string.reader_preview_return),
-                    tint = if (canReturn) Color.White else Color.White.copy(alpha = 0.38f),
+                    tint = if (canReturn) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f),
                     modifier = Modifier.size(24.dp)
                 )
             }

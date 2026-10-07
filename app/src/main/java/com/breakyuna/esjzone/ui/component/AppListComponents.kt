@@ -206,14 +206,13 @@ private fun AppListSurface(
                 if (selected) {
                     Modifier
                         .background(
-                            MaterialTheme.colorScheme.primary.copy(alpha = 0.08f),
+                            MaterialTheme.colorScheme.primaryContainer,
                             selectionShape
                         )
-                        .border(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.62f), selectionShape)
+                        .border(1.dp, MaterialTheme.colorScheme.primary, selectionShape)
                 } else {
                     Modifier
                         .background(MaterialTheme.colorScheme.surface, selectionShape)
-                        .border(1.dp, MaterialTheme.colorScheme.outlineVariant, selectionShape)
                 }
             )
             .then(

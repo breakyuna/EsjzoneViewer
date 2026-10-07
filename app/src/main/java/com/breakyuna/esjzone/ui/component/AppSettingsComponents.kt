@@ -18,7 +18,7 @@ fun AppGroup(
     Surface(
         modifier = modifier.fillMaxWidth(),
         shape = AppShapes.standard,
-        color = appSurfaceColors().subtle,
+        color = appSurfaceColors().card,
         content = { Column(content = content) }
     )
 }

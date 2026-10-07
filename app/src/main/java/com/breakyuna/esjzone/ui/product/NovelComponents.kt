@@ -48,7 +48,7 @@ fun NovelCover(model: NovelCoverModel, modifier: Modifier = Modifier) {
     AppCoverImage(
         model = model.model,
         contentDescription = model.contentDescription,
-        modifier = modifier.aspectRatio(model.aspectRatio).clip(AppShapes.standard)
+        modifier = modifier.aspectRatio(model.aspectRatio).clip(AppShapes.compact)
     )
 }
 

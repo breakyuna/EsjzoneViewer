@@ -1,5 +1,6 @@
 package com.breakyuna.esjzone.ui.page
 
+import com.breakyuna.esjzone.ui.designsystem.appAccentColors
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
@@ -56,7 +57,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalContext
 import com.breakyuna.esjzone.ui.designsystem.globalStringResource as stringResource
 import androidx.compose.ui.text.font.FontFamily
@@ -111,7 +111,7 @@ object LogsPage : AppDestination {
                     title = { Text(stringResource(R.string.system_logs), style = AppTypography.titleMedium) },
                     navigationIcon = { BackIconButton { navigator?.pop() } },
                     actions = {
-                        if (crashReport != null) IconButton(onClick = { crashDialog = true }) { Icon(Icons.Filled.BugReport, stringResource(R.string.logs_crash_report_btn), tint = logCrashErrorColor()) }
+                        if (crashReport != null) IconButton(onClick = { crashDialog = true }) { Icon(Icons.Filled.BugReport, stringResource(R.string.logs_crash_report_btn), tint = MaterialTheme.colorScheme.error) }
                         IconButton(onClick = { copyText(context, AppLogger.exportLogsText()); Toast.makeText(context, copiedToast, Toast.LENGTH_SHORT).show() }) { Icon(Icons.Filled.ContentCopy, stringResource(R.string.logs_copy_all)) }
                         IconButton(onClick = {
                             val intent = Intent(Intent.ACTION_SEND).apply { type = "text/plain"; putExtra(Intent.EXTRA_TEXT, AppLogger.exportLogsText()); putExtra(Intent.EXTRA_SUBJECT, "Esjzone System Logs") }
@@ -203,9 +203,10 @@ private fun LogItem(entry: LogEntry, context: Context) {
         LogLevel.DEBUG -> stringResource(R.string.logs_filter_debug)
     }
     val accent = when (entry.level) {
-        LogLevel.CRASH, LogLevel.ERROR -> logCrashErrorColor()
-        LogLevel.WARN -> logWarnColor()
-        else -> MaterialTheme.colorScheme.primary
+        LogLevel.CRASH, LogLevel.ERROR -> MaterialTheme.colorScheme.error
+        LogLevel.WARN -> appAccentColors().warning
+        LogLevel.INFO -> appAccentColors().info
+        else -> MaterialTheme.colorScheme.onSurfaceVariant
     }
     Surface(shape = AppShapes.standard, color = if (entry.level == LogLevel.CRASH) MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.55f) else MaterialTheme.colorScheme.surface) {
         Column(Modifier.fillMaxWidth().padding(AppSpacing.lg), verticalArrangement = Arrangement.spacedBy(AppSpacing.sm)) {
@@ -232,18 +233,6 @@ private fun LogItem(entry: LogEntry, context: Context) {
             }
         }
     }
-}
-
-@Composable
-private fun logCrashErrorColor(): Color {
-    val dark = MaterialTheme.colorScheme.surface.luminance() < 0.5f
-    return if (dark) Color(0xFFFF8A80) else Color(0xFFC62828)
-}
-
-@Composable
-private fun logWarnColor(): Color {
-    val dark = MaterialTheme.colorScheme.surface.luminance() < 0.5f
-    return if (dark) Color(0xFFFFA726) else Color(0xFF7A4800)
 }
 
 private fun copyText(context: Context, text: String) {

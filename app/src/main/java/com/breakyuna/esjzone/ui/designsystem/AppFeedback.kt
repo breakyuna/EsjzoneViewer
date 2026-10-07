@@ -160,7 +160,7 @@ fun AppOfflineState(
         icon = icon,
         actionLabel = retryLabel,
         onAction = onRetry,
-        accent = MaterialTheme.colorScheme.tertiary
+        accent = appAccentColors().info
     )
 }
 
@@ -324,22 +324,19 @@ fun AppSnackbarHost(hostState: SnackbarHostState, modifier: Modifier = Modifier)
     SnackbarHost(hostState = hostState, modifier = modifier)
 }
 
-/** Stable indicator colors for synchronization status. */
-val SyncStatusGreen: Color = Color(0xFF4CAF50)
-val SyncStatusLightGray: Color = Color(0xFF9E9E9E)
-
 /**
  * Visual status light for synchronization state.
  *
  * - syncing: green breathing light (alpha pulsing between 0.25f and 1.0f).
  * - isSuccess: steady green light.
- * - otherwise (failed or idle): light gray.
+ * - failed: error color; idle: neutral outline.
  */
 @Composable
 fun AppSyncStatusDot(
     syncing: Boolean,
     isSuccess: Boolean,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    failed: Boolean = false
 ) {
     if (syncing) {
         BreathingSyncDot(modifier = modifier)
@@ -347,7 +344,11 @@ fun AppSyncStatusDot(
         Surface(
             modifier = modifier.size(AppSpacing.sm),
             shape = CircleShape,
-            color = if (isSuccess) SyncStatusGreen else SyncStatusLightGray
+            color = when {
+                failed -> MaterialTheme.colorScheme.error
+                isSuccess -> appAccentColors().success
+                else -> MaterialTheme.colorScheme.outline
+            }
         ) {}
     }
 }
@@ -369,6 +370,6 @@ private fun BreathingSyncDot(modifier: Modifier = Modifier) {
             .size(AppSpacing.sm)
             .graphicsLayer { this.alpha = alpha },
         shape = CircleShape,
-        color = SyncStatusGreen
+        color = appAccentColors().success
     ) {}
 }
