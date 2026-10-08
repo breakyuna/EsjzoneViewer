@@ -3,6 +3,8 @@ package com.breakyuna.esjzone.update
 import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.net.Uri
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import com.breakyuna.esjzone.ui.designsystem.GlobalToast as Toast
@@ -18,6 +20,7 @@ import com.breakyuna.esjzone.ui.designsystem.globalStringResource as stringResou
 import com.breakyuna.esjzone.BuildConfig
 import com.breakyuna.esjzone.R
 import com.breakyuna.esjzone.ui.designsystem.AppShapes
+import com.breakyuna.esjzone.ui.designsystem.AppSpacing
 
 @Composable
 internal fun ReleaseUpdateDialog() {
@@ -29,11 +32,16 @@ internal fun ReleaseUpdateDialog() {
         shape = AppShapes.prominent,
         title = { Text(stringResource(R.string.update_available_title)) },
         text = {
-            Text(
-                stringResource(R.string.update_available_message, BuildConfig.VERSION_NAME, release.version) +
-                    if (release.description.isBlank()) "" else "\n\n" + stringResource(R.string.update_release_notes, release.description),
-                modifier = Modifier.verticalScroll(rememberScrollState())
-            )
+            Column(
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(AppSpacing.md)
+            ) {
+                Text(stringResource(R.string.update_available_message, BuildConfig.VERSION_NAME, release.version))
+                if (release.description.isNotBlank()) {
+                    Text(stringResource(R.string.update_release_notes))
+                    ReleaseNotesText(release.description)
+                }
+            }
         },
         confirmButton = {
             TextButton(onClick = {
