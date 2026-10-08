@@ -122,8 +122,9 @@ internal fun ReaderUnderlineText(
         modifier = modifier.onGloballyPositioned { segment.coordinates = it }
             .then(magnifierModifier).drawWithCache {
             val result = layout
-            val lineOffset = 2.dp.toPx()
-            val stroke = Stroke(width = lineOffset, cap = StrokeCap.Round)
+            val lineOffset = 3.dp.toPx()
+            // The stroke extends above its center; keep its width separate from the baseline offset.
+            val stroke = Stroke(width = 2.dp.toPx(), cap = StrokeCap.Round)
             val previewColor = color.copy(alpha = 0.18f)
             // These caches live only as long as this text layout and drawing cache.
             val baselines = mutableMapOf<Int, Float>()

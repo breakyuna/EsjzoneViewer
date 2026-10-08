@@ -308,26 +308,30 @@ class ReaderUnderlineInstrumentedTest {
         fun assertVisibleTextOnly() {
             val pixels = node.captureToImage().toPixelMap()
             val stroke = with(composeRule.density) { 2.dp.toPx() }
+            val lineOffset = with(composeRule.density) { 3.dp.toPx() }
             fun redAt(x: Int, y: Int): Boolean {
                 val color = pixels[x, y]
                 return color.red > 0.8f && color.green < 0.2f && color.blue < 0.2f
             }
             listOf(0 to text.indexOf('乙'), 2 to text.indexOf('丁'), 3 to text.indexOf("xyz") + 2).forEach { (line, last) ->
                 val bounds = layout.getBoundingBox(last)
-                val y = (layout.getLineBaseline(line) + stroke).roundToInt()
+                val y = (layout.getLineBaseline(line) + lineOffset).roundToInt()
                 assertTrue(redAt(bounds.center.x.roundToInt(), y))
+                val gapY = (layout.getLineBaseline(line) + stroke / 2).roundToInt()
+                assertFalse("Underline touches the text baseline on line $line",
+                    redAt(bounds.center.x.roundToInt(), gapY))
                 for (x in (bounds.right + stroke * 2).roundToInt() until pixels.width) {
                     assertFalse("Underline extends into trailing whitespace on line $line", redAt(x, y))
                 }
             }
-            val blankY = (layout.getLineBaseline(1) + stroke).roundToInt()
+            val blankY = (layout.getLineBaseline(1) + lineOffset).roundToInt()
             for (x in 0 until pixels.width) assertFalse("Blank line was underlined", redAt(x, blankY))
             for (index in text.indices) {
                 if (!text[index].isWhitespace() || text[index] == '\n' || text[index] == '\r') continue
                 val bounds = layout.getBoundingBox(index)
                 val x = bounds.center.x.roundToInt()
                 if (bounds.width <= stroke * 2 || x !in 0 until pixels.width) continue
-                val y = (layout.getLineBaseline(layout.getLineForOffset(index)) + stroke).roundToInt()
+                val y = (layout.getLineBaseline(layout.getLineForOffset(index)) + lineOffset).roundToInt()
                 assertFalse("Whitespace at character $index was underlined", redAt(x, y))
             }
         }
@@ -594,7 +598,7 @@ class ReaderUnderlineInstrumentedTest {
             node.performSemanticsAction(SemanticsActions.GetTextLayoutResult) { it(layouts) }
             val layout = layouts.single()
             val pixels = node.captureToImage().toPixelMap()
-            val lineOffset = with(composeRule.density) { 2.dp.toPx() }
+            val lineOffset = with(composeRule.density) { 3.dp.toPx() }
             for (index in text.indices) {
                 if (text[index].isWhitespace()) continue
                 val bounds = layout.getBoundingBox(index)
