@@ -319,7 +319,7 @@ class ChapterPageModel(
                         chapter = target,
                         document = document,
                         fallbackPrevious = detail.previous,
-                        fallbackNext = detail.next, source = logSourceForUrl(requestedChapter.value.url)
+                        fallbackNext = detail.next
                     )
                 }
             }
