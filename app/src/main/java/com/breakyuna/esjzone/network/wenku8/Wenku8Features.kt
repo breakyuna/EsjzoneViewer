@@ -32,3 +32,11 @@ suspend fun EsjzoneClient.searchWenku8(keyword: String, type: Wenku8SearchType, 
     }
     throw Wenku8ParseException()
 }
+
+/** One visible page per request, sharing the existing session-scoped cache. */
+suspend fun EsjzoneClient.browseWenku8(category: Wenku8Browse, page: Int, forceRefresh: Boolean = false): Wenku8SearchResult {
+    val kind = if (category == Wenku8Browse.HOME) Wenku8PageKind.HOME else Wenku8PageKind.BROWSE
+    val response = cancellablePageRequest { getWenkuPage(wenku8BrowseUrl(category, page), kind, true, forceRefresh) }
+    return if (kind == Wenku8PageKind.HOME) Wenku8Parsers.home(response.html, response.url)
+    else Wenku8Parsers.search(response.html, response.url, page)
+}

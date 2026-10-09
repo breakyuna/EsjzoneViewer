@@ -61,7 +61,27 @@ fun novelDetailUrlForId(novelId: String): String {
 }
 
 enum class Wenku8SearchType(val parameter: String) { TITLE("articlename"), AUTHOR("author") }
-enum class Wenku8PageKind { DETAIL, CATALOG, SEARCH, CHAPTER }
+enum class Wenku8PageKind { DETAIL, CATALOG, SEARCH, CHAPTER, HOME, BROWSE }
+
+enum class Wenku8Browse(val path: String, val sort: String? = null) {
+    HOME("/index.php"), ALL("/modules/article/articlelist.php"),
+    POPULAR("/modules/article/toplist.php", "allvisit"),
+    DAILY("/modules/article/toplist.php", "dayvisit"),
+    MONTHLY("/modules/article/toplist.php", "monthvisit"),
+    UPDATED("/modules/article/toplist.php", "lastupdate"),
+    NEW("/modules/article/toplist.php", "postdate"),
+    ANIME("/modules/article/toplist.php", "anime"),
+    COMPLETED("/modules/article/articlelist.php")
+}
+
+fun wenku8BrowseUrl(category: Wenku8Browse, page: Int = 1): String {
+    require(page > 0)
+    return "${Wenku8Urls.BASE}${category.path}".toHttpUrlOrNull()!!.newBuilder().apply {
+        if (category != Wenku8Browse.HOME) addQueryParameter("page", page.toString())
+        category.sort?.let { addQueryParameter("sort", it) }
+        if (category == Wenku8Browse.COMPLETED) addQueryParameter("fullflag", "1")
+    }.build().toString()
+}
 
 /** Fixed-upstream GET parameters; the current website protocol still needs live verification. */
 fun wenku8SearchUrl(keyword: String, type: Wenku8SearchType, page: Int): String {
@@ -82,6 +102,17 @@ internal fun wenku8PageAllowed(rawUrl: String, kind: Wenku8PageKind): Boolean {
     if (!url.isHttps || url.host != "www.wenku8.net" || url.port != 443 ||
         url.username.isNotEmpty() || url.password.isNotEmpty()) return false
     return when (kind) {
+        Wenku8PageKind.HOME -> url.encodedPath == "/index.php" && url.queryParameterNames.isEmpty()
+        Wenku8PageKind.BROWSE -> {
+            val validPage = url.queryParameter("page")?.toIntOrNull()?.let { it > 0 } ?: ("page" !in url.queryParameterNames)
+            validPage && when (url.encodedPath) {
+                "/modules/article/articlelist.php" -> url.queryParameterNames.all { it in setOf("page", "fullflag") } &&
+                    ("fullflag" !in url.queryParameterNames || url.queryParameter("fullflag") == "1")
+                "/modules/article/toplist.php" -> url.queryParameterNames.all { it in setOf("page", "sort") } &&
+                    url.queryParameter("sort") in Wenku8Browse.entries.mapNotNull { it.sort }
+                else -> false
+            }
+        }
         Wenku8PageKind.DETAIL -> Wenku8Urls.detailIdentity(rawUrl) != null
         Wenku8PageKind.CATALOG -> Wenku8Urls.catalogIdentity(rawUrl) != null
         Wenku8PageKind.CHAPTER -> Wenku8Urls.chapterIdentity(rawUrl) != null

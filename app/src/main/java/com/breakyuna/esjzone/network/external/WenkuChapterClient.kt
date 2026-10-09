@@ -214,7 +214,12 @@ internal class WenkuChapterClient(context: Context, userAgent: String) {
         val epoch = sessionEpoch.get()
         val scope = jar.cacheScope()
         val initialKey = "wenku8-pages|$scope|${kind.name}|${wenku8PageCacheIdentity(url)}"
-        if (!forceRefresh) PageCache.read(initialKey, PageCacheTtl.DETAIL)?.let { cached ->
+        val ttl = when (kind) {
+            Wenku8PageKind.HOME -> PageCacheTtl.HOME
+            Wenku8PageKind.BROWSE -> PageCacheTtl.LIST
+            else -> PageCacheTtl.DETAIL
+        }
+        if (!forceRefresh) PageCache.read(initialKey, ttl)?.let { cached ->
             val page = Wenku8PageResponse(cached.substringAfter('\n'), cached.substringBefore('\n'))
             if (runCatching { validatePage(page, kind); true }.getOrDefault(false)) {
                 if (sessionEpoch.get() != epoch) throw WenkuBrowserSessionClosedException()
@@ -252,7 +257,8 @@ internal class WenkuChapterClient(context: Context, userAgent: String) {
             Wenku8PageKind.DETAIL -> parsers.detail(page.html, page.url,
                 com.breakyuna.esjzone.novellibrary.novel.NovelChapterList(emptyList()))
             Wenku8PageKind.CATALOG -> parsers.catalog(page.html, page.url)
-            Wenku8PageKind.SEARCH -> parsers.search(page.html, page.url,
+            Wenku8PageKind.HOME -> parsers.home(page.html, page.url)
+            Wenku8PageKind.SEARCH, Wenku8PageKind.BROWSE -> parsers.search(page.html, page.url,
                 page.url.toHttpUrlOrNull()?.queryParameter("page")?.toIntOrNull() ?: 1)
             Wenku8PageKind.CHAPTER -> throw UnsupportedExternalChapterException()
         }
@@ -265,6 +271,10 @@ internal class WenkuChapterClient(context: Context, userAgent: String) {
             val result = requestOnce(target, kind, scope)
             val next = result.redirect
             if (next == null) return result
+            if (next.toHttpUrlOrNull()?.let { it.isHttps && it.host == "www.wenku8.net" &&
+                    it.port == 443 && it.encodedPath == "/login.php" } == true) {
+                throw com.breakyuna.esjzone.network.wenku8.Wenku8LoginRequiredException()
+            }
             if (!wenku8PageAllowed(next, kind)) throw UnsupportedExternalChapterException()
             target = next
         }

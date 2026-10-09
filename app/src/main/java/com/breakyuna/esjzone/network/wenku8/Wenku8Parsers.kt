@@ -6,7 +6,7 @@
  * 8681711f020af991fe37ca89983cc4531fe94c53 (see doc/WENKU8_THIRD_PARTY_SOURCES.md).
  * Changes: existing models/Jsoup, validated URLs, no embedded accounts,
  * no upstream request/Builder/cache framework, preserve original titles.
- * Current-site DOM remains unverified; these are reference-source candidates.
+ * Detail/catalog remain reference-source candidates; home/list DOM checked 2026-10-09.
  */
 package com.breakyuna.esjzone.network.wenku8
 
@@ -26,6 +26,8 @@ import org.jsoup.nodes.Document
 import org.jsoup.nodes.Element
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 
+class Wenku8LoginRequiredException : IOException("Wenku8 sign-in is required")
+
 class Wenku8ParseException : IOException("Wenku8 page structure could not be recognized")
 class Wenku8RestrictedException : IOException("Wenku8 content is restricted by the site")
 class Wenku8SearchRateLimitException : IOException("Wenku8 search interval limit")
@@ -33,8 +35,11 @@ class Wenku8SearchRateLimitException : IOException("Wenku8 search interval limit
 data class Wenku8SearchResult(
     val novels: List<CoveredNovelImpl>,
     val page: Int,
-    val totalPages: Int
+    val totalPages: Int,
+    val sections: List<Wenku8HomeSection> = emptyList()
 )
+
+data class Wenku8HomeSection(val title: String, val novels: List<CoveredNovelImpl>)
 
 /** Candidate rules from the fixed upstream SHA; never infer empty results from missing DOM. */
 object Wenku8Parsers {
@@ -44,6 +49,7 @@ object Wenku8Parsers {
     private fun document(html: String, url: String): Document {
         if (CloudflareChallenge.hasChallengeDocumentMarkers(html)) throw Wenku8ParseException()
         return Jsoup.parse(html, url).also {
+            if (it.selectFirst("input[name=username]") != null && it.selectFirst("input[name=password]") != null) throw Wenku8LoginRequiredException()
             if (it.text().contains("因版权问题")) throw Wenku8RestrictedException()
         }
     }
@@ -122,10 +128,11 @@ object Wenku8Parsers {
             val link = card.selectFirst("div > div:nth-child(1) > a") ?: throw Wenku8ParseException()
             val bookUrl = resolve(link.attr("href"), url)
             if (Wenku8Urls.detailIdentity(bookUrl) == null) throw Wenku8ParseException()
-            val name = link.attr("title").trim().takeIf(String::isNotBlank) ?: throw Wenku8ParseException()
-            val author = card.selectFirst("div > div:nth-child(2) > p:nth-child(2)")
-                ?.text()?.substringBefore('/')?.substringAfter(':')?.trim()
-            val tags = card.selectFirst("div > div:nth-child(2) > p:nth-child(4) > span")?.text().orEmpty()
+            val name = link.attr("tiptitle").ifBlank { link.attr("title") }.trim().takeIf(String::isNotBlank) ?: throw Wenku8ParseException()
+            val metadata = card.select("p").map { it.text() }
+            val author = metadata.firstOrNull { it.startsWith("作者:") || it.startsWith("作者：") }
+                ?.substringBefore('/')?.substringAfter(':')?.substringAfter('：')?.trim()
+            val tags = card.select("p").firstOrNull { it.text().startsWith("Tags:") }?.selectFirst("span")?.text().orEmpty()
                 .split(Regex("\\s+")).filter(String::isNotBlank)
             CoveredNovelImpl(name = name, url = bookUrl, isAdult = tags.any { it.equals("R18", true) },
                 coverUrl = image(link.selectFirst("img")?.attr("src").orEmpty(), url), author = author)
@@ -135,12 +142,42 @@ object Wenku8Parsers {
         return Wenku8SearchResult(books, page, total)
     }
 
+    /** Verified on the signed-in website, 2026-10-09. No detail-page fan-out. */
+    fun home(html: String, url: String): Wenku8SearchResult {
+        if (!wenku8PageAllowed(url, Wenku8PageKind.HOME)) throw Wenku8ParseException()
+        val doc = document(html, url)
+        val sections = doc.select("#centers > .block, #right > .block").mapNotNull { block ->
+            val title = block.selectFirst(".blocktitle")?.ownText()?.trim().orEmpty()
+                .ifBlank { block.selectFirst(".blocktitle .txt")?.text().orEmpty() }
+                .substringBefore('(').trim()
+            val books = block.select(".blockcontent a[href]").mapNotNull book@ { link ->
+                val bookUrl = resolve(link.attr("href"), url)
+                if (Wenku8Urls.detailIdentity(bookUrl) == null) return@book null
+                val name = link.attr("tiptitle").ifBlank { link.text() }.trim()
+                if (name.isBlank()) return@book null
+                CoveredNovelImpl(name = name, url = bookUrl,
+                    coverUrl = image(link.selectFirst("img")?.attr("src").orEmpty(), url))
+            }.groupBy { it.url }.values.map { duplicates ->
+                duplicates.firstOrNull { it.coverUrl.isNotBlank() } ?: duplicates.first()
+            }
+            if (title.isBlank() || books.isEmpty()) null else Wenku8HomeSection(title, books)
+        }
+        if (sections.isEmpty()) throw Wenku8ParseException()
+        return Wenku8SearchResult(emptyList(), 1, 1, sections)
+    }
+
     private fun resolve(raw: String, base: String): String =
         base.toHttpUrlOrNull()?.resolve(raw)?.toString().orEmpty()
 
-    private fun image(raw: String, base: String): String = resolve(raw, base).takeIf {
-        val url = it.toHttpUrlOrNull()
-        url != null && url.isHttps && url.host == "www.wenku8.net" && url.port == 443 &&
-            url.username.isEmpty() && url.password.isEmpty()
-    }.orEmpty()
+    private fun image(raw: String, base: String): String {
+        if (raw.isBlank()) return ""
+        val parsed = resolve(raw, base).toHttpUrlOrNull() ?: return ""
+        if (parsed.username.isNotEmpty() || parsed.password.isNotEmpty()) return ""
+        if (parsed.host == "img.wenku8.com" && parsed.port in setOf(80, 443)) {
+            return parsed.newBuilder().scheme("https").port(443).build().toString()
+        }
+        return parsed.toString().takeIf {
+            parsed.isHttps && parsed.host == "www.wenku8.net" && parsed.port == 443
+        }.orEmpty()
+    }
 }

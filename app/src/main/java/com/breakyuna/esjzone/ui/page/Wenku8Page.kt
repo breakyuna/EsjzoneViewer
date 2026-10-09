@@ -33,6 +33,10 @@ import com.breakyuna.esjzone.R
 import com.breakyuna.esjzone.app.PresentationAccess
 import com.breakyuna.esjzone.network.LoadFailureKind
 import com.breakyuna.esjzone.network.loadFailureKind
+import com.breakyuna.esjzone.network.wenku8.Wenku8Browse
+import com.breakyuna.esjzone.network.wenku8.browseWenku8
+import com.breakyuna.esjzone.network.wenku8.wenku8BrowseUrl
+import com.breakyuna.esjzone.network.wenku8.Wenku8LoginRequiredException
 import com.breakyuna.esjzone.network.wenku8.Wenku8ParseException
 import com.breakyuna.esjzone.network.wenku8.Wenku8RestrictedException
 import com.breakyuna.esjzone.network.external.CloudflareChallengeRequiredException
@@ -75,10 +79,12 @@ class Wenku8Page(
         var query by rememberSaveable { mutableStateOf(keyword) }
         var searchType by rememberSaveable { mutableStateOf(type) }
         var showLocalActions by remember { mutableStateOf(false) }
+        var category by rememberSaveable { mutableStateOf(Wenku8Browse.HOME) }
         var savedPage by rememberSaveable { mutableStateOf(1) }
         var showVerification by remember { mutableStateOf(false) }
-        if (showVerification && keyword.isNotBlank()) {
-            WenkuVerificationDialog(url = wenku8SearchUrl(keyword, type, model.page),
+        if (showVerification) {
+            WenkuVerificationDialog(url = if (keyword.isBlank()) wenku8BrowseUrl(category, model.page)
+                else wenku8SearchUrl(keyword, type, model.page),
                 onVerified = { showVerification = false; model.load(model.page, forceRefresh = true) },
                 onUnavailable = { showVerification = false },
                 onDismiss = { showVerification = false })
@@ -89,16 +95,36 @@ class Wenku8Page(
             if (submitted == keyword && searchType == type) model.load(1, forceRefresh = true)
             else navigator?.replace(Wenku8Page(submitted, searchType))
         }
-        LaunchedEffect(model) { if (state == Wenku8PageModel.State.Idle) model.load(savedPage) }
+        LaunchedEffect(model) { if (state == Wenku8PageModel.State.Idle) model.load(savedPage, category = category) }
         LaunchedEffect(state) { (state as? Wenku8PageModel.State.Result)?.let { savedPage = it.result.page } }
         Scaffold(topBar = {
             Column {
-                DiscoverySearchTopBar(query, { query = it }, ::submit, { query = "" }, { navigator?.pop() })
+                DiscoverySearchTopBar(query, { query = it }, ::submit, {
+                    query = ""
+                    if (keyword.isNotBlank()) navigator?.replace(Wenku8Page())
+                }, { navigator?.pop() })
+                if (keyword.isBlank()) {
+                    Row(Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = AppSpacing.md),
+                        horizontalArrangement = Arrangement.spacedBy(AppSpacing.sm)) {
+                        Wenku8Browse.entries.forEach { entry ->
+                            FilterChip(selected = category == entry,
+                                enabled = state != Wenku8PageModel.State.Loading,
+                                onClick = { category = entry; savedPage = 1; model.load(1, category = entry) },
+                                label = { Text(stringResource(entry.labelResource())) })
+                        }
+                    }
+                } else {
+                    TextButton(onClick = { navigator?.replace(Wenku8Page()) }) {
+                        Text(stringResource(R.string.wenku8_home))
+                    }
+                }
                 Row(Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = AppSpacing.md), horizontalArrangement = Arrangement.spacedBy(AppSpacing.sm)) {
                     FilterChip(selected = searchType == Wenku8SearchType.TITLE,
                         onClick = { searchType = Wenku8SearchType.TITLE }, label = { Text(stringResource(R.string.wenku8_search_title)) })
                     FilterChip(selected = searchType == Wenku8SearchType.AUTHOR,
                         onClick = { searchType = Wenku8SearchType.AUTHOR }, label = { Text(stringResource(R.string.author)) })
+                    TextButton(onClick = { model.load(model.page, forceRefresh = true) },
+                        enabled = state != Wenku8PageModel.State.Loading) { Text(stringResource(R.string.wenku8_refresh)) }
                     TextButton(onClick = { navigator?.pushIfNotCurrent(Wenku8BookshelfPage) }) { Text(stringResource(R.string.bookshelf)) }
                     TextButton(onClick = { navigator?.pushIfNotCurrent(Wenku8LoginPage) }) { Text(stringResource(R.string.wenku8_session)) }
                     Box {
@@ -126,13 +152,31 @@ class Wenku8Page(
                     Wenku8PageModel.State.Loading -> item { CircularProgressIndicator(Modifier.padding(AppSpacing.lg)) }
                     is Wenku8PageModel.State.Failed -> item {
                         DiscoveryErrorState(stringResource(snapshot.message), onRetry = { model.load(model.page, forceRefresh = true) })
+                        if (snapshot.message == R.string.wenku8_login_required) {
+                            TextButton(onClick = { navigator?.pushIfNotCurrent(Wenku8LoginPage) }) {
+                                Text(stringResource(R.string.wenku8_session))
+                            }
+                        }
                         if (snapshot.message == R.string.wenku8_verification_needed) {
                             TextButton(onClick = { showVerification = true }) { Text(stringResource(R.string.wenku_verification_open)) }
                         }
                     }
                     is Wenku8PageModel.State.Result -> {
                         val visibleBooks = snapshot.result.novels.filter { adult || !it.isAdult }
-                        if (visibleBooks.isEmpty()) item {
+                        snapshot.result.sections.forEach { section ->
+                            val sectionBooks = section.novels.filter { adult || !it.isAdult }
+                            if (sectionBooks.isNotEmpty()) {
+                                item(key = "section:${section.title}") {
+                                    Text(section.title, Modifier.padding(AppSpacing.md))
+                                }
+                                items(sectionBooks, key = { "${section.title}:${it.url}" }) { book ->
+                                    DiscoveryNovelCard(book, Modifier.padding(horizontal = AppSpacing.md)) {
+                                        navigator?.pushIfNotCurrent(NovelPage(book))
+                                    }
+                                }
+                            }
+                        }
+                        if (visibleBooks.isEmpty() && snapshot.result.sections.isEmpty()) item {
                             DiscoveryEmptyState(stringResource(R.string.search_no_results), stringResource(R.string.search_no_results_message))
                         }
                         items(visibleBooks, key = { it.url }) { book ->
@@ -140,7 +184,7 @@ class Wenku8Page(
                                 navigator?.pushIfNotCurrent(NovelPage(book))
                             }
                         }
-                        item {
+                        if (snapshot.result.sections.isEmpty()) item {
                             Row(Modifier.padding(AppSpacing.md), horizontalArrangement = Arrangement.spacedBy(AppSpacing.md)) {
                                 TextButton(onClick = { model.load(snapshot.result.page - 1) }, enabled = snapshot.result.page > 1) {
                                     Text(stringResource(R.string.wenku8_previous_page))
@@ -160,6 +204,8 @@ class Wenku8Page(
 
 internal class Wenku8PageModel(private val keyword: String, private val type: Wenku8SearchType) :
     AppStateViewModel<Wenku8PageModel.State>(State.Idle) {
+    var category = Wenku8Browse.HOME
+        private set
     var page = 1
         private set
     sealed interface State {
@@ -168,17 +214,21 @@ internal class Wenku8PageModel(private val keyword: String, private val type: We
         data class Result(val result: Wenku8SearchResult) : State
         data class Failed(val message: Int) : State
     }
-    fun load(targetPage: Int, forceRefresh: Boolean = false) {
-        if (state.value == State.Loading || targetPage < 1 || keyword.isBlank()) return
+    fun load(targetPage: Int, forceRefresh: Boolean = false, category: Wenku8Browse = this.category) {
+        if (state.value == State.Loading || targetPage < 1) return
+        this.category = category
         page = targetPage
         mutableState.value = State.Loading
         viewModelScope.launch(Dispatchers.IO) {
             try {
-                mutableState.value = State.Result(PresentationAccess.client.searchWenku8(keyword, type, targetPage, forceRefresh))
+                mutableState.value = State.Result(if (keyword.isBlank())
+                    PresentationAccess.client.browseWenku8(category, targetPage, forceRefresh)
+                else PresentationAccess.client.searchWenku8(keyword, type, targetPage, forceRefresh))
             } catch (error: CancellationException) {
                 throw error
             } catch (error: Exception) {
                 mutableState.value = State.Failed(when (error) {
+                    is Wenku8LoginRequiredException -> R.string.wenku8_login_required
                     is Wenku8SearchRateLimitException -> R.string.wenku8_search_rate_limit
                     is CloudflareChallengeRequiredException -> R.string.wenku8_verification_needed
                     is CloudflareWebViewUnavailableException -> R.string.wenku_webview_unavailable
@@ -190,4 +240,16 @@ internal class Wenku8PageModel(private val keyword: String, private val type: We
             }
         }
     }
+}
+
+private fun Wenku8Browse.labelResource(): Int = when (this) {
+    Wenku8Browse.HOME -> R.string.wenku8_home
+    Wenku8Browse.ALL -> R.string.wenku8_all
+    Wenku8Browse.POPULAR -> R.string.wenku8_popular
+    Wenku8Browse.DAILY -> R.string.wenku8_daily
+    Wenku8Browse.MONTHLY -> R.string.wenku8_monthly
+    Wenku8Browse.UPDATED -> R.string.wenku8_updated
+    Wenku8Browse.NEW -> R.string.wenku8_new
+    Wenku8Browse.ANIME -> R.string.wenku8_anime
+    Wenku8Browse.COMPLETED -> R.string.wenku8_completed
 }

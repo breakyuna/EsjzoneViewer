@@ -84,3 +84,42 @@
 补齐浏览器快照的加密同步保存、CookieJar 重建恢复、WebView 导航前恢复，以及原生轮换／删除／到期与清理同步。新增两项 JVM 用例检验快照序列化后的 URL 范围和来源隔离；新增设备用例检验加密存储重建、清理和原生 Cookie 更新不恢复旧快照，使用测试 APK 私有存储和合成 Cookie。
 
 静态检查与 `git diff --check` 通过。统一 `testDebugUnitTest lintDebug compileDebugAndroidTestKotlin --build-cache -Pkotlin.incremental=false` 成功，耗时 10 分 40 秒：334 项 JVM 用例全部通过，其中 Cookie 范围／快照用例 8 项；Android Lint 与设备测试源码编译通过。ADB 无连接设备，未执行设备测试及真实登录后杀进程重启验收；未构建 APK 或触发 CI。旧版只存在内存中的桥接 Cookie 无法凭空恢复，首次安装此修改后需要先打开仍持有会话的 WebView 或重新登录一次。
+
+### 实站登录与发现入口（2026-10-09，beta 基线 92be9b1）
+
+通过云浏览器用户安全登录流程访问 `https://www.wenku8.net/`，匿名访问重定向到
+`/login.php?jumpurl=...`，提交后进入 `/index.php`，页面显示用户欢迎栏和退出登录入口。
+登录页的旧“本站正式关闭”文案不代表当前业务关闭；登录后的首页正常展示更新内容。
+没有读取、导出或存储该浏览器的密码或 Cookie，云浏览器会话不会自动进入 Android 应用。
+应用继续通过独立的文库会话 WebView 由用户登录。
+
+本轮直接观察首页、全部列表与总排行榜的公开内容 DOM：
+
+| 页面 | 路径 / 参数 | DOM |
+| --- | --- | --- |
+| 首页 | `/index.php` | `#centers > .block` 与 `#right > .block`；标题 `.blocktitle` / `.txt`，作品 `.blockcontent a[href]` |
+| 全部 / 完结 | `/modules/article/articlelist.php`，完结 `fullflag=1` | `#content > table > tbody > tr > td > div` 书卡 |
+| 排行 / 更新 / 新书 / 动画 | `/modules/article/toplist.php?sort=...` | 同一书卡结构；总榜页面已直接打开验证 |
+| 分页 | 上述路径加 `page=N` | `#pagelink em` 为 `当前页/总页数` |
+
+导航实际暴露 `allvisit`、`dayvisit`、`monthvisit`、`lastupdate`、`postdate`、`anime`；
+本轮加入以上入口及全部、完结筛选，仅总榜与全部列表取得了直接业务 DOM，其余入口参数由站点导航确认，未逐项打开验收。
+站点还暴露分类 `class=1..14`、Tags、更多推荐榜和年度专题；这些不在本轮实现范围。
+
+首页按动态标题分组（新番原作、新书风云榜、会员推荐、最近更新及右侧榜单），
+仅保留合法同源作品链接，在分组内合并封面与标题重复链接；排行使用 `tiptitle` 保留未截断的完整书名。
+列表图片链接也是 `tiptitle`，正文区第一个作者段落为 `作者:.../分类:...`，Tags 段落独立查找；
+修正原先只读取 `title` 和固定段落序号导致的解析失败／作者错位／成人标记丢失。
+站点封面实际使用 `http://img.wenku8.com/image/...`，仅该精确图片域名升级为 HTTPS，
+使用现有普通图片加载器，不向其发送文库会话。CDN HTTPS 加载仍需 Android 设备验收。
+首页缺少 Tags，无法仅凭首页确定未标记作品的成人属性，不为此请求每本详情；列表继续按已解析的 R18 标记过滤。
+
+扩展传输允许 HOME/BROWSE 页类，仍严格限制主机、端口、路径及参数；
+首页缓存 15 分钟、列表 30 分钟，沿用会话隔离与强制刷新；请求跳到同源 `/login.php`
+时抛出明确登录需求，不缓存登录页、不自动输入密码。首页会按动态分区复用书卡，
+其他入口分页加载，保留分类与页码状态，支持刷新、书名／作者搜索与既有详情、阅读和书架。
+
+新增 `Wenku8DiscoveryTest` 覆盖实站书卡形状、首页去重、完整标题、CDN 地址、
+R18 和分页、登录页拒绝、浏览 URL 允许范围。按用户要求不运行 Gradle、JVM 测试或 Lint，
+只执行静态契约检查、XML 资源校验和 `git diff --check`；这些检查不证明 Android 编译或设备行为。
+未提交或推送 GitHub。
