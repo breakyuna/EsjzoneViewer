@@ -211,6 +211,7 @@ internal class WenkuChapterClient(context: Context, userAgent: String) {
     /** Non-chapter pages never enter ESJ transport or the chapter cache. Call on IO. */
     fun loadPage(url: String, kind: Wenku8PageKind, allowAutoSolve: Boolean, forceRefresh: Boolean): Wenku8PageResponse {
         if (!wenku8PageAllowed(url, kind)) throw UnsupportedExternalChapterException()
+        com.breakyuna.esjzone.util.AppLogger.i("WenkuChapterClient", "Loading page: kind=$kind, forceRefresh=$forceRefresh")
         val epoch = sessionEpoch.get()
         val scope = jar.cacheScope()
         val initialKey = "wenku8-pages|$scope|${kind.name}|${wenku8PageCacheIdentity(url)}"

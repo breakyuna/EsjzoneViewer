@@ -18,6 +18,14 @@ class LoadFailureTest {
     private val url = "https://www.esjzone.cc/"
 
     @Test
+    fun unexpectedLandingHasItsOwnMessageCategoryThroughWrappers() {
+        val body = "<html><head><title>ESJZone</title></head><body><main>Home</main></body></html>"
+        val validation = PageResponsePolicy.validate(200, body, "${url}detail/123.html", finalUrl = url)
+        assertEquals(LoadFailureKind.SESSION_OR_NODE,
+            ExecutionException(UntrustedPageException(url, validation)).loadFailureKind())
+    }
+
+    @Test
     fun transportFailuresRemainNetworkErrorsThroughWrappers() {
         listOf(
             UnknownHostException("unavailable"),

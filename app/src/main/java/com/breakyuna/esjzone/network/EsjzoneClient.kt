@@ -93,7 +93,8 @@ object EsjzoneClient {
         wenkuClient = wenkuInitialization.getOrNull()
         wenkuInitialization.exceptionOrNull()?.let { error ->
             com.breakyuna.esjzone.util.AppLogger.w(
-                "EsjzoneClient", "Wenku cookie storage unavailable (${error::class.java.simpleName})"
+                "EsjzoneClient", "Wenku cookie storage unavailable (${error::class.java.simpleName})",
+                source = com.breakyuna.esjzone.util.LogSource.WENKU8
             )
         }
         PageCache.initialize(context.applicationContext)
@@ -336,7 +337,10 @@ object EsjzoneClient {
                 }
             }
             if (!validation.trusted) {
-                val fallback = if (allowStaleOnError) {
+                com.breakyuna.esjzone.util.AppLogger.w("EsjzoneClient",
+                    "Page rejected: kind=$pageKind, reason=${validation.reason}",
+                    source = com.breakyuna.esjzone.util.LogSource.ESJZONE)
+                val fallback = if (allowStaleOnError && !validation.unexpectedLanding) {
                     PageResponsePolicy.selectTrustedBody(
                         validation,
                         responseData.body,
@@ -373,7 +377,8 @@ object EsjzoneClient {
             }
             // A previously fetched page is preferable to a blank screen during a transient
             // timeout or offline period. The page remains scoped to this account and URL.
-            val result = if (error is Exception) stalePage.takeIf { allowStaleOnError } else null
+            val unexpectedLanding = error is UntrustedPageException && error.validation.unexpectedLanding
+            val result = if (error is Exception) stalePage.takeIf { allowStaleOnError && !unexpectedLanding } else null
             if (result != null) {
                 owner.complete(result)
                 result

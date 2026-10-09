@@ -57,7 +57,7 @@ class NovelDetailLoader(private val authorization: Authorization) : AppStateView
                 throw e
             } catch (e: Exception) {
                 failures[key] = e.loadFailureKind()
-                com.breakyuna.esjzone.util.AppLogger.e("NovelDetailLoader", "Failed to load novel detail: $key", e)
+                com.breakyuna.esjzone.util.AppLogger.e("NovelDetailLoader", "Failed to load novel detail: $key", e, source = com.breakyuna.esjzone.util.logSourceForUrl(novel.url))
             } finally {
                 if (jobs[key] === thisJob) jobs.remove(key)
             }

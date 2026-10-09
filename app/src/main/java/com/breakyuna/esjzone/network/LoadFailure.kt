@@ -10,9 +10,10 @@ import java.util.Collections
 import java.util.IdentityHashMap
 import javax.net.ssl.SSLException
 
-/** The two user-facing classes of failures that can occur while loading a page. */
+/** User-facing failures that can occur while loading a page. */
 enum class LoadFailureKind {
     NETWORK,
+    SESSION_OR_NODE,
     CLIENT
 }
 
@@ -48,6 +49,7 @@ internal fun Throwable.loadFailureKind(): LoadFailureKind {
             is SSLException,
             is InterruptedIOException -> return LoadFailureKind.NETWORK
             is UntrustedPageException -> {
+                if (current.validation.unexpectedLanding) return LoadFailureKind.SESSION_OR_NODE
                 // HTTP failures and WAF blocks mean the site could not serve
                 // the requested page.  A structurally invalid or redirected
                 // page, however, points to a client/parser or session issue.

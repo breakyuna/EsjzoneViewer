@@ -170,6 +170,7 @@ private fun categoryKey(category: Category): String =
 
 private fun categoryFailureMessage(failure: LoadFailureKind): Int = when (failure) {
     LoadFailureKind.NETWORK -> R.string.load_network_error
+    LoadFailureKind.SESSION_OR_NODE -> R.string.load_session_or_node_error
     LoadFailureKind.CLIENT -> R.string.load_client_error
 }
 

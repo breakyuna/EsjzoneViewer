@@ -787,4 +787,5 @@
     <string name="wenku8_completed">Completed</string>
     <string name="wenku8_refresh">Refresh</string>
     <string name="wenku8_login_required">Sign in to Wenku8, then refresh</string>
+    <string name="load_session_or_node_error">Login or network node status is abnormal. Try changing your network node or signing in again.</string>
 </resources>

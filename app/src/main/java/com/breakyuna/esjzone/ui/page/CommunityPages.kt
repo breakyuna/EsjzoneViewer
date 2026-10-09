@@ -414,7 +414,12 @@ class ForumPostPage(private val topic: ForumTopic) : AppDestination {
             ) {
             when (val snapshot = state) {
                 is CommunityState.Loading -> LoadingSkeleton(modifier = Modifier.fillMaxWidth())
-                is CommunityState.Error -> if (snapshot.failure == LoadFailureKind.NETWORK) {
+                is CommunityState.Error -> if (snapshot.failure == LoadFailureKind.SESSION_OR_NODE) {
+                    ErrorState(
+                        message = stringResource(R.string.load_session_or_node_error),
+                        modifier = Modifier.fillMaxWidth(), onRetry = model::retry
+                    )
+                } else if (snapshot.failure == LoadFailureKind.NETWORK) {
                     OfflineState(modifier = Modifier.fillMaxWidth(), onRetry = model::retry)
                 } else {
                     ErrorState(

@@ -35,6 +35,7 @@ import com.breakyuna.esjzone.novellibrary.novel.DetailedChapter
 import com.breakyuna.esjzone.novellibrary.novel.FavoriteNovel
 import com.breakyuna.esjzone.offline.NovelDownloadStore
 import com.breakyuna.esjzone.ui.reader.toReaderDocument
+import com.breakyuna.esjzone.util.logSourceForUrl
 import com.breakyuna.esjzone.util.AppLogger
 
 data class ReaderChapter(
@@ -243,7 +244,7 @@ class ChapterPageModel(
                 AppLogger.e(
                     "ChapterPageModel",
                     "Failed to load initial chapter ${chapter.name}",
-                    error
+                    error, source = logSourceForUrl(chapter.url)
                 )
                 return@launch
             }
@@ -307,7 +308,7 @@ class ChapterPageModel(
                 if (isCurrentSession(currentSession)) {
                     mutableState.value = State.Error(error.loadFailureKind())
                 }
-                AppLogger.e("ChapterPageModel", "Failed to unlock password-protected chapter", error)
+                AppLogger.e("ChapterPageModel", "Failed to unlock password-protected chapter", error, source = logSourceForUrl(requestedChapter.value.url))
                 return@launch
             }
             if (!isCurrentSession(currentSession)) return@launch
@@ -318,7 +319,7 @@ class ChapterPageModel(
                         chapter = target,
                         document = document,
                         fallbackPrevious = detail.previous,
-                        fallbackNext = detail.next
+                        fallbackNext = detail.next, source = logSourceForUrl(requestedChapter.value.url)
                     )
                 }
             }
@@ -403,7 +404,7 @@ class ChapterPageModel(
                 AppLogger.e(
                     "ChapterPageModel",
                     "Failed to append chapter ${chapterToLoad.name}",
-                    e
+                    e, source = logSourceForUrl(chapterToLoad.url)
                 )
             } finally {
                 synchronized(lock) {
@@ -494,7 +495,7 @@ class ChapterPageModel(
                 AppLogger.e(
                     "ChapterPageModel",
                     "Failed to prepend chapter ${chapterToLoad.name}",
-                    e
+                    e, source = logSourceForUrl(chapterToLoad.url)
                 )
             } finally {
                 synchronized(lock) {
@@ -593,7 +594,7 @@ class ChapterPageModel(
                     synchronized(lock) { offlineChapterKeys += key }
                     AppLogger.i(
                         "ChapterPageModel",
-                        "Using downloaded chapter while offline: ${chapter.name}"
+                        "Using downloaded chapter while offline: ${chapter.name}", source = logSourceForUrl(chapter.url)
                     )
                     queueChapterPersistence(chapter, downloaded)
                     return downloaded
@@ -602,7 +603,7 @@ class ChapterPageModel(
             AppLogger.e(
                 "ChapterPageModel",
                 "Failed to load chapter detail for ${chapter.name}",
-                e
+                e, source = logSourceForUrl(chapter.url)
             )
             throw e
         }
@@ -660,7 +661,7 @@ class ChapterPageModel(
                     AppLogger.w(
                         "ChapterPageModel",
                         "Prefetch failed for chapter ${chapter.name}",
-                        e
+                        e, source = logSourceForUrl(chapter.url)
                     )
                     null
                 }
@@ -697,7 +698,7 @@ class ChapterPageModel(
             AppLogger.w(
                 "ChapterPageModel",
                 "Failed to load canonical chapter order for novel $novelId",
-                e
+                e, source = logSourceForUrl(requestedChapter.value.url)
             )
             emptyList()
         }
@@ -846,7 +847,7 @@ private fun persistLoadedChapter(
             authorization = authorization
         )
     }.onFailure { error ->
-        AppLogger.w("ChapterPageModel", "Failed to auto-save chapter ${chapter.name}", error)
+        AppLogger.w("ChapterPageModel", "Failed to auto-save chapter ${chapter.name}", error, source = logSourceForUrl(chapter.url))
     }
 }
 

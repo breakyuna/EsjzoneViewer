@@ -11,6 +11,33 @@ class PageResponsePolicyTest {
     private val url = "https://www.esjzone.cc/"
 
     @Test
+    fun detectsDetailRedirectedToHomeAndForumEvenWithSuccessfulHtml() {
+        val requested = "${url}detail/123.html"
+        listOf(url, "${url}forum/").forEach { finalUrl ->
+            val validation = PageResponsePolicy.validate(200, validHome(), requested,
+                finalUrl = finalUrl, kind = PageKind.DETAIL)
+            assertFalse(validation.trusted)
+            assertTrue(validation.unexpectedLanding)
+        }
+    }
+
+    @Test
+    fun detectsForumIndexServedAtHomeWithoutRedirectAndAllowsNormalForum() {
+        val forum = """<html><head><title>論壇 - ESJZone</title></head><body>
+            <h1>論壇</h1><table><tr><td><a href="/forum/123/">一般討論</a></td></tr></table>
+            </body></html>"""
+        listOf(PageKind.HOME, PageKind.DETAIL, PageKind.CHAPTER).forEach { kind ->
+            val validation = PageResponsePolicy.validate(200, forum, url, kind = kind)
+            assertFalse(validation.trusted)
+            assertTrue(validation.unexpectedLanding)
+        }
+        val normal = PageResponsePolicy.validate(200, forum, "${url}forum/", kind = PageKind.FORUM)
+        assertTrue(normal.trusted)
+        assertFalse(normal.unexpectedLanding)
+        assertTrue(PageResponsePolicy.validate(200, validHome(), url, kind = PageKind.HOME).trusted)
+    }
+
+    @Test
     fun rejectsNonSuccessAndEmptyResponses() {
         assertFalse(PageResponsePolicy.validate(403, validHome(), url, kind = PageKind.HOME).trusted)
         assertFalse(PageResponsePolicy.validate(200, "", url, kind = PageKind.HOME).trusted)

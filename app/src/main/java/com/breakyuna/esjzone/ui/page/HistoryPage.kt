@@ -643,7 +643,12 @@ private fun CloudHistoryContent(
 ) {
     when (state) {
         HistoryPageModel.State.Loading -> CloudHistoryLoadingState()
-        is HistoryPageModel.State.Error -> if (state.failure == LoadFailureKind.NETWORK) {
+        is HistoryPageModel.State.Error -> if (state.failure == LoadFailureKind.SESSION_OR_NODE) {
+            ErrorState(
+                message = stringResource(R.string.load_session_or_node_error),
+                onRetry = model::reload, modifier = Modifier.fillMaxSize()
+            )
+        } else if (state.failure == LoadFailureKind.NETWORK) {
             OfflineState(
                 title = stringResource(R.string.load_network_error),
                 message = stringResource(R.string.history_cloud_separate),
@@ -681,7 +686,8 @@ private fun CloudHistoryContent(
                             if (detailLoader.failures[key] != null) {
                                 ErrorState(
                                     title = stringResource(R.string.history_load_failed),
-                                    message = stringResource(R.string.load_network_error),
+                                    message = stringResource(if (detailLoader.failures[key] == LoadFailureKind.SESSION_OR_NODE)
+                                        R.string.load_session_or_node_error else R.string.load_network_error),
                                     onRetry = { detailLoader.retry(history) },
                                     modifier = Modifier.fillMaxWidth()
                                 )

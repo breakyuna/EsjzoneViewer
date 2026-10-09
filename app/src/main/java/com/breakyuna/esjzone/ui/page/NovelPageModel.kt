@@ -20,6 +20,7 @@ import com.breakyuna.esjzone.network.features.getNovelDetail
 import com.breakyuna.esjzone.network.loadFailureKind
 import com.breakyuna.esjzone.novellibrary.novel.DetailedNovel
 import com.breakyuna.esjzone.novellibrary.novel.Novel
+import com.breakyuna.esjzone.util.logSourceForUrl
 import com.breakyuna.esjzone.util.AppLogger
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -69,7 +70,7 @@ class NovelPageModel(
                 if (downloaded != null) {
                     ReadingStatisticsRecorder.recordTags(downloaded)
                     mutableState.value = State.Result(downloaded)
-                    AppLogger.w("NovelPageModel", "Using downloaded novel detail for ${novel.name}", error)
+                    AppLogger.w("NovelPageModel", "Using downloaded novel detail for ${novel.name}", error, source = logSourceForUrl(novel.url))
                 } else {
                     val message = if (Wenku8Urls.detailIdentity(novel.url) != null) when (error) {
                         is CloudflareChallengeRequiredException -> R.string.wenku8_verification_needed
@@ -81,7 +82,7 @@ class NovelPageModel(
                     } else null
                     mutableState.value = State.Error(error.loadFailureKind(), message,
                         requiresVerification = error is CloudflareChallengeRequiredException)
-                    AppLogger.e("NovelPageModel", "Failed to load novel detail for ${novel.name}", error)
+                    AppLogger.e("NovelPageModel", "Failed to load novel detail for ${novel.name}", error, source = logSourceForUrl(novel.url))
                 }
             }
         }
@@ -106,7 +107,7 @@ class NovelPageModel(
                 AppLogger.e(
                     "NovelPageModel",
                     "Failed to persist favorite intent for ${novel.name}",
-                    error
+                    error, source = logSourceForUrl(novel.url)
                 )
             }
         }
@@ -125,7 +126,7 @@ class NovelPageModel(
             } catch (error: CancellationException) {
                 throw error
             } catch (error: Exception) {
-                AppLogger.e("NovelPageModel", "Failed to seed favorite metadata for ${novel.name}", error)
+                AppLogger.e("NovelPageModel", "Failed to seed favorite metadata for ${novel.name}", error, source = logSourceForUrl(novel.url))
             }
         }
     }

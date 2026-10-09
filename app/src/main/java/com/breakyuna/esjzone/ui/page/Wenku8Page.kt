@@ -227,6 +227,7 @@ internal class Wenku8PageModel(private val keyword: String, private val type: We
             } catch (error: CancellationException) {
                 throw error
             } catch (error: Exception) {
+                com.breakyuna.esjzone.util.AppLogger.e("Wenku8PageModel", "Failed to load discovery page: category=$category, page=$targetPage", error)
                 mutableState.value = State.Failed(when (error) {
                     is Wenku8LoginRequiredException -> R.string.wenku8_login_required
                     is Wenku8SearchRateLimitException -> R.string.wenku8_search_rate_limit

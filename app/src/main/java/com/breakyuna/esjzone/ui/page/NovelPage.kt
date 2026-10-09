@@ -294,6 +294,12 @@ class NovelPage(
                             retryLabel = stringResource(if (snapshot.requiresVerification)
                                 R.string.wenku_verification_open else R.string.retry),
                             onRetry = { if (snapshot.requiresVerification) showWenkuVerification = true else screenModel.retry() })
+                    } else if (snapshot.failure == LoadFailureKind.SESSION_OR_NODE) {
+                        ErrorState(
+                            message = stringResource(R.string.load_session_or_node_error),
+                            modifier = Modifier.fillMaxWidth(),
+                            onRetry = screenModel::retry
+                        )
                     } else if (snapshot.failure == LoadFailureKind.NETWORK) {
                         OfflineState(
                             modifier = Modifier.fillMaxWidth(),

@@ -788,4 +788,5 @@
     <string name="wenku8_completed">完结全本</string>
     <string name="wenku8_refresh">刷新</string>
     <string name="wenku8_login_required">请登录文库账号后刷新</string>
+    <string name="load_session_or_node_error">登录状态或者节点状态异常，请尝试更换节点或者重新登录</string>
 </resources>

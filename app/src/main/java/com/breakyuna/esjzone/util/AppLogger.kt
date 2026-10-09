@@ -29,11 +29,12 @@ data class LogEntry(
     val tag: String,
     val message: String,
     val stackTrace: String? = null,
-    val threadName: String = Thread.currentThread().name
+    val threadName: String = Thread.currentThread().name,
+    val source: LogSource = logSourceForTag(tag)
 ) {
     fun formattedTime(): String = SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS", Locale.getDefault()).format(Date(timestamp))
     fun toFormattedString(): String = buildString {
-        append("[${formattedTime()}] [${level.name}] [$threadName] [$tag]: $message")
+        append("[${formattedTime()}] [${level.name}] [${source.label}] [$threadName] [$tag]: $message")
         if (!stackTrace.isNullOrBlank()) append('\n').append(stackTrace)
     }
 }
@@ -65,13 +66,13 @@ object AppLogger {
         } catch (e: Exception) { Log.e("AppLogger", "Failed to init logger files: ${safeThrowable(e)}") }
     }
 
-    fun d(tag: String, message: String) = log(LogLevel.DEBUG, tag, message, null)
-    fun i(tag: String, message: String) = log(LogLevel.INFO, tag, message, null)
-    fun w(tag: String, message: String, throwable: Throwable? = null) = log(LogLevel.WARN, tag, message, throwable)
-    fun e(tag: String, message: String, throwable: Throwable? = null) = log(LogLevel.ERROR, tag, message, throwable)
+    fun d(tag: String, message: String, source: LogSource = logSourceForTag(tag)) = log(LogLevel.DEBUG, tag, message, null, source)
+    fun i(tag: String, message: String, source: LogSource = logSourceForTag(tag)) = log(LogLevel.INFO, tag, message, null, source)
+    fun w(tag: String, message: String, throwable: Throwable? = null, source: LogSource = logSourceForTag(tag)) = log(LogLevel.WARN, tag, message, throwable, source)
+    fun e(tag: String, message: String, throwable: Throwable? = null, source: LogSource = logSourceForTag(tag)) = log(LogLevel.ERROR, tag, message, throwable, source)
 
-    private fun log(level: LogLevel, tag: String, message: String, throwable: Throwable?) {
-        val entry = LogEntry(level = level, tag = tag, message = sanitize(message), stackTrace = throwable?.let(::stackTrace))
+    private fun log(level: LogLevel, tag: String, message: String, throwable: Throwable?, source: LogSource) {
+        val entry = LogEntry(level = level, tag = tag, message = sanitize(message), stackTrace = throwable?.let(::stackTrace), source = source)
         val output = entry.toFormattedString()
         when (level) {
             LogLevel.DEBUG -> Log.d(tag, output)

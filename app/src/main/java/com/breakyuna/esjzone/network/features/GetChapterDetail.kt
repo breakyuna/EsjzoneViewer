@@ -17,6 +17,7 @@ import com.breakyuna.esjzone.novellibrary.novel.DetailedChapter
 import com.breakyuna.esjzone.novellibrary.novel.ChapterSource
 import com.breakyuna.esjzone.novellibrary.novel.resolveChapterSource
 import com.breakyuna.esjzone.network.external.UnsupportedExternalChapterException
+import com.breakyuna.esjzone.util.logSourceForUrl
 import com.breakyuna.esjzone.util.AppLogger
 import com.google.gson.JsonParser
 import okhttp3.FormBody
@@ -53,13 +54,13 @@ fun EsjzoneClient.getChapterDetail(
     if (preferDownloaded) {
         NovelDownloadStore.readChapter(targetUrl)
             ?.let { downloaded ->
-            AppLogger.i("GetChapterDetail", "Using downloaded ${source.name} chapter")
+            AppLogger.i("GetChapterDetail", "Using downloaded ${source.name} chapter", source = logSourceForUrl(targetUrl))
             return downloaded
         }
     }
 
     if (source == ChapterSource.WENKU8) {
-        AppLogger.i("GetChapterDetail", "Fetching WENKU8 chapter")
+        AppLogger.i("GetChapterDetail", "Fetching WENKU8 chapter", source = logSourceForUrl(targetUrl))
         return try {
             getWenkuChapter(chapter, targetUrl, forceRefresh, allowAutoSolve, onSecurityCheck)
         } catch (error: Exception) {
@@ -70,7 +71,7 @@ fun EsjzoneClient.getChapterDetail(
 
     val cacheKey = novelDetailCacheKey(authorization, targetUrl)
     if (!forceRefresh) StructuredChapterCache.read(cacheKey, targetUrl)?.let { return it }
-    AppLogger.i("GetChapterDetail", "Fetching ESJ chapter: ${chapter.name} at $targetUrl")
+    AppLogger.i("GetChapterDetail", "Fetching ESJ chapter: ${chapter.name} at $targetUrl", source = logSourceForUrl(targetUrl))
     val responseBody = try {
         getPage(
             authorization,

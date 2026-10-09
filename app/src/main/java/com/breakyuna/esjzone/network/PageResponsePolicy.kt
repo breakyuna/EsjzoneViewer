@@ -1,6 +1,7 @@
 package com.breakyuna.esjzone.network
 
 import org.jsoup.Jsoup
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import com.breakyuna.esjzone.novellibrary.novel.ChapterSource
 import com.breakyuna.esjzone.novellibrary.novel.resolveChapterSource
 
@@ -27,7 +28,8 @@ enum class PageKind {
 
 internal data class PageValidation(
     val trusted: Boolean,
-    val reason: String = ""
+    val reason: String = "",
+    val unexpectedLanding: Boolean = false
 )
 
 /**
@@ -107,6 +109,22 @@ internal object PageResponsePolicy {
 
         val hasEsjMarker = hasEsjPageMarker(lower)
         if (!hasEsjMarker) return PageValidation(false, "missing ESJ page markers")
+
+        val requestedPath = requestedUrl.toHttpUrlOrNull()?.encodedPath?.trim('/')
+        val finalPath = finalUrl.toHttpUrlOrNull()?.encodedPath?.trim('/')
+        if (requestedPath != null && finalPath != null && requestedPath != finalPath &&
+            (finalPath.isEmpty() || finalPath == "forum")) {
+            return PageValidation(false, "unexpected landing page", unexpectedLanding = true)
+        }
+        // The site can serve its forum index at the requested URL without an HTTP redirect.
+        if (kind != PageKind.GENERIC && !(kind == PageKind.FORUM && requestedPath == "forum")) {
+            val document = Jsoup.parse(body)
+            val forumHeading = document.select("h1, h2").any { it.text().trim() in setOf("論壇", "论坛") }
+            if (forumHeading && document.select("table a[href*='/forum/']").isNotEmpty() &&
+                document.select(".card-title, .book-detail").isEmpty()) {
+                return PageValidation(false, "unexpected forum index", unexpectedLanding = true)
+            }
+        }
 
         val familyValid = when (kind) {
             PageKind.GENERIC -> true

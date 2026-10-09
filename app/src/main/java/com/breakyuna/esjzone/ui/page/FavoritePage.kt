@@ -243,6 +243,7 @@ object FavoritePage : AppDestination {
         val syncAddedMessage = stringResource(R.string.bookshelf_sync_added)
         val syncDoneMessage = stringResource(R.string.bookshelf_sync_done)
         val networkErrorMessage = stringResource(R.string.load_network_error)
+        val sessionOrNodeErrorMessage = stringResource(R.string.load_session_or_node_error)
         val syncFailedMessage = stringResource(R.string.bookshelf_sync_failed)
         val deleteDoneMessage = stringResource(R.string.bookshelf_delete_done)
         val deleteFailedMessage = stringResource(R.string.bookshelf_delete_failed)
@@ -314,6 +315,7 @@ object FavoritePage : AppDestination {
                         showTransientSnackbar(
                             when (state.failure) {
                                 LoadFailureKind.NETWORK -> networkErrorMessage
+                                LoadFailureKind.SESSION_OR_NODE -> sessionOrNodeErrorMessage
                                 else -> syncFailedMessage
                             }
                         )

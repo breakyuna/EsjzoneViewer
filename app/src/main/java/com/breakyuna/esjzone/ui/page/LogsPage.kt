@@ -72,6 +72,7 @@ import com.breakyuna.esjzone.ui.designsystem.accountContentWidth
 import com.breakyuna.esjzone.ui.navigation.AppDestination
 import com.breakyuna.esjzone.ui.navigation.LocalBaseNavigator
 import com.breakyuna.esjzone.util.AppLogger
+import com.breakyuna.esjzone.util.LogSource
 import com.breakyuna.esjzone.util.LogEntry
 import com.breakyuna.esjzone.util.LogLevel
 
@@ -94,15 +95,17 @@ object LogsPage : AppDestination {
         val logs by AppLogger.logsFlow.collectAsState()
         val crashReport by AppLogger.crashReportFlow.collectAsState()
         var filter by remember { mutableStateOf<LogLevel?>(null) }
+        var sourceFilter by remember { mutableStateOf<LogSource?>(null) }
         var query by remember { mutableStateOf("") }
         var clearDialog by remember { mutableStateOf(false) }
         var crashDialog by remember { mutableStateOf(false) }
         LaunchedEffect(Unit) { AppLogger.refreshCrashReport() }
 
-        val visible = remember(logs, filter, query) {
+        val visible = remember(logs, filter, sourceFilter, query) {
             logs.asReversed().filter { entry ->
                 (filter == null || entry.level == filter) &&
-                    (query.isBlank() || entry.tag.contains(query, true) || entry.message.contains(query, true) || entry.stackTrace.orEmpty().contains(query, true))
+                    (sourceFilter == null || entry.source == sourceFilter) &&
+                    (query.isBlank() || entry.source.label.contains(query, true) || entry.tag.contains(query, true) || entry.message.contains(query, true) || entry.stackTrace.orEmpty().contains(query, true))
             }.distinctBy { it.id }
         }
         Scaffold(
@@ -145,6 +148,14 @@ object LogsPage : AppDestination {
                     leadingIcon = { Icon(Icons.Filled.Search, null) },
                     trailingIcon = { if (query.isNotBlank()) IconButton(onClick = { query = "" }) { Icon(Icons.Filled.Close, null) } }
                 )
+                Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = AppSpacing.lg), horizontalArrangement = Arrangement.spacedBy(AppSpacing.sm)) {
+                    FilterChip(selected = sourceFilter == null, onClick = { sourceFilter = null },
+                        label = { Text(stringResource(R.string.logs_filter_all)) })
+                    listOf(LogSource.ESJZONE, LogSource.WENKU8).forEach { source ->
+                        FilterChip(selected = sourceFilter == source, onClick = { sourceFilter = source },
+                            label = { Text(source.label) })
+                    }
+                }
                 Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = AppSpacing.lg), horizontalArrangement = Arrangement.spacedBy(AppSpacing.sm)) {
                     LogFilter(null, stringResource(R.string.logs_filter_all), logs.size, filter == null) { filter = null }
                     LogFilter(LogLevel.CRASH, stringResource(R.string.logs_filter_crash), logs.count { it.level == LogLevel.CRASH }, filter == LogLevel.CRASH) { filter = if (filter == LogLevel.CRASH) null else LogLevel.CRASH }
@@ -211,7 +222,7 @@ private fun LogItem(entry: LogEntry, context: Context) {
         Column(Modifier.fillMaxWidth().padding(AppSpacing.lg), verticalArrangement = Arrangement.spacedBy(AppSpacing.sm)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(label, style = AppTypography.labelMedium, color = accent, fontWeight = FontWeight.Bold)
-                Text(entry.tag, style = AppTypography.labelLarge, color = MaterialTheme.colorScheme.primary, modifier = Modifier.weight(1f).padding(start = AppSpacing.sm), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text("[${entry.source.label}] ${entry.tag}", style = AppTypography.labelLarge, color = MaterialTheme.colorScheme.primary, modifier = Modifier.weight(1f).padding(start = AppSpacing.sm), maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Text(entry.formattedTime().substringAfter(' '), style = AppTypography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             Text(entry.message, style = AppTypography.bodyMedium)

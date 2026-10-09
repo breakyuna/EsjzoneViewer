@@ -405,7 +405,8 @@ class ChapterPage(
                             }
                             if (!cached) com.breakyuna.esjzone.util.AppLogger.w(
                                 "ChapterPageModel",
-                                "Browser-loaded chapter could not be validated or cached; retrying network"
+                                "Browser-loaded chapter could not be validated or cached; retrying network",
+                                source = com.breakyuna.esjzone.util.LogSource.WENKU8
                             )
                         }
                         if (retryPending) {
@@ -1921,6 +1922,8 @@ class ChapterPage(
                                     title = stringResource(
                                         if (failure == com.breakyuna.esjzone.network.LoadFailureKind.NETWORK) {
                                             R.string.reader_offline_title
+                                        } else if (failure == com.breakyuna.esjzone.network.LoadFailureKind.SESSION_OR_NODE) {
+                                            R.string.load_failed
                                         } else {
                                             R.string.load_client_error
                                         }
@@ -1928,6 +1931,8 @@ class ChapterPage(
                                     message = stringResource(
                                         if (failure == com.breakyuna.esjzone.network.LoadFailureKind.NETWORK) {
                                             R.string.reader_offline_message
+                                        } else if (failure == com.breakyuna.esjzone.network.LoadFailureKind.SESSION_OR_NODE) {
+                                            R.string.load_session_or_node_error
                                         } else {
                                             R.string.load_client_error
                                         }

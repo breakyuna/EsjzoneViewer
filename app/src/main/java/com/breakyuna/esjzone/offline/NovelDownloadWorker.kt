@@ -290,7 +290,8 @@ class NovelDownloadWorker(
         } catch (error: CancellationException) {
             throw error
         } catch (error: Exception) {
-            AppLogger.e("NovelDownloadWorker", "Background novel download failed", error)
+            AppLogger.e("NovelDownloadWorker", "Background novel download failed", error,
+                source = com.breakyuna.esjzone.util.logSourceForUrl(rawUrl))
             if (generateSequence<Throwable>(error) { it.cause }.any {
                     it is CloudflareChallengeRequiredException
                 }) {
