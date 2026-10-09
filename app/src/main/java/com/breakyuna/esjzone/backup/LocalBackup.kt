@@ -48,6 +48,9 @@ object LocalBackup {
                     val dao = database.bookshelfGroupDao()
                     json.add("groups", gson.toJsonTree(BackupGroups(dao.groups(scope).map { it.name },
                         dao.members(scope).associate { it.bookKey to it.groupName })))
+                    val localScope = com.breakyuna.esjzone.database.BookshelfRepository.WENKU8_SCOPE
+                    json.add("wenku8Groups", gson.toJsonTree(BackupGroups(dao.groups(localScope).map { it.name },
+                        dao.members(localScope).associate { it.bookKey to it.groupName })))
                 }
             }
             if (BackupCategory.DOWNLOADS in selected) {
@@ -136,6 +139,10 @@ object LocalBackup {
                 gson.fromJson(json["search"], Array<SearchHistory>::class.java).toList() else emptyList()
             val groups = if (BackupCategory.GROUPS in selected && json.has("groups"))
                 gson.fromJson(json["groups"], BackupGroups::class.java) else null
+            val wenkuGroups = if (BackupCategory.GROUPS in selected && json.has("wenku8Groups"))
+                gson.fromJson(json["wenku8Groups"], BackupGroups::class.java) else null
+            require(wenkuGroups == null || (wenkuGroups.names.all { it.isNotBlank() } &&
+                wenkuGroups.members.values.all { it in wenkuGroups.names }))
             require(bookmarks.all { it.chapterUrl.isNotBlank() })
             require(history.all { it.activityId.isNotBlank() && it.chapterProgress in 0f..1f && it.durationMs >= 0 &&
                 (it.anchor == null || com.breakyuna.esjzone.domain.reader.ReaderAnchor.decode(it.anchor) != null) &&
@@ -172,6 +179,15 @@ object LocalBackup {
                     val existing = dao.members(scope).map { it.bookKey }.toSet()
                     data.members.filterKeys { it !in existing }.forEach { (key, name) ->
                         dao.assign(BookshelfGroupMember(scope, key, name))
+                    }
+                }
+                wenkuGroups?.let { data ->
+                    val localScope = com.breakyuna.esjzone.database.BookshelfRepository.WENKU8_SCOPE
+                    val dao = database.bookshelfGroupDao()
+                    data.names.forEach { dao.add(BookshelfGroup(localScope, it)) }
+                    val existing = dao.members(localScope).map { it.bookKey }.toSet()
+                    data.members.filterKeys { it !in existing }.forEach { (key, name) ->
+                        dao.assign(BookshelfGroupMember(localScope, key, name))
                     }
                 }
             }

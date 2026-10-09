@@ -92,7 +92,7 @@ internal fun WenkuVerificationDialog(
                     fun complete(rawCookies: String?, html: String?) {
                         if (!active.get() || completed.get()) return
                         cookieManager.flush()
-                        if (!EsjzoneClient.importWenkuBrowserCookies(rawCookies)) {
+                        if (!EsjzoneClient.importWenkuBrowserCookies(rawCookies, url)) {
                             if (completed.compareAndSet(false, true)) onUnavailable()
                         } else if (completed.compareAndSet(false, true)) {
                             onVerified(html)
@@ -186,6 +186,7 @@ internal fun WenkuVerificationDialog(
                         view.evaluateJavascript(readableChapterScript) { result ->
                             if (!active.get() || completed.get()) return@evaluateJavascript
                             val rawCookies = cookieManager.getCookie(url)
+                            // The policy handles chapter readiness and its clearance fallback.
                             val hasClearance = clearanceValue(rawCookies) != null
                             val now = SystemClock.elapsedRealtime()
                             when (policy.next(result == "true", hasClearance, now)) {
@@ -224,11 +225,13 @@ internal fun WenkuVerificationDialog(
                         webViewClient = object : WebViewClient() {
                             override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean =
                                 request.isForMainFrame &&
-                                    (request.url.scheme != "https" || request.url.host != "www.wenku8.net")
+                                    (request.url.scheme != "https" || request.url.host != "www.wenku8.net" ||
+                                        (request.url.port != -1 && request.url.port != 443) || request.url.userInfo != null)
 
                             override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): WebResourceResponse? {
                                 val host = request.url.host.orEmpty()
-                                if (request.url.scheme == "https" && host in setOf(
+                                if (request.url.scheme == "https" && (request.url.port == -1 || request.url.port == 443) &&
+                                    request.url.userInfo == null && host in setOf(
                                         "www.wenku8.net", "challenges.cloudflare.com", "www.cloudflare.com")) return null
                                 return WebResourceResponse("text/plain", "utf-8", java.io.ByteArrayInputStream(ByteArray(0)))
                             }

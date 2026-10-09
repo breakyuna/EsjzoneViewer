@@ -296,6 +296,9 @@ object LoginScreen : AppDestination {
                             modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp)
                         )
                     }
+                    androidx.compose.material3.TextButton(onClick = {
+                        navigator.push(com.breakyuna.esjzone.ui.page.Wenku8Page())
+                    }, enabled = !loggingIn) { Text(stringResource(R.string.wenku8_title)) }
                     Button(
                         onClick = ::submit,
                         enabled = !loggingIn,

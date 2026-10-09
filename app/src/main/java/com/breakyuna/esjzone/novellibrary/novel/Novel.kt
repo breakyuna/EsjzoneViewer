@@ -1,5 +1,6 @@
 package com.breakyuna.esjzone.novellibrary.novel
 
+import com.breakyuna.esjzone.network.wenku8.Wenku8Urls
 import androidx.compose.runtime.Immutable
 import com.google.gson.annotations.SerializedName
 import java.io.Serializable
@@ -113,6 +114,7 @@ data class DetailedNovel(
 ) : CoveredNovel {
 
     fun id(): String {
+        Wenku8Urls.detailIdentity(url)?.let { return it }
         return FORUM_URL_REGEX.find(this.forumUrl)?.groupValues?.getOrNull(1).orEmpty()
     }
 

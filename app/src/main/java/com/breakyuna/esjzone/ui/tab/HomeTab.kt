@@ -378,6 +378,9 @@ object HomeTab : AppTab {
                         onClick = { navigator?.pushIfNotCurrent(SearchTab) },
                         modifier = Modifier.weight(1f)
                     )
+                    androidx.compose.material3.TextButton(onClick = {
+                        navigator?.pushIfNotCurrent(com.breakyuna.esjzone.ui.page.Wenku8Page())
+                    }) { Text(stringResource(R.string.wenku8_title)) }
                 }
             }
         ) { padding ->

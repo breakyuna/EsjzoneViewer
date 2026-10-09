@@ -158,3 +158,7 @@ list-04 在实际选择排序值 4 后被观察到，分类下拉框在该交互
 - list-{category}{sort} 的所有组合是否支持：UNKNOWN / NOT VERIFIED。
 - 子板块的 Bootstrap Table 数据接口及其初始占位行为：已在云浏览器观察到，具体参数见 API_ENDPOINTS.md。
 - 登出后的匿名页面与权限差异：未执行登出，UNKNOWN / NOT VERIFIED。
+
+## 独立文库入口
+
+主页与 ESJ 登录页新增文库入口，使用独立搜索／会话／本地书架，作品和章节复用原页面；未改变四个主 Tab 或 ESJ 镜像设置。候选文库路径与当前证据见 [WENKU8.md](WENKU8.md)。

@@ -7,6 +7,8 @@
     <cloud-backup>
         <exclude domain="sharedpref" path="esj_session.xml" />
         <exclude domain="sharedpref" path="esj_session_secure.xml" />
+        <exclude domain="sharedpref" path="wenku8_cookies.xml" />
+        <exclude domain="root" path="app_webview" />
         <exclude domain="sharedpref" path="__androidx_security_crypto_encrypted_prefs_key_keyset__.xml" />
         <exclude domain="sharedpref" path="__androidx_security_crypto_encrypted_prefs_value_keyset__.xml" />
         <exclude domain="database" path="general" />
@@ -26,6 +28,8 @@
     <device-transfer>
         <exclude domain="sharedpref" path="esj_session.xml" />
         <exclude domain="sharedpref" path="esj_session_secure.xml" />
+        <exclude domain="sharedpref" path="wenku8_cookies.xml" />
+        <exclude domain="root" path="app_webview" />
         <exclude domain="sharedpref" path="__androidx_security_crypto_encrypted_prefs_key_keyset__.xml" />
         <exclude domain="sharedpref" path="__androidx_security_crypto_encrypted_prefs_value_keyset__.xml" />
         <exclude domain="database" path="general" />

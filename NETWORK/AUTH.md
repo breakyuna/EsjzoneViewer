@@ -158,3 +158,7 @@ Set-Cookie 恢复旧会话。普通服务端 Cookie 轮换不递增代次，保�
 页面与接口 HTML/JSON 统一限制解压后最多 8 MiB，超过上限作为可恢复的 IOException 处理。
 同时检查声明长度和实际流，不依赖 Content-Length；已有字符集与 BOM 解码规则保持由 OkHttp 负责。
 该限制不应用于离线图片流，图片继续使用独立大小限制。
+
+## 独立文库会话
+
+文库用户操作 WebView、加密 CookieJar、临时 Cookie 桥接、本地清理和未验证项见 [WENKU8.md](WENKU8.md)。这些操作不复用 ESJ Authorization，不修改本文件中的 ESJ 登录协议；文库登录成功／过期与远端退出尚无已验证规则。

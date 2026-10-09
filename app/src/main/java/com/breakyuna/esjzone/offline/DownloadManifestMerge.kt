@@ -24,7 +24,8 @@ internal fun mergeDownloadManifest(
     }
     return incoming.copy(version = 2, chapters = records,
         catalogComplete = if (replaceCatalog) incoming.catalogComplete else existing.catalogComplete || existing.complete,
-        commonPassword = existing.commonPassword)
+        commonPassword = existing.commonPassword,
+        volumes = if (replaceCatalog) incoming.volumes else existing.volumes ?: incoming.volumes)
 }
 
 /** All requested chapter lengths must be known; partial downloads never become the book denominator. */

@@ -120,12 +120,24 @@ object EsjzoneClient {
         (wenkuClient ?: throw WenkuCookieStoreUnavailableException())
             .load(chapter, url, forceRefresh, allowAutoSolve, onSecurityCheck)
 
-    fun importWenkuBrowserCookies(raw: String?): Boolean =
-        wenkuClient?.let { runCatching { it.importBrowserCookies(raw) }.isSuccess } ?: false
+    fun getWenkuPage(url: String, kind: com.breakyuna.esjzone.network.wenku8.Wenku8PageKind,
+        allowAutoSolve: Boolean = true, forceRefresh: Boolean = false): com.breakyuna.esjzone.network.wenku8.Wenku8PageResponse =
+        (wenkuClient ?: throw WenkuCookieStoreUnavailableException()).loadPage(url, kind, allowAutoSolve, forceRefresh)
+
+    fun importWenkuBrowserCookies(raw: String?, sourceUrl: String = "https://www.wenku8.net/"): Boolean =
+        wenkuClient?.let { runCatching { it.importBrowserCookies(raw, sourceUrl) }.isSuccess } ?: false
     fun importWenkuBrowserChapter(chapter: Chapter, url: String, html: String): Boolean =
         wenkuClient?.let { runCatching { it.importBrowserChapter(chapter, url, html) }.getOrDefault(false) }
             ?: false
     fun wenkuUserAgent(): String = wenkuClient?.userAgent() ?: headers["User-Agent"].orEmpty()
+    fun restoreWenkuBrowserCookies(onRestored: () -> Unit) {
+        val client = wenkuClient
+        if (client != null) client.restoreBrowserCookies(onRestored) else onRestored()
+    }
+    fun clearWenkuSession(onCleared: () -> Unit = {}) {
+        val client = wenkuClient
+        if (client != null) client.clearSession(onCleared) else onCleared()
+    }
     fun closeWenkuBrowserSession() { wenkuClient?.closeBrowserSession() }
     fun wenkuImageClient(): OkHttpClient =
         (wenkuClient ?: throw WenkuCookieStoreUnavailableException()).imageClient()

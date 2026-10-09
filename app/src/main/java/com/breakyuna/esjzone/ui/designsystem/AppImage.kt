@@ -99,7 +99,8 @@ fun AppCoverImage(
         modifier = modifier,
         contentScale = contentScale,
         loading = loading,
-        error = error
+        error = error,
+        imageLoader = readerImageLoader(model)
     )
 }
 
@@ -229,9 +230,9 @@ internal fun sharedMirrorImageRequest(model: Any?, allowNetwork: Boolean = true)
 
 @Composable
 internal fun readerImageLoader(model: Any?): ImageLoader {
-    val url = model as? String
+    val url = (model as? ImageRequest)?.data as? String ?: model as? String
     val parsed = remember(url) { url?.toHttpUrlOrNull() }
-    return if (parsed?.isHttps == true && parsed.host == "www.wenku8.net" &&
+    return if (parsed?.isHttps == true && parsed.host == "www.wenku8.net" && parsed.port == 443 &&
         parsed.username.isEmpty() && parsed.password.isEmpty()) {
         PresentationAccess.wenkuImageLoader
     } else PresentationAccess.imageLoader

@@ -1,5 +1,7 @@
 package com.breakyuna.esjzone.database
 
+import com.breakyuna.esjzone.network.wenku8.Wenku8Urls
+import com.breakyuna.esjzone.network.wenku8.novelDetailUrlForId
 import com.breakyuna.esjzone.EsjzoneApplication
 import com.breakyuna.esjzone.app.PresentationAccess
 import com.breakyuna.esjzone.data.settings.SettingsDefaults
@@ -33,6 +35,8 @@ object BookmarkCoverStore {
 
     fun cleanNovelId(rawNovelId: String, chapterUrl: String = ""): String {
         val id = rawNovelId.trim()
+        Wenku8Urls.bookId(id)?.let { return Wenku8Urls.identity(it) }
+        Wenku8Urls.detailIdentity(id)?.let { return it }
         if (id.isNotBlank() && !id.startsWith("/") && !id.startsWith("http")) {
             return id.replace(Regex("[^a-zA-Z0-9_-]"), "_")
         }
@@ -48,7 +52,7 @@ object BookmarkCoverStore {
     }
 
     fun coverFile(novelId: String, chapterUrl: String = ""): File {
-        val cleanId = cleanNovelId(novelId, chapterUrl)
+        val cleanId = cleanNovelId(novelId, chapterUrl).replace(':', '_')
         return File(directory, "cover_$cleanId.jpg")
     }
 
@@ -149,7 +153,7 @@ object BookmarkCoverStore {
         // 3. Fallback: try copying from downloaded novel directory
         val downloadCandidates = listOfNotNull(
             novelUrl.takeIf(String::isNotBlank),
-            "/detail/$cleanId.html",
+            novelDetailUrlForId(cleanId).takeIf(String::isNotBlank),
             cleanId
         ).distinct()
 

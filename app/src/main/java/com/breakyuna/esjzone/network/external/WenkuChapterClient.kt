@@ -1,6 +1,11 @@
 package com.breakyuna.esjzone.network.external
 
 import android.content.Context
+import com.breakyuna.esjzone.network.wenku8.Wenku8PageKind
+import com.breakyuna.esjzone.network.wenku8.wenku8PageAllowed
+import com.breakyuna.esjzone.network.wenku8.wenku8PageCacheIdentity
+import com.breakyuna.esjzone.network.wenku8.Wenku8PageResponse
+import java.io.IOException
 import com.breakyuna.esjzone.network.EsjzoneUrls
 import com.breakyuna.esjzone.network.StructuredChapterCache
 import com.breakyuna.esjzone.network.PageCache
@@ -19,12 +24,18 @@ import java.util.concurrent.TimeUnit
 import okhttp3.Dns
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 
 internal class WenkuChapterClient(context: Context, userAgent: String) {
     private val jar = WenkuCookieJar(context)
-    private val browser = WenkuWebViewSession(context, userAgent)
+    private val browser = WenkuWebViewSession(context, userAgent, jar::restoreBrowserCookies)
+    private val sessionLock = Any()
+    private val sessionEpoch = java.util.concurrent.atomic.AtomicLong()
     private val client = OkHttpClient.Builder()
         .cookieJar(jar)
+        .addInterceptor { chain ->
+            jar.withinRequest(chain.request().tag(String::class.java)) { chain.proceed(chain.request()) }
+        }
         .dns(Dns { host ->
             if (host != "www.wenku8.net") throw java.net.UnknownHostException("External host is not allowed")
             val addresses = Dns.SYSTEM.lookup(host)
@@ -38,15 +49,56 @@ internal class WenkuChapterClient(context: Context, userAgent: String) {
         .build()
     private val userAgentHeader = userAgent
 
-    fun importBrowserCookies(raw: String?) = jar.importBrowserCookies(raw)
+    fun restoreBrowserCookies(onRestored: () -> Unit) = jar.restoreBrowserCookies(onRestored)
+
+    fun importBrowserCookies(raw: String?, sourceUrl: String = "https://www.wenku8.net/") = synchronized(sessionLock) {
+        sessionEpoch.incrementAndGet()
+        browser.close()
+        jar.importBrowserCookies(raw, sourceUrl, forceNewScope = true)
+    }
+    fun clearSession(onCleared: () -> Unit = {}) {
+        val cookies = synchronized(sessionLock) {
+            sessionEpoch.incrementAndGet()
+            browser.close()
+            jar.clear()
+        }
+        android.os.Handler(android.os.Looper.getMainLooper()).post {
+            val manager = android.webkit.CookieManager.getInstance()
+            val origin = "https://www.wenku8.net/"
+            val names = manager.getCookie(origin).orEmpty().split(';').map { it.trim().substringBefore('=') }
+            val targets = cookies.map { Triple(it.name, it.path, if (it.hostOnly) "" else it.domain) } +
+                names.filter(String::isNotBlank).flatMap { name ->
+                    listOf("", "www.wenku8.net", "wenku8.net").map { domain -> Triple(name, "/", domain) }
+                }
+            val distinctTargets = targets.distinct()
+            fun finish() {
+                android.webkit.WebStorage.getInstance().deleteOrigin("https://www.wenku8.net")
+                manager.flush()
+                onCleared()
+            }
+            if (distinctTargets.isEmpty()) finish()
+            else {
+                var remaining = distinctTargets.size
+                distinctTargets.forEach { (name, path, domain) ->
+                    manager.setCookie(origin, "$name=; Max-Age=0; Path=$path; Secure" +
+                        domain.takeIf(String::isNotBlank)?.let { "; Domain=$it" }.orEmpty()) {
+                        remaining--
+                        if (remaining == 0) finish()
+                    }
+                }
+            }
+        }
+    }
 
     /** Save a chapter already rendered by the verified, same-host browser. Call on IO. */
     fun importBrowserChapter(chapter: Chapter, url: String, html: String): Boolean {
         if (resolveChapterSource(url) != ChapterSource.WENKU8 ||
             html.toByteArray(Charsets.UTF_8).size > MAX_BROWSER_CHAPTER_HTML_BYTES) return false
+        val epoch = sessionEpoch.get()
+        val key = cacheKey(url)
         val detail = runCatching { validateAndParse(html, chapter, url) }.getOrNull() ?: return false
-        val cachedDocument = cacheChapter(url, detail)
-        return PageCache.read(cacheKey(url), PageCacheTtl.CHAPTER) == cachedDocument
+        val cachedDocument = cacheChapter(url, detail, epoch, key)
+        return PageCache.read(key, PageCacheTtl.CHAPTER) == cachedDocument
     }
 
     fun userAgent(): String = userAgentHeader
@@ -71,11 +123,19 @@ internal class WenkuChapterClient(context: Context, userAgent: String) {
     fun load(chapter: Chapter, url: String, forceRefresh: Boolean, allowAutoSolve: Boolean,
              onSecurityCheck: (() -> Unit)? = null): DetailedChapter {
         if (resolveChapterSource(url) != ChapterSource.WENKU8) throw UnsupportedExternalChapterException()
-        val key = cacheKey(url)
-        if (!forceRefresh) StructuredChapterCache.read(key, url)?.let { return it }
+        val epoch = sessionEpoch.get()
+        val scope = jar.cacheScope()
+        val key = cacheKey(url, scope)
+        if (!forceRefresh) StructuredChapterCache.read(key, url)?.let {
+            if (sessionEpoch.get() != epoch) throw WenkuBrowserSessionClosedException()
+            return it
+        }
         if (!forceRefresh) PageCache.read(key, PageCacheTtl.CHAPTER)?.let { cached ->
             runCatching { validateAndParse(cached, chapter, url) }.getOrNull()?.let {
-                StructuredChapterCache.write(key, cached, it)
+                synchronized(sessionLock) {
+                    if (sessionEpoch.get() != epoch) throw WenkuBrowserSessionClosedException()
+                    StructuredChapterCache.write(key, cached, it)
+                }
                 return it
             }
             PageCache.remove(key)
@@ -83,8 +143,8 @@ internal class WenkuChapterClient(context: Context, userAgent: String) {
         if (allowAutoSolve && browser.isReady()) {
             try {
                 val detail = validateAndParse(browser.fetch(url), chapter, url)
-                syncBrowserCookies(url)
-                cacheChapter(url, detail)
+                val browserScope = syncBrowserCookies(url, epoch)
+                cacheChapter(url, detail, epoch, browserScope?.let { cacheKey(url, it) } ?: key)
                 return detail
             } catch (error: CloudflareChallengeRequiredException) {
                 throw error
@@ -94,39 +154,51 @@ internal class WenkuChapterClient(context: Context, userAgent: String) {
                 if (pageRequestCancellation.get()?.isCancelled() == true) throw error
             }
         }
-        val result = request(url)
+        val result = request(url, scope = scope)
         if (result.challenge) {
             if (!allowAutoSolve) throw CloudflareChallengeRequiredException()
             onSecurityCheck?.invoke()
             val html = browser.fetch(url)
             val detail = validateAndParse(html, chapter, url)
-            syncBrowserCookies(url)
-            cacheChapter(url, detail)
+            val browserScope = syncBrowserCookies(url, epoch)
+            cacheChapter(url, detail, epoch, browserScope?.let { cacheKey(url, it) } ?: key)
             return detail
         }
         if (result.status !in 200..299) throw NetworkHttpException("https://www.wenku8.net/", result.status)
         val detail = validateAndParse(result.html, chapter, url)
-        cacheChapter(url, detail)
+        cacheChapter(url, detail, epoch, key)
         return detail
     }
 
-    private fun cacheKey(url: String): String = "wenku8|${EsjzoneUrls.canonicalPageKey(url)}"
+    private fun cacheKey(url: String, scope: String = jar.cacheScope()): String =
+        "wenku8|$scope|${EsjzoneUrls.canonicalPageKey(url)}"
 
-    private fun syncBrowserCookies(url: String) {
+    private fun syncBrowserCookies(url: String, epoch: Long): String? =
         try {
-            browser.cookies(url)?.let(jar::importBrowserCookies)
+            val pairs = browser.cookies(url)
+            synchronized(sessionLock) {
+                if (sessionEpoch.get() != epoch) throw WenkuBrowserSessionClosedException()
+                jar.importBrowserCookies(pairs, url)
+                jar.cacheScope()
+            }
         } catch (error: InterruptedException) {
             Thread.currentThread().interrupt()
             throw java.io.IOException("Browser request cancelled", error)
+        } catch (error: WenkuBrowserSessionClosedException) {
+            throw error
         } catch (_: Exception) {
             // Browser HTML remains usable if optional cookie sharing fails.
+            null
         }
-    }
 
-    private fun cacheChapter(url: String, detail: DetailedChapter): String =
-        ExternalChapterHtml.cacheDocument(detail, url).also {
-            PageCache.write(cacheKey(url), it)
-            StructuredChapterCache.write(cacheKey(url), it, detail)
+    private fun cacheChapter(url: String, detail: DetailedChapter, epoch: Long, key: String): String =
+        ExternalChapterHtml.cacheDocument(detail, url).also { document ->
+            synchronized(sessionLock) {
+                if (sessionEpoch.get() != epoch) throw WenkuBrowserSessionClosedException()
+                // Use the captured request/bridge namespace, never a later session's current scope.
+                PageCache.write(key, document)
+                StructuredChapterCache.write(key, document, detail)
+            }
         }
 
     private fun validateAndParse(html: String, chapter: Chapter, url: String): DetailedChapter {
@@ -136,8 +208,71 @@ internal class WenkuChapterClient(context: Context, userAgent: String) {
         return ExternalChapterHtml.parse(html, chapter, url)
     }
 
-    private fun request(url: String): ResponseData {
-        val request = Request.Builder().url(url).header("User-Agent", userAgentHeader)
+    /** Non-chapter pages never enter ESJ transport or the chapter cache. Call on IO. */
+    fun loadPage(url: String, kind: Wenku8PageKind, allowAutoSolve: Boolean, forceRefresh: Boolean): Wenku8PageResponse {
+        if (!wenku8PageAllowed(url, kind)) throw UnsupportedExternalChapterException()
+        val epoch = sessionEpoch.get()
+        val scope = jar.cacheScope()
+        val initialKey = "wenku8-pages|$scope|${kind.name}|${wenku8PageCacheIdentity(url)}"
+        if (!forceRefresh) PageCache.read(initialKey, PageCacheTtl.DETAIL)?.let { cached ->
+            val page = Wenku8PageResponse(cached.substringAfter('\n'), cached.substringBefore('\n'))
+            if (runCatching { validatePage(page, kind); true }.getOrDefault(false)) {
+                if (sessionEpoch.get() != epoch) throw WenkuBrowserSessionClosedException()
+                return page
+            }
+            PageCache.remove(initialKey)
+        }
+        val result = request(url, kind, scope)
+        if (sessionEpoch.get() != epoch) throw WenkuBrowserSessionClosedException()
+        var resultKey = initialKey
+        val page = if (result.challenge) {
+            if (!allowAutoSolve) throw CloudflareChallengeRequiredException()
+            val captured = browser.fetchPage(url, kind)
+            if (sessionEpoch.get() != epoch) throw WenkuBrowserSessionClosedException()
+            syncBrowserCookies(captured.url, epoch)?.let { browserScope ->
+                resultKey = "wenku8-pages|$browserScope|${kind.name}|${wenku8PageCacheIdentity(url)}"
+            }
+            captured
+        } else {
+            if (result.status !in 200..299) throw NetworkHttpException("https://www.wenku8.net/", result.status)
+            Wenku8PageResponse(result.html, result.url)
+        }
+        validatePage(page, kind)
+        synchronized(sessionLock) {
+            if (sessionEpoch.get() != epoch) throw WenkuBrowserSessionClosedException()
+            PageCache.write(resultKey, "${page.url}\n${page.html}")
+        }
+        return page
+    }
+
+    private fun validatePage(page: Wenku8PageResponse, kind: Wenku8PageKind) {
+        if (!wenku8PageAllowed(page.url, kind)) throw UnsupportedExternalChapterException()
+        val parsers = com.breakyuna.esjzone.network.wenku8.Wenku8Parsers
+        when (kind) {
+            Wenku8PageKind.DETAIL -> parsers.detail(page.html, page.url,
+                com.breakyuna.esjzone.novellibrary.novel.NovelChapterList(emptyList()))
+            Wenku8PageKind.CATALOG -> parsers.catalog(page.html, page.url)
+            Wenku8PageKind.SEARCH -> parsers.search(page.html, page.url,
+                page.url.toHttpUrlOrNull()?.queryParameter("page")?.toIntOrNull() ?: 1)
+            Wenku8PageKind.CHAPTER -> throw UnsupportedExternalChapterException()
+        }
+    }
+
+    private fun request(url: String, kind: Wenku8PageKind = Wenku8PageKind.CHAPTER,
+        scope: String = jar.cacheScope()): ResponseData {
+        var target = url
+        repeat(4) {
+            val result = requestOnce(target, kind, scope)
+            val next = result.redirect
+            if (next == null) return result
+            if (!wenku8PageAllowed(next, kind)) throw UnsupportedExternalChapterException()
+            target = next
+        }
+        throw IOException("Wenku8 redirect limit exceeded")
+    }
+
+    private fun requestOnce(url: String, kind: Wenku8PageKind, scope: String): ResponseData {
+        val request = Request.Builder().url(url).tag(String::class.java, scope).header("User-Agent", userAgentHeader)
             .header("Accept-Language", "zh-CN,zh;q=0.9")
             .header("Accept", "text/html,application/xhtml+xml")
             .get().build()
@@ -146,8 +281,13 @@ internal class WenkuChapterClient(context: Context, userAgent: String) {
         cancellation?.attach(call)
         try {
             return call.execute().use { response ->
-                if (resolveChapterSource(response.request.url.toString()) != ChapterSource.WENKU8) {
+                if (!wenku8PageAllowed(response.request.url.toString(), kind)) {
                     throw UnsupportedExternalChapterException()
+                }
+                if (response.code in listOf(301, 302, 303, 307, 308)) {
+                    val next = response.header("Location")?.let(response.request.url::resolve)
+                        ?: throw IOException("Wenku8 redirect location missing")
+                    return@use ResponseData(response.code, "", false, url, next.toString())
                 }
                 val contentType = response.header("Content-Type")
                 if (response.isSuccessful && contentType != null &&
@@ -160,7 +300,7 @@ internal class WenkuChapterClient(context: Context, userAgent: String) {
                 ResponseData(
                     response.code, html,
                     CloudflareChallenge.isChallenge(response.code, response.header("cf-mitigated"),
-                        response.header("Server"), html)
+                        response.header("Server"), html), url
                 )
             }
         } finally {
@@ -168,7 +308,8 @@ internal class WenkuChapterClient(context: Context, userAgent: String) {
         }
     }
 
-    private data class ResponseData(val status: Int, val html: String, val challenge: Boolean)
+    private data class ResponseData(val status: Int, val html: String, val challenge: Boolean,
+        val url: String, val redirect: String? = null)
 
     private fun isPublicAddress(address: InetAddress): Boolean {
         if (address.isAnyLocalAddress || address.isLoopbackAddress || address.isLinkLocalAddress ||

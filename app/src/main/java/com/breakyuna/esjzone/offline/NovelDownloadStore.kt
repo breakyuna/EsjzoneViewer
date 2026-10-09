@@ -76,11 +76,14 @@ data class DownloadedNovelManifest(
     val downloadedAt: Long,
     val complete: Boolean,
     val commonPassword: String? = null,
-    val catalogComplete: Boolean = false
+    val catalogComplete: Boolean = false,
+    val volumes: List<DownloadedVolumeRecord>? = null
 ) {
     val pendingPasswordChapters: List<DownloadedChapterRecord>
         get() = chapters.filter { it.requiresPassword && !it.downloaded }
 }
+
+data class DownloadedVolumeRecord(val name: String, val chapterUrls: List<String>)
 
 data class DownloadedChapterRecord(
     val index: Int,
@@ -994,14 +997,41 @@ object NovelDownloadStore {
         )
     }
 
-    /** Reconstructs enough detail data to open a fully downloaded novel while offline. */
+    /** Saves the verified catalog before prefetch so partial downloads retain detail and volume metadata. */
+    fun saveNovelCatalog(novel: DetailedNovel): DownloadedNovelManifest? = synchronized(ioLock) {
+        val order = novel.chapterList.orderedChapters.filter { !it.isExternal }.distinctBy { chapterKey(it.url) }
+        if (order.isEmpty()) return@synchronized null
+        val directory = directoryFor(novel.url, create = true) ?: return@synchronized null
+        val writeGuard = newWriteGuard(directory)
+        val previous = readManifest(directory)
+        val old = previous?.chapters.orEmpty().associateBy { chapterKey(it.url) }
+        val records = order.mapIndexed { index, chapter ->
+            old[chapterKey(chapter.url)]?.copy(index = index, name = chapter.name, url = chapter.url, localOnly = false)
+                ?: DownloadedChapterRecord(index, chapter.name, chapter.url, chapterFileName(chapter.url), false)
+        }
+        writeManifest(directory, manifestFrom(novel, records, previous?.downloadedAt ?: 0L,
+            records.all { it.downloaded }, previous?.commonPassword), writeGuard, replaceCatalog = true)
+    }
+
+    /** Wenku catalogs remain complete even when only selected chapters have been downloaded. */
     fun readDetailedNovel(novelUrl: String): DetailedNovel? = synchronized(ioLock) {
-        val stored = readManifest(directoryFor(novelUrl, create = false))
-            ?.takeIf { it.complete }
-            ?: return@synchronized null
-        val chapters = stored.chapters
-            .filter { it.downloaded && !it.localOnly }
-            .map { ChapterItem(it.toChapter()) }
+        val stored = readManifest(directoryFor(novelUrl, create = false)) ?: return@synchronized null
+        val wenku8 = com.breakyuna.esjzone.network.wenku8.Wenku8Urls.detailIdentity(stored.url) != null
+        if (!stored.complete && !(wenku8 && stored.catalogComplete &&
+                stored.chapters.any { it.bodyAvailable || it.downloaded })) return@synchronized null
+        val available = stored.chapters.filter { !it.localOnly && (stored.complete || wenku8 || it.downloaded) }
+        val volumes = if (wenku8) stored.volumes.orEmpty() else emptyList()
+        val chapterByUrl = available.associateBy { it.url }
+        val emitted = mutableSetOf<DownloadedVolumeRecord>()
+        val chapters = buildList<com.breakyuna.esjzone.novellibrary.component.Item> {
+            available.forEach { record ->
+                val volume = volumes.firstOrNull { record.url in it.chapterUrls }
+                if (volume == null) add(ChapterItem(record.toChapter()))
+                else if (emitted.add(volume)) add(com.breakyuna.esjzone.novellibrary.component.ChapterListItem(
+                    TextComponent(volume.name), volume.chapterUrls.mapNotNull { chapterByUrl[it]?.toChapter() }
+                ))
+            }
+        }
 
         DetailedNovel(
             name = stored.name,
@@ -1108,7 +1138,11 @@ object NovelDownloadStore {
         downloadedAt = downloadedAt,
         complete = complete,
         commonPassword = commonPassword,
-        catalogComplete = true
+        catalogComplete = true,
+        volumes = if (com.breakyuna.esjzone.network.wenku8.Wenku8Urls.detailIdentity(novel.url) != null)
+            novel.chapterList.items.filterIsInstance<com.breakyuna.esjzone.novellibrary.component.ChapterListItem>()
+                .map { DownloadedVolumeRecord(it.name.text, it.chapters.map { chapter -> chapter.url }) }
+            else null
     )
 
     private fun manifestFromMetadata(
@@ -1125,6 +1159,7 @@ object NovelDownloadStore {
         name = name.trim().ifBlank { previous?.name.orEmpty() },
         url = url,
         coverUrl = coverUrl.trim().ifBlank { previous?.coverUrl.orEmpty() },
+        volumes = previous?.volumes,
         views = previous?.views ?: 0,
         likes = previous?.likes ?: 0,
         words = previous?.words ?: 0,
@@ -1404,8 +1439,10 @@ object NovelDownloadStore {
             }
 
             // 2. Fall back to network download if not found in Coil disk cache
-            val client = if (com.breakyuna.esjzone.novellibrary.novel.resolveChapterSource(baseUrl.orEmpty()) ==
-                com.breakyuna.esjzone.novellibrary.novel.ChapterSource.WENKU8) {
+            val client = if (url.toHttpUrlOrNull()?.let {
+                it.isHttps && it.host == "www.wenku8.net" && it.port == 443 &&
+                    it.username.isEmpty() && it.password.isEmpty()
+            } == true) {
                 EsjzoneClient.wenkuImageClient()
             } else EsjzoneClient.downloadClient(authorization)
             val host = runCatching { java.net.URI(url).host }.getOrNull().orEmpty()

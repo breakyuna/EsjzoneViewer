@@ -1,6 +1,10 @@
 @file:OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 
 package com.breakyuna.esjzone.ui.page
+
+import com.breakyuna.esjzone.ui.navigation.readerToken
+import com.breakyuna.esjzone.ui.navigation.ReaderRoute
+import com.breakyuna.esjzone.network.wenku8.novelDetailUrlForId
 import com.breakyuna.esjzone.app.PresentationAccess
 
 import android.app.Activity
@@ -230,10 +234,10 @@ class ChapterPage(
     override val isReaderDestination: Boolean = true
 
     override val key: String =
-        "ChapterPage:" +
-            novelId.trim().ifBlank { chapter.novelId() } +
-            ":" +
-            chapterIdentity(chapter)
+        readerToken(ReaderRoute(
+            novelId = novelId.trim().ifBlank { chapter.novelId() },
+            chapterIdentity = chapterIdentity(chapter)
+        ))
 
     @Composable
     override fun Content() {
@@ -943,7 +947,7 @@ class ChapterPage(
         }
         LaunchedEffect(downloadChanges, novelUrl, novelId, bookChapterOrder) {
             progressTextIndex = withContext(Dispatchers.IO) {
-                val url = novelUrl.ifBlank { novelId.takeIf(String::isNotBlank)?.let { EsjzoneUrls.resolve("/detail/$it.html") }.orEmpty() }
+                val url = novelUrl.ifBlank { novelId.takeIf(String::isNotBlank)?.let(::novelDetailUrlForId).orEmpty() }
                 PresentationAccess.downloads.manifest(url)?.textProgressIndex(bookChapterOrder.map { it.url })
             }
         }
@@ -1075,7 +1079,7 @@ class ChapterPage(
                     novelId.ifBlank {
                         currentReadingChapter.novelId()
                     }.takeIf { it.isNotBlank() }?.let { id ->
-                        EsjzoneUrls.resolve("/detail/$id.html")
+                        novelDetailUrlForId(id)
                     }.orEmpty()
                 },
                 novelCoverUrl = EsjzoneUrls.coverOrEmpty(novelCoverUrl),
@@ -1548,7 +1552,7 @@ class ChapterPage(
         val detailUrl = novelUrl.takeIf { it.isNotBlank() }
             ?.let { EsjzoneUrls.resolve(it) }
             ?: novelId.ifBlank { commentChapter.novelId() }.takeIf { it.isNotBlank() }
-                ?.let { id -> EsjzoneUrls.resolve("/detail/$id.html") }.orEmpty()
+                ?.let { id -> novelDetailUrlForId(id) }.orEmpty()
         val reducedMotion = com.breakyuna.esjzone.ui.designsystem.rememberReaderReducedMotion()
         val readerDialogVisible = showBrightness || passwordRequired != null || wenkuVerificationChapter != null ||
             (pendingWenkuVerification != null && pendingWenkuVerification.url != dismissedWenkuPrompt)

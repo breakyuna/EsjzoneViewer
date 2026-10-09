@@ -10,6 +10,8 @@
          plaintext session data should be transferred to another device. -->
     <exclude domain="sharedpref" path="esj_session.xml" />
     <exclude domain="sharedpref" path="esj_session_secure.xml" />
+    <exclude domain="sharedpref" path="wenku8_cookies.xml" />
+    <exclude domain="root" path="app_webview" />
     <exclude domain="sharedpref" path="__androidx_security_crypto_encrypted_prefs_key_keyset__.xml" />
     <exclude domain="sharedpref" path="__androidx_security_crypto_encrypted_prefs_value_keyset__.xml" />
     <!-- The database may contain legacy session rows on an upgraded install. -->

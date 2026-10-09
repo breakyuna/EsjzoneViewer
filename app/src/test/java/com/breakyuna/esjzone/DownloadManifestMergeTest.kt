@@ -87,4 +87,16 @@ class DownloadManifestMergeTest {
         assertEquals(3, index.chapterIndex(0.1f))
         assertNull(book.copy(chapters = book.chapters.map { it.copy(textLength = null) }).textProgressIndex(urls))
     }
+
+    @Test fun lateCompletionKeepsTheRefreshedVolumeCatalog() {
+        val refreshed = listOf(DownloadedVolumeRecord("New volume", listOf(record(2).url, record(1).url)))
+        val current = manifest(listOf(record(2), record(1))).copy(volumes = refreshed)
+        val stale = manifest(listOf(record(1, true), record(2))).copy(
+            volumes = listOf(DownloadedVolumeRecord("Old volume", listOf(record(1).url, record(2).url))))
+        val merged = mergeDownloadManifest(current, stale, false)
+        assertEquals(refreshed, merged.volumes)
+        assertEquals(listOf(record(2).url, record(1).url), merged.chapters.map { it.url })
+        assertTrue(merged.chapters.last().downloaded)
+        assertEquals(stale.volumes, mergeDownloadManifest(current, stale, true).volumes)
+    }
 }

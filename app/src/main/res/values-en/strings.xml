@@ -762,4 +762,18 @@
     <string name="image_save_failed">Could not save image. Long-press to retry.</string>
     <string name="novel_export_selected_action">Export %1$d chapters</string>
     <string name="novel_export_no_chapters">No downloaded chapters available to export</string>
+
+    <string name="esj_source_title">ESJ</string>
+    <string name="wenku8_title">Wenku8</string>
+    <string name="wenku8_bookshelf">Wenku8 bookshelf</string>
+    <string name="wenku8_search_title">Title</string>
+    <string name="wenku8_session">Wenku8 session</string>
+    <string name="wenku8_clear_session">Clear local session</string>
+    <string name="wenku8_previous_page">Previous</string>
+    <string name="wenku8_next_page">Next</string>
+    <string name="wenku8_search_rate_limit">Search requests are too frequent. Try again later.</string>
+    <string name="wenku8_verification_needed">Open Wenku8 session to complete site verification, then retry.</string>
+    <string name="wenku8_page_unrecognized">Wenku8 page could not be recognized</string>
+    <string name="wenku8_content_restricted">Content is restricted by the site</string>
+    <string name="wenku8_local_actions">Local content</string>
 </resources>

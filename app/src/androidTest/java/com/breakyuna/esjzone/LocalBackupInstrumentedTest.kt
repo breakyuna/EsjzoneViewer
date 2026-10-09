@@ -123,6 +123,9 @@ class LocalBackupInstrumentedTest {
             val groups = source.bookshelfGroupDao()
             groups.add(BookshelfGroup("source", "Reading"))
             groups.assign(BookshelfGroupMember("source", "1", "Reading"))
+            val wenkuScope = com.breakyuna.esjzone.database.BookshelfRepository.WENKU8_SCOPE
+            groups.add(BookshelfGroup(wenkuScope, "Wenku reading"))
+            groups.assign(BookshelfGroupMember(wenkuScope, "https://www.wenku8.net/book/1.htm", "Wenku reading"))
             val underlineKey = ReaderUnderlines.KEY_PREFIX + "/forum/1/2.html"
             val underline = ReaderUnderline(0, "a".repeat(64), 1, 8)
             source.cacheDao().putAtomic(underlineKey, ReaderUnderlines.encode(listOf(underline)))
@@ -141,6 +144,8 @@ class LocalBackupInstrumentedTest {
             assertEquals(400L, target.readingStatDao().getAll().single().durationMs)
             val restored = target.bookshelfGroupDao()
             assertEquals("Reading", restored.members("target").single().groupName)
+            assertEquals("Wenku reading", restored.members(wenkuScope).single().groupName)
+            assertTrue(restored.groups("target").none { it.name == "Wenku reading" })
             restored.rename("target", "Reading", "Finished")
             assertEquals("Finished", restored.members("target").single().groupName)
             restored.remove("target", "Finished")

@@ -44,11 +44,27 @@ class WenkuVerificationPolicyTest {
         assertFalse(noClearance.shouldContinue(nowElapsedMillis = 61_000, checkStartedAtMillis = 1_000))
     }
 
-    @Test fun downloadFlowAcceptsExistingClearanceWithoutChapterCapture() {
+    @Test fun nonChapterPageAcceptsClearanceWithoutMatchingOriginalDocument() {
         val policy = WenkuVerificationPolicy(acceptChapterContent = false)
         assertEquals(
             WenkuVerificationPolicy.Decision.USE_CLEARANCE,
             policy.next(hasReadableChapter = false, hasClearance = true, nowElapsedMillis = 1_000)
+        )
+    }
+
+    @Test fun nonChapterPageWaitsWithoutClearanceEvenIfContentIsReadable() {
+        val policy = WenkuVerificationPolicy(acceptChapterContent = false)
+        assertEquals(
+            WenkuVerificationPolicy.Decision.WAIT,
+            policy.next(hasReadableChapter = true, hasClearance = false, nowElapsedMillis = 1_000)
+        )
+    }
+
+    @Test fun chapterContentCanCompleteWithoutClearance() {
+        val policy = WenkuVerificationPolicy(acceptChapterContent = true)
+        assertEquals(
+            WenkuVerificationPolicy.Decision.USE_CHAPTER_CONTENT,
+            policy.next(hasReadableChapter = true, hasClearance = false, nowElapsedMillis = 1_000)
         )
     }
 }

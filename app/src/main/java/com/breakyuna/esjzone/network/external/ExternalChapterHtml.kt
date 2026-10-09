@@ -27,21 +27,30 @@ internal object ExternalChapterHtml {
         val metaCharset = document.selectFirst("meta[charset]")?.attr("charset")
         val httpEquiv = document.selectFirst("meta[http-equiv=Content-Type]")?.attr("content")
             ?.let { charsetPattern.find(it)?.groupValues?.get(1) }
-        val charset = sequenceOf(httpCharset, metaCharset, httpEquiv, "GBK")
+        val charset = sequenceOf(httpCharset, metaCharset, httpEquiv, "GB18030")
             .filterNotNull()
-            .mapNotNull { runCatching { Charset.forName(it.trim()) }.getOrNull() }
+            .mapNotNull {
+                val name = it.trim()
+                val compatible = if (name.lowercase() in setOf("gbk", "gb2312", "gb_2312-80", "x-gbk")) "GB18030" else name
+                runCatching { Charset.forName(compatible) }.getOrNull()
+            }
             .first()
         return String(bytes, charset)
     }
 
     fun parse(html: String, chapter: Chapter, url: String): DetailedChapter {
         val document = Jsoup.parse(html, url)
+        if (document.text().contains("因版权问题")) {
+            throw com.breakyuna.esjzone.network.wenku8.Wenku8RestrictedException()
+        }
         val content = document.selectFirst("#content") ?: throw ExternalChapterParseException()
         fun nav(labels: String): Chapter? = document.select("a[href]")
             .lastOrNull { it.text().trim().matches(Regex(labels)) }
             ?.let { link ->
                 val resolved = EsjzoneUrls.resolve(link.attr("href"), url)
-                if (resolveChapterSource(resolved) == ChapterSource.WENKU8) {
+                if (resolveChapterSource(resolved) == ChapterSource.WENKU8 &&
+                    com.breakyuna.esjzone.network.wenku8.Wenku8Urls.chapterIdentity(resolved) ==
+                    com.breakyuna.esjzone.network.wenku8.Wenku8Urls.chapterIdentity(url)) {
                     Chapter(link.text().trim(), resolved, false)
                 } else null
             }
@@ -57,7 +66,7 @@ internal object ExternalChapterHtml {
         content.select("img").forEach { image ->
             val raw = image.attr("src")
             val resolved = EsjzoneUrls.resolve(raw, url)
-            if (resolved.toHttpUrlOrNull()?.let { it.isHttps && it.host == "www.wenku8.net" &&
+            if (resolved.toHttpUrlOrNull()?.let { it.isHttps && it.host == "www.wenku8.net" && it.port == 443 &&
                     it.username.isEmpty() && it.password.isEmpty() } == true) image.attr("src", resolved)
             else image.remove()
         }

@@ -295,3 +295,7 @@
 - UserProfile 1 -> N ViewRecord
 - ForumCategory 1 -> N ForumThreadCard
 - Novel 可通过 forum_url 连接到 ForumCategory 与论坛子板块页面；ESJ 作品板由 detail 链接识别，天空大公國讨论板按动态主题表识别
+
+## Wenku8 本地身份扩展
+
+独立文库作品使用 `wenku8:{bookId}` 本地身份，ESJ 数字身份保持不变。详情 URL、章节身份和导航恢复规则见 [WENKU8.md](WENKU8.md)。ESJ 作品中的文库外链仍采用显式传入的 ESJ 所属作品身份；详情／目录已按固定上游候选规则接入，本地书架使用 `wenku8:local` scope；真实站点及后续修改统一验证仍待完成。

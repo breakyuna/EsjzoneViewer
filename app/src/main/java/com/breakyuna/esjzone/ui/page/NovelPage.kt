@@ -1,5 +1,6 @@
 package com.breakyuna.esjzone.ui.page
 import com.breakyuna.esjzone.app.PresentationAccess
+import com.breakyuna.esjzone.network.features.getNovelDetail
 import com.breakyuna.esjzone.network.features.getChapterDetail
 import com.breakyuna.esjzone.network.cancellablePageRequest
 
@@ -176,10 +177,21 @@ class NovelPage(
         val authorization = LocalAuthorization.current
         val context = LocalContext.current
         val screenModel = rememberAppViewModel { NovelPageModel(authorization, novel) }
-        val commentModel = rememberAppViewModel { CommentPageModel(authorization, novel.url) }
+        val isWenku8 = com.breakyuna.esjzone.network.wenku8.Wenku8Urls.detailIdentity(novel.url) != null
+        val commentModel = if (isWenku8) null else rememberAppViewModel { CommentPageModel(authorization, novel.url) }
         val state by screenModel.state.collectAsState()
         val localShelfEntry by BookshelfRepository.observeEntry(authorization, novel.url)
             .collectAsState(initial = null)
+        var showWenkuVerification by remember(novel.url) { mutableStateOf(false) }
+        if (showWenkuVerification) {
+            WenkuVerificationDialog(url = novel.url,
+                onVerified = { showWenkuVerification = false; screenModel.retry() },
+                onUnavailable = {
+                    showWenkuVerification = false
+                    Toast.makeText(context, R.string.wenku_cookie_store_unavailable, Toast.LENGTH_LONG).show()
+                },
+                onDismiss = { showWenkuVerification = false })
+        }
         var showMoreActions by rememberSaveable(novel.url) { mutableStateOf(false) }
         var exportFormat by rememberSaveable(novel.url) { mutableStateOf<NovelExportFormat?>(null) }
         var exportSelection by rememberSaveable(novel.url, stateSaver = DownloadChapterSelectionSaver) {
@@ -276,7 +288,13 @@ class NovelPage(
                     modifier = Modifier.weight(1f).fillMaxWidth(),
                     contentAlignment = Alignment.Center
                 ) {
-                    if (snapshot.failure == LoadFailureKind.NETWORK) {
+                    if (snapshot.message != null) {
+                        ErrorState(message = stringResource(snapshot.message),
+                            modifier = Modifier.fillMaxWidth(),
+                            retryLabel = stringResource(if (snapshot.requiresVerification)
+                                R.string.wenku_verification_open else R.string.retry),
+                            onRetry = { if (snapshot.requiresVerification) showWenkuVerification = true else screenModel.retry() })
+                    } else if (snapshot.failure == LoadFailureKind.NETWORK) {
                         OfflineState(
                             modifier = Modifier.fillMaxWidth(),
                             onRetry = screenModel::retry
@@ -453,7 +471,7 @@ private fun NovelDetailContent(
     onShowAllChaptersChange: (Boolean) -> Unit,
     onGroupToggle: (String) -> Unit,
     visibleRows: List<com.breakyuna.esjzone.novellibrary.component.VisibleChapterRow>,
-    commentModel: CommentPageModel,
+    commentModel: CommentPageModel?,
     navigator: AppNavigator?,
     context: Context,
     modifier: Modifier = Modifier
@@ -887,12 +905,12 @@ private fun NovelDetailContent(
                 }
             }
 
-            item(key = "detail-comments-rule", contentType = "section-divider") {
+            if (commentModel != null) item(key = "detail-comments-rule", contentType = "section-divider") {
                 Column(
                     modifier = Modifier.fillMaxWidth()
                 ) { RebuiltRule() }
             }
-            item(key = "detail-comments", contentType = "comments") {
+            if (commentModel != null) item(key = "detail-comments", contentType = "comments") {
                 Column(
                     modifier = Modifier.fillMaxWidth()
                 ) {
@@ -906,7 +924,7 @@ private fun NovelDetailContent(
                 }
             }
         }
-        CommentComposerHost(model = commentModel)
+        if (commentModel != null) CommentComposerHost(model = commentModel)
     }
 }
 
@@ -1294,8 +1312,16 @@ private fun NovelDownloadActions(
         downloading = true
         preflighting = true
         downloadScope.launch {
-            var pendingWenku: com.breakyuna.esjzone.novellibrary.novel.Chapter? = null
+            val wenku8Novel = com.breakyuna.esjzone.network.wenku8.Wenku8Urls.detailIdentity(novel.url) != null
+            var pendingWenkuUrl: String? = novel.url.takeIf { wenku8Novel }
             try {
+                if (wenku8Novel) {
+                    withContext(Dispatchers.IO) { PresentationAccess.downloads.saveNovelCatalog(novel) }
+                    // Warm both business pages before the worker, which never starts a WebView.
+                    cancellablePageRequest {
+                        PresentationAccess.client.getNovelDetail(authorization, novel, includeComments = false)
+                    }
+                }
                 val completedKeys = downloaded?.chapters.orEmpty().filter { it.downloaded }
                     .map { com.breakyuna.esjzone.offline.NovelDownloadStore.chapterKey(it.url) }.toSet()
                 val wenkuChapters = targetChapters.filter {
@@ -1328,7 +1354,7 @@ private fun NovelDownloadActions(
                     }.awaitAll().filterNotNull()
                 }
                 failures.firstOrNull()?.let { (chapter, error) ->
-                    pendingWenku = chapter
+                    pendingWenkuUrl = chapter.url
                     throw error
                 }
                 requestedWorkId = NovelDownloadManager.enqueue(context, authorization, novel, selectedUrls).toString()
@@ -1341,7 +1367,7 @@ private fun NovelDownloadActions(
                 preflighting = false
                 downloading = false
                 verificationSelection = selectedUrls
-                wenkuVerificationUrl = pendingWenku?.url
+                wenkuVerificationUrl = pendingWenkuUrl
             } catch (error: com.breakyuna.esjzone.network.external.WenkuCookieStoreUnavailableException) {
                 preflighting = false
                 downloading = false
@@ -1358,7 +1384,8 @@ private fun NovelDownloadActions(
     wenkuVerificationUrl?.let { url ->
         WenkuVerificationDialog(
             url = EsjzoneUrls.resolve(url),
-            acceptChapterContent = true,
+            acceptChapterContent = com.breakyuna.esjzone.novellibrary.novel.resolveChapterSource(url) ==
+                com.breakyuna.esjzone.novellibrary.novel.ChapterSource.WENKU8,
             onVerified = { html ->
                 val chapter = novel.chapterList.orderedChapters.firstOrNull { it.url == url }
                 wenkuVerificationUrl = null

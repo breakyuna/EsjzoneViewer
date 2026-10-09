@@ -93,7 +93,7 @@ class ChapterItem(val chapter: Chapter) : Item {
 
         Surface(
             onClick = {
-                if (chapter.url.contains("esjzone") || chapter.url.contains("forum")) {
+                if (!chapter.isExternal) {
                     onChapterOpen(chapter)
                 }
             },

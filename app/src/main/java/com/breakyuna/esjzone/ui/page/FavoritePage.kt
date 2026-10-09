@@ -135,11 +135,16 @@ object FavoritePage : AppDestination {
     override fun Content() = Content(showBack = true)
 
     @Composable
-    fun Content(showBack: Boolean) {
+    fun Content(showBack: Boolean) = ShelfContent(false, showBack)
+
+    @Composable
+    internal fun ShelfContent(wenku8: Boolean, showBack: Boolean = true) {
         val navigator = LocalBaseNavigator.current
         val focusManager = LocalFocusManager.current
         val authorization = LocalAuthorization.current
-        val model = rememberAppViewModel { FavoritePageModel(authorization) }
+        val model = rememberAppViewModel(key = "shelf:${BookshelfRepository.scopeFor(authorization, wenku8)}") {
+            FavoritePageModel(authorization, wenku8)
+        }
         val entries by model.entries.collectAsStateWithLifecycle()
         val groups by model.groups.collectAsStateWithLifecycle()
         val members by model.groupMembers.collectAsStateWithLifecycle()
@@ -410,6 +415,8 @@ object FavoritePage : AppDestination {
             topBar = {
                 BookshelfTopBar(
                     showBack = showBack,
+                    wenku8 = wenku8,
+                    onSwitchSource = { navigator?.pushIfNotCurrent(if (wenku8) FavoritePage else Wenku8BookshelfPage) },
                     editing = editing,
                     selectedCount = selected.size,
                     totalCount = shown.size,
@@ -468,7 +475,7 @@ object FavoritePage : AppDestination {
             // Each visible row owns its covers; the 2-1-3-4 showcase stays in the header.
             PullToRefreshBox(
                 isRefreshing = syncing,
-                onRefresh = { if (!syncing && !editing) model.sync() },
+                onRefresh = { if (!syncing && !editing && !wenku8) model.sync() },
                 modifier = Modifier.fillMaxSize().padding(top = padding.calculateTopPadding())
             ) {
             BoxWithConstraints(Modifier.fillMaxSize()) {
@@ -712,7 +719,7 @@ object FavoritePage : AppDestination {
                 text = {
                     Text(
                         stringResource(R.string.bookshelf_delete_confirm, pendingDelete.size) +
-                            "\n\n" + stringResource(R.string.bookshelf_delete_sync_notice)
+                            (if (wenku8) "" else "\n\n" + stringResource(R.string.bookshelf_delete_sync_notice))
                     )
                 },
                 confirmButton = {
@@ -728,6 +735,8 @@ object FavoritePage : AppDestination {
 
 @Composable
 private fun BookshelfTopBar(
+    wenku8: Boolean,
+    onSwitchSource: () -> Unit,
     showBack: Boolean,
     editing: Boolean,
     selectedCount: Int,
@@ -755,12 +764,12 @@ private fun BookshelfTopBar(
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(AppSpacing.xs)) {
                     Text(
                         if (editing) stringResource(R.string.bookshelf_selected_header, selectedCount)
-                        else stringResource(R.string.bookshelf),
+                        else stringResource(if (wenku8) R.string.wenku8_bookshelf else R.string.bookshelf),
                         style = AppTypography.titleLarge,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
-                    if (!editing) {
+                    if (!editing && !wenku8) {
                         BookshelfSyncStatusIndicator(
                             syncing = syncing,
                             isSyncSuccess = isSyncSuccess,
@@ -782,6 +791,9 @@ private fun BookshelfTopBar(
                 }
                 IconButton(onClick = onDone, enabled = !deleting) { Icon(Icons.Filled.Done, stringResource(R.string.bookshelf_edit_done)) }
             } else {
+                TextButton(onClick = onSwitchSource) {
+                    Text(stringResource(if (wenku8) R.string.esj_source_title else R.string.wenku8_title))
+                }
                 IconButton(onClick = onToggleView) {
                     Icon(if (listView) Icons.Filled.GridView else Icons.Filled.ViewList, "切换书架展示方式")
                 }
@@ -1001,3 +1013,10 @@ private fun BookshelfEntry.asCoveredNovel() = CoveredNovelImpl(
     likes = 0,
     isAdult = isAdult
 )
+
+
+object Wenku8BookshelfPage : AppDestination {
+    override val key = "Wenku8BookshelfPage"
+    @Composable
+    override fun Content() = FavoritePage.ShelfContent(true)
+}

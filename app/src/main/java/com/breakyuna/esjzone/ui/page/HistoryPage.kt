@@ -2,6 +2,8 @@
 
 package com.breakyuna.esjzone.ui.page
 
+import com.breakyuna.esjzone.network.wenku8.novelDetailUrlForId
+
 import androidx.activity.compose.BackHandler
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.lifecycle.viewModelScope
@@ -955,6 +957,6 @@ class LocalHistoryPageModel(private val authorization: Authorization) : AppState
 
     private fun coverLookupUrl(activity: LocalReadingActivity): String =
         activity.novelUrl.trim().takeIf { it.isNotBlank() }?.let { EsjzoneUrls.resolve(it) }
-            ?: activity.novelId.trim().takeIf(String::isNotBlank)?.let { "/detail/$it.html" }.orEmpty()
+            ?: activity.novelId.trim().takeIf(String::isNotBlank)?.let(::novelDetailUrlForId).orEmpty()
     private fun coverKey(url: String): String = EsjzoneUrls.canonicalPageKey(url).ifBlank { url.trim() }
 }

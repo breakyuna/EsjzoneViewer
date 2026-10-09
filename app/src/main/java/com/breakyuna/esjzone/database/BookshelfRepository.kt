@@ -1,5 +1,6 @@
 package com.breakyuna.esjzone.database
 
+import com.breakyuna.esjzone.network.wenku8.Wenku8Urls
 import com.breakyuna.esjzone.database.dao.BookshelfDao
 import com.breakyuna.esjzone.database.dao.LocalReadingActivityDao
 import com.breakyuna.esjzone.database.entity.BookshelfEntry
@@ -88,9 +89,13 @@ object BookshelfRepository {
         return dao
     }
 
-    fun scopeFor(authorization: Authorization): String {
-        return EsjzoneClient.accountScope(authorization)
-    }
+    const val WENKU8_SCOPE = "wenku8:local"
+
+    fun scopeFor(authorization: Authorization, wenku8: Boolean = false): String =
+        if (wenku8) WENKU8_SCOPE else EsjzoneClient.accountScope(authorization)
+
+    fun scopeForNovel(authorization: Authorization, url: String): String =
+        scopeFor(authorization, Wenku8Urls.detailIdentity(url) != null)
 
     suspend fun migrateLegacyScopeIfNeeded(authorization: Authorization) {
         val domain = authorization.domain.ifBlank { EsjzoneUrls.BaseWithoutProtocol }
@@ -127,9 +132,9 @@ object BookshelfRepository {
     fun keyFor(url: String): String =
         EsjzoneUrls.canonicalPageKey(url).ifBlank { EsjzoneUrls.resolve(url).substringBefore('#') }
 
-    /** Extracts ESJ's stable detail id from a canonical /detail/{id}.html URL. */
+    /** Source-aware local identity; ESJ keys retain their existing format. */
     fun novelIdFor(url: String): String =
-        Regex("^/detail/([^/]+?)(?:\\.html)?/?$")
+        Wenku8Urls.detailIdentity(url) ?: Regex("^/detail/([^/]+?)(?:\\.html)?/?$")
             .find(EsjzoneUrls.canonicalPageKey(url))
             ?.groupValues
             ?.getOrNull(1)
@@ -141,8 +146,8 @@ object BookshelfRepository {
         if (fingerprint.isNotBlank()) requireDao().clearUpdateForFingerprint(fingerprint)
     }
 
-    fun observe(authorization: Authorization): Flow<List<BookshelfEntry>> = combine(
-        requireDao().observeVisible(scopeFor(authorization)),
+    fun observe(authorization: Authorization, wenku8: Boolean = false): Flow<List<BookshelfEntry>> = combine(
+        requireDao().observeVisible(scopeFor(authorization, wenku8)),
         localReadingDao.observeAll()
     ) { entries, activities ->
         withContext(Dispatchers.Default) {
@@ -155,10 +160,36 @@ object BookshelfRepository {
     }.distinctUntilChanged()
 
     fun observeEntry(authorization: Authorization, url: String): Flow<BookshelfEntry?> =
-        requireDao().observe(scopeFor(authorization), keyFor(url))
+        requireDao().observe(scopeForNovel(authorization, url), keyFor(url))
 
     /** Applies a local intent immediately, then schedules a serialized remote retry. */
     suspend fun setFavorite(authorization: Authorization, novel: Novel, desired: Boolean) {
+        if (Wenku8Urls.detailIdentity(novel.url) != null) {
+            intentMutex.withLock {
+                requireDatabase().withTransaction {
+                    val dao = requireDao()
+                    val key = keyFor(novel.url)
+                    val existing = dao.find(WENKU8_SCOPE, key)
+                    if (!desired) {
+                        if (existing != null && dao.deleteIfVersion(WENKU8_SCOPE, key, existing.operationVersion) > 0) {
+                            requireDatabase().bookshelfGroupDao().ungroup(WENKU8_SCOPE, listOf(key))
+                        }
+                    } else {
+                        val covered = novel as? CoveredNovel
+                        dao.upsert((existing ?: BookshelfEntry(scope = WENKU8_SCOPE, bookKey = key,
+                            url = novel.url, title = novel.name)).copy(
+                            novelId = novelIdFor(novel.url), title = novel.name,
+                            author = covered?.author ?: existing?.author.orEmpty(),
+                            coverUrl = covered?.coverUrl?.takeIf(String::isNotBlank) ?: existing?.coverUrl.orEmpty(),
+                            isAdult = covered?.isAdult ?: existing?.isAdult ?: false,
+                            visible = true, syncState = BookshelfSyncState.SYNCED,
+                            operationVersion = (existing?.operationVersion ?: 0L) + 1
+                        ))
+                    }
+                }
+            }
+            return
+        }
         intentMutex.withLock {
             val dao = requireDao()
             val scope = scopeFor(authorization)
@@ -238,6 +269,19 @@ object BookshelfRepository {
         authorization: Authorization,
         entries: List<BookshelfEntry>
     ): Int {
+        if (entries.isNotEmpty() && entries.all { it.scope == WENKU8_SCOPE }) {
+            return intentMutex.withLock {
+                val dao = requireDao()
+                requireDatabase().withTransaction {
+                    val removed = entries.filter { entry ->
+                        dao.deleteIfVersion(WENKU8_SCOPE, entry.bookKey, entry.operationVersion) > 0
+                    }
+                    if (removed.isNotEmpty()) requireDatabase().bookshelfGroupDao()
+                        .ungroup(WENKU8_SCOPE, removed.map { it.bookKey })
+                    removed.size
+                }
+            }
+        }
         val removed = intentMutex.withLock {
             val dao = requireDao()
             val scope = scopeFor(authorization)
@@ -271,9 +315,16 @@ object BookshelfRepository {
         isAdult: Boolean = false
     ) {
         val dao = requireDao()
-        val scope = scopeFor(authorization)
+        val scope = scopeForNovel(authorization, novel.url)
         val key = keyFor(novel.url)
         val existing = dao.find(scope, key)
+        if (scope == WENKU8_SCOPE) {
+            if (existing != null) {
+                dao.supplementMetadata(scope, key, novel.name, author, coverUrl, isAdult)
+                dao.updateCoverIfChanged(scope, key, EsjzoneUrls.coverOrEmpty(coverUrl))
+            }
+            return
+        }
         val crossScope = if (coverUrl.isBlank() || author.isBlank()) {
             dao.findAnyWithCover(key)
         } else null

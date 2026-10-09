@@ -1,5 +1,6 @@
 package com.breakyuna.esjzone.novellibrary.novel
 
+import com.breakyuna.esjzone.network.wenku8.Wenku8Urls
 import androidx.compose.runtime.Immutable
 import com.breakyuna.esjzone.novellibrary.component.Component
 import java.io.Serializable
@@ -50,6 +51,7 @@ data class Chapter(
     val source: ChapterSource get() = resolveChapterSource(url)
 
     fun novelId(): String {
+        Wenku8Urls.chapterIdentity(url)?.let { return it }
         return URL_REGEX.find(this.url)?.groupValues?.getOrNull(1).orEmpty()
     }
 }

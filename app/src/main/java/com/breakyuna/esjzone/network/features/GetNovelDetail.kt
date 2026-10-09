@@ -1,5 +1,7 @@
 package com.breakyuna.esjzone.network.features
 
+import com.breakyuna.esjzone.network.wenku8.Wenku8Urls
+import com.breakyuna.esjzone.network.wenku8.getWenku8Novel
 import com.breakyuna.esjzone.network.Authorization
 import com.breakyuna.esjzone.network.EsjzoneClient
 import com.breakyuna.esjzone.network.EsjzoneUrls
@@ -24,10 +26,14 @@ fun EsjzoneClient.getNovelDetail(
     novel: Novel,
     includeComments: Boolean = false,
     forceRefresh: Boolean = false,
-    baseUrl: String? = null
+    baseUrl: String? = null,
+    allowWenkuAutoSolve: Boolean = true
 ): DetailedNovel {
     val targetUrl = baseUrl?.let { EsjzoneUrls.resolve(novel.url, it) }
         ?: EsjzoneUrls.resolve(novel.url)
+    if (Wenku8Urls.detailIdentity(targetUrl) != null) {
+        return getWenku8Novel(targetUrl, allowAutoSolve = allowWenkuAutoSolve, forceRefresh = forceRefresh)
+    }
     val detailCacheKey = novelDetailCacheKey(authorization, targetUrl)
     if (!includeComments && !forceRefresh) {
         NovelDetailCache.read(detailCacheKey)?.takeIf { cached ->

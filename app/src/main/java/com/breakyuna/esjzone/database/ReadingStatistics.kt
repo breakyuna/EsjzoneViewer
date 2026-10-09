@@ -1,5 +1,6 @@
 package com.breakyuna.esjzone.database
 
+import com.breakyuna.esjzone.network.wenku8.Wenku8Urls
 import android.os.SystemClock
 import com.breakyuna.esjzone.EsjzoneApplication
 import com.breakyuna.esjzone.database.entity.ReadingStat
@@ -25,7 +26,8 @@ private val DETAIL_ID_REGEX = Regex("/detail/([^/?#]+?)(?:\\.html)?/?(?:[?#]|$)"
 /** Shared identity for time and tags, including detail URLs without a forum id. */
 internal fun readingStatisticsBookKey(novelId: String, novelUrl: String, chapterUrl: String = ""): String =
     novelId.trim().ifBlank {
-        DETAIL_ID_REGEX.find(novelUrl)?.groupValues?.getOrNull(1).orEmpty()
+        Wenku8Urls.detailIdentity(novelUrl)
+            ?: DETAIL_ID_REGEX.find(novelUrl)?.groupValues?.getOrNull(1).orEmpty()
     }.ifBlank {
         EsjzoneUrls.canonicalPageKey(novelUrl).ifBlank {
             EsjzoneUrls.canonicalPageKey(chapterUrl).ifBlank { chapterUrl.trim() }

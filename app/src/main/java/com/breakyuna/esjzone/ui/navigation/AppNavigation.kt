@@ -1,5 +1,6 @@
 package com.breakyuna.esjzone.ui.navigation
 
+import com.breakyuna.esjzone.network.wenku8.novelDetailUrlForId
 import androidx.compose.animation.AnimatedContentTransitionScope
 import androidx.compose.animation.ContentTransform
 import androidx.compose.animation.EnterTransition
@@ -19,7 +20,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import android.net.Uri
+import java.net.URLEncoder
+import java.net.URLDecoder
 import androidx.lifecycle.viewmodel.compose.LocalViewModelStoreOwner
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
@@ -124,6 +126,7 @@ sealed interface LegacyRoute {
     @Serializable data class Static(val token: String) : LegacyRoute
     @Serializable data class Search(val keyword: String) : LegacyRoute
     @Serializable data class Novel(val identity: String) : LegacyRoute
+    @Serializable data class Wenku8Search(val keyword: String, val type: String) : LegacyRoute
     @Serializable data class Category(val identity: String, val name: String = "") : LegacyRoute
     @Serializable data class NovelList(
         val novelType: Int,
@@ -143,13 +146,14 @@ data class ReaderRoute(
     val chapterIdentity: String
 )
 
-internal fun encodeRouteTokenPart(value: String): String = Uri.encode(value)
-internal fun decodeRouteTokenPart(value: String): String = Uri.decode(value)
+internal fun encodeRouteTokenPart(value: String): String = URLEncoder.encode(value, "UTF-8").replace("+", "%20")
+internal fun decodeRouteTokenPart(value: String): String = URLDecoder.decode(value.replace("+", "%2B"), "UTF-8")
 
 private fun LegacyRoute.token(): String = when (this) {
     is LegacyRoute.Static -> token
     is LegacyRoute.Search -> "SearchPage:$keyword"
     is LegacyRoute.Novel -> "NovelPage:$identity"
+    is LegacyRoute.Wenku8Search -> "Wenku8Page:$type:${encodeRouteTokenPart(keyword)}"
     is LegacyRoute.Category -> if (name.isNotBlank()) "CategoryPage:$identity:$name" else "CategoryPage:$identity"
     is LegacyRoute.NovelList -> "NovelListPage:$novelType:$sortType:$adultOnly"
     is LegacyRoute.ChapterComments -> "ChapterCommentsPage:$identity"
@@ -165,6 +169,10 @@ private fun routeFromToken(token: String): LegacyRoute {
     return when (kind) {
         "SearchPage" -> LegacyRoute.Search(argument)
         "NovelPage" -> LegacyRoute.Novel(argument)
+        "Wenku8Page" -> LegacyRoute.Wenku8Search(
+            keyword = decodeRouteTokenPart(argument.substringAfter(':', "")),
+            type = argument.substringBefore(':')
+        )
         "CategoryPage" -> {
             val parts = argument.split(':', limit = 2)
             LegacyRoute.Category(
@@ -200,14 +208,14 @@ private fun routeFromToken(token: String): LegacyRoute {
     }
 }
 
-private fun readerRouteFromToken(token: String): ReaderRoute {
+internal fun readerRouteFromToken(token: String): ReaderRoute {
     val argument = token.substringAfter("ChapterPage:", missingDelimiterValue = "")
     val separator = argument.indexOf(':')
     return if (separator < 0) {
         ReaderRoute(novelId = "", chapterIdentity = argument)
     } else {
         ReaderRoute(
-            novelId = argument.substring(0, separator),
+            novelId = decodeRouteTokenPart(argument.substring(0, separator)),
             chapterIdentity = argument.substring(separator + 1)
         )
     }
@@ -251,13 +259,15 @@ open class AppStateViewModel<S>(initialState: S) : ViewModel() {
 /** Creates arbitrary-argument feature ViewModels in the current NavEntry scope. */
 @Composable
 inline fun <reified VM : ViewModel> rememberAppViewModel(
+    key: String? = null,
     noinline factory: () -> VM
 ): VM {
     val owner = LocalViewModelStoreOwner.current
         ?: error("Navigation 3 ViewModel entry decorator is missing")
     return viewModel<VM>(
         viewModelStoreOwner = owner,
-        factory = remember(owner, VM::class) {
+        key = key,
+        factory = remember(owner, VM::class, key) {
             object : ViewModelProvider.Factory {
                 @Suppress("UNCHECKED_CAST")
                 override fun <T : ViewModel> create(modelClass: Class<T>): T = factory() as T
@@ -442,8 +452,8 @@ class AppNavigator internal constructor(
     }
 }
 
-private fun readerToken(route: ReaderRoute): String =
-    "ChapterPage:${route.novelId}:${route.chapterIdentity}"
+internal fun readerToken(route: ReaderRoute): String =
+    "ChapterPage:${encodeRouteTokenPart(route.novelId)}:${route.chapterIdentity}"
 
 private fun ReaderRoute.restore(): AppDestination = ChapterPage(
     novelId = novelId,
@@ -451,7 +461,7 @@ private fun ReaderRoute.restore(): AppDestination = ChapterPage(
     history = ChapterStateHolder(),
     novelName = novelId,
     novelUrl = novelId.takeIf { it.isNotBlank() }
-        ?.let { EsjzoneUrls.resolve("/detail/$it.html") }
+        ?.let(::novelDetailUrlForId)
         .orEmpty(),
     novelCoverUrl = "",
     restoreFromLocalHistory = true
@@ -462,6 +472,8 @@ private fun LegacyRoute.restore(): AppDestination? = when (this) {
         token == BookmarksPage.key || token.endsWith(".BookmarksPage") -> BookmarksPage
         token == DownloadPage.key || token.endsWith(".DownloadPage") -> DownloadPage
         token == FavoritePage.key || token.endsWith(".FavoritePage") -> FavoritePage
+        token == com.breakyuna.esjzone.ui.page.Wenku8LoginPage.key -> com.breakyuna.esjzone.ui.page.Wenku8LoginPage
+        token == com.breakyuna.esjzone.ui.page.Wenku8BookshelfPage.key -> com.breakyuna.esjzone.ui.page.Wenku8BookshelfPage
         token == HistoryPage.key || token.endsWith(".HistoryPage") -> HistoryPage
         token == LogsPage.key || token.endsWith(".LogsPage") -> LogsPage
         token == com.breakyuna.esjzone.ui.page.LocalBackupPage.key -> com.breakyuna.esjzone.ui.page.LocalBackupPage
@@ -476,6 +488,9 @@ private fun LegacyRoute.restore(): AppDestination? = when (this) {
     }
     is LegacyRoute.Search -> SearchPage(keyword)
     is LegacyRoute.Novel -> NovelPage(FavoriteNovel(name = "", url = identity))
+    is LegacyRoute.Wenku8Search -> com.breakyuna.esjzone.ui.page.Wenku8Page(keyword,
+        com.breakyuna.esjzone.network.wenku8.Wenku8SearchType.entries.firstOrNull { it.name == type }
+            ?: com.breakyuna.esjzone.network.wenku8.Wenku8SearchType.TITLE)
     is LegacyRoute.Category -> CategoryPage(
         Category(name = name, url = identity, isAdult = false)
     )
@@ -570,7 +585,8 @@ fun AppNavigation() {
     val pendingNovelUrl by com.breakyuna.esjzone.MainActivity.pendingTargetNovel.collectAsState()
     LaunchedEffect(pendingNovelUrl, authorization) {
         val target = pendingNovelUrl
-        if (!target.isNullOrBlank() && authorization != null) {
+        if (!target.isNullOrBlank() && (authorization != null ||
+            com.breakyuna.esjzone.network.wenku8.Wenku8Urls.detailIdentity(target) != null)) {
             com.breakyuna.esjzone.MainActivity.setPendingNovelUrl(null)
             navigator.pushIfNotCurrent(NovelPage(FavoriteNovel(name = "", url = target)))
         }
@@ -625,12 +641,12 @@ fun AppNavigation() {
                         // Reader presentation remains untouched in this stage;
                         // ChapterPage is the independent shell boundary.
                         val session = authorization
-                        if (session == null) {
+                        if (session == null && com.breakyuna.esjzone.network.wenku8.Wenku8Urls.bookId(key.route.novelId) == null) {
                             // A stale restored Reader must never run against
                             // LocalAuthorization's empty default value.
                             LoginScreen.Content()
                         } else {
-                            CompositionLocalProvider(LocalAuthorization provides session) {
+                            CompositionLocalProvider(LocalAuthorization provides (session ?: Authorization("", ""))) {
                                 navigator.readerDestination(key.route)?.Content()
                             }
                         }

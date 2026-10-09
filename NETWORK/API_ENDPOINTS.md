@@ -181,3 +181,7 @@
 - 明确时间节点包括 `before_send_experience_started` / `before_send_experience_ready`（发送前经验值获取或预取复用）、`after_send_experience_started` / `after_send_experience_ready`（发送后资料请求，完成节点在缓存写入之前）、`comment_response_accepted`（评论接口确认接受）、`comment_post_started`（发起评论 POST，同时记录本地显示时间并启动并发校对）和 `new_comment_added_to_list`（新评论写入页面列表状态）。恢复路径另有 `new_comment_added_to_list_after_recovery` / `new_comment_verified_after_refresh`；发送后经验值重查会再次记录同名节点。节点的绝对时间由日志前缀提供，精确到毫秒，`total_ms` 表示距流程开始的相对时间；`available` / `unavailable` 区分是否取得经验值，不记录数值。
 - 经验值确认成功另记录 `comment_experience_confirmed`，紧接 `ui_state_update` 和 `new_comment_added_to_list_after_experience`；资料缓存写入在界面状态更新后进行。个人资料页订阅当前账户的经验值缓存，直接显示此次确认得到的经验值，无须为此再请求资料接口。
 - `stage=flow` 的结束记录表示发送协程结束；经验值先确认时界面可提前结束发送状态，而提交请求仍等待响应，故该结束记录不一定等于界面等待时长。后续后台记录不计入该协程耗时。`completed` 只表示该阶段正常返回，发送成功可由流程结果 `accepted` 或后续的 `comment_experience_confirmed`、评论页面核验成功节点确认。嵌套阶段和并行阶段不能直接相加；`ui_state_update` 测量状态写入，不代表屏幕已经完成绘制。
+
+## Wenku8 来源扩展
+
+文库 GET 搜索、详情与目录的候选协议、固定上游证据和未验证项见 [WENKU8.md](WENKU8.md)。这些规则不改变本文 ESJ 接口，不表示当前文库站点协议已验证。

@@ -253,15 +253,19 @@ class NovelDownloadWorker(
             val actualBaseUrl = if (!parsedUrl.scheme.isNullOrBlank() && host.isNotBlank()) {
                 "${parsedUrl.scheme}://$host/"
             } else taskBaseUrl
-            val authorization = EsjzoneClient.restoreAuthorization(host)
-                ?: Authorization("", "", host)
-            val detail = EsjzoneClient.getNovelDetail(
+            val wenku8 = com.breakyuna.esjzone.network.wenku8.Wenku8Urls.detailIdentity(resolvedUrl) != null
+            val authorization = if (wenku8) Authorization("", "", host) else
+                EsjzoneClient.restoreAuthorization(host) ?: Authorization("", "", host)
+            val detail = try { EsjzoneClient.getNovelDetail(
                 authorization = authorization,
                 novel = CategoryNovel(name = name, url = rawUrl, forumUrl = forumUrl),
                 includeComments = false,
-                forceRefresh = true,
-                baseUrl = actualBaseUrl
-            )
+                forceRefresh = !wenku8,
+                baseUrl = actualBaseUrl,
+                allowWenkuAutoSolve = false
+            ) } catch (error: CloudflareChallengeRequiredException) {
+                if (wenku8) NovelDownloadStore.readDetailedNovel(resolvedUrl) ?: throw error else throw error
+            }
             val manifest = NovelDownloadStore.download(authorization, detail, actualBaseUrl, concurrency,
                 selectedChapterUrls) { next ->
                 setProgressAsync(next.toWorkData())

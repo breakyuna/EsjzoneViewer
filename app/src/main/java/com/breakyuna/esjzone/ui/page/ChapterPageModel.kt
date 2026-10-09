@@ -1,5 +1,6 @@
 package com.breakyuna.esjzone.ui.page
 
+import com.breakyuna.esjzone.network.wenku8.novelDetailUrlForId
 import androidx.lifecycle.viewModelScope
 import com.breakyuna.esjzone.app.PresentationAccess
 
@@ -9,6 +10,7 @@ import com.breakyuna.esjzone.ui.navigation.AppStateViewModel
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
@@ -197,7 +199,7 @@ class ChapterPageModel(
             if (!orderResolved) {
                 val targetNovelUrl = novelUrl.takeIf { it.isNotBlank() }
                     ?: novelId.takeIf { it.isNotBlank() }
-                        ?.let { "${EsjzoneUrls.Base}/detail/$it.html" }
+                        ?.let(::novelDetailUrlForId)
                 val localOrder = targetNovelUrl?.let { url ->
                     runCatching { PresentationAccess.downloads.manifest(url)?.chapters
                         ?.filterNot { it.localOnly }
@@ -681,10 +683,11 @@ class ChapterPageModel(
 
         val source = FavoriteNovel(
             name = "",
-            url = "${EsjzoneUrls.Base}/detail/$novelId.html"
+            url = novelUrl.takeIf(String::isNotBlank) ?: novelDetailUrlForId(novelId)
         )
         val fetchedOrder = try {
-            cancellablePageRequest { PresentationAccess.client.getNovelDetail(authorization, source) }
+            (withContext(Dispatchers.IO) { PresentationAccess.downloads.readDetailedNovel(source.url) }
+                ?: cancellablePageRequest { PresentationAccess.client.getNovelDetail(authorization, source) })
                 .also { com.breakyuna.esjzone.database.ReadingStatisticsRecorder.recordTags(it) }
                 .chapterList
                 .orderedChapters
@@ -830,7 +833,7 @@ private fun persistLoadedChapter(
 ) {
     val targetNovelUrl = novelUrl.trim().takeIf { it.isNotBlank() }
         ?.let { EsjzoneUrls.resolve(it) }
-        ?: if (novelId.isBlank()) "" else "${EsjzoneUrls.Base}/detail/$novelId.html"
+        ?: novelDetailUrlForId(novelId)
     if (targetNovelUrl.isBlank()) return
     runCatching {
         PresentationAccess.downloads.saveChapter(

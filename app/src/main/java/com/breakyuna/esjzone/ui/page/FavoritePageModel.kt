@@ -11,6 +11,7 @@ import com.breakyuna.esjzone.database.entity.LocalReadingActivity
 import com.breakyuna.esjzone.network.Authorization
 import com.breakyuna.esjzone.network.LoadFailureKind
 import com.breakyuna.esjzone.network.loadFailureKind
+import com.breakyuna.esjzone.network.features.getNovelDetail
 import com.breakyuna.esjzone.network.EsjzoneUrls
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -29,10 +30,10 @@ import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 
 /** Owns bookshelf synchronization and deletion jobs for the page. */
-class FavoritePageModel(private val authorization: Authorization) :
+class FavoritePageModel(private val authorization: Authorization, private val wenku8: Boolean = false) :
     AppStateViewModel<FavoritePageModel.State>(State.Idle) {
     private val groupDao = PresentationAccess.database.bookshelfGroupDao()
-    private val groupScope = BookshelfRepository.scopeFor(authorization)
+    private val groupScope = BookshelfRepository.scopeFor(authorization, wenku8)
     val groups = groupDao.observeGroups(groupScope)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
     val groupMembers = groupDao.observeMembers(groupScope)
@@ -91,7 +92,7 @@ class FavoritePageModel(private val authorization: Authorization) :
         }
 
     /** Hot snapshots prevent an empty Room frame from resetting the restored shelf position. */
-    val entries: StateFlow<List<BookshelfEntry>> = BookshelfRepository.observe(authorization)
+    val entries: StateFlow<List<BookshelfEntry>> = BookshelfRepository.observe(authorization, wenku8)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     /** Latest local activity for the showcase, grid progress labels, and reactive ordering. */
@@ -201,6 +202,7 @@ class FavoritePageModel(private val authorization: Authorization) :
     val legacyRecoveryFailed: StateFlow<Boolean> = _legacyRecoveryFailed
 
     fun sync(manualRetry: Boolean = true) {
+        if (wenku8) return
         viewModelScope.launch(Dispatchers.IO) {
             mutableState.value = State.Syncing
             try {
@@ -222,7 +224,7 @@ class FavoritePageModel(private val authorization: Authorization) :
     fun initShelf() {
         if (initialized) return
         initialized = true
-        viewModelScope.launch(Dispatchers.IO) {
+        if (!wenku8) viewModelScope.launch(Dispatchers.IO) {
             BookshelfRepository.migrateLegacyScopeIfNeeded(authorization)
             _legacyBookshelfCount.value = BookshelfRepository.pendingLegacyBookshelfCount(authorization)
         }
@@ -246,7 +248,8 @@ class FavoritePageModel(private val authorization: Authorization) :
     }
 
     fun autoCheck() {
-        val scope = BookshelfRepository.scopeFor(authorization)
+        if (wenku8) return
+        val scope = BookshelfRepository.scopeFor(authorization, wenku8)
         val now = System.currentTimeMillis()
         synchronized(autoCheckTimes) {
             if (now - (autoCheckTimes[scope] ?: 0L) < AUTO_CHECK_COOLDOWN_MILLIS) return
@@ -256,7 +259,28 @@ class FavoritePageModel(private val authorization: Authorization) :
     }
 
     fun scheduleMetadataSupplement() {
-        BookshelfRepository.scheduleMetadataSupplement(authorization)
+        if (!wenku8) {
+            BookshelfRepository.scheduleMetadataSupplement(authorization)
+            return
+        }
+        viewModelScope.launch(Dispatchers.IO) {
+            val candidates = PresentationAccess.database.bookshelfDao().getAll(groupScope)
+                .filter { it.visible && (it.author.isBlank() || it.coverUrl.isBlank()) }
+            candidates.forEach { entry ->
+                try {
+                    val detail = com.breakyuna.esjzone.network.cancellablePageRequest {
+                        PresentationAccess.client.getNovelDetail(authorization,
+                            com.breakyuna.esjzone.novellibrary.novel.FavoriteNovel(entry.title, entry.url),
+                            includeComments = false, allowWenkuAutoSolve = false)
+                    }
+                    BookshelfRepository.seedRemoteFavorite(authorization, detail, detail.author, detail.coverUrl, detail.isAdult)
+                } catch (error: CancellationException) {
+                    throw error
+                } catch (_: Exception) {
+                    // Retain local rows; opening the book supplies the foreground verification path.
+                }
+            }
+        }
     }
 
     fun delete(entries: List<BookshelfEntry>) {

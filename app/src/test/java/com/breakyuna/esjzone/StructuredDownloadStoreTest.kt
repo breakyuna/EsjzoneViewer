@@ -6,6 +6,7 @@ import com.breakyuna.esjzone.database.entity.LocalReadingActivity
 import com.breakyuna.esjzone.domain.reader.ReaderSearchHit
 import com.breakyuna.esjzone.network.Authorization
 import com.breakyuna.esjzone.novellibrary.component.ChapterItem
+import com.breakyuna.esjzone.novellibrary.component.ChapterListItem
 import com.breakyuna.esjzone.novellibrary.component.TextComponent
 import com.breakyuna.esjzone.novellibrary.novel.*
 import com.breakyuna.esjzone.offline.*
@@ -350,5 +351,34 @@ class StructuredDownloadStoreTest {
             scans++
             return super.listFiles()
         }
+    }
+
+    @Test fun partialWenkuDownloadRestoresFullVolumesAndMetadata() = withStorage {
+        val url = "https://www.wenku8.net/book/2552.htm"
+        val order = (1..3).map { Chapter("Chapter $it", "https://www.wenku8.net/novel/2/2552/$it.htm", false) }
+        val book = novel(emptyList()).copy(url = url, author = "Synthetic author", forumUrl = "",
+            chapterList = NovelChapterList(listOf(
+                ChapterListItem(TextComponent("Volume one"), order.take(2)),
+                ChapterListItem(TextComponent("Volume two"), order.drop(2)))))
+        NovelDownloadStore.saveNovelCatalog(book)
+        assertNull(NovelDownloadStore.readDetailedNovel(url))
+        NovelDownloadStore.saveChapter(book.name, url, "", order, order[1],
+            DetailedChapter(order[1].name, listOf(TextComponent("本地合成章节正文")), null, null, "<p>本地合成章节正文</p>", order[1].url), auth)
+        val partial = requireNotNull(NovelDownloadStore.readDetailedNovel(url))
+        assertFalse(NovelDownloadStore.manifest(url)!!.complete)
+        assertEquals("wenku8:2552", partial.id())
+        assertEquals("Synthetic author", partial.author)
+        assertEquals(order.map { it.url }, partial.chapterList.orderedChapters.map { it.url })
+        assertEquals(listOf("Volume one", "Volume two"), partial.chapterList.items.filterIsInstance<ChapterListItem>().map { it.name.text })
+        assertNotNull(NovelDownloadStore.readChapter(order[1].url))
+        assertNull(NovelDownloadStore.readChapter(order[0].url))
+    }
+
+    @Test fun esjCatalogDoesNotAdoptWenkuVolumeStorage() = withStorage {
+        val book = novel(listOf(chapter(1))).copy(chapterList = NovelChapterList(listOf(
+            ChapterListItem(TextComponent("ESJ group"), listOf(chapter(1))))))
+        val manifest = requireNotNull(NovelDownloadStore.saveNovelCatalog(book))
+        assertNull(manifest.volumes)
+        assertNull(NovelDownloadStore.readDetailedNovel(novelUrl))
     }
 }

@@ -195,7 +195,9 @@ URL：/forum/{novelId}/{postId}.html
 
 ### 6.3 wenku8 站外章节
 
-ESJ 目录中形如 `https://www.wenku8.net/novel/{bookGroup}/{bookId}/{chapterId}.htm` 的 HTTPS 链接由原生阅读器处理。来源识别检查解析后的完整主机和路径；其余站外链接默认在应用内 WebView 打开，右上角可交给系统浏览器。wenku8 响应从有大小限制的原始字节解码，按 HTTP charset、HTML meta charset、HTML http-equiv charset、GBK 的顺序选择编码。
+独立文库候选搜索、详情、目录、会话和本地书架接入的最新证据与验证边界见 [WENKU8.md](WENKU8.md)。
+
+ESJ 目录中形如 `https://www.wenku8.net/novel/{bookGroup}/{bookId}/{chapterId}.htm` 的 HTTPS 链接由原生阅读器处理。来源识别检查解析后的完整主机和路径；其余站外链接默认在应用内 WebView 打开，右上角可交给系统浏览器。wenku8 响应从有大小限制的原始字节解码，按 HTTP charset、HTML meta charset、HTML http-equiv charset 的优先级选择编码；GBK／GB2312 声明与缺省值采用固定上游使用的 GB18030，明确 UTF-8 保持优先。当前站点样本和设备一致性仍待验证。
 
 正文只读取 `#content`，标题优先读取 `#title`。清除脚本、样式、广告、导航及书签控件后，正文仍经共享的 `analyseComponents` 解析；图片相对地址以章节 URL 解析为 HTTPS wenku8 地址。缺少正文容器或正文过短时拒绝缓存。详情页的目录顺序优先于站外页面自己的上一页、下一页链接，因此跨来源翻章仍由 ESJ 目录决定。
 

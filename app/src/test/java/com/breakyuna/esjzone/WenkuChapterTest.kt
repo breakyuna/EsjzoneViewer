@@ -58,6 +58,15 @@ class WenkuChapterTest {
         assertEquals(equiv, ExternalChapterHtml.decode(equiv.toByteArray(charset("GBK")), null))
     }
 
+    @Test fun gb18030ExtendsDeclaredGbkWithoutChangingUtf8() {
+        val text = "<meta charset=GBK><div id=content>扩展字符𠀀与中文正文</div>"
+        assertEquals(text, ExternalChapterHtml.decode(text.toByteArray(charset("GB18030")), null))
+        assertEquals(text, ExternalChapterHtml.decode(text.toByteArray(charset("GB18030")), "text/html; charset=GB2312"))
+        val undeclared = "中文𠀀正文"
+        assertEquals(undeclared, ExternalChapterHtml.decode(undeclared.toByteArray(charset("GB18030")), null))
+        assertEquals(undeclared, ExternalChapterHtml.decode(undeclared.toByteArray(), "text/html; charset=UTF-8"))
+    }
+
     @Test fun parserCleansBodyAndResolvesLinks() {
         val body = "<html><body><div id=title>第一章</div><div id=content>" +
             "<p>这是第一段正文，长度足以成为有效章节。</p><script>tracking()</script>" +
@@ -81,6 +90,12 @@ class WenkuChapterTest {
         val detail = ExternalChapterHtml.parse(html, Chapter("彩页", url, false), url)
         assertEquals("彩页", detail.name)
         assertTrue(detail.contentHtml!!.contains("https://www.wenku8.net/novel/2/2552/96772.jpg"))
+    }
+
+    @Test fun footerCannotJumpIntoAnotherBook() {
+        val html = "<div id=content>这是足够长的正文内容，用于验证章节页不会跨作品跳转。</div>" +
+            "<a href='/novel/2/2553/1.htm'>下一页</a>"
+        assertEquals(null, ExternalChapterHtml.parse(html, Chapter("章", url, false), url).next)
     }
 
     @Test fun footerNavigationWinsOverHeaderLinks() {
@@ -149,5 +164,13 @@ class WenkuChapterTest {
         val restored = ExternalChapterHtml.parse(cached, Chapter("fallback", url, false), url)
         assertEquals(detail.name, restored.name)
         assertEquals(detail.contentHtml, restored.contentHtml)
+    }
+
+    @Test fun copyrightNoticeCannotBeParsedAsChapterBody() {
+        val url = "https://www.wenku8.net/novel/2/2552/1.htm"
+        assertThrows(com.breakyuna.esjzone.network.wenku8.Wenku8RestrictedException::class.java) {
+            ExternalChapterHtml.parse("<div id=title>Notice</div><div id=content>因版权问题，本作品已经停止提供在线阅读，请不要将此通知保存为章节正文。</div>",
+                Chapter("Notice", url, false), url)
+        }
     }
 }

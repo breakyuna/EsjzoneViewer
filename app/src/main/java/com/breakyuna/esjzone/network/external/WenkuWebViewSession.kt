@@ -1,6 +1,9 @@
 package com.breakyuna.esjzone.network.external
 
 import android.content.Context
+import com.breakyuna.esjzone.network.wenku8.Wenku8PageResponse
+import com.breakyuna.esjzone.network.wenku8.Wenku8PageKind
+import com.breakyuna.esjzone.network.wenku8.wenku8PageAllowed
 import android.os.Handler
 import android.os.Looper
 import android.webkit.WebResourceRequest
@@ -20,7 +23,11 @@ import org.json.JSONObject
 internal class WenkuBrowserSessionClosedException : IOException("Browser session closed")
 
 /** A single Chromium transport for supported wenku8 chapters. All WebView access stays on main. */
-internal class WenkuWebViewSession(context: Context, private val userAgent: String) {
+internal class WenkuWebViewSession(
+    context: Context,
+    private val userAgent: String,
+    private val restoreCookies: (() -> Unit) -> Unit
+) {
     private val appContext = context.applicationContext
     private val main = Handler(Looper.getMainLooper())
     private val lock = ReentrantLock(true)
@@ -33,7 +40,7 @@ internal class WenkuWebViewSession(context: Context, private val userAgent: Stri
     fun isReady(): Boolean = ready && System.currentTimeMillis() - lastUse < IDLE_MS
 
     fun cookies(url: String): String? {
-        if (resolveChapterSource(url) != ChapterSource.WENKU8) return null
+        if (Wenku8PageKind.entries.none { wenku8PageAllowed(url, it) }) return null
         return onMain { android.webkit.CookieManager.getInstance().getCookie(url) }
     }
 
@@ -49,8 +56,10 @@ internal class WenkuWebViewSession(context: Context, private val userAgent: Stri
         }
     }
 
-    fun fetch(url: String): String {
-        if (resolveChapterSource(url) != ChapterSource.WENKU8) throw UnsupportedExternalChapterException()
+    fun fetch(url: String): String = fetchPage(url, Wenku8PageKind.CHAPTER).html
+
+    fun fetchPage(url: String, kind: Wenku8PageKind): Wenku8PageResponse {
+        if (!wenku8PageAllowed(url, kind)) throw UnsupportedExternalChapterException()
         try {
             lock.lockInterruptibly()
         } catch (error: InterruptedException) {
@@ -78,6 +87,10 @@ internal class WenkuWebViewSession(context: Context, private val userAgent: Stri
                     view = created
                 }
             }
+            val cookiesRestored = CountDownLatch(1)
+            onMain { restoreCookies { cookiesRestored.countDown() } }
+            if (!cookiesRestored.await(5, TimeUnit.SECONDS)) throw CloudflareWebViewUnavailableException()
+            if (token != generation.get()) throw WenkuBrowserSessionClosedException()
             val deadline = System.currentTimeMillis() + REQUEST_MS
             var html: String? = null
             if (ready) {
@@ -90,10 +103,12 @@ internal class WenkuWebViewSession(context: Context, private val userAgent: Stri
                 }
                 if (html != null && CloudflareChallenge.hasChallengeDocumentMarkers(html)) html = null
             }
-            if (html == null) html = navigate(browser, url, token, deadline)
+            if (html == null) html = navigate(browser, url, kind, token, deadline)
+            val final = if (html != null) evaluate(browser, "window.__esjWenkuFinalUrl||location.href", deadline) else url
+            if (!wenku8PageAllowed(final, kind)) throw UnsupportedExternalChapterException()
             ready = true
             lastUse = System.currentTimeMillis()
-            return html
+            return Wenku8PageResponse(html, final)
         } catch (error: IOException) {
             ready = false
             throw error
@@ -119,24 +134,30 @@ internal class WenkuWebViewSession(context: Context, private val userAgent: Stri
         }
     }
 
-    private fun navigate(browser: WebView, url: String, token: Long, deadline: Long): String {
+    private fun navigate(browser: WebView, url: String, kind: Wenku8PageKind, token: Long, deadline: Long): String {
         onMain {
             browser.webViewClient = object : WebViewClient() {
                 override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean =
-                    request.isForMainFrame && resolveChapterSource(request.url.toString()) != ChapterSource.WENKU8
+                    request.isForMainFrame && !wenku8PageAllowed(request.url.toString(), kind)
 
                 override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): WebResourceResponse? {
                     val uri = request.url
-                    if (uri.scheme == "https" && uri.host in ALLOWED_RESOURCE_HOSTS) return null
+                    if (uri.scheme == "https" && (uri.port == -1 || uri.port == 443) && uri.host in ALLOWED_RESOURCE_HOSTS) return null
                     return WebResourceResponse("text/plain", "utf-8", ByteArrayInputStream(ByteArray(0)))
                 }
             }
+            browser.evaluateJavascript("window.__esjWenkuFinalUrl=null", null)
             browser.loadUrl(url, mapOf("Accept-Language" to "zh-CN,zh;q=0.9"))
         }
         while (System.currentTimeMillis() < deadline) {
             Thread.sleep(POLL_MS)
             if (token != generation.get()) throw WenkuBrowserSessionClosedException()
-            val state = evaluate(browser, """(function(){let expected=new URL(${JSONObject.quote(url)});if(location.protocol!=='https:'||location.hostname!=='www.wenku8.net'||location.pathname.toLowerCase()!==expected.pathname.toLowerCase())return 0;let c=document.querySelector('#content');return c&&(c.textContent.trim().length>=20||c.querySelector('img'))?1:0})()""", deadline)
+            val allowed = onMain { browser.url.orEmpty() }
+            if (!wenku8PageAllowed(allowed, kind)) continue
+            // Capture completed documents; the caller validates the corresponding business structure.
+            // Missing containers and copyright notices must become parse/restriction errors, not timeouts.
+            val condition = "return document.readyState==='complete'?1:0"
+            val state = evaluate(browser, "(function(){$condition})()", deadline)
             if (state == "1") {
                 val html = capture(browser, "document.documentElement.outerHTML", deadline)
                 if (!CloudflareChallenge.hasChallengeDocumentMarkers(html)) return html
@@ -146,7 +167,7 @@ internal class WenkuWebViewSession(context: Context, private val userAgent: Stri
     }
 
     private fun fetchInPage(browser: WebView, url: String, token: Long, deadline: Long): String {
-        val script = """(function(){window.__esjWenkuResult=null;fetch(${JSONObject.quote(url)},{credentials:'include'}).then(async r=>{if(!r.ok)throw Error('HTTP '+r.status);let b=await r.arrayBuffer();let p=new TextDecoder('iso-8859-1').decode(b.slice(0,4096));let c=(r.headers.get('content-type')||'').match(/charset\s*=\s*['"]?([\w+.-]+)/i)?.[1]||p.match(/<meta[^>]+charset\s*=\s*['"]?([\w+.-]+)/i)?.[1]||'gbk';try{return new TextDecoder(c).decode(b)}catch(_){return new TextDecoder('gbk').decode(b)}}).then(t=>window.__esjWenkuResult=t).catch(()=>window.__esjWenkuResult=false);return true})()"""
+        val script = """(function(){window.__esjWenkuResult=null;fetch(${JSONObject.quote(url)},{credentials:'include',redirect:'error'}).then(async r=>{if(!r.ok||new URL(r.url).origin!==location.origin)throw Error('HTTP '+r.status);window.__esjWenkuFinalUrl=r.url;let b=await r.arrayBuffer();let p=new TextDecoder('iso-8859-1').decode(b.slice(0,8192));let c=(r.headers.get('content-type')||'').match(/charset\s*=\s*['"]?([\w+.-]+)/i)?.[1]||p.match(/<meta[^>]+charset\s*=\s*['"]?([\w+.-]+)/i)?.[1]||'gb18030';if(['gbk','gb2312','gb_2312-80','x-gbk'].includes(c.toLowerCase()))c='gb18030';try{return new TextDecoder(c).decode(b)}catch(_){return new TextDecoder('gb18030').decode(b)}}).then(t=>window.__esjWenkuResult=t).catch(()=>window.__esjWenkuResult=false);return true})()"""
         evaluate(browser, script, deadline)
         while (System.currentTimeMillis() < deadline) {
             Thread.sleep(POLL_MS)

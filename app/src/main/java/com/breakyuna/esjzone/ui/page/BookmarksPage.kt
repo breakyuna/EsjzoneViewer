@@ -1,5 +1,6 @@
 package com.breakyuna.esjzone.ui.page
 
+import com.breakyuna.esjzone.network.wenku8.novelDetailUrlForId
 import androidx.lifecycle.viewModelScope
 
 import androidx.compose.ui.draw.clip
@@ -180,7 +181,7 @@ object BookmarksPage : AppDestination {
                                                 chapter = chapter,
                                                 history = ChapterStateHolder(chapter),
                                                 novelName = bookmark.novelName,
-                                                novelUrl = "/detail/$cleanId.html",
+                                                novelUrl = novelDetailUrlForId(cleanId),
                                                 novelCoverUrl = model.coverUrlFor(bookmark)
                                             )
                                         )
