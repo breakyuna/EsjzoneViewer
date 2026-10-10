@@ -1,5 +1,18 @@
 # Wenku8 集成证据与实现状态
 
+### 隐藏浏览器最终地址修正（2026-10-10）
+
+收到首页 `stage=browser-final-url, kind=HOME, actual=invalid-url` 报告：该错误位于
+HTML 抓取后的最终地址校验，旧日志不能区分空地址、JavaScript null／undefined 或其他非法值，
+不能据此推断 Cookie 失效或站点跳转目标。
+
+导航加载现使用 WebView 自身的实际地址，并在抓取前后地址一致时返回 HTML 与地址；
+页面内 fetch 则使用该次 Response.url，每次 fetch 开始时清空旧值。
+两条路径分别携带结果，取消统一读取 `window.__esjWenkuFinalUrl||location.href`，
+最终仍执行原有页面类型、主机和路径校验，不用请求地址代替缺失的实际地址。
+诊断补充空地址、JavaScript null／undefined 和 about:blank 分类，其余非法值仍不输出原文。
+此修正尚未经过设备 WebView 或实站验收，原始非法值的具体来源仍待设备日志确认。
+
 ### 请求诊断日志（2026-10-10）
 
 文库日志补充页面类型、HTTP 状态、跳转序号、挑战识别结果，以及隐藏 WebView 的请求、导航拦截、fetch 回退和最终地址。URL 拒绝异常携带具体检查阶段与请求／实际地址，可在混淆堆栈之外定位拒绝原因。地址只保留主机、端口、路径和查询参数名，剔除用户信息、查询参数值和 fragment；不记录 Cookie、请求凭据或网页正文。此修改仅增强诊断，不改变 URL 允许规则。

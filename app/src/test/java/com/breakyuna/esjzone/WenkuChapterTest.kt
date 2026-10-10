@@ -36,6 +36,10 @@ class WenkuChapterTest {
         }
         assertEquals("invalid-url", wenkuDiagnosticUrl("invalid synthetic-secret"))
         assertEquals("unavailable", wenkuDiagnosticUrl(null))
+        assertEquals("empty-url", wenkuDiagnosticUrl(""))
+        assertEquals("javascript-null", wenkuDiagnosticUrl("null"))
+        assertEquals("javascript-undefined", wenkuDiagnosticUrl("undefined"))
+        assertEquals("about:blank", wenkuDiagnosticUrl("about:blank"))
     }
 
     @Test fun sourceAndIdentity() {

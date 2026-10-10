@@ -26,6 +26,12 @@ class UnsupportedExternalChapterException(
 /** Query values, fragments and user information may contain session credentials. */
 internal fun wenkuDiagnosticUrl(raw: String?): String {
     if (raw == null) return "unavailable"
+    when (raw) {
+        "" -> return "empty-url"
+        "null" -> return "javascript-null"
+        "undefined" -> return "javascript-undefined"
+        "about:blank" -> return "about:blank"
+    }
     val url = raw.toHttpUrlOrNull() ?: return "invalid-url"
     val address = url.newBuilder().username("").password("").query(null).fragment(null).build()
     return "$address queryNames=${url.queryParameterNames.sorted()}"

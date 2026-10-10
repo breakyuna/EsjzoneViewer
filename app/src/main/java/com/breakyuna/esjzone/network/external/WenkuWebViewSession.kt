@@ -94,25 +94,26 @@ internal class WenkuWebViewSession(
             if (!cookiesRestored.await(5, TimeUnit.SECONDS)) throw CloudflareWebViewUnavailableException()
             if (token != generation.get()) throw WenkuBrowserSessionClosedException()
             val deadline = System.currentTimeMillis() + REQUEST_MS
-            var html: String? = null
+            var response: Wenku8PageResponse? = null
             if (ready) {
                 try {
-                    html = fetchInPage(browser, url, token, deadline)
+                    response = fetchInPage(browser, url, token, deadline)
                 } catch (error: WenkuBrowserSessionClosedException) {
                     throw error
                 } catch (error: IOException) {
                     AppLogger.w("WenkuWebViewSession", "Browser fetch failed; using navigation: kind=$kind, url=${wenkuDiagnosticUrl(url)}", error)
                     // A browser fetch can be challenged even with a healthy page session.
                 }
-                if (html != null && CloudflareChallenge.hasChallengeDocumentMarkers(html)) html = null
+                if (response?.let { CloudflareChallenge.hasChallengeDocumentMarkers(it.html) } == true) response = null
             }
-            if (html == null) html = navigate(browser, url, kind, token, deadline)
-            val final = if (html != null) evaluate(browser, "window.__esjWenkuFinalUrl||location.href", deadline) else url
+            val captured = response ?: navigate(browser, url, kind, token, deadline)
+            val html = captured.html
+            val final = captured.url
             AppLogger.i("WenkuWebViewSession", "Browser captured: kind=$kind, requested=${wenkuDiagnosticUrl(url)}, final=${wenkuDiagnosticUrl(final)}, htmlChars=${html.length}")
             if (!wenku8PageAllowed(final, kind)) throw UnsupportedExternalChapterException("browser-final-url", kind, url, final)
             ready = true
             lastUse = System.currentTimeMillis()
-            return Wenku8PageResponse(html, final)
+            return captured
         } catch (error: IOException) {
             ready = false
             AppLogger.e("WenkuWebViewSession", "Browser request failed: kind=$kind, requested=${wenkuDiagnosticUrl(url)}", error)
@@ -139,7 +140,7 @@ internal class WenkuWebViewSession(
         }
     }
 
-    private fun navigate(browser: WebView, url: String, kind: Wenku8PageKind, token: Long, deadline: Long): String {
+    private fun navigate(browser: WebView, url: String, kind: Wenku8PageKind, token: Long, deadline: Long): Wenku8PageResponse {
         onMain {
             browser.webViewClient = object : WebViewClient() {
                 override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
@@ -155,7 +156,6 @@ internal class WenkuWebViewSession(
                     return WebResourceResponse("text/plain", "utf-8", ByteArrayInputStream(ByteArray(0)))
                 }
             }
-            browser.evaluateJavascript("window.__esjWenkuFinalUrl=null", null)
             browser.loadUrl(url, mapOf("Accept-Language" to "zh-CN,zh;q=0.9"))
         }
         while (System.currentTimeMillis() < deadline) {
@@ -169,21 +169,30 @@ internal class WenkuWebViewSession(
             val state = evaluate(browser, "(function(){$condition})()", deadline)
             if (state == "1") {
                 val html = capture(browser, "document.documentElement.outerHTML", deadline)
-                if (!CloudflareChallenge.hasChallengeDocumentMarkers(html)) return html
+                if (!CloudflareChallenge.hasChallengeDocumentMarkers(html)) {
+                    // Navigation owns a WebView document; never reuse a previous fetch response URL.
+                    val final = onMain { browser.url.orEmpty() }
+                    if (final != allowed) continue
+                    return Wenku8PageResponse(html, final)
+                }
             }
         }
         throw CloudflareChallengeRequiredException()
     }
 
-    private fun fetchInPage(browser: WebView, url: String, token: Long, deadline: Long): String {
-        val script = """(function(){window.__esjWenkuResult=null;fetch(${JSONObject.quote(url)},{credentials:'include',redirect:'error'}).then(async r=>{if(!r.ok||new URL(r.url).origin!==location.origin)throw Error('HTTP '+r.status);window.__esjWenkuFinalUrl=r.url;let b=await r.arrayBuffer();let p=new TextDecoder('iso-8859-1').decode(b.slice(0,8192));let c=(r.headers.get('content-type')||'').match(/charset\s*=\s*['"]?([\w+.-]+)/i)?.[1]||p.match(/<meta[^>]+charset\s*=\s*['"]?([\w+.-]+)/i)?.[1]||'gb18030';if(['gbk','gb2312','gb_2312-80','x-gbk'].includes(c.toLowerCase()))c='gb18030';try{return new TextDecoder(c).decode(b)}catch(_){return new TextDecoder('gb18030').decode(b)}}).then(t=>window.__esjWenkuResult=t).catch(()=>window.__esjWenkuResult=false);return true})()"""
+    private fun fetchInPage(browser: WebView, url: String, token: Long, deadline: Long): Wenku8PageResponse {
+        val script = """(function(){window.__esjWenkuResult=null;window.__esjWenkuFinalUrl=null;fetch(${JSONObject.quote(url)},{credentials:'include',redirect:'error'}).then(async r=>{if(!r.ok||new URL(r.url).origin!==location.origin)throw Error('HTTP '+r.status);window.__esjWenkuFinalUrl=r.url;let b=await r.arrayBuffer();let p=new TextDecoder('iso-8859-1').decode(b.slice(0,8192));let c=(r.headers.get('content-type')||'').match(/charset\s*=\s*['"]?([\w+.-]+)/i)?.[1]||p.match(/<meta[^>]+charset\s*=\s*['"]?([\w+.-]+)/i)?.[1]||'gb18030';if(['gbk','gb2312','gb_2312-80','x-gbk'].includes(c.toLowerCase()))c='gb18030';try{return new TextDecoder(c).decode(b)}catch(_){return new TextDecoder('gb18030').decode(b)}}).then(t=>window.__esjWenkuResult=t).catch(()=>window.__esjWenkuResult=false);return true})()"""
         evaluate(browser, script, deadline)
         while (System.currentTimeMillis() < deadline) {
             Thread.sleep(POLL_MS)
             if (token != generation.get()) throw WenkuBrowserSessionClosedException()
             val state = evaluate(browser, "window.__esjWenkuResult===false?-1:typeof window.__esjWenkuResult==='string'?1:0", deadline)
             if (state == "-1") throw IOException("Browser fetch failed")
-            if (state == "1") return capture(browser, "window.__esjWenkuResult", deadline)
+            if (state == "1") {
+                // fetch may target a different page from the current WebView document.
+                val final = evaluate(browser, "window.__esjWenkuFinalUrl", deadline)
+                return Wenku8PageResponse(capture(browser, "window.__esjWenkuResult", deadline), final)
+            }
         }
         throw IOException("Browser fetch timed out")
     }
