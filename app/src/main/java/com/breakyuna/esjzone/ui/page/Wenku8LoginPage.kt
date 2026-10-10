@@ -130,7 +130,14 @@ object Wenku8LoginPage : AppDestination {
             passwordVisible = false
         }
         BackHandler(enabled = navigator != null) { back() }
-        LaunchedEffect(model.status) {
+        val accountStatus = com.breakyuna.esjzone.ui.discovery.LocalWenkuAccountStatus.current
+        LaunchedEffect(model.status, model.clearing) {
+            accountStatus.value = when {
+                model.clearing -> com.breakyuna.esjzone.ui.discovery.WenkuAccountStatus.UNCHECKED
+                model.status == Status.SUCCESS -> com.breakyuna.esjzone.ui.discovery.WenkuAccountStatus.SIGNED_IN
+                model.status == Status.READY -> com.breakyuna.esjzone.ui.discovery.WenkuAccountStatus.SIGNED_OUT
+                else -> com.breakyuna.esjzone.ui.discovery.WenkuAccountStatus.UNCHECKED
+            }
             if (model.status == Status.SUCCESS) { password = ""; keyboard?.hide() }
         }
         Scaffold(topBar = {

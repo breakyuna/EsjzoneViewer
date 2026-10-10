@@ -1,4 +1,8 @@
 package com.breakyuna.esjzone.ui.screen
+
+import androidx.compose.runtime.saveable.rememberSaveable
+import com.breakyuna.esjzone.ui.discovery.LibrarySource
+import com.breakyuna.esjzone.ui.discovery.LocalDiscoverySource
 import com.breakyuna.esjzone.app.PresentationAccess
 
 import androidx.compose.foundation.layout.Arrangement
@@ -48,6 +52,8 @@ class MainScreen(val authorization: Authorization) : AppDestination {
 
     @Composable
     override fun Content() {
+        val wenkuAccountStatus = remember { mutableStateOf(com.breakyuna.esjzone.ui.discovery.WenkuAccountStatus.UNCHECKED) }
+        val discoverySource = rememberSaveable { mutableStateOf(LibrarySource.ESJZONE) }
         val appNavigator = LocalAppNavigator.current
         val activeDomain = PresentationAccess.settings.domain.value
         var authorizationCheckResult by remember(authorization) {
@@ -95,6 +101,8 @@ class MainScreen(val authorization: Authorization) : AppDestination {
         }
 
         androidx.compose.runtime.CompositionLocalProvider(
+            com.breakyuna.esjzone.ui.discovery.LocalWenkuAccountStatus provides wenkuAccountStatus,
+            LocalDiscoverySource provides discoverySource,
             LocalAuthorization provides authorization
         ) {
             Column(modifier = Modifier.fillMaxSize()) {

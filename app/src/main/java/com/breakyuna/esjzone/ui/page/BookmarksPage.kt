@@ -1,5 +1,9 @@
 package com.breakyuna.esjzone.ui.page
 
+import androidx.compose.runtime.saveable.rememberSaveable
+
+import com.breakyuna.esjzone.ui.discovery.*
+
 import com.breakyuna.esjzone.network.wenku8.novelDetailUrlForId
 import androidx.lifecycle.viewModelScope
 
@@ -81,6 +85,7 @@ object BookmarksPage : AppDestination {
     @OptIn(ExperimentalMaterial3Api::class)
     @Composable
     override fun Content() {
+        var sourceFilter by rememberSaveable { mutableStateOf<LibrarySource?>(null) }
         val navigator = LocalBaseNavigator.current
         val model = rememberAppViewModel { BookmarksPageModel() }
         val state by model.state.collectAsState()
@@ -93,6 +98,7 @@ object BookmarksPage : AppDestination {
         LaunchedEffect(Unit) { model.load() }
 
         val bookmarks = (state as? BookmarksPageModel.State.Result)?.bookmarks.orEmpty()
+            .filter { matchesLibrarySource(sourceFilter, it.novelId, it.chapterUrl) }
         val bookmarkUrls = remember(bookmarks) { bookmarks.mapTo(LinkedHashSet()) { it.chapterUrl } }
         LaunchedEffect(bookmarkUrls) { selected = selected.intersect(bookmarkUrls) }
 
@@ -109,36 +115,40 @@ object BookmarksPage : AppDestination {
 
         Scaffold(
             topBar = {
-                TopAppBar(
-                    title = { Text(stringResource(R.string.bookmarks), style = AppTypography.titleLarge) },
-                    navigationIcon = { BackIconButton { if (editing) exitEditing() else navigator?.pop() } },
-                    actions = {
-                        if (editing) {
-                            IconButton(
-                                onClick = { selected = if (selected == bookmarkUrls) emptySet() else bookmarkUrls },
-                                enabled = bookmarkUrls.isNotEmpty()
-                            ) {
-                                Icon(Icons.Filled.SelectAll, contentDescription = stringResource(R.string.bookmark_select_all))
+                Column {
+                    TopAppBar(
+                        title = { Text(stringResource(R.string.bookmarks), style = AppTypography.titleLarge) },
+                        navigationIcon = { BackIconButton { if (editing) exitEditing() else navigator?.pop() } },
+                        actions = {
+                            if (editing) {
+                                IconButton(
+                                    onClick = { selected = if (selected == bookmarkUrls) emptySet() else bookmarkUrls },
+                                    enabled = bookmarkUrls.isNotEmpty()
+                                ) {
+                                    Icon(Icons.Filled.SelectAll, contentDescription = stringResource(R.string.bookmark_select_all))
+                                }
+                                IconButton(
+                                    onClick = { requestDelete(bookmarks.filter { it.chapterUrl in selected }) },
+                                    enabled = selected.isNotEmpty()
+                                ) {
+                                    Icon(Icons.Filled.DeleteOutline, contentDescription = stringResource(R.string.bookmark_delete_selected))
+                                }
+                                IconButton(onClick = ::exitEditing) {
+                                    Icon(Icons.Filled.Check, contentDescription = stringResource(R.string.bookmark_edit_done))
+                                }
+                            } else {
+                                IconButton(onClick = { editing = true }) {
+                                    Icon(Icons.Filled.Edit, contentDescription = stringResource(R.string.bookmark_edit))
+                                }
                             }
-                            IconButton(
-                                onClick = { requestDelete(bookmarks.filter { it.chapterUrl in selected }) },
-                                enabled = selected.isNotEmpty()
-                            ) {
-                                Icon(Icons.Filled.DeleteOutline, contentDescription = stringResource(R.string.bookmark_delete_selected))
-                            }
-                            IconButton(onClick = ::exitEditing) {
-                                Icon(Icons.Filled.Check, contentDescription = stringResource(R.string.bookmark_edit_done))
-                            }
-                        } else {
-                            IconButton(onClick = { editing = true }) {
-                                Icon(Icons.Filled.Edit, contentDescription = stringResource(R.string.bookmark_edit))
-                            }
-                        }
-                    },
-                    colors = TopAppBarDefaults.topAppBarColors(
-                        containerColor = MaterialTheme.colorScheme.background
+                        },
+                        colors = TopAppBarDefaults.topAppBarColors(
+                            containerColor = MaterialTheme.colorScheme.background
+                        )
                     )
-                )
+                    SourceSelector(sourceFilter, { sourceFilter = it; selected = emptySet() },
+                        includeAll = true, enabled = !editing && !deleting)
+                }
             }
         ) { padding ->
             when (val current = state) {
@@ -149,7 +159,7 @@ object BookmarksPage : AppDestination {
                     onRetry = model::retry,
                     modifier = Modifier.fillMaxSize().accountContentWidth().padding(padding)
                 )
-                is BookmarksPageModel.State.Result -> if (current.bookmarks.isEmpty()) {
+                is BookmarksPageModel.State.Result -> if (bookmarks.isEmpty()) {
                     EmptyState(
                         title = stringResource(R.string.bookmarks_empty),
                         message = stringResource(R.string.bookmarks_description),
@@ -162,7 +172,7 @@ object BookmarksPage : AppDestination {
                         verticalArrangement = Arrangement.spacedBy(AppSpacing.sm)
                     ) {
                         items(
-                            current.bookmarks,
+                            bookmarks,
                             key = { "bookmark:${it.chapterUrl}" },
                             contentType = { "bookmark" }
                         ) { bookmark ->
@@ -258,6 +268,7 @@ private fun BookmarkCard(
         )
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(AppSpacing.xs)) {
             Text(bookmark.novelName.ifBlank { bookmark.novelId }, style = AppTypography.labelLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            SourceBadge(librarySourceOf(bookmark.novelId, bookmark.chapterUrl))
             Text(bookmark.chapterName, style = AppTypography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
         }
         if (editing) {

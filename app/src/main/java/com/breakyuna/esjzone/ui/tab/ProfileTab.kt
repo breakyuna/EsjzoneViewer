@@ -2,6 +2,10 @@
 
 package com.breakyuna.esjzone.ui.tab
 
+import com.breakyuna.esjzone.ui.discovery.LibrarySource
+import com.breakyuna.esjzone.ui.discovery.sourceLabel
+import com.breakyuna.esjzone.ui.page.Wenku8LoginPage
+
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -99,6 +103,7 @@ object ProfileTab : AppTab {
     @OptIn(ExperimentalMaterial3Api::class)
     @Composable
     override fun Content() {
+        val wenkuAccountStatus = com.breakyuna.esjzone.ui.discovery.LocalWenkuAccountStatus.current.value
         val navigator = LocalBaseNavigator.current
         val authorization = LocalAuthorization.current
         val domain = authorization.domain.ifBlank { PresentationAccess.settings.domain.value }
@@ -183,6 +188,34 @@ object ProfileTab : AppTab {
                 verticalArrangement = Arrangement.spacedBy(AppSpacing.md)
             ) {
                 item(key = "profile-hero") { ProfileHero(profile, domain, loading, onRetry = { retry++ }) }
+                item(key = "source-accounts") {
+                    androidx.compose.material3.Surface(shape = AppShapes.standard,
+                        color = MaterialTheme.colorScheme.surfaceContainer) {
+                        Column(Modifier.fillMaxWidth().padding(AppSpacing.md)) {
+                            Text(stringResource(R.string.source_accounts), style = AppTypography.titleMedium)
+                            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                                Text(sourceLabel(LibrarySource.ESJZONE), Modifier.weight(1f), style = AppTypography.bodyMedium)
+                                androidx.compose.material3.TextButton(onClick = { navigator?.pushIfNotCurrent(SettingsPage) }) {
+                                    Text(stringResource(R.string.source_manage_account))
+                                }
+                            }
+                            androidx.compose.material3.HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                                Column(Modifier.weight(1f)) {
+                                    Text(sourceLabel(LibrarySource.WENKU8), style = AppTypography.bodyMedium)
+                                    Text(stringResource(when (wenkuAccountStatus) {
+                                        com.breakyuna.esjzone.ui.discovery.WenkuAccountStatus.SIGNED_IN -> R.string.source_session_verified
+                                        com.breakyuna.esjzone.ui.discovery.WenkuAccountStatus.SIGNED_OUT -> R.string.source_signed_out
+                                        com.breakyuna.esjzone.ui.discovery.WenkuAccountStatus.UNCHECKED -> R.string.source_session_unchecked
+                                    }), style = AppTypography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                                androidx.compose.material3.TextButton(onClick = { navigator?.pushIfNotCurrent(Wenku8LoginPage) }) {
+                                    Text(stringResource(R.string.wenku8_check_session))
+                                }
+                            }
+                        }
+                    }
+                }
                 item(key = "profile-menu-title") {
                     Text(stringResource(R.string.profile_tools), style = AppTypography.labelMedium,
                         modifier = Modifier.padding(start = AppSpacing.xs, top = AppSpacing.sm).semantics { heading() },

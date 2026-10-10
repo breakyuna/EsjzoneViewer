@@ -605,7 +605,11 @@ private fun NovelDetailContent(
                 item(key = "detail-tags", contentType = "novel-tags") {
                     RebuiltNovelTags(
                         tags = detailed.tags,
-                        onTagClick = { tag -> navigator?.pushIfNotCurrent(SearchPage(tag)) }
+                        onTagClick = if (com.breakyuna.esjzone.network.wenku8.Wenku8Urls.detailIdentity(detailed.url) != null) {
+                            null
+                        } else {
+                            { tag -> navigator?.pushIfNotCurrent(SearchPage(tag)) }
+                        }
                     )
                 }
             }
@@ -1003,6 +1007,8 @@ private fun RebuiltNovelHero(novel: DetailedNovel, metrics: AppAdaptiveMetrics) 
                 author = novel.author.trim().takeIf(String::isNotBlank),
                 description = metadataDescription,
                 tags = listOfNotNull(
+                    NovelTagModel(com.breakyuna.esjzone.ui.discovery.sourceLabel(
+                        com.breakyuna.esjzone.ui.discovery.librarySourceOf(url = novel.url))),
                     adultLabel.takeIf { novel.isAdult }?.let { NovelTagModel(it) }
                 ),
                 metrics = stats
@@ -1057,7 +1063,7 @@ private fun RebuiltDetailTopBar(
 }
 
 @Composable
-private fun RebuiltNovelTags(tags: List<String>, onTagClick: (String) -> Unit) {
+private fun RebuiltNovelTags(tags: List<String>, onTagClick: ((String) -> Unit)?) {
     val visibleTags = remember(tags) {
         tags.map(String::trim).filter(String::isNotBlank).distinct()
     }
@@ -1070,7 +1076,7 @@ private fun RebuiltNovelTags(tags: List<String>, onTagClick: (String) -> Unit) {
             key("novel-tag:$tag") {
                 NovelTag(
                     tag = NovelTagModel(label = tag),
-                    onClick = { onTagClick(tag) }
+                    onClick = onTagClick?.let { callback -> { callback(tag) } }
                 )
             }
         }

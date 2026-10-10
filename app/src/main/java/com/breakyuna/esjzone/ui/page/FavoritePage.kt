@@ -1,6 +1,11 @@
 @file:OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 
+
 package com.breakyuna.esjzone.ui.page
+
+import com.breakyuna.esjzone.ui.discovery.LibrarySource
+import com.breakyuna.esjzone.ui.discovery.SourceSelector
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.activity.compose.BackHandler
@@ -135,10 +140,19 @@ object FavoritePage : AppDestination {
     override fun Content() = Content(showBack = true)
 
     @Composable
-    fun Content(showBack: Boolean) = ShelfContent(false, showBack)
+    fun Content(showBack: Boolean) = SourceShelf(showBack = showBack)
 
     @Composable
-    internal fun ShelfContent(wenku8: Boolean, showBack: Boolean = true) {
+    internal fun SourceShelf(showBack: Boolean = true, initialWenku8: Boolean = false) {
+        var wenku8 by rememberSaveable { mutableStateOf(initialWenku8) }
+        val holder = rememberSaveableStateHolder()
+        holder.SaveableStateProvider(if (wenku8) "wenku8" else "esjzone") {
+            ShelfContent(wenku8, showBack, onSwitchSource = { wenku8 = !wenku8 })
+        }
+    }
+
+    @Composable
+    internal fun ShelfContent(wenku8: Boolean, showBack: Boolean, onSwitchSource: () -> Unit) {
         val navigator = LocalBaseNavigator.current
         val focusManager = LocalFocusManager.current
         val authorization = LocalAuthorization.current
@@ -418,7 +432,7 @@ object FavoritePage : AppDestination {
                 BookshelfTopBar(
                     showBack = showBack,
                     wenku8 = wenku8,
-                    onSwitchSource = { navigator?.pushIfNotCurrent(if (wenku8) FavoritePage else Wenku8BookshelfPage) },
+                    onSwitchSource = onSwitchSource,
                     editing = editing,
                     selectedCount = selected.size,
                     totalCount = shown.size,
@@ -757,50 +771,51 @@ private fun BookshelfTopBar(
     onSelectAll: () -> Unit
 ) {
     Surface(color = MaterialTheme.colorScheme.background) {
-        Row(
-            Modifier.fillMaxWidth().padding(horizontal = AppSpacing.xs, vertical = AppSpacing.sm),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            if (showBack) IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.reader_back)) }
-            Column(Modifier.weight(1f).padding(horizontal = AppSpacing.sm)) {
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(AppSpacing.xs)) {
-                    Text(
-                        if (editing) stringResource(R.string.bookshelf_selected_header, selectedCount)
-                        else stringResource(if (wenku8) R.string.wenku8_bookshelf else R.string.bookshelf),
-                        style = AppTypography.titleLarge,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                    if (!editing && !wenku8) {
-                        BookshelfSyncStatusIndicator(
-                            syncing = syncing,
-                            isSyncSuccess = isSyncSuccess,
-                            isSyncFailed = isSyncFailed,
-                            expanded = showSyncStatusMenu,
-                            onExpandedChange = onSyncStatusMenuChange
+        Column {
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = AppSpacing.xs, vertical = AppSpacing.sm),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                if (showBack) IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.reader_back)) }
+                Column(Modifier.weight(1f).padding(horizontal = AppSpacing.sm)) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(AppSpacing.xs)) {
+                        Text(
+                            if (editing) stringResource(R.string.bookshelf_selected_header, selectedCount)
+                            else stringResource(R.string.bookshelf),
+                            style = AppTypography.titleLarge,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
                         )
+                        if (!editing && !wenku8) {
+                            BookshelfSyncStatusIndicator(
+                                syncing = syncing,
+                                isSyncSuccess = isSyncSuccess,
+                                isSyncFailed = isSyncFailed,
+                                expanded = showSyncStatusMenu,
+                                onExpandedChange = onSyncStatusMenuChange
+                            )
+                        }
                     }
+                    if (editing) Text(
+                        stringResource(R.string.bookshelf_total_header, totalCount),
+                        style = AppTypography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
-                if (editing) Text(
-                    stringResource(R.string.bookshelf_total_header, totalCount),
-                    style = AppTypography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+                if (editing) {
+                    IconButton(onClick = onSelectAll, enabled = totalCount > 0 && !deleting) {
+                        Icon(Icons.Filled.SelectAll, stringResource(R.string.bookshelf_select_all))
+                    }
+                    IconButton(onClick = onDone, enabled = !deleting) { Icon(Icons.Filled.Done, stringResource(R.string.bookshelf_edit_done)) }
+                } else {
+                    IconButton(onClick = onToggleView) {
+                        Icon(if (listView) Icons.Filled.GridView else Icons.Filled.ViewList, "切换书架展示方式")
+                    }
+                    IconButton(onClick = onStatistics) { Icon(Icons.Filled.QueryStats, stringResource(R.string.reading_stats_title)) }
+                }
             }
-            if (editing) {
-                IconButton(onClick = onSelectAll, enabled = totalCount > 0 && !deleting) {
-                    Icon(Icons.Filled.SelectAll, stringResource(R.string.bookshelf_select_all))
-                }
-                IconButton(onClick = onDone, enabled = !deleting) { Icon(Icons.Filled.Done, stringResource(R.string.bookshelf_edit_done)) }
-            } else {
-                TextButton(onClick = onSwitchSource) {
-                    Text(stringResource(if (wenku8) R.string.esj_source_title else R.string.wenku8_title))
-                }
-                IconButton(onClick = onToggleView) {
-                    Icon(if (listView) Icons.Filled.GridView else Icons.Filled.ViewList, "切换书架展示方式")
-                }
-                IconButton(onClick = onStatistics) { Icon(Icons.Filled.QueryStats, stringResource(R.string.reading_stats_title)) }
-            }
+            if (!editing) SourceSelector(if (wenku8) LibrarySource.WENKU8 else LibrarySource.ESJZONE,
+                { onSwitchSource() }, enabled = !deleting)
         }
     }
 }
@@ -1020,5 +1035,5 @@ private fun BookshelfEntry.asCoveredNovel() = CoveredNovelImpl(
 object Wenku8BookshelfPage : AppDestination {
     override val key = "Wenku8BookshelfPage"
     @Composable
-    override fun Content() = FavoritePage.ShelfContent(true)
+    override fun Content() = FavoritePage.SourceShelf(initialWenku8 = true)
 }

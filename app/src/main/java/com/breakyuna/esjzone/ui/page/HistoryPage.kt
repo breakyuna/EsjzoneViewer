@@ -2,6 +2,8 @@
 
 package com.breakyuna.esjzone.ui.page
 
+import com.breakyuna.esjzone.ui.discovery.*
+
 import com.breakyuna.esjzone.network.wenku8.novelDetailUrlForId
 
 import androidx.activity.compose.BackHandler
@@ -139,6 +141,7 @@ object HistoryPage : AppDestination {
         val cloudDetailLoader = rememberAppViewModel { NovelDetailLoader(authorization) }
         val localState by localModel.state.collectAsStateWithLifecycle()
         val cloudState by cloudModel.state.collectAsStateWithLifecycle()
+        var sourceFilter by rememberSaveable { mutableStateOf<LibrarySource?>(null) }
         var selectedPage by rememberSaveable { mutableIntStateOf(0) }
         var searchOpen by rememberSaveable { mutableStateOf(false) }
         var query by rememberSaveable { mutableStateOf("") }
@@ -171,6 +174,7 @@ object HistoryPage : AppDestination {
 
         val localRows = (localState as? LocalHistoryPageModel.State.Result)
             ?.activities
+            ?.filter { matchesLibrarySource(sourceFilter, it.novelId, it.novelUrl.ifBlank { it.chapterUrl }) }
             ?.filter { query.isBlank() || it.novelName.contains(query, true) || it.chapterName.contains(query, true) }
             .orEmpty()
         val localRowIds = remember(localRows) { localRows.mapTo(LinkedHashSet()) { it.activityId } }
@@ -321,16 +325,20 @@ object HistoryPage : AppDestination {
                     Tab(
                         selected = selectedPage == 1,
                         onClick = { selectedPage = 1 },
-                        text = { Text(stringResource(R.string.history_cloud)) },
+                        text = { Text(stringResource(R.string.source_cloud_history)) },
                         icon = { Icon(Icons.Filled.CloudSync, null) },
                         selectedContentColor = MaterialTheme.colorScheme.primary,
                         unselectedContentColor = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
+                if (selectedPage == 0) SourceSelector(sourceFilter, {
+                    sourceFilter = it; localSelected = emptySet()
+                }, includeAll = true, enabled = !localEditing && !deletingLocal)
                 HorizontalPager(state = pager, modifier = Modifier.fillMaxSize()) { page ->
                     if (page == 0) {
                         LocalHistoryContent(
                             state = localState,
+                            sourceFilter = sourceFilter,
                             query = query,
                             model = localModel,
                             navigator = navigator,
@@ -508,6 +516,7 @@ private fun HistoryCloudSyncStatusIndicator(
 @Composable
 private fun LocalHistoryContent(
     state: LocalHistoryPageModel.State,
+    sourceFilter: LibrarySource?,
     query: String,
     model: LocalHistoryPageModel,
     navigator: com.breakyuna.esjzone.ui.navigation.AppNavigator?,
@@ -525,7 +534,9 @@ private fun LocalHistoryContent(
             modifier = Modifier.fillMaxSize()
         )
         is LocalHistoryPageModel.State.Result -> {
-            val rows = current.activities.filter { it.novelName.contains(query, true) || it.chapterName.contains(query, true) || query.isBlank() }
+            val rows = current.activities.filter {
+                matchesLibrarySource(sourceFilter, it.novelId, it.novelUrl.ifBlank { it.chapterUrl })
+            }.filter { it.novelName.contains(query, true) || it.chapterName.contains(query, true) || query.isBlank() }
             if (rows.isEmpty()) {
                 EmptyState(
                     title = stringResource(if (query.isBlank()) R.string.history_local_empty else R.string.history_search_empty),
@@ -617,6 +628,7 @@ private fun LocalHistoryCard(
             )
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(AppSpacing.xs)) {
                 Text(activity.novelName.ifBlank { activity.novelId }, style = AppTypography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                SourceBadge(librarySourceOf(activity.novelId, activity.novelUrl.ifBlank { activity.chapterUrl }))
                 Text(activity.chapterName, style = AppTypography.bodySmall, color = MaterialTheme.colorScheme.primary, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 androidx.compose.material3.LinearProgressIndicator(progress = (activity.bookProgress ?: fullBookProgress(activity.chapterIndex, activity.totalChapters, activity.chapterProgress)), modifier = Modifier.fillMaxWidth())
                 Text(position, style = AppTypography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)

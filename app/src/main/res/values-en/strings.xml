@@ -812,4 +812,13 @@
     <string name="wenku8_login_invalid">The website did not accept the input. Check its content and length.</string>
     <string name="wenku8_check_session">Check session</string>
     <string name="wenku8_reload_login">Reopen sign-in page</string>
+    <string name="source_esjzone">ESJZone</string>
+    <string name="source_wenku8">Wenku8</string>
+    <string name="source_all">All</string>
+    <string name="source_cloud_history">ESJZone cloud</string>
+    <string name="source_accounts">Site accounts</string>
+    <string name="source_manage_account">Manage</string>
+    <string name="source_session_verified">Session verified</string>
+    <string name="source_signed_out">Signed out</string>
+    <string name="source_session_unchecked">Not checked</string>
 </resources>

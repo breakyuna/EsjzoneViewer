@@ -2,12 +2,18 @@
 
 package com.breakyuna.esjzone.ui.tab
 
+import com.breakyuna.esjzone.ui.discovery.*
+import com.breakyuna.esjzone.ui.page.WenkuFeed
+import com.breakyuna.esjzone.network.wenku8.Wenku8SearchType
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
+import androidx.compose.material3.FilterChip
+import androidx.compose.foundation.layout.Row
+
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -70,81 +76,89 @@ object SearchTab : AppTab {
         )
 
     @Composable
-    override fun Content() {
+    override fun Content() = SearchContent()
+
+    @Composable
+    internal fun SearchContent(
+        initialSource: LibrarySource = LocalDiscoverySource.current.value,
+        initialKeyword: String = "",
+        initialType: Wenku8SearchType = Wenku8SearchType.TITLE
+    ) {
         val navigator = LocalBaseNavigator.current
+        val discoverySource = LocalDiscoverySource.current
+        var source by rememberSaveable { mutableStateOf(initialSource) }
+        val holder = rememberSaveableStateHolder()
         val authorization = LocalAuthorization.current
         val searchModel = rememberAppViewModel { SearchPageModel(authorization) }
         val searchState by searchModel.state.collectAsStateWithLifecycle()
         val historyModel = rememberAppViewModel { SearchHistoryModel() }
         val historyState by historyModel.state.collectAsStateWithLifecycle()
-        var query by rememberSaveable { mutableStateOf("") }
-        var activeKeyword by rememberSaveable { mutableStateOf<String?>(null) }
+        var query by rememberSaveable { mutableStateOf(initialKeyword) }
+        var activeKeyword by rememberSaveable { mutableStateOf(initialKeyword.takeIf { it.isNotBlank() }) }
         var category by rememberSaveable { mutableIntStateOf(0) }
         var sort by rememberSaveable { mutableIntStateOf(1) }
+        var searchType by rememberSaveable { mutableStateOf(initialType) }
+        var refreshRequest by rememberSaveable { mutableIntStateOf(0) }
 
         fun submit(value: String) {
             value.trim().takeIf { it.isNotBlank() }?.let {
                 query = it
                 if (activeKeyword == it) {
-                    searchModel.search(it, category, sort)
-                } else {
-                    activeKeyword = it
-                }
+                    if (source == LibrarySource.ESJZONE) searchModel.search(it, category, sort, forceRefresh = true)
+                    else refreshRequest++
+                } else activeKeyword = it
                 historyModel.save(it)
             }
         }
 
         Scaffold(
             topBar = {
-                DiscoverySearchTopBar(
-                    query = query,
-                    onQueryChange = { query = it },
-                    onSearch = { submit(query) },
-                    onClear = {
-                        query = ""
-                        activeKeyword = null
-                    },
-                    onBack = { navigator?.pop() }
-                )
+                Column {
+                    DiscoverySearchTopBar(query, { query = it }, { submit(query) }, {
+                        query = ""; activeKeyword = null
+                    }, { navigator?.pop() })
+                    SourceSelector(source, { selected -> selected?.let {
+                        source = it; discoverySource.value = it
+                    } })
+                    if (source == LibrarySource.WENKU8) Row(
+                        Modifier.padding(horizontal = AppSpacing.lg),
+                        horizontalArrangement = Arrangement.spacedBy(AppSpacing.sm)
+                    ) {
+                        Wenku8SearchType.entries.forEach { type ->
+                            FilterChip(selected = searchType == type, onClick = { searchType = type },
+                                label = { Text(stringResource(if (type == Wenku8SearchType.TITLE) R.string.wenku8_search_title else R.string.author)) })
+                        }
+                    }
+                }
             },
             containerColor = MaterialTheme.colorScheme.background
         ) { padding ->
-            PullToRefreshBox(
-                isRefreshing = activeKeyword != null && searchState is SearchPageModel.State.Loading,
-                onRefresh = {
-                    activeKeyword?.let { searchModel.refresh(it, category, sort) }
-                },
-                modifier = Modifier.fillMaxSize().padding(padding)
-            ) {
-                activeKeyword?.let { current ->
-                    DiscoverySearchResults(
-                        model = searchModel,
-                        state = searchState,
-                        keyword = current,
-                        category = category,
-                        sort = sort,
-                        onCategoryChange = { category = it },
+            val keyword = activeKeyword
+            if (keyword == null) SearchHistoryList(historyState, historyModel::clear, ::submit,
+                Modifier.fillMaxSize().padding(padding))
+            else holder.SaveableStateProvider("${source.name}:$keyword:${if (source == LibrarySource.WENKU8) searchType.name else ""}") {
+                if (source == LibrarySource.WENKU8) {
+                    WenkuFeed(keyword = keyword, type = searchType, refreshRequest = refreshRequest,
+                        modifier = Modifier.fillMaxSize().padding(padding))
+                } else PullToRefreshBox(
+                    isRefreshing = searchState is SearchPageModel.State.Loading,
+                    onRefresh = { searchModel.refresh(keyword, category, sort) },
+                    modifier = Modifier.fillMaxSize().padding(padding)
+                ) {
+                    DiscoverySearchResults(model = searchModel, state = searchState, keyword = keyword,
+                        category = category, sort = sort, onCategoryChange = { category = it },
                         onSortChange = { sort = it },
-                        onRetry = {
-                            searchModel.search(current, category, sort, forceRefresh = true)
-                        },
-                        navigator = navigator,
-                        modifier = Modifier.fillMaxSize()
-                    )
-                } ?: SearchHistoryList(
-                    state = historyState,
-                    onClear = historyModel::clear,
-                    onSelect = ::submit,
-                    modifier = Modifier.fillMaxSize()
-                )
+                        onRetry = { searchModel.search(keyword, category, sort, forceRefresh = true) },
+                        navigator = navigator, modifier = Modifier.fillMaxSize())
+                }
             }
         }
-
         LaunchedEffect(Unit) { historyModel.load() }
-        LaunchedEffect(activeKeyword, category, sort) {
-            activeKeyword?.let { searchModel.search(it, category, sort) }
+        LaunchedEffect(source, activeKeyword, category, sort) {
+            if (source == LibrarySource.ESJZONE) activeKeyword?.let { searchModel.search(it, category, sort) }
         }
     }
+
 }
 
 @Composable

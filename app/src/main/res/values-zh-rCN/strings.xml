@@ -813,4 +813,13 @@
     <string name="wenku8_login_invalid">输入不符合网页要求，请检查内容和长度</string>
     <string name="wenku8_check_session">核对会话</string>
     <string name="wenku8_reload_login">重新打开登录页</string>
+    <string name="source_esjzone">ESJZone</string>
+    <string name="source_wenku8">文库8</string>
+    <string name="source_all">全部</string>
+    <string name="source_cloud_history">ESJZone 云端</string>
+    <string name="source_accounts">站点账号</string>
+    <string name="source_manage_account">管理</string>
+    <string name="source_session_verified">会话已核对</string>
+    <string name="source_signed_out">未登录</string>
+    <string name="source_session_unchecked">待核对</string>
 </resources>

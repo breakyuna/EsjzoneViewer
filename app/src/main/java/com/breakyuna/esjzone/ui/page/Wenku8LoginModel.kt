@@ -165,6 +165,7 @@ internal class Wenku8LoginModel(context: Context) : ViewModel() {
                 if (!active()) return
                 cancelChecks()
                 formReady = false
+                if (status == Wenku8LoginStatus.SUCCESS) return
                 status = if (submitting) Wenku8LoginStatus.SUBMITTING else Wenku8LoginStatus.PREPARING
                 startDeadline()
             }
@@ -183,7 +184,8 @@ internal class Wenku8LoginModel(context: Context) : ViewModel() {
                 if (request.isForMainFrame && active()) {
                     logBrowser("load-error", request.url.toString(), "code=${error.errorCode}")
                     httpError = true
-                    cancelChecks(); submitting = false; formReady = false; status = Wenku8LoginStatus.NETWORK
+                    cancelChecks(); submitting = false; formReady = false
+                    if (status != Wenku8LoginStatus.SUCCESS) status = Wenku8LoginStatus.NETWORK
                 }
             }
             override fun onReceivedHttpError(view: WebView, request: WebResourceRequest, response: WebResourceResponse) {
@@ -214,7 +216,8 @@ internal class Wenku8LoginModel(context: Context) : ViewModel() {
                 if (allowed(raw)) return false
                 logBrowser("blocked-navigation", raw)
                 if (attached) {
-                    submitting = false; formReady = false; status = Wenku8LoginStatus.INCOMPATIBLE
+                    submitting = false; formReady = false
+                    if (status != Wenku8LoginStatus.SUCCESS) status = Wenku8LoginStatus.INCOMPATIBLE
                 }
                 return true
             }
@@ -260,7 +263,7 @@ internal class Wenku8LoginModel(context: Context) : ViewModel() {
                         cancelChecks(); submitting = false; pendingDuration = null
                         attemptStarted = submissionState != "incompatible"
                         diagnostics.event("submit-unconfirmed", "scriptRecognized=${submissionState == "incompatible"}")
-                        status = Wenku8LoginStatus.INCOMPATIBLE; showWeb = true
+                        status = Wenku8LoginStatus.INCOMPATIBLE
                     }
                 }
             }
@@ -268,7 +271,7 @@ internal class Wenku8LoginModel(context: Context) : ViewModel() {
             // Never attach raw JS, inputs or a browser exception to diagnostics.
             diagnostics.event("submit-script-error", "type=${error.javaClass.name}")
             cancelChecks(); submitting = false; pendingDuration = null
-            status = Wenku8LoginStatus.UNKNOWN; showWeb = true
+            status = Wenku8LoginStatus.UNKNOWN
         }
     }
 
@@ -302,6 +305,11 @@ internal class Wenku8LoginModel(context: Context) : ViewModel() {
             }
             val duration = result?.optString("duration")?.takeIf { it in SettingsDefaults.WENKU_LOGIN_DURATIONS }
             if (duration != null) attemptStarted = true
+            // Navigation and transport errors do not revoke a confirmed browser identity.
+            // A real login form can still show that the browser session has ended.
+            if (status == Wenku8LoginStatus.SUCCESS && state != "form") {
+                return@evaluateJavascript
+            }
             when (result?.optString("state")) {
                 "preparing" -> {
                     status = if (submitting) Wenku8LoginStatus.SUBMITTING else Wenku8LoginStatus.PREPARING
@@ -325,16 +333,21 @@ internal class Wenku8LoginModel(context: Context) : ViewModel() {
                     }
                     cancelChecks(); formReady = true; submitting = false
                     status = if (duration != null || pendingDuration != null) Wenku8LoginStatus.UNKNOWN else Wenku8LoginStatus.READY
-                    if (status == Wenku8LoginStatus.UNKNOWN && revealFallback) showWeb = true
                 }
                 "rejected" -> {
                     cancelChecks(); submitting = false; formReady = false
                     status = Wenku8LoginStatus.REJECTED
-                    if (revealFallback) showWeb = true
                 }
                 else -> {
+                    if (!httpError && (submitting || duration != null || pendingDuration != null) &&
+                        SystemClock.elapsedRealtime() < deadline) {
+                        // A successful POST may briefly show a notice before its home redirect.
+                        submitting = true; formReady = false; status = Wenku8LoginStatus.SUBMITTING
+                        armTimeout()
+                        scheduleInspection(revealFallback)
+                        return@evaluateJavascript
+                    }
                     cancelChecks(); submitting = false; formReady = false
-                    if (revealFallback) showWeb = true
                     status = if (httpError) Wenku8LoginStatus.NETWORK else if (duration != null || pendingDuration != null)
                         Wenku8LoginStatus.UNKNOWN else Wenku8LoginStatus.INCOMPATIBLE
                 }
@@ -347,7 +360,6 @@ internal class Wenku8LoginModel(context: Context) : ViewModel() {
         cancelChecks()
         if (!bridgeBrowserSession()) { status = Wenku8LoginStatus.UNKNOWN; return }
         status = Wenku8LoginStatus.CHECKING
-        diagnostics.event("session-check-start", "durationObserved=${actualDuration != null}")
         val binding = bindingGeneration
         val document = documentGeneration
         verification = viewModelScope.launch {
@@ -355,11 +367,20 @@ internal class Wenku8LoginModel(context: Context) : ViewModel() {
                 val recorded = PresentationAccess.client.recordWenkuBrowserLogin(actualDuration)
                 if (!active() || binding != bindingGeneration || document != documentGeneration) return@launch
                 if (!recorded) {
-                    status = Wenku8LoginStatus.UNKNOWN; showWeb = true; return@launch
+                    status = Wenku8LoginStatus.UNKNOWN; return@launch
                 }
                 recordedDuration = actualDuration
                 PresentationAccess.settings.setWenkuLoginDuration(actualDuration)
             }
+            if (!active() || binding != bindingGeneration || document != documentGeneration) return@launch
+            status = Wenku8LoginStatus.SUCCESS
+            pendingDuration = null
+            browser?.evaluateJavascript(Wenku8LoginForm.clearPassword, null)
+            browser?.clearHistory()
+            showWeb = false
+            diagnostics.event("browser-sign-in-confirmed", "durationObserved=${actualDuration != null}")
+            // This request checks native transport separately; its failure is not a logout.
+            diagnostics.event("session-check-start")
             val verified = try {
                 withTimeout(35_000) {
                     cancellablePageRequest {
@@ -377,15 +398,6 @@ internal class Wenku8LoginModel(context: Context) : ViewModel() {
                 false
             }
             diagnostics.event("session-check-end", "verified=$verified, active=${active()}, binding=$binding/$bindingGeneration")
-            if (active() && binding == bindingGeneration && document == documentGeneration) {
-                status = if (verified) Wenku8LoginStatus.SUCCESS else Wenku8LoginStatus.UNKNOWN
-                if (verified) {
-                    pendingDuration = null
-                    browser?.evaluateJavascript(Wenku8LoginForm.clearPassword, null)
-                    browser?.clearHistory()
-                    showWeb = false
-                }
-            }
         }
     }
 
@@ -443,7 +455,7 @@ internal class Wenku8LoginModel(context: Context) : ViewModel() {
             if (active() && (submitting || status == Wenku8LoginStatus.PREPARING)) {
                 logBrowser("timeout", detail = "documentLoading=$documentLoading")
                 browser?.let { diagnostics.snapshot(it, "timeout") }
-                submitting = false; formReady = false; status = Wenku8LoginStatus.UNKNOWN; showWeb = true
+                cancelChecks(); submitting = false; formReady = false; status = Wenku8LoginStatus.UNKNOWN
             }
         }.also { main.postDelayed(it, (deadline - SystemClock.elapsedRealtime()).coerceAtLeast(0)) }
     }

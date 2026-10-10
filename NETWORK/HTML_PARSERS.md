@@ -195,7 +195,7 @@ URL：/forum/{novelId}/{postId}.html
 
 ### 6.3 wenku8 站外章节
 
-独立文库候选搜索、详情、目录、会话和本地书架接入的最新证据与验证边界见 [WENKU8.md](WENKU8.md)。
+独立文库搜索、详情、目录、会话和本地书架接入的最新证据与验证边界见 [WENKU8.md](WENKU8.md)；详情字段已依据 2026-10-11 用户提供的 MHT 结构调整，目录页正文仍待实站验证。
 
 ESJ 目录中形如 `https://www.wenku8.net/novel/{bookGroup}/{bookId}/{chapterId}.htm` 的 HTTPS 链接由原生阅读器处理。来源识别检查解析后的完整主机和路径；其余站外链接默认在应用内 WebView 打开，右上角可交给系统浏览器。wenku8 响应从有大小限制的原始字节解码，按 HTTP charset、HTML meta charset、HTML http-equiv charset 的优先级选择编码；GBK／GB2312 声明与缺省值采用固定上游使用的 GB18030，明确 UTF-8 保持优先。当前站点样本和设备一致性仍待验证。
 

@@ -136,7 +136,7 @@ internal object Wenku8LoginForm {
     """.trimIndent()
 }
 
-/** Welcome + an actual same-origin sign-out link, followed by a protected native request. */
+/** Welcome + an actual same-origin sign-out link; also used by the separate native check. */
 internal fun wenku8SignedInDocument(html: String, url: String): Boolean {
     val document = Jsoup.parse(html, url)
     if (!Regex("欢迎|歡迎").containsMatchIn(document.text())) return false

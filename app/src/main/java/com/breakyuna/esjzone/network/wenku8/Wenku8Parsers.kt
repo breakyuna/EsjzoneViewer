@@ -6,7 +6,8 @@
  * 8681711f020af991fe37ca89983cc4531fe94c53 (see doc/WENKU8_THIRD_PARTY_SOURCES.md).
  * Changes: existing models/Jsoup, validated URLs, no embedded accounts,
  * no upstream request/Builder/cache framework, preserve original titles.
- * Detail/catalog remain reference-source candidates; home/list DOM checked 2026-10-09.
+ * Detail DOM checked against the supplied MHT 2026-10-11; home/list checked 2026-10-09.
+ * Catalog remains a reference-source candidate.
  */
 package com.breakyuna.esjzone.network.wenku8
 
@@ -41,7 +42,7 @@ data class Wenku8SearchResult(
 
 data class Wenku8HomeSection(val title: String, val novels: List<CoveredNovelImpl>)
 
-/** Candidate rules from the fixed upstream SHA; never infer empty results from missing DOM. */
+/** Site snapshots supplement the fixed upstream rules; missing DOM never means empty results. */
 object Wenku8Parsers {
     private const val INFO = "//*[@id='content']/div[1]/table[1]/tbody"
     private const val EXTRA = "//*[@id='content']/div[1]/table[2]/tbody/tr"
@@ -65,20 +66,27 @@ object Wenku8Parsers {
             throw Wenku8ParseException()
         }
         fun text(path: String): String = field(path).text().trim()
-        fun value(column: Int, label: String): String = text("$INFO/tr[2]/td[$column]").removePrefix(label).trim()
+        val metadata = doc.selectXpath("$INFO/tr[2]/td").map { it.text().trim() }
+        fun value(label: String): String = metadata.firstOrNull { it.startsWith(label) }
+            ?.removePrefix(label)?.trim()?.takeIf(String::isNotBlank) ?: throw Wenku8ParseException()
+        val spans = field("$EXTRA/td[2]").children().filter { it.tagName() == "span" }
+        fun span(label: String): Element = spans.firstOrNull { it.text().trim().startsWith(label) }
+            ?: throw Wenku8ParseException()
         val name = text("$INFO/tr[1]/td/table/tbody/tr/td[1]/span/b").takeIf(String::isNotBlank)
             ?: throw Wenku8ParseException()
         val cover = image(field("$EXTRA/td[1]/img").attr("src"), url)
-        val tags = text("$EXTRA/td[2]/span[1]/b").removePrefix("作品Tags：")
+        val tags = span("作品Tags：").text().trim().removePrefix("作品Tags：")
             .split(Regex("\\s+")).filter(String::isNotBlank)
+        val description = span("内容简介：").nextElementSiblings().firstOrNull { it.tagName() == "span" }
+            ?: throw Wenku8ParseException()
         return DetailedNovel(
             name = name, url = url, coverUrl = cover, views = 0, likes = 0,
-            words = value(5, "全文长度：").removeSuffix("字").toIntOrNull() ?: throw Wenku8ParseException(),
-            type = listOf(value(1, "文库分类："), value(3, "小说状态：")).joinToString(" · "),
-            author = value(2, "小说作者："),
+            words = value("全文长度：").removeSuffix("字").toIntOrNull() ?: throw Wenku8ParseException(),
+            type = listOf(value("文库分类："), value("文章状态：")).joinToString(" · "),
+            author = value("小说作者："),
             forumUrl = "", tags = tags, isAdult = tags.any { it.equals("R18", true) }, isFavorite = false,
-            description = analyseDescription(field("$EXTRA/td[2]/span[6]")),
-            chapterList = catalog, sourceUrl = url, updatedAt = value(4, "最后更新：")
+            description = analyseDescription(description),
+            chapterList = catalog, sourceUrl = url, updatedAt = value("最后更新：")
         )
     }
 
@@ -117,8 +125,9 @@ object Wenku8Parsers {
     fun search(html: String, url: String, page: Int): Wenku8SearchResult {
         val doc = document(html, url)
         if (doc.text().contains("两次搜索的间隔时间不得少于 5 秒")) throw Wenku8SearchRateLimitException()
-        val menu = doc.selectXpath("//*[@id='content']/div[1]/div[4]/div/span[1]/fieldset/div/a").firstOrNull()
-        if (menu != null && menu.text().contains("小说目录")) {
+        val menu = doc.select("#content > div:first-child fieldset a[href]")
+            .firstOrNull { it.text().trim() == "小说目录" }
+        if (menu != null) {
             val identity = Wenku8Urls.catalogIdentity(resolve(menu.attr("href"), url)) ?: throw Wenku8ParseException()
             val detailUrl = Wenku8Urls.detail(requireNotNull(Wenku8Urls.bookId(identity)))
             val book = detail(html, detailUrl, NovelChapterList(emptyList()))

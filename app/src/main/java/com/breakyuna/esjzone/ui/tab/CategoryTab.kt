@@ -2,11 +2,21 @@
 
 package com.breakyuna.esjzone.ui.tab
 
+import com.breakyuna.esjzone.ui.discovery.LibrarySource
+import com.breakyuna.esjzone.ui.discovery.LocalDiscoverySource
+import com.breakyuna.esjzone.ui.discovery.SourceSelector
+import com.breakyuna.esjzone.ui.page.WenkuFeed
+import com.breakyuna.esjzone.network.wenku8.Wenku8Browse
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.foundation.layout.Column
+
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.lifecycle.viewModelScope
 
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
@@ -65,10 +75,7 @@ class CategoryBrowserPage : AppDestination {
             title = stringResource(R.string.categories),
             onBack = { navigator?.pop() }
         ) { padding ->
-            CategoryBrowserContent(
-                model = model,
-                modifier = Modifier.fillMaxSize().padding(padding)
-            )
+            IntegratedCategoryContent(model, Modifier.fillMaxSize().padding(padding))
         }
     }
 }
@@ -91,7 +98,22 @@ object CategoryTab : AppTab {
         DiscoveryScaffold(
             title = stringResource(R.string.categories)
         ) { padding ->
-            CategoryBrowserContent(model, Modifier.fillMaxSize().padding(padding))
+            IntegratedCategoryContent(model, Modifier.fillMaxSize().padding(padding))
+        }
+    }
+}
+
+@Composable
+private fun IntegratedCategoryContent(model: CategoryModel, modifier: Modifier) {
+    val discoverySource = LocalDiscoverySource.current
+    var source by rememberSaveable { mutableStateOf(discoverySource.value) }
+    val holder = rememberSaveableStateHolder()
+    Column(modifier) {
+        SourceSelector(source, { selected -> selected?.let { source = it; discoverySource.value = it } })
+        holder.SaveableStateProvider(source.name) {
+            if (source == LibrarySource.WENKU8) WenkuFeed(initialBrowse = Wenku8Browse.ALL,
+                showBrowse = true, modifier = Modifier.weight(1f))
+            else CategoryBrowserContent(model, Modifier.weight(1f))
         }
     }
 }

@@ -1,6 +1,16 @@
 @file:OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 
+
+
 package com.breakyuna.esjzone.ui.tab
+
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Category
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
+import com.breakyuna.esjzone.ui.discovery.LibrarySource
+import com.breakyuna.esjzone.ui.discovery.LocalDiscoverySource
+import com.breakyuna.esjzone.ui.discovery.SourceSelector
+import com.breakyuna.esjzone.ui.page.WenkuDiscoveryScreen
 
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.Spring
@@ -103,6 +113,17 @@ object HomeTab : AppTab {
     @Composable
     @OptIn(ExperimentalMaterial3Api::class)
     override fun Content() {
+        val source = LocalDiscoverySource.current
+        val holder = rememberSaveableStateHolder()
+        holder.SaveableStateProvider(source.value.name) {
+            if (source.value == LibrarySource.WENKU8) WenkuDiscoveryScreen()
+            else EsjHomeContent()
+        }
+    }
+
+    @Composable
+    @OptIn(ExperimentalMaterial3Api::class)
+    private fun EsjHomeContent() {
         val navigator = LocalBaseNavigator.current
         val authorization = LocalAuthorization.current
         val model = rememberAppViewModel { HomeTabModel(authorization) }
@@ -362,199 +383,189 @@ object HomeTab : AppTab {
         }
 
         DiscoveryScaffold(
-            titleContent = {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(end = AppSpacing.sm),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(AppSpacing.md)
-                ) {
-                    Text(
-                        text = stringResource(R.string.home_discover),
-                        style = AppTypography.titleLarge
-                    )
-                    HomeSearchBar(
-                        onClick = { navigator?.pushIfNotCurrent(SearchTab) },
-                        modifier = Modifier.weight(1f)
-                    )
-                    androidx.compose.material3.TextButton(onClick = {
-                        navigator?.pushIfNotCurrent(com.breakyuna.esjzone.ui.page.Wenku8Page())
-                    }) { Text(stringResource(R.string.wenku8_title)) }
+            title = stringResource(R.string.home_discover),
+            actions = {
+                androidx.compose.material3.IconButton(onClick = { navigator?.pushIfNotCurrent(SearchTab) }) {
+                    androidx.compose.material3.Icon(Icons.Filled.Search, stringResource(R.string.search_action))
+                }
+                androidx.compose.material3.IconButton(onClick = { navigator?.pushIfNotCurrent(CategoryBrowserPage()) }) {
+                    androidx.compose.material3.Icon(Icons.Filled.Category, stringResource(R.string.categories))
                 }
             }
         ) { padding ->
-            PullToRefreshBox(
-                isRefreshing = (state as? HomeTabModel.State.Result)?.isRefreshing == true,
-                onRefresh = {
-                    isLoadingFromPull = false
-                    pullUpOffsetPx = 0f
-                    model.reload()
-                },
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(top = padding.calculateTopPadding())
-                    .clipToBounds()
-            ) {
-                if (isPullingUp || isLoadingFromPull) {
-                    Box(
-                        modifier = Modifier
-                            .align(Alignment.BottomCenter)
-                            .padding(bottom = navPadding.calculateBottomPadding() + AppSpacing.md)
-                            .graphicsLayer {
-                                val progress = (pullUpOffsetPx / thresholdPx).coerceIn(0f, 1f)
-                                alpha = progress
-                                translationY = (1f - progress) * 16.dp.toPx()
-                            },
-                        contentAlignment = Alignment.Center
-                    ) {
-                        if (isLoadingFromPull) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(24.dp),
-                                strokeWidth = 2.dp
-                            )
-                        } else Text(
-                            text = if (pullUpOffsetPx >= thresholdPx) {
-                                stringResource(R.string.home_random_release_to_load)
-                            } else pullToLoadLabel,
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = if (pullUpOffsetPx >= thresholdPx) {
-                                MaterialTheme.colorScheme.primary
-                            } else {
-                                MaterialTheme.colorScheme.onSurfaceVariant
-                            }
-                        )
-                    }
-                }
-
-                LazyColumn(
-                    state = listState,
+            Column(Modifier.fillMaxSize().padding(top = padding.calculateTopPadding())) {
+                val source = LocalDiscoverySource.current
+                SourceSelector(source.value, { it?.let { source.value = it } })
+                PullToRefreshBox(
+                    isRefreshing = (state as? HomeTabModel.State.Result)?.isRefreshing == true,
+                    onRefresh = {
+                        isLoadingFromPull = false
+                        pullUpOffsetPx = 0f
+                        model.reload()
+                    },
                     modifier = Modifier
                         .fillMaxSize()
-                        .nestedScroll(bottomSwipeConnection)
-                        .graphicsLayer {
-                            translationY = -pullUpOffsetPx
-                        },
-                    contentPadding = PaddingValues(
-                        start = 16.dp + navPadding.calculateStartPadding(layoutDirection),
-                        end = 16.dp,
-                        top = AppSpacing.sm,
-                        bottom = AppSpacing.sm + navPadding.calculateBottomPadding()
-                    ),
-                    verticalArrangement = Arrangement.spacedBy(AppSpacing.sm)
+                        .clipToBounds()
                 ) {
-                    when (val snapshot = state) {
-                        HomeTabModel.State.Loading -> {
-                            homeLoadingHero()
-                            homeActionsItem(onForum, onGuestbook, onWaterCooler)
-                            if (!hideHomeRecommendations) homeLoadingCollection(editorPicksTitle)
-                            homeLoadingCollection(translatedTitle)
-                            homeLoadingCollection(originalTitle)
-                            if (adult) {
-                                homeLoadingCollection(translatedAdultTitle)
-                                homeLoadingCollection(originalAdultTitle)
-                            }
-                            homeLoadingWeeklyUpdates()
-                        }
-                        is HomeTabModel.State.Error -> item(key = "home-error", contentType = "error") {
-                            Column {
-                                if (snapshot.failure == LoadFailureKind.NETWORK) {
-                                    DiscoveryOfflineBanner(modifier = Modifier.padding(bottom = 8.dp))
+                    if (isPullingUp || isLoadingFromPull) {
+                        Box(
+                            modifier = Modifier
+                                .align(Alignment.BottomCenter)
+                                .padding(bottom = navPadding.calculateBottomPadding() + AppSpacing.md)
+                                .graphicsLayer {
+                                    val progress = (pullUpOffsetPx / thresholdPx).coerceIn(0f, 1f)
+                                    alpha = progress
+                                    translationY = (1f - progress) * 16.dp.toPx()
+                                },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            if (isLoadingFromPull) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(24.dp),
+                                    strokeWidth = 2.dp
+                                )
+                            } else Text(
+                                text = if (pullUpOffsetPx >= thresholdPx) {
+                                    stringResource(R.string.home_random_release_to_load)
+                                } else pullToLoadLabel,
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = if (pullUpOffsetPx >= thresholdPx) {
+                                    MaterialTheme.colorScheme.primary
+                                } else {
+                                    MaterialTheme.colorScheme.onSurfaceVariant
                                 }
-                                DiscoveryErrorState(
-                                    message = stringResource(failureMessage(snapshot.failure)),
-                                    onRetry = model::reload
-                                )
-                            }
+                            )
                         }
-                        is HomeTabModel.State.Result -> {
-                            weeklyPopularCarousel(
-                                novels = weeklyPopularNovels,
-                                onNovelClick = onNovelClick
-                            )
-                            homeActionsItem(onForum, onGuestbook, onWaterCooler)
-                            if (!hideHomeRecommendations) {
-                                homeCollection(
-                                    title = editorPicksTitle,
-                                    rows = editorPicksRows,
-                                    showDivider = true,
-                                    onMore = null,
-                                    onNovelClick = onNovelClick,
-                                    browseMoreLabel = browseMoreLabel,
-                                    emptyTitle = emptyCollectionTitle,
-                                    emptyMessage = emptyCollectionMessage
-                                )
-                            }
-                            homeCollection(
-                                title = translatedTitle,
-                                rows = translatedRows,
-                                showDivider = true,
-                                onMore = { navigator?.pushIfNotCurrent(NovelListPage(1, 1, false)) },
-                                onNovelClick = onNovelClick,
-                                browseMoreLabel = browseMoreLabel,
-                                emptyTitle = emptyCollectionTitle,
-                                emptyMessage = emptyCollectionMessage
-                            )
-                            homeCollection(
-                                title = originalTitle,
-                                rows = originalRows,
-                                showDivider = true,
-                                onMore = { navigator?.pushIfNotCurrent(NovelListPage(2, 1, false)) },
-                                onNovelClick = onNovelClick,
-                                browseMoreLabel = browseMoreLabel,
-                                emptyTitle = emptyCollectionTitle,
-                                emptyMessage = emptyCollectionMessage
-                            )
-                            if (adult) {
-                                homeCollection(
-                                    title = translatedAdultTitle,
-                                    rows = translatedAdultRows,
-                                    showDivider = true,
-                                    onMore = { navigator?.pushIfNotCurrent(NovelListPage(1, 1, true)) },
-                                    onNovelClick = onNovelClick,
-                                    browseMoreLabel = browseMoreLabel,
-                                    emptyTitle = emptyCollectionTitle,
-                                    emptyMessage = emptyCollectionMessage
-                                )
-                                homeCollection(
-                                    title = originalAdultTitle,
-                                    rows = originalAdultRows,
-                                    showDivider = true,
-                                    onMore = { navigator?.pushIfNotCurrent(NovelListPage(2, 1, true)) },
-                                    onNovelClick = onNovelClick,
-                                    browseMoreLabel = browseMoreLabel,
-                                    emptyTitle = emptyCollectionTitle,
-                                    emptyMessage = emptyCollectionMessage
-                                )
-                            }
-                            weeklyUpdatesCollection(
-                                days = weeklyDays,
-                                selectedIndex = weeklyIndex,
-                                novelsByDay = weeklyNovelsByDay,
-                                showDivider = true,
-                                onSelect = { selectedWeeklyDate = weeklyDays[it].date.toString() },
-                                onNovelClick = onNovelClick
-                            )
-                            if (weeklyDays.isEmpty() && snapshot.isSyncing) {
+                    }
+
+                    LazyColumn(
+                        state = listState,
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .nestedScroll(bottomSwipeConnection)
+                            .graphicsLayer {
+                                translationY = -pullUpOffsetPx
+                            },
+                        contentPadding = PaddingValues(
+                            start = 16.dp + navPadding.calculateStartPadding(layoutDirection),
+                            end = 16.dp,
+                            top = AppSpacing.sm,
+                            bottom = AppSpacing.sm + navPadding.calculateBottomPadding()
+                        ),
+                        verticalArrangement = Arrangement.spacedBy(AppSpacing.sm)
+                    ) {
+                        when (val snapshot = state) {
+                            HomeTabModel.State.Loading -> {
+                                homeLoadingHero()
+                                homeActionsItem(onForum, onGuestbook, onWaterCooler)
+                                if (!hideHomeRecommendations) homeLoadingCollection(editorPicksTitle)
+                                homeLoadingCollection(translatedTitle)
+                                homeLoadingCollection(originalTitle)
+                                if (adult) {
+                                    homeLoadingCollection(translatedAdultTitle)
+                                    homeLoadingCollection(originalAdultTitle)
+                                }
                                 homeLoadingWeeklyUpdates()
                             }
-                            randomRecommendationsSection(
-                                state = randomState,
-                                showInitialLoading = !isLoadingFromPull,
-                                title = randomRecommendationsTitle,
-                                changeBatchLabel = changeBatchLabel,
-                                collapseLabel = collapseLabel,
-                                onChangeBatch = { model.replaceRandomRecommendations(adult) },
-                                onCollapse = { model.unloadRandomRecommendations(clearDeduplication = false) },
-                                onRetry = { model.retryRandomRecommendations(adult) },
-                                onNovelClick = onNovelClick
-                            )
+                            is HomeTabModel.State.Error -> item(key = "home-error", contentType = "error") {
+                                Column {
+                                    if (snapshot.failure == LoadFailureKind.NETWORK) {
+                                        DiscoveryOfflineBanner(modifier = Modifier.padding(bottom = 8.dp))
+                                    }
+                                    DiscoveryErrorState(
+                                        message = stringResource(failureMessage(snapshot.failure)),
+                                        onRetry = model::reload
+                                    )
+                                }
+                            }
+                            is HomeTabModel.State.Result -> {
+                                weeklyPopularCarousel(
+                                    novels = weeklyPopularNovels,
+                                    onNovelClick = onNovelClick
+                                )
+                                homeActionsItem(onForum, onGuestbook, onWaterCooler)
+                                if (!hideHomeRecommendations) {
+                                    homeCollection(
+                                        title = editorPicksTitle,
+                                        rows = editorPicksRows,
+                                        showDivider = true,
+                                        onMore = null,
+                                        onNovelClick = onNovelClick,
+                                        browseMoreLabel = browseMoreLabel,
+                                        emptyTitle = emptyCollectionTitle,
+                                        emptyMessage = emptyCollectionMessage
+                                    )
+                                }
+                                homeCollection(
+                                    title = translatedTitle,
+                                    rows = translatedRows,
+                                    showDivider = true,
+                                    onMore = { navigator?.pushIfNotCurrent(NovelListPage(1, 1, false)) },
+                                    onNovelClick = onNovelClick,
+                                    browseMoreLabel = browseMoreLabel,
+                                    emptyTitle = emptyCollectionTitle,
+                                    emptyMessage = emptyCollectionMessage
+                                )
+                                homeCollection(
+                                    title = originalTitle,
+                                    rows = originalRows,
+                                    showDivider = true,
+                                    onMore = { navigator?.pushIfNotCurrent(NovelListPage(2, 1, false)) },
+                                    onNovelClick = onNovelClick,
+                                    browseMoreLabel = browseMoreLabel,
+                                    emptyTitle = emptyCollectionTitle,
+                                    emptyMessage = emptyCollectionMessage
+                                )
+                                if (adult) {
+                                    homeCollection(
+                                        title = translatedAdultTitle,
+                                        rows = translatedAdultRows,
+                                        showDivider = true,
+                                        onMore = { navigator?.pushIfNotCurrent(NovelListPage(1, 1, true)) },
+                                        onNovelClick = onNovelClick,
+                                        browseMoreLabel = browseMoreLabel,
+                                        emptyTitle = emptyCollectionTitle,
+                                        emptyMessage = emptyCollectionMessage
+                                    )
+                                    homeCollection(
+                                        title = originalAdultTitle,
+                                        rows = originalAdultRows,
+                                        showDivider = true,
+                                        onMore = { navigator?.pushIfNotCurrent(NovelListPage(2, 1, true)) },
+                                        onNovelClick = onNovelClick,
+                                        browseMoreLabel = browseMoreLabel,
+                                        emptyTitle = emptyCollectionTitle,
+                                        emptyMessage = emptyCollectionMessage
+                                    )
+                                }
+                                weeklyUpdatesCollection(
+                                    days = weeklyDays,
+                                    selectedIndex = weeklyIndex,
+                                    novelsByDay = weeklyNovelsByDay,
+                                    showDivider = true,
+                                    onSelect = { selectedWeeklyDate = weeklyDays[it].date.toString() },
+                                    onNovelClick = onNovelClick
+                                )
+                                if (weeklyDays.isEmpty() && snapshot.isSyncing) {
+                                    homeLoadingWeeklyUpdates()
+                                }
+                                randomRecommendationsSection(
+                                    state = randomState,
+                                    showInitialLoading = !isLoadingFromPull,
+                                    title = randomRecommendationsTitle,
+                                    changeBatchLabel = changeBatchLabel,
+                                    collapseLabel = collapseLabel,
+                                    onChangeBatch = { model.replaceRandomRecommendations(adult) },
+                                    onCollapse = { model.unloadRandomRecommendations(clearDeduplication = false) },
+                                    onRetry = { model.retryRandomRecommendations(adult) },
+                                    onNovelClick = onNovelClick
+                                )
+                            }
                         }
                     }
                 }
             }
         }
-
         LaunchedEffect(Unit) { model.getHomeData() }
         LaunchedEffect(adult) {
             isLoadingFromPull = false

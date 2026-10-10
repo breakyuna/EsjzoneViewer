@@ -1,5 +1,7 @@
 package com.breakyuna.esjzone.ui.page
 
+import com.breakyuna.esjzone.ui.discovery.*
+
 import androidx.lifecycle.viewModelScope
 
 import androidx.activity.compose.BackHandler
@@ -85,6 +87,7 @@ object DownloadPage : AppDestination {
     @OptIn(ExperimentalMaterial3Api::class)
     @Composable
     override fun Content() {
+        var sourceFilter by rememberSaveable { mutableStateOf<LibrarySource?>(null) }
         val navigator = LocalBaseNavigator.current
         val model = rememberAppViewModel { DownloadPageModel() }
         val state by model.state.collectAsState()
@@ -97,6 +100,7 @@ object DownloadPage : AppDestination {
 
         LaunchedEffect(Unit) { model.refresh() }
         val entries = (state as? DownloadPageModel.State.Content)?.novels.orEmpty()
+            .filter { matchesLibrarySource(sourceFilter, url = it.novelUrl) }
         val deleting = (state as? DownloadPageModel.State.Content)?.deleting == true
         LaunchedEffect(entries) { selected = selected.intersect(entries.mapTo(LinkedHashSet()) { it.novelUrl }) }
         BackHandler(enabled = editing && !showDelete) {
@@ -110,38 +114,42 @@ object DownloadPage : AppDestination {
 
         Scaffold(
             topBar = {
-                TopAppBar(
-                    title = { Text(if (editing) "${stringResource(R.string.download_edit)} (${selected.size})" else stringResource(R.string.downloads), style = AppTypography.titleLarge) },
-                    navigationIcon = { BackIconButton { if (editing) { editing = false; selected = emptySet() } else navigator?.pop() } },
-                    actions = {
-                        if (editing) {
-                            IconButton(onClick = { selected = if (selected.size == entries.size) emptySet() else entries.mapTo(LinkedHashSet()) { it.novelUrl } }, enabled = entries.isNotEmpty() && !deleting) {
-                                Icon(Icons.Filled.SelectAll, stringResource(R.string.download_select_all))
-                            }
-                            IconButton(onClick = { requestDelete(selected) }, enabled = selected.isNotEmpty() && !deleting) {
-                                Icon(Icons.Filled.DeleteOutline, stringResource(R.string.download_delete_selected), tint = MaterialTheme.colorScheme.error)
-                            }
-                            IconButton(onClick = { editing = false; selected = emptySet() }, enabled = !deleting) {
-                                Icon(Icons.Filled.Done, stringResource(R.string.download_edit_done))
-                            }
-                        } else {
-                            IconButton(onClick = { editing = true }, enabled = entries.isNotEmpty()) { Icon(Icons.Filled.Edit, stringResource(R.string.download_edit)) }
-                            Box {
-                                IconButton(onClick = { showSettings = true }) { Icon(Icons.Filled.Settings, stringResource(R.string.download_settings)) }
-                                DropdownMenu(expanded = showSettings, onDismissRequest = { showSettings = false }) {
-                                    DropdownMenuItem(
-                                        text = { Text(stringResource(R.string.download_auto_save), style = AppTypography.labelLarge) },
-                                        trailingIcon = { Switch(checked = autoSave, onCheckedChange = { model.setAutoSave(it) }) },
-                                        onClick = { model.setAutoSave(!autoSave) }
-                                    )
+                Column {
+                    TopAppBar(
+                        title = { Text(if (editing) "${stringResource(R.string.download_edit)} (${selected.size})" else stringResource(R.string.downloads), style = AppTypography.titleLarge) },
+                        navigationIcon = { BackIconButton { if (editing) { editing = false; selected = emptySet() } else navigator?.pop() } },
+                        actions = {
+                            if (editing) {
+                                IconButton(onClick = { selected = if (selected.size == entries.size) emptySet() else entries.mapTo(LinkedHashSet()) { it.novelUrl } }, enabled = entries.isNotEmpty() && !deleting) {
+                                    Icon(Icons.Filled.SelectAll, stringResource(R.string.download_select_all))
+                                }
+                                IconButton(onClick = { requestDelete(selected) }, enabled = selected.isNotEmpty() && !deleting) {
+                                    Icon(Icons.Filled.DeleteOutline, stringResource(R.string.download_delete_selected), tint = MaterialTheme.colorScheme.error)
+                                }
+                                IconButton(onClick = { editing = false; selected = emptySet() }, enabled = !deleting) {
+                                    Icon(Icons.Filled.Done, stringResource(R.string.download_edit_done))
+                                }
+                            } else {
+                                IconButton(onClick = { editing = true }, enabled = entries.isNotEmpty()) { Icon(Icons.Filled.Edit, stringResource(R.string.download_edit)) }
+                                Box {
+                                    IconButton(onClick = { showSettings = true }) { Icon(Icons.Filled.Settings, stringResource(R.string.download_settings)) }
+                                    DropdownMenu(expanded = showSettings, onDismissRequest = { showSettings = false }) {
+                                        DropdownMenuItem(
+                                            text = { Text(stringResource(R.string.download_auto_save), style = AppTypography.labelLarge) },
+                                            trailingIcon = { Switch(checked = autoSave, onCheckedChange = { model.setAutoSave(it) }) },
+                                            onClick = { model.setAutoSave(!autoSave) }
+                                        )
+                                    }
                                 }
                             }
-                        }
-                    },
-                    colors = TopAppBarDefaults.topAppBarColors(
-                        containerColor = MaterialTheme.colorScheme.background
+                        },
+                        colors = TopAppBarDefaults.topAppBarColors(
+                            containerColor = MaterialTheme.colorScheme.background
+                        )
                     )
-                )
+                    SourceSelector(sourceFilter, { sourceFilter = it; selected = emptySet() },
+                        includeAll = true, enabled = !editing && !deleting)
+                }
             }
         ) { padding ->
             when (val current = state) {
@@ -153,7 +161,7 @@ object DownloadPage : AppDestination {
                     onRetry = model::refresh,
                     modifier = Modifier.fillMaxSize().accountContentWidth().padding(padding)
                 )
-                is DownloadPageModel.State.Content -> if (current.novels.isEmpty()) {
+                is DownloadPageModel.State.Content -> if (entries.isEmpty()) {
                     EmptyState(
                         title = stringResource(R.string.download_empty),
                         message = stringResource(R.string.download_empty_hint),
@@ -161,7 +169,7 @@ object DownloadPage : AppDestination {
                     )
                 } else {
                     DownloadList(
-                        novels = current.novels,
+                        novels = entries,
                         selected = selected,
                         editing = editing,
                         deleting = deleting,
@@ -243,6 +251,7 @@ private fun DownloadCard(
             modifier = Modifier.size(width = 64.dp, height = 88.dp)
         )
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(AppSpacing.xs)) {
+            SourceBadge(librarySourceOf(url = summary.novelUrl))
             Text(summary.novelName.ifBlank { stringResource(R.string.download_unknown_novel) }, style = AppTypography.labelLarge, maxLines = 2, overflow = TextOverflow.Ellipsis)
             Text(stringResource(R.string.download_chapters_count, summary.downloadedChapterCount), style = AppTypography.bodyMedium, color = MaterialTheme.colorScheme.primary)
             Text(formatStorageSize(summary.storageBytes), style = AppTypography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
