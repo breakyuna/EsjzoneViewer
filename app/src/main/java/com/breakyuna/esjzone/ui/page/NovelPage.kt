@@ -183,6 +183,14 @@ class NovelPage(
         val localShelfEntry by BookshelfRepository.observeEntry(authorization, novel.url)
             .collectAsState(initial = null)
         var showWenkuVerification by remember(novel.url) { mutableStateOf(false) }
+        var pendingSessionReturn by rememberSaveable(novel.url) { mutableStateOf(false) }
+        val currentPageKey = navigator?.lastItem?.key
+        LaunchedEffect(currentPageKey) {
+            if (isWenku8 && currentPageKey == key && pendingSessionReturn) {
+                pendingSessionReturn = false
+                screenModel.retry()
+            }
+        }
         if (showWenkuVerification) {
             WenkuVerificationDialog(url = novel.url,
                 onVerified = { showWenkuVerification = false; screenModel.retry() },
@@ -291,9 +299,21 @@ class NovelPage(
                     if (snapshot.message != null) {
                         ErrorState(message = stringResource(snapshot.message),
                             modifier = Modifier.fillMaxWidth(),
-                            retryLabel = stringResource(if (snapshot.requiresVerification)
-                                R.string.wenku_verification_open else R.string.retry),
-                            onRetry = { if (snapshot.requiresVerification) showWenkuVerification = true else screenModel.retry() })
+                            retryLabel = stringResource(when {
+                                snapshot.message == R.string.wenku8_login_required -> R.string.button_login
+                                snapshot.requiresVerification -> R.string.wenku_verification_open
+                                else -> R.string.retry
+                            }),
+                            onRetry = {
+                                when {
+                                    snapshot.message == R.string.wenku8_login_required -> navigator?.let {
+                                        pendingSessionReturn = true
+                                        it.pushIfNotCurrent(Wenku8LoginPage)
+                                    }
+                                    snapshot.requiresVerification -> showWenkuVerification = true
+                                    else -> screenModel.retry()
+                                }
+                            })
                     } else if (snapshot.failure == LoadFailureKind.SESSION_OR_NODE) {
                         ErrorState(
                             message = stringResource(R.string.load_session_or_node_error),

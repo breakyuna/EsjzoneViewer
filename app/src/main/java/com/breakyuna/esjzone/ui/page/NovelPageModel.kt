@@ -15,6 +15,7 @@ import com.breakyuna.esjzone.network.external.WenkuCookieStoreUnavailableExcepti
 import com.breakyuna.esjzone.network.wenku8.Wenku8ParseException
 import com.breakyuna.esjzone.network.wenku8.Wenku8RestrictedException
 import com.breakyuna.esjzone.network.wenku8.Wenku8Urls
+import com.breakyuna.esjzone.network.wenku8.Wenku8LoginRequiredException
 import com.breakyuna.esjzone.R
 import com.breakyuna.esjzone.network.features.getNovelDetail
 import com.breakyuna.esjzone.network.loadFailureKind
@@ -73,6 +74,7 @@ class NovelPageModel(
                     AppLogger.w("NovelPageModel", "Using downloaded novel detail for ${novel.name}", error, source = logSourceForUrl(novel.url))
                 } else {
                     val message = if (Wenku8Urls.detailIdentity(novel.url) != null) when (error) {
+                        is Wenku8LoginRequiredException -> R.string.wenku8_login_required
                         is CloudflareChallengeRequiredException -> R.string.wenku8_verification_needed
                         is CloudflareWebViewUnavailableException -> R.string.wenku_webview_unavailable
                         is WenkuCookieStoreUnavailableException -> R.string.wenku_cookie_store_unavailable

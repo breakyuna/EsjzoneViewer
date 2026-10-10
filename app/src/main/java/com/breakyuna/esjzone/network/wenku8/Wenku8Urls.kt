@@ -40,6 +40,8 @@ object Wenku8Urls {
         }
     }
 
+    internal fun isLogin(rawUrl: String): Boolean = siteUrl(rawUrl)?.encodedPath == "/login.php"
+
     fun detailIdentity(rawUrl: String): String? = siteUrl(rawUrl)?.let {
         detailPath.matchEntire(it.encodedPath)?.groupValues?.get(1)?.let(::identity)
     }

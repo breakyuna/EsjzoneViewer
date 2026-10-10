@@ -286,8 +286,7 @@ internal class WenkuChapterClient(context: Context, userAgent: String) {
                 "HTTP result: kind=$kind, hop=$it, status=${result.status}, challenge=${result.challenge}, " +
                     "url=${wenkuDiagnosticUrl(target)}, redirect=${wenkuDiagnosticUrl(next)}")
             if (next == null) return result
-            if (next.toHttpUrlOrNull()?.let { it.isHttps && it.host == "www.wenku8.net" &&
-                    it.port == 443 && it.encodedPath == "/login.php" } == true) {
+            if (com.breakyuna.esjzone.network.wenku8.Wenku8Urls.isLogin(next)) {
                 throw com.breakyuna.esjzone.network.wenku8.Wenku8LoginRequiredException()
             }
             if (!wenku8PageAllowed(next, kind)) throw UnsupportedExternalChapterException("http-redirect", kind, url, next)

@@ -10,6 +10,7 @@ import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
@@ -48,6 +49,11 @@ object Wenku8LoginPage : AppDestination {
         val navigator = LocalBaseNavigator.current
         val model = rememberAppViewModel { SessionBrowserModel(context.applicationContext) }
         val browser = model.browser
+        fun leaveSession() {
+            model.prepareToLeave()
+            navigator?.pop()
+        }
+        BackHandler(enabled = navigator != null) { leaveSession() }
         DisposableEffect(model, context) {
             model.browserContext.baseContext = context
             onDispose {
@@ -57,7 +63,7 @@ object Wenku8LoginPage : AppDestination {
         }
         Scaffold(topBar = {
             TopAppBar(title = { Text(stringResource(R.string.wenku8_session)) }, navigationIcon = {
-                IconButton(onClick = { navigator?.pop() }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.reader_back)) }
+                IconButton(onClick = ::leaveSession) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.reader_back)) }
             }, actions = {
                 TextButton(onClick = {
                     model.bridgeBrowserSession()
@@ -66,7 +72,7 @@ object Wenku8LoginPage : AppDestination {
                     browser.stopLoading()
                     browser.loadUrl("about:blank")
                     PresentationAccess.client.clearWenkuSession {
-                        if (model.alive) {
+                        if (model.alive && !model.leaving) {
                             model.cleared = false
                             model.clearing = false
                             browser.loadUrl("${Wenku8Urls.BASE}/login.php")
@@ -87,6 +93,8 @@ object Wenku8LoginPage : AppDestination {
         val browserContext = MutableContextWrapper(applicationContext)
         var clearing by mutableStateOf(false)
         var cleared = false
+        var leaving = false
+            private set
         var alive = true
             private set
         val browser = WebView(browserContext).apply {
@@ -98,7 +106,7 @@ object Wenku8LoginPage : AppDestination {
             CookieManager.getInstance().setAcceptThirdPartyCookies(this, false)
             webViewClient = object : WebViewClient() {
                 override fun onPageFinished(view: WebView, url: String) {
-                    if (alive && !clearing && allowed(url)) bridgeBrowserSession(url)
+                    if (alive && !clearing && !leaving && allowed(url)) bridgeBrowserSession(url)
                 }
                 override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean =
                     request.isForMainFrame && !allowed(request.url.toString())
@@ -111,7 +119,7 @@ object Wenku8LoginPage : AppDestination {
             }
             val loginBrowser = this
             PresentationAccess.client.restoreWenkuBrowserCookies {
-                if (alive && !clearing) loginBrowser.loadUrl("${Wenku8Urls.BASE}/login.php")
+                if (alive && !clearing && !leaving) loginBrowser.loadUrl("${Wenku8Urls.BASE}/login.php")
             }
         }
 
@@ -125,9 +133,16 @@ object Wenku8LoginPage : AppDestination {
             }
         }
 
+        fun prepareToLeave() {
+            if (leaving) return
+            leaving = true
+            browser.stopLoading()
+            if (!clearing) bridgeBrowserSession()
+        }
+
         override fun onCleared() {
             alive = false
-            if (!cleared) bridgeBrowserSession()
+            if (!cleared && !leaving) bridgeBrowserSession()
             (browser.parent as? ViewGroup)?.removeView(browser)
             browser.stopLoading()
             browser.destroy()

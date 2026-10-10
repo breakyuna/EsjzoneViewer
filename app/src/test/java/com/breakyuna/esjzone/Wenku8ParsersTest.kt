@@ -3,6 +3,7 @@ package com.breakyuna.esjzone
 import com.breakyuna.esjzone.network.wenku8.Wenku8PageKind
 import com.breakyuna.esjzone.network.wenku8.Wenku8Parsers
 import com.breakyuna.esjzone.network.wenku8.Wenku8ParseException
+import com.breakyuna.esjzone.network.wenku8.Wenku8LoginRequiredException
 import com.breakyuna.esjzone.network.wenku8.Wenku8RestrictedException
 import com.breakyuna.esjzone.network.wenku8.Wenku8SearchRateLimitException
 import com.breakyuna.esjzone.network.wenku8.Wenku8SearchType
@@ -24,6 +25,22 @@ import org.junit.Test
 class Wenku8ParsersTest {
     private val book = Wenku8Urls.detail("2552")
     private val catalog = Wenku8Urls.catalog("2552")
+
+    @Test fun loginFormIsReportedAsSignInRequiredAcrossBusinessPages() {
+        val html = "<form><input name=username><input name=password type=password></form>"
+        assertThrows(Wenku8LoginRequiredException::class.java) {
+            Wenku8Parsers.home(html, "${Wenku8Urls.BASE}/index.php")
+        }
+        assertThrows(Wenku8LoginRequiredException::class.java) {
+            Wenku8Parsers.search(html, wenku8SearchUrl("fixture", Wenku8SearchType.TITLE, 1), 1)
+        }
+        assertThrows(Wenku8LoginRequiredException::class.java) {
+            Wenku8Parsers.detail(html, book, NovelChapterList(emptyList()))
+        }
+        assertThrows(Wenku8LoginRequiredException::class.java) {
+            Wenku8Parsers.catalog(html, catalog)
+        }
+    }
 
     @Test fun groupedCatalogPreservesAllRowsAndRejectsOtherBooks() {
         val html = """<html><body><table>

@@ -5,6 +5,8 @@ import android.graphics.Bitmap
 import com.breakyuna.esjzone.util.AppLogger
 import com.breakyuna.esjzone.network.wenku8.Wenku8PageResponse
 import com.breakyuna.esjzone.network.wenku8.Wenku8PageKind
+import com.breakyuna.esjzone.network.wenku8.Wenku8Urls
+import com.breakyuna.esjzone.network.wenku8.Wenku8LoginRequiredException
 import com.breakyuna.esjzone.network.wenku8.wenku8PageAllowed
 import android.os.Handler
 import android.os.Looper
@@ -114,6 +116,7 @@ internal class WenkuWebViewSession(
             val html = captured.html
             val final = captured.url
             AppLogger.i("WenkuWebViewSession", "Browser captured: kind=$kind, requested=${wenkuDiagnosticUrl(url)}, final=${wenkuDiagnosticUrl(final)}, htmlChars=${html.length}")
+            if (Wenku8Urls.isLogin(final)) throw Wenku8LoginRequiredException()
             if (!wenku8PageAllowed(final, kind)) throw UnsupportedExternalChapterException("browser-final-url", kind, url, final)
             ready = true
             lastUse = System.currentTimeMillis()
@@ -149,6 +152,7 @@ internal class WenkuWebViewSession(
         // These fields are accessed only on main, including reads through onMain below.
         var started = false
         var completedUrl: String? = null
+        var loginRequired = false
         var emptyLogged = false
         onMain {
             browser.stopLoading()
@@ -156,6 +160,7 @@ internal class WenkuWebViewSession(
                 override fun onPageStarted(view: WebView, url: String, favicon: Bitmap?) {
                     started = true
                     completedUrl = null
+                    if (Wenku8Urls.isLogin(url)) loginRequired = true
                 }
 
                 override fun onPageFinished(view: WebView, url: String) {
@@ -166,6 +171,7 @@ internal class WenkuWebViewSession(
                 }
 
                 override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
+                    if (request.isForMainFrame && Wenku8Urls.isLogin(request.url.toString())) loginRequired = true
                     val blocked = request.isForMainFrame && !wenku8PageAllowed(request.url.toString(), kind)
                     if (request.isForMainFrame) AppLogger.i("WenkuWebViewSession",
                         "Browser navigation: kind=$kind, blocked=$blocked, url=${wenkuDiagnosticUrl(request.url.toString())}")
@@ -183,7 +189,11 @@ internal class WenkuWebViewSession(
         while (System.currentTimeMillis() < deadline) {
             Thread.sleep(POLL_MS)
             if (token != generation.get()) throw WenkuBrowserSessionClosedException()
-            val allowed = onMain { browser.url.orEmpty().takeIf { it == completedUrl }.orEmpty() }
+            val (requiresLogin, allowed) = onMain {
+                val current = browser.url.orEmpty()
+                (loginRequired || Wenku8Urls.isLogin(current)) to current.takeIf { it == completedUrl }.orEmpty()
+            }
+            if (requiresLogin) throw Wenku8LoginRequiredException()
             if (!wenku8PageAllowed(allowed, kind)) continue
             // A new WebView URL alone does not prove that the initial/previous DOM has been replaced.
             val condition = "return document.readyState==='complete'&&location.href===${JSONObject.quote(allowed)}?1:0"

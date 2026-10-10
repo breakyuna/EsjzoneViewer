@@ -4,15 +4,19 @@ import com.breakyuna.esjzone.database.BookmarkCoverStore
 import com.breakyuna.esjzone.database.BookshelfRepository
 import com.breakyuna.esjzone.database.readingStatisticsBookKey
 import com.breakyuna.esjzone.network.wenku8.Wenku8Urls
+import com.breakyuna.esjzone.network.wenku8.Wenku8PageKind
+import com.breakyuna.esjzone.network.wenku8.wenku8PageAllowed
 import com.breakyuna.esjzone.network.wenku8.novelDetailUrlForId
 import com.breakyuna.esjzone.novellibrary.novel.Chapter
 import com.breakyuna.esjzone.novellibrary.novel.DetailedNovel
 import com.breakyuna.esjzone.novellibrary.novel.NovelChapterList
 import com.breakyuna.esjzone.novellibrary.novel.NovelDescription
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertThrows
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class Wenku8IdentityTest {
@@ -41,6 +45,23 @@ class Wenku8IdentityTest {
             "https://www.wenku8.net/book/2552.htm/extra",
             "/book/2552.htm", chapterUrl
         ).forEach { assertNull(it, Wenku8Urls.detailIdentity(it)) }
+    }
+
+    @Test fun loginRedirectsAreRecognizedWithoutAllowingThemAsBusinessPages() {
+        listOf(
+            "https://www.wenku8.net/login.php",
+            "https://www.wenku8.net/login.php?jumpurl=%2Findex.php"
+        ).forEach { login ->
+            assertTrue(login, Wenku8Urls.isLogin(login))
+            Wenku8PageKind.entries.forEach { kind ->
+                assertFalse(wenku8PageAllowed(login, kind))
+            }
+        }
+        listOf(
+            "http://www.wenku8.net/login.php", "https://www.wenku8.net:444/login.php",
+            "https://www.wenku8.net.example.org/login.php", "https://www.wenku8.cc/login.php",
+            "https://user@www.wenku8.net/login.php", "https://www.wenku8.net/login.php/extra", bookUrl
+        ).forEach { assertFalse(it, Wenku8Urls.isLogin(it)) }
     }
 
     @Test fun sameNumericIdCannotOverwriteOtherSourceIdentity() {

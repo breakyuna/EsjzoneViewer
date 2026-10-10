@@ -82,6 +82,21 @@ class Wenku8Page(
         var category by rememberSaveable { mutableStateOf(Wenku8Browse.HOME) }
         var savedPage by rememberSaveable { mutableStateOf(1) }
         var showVerification by remember { mutableStateOf(false) }
+        var pendingSessionReturn by rememberSaveable { mutableStateOf(false) }
+        fun openSession() {
+            navigator?.let {
+                pendingSessionReturn = true
+                it.pushIfNotCurrent(Wenku8LoginPage)
+            }
+        }
+        val currentPageKey = navigator?.lastItem?.key
+        LaunchedEffect(currentPageKey, state) {
+            if (currentPageKey == key && pendingSessionReturn && state != Wenku8PageModel.State.Loading) {
+                pendingSessionReturn = false
+                if (state == Wenku8PageModel.State.Idle) model.load(savedPage, forceRefresh = true, category = category)
+                else model.load(model.page, forceRefresh = true)
+            }
+        }
         if (showVerification) {
             WenkuVerificationDialog(url = if (keyword.isBlank()) wenku8BrowseUrl(category, model.page)
                 else wenku8SearchUrl(keyword, type, model.page),
@@ -126,7 +141,7 @@ class Wenku8Page(
                     TextButton(onClick = { model.load(model.page, forceRefresh = true) },
                         enabled = state != Wenku8PageModel.State.Loading) { Text(stringResource(R.string.wenku8_refresh)) }
                     TextButton(onClick = { navigator?.pushIfNotCurrent(Wenku8BookshelfPage) }) { Text(stringResource(R.string.bookshelf)) }
-                    TextButton(onClick = { navigator?.pushIfNotCurrent(Wenku8LoginPage) }) { Text(stringResource(R.string.wenku8_session)) }
+                    TextButton(onClick = ::openSession) { Text(stringResource(R.string.wenku8_session)) }
                     Box {
                         IconButton(onClick = { showLocalActions = true }) {
                             Icon(Icons.Filled.MoreVert, stringResource(R.string.wenku8_local_actions))
@@ -153,8 +168,8 @@ class Wenku8Page(
                     is Wenku8PageModel.State.Failed -> item {
                         DiscoveryErrorState(stringResource(snapshot.message), onRetry = { model.load(model.page, forceRefresh = true) })
                         if (snapshot.message == R.string.wenku8_login_required) {
-                            TextButton(onClick = { navigator?.pushIfNotCurrent(Wenku8LoginPage) }) {
-                                Text(stringResource(R.string.wenku8_session))
+                            TextButton(onClick = ::openSession) {
+                                Text(stringResource(R.string.button_login))
                             }
                         }
                         if (snapshot.message == R.string.wenku8_verification_needed) {
