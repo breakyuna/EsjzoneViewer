@@ -6,6 +6,9 @@ import com.breakyuna.esjzone.network.PageResponsePolicy
 import com.breakyuna.esjzone.network.external.CloudflareChallenge
 import com.breakyuna.esjzone.network.external.ExternalChapterHtml
 import com.breakyuna.esjzone.network.external.ExternalChapterParseException
+import com.breakyuna.esjzone.network.external.UnsupportedExternalChapterException
+import com.breakyuna.esjzone.network.external.wenkuDiagnosticUrl
+import com.breakyuna.esjzone.network.wenku8.Wenku8PageKind
 import com.breakyuna.esjzone.novellibrary.novel.Chapter
 import com.breakyuna.esjzone.novellibrary.novel.ChapterSource
 import com.breakyuna.esjzone.novellibrary.novel.resolveChapterSource
@@ -19,6 +22,21 @@ import org.junit.Test
 
 class WenkuChapterTest {
     private val url = "https://www.wenku8.net/novel/2/2552/96772.htm"
+
+    @Test fun rejectedPageDiagnosticsKeepContextWithoutUrlSecrets() {
+        val actual = "https://synthetic-user:synthetic-pass@www.wenku8.net/index.php?__cf_chl_rt_tk=synthetic-token&page=2#synthetic-fragment"
+        val message = UnsupportedExternalChapterException(
+            "browser-final-url", Wenku8PageKind.HOME, "https://www.wenku8.net/index.php", actual
+        ).message.orEmpty()
+        assertTrue(message.contains("stage=browser-final-url, kind=HOME"))
+        assertTrue(message.contains("https://www.wenku8.net/index.php"))
+        assertTrue(message.contains("queryNames=[__cf_chl_rt_tk, page]"))
+        listOf("synthetic-user", "synthetic-pass", "synthetic-token", "synthetic-fragment").forEach {
+            assertFalse(message.contains(it))
+        }
+        assertEquals("invalid-url", wenkuDiagnosticUrl("invalid synthetic-secret"))
+        assertEquals("unavailable", wenkuDiagnosticUrl(null))
+    }
 
     @Test fun sourceAndIdentity() {
         assertEquals(ChapterSource.ESJ_ZONE, resolveChapterSource("/forum/1552200797/123.html"))

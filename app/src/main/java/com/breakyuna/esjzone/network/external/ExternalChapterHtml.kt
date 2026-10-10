@@ -15,7 +15,21 @@ import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 internal const val MAX_BROWSER_CHAPTER_HTML_BYTES = 4 * 1024 * 1024
 
 class ExternalChapterParseException : IOException("External chapter content could not be recognized")
-class UnsupportedExternalChapterException : IOException("Unsupported external chapter")
+class UnsupportedExternalChapterException(
+    stage: String = "chapter-source",
+    kind: com.breakyuna.esjzone.network.wenku8.Wenku8PageKind? = null,
+    requestedUrl: String? = null,
+    actualUrl: String? = null
+) : IOException("Unsupported external chapter: stage=$stage, kind=${kind?.name ?: "CHAPTER"}, " +
+    "requested=${wenkuDiagnosticUrl(requestedUrl)}, actual=${wenkuDiagnosticUrl(actualUrl)}")
+
+/** Query values, fragments and user information may contain session credentials. */
+internal fun wenkuDiagnosticUrl(raw: String?): String {
+    if (raw == null) return "unavailable"
+    val url = raw.toHttpUrlOrNull() ?: return "invalid-url"
+    val address = url.newBuilder().username("").password("").query(null).fragment(null).build()
+    return "$address queryNames=${url.queryParameterNames.sorted()}"
+}
 
 internal object ExternalChapterHtml {
     private val charsetPattern = Regex("(?i)charset\\s*=\\s*['\"]?([a-z0-9_+.-]+)")

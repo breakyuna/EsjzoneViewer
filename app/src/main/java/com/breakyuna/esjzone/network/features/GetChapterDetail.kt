@@ -49,7 +49,7 @@ fun EsjzoneClient.getChapterDetail(
     val targetUrl = baseUrl?.let { EsjzoneUrls.resolve(chapter.url, it) }
         ?: EsjzoneUrls.resolve(chapter.url)
     val source = resolveChapterSource(targetUrl)
-    if (source == ChapterSource.UNSUPPORTED_EXTERNAL) throw UnsupportedExternalChapterException()
+    if (source == ChapterSource.UNSUPPORTED_EXTERNAL) throw UnsupportedExternalChapterException(requestedUrl = targetUrl)
 
     if (preferDownloaded) {
         NovelDownloadStore.readChapter(targetUrl)

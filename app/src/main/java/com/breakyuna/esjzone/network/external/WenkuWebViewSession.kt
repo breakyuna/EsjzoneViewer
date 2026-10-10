@@ -1,6 +1,7 @@
 package com.breakyuna.esjzone.network.external
 
 import android.content.Context
+import com.breakyuna.esjzone.util.AppLogger
 import com.breakyuna.esjzone.network.wenku8.Wenku8PageResponse
 import com.breakyuna.esjzone.network.wenku8.Wenku8PageKind
 import com.breakyuna.esjzone.network.wenku8.wenku8PageAllowed
@@ -59,7 +60,7 @@ internal class WenkuWebViewSession(
     fun fetch(url: String): String = fetchPage(url, Wenku8PageKind.CHAPTER).html
 
     fun fetchPage(url: String, kind: Wenku8PageKind): Wenku8PageResponse {
-        if (!wenku8PageAllowed(url, kind)) throw UnsupportedExternalChapterException()
+        if (!wenku8PageAllowed(url, kind)) throw UnsupportedExternalChapterException("browser-input", kind, url)
         try {
             lock.lockInterruptibly()
         } catch (error: InterruptedException) {
@@ -69,6 +70,7 @@ internal class WenkuWebViewSession(
         try {
             if (Looper.myLooper() == Looper.getMainLooper()) throw IOException("Browser request on main thread")
             val token = generation.incrementAndGet()
+            AppLogger.i("WenkuWebViewSession", "Browser request: kind=$kind, ready=$ready, url=${wenkuDiagnosticUrl(url)}")
             val browser = onMain {
                 cleanup?.let(main::removeCallbacks)
                 cleanup = null
@@ -98,19 +100,22 @@ internal class WenkuWebViewSession(
                     html = fetchInPage(browser, url, token, deadline)
                 } catch (error: WenkuBrowserSessionClosedException) {
                     throw error
-                } catch (_: IOException) {
+                } catch (error: IOException) {
+                    AppLogger.w("WenkuWebViewSession", "Browser fetch failed; using navigation: kind=$kind, url=${wenkuDiagnosticUrl(url)}", error)
                     // A browser fetch can be challenged even with a healthy page session.
                 }
                 if (html != null && CloudflareChallenge.hasChallengeDocumentMarkers(html)) html = null
             }
             if (html == null) html = navigate(browser, url, kind, token, deadline)
             val final = if (html != null) evaluate(browser, "window.__esjWenkuFinalUrl||location.href", deadline) else url
-            if (!wenku8PageAllowed(final, kind)) throw UnsupportedExternalChapterException()
+            AppLogger.i("WenkuWebViewSession", "Browser captured: kind=$kind, requested=${wenkuDiagnosticUrl(url)}, final=${wenkuDiagnosticUrl(final)}, htmlChars=${html.length}")
+            if (!wenku8PageAllowed(final, kind)) throw UnsupportedExternalChapterException("browser-final-url", kind, url, final)
             ready = true
             lastUse = System.currentTimeMillis()
             return Wenku8PageResponse(html, final)
         } catch (error: IOException) {
             ready = false
+            AppLogger.e("WenkuWebViewSession", "Browser request failed: kind=$kind, requested=${wenkuDiagnosticUrl(url)}", error)
             throw error
         } catch (error: InterruptedException) {
             ready = false
@@ -137,8 +142,12 @@ internal class WenkuWebViewSession(
     private fun navigate(browser: WebView, url: String, kind: Wenku8PageKind, token: Long, deadline: Long): String {
         onMain {
             browser.webViewClient = object : WebViewClient() {
-                override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean =
-                    request.isForMainFrame && !wenku8PageAllowed(request.url.toString(), kind)
+                override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
+                    val blocked = request.isForMainFrame && !wenku8PageAllowed(request.url.toString(), kind)
+                    if (request.isForMainFrame) AppLogger.i("WenkuWebViewSession",
+                        "Browser navigation: kind=$kind, blocked=$blocked, url=${wenkuDiagnosticUrl(request.url.toString())}")
+                    return blocked
+                }
 
                 override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): WebResourceResponse? {
                     val uri = request.url

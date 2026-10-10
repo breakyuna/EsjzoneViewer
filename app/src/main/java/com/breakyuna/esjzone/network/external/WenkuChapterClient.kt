@@ -122,7 +122,7 @@ internal class WenkuChapterClient(context: Context, userAgent: String) {
 
     fun load(chapter: Chapter, url: String, forceRefresh: Boolean, allowAutoSolve: Boolean,
              onSecurityCheck: (() -> Unit)? = null): DetailedChapter {
-        if (resolveChapterSource(url) != ChapterSource.WENKU8) throw UnsupportedExternalChapterException()
+        if (resolveChapterSource(url) != ChapterSource.WENKU8) throw UnsupportedExternalChapterException(requestedUrl = url)
         val epoch = sessionEpoch.get()
         val scope = jar.cacheScope()
         val key = cacheKey(url, scope)
@@ -210,8 +210,8 @@ internal class WenkuChapterClient(context: Context, userAgent: String) {
 
     /** Non-chapter pages never enter ESJ transport or the chapter cache. Call on IO. */
     fun loadPage(url: String, kind: Wenku8PageKind, allowAutoSolve: Boolean, forceRefresh: Boolean): Wenku8PageResponse {
-        if (!wenku8PageAllowed(url, kind)) throw UnsupportedExternalChapterException()
-        com.breakyuna.esjzone.util.AppLogger.i("WenkuChapterClient", "Loading page: kind=$kind, forceRefresh=$forceRefresh")
+        if (!wenku8PageAllowed(url, kind)) throw UnsupportedExternalChapterException("page-input", kind, url)
+        com.breakyuna.esjzone.util.AppLogger.i("WenkuChapterClient", "Loading page: kind=$kind, forceRefresh=$forceRefresh, url=${wenkuDiagnosticUrl(url)}")
         val epoch = sessionEpoch.get()
         val scope = jar.cacheScope()
         val initialKey = "wenku8-pages|$scope|${kind.name}|${wenku8PageCacheIdentity(url)}"
@@ -252,7 +252,7 @@ internal class WenkuChapterClient(context: Context, userAgent: String) {
     }
 
     private fun validatePage(page: Wenku8PageResponse, kind: Wenku8PageKind) {
-        if (!wenku8PageAllowed(page.url, kind)) throw UnsupportedExternalChapterException()
+        if (!wenku8PageAllowed(page.url, kind)) throw UnsupportedExternalChapterException("page-validation", kind, actualUrl = page.url)
         val parsers = com.breakyuna.esjzone.network.wenku8.Wenku8Parsers
         when (kind) {
             Wenku8PageKind.DETAIL -> parsers.detail(page.html, page.url,
@@ -261,7 +261,7 @@ internal class WenkuChapterClient(context: Context, userAgent: String) {
             Wenku8PageKind.HOME -> parsers.home(page.html, page.url)
             Wenku8PageKind.SEARCH, Wenku8PageKind.BROWSE -> parsers.search(page.html, page.url,
                 page.url.toHttpUrlOrNull()?.queryParameter("page")?.toIntOrNull() ?: 1)
-            Wenku8PageKind.CHAPTER -> throw UnsupportedExternalChapterException()
+            Wenku8PageKind.CHAPTER -> throw UnsupportedExternalChapterException("non-chapter-validation", kind, actualUrl = page.url)
         }
     }
 
@@ -271,12 +271,15 @@ internal class WenkuChapterClient(context: Context, userAgent: String) {
         repeat(4) {
             val result = requestOnce(target, kind, scope)
             val next = result.redirect
+            com.breakyuna.esjzone.util.AppLogger.i("WenkuChapterClient",
+                "HTTP result: kind=$kind, hop=$it, status=${result.status}, challenge=${result.challenge}, " +
+                    "url=${wenkuDiagnosticUrl(target)}, redirect=${wenkuDiagnosticUrl(next)}")
             if (next == null) return result
             if (next.toHttpUrlOrNull()?.let { it.isHttps && it.host == "www.wenku8.net" &&
                     it.port == 443 && it.encodedPath == "/login.php" } == true) {
                 throw com.breakyuna.esjzone.network.wenku8.Wenku8LoginRequiredException()
             }
-            if (!wenku8PageAllowed(next, kind)) throw UnsupportedExternalChapterException()
+            if (!wenku8PageAllowed(next, kind)) throw UnsupportedExternalChapterException("http-redirect", kind, url, next)
             target = next
         }
         throw IOException("Wenku8 redirect limit exceeded")
@@ -293,7 +296,7 @@ internal class WenkuChapterClient(context: Context, userAgent: String) {
         try {
             return call.execute().use { response ->
                 if (!wenku8PageAllowed(response.request.url.toString(), kind)) {
-                    throw UnsupportedExternalChapterException()
+                    throw UnsupportedExternalChapterException("http-response", kind, url, response.request.url.toString())
                 }
                 if (response.code in listOf(301, 302, 303, 307, 308)) {
                     val next = response.header("Location")?.let(response.request.url::resolve)
