@@ -42,8 +42,9 @@ MIME charset 与原字节不一致时，离线检查采用 GB18030 解码。WebV
    四个选项和真实提交按钮均检查通过后，启用原生提交。点击后以 Gson JSON 序列化参数，
    evaluateJavascript 填写字段、触发 input/change、点击实际提交按钮；保留 action、按钮值、隐藏字段
    和浏览器编码／校验流程，不构造 HTTP 登录接口，不添加 JavascriptInterface。
-4. 原 action 中的 jumpurl 不改写；若主文档跳转到已确认的本站 `http://www.wenku8.net/index.php`，
-   仅将该精确首页地址升级为 HTTPS。其他非允许来源仍拒绝；URL 跳转本身不证明登录成功。
+4. 原 action 中的 jumpurl 不改写；若主文档跳转到已确认的本站 HTTP `/index.php`（无查询）或
+   `/login.php`（可带查询），将这两种旧地址升级为 HTTPS。登录页查询字节保持不变。
+   其他非允许来源仍拒绝；URL 跳转本身不证明登录成功。
 5. 提交期间禁用重复登录。回调仅读取有限状态和数字有效期；sessionStorage 中仅保存随机尝试标记
    与有效期值，用于辨认用户在完整网页中提交的实际选项，不保存账号密码。
    页面加载、旋转或验证完成不会自动填写或重新提交。人工验证只交给用户操作。
@@ -99,7 +100,8 @@ Cookie 与生命周期：
 不移植上游账户配置。本次匿名只读访问两域名的登录页均返回带挑战标记的 403，
 不能据此判断用户登录态，也不能证明切换域名能解决访问问题。
 
-原生重定向和隐藏浏览器现在共用准确的 HTTPS 同源 `/login.php` 识别。
+原生重定向和隐藏浏览器共用准确的本站 `/login.php` 重定向识别；旧 HTTP 登录重定向仅用于
+识别“需要登录”，UI 导航升级为 HTTPS，业务页面与表单提交仍要求 HTTPS。
 隐藏浏览器拦截主文档登录跳转后立即返回需要登录的异常，不再等到挑战超时；
 兼顾导航回调未拦截但实际地址已是登录页的情况，登录页仍不属于允许的业务页面。
 详情页将该异常显示为登录提示，并提供登录按钮。
@@ -179,6 +181,38 @@ Cookie 桥接导致旧请求失效时单独记录固定原因，便于区分后�
 新增 Chromium 用例源码覆盖正常表单、空正文等待与额外交互字段拒绝；本轮仅做静态验证，
 另补充恢复决策的 JVM 用例源码，覆盖失败后重试与正常表单／验证／提交结果保留。
 未运行测试、编译、Lint、APK 构建或设备验收，首次加载失败的实际原因仍待新日志确认。
+
+### Debug 复现日志确认的登录失败（2026-10-10）
+
+用户提供 `esjzone-logs-1791643505496.txt`，对应提交 `41679d1`。本轮依据该日志和调用链确认：
+
+- 22:44:12.948：初始 HTTPS 首页被服务端重定向到 `http://www.wenku8.net/login.php`，带
+  `jumpurl` 参数；原生登录页判定 `allowed=false` 并拦截。打开网页前的 DOM 为 about:blank，
+  `htmlChars=39`、表单数量为零。此前只升级 HTTP 首页，遗漏了真实出现的 HTTP 登录页重定向。
+- 22:44:16.659：手动重新加载 HTTPS 登录页后，文档已完成，编码 GBK；一份登录表单、账号／密码／
+  时长／提交控件各一，四个时长选项均存在，没有禁用、归属或额外交互控件异常，含一个隐藏字段。
+  随后检查返回 `incompatible`、`reason=action`；脱敏 action 路径为 `/login.php`，查询名为 `do`。
+  这证明该次表单已加载，失败发生在 action 检查，不是控件缺失或验证码。
+- 22:44:16.583／16.617：Cookie 导入主动关闭独立隐藏浏览器；22:44:16.929 的
+  `Browser session closed: stage=browser-navigation` 属于仍在请求首页的隐藏传输，
+  并非 UI 登录 WebView 被销毁。不通过取消 Cookie 代际隔离来处理表单问题。
+
+修复以这两处实际失败为边界：`loginRedirectUrl` 只识别精确本站、正确端口、无用户信息的
+HTTP／HTTPS `/login.php`，HTTP 仅升级传输协议，保留原查询。HTTP 客户端和隐藏传输通过
+`isLogin` 及时报告需要登录，不再等待被拦截的空文档直到超时或 Cookie 导入失效。
+登录 WebView 短暂解绑时保存待导航地址，重绑后继续该 HTTPS 导航。
+
+表单提交仍限制为 HTTPS 同源 `/login.php`、POST、默认 URL 编码、已验证的控件与时长选项。
+读取 `getAttribute('action')` 并按 `document.baseURI` 解析，不读取可能被同名控件遮蔽的 `form.action`；
+诊断采样同步采用该方式。站点的 action 查询和隐藏字段原样参与真实按钮提交，不再将一个 MHT
+快照中的 `do=submit` 作为所有登录页的固定识别前提。
+日志未包含查询值或隐藏字段名，不能断言此次实际 `do` 值或隐藏字段是否遮蔽 action；
+[HTMLFormElement 文档](https://developer.mozilla.org/en-US/docs/Web/API/HTMLFormElement#instance_properties)
+说明了同名控件覆盖原生属性的行为。此前 MHT 仍只证明其自身的 action 与无隐藏字段结构。
+
+补充 JVM 重定向识别／升级范围及查询字节保留用例、Chromium action 同名控件／站点查询保留／
+跨站和错误路径拒绝用例源码。本轮只执行静态检查，未运行测试、编译、Lint 或 APK 构建；
+修改后的设备登录结果尚未验证。
 
 更新日期：2026-10-09。实施计划：[WENKU8_INTEGRATION_PLAN.md](../doc/WENKU8_INTEGRATION_PLAN.md)。
 

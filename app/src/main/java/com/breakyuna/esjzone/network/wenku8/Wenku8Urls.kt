@@ -40,7 +40,21 @@ object Wenku8Urls {
         }
     }
 
-    internal fun isLogin(rawUrl: String): Boolean = siteUrl(rawUrl)?.encodedPath == "/login.php"
+    /** Classifies server login redirects; legacy HTTP is upgraded before any UI navigation. */
+    internal fun loginRedirectUrl(rawUrl: String): String? {
+        val value = rawUrl.trim()
+        if (value.contains('\\')) return null
+        val url = value.toHttpUrlOrNull() ?: return null
+        if (url.host != "www.wenku8.net" || url.username.isNotEmpty() || url.password.isNotEmpty() ||
+            url.encodedPath != "/login.php") return null
+        return when {
+            url.isHttps && url.port == 443 -> url.toString()
+            url.scheme == "http" && url.port == 80 -> url.newBuilder().scheme("https").port(443).build().toString()
+            else -> null
+        }
+    }
+
+    internal fun isLogin(rawUrl: String): Boolean = loginRedirectUrl(rawUrl) != null
 
     fun detailIdentity(rawUrl: String): String? = siteUrl(rawUrl)?.let {
         detailPath.matchEntire(it.encodedPath)?.groupValues?.get(1)?.let(::identity)

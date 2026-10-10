@@ -50,7 +50,8 @@ class Wenku8IdentityTest {
     @Test fun loginRedirectsAreRecognizedWithoutAllowingThemAsBusinessPages() {
         listOf(
             "https://www.wenku8.net/login.php",
-            "https://www.wenku8.net/login.php?jumpurl=%2Findex.php"
+            "https://www.wenku8.net/login.php?jumpurl=%2Findex.php",
+            "http://www.wenku8.net/login.php?jumpurl=%2Findex.php"
         ).forEach { login ->
             assertTrue(login, Wenku8Urls.isLogin(login))
             Wenku8PageKind.entries.forEach { kind ->
@@ -58,10 +59,20 @@ class Wenku8IdentityTest {
             }
         }
         listOf(
-            "http://www.wenku8.net/login.php", "https://www.wenku8.net:444/login.php",
+            "http://www.wenku8.net:81/login.php", "https://www.wenku8.net:444/login.php",
             "https://www.wenku8.net.example.org/login.php", "https://www.wenku8.cc/login.php",
             "https://user@www.wenku8.net/login.php", "https://www.wenku8.net/login.php/extra", bookUrl
         ).forEach { assertFalse(it, Wenku8Urls.isLogin(it)) }
+    }
+
+    @Test fun legacyLoginRedirectUpgradesOnlyTransportAndPreservesQueryBytes() {
+        val path = "/login.php?jumpurl=http%3A%2F%2Fwww.wenku8.net%2Findex.php"
+        assertEquals("https://www.wenku8.net$path", Wenku8Urls.loginRedirectUrl("http://www.wenku8.net$path"))
+        listOf("http://www.wenku8.net:81$path", "http://www.wenku8.net.example.org$path",
+            "http://fixture-user@www.wenku8.net$path", "http://www.wenku8.net/index.php",
+            "http://www.wenku8.net/login.php/extra").forEach {
+            assertNull(it, Wenku8Urls.loginRedirectUrl(it))
+        }
     }
 
     @Test fun sameNumericIdCannotOverwriteOtherSourceIdentity() {

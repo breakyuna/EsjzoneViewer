@@ -24,6 +24,45 @@ class WenkuLoginFormInstrumentedTest {
         assertEquals("form", evaluate(view, Wenku8LoginForm.inspect("fixture-attempt")).getString("state"))
     }
 
+    @Test fun namedActionControlDoesNotMaskRealSubmissionTarget() = withForm("") { view ->
+        evaluate(view, """
+            (function(){const input=document.createElement('input');
+                input.type='hidden';input.name='action';input.value='fixture-hidden';
+                document.frmlogin.appendChild(input);return {};})()
+        """.trimIndent())
+        assertEquals("form", evaluate(view, Wenku8LoginForm.inspect("fixture-attempt")).getString("state"))
+        assertEquals("submitted", submit(view).getString("state"))
+        val preserved = evaluate(view, """
+            ({original:!!window.fixtureOriginal,
+              hidden:new FormData(document.frmlogin).get('action')==='fixture-hidden'})
+        """.trimIndent())
+        assertTrue(preserved.getBoolean("hidden"))
+        assertTrue(preserved.getBoolean("original"))
+    }
+
+    @Test fun sameOriginLoginActionQueryRemainsOwnedByTheSite() = withForm("") { view ->
+        evaluate(view, """
+            (function(){document.frmlogin.setAttribute('action','login.php?do=fixture-operation');return {};})()
+        """.trimIndent())
+        assertEquals("form", evaluate(view, Wenku8LoginForm.inspect("fixture-attempt")).getString("state"))
+        assertEquals("submitted", submit(view).getString("state"))
+        val preserved = evaluate(view, """
+            ({unchanged:document.frmlogin.getAttribute('action')==='login.php?do=fixture-operation',
+              original:!!window.fixtureOriginal})
+        """.trimIndent())
+        assertTrue(preserved.getBoolean("unchanged"))
+        assertTrue(preserved.getBoolean("original"))
+    }
+
+    @Test fun foreignAndNonLoginSubmissionTargetsRemainIncompatible() = withForm("") { view ->
+        listOf("https://fixture.invalid/login.php?do=submit", "${Wenku8Urls.BASE}/index.php?do=submit").forEach { target ->
+            evaluate(view, "(function(){document.frmlogin.setAttribute('action',${JSONObject.quote(target)});return {};})()")
+            val result = evaluate(view, Wenku8LoginForm.inspect("fixture-attempt"))
+            assertEquals("incompatible", result.getString("state"))
+            assertEquals("action", result.getString("reason"))
+        }
+    }
+
     @Test fun emptyDocumentWaitsInsteadOfRejectingForm() = withForm("") { view ->
         evaluate(view, "(function(){window.fixtureForm=document.frmlogin;document.body.replaceChildren();return {};})()")
         val result = evaluate(view, Wenku8LoginForm.inspect("fixture-attempt"))

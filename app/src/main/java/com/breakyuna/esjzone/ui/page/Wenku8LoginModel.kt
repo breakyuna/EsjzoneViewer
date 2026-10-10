@@ -69,7 +69,7 @@ internal class Wenku8LoginModel(context: Context) : ViewModel() {
     private var documentGeneration = 0L
     private var inspectionGeneration = 0L
     private var initialized = false
-    private var pendingHomeRedirect = false
+    private var pendingRedirect: String? = null
     private var requestedUrl = ""
     private var lastInspection = ""
     private var documentLoading = false
@@ -115,9 +115,10 @@ internal class Wenku8LoginModel(context: Context) : ViewModel() {
                     loadPage("${Wenku8Urls.BASE}/index.php")
                 }
             }
-        } else if (active() && pendingHomeRedirect) {
-            pendingHomeRedirect = false
-            loadPage("${Wenku8Urls.BASE}/index.php")
+        } else if (active() && pendingRedirect != null) {
+            val target = pendingRedirect!!
+            pendingRedirect = null
+            loadPage(target)
         } else if (active()) {
             // Inspect the retained document; never replay submission on recreation.
             if (busy) armTimeout()
@@ -199,10 +200,15 @@ internal class Wenku8LoginModel(context: Context) : ViewModel() {
                 val raw = request.url.toString()
                 diagnostics.event("navigation", "redirect=${request.isRedirect}, allowed=${allowed(raw)}, url=${com.breakyuna.esjzone.util.diagnosticUrl(raw)}")
                 val url = raw.toHttpUrlOrNull()
+                val loginRedirect = Wenku8Urls.loginRedirectUrl(raw)
+                if (url?.scheme == "http" && loginRedirect != null) {
+                    if (attached) loadPage(loginRedirect) else pendingRedirect = loginRedirect
+                    return true
+                }
                 // The verified form's original jumpurl uses this exact legacy HTTP home.
                 if (url?.scheme == "http" && url.host == "www.wenku8.net" && url.port == 80 &&
                     url.username.isEmpty() && url.password.isEmpty() && url.encodedPath == "/index.php" && url.query == null) {
-                    if (attached) loadPage("${Wenku8Urls.BASE}/index.php") else pendingHomeRedirect = true
+                    if (attached) loadPage("${Wenku8Urls.BASE}/index.php") else pendingRedirect = "${Wenku8Urls.BASE}/index.php"
                     return true
                 }
                 if (allowed(raw)) return false
@@ -482,7 +488,7 @@ internal class Wenku8LoginModel(context: Context) : ViewModel() {
         cancelChecks(); bindingGeneration++
         clearing = true; submitting = false; formReady = false
         pendingDuration = null; attemptStarted = false; recordedDuration = null; status = Wenku8LoginStatus.PREPARING
-        pendingHomeRedirect = false; attemptId = UUID.randomUUID().toString()
+        pendingRedirect = null; attemptId = UUID.randomUUID().toString()
         browser?.stopLoading()
         browser?.evaluateJavascript(Wenku8LoginForm.clearPassword, null)
         browser?.loadUrl("about:blank")

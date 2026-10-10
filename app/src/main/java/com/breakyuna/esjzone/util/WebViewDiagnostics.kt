@@ -65,9 +65,10 @@ internal class WebViewDiagnostics(private val tag: String) {
                     const expected=controls.filter(e=>['username','password','usecookie','submit'].includes(e.name));
                     const duration=form?.querySelector('select[name="usecookie"]');
                     const count=selector=>form?.querySelectorAll(selector).length||0;
-                    let actionSubmit=false;
-                    try {const a=new URL(form.action,location.href);
-                        actionSubmit=a.origin===location.origin&&a.pathname==='/login.php'&&a.searchParams.get('do')==='submit';
+                    let actionAllowed=false, actionUrl='';
+                    try {const a=new URL(form.getAttribute('action')||location.href,document.baseURI);
+                        actionUrl=a.href;
+                        actionAllowed=a.origin===location.origin&&!a.username&&!a.password&&a.pathname==='/login.php';
                     } catch (_) {}
                     return {ready:document.readyState, url:location.href,
                         htmlChars:document.documentElement?.outerHTML.length||0,
@@ -78,8 +79,8 @@ internal class WebViewDiagnostics(private val tag: String) {
                         durations:document.querySelectorAll('select[name="usecookie"] option').length,
                         submitters:document.querySelectorAll('input[type="submit"],button[type="submit"]').length,
                         challenge:!!document.querySelector('#challenge-stage,#challenge-form,.cf-turnstile'),
-                        charset:document.characterSet, action:form?.getAttribute('action')||'',
-                        post:form?.method.toLowerCase()==='post', encoding:form?.enctype||'', actionSubmit,
+                        charset:document.characterSet, action:actionUrl,
+                        post:form?.method.toLowerCase()==='post', encoding:form?.enctype||'', actionAllowed,
                         userControls:count('input[type="text"][name="username"]'),
                         passwordControls:count('input[type="password"][name="password"]'),
                         durationControls:count('select[name="usecookie"]'),
@@ -111,7 +112,7 @@ internal class WebViewDiagnostics(private val tag: String) {
                     ?.resolve(data.optString("action"))?.toString()
                 event("dom", "trigger=$stage, ready=$ready, document=${diagnosticUrl(documentUrl)}, charset=$charset, " +
                     "$counts, challenge=${data.optBoolean("challenge")}, post=${data.optBoolean("post")}, encoding=$encoding, " +
-                    "actionSubmit=${data.optBoolean("actionSubmit")}, action=${diagnosticUrl(action)}")
+                    "actionAllowed=${data.optBoolean("actionAllowed")}, action=${diagnosticUrl(action)}")
             }
         }.onFailure { event("snapshot-error", "type=${it.javaClass.name}") }
     }

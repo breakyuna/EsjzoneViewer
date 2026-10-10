@@ -30,10 +30,11 @@ internal object Wenku8LoginForm {
             if (forms.length !== 1) return null;
             const f = forms[0];
             let action;
-            try { action = new URL(f.action, location.href); }
+            // Read the actual attribute: named controls can shadow HTMLFormElement.action.
+            try { action = new URL(f.getAttribute('action') || location.href, document.baseURI); }
             catch (_) { return incompatible('action'); }
-            if (!allowed(action.href) || action.pathname !== '/login.php' ||
-                action.searchParams.get('do') !== 'submit') return incompatible('action');
+            // The browser submits the site's unchanged action/query/hidden fields.
+            if (!allowed(action.href) || action.pathname !== '/login.php') return incompatible('action');
             if (f.method.toLowerCase() !== 'post' ||
                 f.enctype.toLowerCase() !== 'application/x-www-form-urlencoded') return incompatible('encoding');
             const users = f.querySelectorAll('input[type="text"][name="username"]');
