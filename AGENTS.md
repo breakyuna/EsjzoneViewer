@@ -11,7 +11,7 @@
 - 未经明确要求，不得修改 `applicationId`、包名、数据库名称、远程仓库地址或发布签名配置。
 - 不得在日志、异常信息、测试数据或文档中写入真实密码、会话 Cookie、`ews_key`、`ews_token` 或其他账户凭据。
 - 保持现有 GPL-3.0 许可证文件和第三方开源库归属信息。
-- 按文末验证策略选择检查：小型改动只做静态检查，大规模改动在全部修改完成并确认后，统一执行 JVM 单元测试和 Android Lint，APK 构建由 GitHub Actions 验证。
+- 默认只执行文末允许的静态检查。未经用户明确要求，不得运行任何编译、测试、构建或会触发编译的 Android Lint；大规模改动也不例外，不得将“修复”“改进”或“检查更改”视为执行这些任务的授权。
 
 ### 本地凭据
 
@@ -20,9 +20,9 @@
 ## 工作流程
 
 1. 确认修改范围及相关调用链。设计、添加或修改功能与解析前，必须先查阅 `NETWORK/` 中相关的网站逆向分析文档，基于已验证的实际 DOM 结构与接口规范实现。
-2. 按下述修改边界实现变更。行为修改应补充能检验结果的测试，不添加只重复实现过程的测试。
+2. 按下述修改边界实现变更。行为修改应补充能检验结果的测试，不添加只重复实现过程的测试；补充测试源码不代表获准运行测试。
 3. 同步维护受影响的资源、引用和文档。改动站点 URL、CSS selector 或登录流程时，必须更新 `NETWORK/` 中对应的技术说明。
-4. 按改动规模执行验证，并如实报告已执行、未执行及未完成的检查。
+4. 默认仅执行静态验证；编译、测试、构建和 Android Lint 仅在用户明确要求时执行，并如实报告已执行、未执行及未完成的检查。
 
 网站分析文档入口：
 
@@ -47,7 +47,7 @@ Gradle 构建、测试、GitHub Actions、长时间脚本和 Subagent 等预计�
 
 ### Gradle 构建、测试与静态分析
 
-启动 Gradle 构建、测试、Lint 或静态分析后，优先对运行中的进程进行一次最长 10 分钟的阻塞等待，不要每隔几十秒调用 `write_stdin` 或重新检查输出。进程提前结束时立即处理退出状态和输出；10 分钟后仍在运行时，再检查一次状态并继续长等待。
+只有用户明确要求后，才能启动 Gradle 编译、构建、测试或 Lint；以下等待规则不构成运行授权。启动已获准的长任务后，优先对运行中的进程进行一次最长 10 分钟的阻塞等待，不要每隔几十秒调用 `write_stdin` 或重新检查输出。进程提前结束时立即处理退出状态和输出；10 分钟后仍在运行时，再检查一次状态并继续长等待。
 
 ### GitHub Actions
 
@@ -143,7 +143,7 @@ app/src/main/java/com/breakyuna/esjzone/
 - 不要把网络请求、数据库操作或大型列表计算直接放进 Compose 重组过程；页面状态使用 Navigation 3 entry 提供生命周期的 AndroidX `ViewModel`（当前基类为 `AppStateViewModel`），并通过协程执行后台工作。`screenModelScope` 是迁移期间保留的兼容命名，清理前必须先迁移所有调用点。
 ## 本地验证策略
 
-本地验证用于提前发现会使 GitHub Actions 中断的常见错误。Termux 已配置 Android SDK、JDK 和 Gradle，但没有模拟器。
+本地验证用于提前发现会使 GitHub Actions 中断的常见错误。Termux 已配置 Android SDK、JDK 和 Gradle，但没有模拟器。默认仅进行静态检查；工具可用、改动规模较大或存在测试用例，都不构成编译或测试授权。
 
 ### 所有改动：静态检查
 
@@ -159,17 +159,17 @@ git diff --check
 - 新增用户可见文本的英文和简体中文资源。
 - 敏感信息和无关文件。
 
-小型改动指局部、影响范围明确的代码、资源或文档修改，静态验证通过即可完成本地验证。
+无论改动规模，用户没有明确要求编译或测试时，完成上述静态检查即可结束本地验证。不得额外运行 JVM／设备测试、Node 等行为测试或其他测试脚本；只检查语法、结构、引用和资源的静态检查可以执行。
 
-### 大规模改动：JVM 单元测试与 Android Lint
+### 用户明确要求时：编译、测试与 Android Lint
 
-跨多个模块或核心流程、涉及广泛重构等大规模改动，必须遵守以下验证时机：
+仅执行用户明确要求的检查，不得自行扩大到其他任务。用户明确要求 JVM 单元测试与 Android Lint 时，遵守以下验证时机：
 
 - 修改期间不得每改一处就运行 Gradle 测试、Lint 或构建；可按需进行轻量静态检查。
-- 完成本次任务的全部代码、资源、文档及测试修改，并确认修改范围完整、静态检查通过后，再统一执行下述检查。
-- 若检查失败，先集中修复相关问题，确认修复完成后再复跑受影响的检查；检查通过后，没有新的修改或未解决问题，不重复运行。
+- 完成本次任务的全部代码、资源、文档及测试修改，并确认修改范围完整、静态检查通过后，再统一执行用户要求的检查。
+- 若检查失败，先集中修复相关问题，确认修复完成后可在原授权范围内复跑受影响的检查；用户要求停止后立即停止，不再复跑。检查通过后，没有新的修改或未解决问题，不重复运行。
 
-最终统一执行与 CI 对应的检查：
+以下仅为用户明确要求两项检查时使用的命令，不是默认执行步骤：
 
 ```bash
 ./gradlew testDebugUnitTest lintDebug --build-cache
@@ -179,9 +179,9 @@ git diff --check
 
 ### CI：APK 构建与设备验证
 
-- APK 构建交给 GitHub Actions；日常本地验证不要求 `assembleDebug` 或 `assembleRelease`。用户明确要求排查构建问题时，可按需要单独执行构建任务。
+- APK 构建交给 GitHub Actions；未经用户明确要求，不得在本地执行 `assembleDebug`、`assembleRelease` 或其他构建任务。仅在用户明确要求提交、发布或触发 CI 的范围内操作 GitHub Actions。
 - Release Variant、R8、资源压缩、签名和 Baseline Profile 集成由 CI 的 Release 构建检查。
-- 日常本地验收不强制运行 `connectedDebugAndroidTest`。保留 Room、DataStore、SharedPreferences 迁移、Cookie / Android Framework 持久化和 MainActivity 启动等 Instrumentation 测试；需要时通过 GitHub Actions 的 Android Device Validation 在模拟器上运行。
+- 保留 Room、DataStore、SharedPreferences 迁移、Cookie / Android Framework 持久化和 MainActivity 启动等 Instrumentation 测试；仅在用户明确要求时执行设备测试、设备测试源码编译，或触发 GitHub Actions 的 Android Device Validation。
 
 ### 结果表述
 

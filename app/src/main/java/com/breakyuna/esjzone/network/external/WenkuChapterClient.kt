@@ -1,6 +1,9 @@
 package com.breakyuna.esjzone.network.external
 
 import android.content.Context
+import androidx.annotation.MainThread
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import com.breakyuna.esjzone.network.wenku8.Wenku8PageKind
 import com.breakyuna.esjzone.network.wenku8.wenku8PageAllowed
 import com.breakyuna.esjzone.network.wenku8.wenku8PageCacheIdentity
@@ -28,7 +31,7 @@ import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 
 internal class WenkuChapterClient(context: Context, userAgent: String) {
     private val jar = WenkuCookieJar(context)
-    private val browser = WenkuWebViewSession(context, userAgent, jar::restoreBrowserCookies)
+    private val browser = WenkuWebViewSession(context, userAgent, ::restoreBrowserCookies)
     private val sessionLock = Any()
     private val sessionEpoch = java.util.concurrent.atomic.AtomicLong()
     private val client = OkHttpClient.Builder()
@@ -48,8 +51,36 @@ internal class WenkuChapterClient(context: Context, userAgent: String) {
         .followRedirects(false)
         .build()
     private val userAgentHeader = userAgent
+    // An explicit process-only login must not be resurrected by either snapshot store.
+    // Native cookies are cleared synchronously; browser navigation waits for scoped deletion.
+    // After construction, this flag and the restore queue are accessed only on main.
+    private var startupClearing = jar.processSessionFromPreviousRun
+    private val pendingRestores = mutableListOf<() -> Unit>()
 
-    fun restoreBrowserCookies(onRestored: () -> Unit) = jar.restoreBrowserCookies(onRestored)
+    init {
+        if (startupClearing) clearSession {
+            startupClearing = false
+            val callbacks = pendingRestores.toList()
+            pendingRestores.clear()
+            callbacks.forEach { jar.restoreBrowserCookies(it) }
+        }
+    }
+
+    @MainThread
+    fun restoreBrowserCookies(onRestored: () -> Unit) {
+        check(android.os.Looper.myLooper() == android.os.Looper.getMainLooper())
+        if (startupClearing) pendingRestores += onRestored else jar.restoreBrowserCookies(onRestored)
+    }
+
+    suspend fun recordBrowserLogin(usecookie: String) {
+        val epoch = sessionEpoch.get()
+        withContext(Dispatchers.IO) {
+            synchronized(sessionLock) {
+                if (epoch != sessionEpoch.get()) throw WenkuBrowserSessionClosedException()
+                jar.recordBrowserLogin(usecookie)
+            }
+        }
+    }
 
     fun importBrowserCookies(raw: String?, sourceUrl: String = "https://www.wenku8.net/") = synchronized(sessionLock) {
         sessionEpoch.incrementAndGet()

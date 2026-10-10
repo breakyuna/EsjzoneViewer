@@ -297,23 +297,28 @@ class NovelPage(
                     contentAlignment = Alignment.Center
                 ) {
                     if (snapshot.message != null) {
-                        ErrorState(message = stringResource(snapshot.message),
-                            modifier = Modifier.fillMaxWidth(),
-                            retryLabel = stringResource(when {
-                                snapshot.message == R.string.wenku8_login_required -> R.string.button_login
-                                snapshot.requiresVerification -> R.string.wenku_verification_open
-                                else -> R.string.retry
-                            }),
-                            onRetry = {
-                                when {
-                                    snapshot.message == R.string.wenku8_login_required -> navigator?.let {
-                                        pendingSessionReturn = true
-                                        it.pushIfNotCurrent(Wenku8LoginPage)
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            ErrorState(message = stringResource(snapshot.message),
+                                modifier = Modifier.fillMaxWidth(),
+                                retryLabel = stringResource(when {
+                                    snapshot.message == R.string.wenku8_login_required || snapshot.requiresVerification -> R.string.button_login
+                                    else -> R.string.retry
+                                }),
+                                onRetry = {
+                                    when {
+                                        snapshot.message == R.string.wenku8_login_required || snapshot.requiresVerification -> navigator?.let {
+                                            pendingSessionReturn = true
+                                            it.pushIfNotCurrent(Wenku8LoginPage)
+                                        }
+                                        else -> screenModel.retry()
                                     }
-                                    snapshot.requiresVerification -> showWenkuVerification = true
-                                    else -> screenModel.retry()
+                                })
+                            if (snapshot.requiresVerification) {
+                                TextButton(onClick = { showWenkuVerification = true }) {
+                                    Text(stringResource(R.string.wenku_verification_open))
                                 }
-                            })
+                            }
+                        }
                     } else if (snapshot.failure == LoadFailureKind.SESSION_OR_NODE) {
                         ErrorState(
                             message = stringResource(R.string.load_session_or_node_error),

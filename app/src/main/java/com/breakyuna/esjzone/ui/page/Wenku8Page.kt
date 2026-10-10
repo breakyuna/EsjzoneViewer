@@ -167,7 +167,8 @@ class Wenku8Page(
                     Wenku8PageModel.State.Loading -> item { CircularProgressIndicator(Modifier.padding(AppSpacing.lg)) }
                     is Wenku8PageModel.State.Failed -> item {
                         DiscoveryErrorState(stringResource(snapshot.message), onRetry = { model.load(model.page, forceRefresh = true) })
-                        if (snapshot.message == R.string.wenku8_login_required) {
+                        if (snapshot.message == R.string.wenku8_login_required ||
+                            snapshot.message == R.string.wenku8_verification_needed) {
                             TextButton(onClick = ::openSession) {
                                 Text(stringResource(R.string.button_login))
                             }

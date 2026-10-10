@@ -131,6 +131,17 @@ object EsjzoneClient {
         wenkuClient?.let { runCatching { it.importBrowserChapter(chapter, url, html) }.getOrDefault(false) }
             ?: false
     fun wenkuUserAgent(): String = wenkuClient?.userAgent() ?: headers["User-Agent"].orEmpty()
+    suspend fun recordWenkuBrowserLogin(usecookie: String): Boolean {
+        val client = wenkuClient ?: return false
+        return try {
+            client.recordBrowserLogin(usecookie)
+            true
+        } catch (error: CancellationException) {
+            throw error
+        } catch (_: Exception) {
+            false
+        }
+    }
     fun restoreWenkuBrowserCookies(onRestored: () -> Unit) {
         val client = wenkuClient
         if (client != null) client.restoreBrowserCookies(onRestored) else onRestored()

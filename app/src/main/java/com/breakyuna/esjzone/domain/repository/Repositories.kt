@@ -44,6 +44,7 @@ interface SettingsRepository {
     val novelListAdultOnly: StateFlow<Boolean>
     val navigationOrder: StateFlow<List<String>>
     val startTab: StateFlow<String>
+    val wenkuLoginDuration: StateFlow<String>
     fun setAdult(value: Boolean)
     fun setThemeMode(value: AppThemeMode)
     fun setHideHomeRecommendations(value: Boolean)
@@ -56,6 +57,7 @@ interface SettingsRepository {
     fun setNovelListAdultOnly(value: Boolean)
     fun setNavigationOrder(value: List<String>)
     fun setStartTab(value: String)
+    fun setWenkuLoginDuration(value: String)
 }
 
 interface NovelRepository {

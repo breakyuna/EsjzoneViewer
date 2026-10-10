@@ -3,6 +3,7 @@ package com.breakyuna.esjzone.network.external
 import android.content.Context
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
+import com.breakyuna.esjzone.network.wenku8.Wenku8Urls
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 import okhttp3.Cookie
@@ -13,7 +14,7 @@ import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 
 /** Kept in its own encrypted store, independent of ESJ sign-in and sign-out. */
 internal class WenkuCookieJar(context: Context) : CookieJar {
-    private val origin = "https://www.wenku8.net/".toHttpUrl()
+    private val origin = "${Wenku8Urls.BASE}/".toHttpUrl()
     private val preferences = EncryptedSharedPreferences.create(
         context.applicationContext,
         "wenku8_cookies",
@@ -22,6 +23,15 @@ internal class WenkuCookieJar(context: Context) : CookieJar {
         EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
     )
     private val lock = Any()
+    // Only a newly observed successful login can change this policy, never a UI preference edit.
+    val processSessionFromPreviousRun = preferences.getBoolean(PROCESS_ONLY, false)
+
+    fun recordBrowserLogin(usecookie: String) = synchronized(lock) {
+        require(usecookie in setOf("0", "86400", "2592000", "315360000"))
+        check(preferences.edit().putBoolean(PROCESS_ONLY, usecookie == "0").commit()) {
+            "Unable to save Wenku session policy"
+        }
+    }
     // Keep observed URL scopes; getCookie does not expose the original expiry/path.
     private val browserPairs = decodeWenkuBrowserSnapshots(preferences.getString(BROWSER_SNAPSHOTS, null)).toMutableMap()
     private val requestScope = ThreadLocal<String?>()
@@ -176,6 +186,7 @@ internal class WenkuCookieJar(context: Context) : CookieJar {
 
     private companion object {
         const val BROWSER_SNAPSHOTS = "browser_snapshots_v1"
+        const val PROCESS_ONLY = "browser_process_only"
     }
 }
 

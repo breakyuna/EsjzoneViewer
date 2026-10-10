@@ -41,6 +41,8 @@ object SettingsDefaults {
     const val START_TAB_FOLLOW_NAV = "FOLLOW_NAV"
     const val DEFAULT_START_TAB = "FOLLOW_NAV"
     val VALID_START_TABS: List<String> = listOf("FOLLOW_NAV", "HOME", "BOOKSHELF", "HISTORY", "PROFILE")
+    const val DEFAULT_WENKU_LOGIN_DURATION = "315360000"
+    val WENKU_LOGIN_DURATIONS: List<String> = listOf("0", "86400", "2592000", "315360000")
 }
 
 /** Preferences-backed settings boundary; callers can migrate independently of legacy storage. */
@@ -86,6 +88,8 @@ class SettingsDataStore(
         .stateIn(scope, SharingStarted.Eagerly, defaults.navigationOrder)
     override val startTab: StateFlow<String> = values.map { it.startTab }
         .stateIn(scope, SharingStarted.Eagerly, defaults.startTab)
+    override val wenkuLoginDuration: StateFlow<String> = values.map { it.wenkuLoginDuration }
+        .stateIn(scope, SharingStarted.Eagerly, defaults.wenkuLoginDuration)
 
     override fun setAdult(value: Boolean) = write { it[ADULT] = value }
     override fun setThemeMode(value: AppThemeMode) = write { it[THEME_MODE] = value.name }
@@ -109,6 +113,10 @@ class SettingsDataStore(
     }
     override fun setStartTab(value: String) = write {
         it[START_TAB] = value.takeIf { candidate -> candidate in SettingsDefaults.VALID_START_TABS } ?: defaults.startTab
+    }
+    override fun setWenkuLoginDuration(value: String) = write {
+        it[WENKU_LOGIN_DURATION] = value.takeIf { candidate -> candidate in SettingsDefaults.WENKU_LOGIN_DURATIONS }
+            ?: defaults.wenkuLoginDuration
     }
 
     /** Copies legacy Room preferences once; authentication/session keys are intentionally excluded. */
@@ -172,7 +180,8 @@ class SettingsDataStore(
         val novelListGridView: Boolean = false,
         val novelListAdultOnly: Boolean = false,
         val navigationOrder: List<String> = SettingsDefaults.NAVIGATION_ORDER,
-        val startTab: String = SettingsDefaults.DEFAULT_START_TAB
+        val startTab: String = SettingsDefaults.DEFAULT_START_TAB,
+        val wenkuLoginDuration: String = SettingsDefaults.DEFAULT_WENKU_LOGIN_DURATION
     )
 
     private fun Preferences.toSettingsValues(): SettingsValues = SettingsValues(
@@ -191,7 +200,9 @@ class SettingsDataStore(
         navigationOrder = normalizeNavigationOrder(
             this[NAVIGATION_ORDER]?.split(',').orEmpty()
         ),
-        startTab = this[START_TAB]?.takeIf { it in SettingsDefaults.VALID_START_TABS } ?: defaults.startTab
+        startTab = this[START_TAB]?.takeIf { it in SettingsDefaults.VALID_START_TABS } ?: defaults.startTab,
+        wenkuLoginDuration = this[WENKU_LOGIN_DURATION]?.takeIf { it in SettingsDefaults.WENKU_LOGIN_DURATIONS }
+            ?: defaults.wenkuLoginDuration
     )
 
     private fun normalizeNavigationOrder(value: List<String>): List<String> {
@@ -214,6 +225,7 @@ class SettingsDataStore(
         val NOVEL_LIST_ADULT_ONLY = booleanPreferencesKey("novel_list_adult_only")
         val NAVIGATION_ORDER = stringPreferencesKey("navigation_order")
         val START_TAB = stringPreferencesKey("start_tab")
+        val WENKU_LOGIN_DURATION = stringPreferencesKey("wenku_login_duration")
         val MIGRATION_COMPLETE = booleanPreferencesKey("legacy_room_migration_complete")
     }
 }

@@ -145,6 +145,7 @@ object SettingsStateBoundary {
     val navigationOrderFlow: StateFlow<List<String>> get() = repository().navigationOrder
     val startTab: State<String> get() { repository(); return _startTab }
     val startTabFlow: StateFlow<String> get() = repository().startTab
+    val wenkuLoginDurationFlow: StateFlow<String> get() = repository().wenkuLoginDuration
 
     fun setAdult(value: Boolean) = repository().setAdult(value)
     fun setThemeMode(value: AppThemeMode) {
@@ -160,4 +161,5 @@ object SettingsStateBoundary {
     fun setNovelListAdultOnly(value: Boolean) = repository().setNovelListAdultOnly(value)
     fun setNavigationOrder(value: List<String>) = repository().setNavigationOrder(value)
     fun setStartTab(value: String) = repository().setStartTab(value)
+    fun setWenkuLoginDuration(value: String) = repository().setWenkuLoginDuration(value)
 }
