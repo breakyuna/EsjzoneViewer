@@ -8,6 +8,7 @@ import com.breakyuna.esjzone.network.external.ExternalChapterHtml
 import com.breakyuna.esjzone.network.external.ExternalChapterParseException
 import com.breakyuna.esjzone.network.external.UnsupportedExternalChapterException
 import com.breakyuna.esjzone.network.external.wenkuDiagnosticUrl
+import com.breakyuna.esjzone.network.external.isEmptyWenkuBrowserDocument
 import com.breakyuna.esjzone.network.wenku8.Wenku8PageKind
 import com.breakyuna.esjzone.novellibrary.novel.Chapter
 import com.breakyuna.esjzone.novellibrary.novel.ChapterSource
@@ -40,6 +41,13 @@ class WenkuChapterTest {
         assertEquals("javascript-null", wenkuDiagnosticUrl("null"))
         assertEquals("javascript-undefined", wenkuDiagnosticUrl("undefined"))
         assertEquals("about:blank", wenkuDiagnosticUrl("about:blank"))
+    }
+
+    @Test fun browserRejectsBlankSkeletonWithoutRejectingShortErrorsOrImageContent() {
+        assertTrue(isEmptyWenkuBrowserDocument("<html><head></head><body></body></html>"))
+        assertTrue(isEmptyWenkuBrowserDocument("<title>Loading</title><body> \n<!-- loading --><script>void 0</script></body>"))
+        assertFalse(isEmptyWenkuBrowserDocument("<body>Forbidden</body>"))
+        assertFalse(isEmptyWenkuBrowserDocument("<body><div id=content><img src='1.jpg'></div></body>"))
     }
 
     @Test fun sourceAndIdentity() {

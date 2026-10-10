@@ -151,6 +151,7 @@ internal class WenkuChapterClient(context: Context, userAgent: String) {
             } catch (error: WenkuBrowserSessionClosedException) {
                 throw error
             } catch (error: java.io.IOException) {
+                browser.invalidate()
                 if (pageRequestCancellation.get()?.isCancelled() == true) throw error
             }
         }
@@ -159,7 +160,12 @@ internal class WenkuChapterClient(context: Context, userAgent: String) {
             if (!allowAutoSolve) throw CloudflareChallengeRequiredException()
             onSecurityCheck?.invoke()
             val html = browser.fetch(url)
-            val detail = validateAndParse(html, chapter, url)
+            val detail = try {
+                validateAndParse(html, chapter, url)
+            } catch (error: IOException) {
+                browser.invalidate()
+                throw error
+            }
             val browserScope = syncBrowserCookies(url, epoch)
             cacheChapter(url, detail, epoch, browserScope?.let { cacheKey(url, it) } ?: key)
             return detail
@@ -243,7 +249,12 @@ internal class WenkuChapterClient(context: Context, userAgent: String) {
             if (result.status !in 200..299) throw NetworkHttpException("https://www.wenku8.net/", result.status)
             Wenku8PageResponse(result.html, result.url)
         }
-        validatePage(page, kind)
+        try {
+            validatePage(page, kind)
+        } catch (error: IOException) {
+            if (result.challenge) browser.invalidate()
+            throw error
+        }
         synchronized(sessionLock) {
             if (sessionEpoch.get() != epoch) throw WenkuBrowserSessionClosedException()
             PageCache.write(resultKey, "${page.url}\n${page.html}")

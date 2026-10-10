@@ -37,6 +37,12 @@ internal fun wenkuDiagnosticUrl(raw: String?): String {
     return "$address queryNames=${url.queryParameterNames.sorted()}"
 }
 
+/** Blank initial DOMs are not usable browser sessions; do not use a byte-length threshold. */
+internal fun isEmptyWenkuBrowserDocument(html: String): Boolean {
+    val body = Jsoup.parse(html).body()
+    return body.text().isBlank() && body.children().all { it.normalName() in setOf("script", "style") }
+}
+
 internal object ExternalChapterHtml {
     private val charsetPattern = Regex("(?i)charset\\s*=\\s*['\"]?([a-z0-9_+.-]+)")
 

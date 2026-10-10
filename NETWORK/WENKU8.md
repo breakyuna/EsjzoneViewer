@@ -1,5 +1,25 @@
 # Wenku8 集成证据与实现状态
 
+### 隐藏浏览器空文档与 fetch 诊断修正（2026-10-10）
+
+设备截图显示原生首页返回 `403, challenge=true`，随后隐藏 WebView 约 0.74 秒即返回
+`htmlChars=39`，请求与最终 URL 均为首页。39 与空 HTML 骨架长度一致，但截图没有网页正文，
+不能据此断言实际内容。源码确认旧流程仅凭 WebView URL 与 readyState 便抓取，未等待本次导航完成。
+
+导航现在等待本次 onPageStarted／onPageFinished，并检查当前 DOM 的 location.href 与浏览器
+地址一致、readyState 为 complete，再抓取；空正文骨架或仅脚本／样式的空正文继续等待，
+不按 HTML 长度判断，不吞掉正常短错误页或图片正文。依据
+[Android WebViewClient 回调说明](https://developer.android.com/reference/android/webkit/WebViewClient#onPageFinished(android.webkit.WebView,%20java.lang.String))，
+onPageFinished 仅作为主文档加载完成信号；不宣称视觉帧已经绘制。
+页面或章节的浏览器结果在业务解析失败后撤销 ready，不清除 Cookie；导航开始也撤销 ready。
+fetch 失败只记录固定阶段 request／http／origin／read／decode 与数字状态码，不输出原始
+脚本错误消息；request 阶段仍不能细分网络、CORS 和 redirect:error 拒绝。
+
+补充空文档、短错误页和图片正文的 JVM 回归用例，尚未执行。静态契约与 diff 检查通过，
+并用 Node 对实际 fetch 脚本模拟成功、HTTP 错误、来源不符、请求拒绝、读取失败、解码失败
+共六个分支，全部通过；模拟不涉及实站或 WebView。JVM／Lint／APK／设备验证尚未执行，
+不能据此宣布实站访问恢复。
+
 ### 隐藏浏览器最终地址修正（2026-10-10）
 
 收到首页 `stage=browser-final-url, kind=HOME, actual=invalid-url` 报告：该错误位于
