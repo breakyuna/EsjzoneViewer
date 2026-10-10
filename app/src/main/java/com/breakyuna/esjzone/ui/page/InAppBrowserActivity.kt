@@ -9,7 +9,8 @@ import android.webkit.WebResourceRequest
 import android.webkit.WebResourceError
 import android.webkit.JavascriptInterface
 import android.webkit.WebView
-import android.webkit.WebViewClient
+import com.breakyuna.esjzone.util.DiagnosticWebViewClient
+import com.breakyuna.esjzone.util.WebViewDiagnostics
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
@@ -88,6 +89,7 @@ class InAppBrowserActivity : ComponentActivity() {
                     var currentUrl by remember { mutableStateOf(initialUrl) }
                     var canGoBack by remember { mutableStateOf(false) }
                     val browser = remember {
+                        val diagnostics = WebViewDiagnostics("InAppBrowser")
                         WebView(this).apply {
                             settings.javaScriptEnabled = true
                             settings.domStorageEnabled = true
@@ -105,7 +107,8 @@ class InAppBrowserActivity : ComponentActivity() {
                                     return ReaderScriptConverter.convert(text, script)
                                 }
                             }, "EsjScriptBridge")
-                            webViewClient = object : WebViewClient() {
+                            diagnostics.attach(this)
+                            webViewClient = object : DiagnosticWebViewClient(diagnostics) {
                                 override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
                                     if (isWebUrl(request.url.toString())) return false
                                     if (request.isForMainFrame) openSystemBrowser(request.url.toString())
@@ -113,11 +116,13 @@ class InAppBrowserActivity : ComponentActivity() {
                                 }
 
                                 override fun onPageStarted(view: WebView, url: String, favicon: android.graphics.Bitmap?) {
+                                    super.onPageStarted(view, url, favicon)
                                     currentUrl = url
                                     canGoBack = view.canGoBack()
                                 }
 
                             override fun onPageFinished(view: WebView, url: String) {
+                                super.onPageFinished(view, url)
                                 currentUrl = url
                                 canGoBack = view.canGoBack()
                                 applyWebsiteScript(view, currentScriptMode)
@@ -128,6 +133,7 @@ class InAppBrowserActivity : ComponentActivity() {
                                 request: WebResourceRequest,
                                 error: WebResourceError
                             ) {
+                                super.onReceivedError(view, request, error)
                                 if (request.isForMainFrame && request.url.scheme == "http") {
                                     openSystemBrowser(request.url.toString())
                                     finish()

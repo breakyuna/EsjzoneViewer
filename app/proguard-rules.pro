@@ -6,6 +6,11 @@
 # For more details, see
 #   http://developer.android.com/guide/developing/tools/proguard.html
 
+# Keep diagnostic type labels useful in Release logs; unused code and fields can still be removed.
+-keepnames class com.breakyuna.esjzone.** extends androidx.lifecycle.ViewModel
+-keepnames class com.breakyuna.esjzone.** extends java.lang.Throwable
+-keepnames class com.breakyuna.esjzone.**$State$*
+
 # If your project uses WebView with JS, uncomment the following
 # and specify the fully qualified class name to the JavaScript interface
 # class:

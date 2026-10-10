@@ -24,6 +24,7 @@ import java.net.URLEncoder
 import java.net.URLDecoder
 import androidx.lifecycle.viewmodel.compose.LocalViewModelStoreOwner
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.navigation3.rememberViewModelStoreNavEntryDecorator
@@ -69,6 +70,9 @@ import com.breakyuna.esjzone.ui.screen.MainScreen
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.collect
+import com.breakyuna.esjzone.util.AppLogger
 import kotlinx.serialization.Serializable
 
 /**
@@ -254,6 +258,19 @@ open class AppStateViewModel<S>(initialState: S) : ViewModel() {
     private val stateFlow = MutableStateFlow(initialState)
     val state: StateFlow<S> = stateFlow.asStateFlow()
     protected val mutableState: MutableStateFlow<S> = stateFlow
+    init {
+        viewModelScope.launch {
+            try {
+                stateFlow.collect { value ->
+                    AppLogger.trace("ScreenState") {
+                        "model=${this@AppStateViewModel.javaClass.simpleName}, state=${(value as Any?)?.javaClass?.simpleName}"
+                    }
+                }
+            } finally {
+                AppLogger.trace("ScreenState") { "model=${this@AppStateViewModel.javaClass.simpleName}, stage=cleared" }
+            }
+        }
+    }
 }
 
 /** Creates arbitrary-argument feature ViewModels in the current NavEntry scope. */
@@ -305,7 +322,14 @@ class AppNavigator internal constructor(
     private val root: AppNavigator
         get() = rootNavigator ?: this
 
+    private fun trace(action: String, destination: AppDestination? = null) {
+        AppLogger.trace("Navigation") {
+            "action=$action, depth=${backStack.size}, from=${lastItem?.key?.substringBefore(':')}, to=${destination?.key?.substringBefore(':')}"
+        }
+    }
+
     fun push(destination: AppDestination) {
+        trace("push", destination)
         if (destination.isReaderDestination) {
             root.openReader(destination)
             return
@@ -320,6 +344,7 @@ class AppNavigator internal constructor(
     }
 
     fun pushIfNotCurrent(destination: AppDestination): Boolean {
+        trace("push-if-not-current", destination)
         val existingIndex = backStack.indexOfLast { key ->
             key is AppNavKey.Legacy && key.route.token() == destination.key
         }
@@ -337,6 +362,7 @@ class AppNavigator internal constructor(
     }
 
     fun pop(): Boolean {
+        trace("pop")
         if (backStack.size <= 1) return false
         val removed = backStack.removeLastOrNull()
         cleanupKey(removed)
@@ -344,6 +370,7 @@ class AppNavigator internal constructor(
     }
 
     fun replace(destination: AppDestination) {
+        trace("replace", destination)
         when (destination) {
             is LoadingScreen -> {
                 register(destination)
@@ -370,6 +397,7 @@ class AppNavigator internal constructor(
     }
 
     fun replaceAll(destination: AppDestination) {
+        trace("replace-all", destination)
         val oldKeys = backStack.toList()
         when (destination) {
             LoginScreen -> {

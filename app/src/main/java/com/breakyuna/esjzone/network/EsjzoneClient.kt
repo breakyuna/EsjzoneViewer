@@ -59,6 +59,7 @@ object EsjzoneClient {
         .build()
 
     var EMPTY_HTTP_CLIENT = OkHttpClient.Builder()
+        .eventListenerFactory(DebugHttpEvents)
         .connectTimeout(5, TimeUnit.SECONDS)
         .readTimeout(15, TimeUnit.SECONDS)
         .writeTimeout(15, TimeUnit.SECONDS)
@@ -102,6 +103,7 @@ object EsjzoneClient {
         // without OkHttp's URL-only HTTP cache so one account can never receive another
         // account's authenticated HTML response.
         sharedHttpClient = OkHttpClient.Builder()
+            .eventListenerFactory(DebugHttpEvents)
             .connectTimeout(5, TimeUnit.SECONDS)
             .readTimeout(15, TimeUnit.SECONDS)
             .writeTimeout(15, TimeUnit.SECONDS)
@@ -182,6 +184,10 @@ object EsjzoneClient {
         allowStaleOnError: Boolean = !forceRefresh,
         coalesceRequests: Boolean = true
     ): String {
+        com.breakyuna.esjzone.util.AppLogger.trace("EsjzoneClient") {
+            "stage=page-start, kind=$pageKind, url=${com.breakyuna.esjzone.util.diagnosticUrl(url)}, " +
+                "forceRefresh=$forceRefresh, maxAgeMs=$maxAgeMillis, staleAllowed=$allowStaleOnError, epoch=${cacheEpoch.get()}"
+        }
         val cacheKey = pageCacheKey(authorization, url)
         val legacyKey = if (authorization.hasCredentials() &&
             accountScope(authorization) == activeAccountScopeOrNull()) {
@@ -194,6 +200,7 @@ object EsjzoneClient {
             val cached = current ?: legacyKey?.let { PageCache.read(it, maxAgeMillis) }
             cached?.let {
                 if (PageResponsePolicy.validate(200, it, url, kind = pageKind).trusted) {
+                    com.breakyuna.esjzone.util.AppLogger.trace("EsjzoneClient") { "stage=cache-hit, kind=$pageKind, chars=${it.length}, legacy=${current == null}" }
                     if (current == null) PageCache.write(cacheKey, it)
                     return it
                 }
@@ -214,6 +221,7 @@ object EsjzoneClient {
         }
 
         if (!forceRefresh && stalePage != null) {
+            com.breakyuna.esjzone.util.AppLogger.trace("EsjzoneClient") { "stage=stale-cache-return, kind=$pageKind, chars=${stalePage.length}, backgroundRefresh=true" }
             refreshScope.launch {
                 runCatching {
                     fetchPageCoalesced(
@@ -256,6 +264,7 @@ object EsjzoneClient {
         val owner = CompletableFuture<String>()
         val existing = if (coalesceRequests) inFlightPages.putIfAbsent(cacheKey, owner) else null
         if (existing != null) {
+            com.breakyuna.esjzone.util.AppLogger.trace("EsjzoneClient") { "stage=coalesced-wait, kind=$pageKind, url=${com.breakyuna.esjzone.util.diagnosticUrl(url)}" }
             return try {
                 existing.get(35, TimeUnit.SECONDS)
             } catch (error: TimeoutException) {
@@ -283,6 +292,8 @@ object EsjzoneClient {
         }
 
         return try {
+            val permitStarted = System.nanoTime()
+            com.breakyuna.esjzone.util.AppLogger.trace("EsjzoneClient") { "stage=permit-wait, available=${networkPermits.availablePermits()}" }
             val permitAcquired = try {
                 networkPermits.tryAcquire(NETWORK_PERMIT_WAIT_SECONDS, TimeUnit.SECONDS)
             } catch (error: InterruptedException) {
@@ -295,6 +306,7 @@ object EsjzoneClient {
                     SocketTimeoutException("Timed out waiting for a network permit")
                 )
             }
+            com.breakyuna.esjzone.util.AppLogger.trace("EsjzoneClient") { "stage=permit-acquired, waitMs=${(System.nanoTime() - permitStarted) / 1_000_000}" }
             val cancellation = pageRequestCancellation.get()
             val requestCookieJar = AuthorizationCookieJar(authorization, deferResponses = true)
             val responseData = try {
@@ -337,6 +349,11 @@ object EsjzoneClient {
                 contentType = responseData.contentType,
                 kind = pageKind
             )
+            com.breakyuna.esjzone.util.AppLogger.trace("EsjzoneClient") {
+                "stage=validated, kind=$pageKind, trusted=${validation.trusted}, reason=${validation.reason}, " +
+                    "requested=${com.breakyuna.esjzone.util.diagnosticUrl(url)}, final=${com.breakyuna.esjzone.util.diagnosticUrl(responseData.finalUrl)}, " +
+                    "${responseData.safeDiagnostic(url)}, ${com.breakyuna.esjzone.util.diagnosticHtml(responseData.body)}"
+            }
             if (PageResponsePolicy.hasScriptLoginRedirect(responseData.body)) {
                 persistentCookieJar?.invalidateVerification(authorization)
             }
@@ -361,6 +378,7 @@ object EsjzoneClient {
                     null
                 }
                 if (fallback != null) {
+                    com.breakyuna.esjzone.util.AppLogger.trace("EsjzoneClient") { "stage=validation-stale-fallback, kind=$pageKind, reason=${validation.reason}" }
                     owner.complete(fallback)
                     return fallback
                 }
@@ -391,6 +409,7 @@ object EsjzoneClient {
             val unexpectedLanding = error is UntrustedPageException && error.validation.unexpectedLanding
             val result = if (error is Exception) stalePage.takeIf { allowStaleOnError && !unexpectedLanding } else null
             if (result != null) {
+                com.breakyuna.esjzone.util.AppLogger.trace("EsjzoneClient") { "stage=error-stale-fallback, kind=$pageKind, type=${error.javaClass.name}" }
                 owner.complete(result)
                 result
             } else {

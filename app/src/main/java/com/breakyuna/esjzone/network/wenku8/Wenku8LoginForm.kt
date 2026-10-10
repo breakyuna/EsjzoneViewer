@@ -10,6 +10,8 @@ internal object Wenku8LoginForm {
         const origin = ${Gson().toJson(Wenku8Urls.BASE)};
         const attemptId = ${Gson().toJson(attemptId)};
         const durations = ['0','86400','2592000','315360000'];
+        let formReason = 'form-count';
+        function incompatible(reason) { formReason = reason; return null; }
         function allowed(raw) {
             try { const u = new URL(raw); return u.origin === origin && !u.username && !u.password; }
             catch (_) { return false; }
@@ -23,26 +25,31 @@ internal object Wenku8LoginForm {
             } catch (_) { return null; }
         }
         function form() {
-            if (!allowed(location.href)) return null;
+            if (!allowed(location.href)) return incompatible('origin');
             const forms = document.querySelectorAll('form[name="frmlogin"]');
             if (forms.length !== 1) return null;
             const f = forms[0];
-            const action = new URL(f.action, location.href);
+            let action;
+            try { action = new URL(f.action, location.href); }
+            catch (_) { return incompatible('action'); }
             if (!allowed(action.href) || action.pathname !== '/login.php' ||
-                action.searchParams.get('do') !== 'submit' || f.method.toLowerCase() !== 'post' ||
-                f.enctype.toLowerCase() !== 'application/x-www-form-urlencoded') return null;
+                action.searchParams.get('do') !== 'submit') return incompatible('action');
+            if (f.method.toLowerCase() !== 'post' ||
+                f.enctype.toLowerCase() !== 'application/x-www-form-urlencoded') return incompatible('encoding');
             const users = f.querySelectorAll('input[type="text"][name="username"]');
             const passwords = f.querySelectorAll('input[type="password"][name="password"]');
             const choices = f.querySelectorAll('select[name="usecookie"]');
             const buttons = f.querySelectorAll('input[type="submit"][name="submit"]');
-            if ([users,passwords,choices,buttons].some(items => items.length !== 1)) return null;
+            if ([users,passwords,choices,buttons].some(items => items.length !== 1)) return incompatible('fields');
             const u = users[0], p = passwords[0], c = choices[0], b = buttons[0];
-            if ([u,p,c,b].some(element => element.disabled || element.form !== f) ||
-                !durations.every(value => Array.from(c.options).some(option => option.value === value))) return null;
+            if ([u,p,c,b].some(element => element.disabled || element.form !== f)) return incompatible('controls');
+            if (!durations.every(value => Array.from(c.options).some(option => option.value === value)))
+                return incompatible('durations');
             // An added CAPTCHA or other required interactive field belongs to the user.
             // Hidden inputs remain untouched and continue participating in the real form.
             if (Array.from(f.elements).some(element => ['INPUT','SELECT','TEXTAREA'].includes(element.tagName) &&
-                !['hidden','reset','button'].includes(element.type) && ![u,p,c,b].includes(element) && !element.disabled)) return null;
+                !['hidden','reset','button'].includes(element.type) && ![u,p,c,b].includes(element) && !element.disabled))
+                return incompatible('extra-input');
             if (f.__esjWenkuAttemptId !== attemptId) {
                 f.__esjWenkuAttemptId = attemptId;
                 f.addEventListener('submit', () => {
@@ -64,11 +71,18 @@ internal object Wenku8LoginForm {
     fun inspect(attemptId: String): String = """
         (function(){
             ${helpers(attemptId)}
-            if (!allowed(location.href)) return {state:'incompatible'};
+            if (location.href === 'about:blank') return {state:'preparing',reason:'empty-document'};
+            if (!allowed(location.href)) return {state:'incompatible',reason:'origin'};
             if (document.readyState !== 'complete') return {state:'preparing'};
             const duration = attemptDuration();
             if (document.querySelector('#challenge-stage, #challenge-form, .cf-turnstile') ||
                 /^just a moment|^attention required/i.test(document.title.trim())) return {state:'manual'};
+            // A completed callback can still expose the initial empty document.
+            // Wait for real content instead of classifying a blank WebView as a changed form.
+            const body = document.body;
+            if (!body || (!(body.innerText || '').trim() &&
+                !body.querySelector('form,input,select,textarea,button,img,iframe,canvas,svg,video,object,embed')))
+                return {state:'preparing',reason:'empty-document'};
             if (signedIn()) return {state:'signedIn',duration};
             // Only an explicit denial after an observed submission is classified as rejection.
             // Other response wording remains unknown and is shown in the original document.
@@ -77,7 +91,7 @@ internal object Wenku8LoginForm {
             const fields = form();
             if (fields) return {state:'form',duration};
             // No rejection-page fixture is available; no error container selector is assumed.
-            return {state:duration === null ? 'incompatible' : 'unknown',duration};
+            return {state:duration === null ? 'incompatible' : 'unknown',duration,reason:formReason};
         })()
     """.trimIndent()
 

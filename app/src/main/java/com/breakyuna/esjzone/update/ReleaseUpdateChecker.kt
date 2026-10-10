@@ -85,6 +85,7 @@ internal object ReleaseUpdateChecker {
 
                 // Independent client: never send ESJ cookies or change its network/session state.
                 val client = OkHttpClient.Builder()
+                    .eventListenerFactory(com.breakyuna.esjzone.network.DebugHttpEvents)
                     .connectTimeout(5, TimeUnit.SECONDS)
                     .readTimeout(5, TimeUnit.SECONDS)
                     .callTimeout(10, TimeUnit.SECONDS)

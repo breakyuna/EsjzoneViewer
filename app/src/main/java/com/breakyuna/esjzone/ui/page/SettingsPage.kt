@@ -127,6 +127,7 @@ object SettingsPage : AppDestination {
         val model = rememberAppViewModel { SettingsPageModel() }
         val state by model.state.collectAsStateWithLifecycle()
         val autoBackup by PresentationAccess.autoBackup.enabled.collectAsStateWithLifecycle()
+        val debugLogging by PresentationAccess.settings.debugLoggingFlow.collectAsStateWithLifecycle()
         val adult by PresentationAccess.settings.adult
         val hideHomeRecommendations by PresentationAccess.settings.hideHomeRecommendations
         val domain by PresentationAccess.settings.domain
@@ -285,6 +286,9 @@ object SettingsPage : AppDestination {
                         LinkRow(Icons.Filled.Storage, stringResource(R.string.settings_storage_section)) { section = "STORAGE" }
                     }
                     SettingsSection(title = stringResource(R.string.settings_diagnostics_section)) {
+                        ToggleRow(stringResource(R.string.settings_debug_logging), debugLogging) {
+                            PresentationAccess.settings.setDebugLogging(it)
+                        }
                         LinkRow(Icons.Filled.BugReport, stringResource(R.string.system_logs)) { navigator?.pushIfNotCurrent(LogsPage) }
                         LinkRow(Icons.Filled.Info, stringResource(R.string.about)) { section = "ABOUT" }
                     }

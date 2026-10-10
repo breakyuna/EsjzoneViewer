@@ -412,7 +412,9 @@
     <string name="settings_domain">Target Domain</string>
     <string name="settings_domain_description">Switch between available ESJ Zone sites</string>
     <string name="system_logs">System Logs</string>
-    <string name="logs_copy_all">Copy All</string>
+    <string name="logs_copy_all">Copy Current Logs</string>
+    <string name="settings_debug_logging">Debug logging</string>
+    <string name="logs_export_failure">Could not export logs</string>
     <string name="logs_share">Share Logs</string>
     <string name="logs_clear">Clear Logs</string>
     <string name="logs_clear_title">Clear Logs</string>

@@ -176,6 +176,7 @@ internal object ReaderFontStore {
     private val downloadedFonts = readerFontFiles.map { it.font }.toSet()
 
     private val client = OkHttpClient.Builder()
+        .eventListenerFactory(com.breakyuna.esjzone.network.DebugHttpEvents)
         .followSslRedirects(false)
         .connectTimeout(20, TimeUnit.SECONDS)
         .readTimeout(60, TimeUnit.SECONDS)

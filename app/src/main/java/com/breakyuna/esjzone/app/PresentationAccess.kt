@@ -146,6 +146,8 @@ object SettingsStateBoundary {
     val startTab: State<String> get() { repository(); return _startTab }
     val startTabFlow: StateFlow<String> get() = repository().startTab
     val wenkuLoginDurationFlow: StateFlow<String> get() = repository().wenkuLoginDuration
+    val debugLoggingFlow: StateFlow<Boolean> get() = repository().debugLogging
+    fun setDebugLogging(value: Boolean) = repository().setDebugLogging(value)
 
     fun setAdult(value: Boolean) = repository().setAdult(value)
     fun setThemeMode(value: AppThemeMode) {

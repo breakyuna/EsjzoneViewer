@@ -64,9 +64,16 @@ class AppContainer(context: Context) {
         GeneralDatabase.MIGRATION_8_9,
         GeneralDatabase.MIGRATION_9_10,
         GeneralDatabase.MIGRATION_10_11
-    ).fallbackToDestructiveMigrationOnDowngrade().build()
+    ).fallbackToDestructiveMigrationOnDowngrade()
+        .setQueryCallback({ sql, arguments ->
+            com.breakyuna.esjzone.util.AppLogger.trace("RoomDiagnostic") {
+                com.breakyuna.esjzone.util.diagnosticSql(sql, arguments.size)
+            }
+        }, java.util.concurrent.Executor { it.run() })
+        .build()
 
     private val imageHttpClient = OkHttpClient.Builder()
+        .eventListenerFactory(com.breakyuna.esjzone.network.DebugHttpEvents)
         .dispatcher(Dispatcher().apply {
             maxRequests = 8
             maxRequestsPerHost = 8
@@ -117,6 +124,8 @@ class AppContainer(context: Context) {
     val reader: ReaderRepository = novel as ReaderRepository
 
     suspend fun initializeAsync() = withContext(Dispatchers.IO) {
+        settingsDataStore.restoreLoggingMode()
+        com.breakyuna.esjzone.util.AppLogger.trace("AppContainer") { "stage=initialize-start" }
         database.cacheDao().deleteObsoleteReaderUnderlines()
         CoverLoadingPolicy.initialize(appContext)
         coroutineScope {
@@ -134,5 +143,6 @@ class AppContainer(context: Context) {
             homeCacheJob.join()
             legacyCacheCleanupJob.join()
         }
+        com.breakyuna.esjzone.util.AppLogger.trace("AppContainer") { "stage=initialize-complete" }
     }
 }

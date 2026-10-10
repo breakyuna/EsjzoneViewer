@@ -13,7 +13,8 @@ import android.os.Looper
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
 import android.webkit.WebView
-import android.webkit.WebViewClient
+import com.breakyuna.esjzone.util.DiagnosticWebViewClient
+import com.breakyuna.esjzone.util.WebViewDiagnostics
 import com.breakyuna.esjzone.novellibrary.novel.ChapterSource
 import com.breakyuna.esjzone.novellibrary.novel.resolveChapterSource
 import java.io.ByteArrayInputStream
@@ -24,7 +25,7 @@ import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.locks.ReentrantLock
 import org.json.JSONObject
 
-internal class WenkuBrowserSessionClosedException : IOException("Browser session closed")
+internal class WenkuBrowserSessionClosedException(stage: String = "session-changed") : IOException("Browser session closed: stage=$stage")
 
 /** A single Chromium transport for supported wenku8 chapters. All WebView access stays on main. */
 internal class WenkuWebViewSession(
@@ -34,6 +35,7 @@ internal class WenkuWebViewSession(
 ) {
     private val appContext = context.applicationContext
     private val main = Handler(Looper.getMainLooper())
+    private val diagnostics = WebViewDiagnostics("WenkuWebViewSession")
     private val lock = ReentrantLock(true)
     private var view: WebView? = null
     private val generation = AtomicLong()
@@ -43,14 +45,15 @@ internal class WenkuWebViewSession(
 
     fun isReady(): Boolean = ready && System.currentTimeMillis() - lastUse < IDLE_MS
 
-    fun invalidate() { ready = false }
+    fun invalidate() { diagnostics.event("invalidate", "generation=${generation.get()}"); ready = false }
 
     fun cookies(url: String): String? {
         if (Wenku8PageKind.entries.none { wenku8PageAllowed(url, it) }) return null
         return onMain { android.webkit.CookieManager.getInstance().getCookie(url) }
     }
 
-    fun close() {
+    fun close(reason: String = "explicit-close") {
+        diagnostics.event("close", "reason=$reason, generation=${generation.get()}, ready=$ready")
         generation.incrementAndGet()
         ready = false
         main.post {
@@ -66,6 +69,8 @@ internal class WenkuWebViewSession(
 
     fun fetchPage(url: String, kind: Wenku8PageKind): Wenku8PageResponse {
         if (!wenku8PageAllowed(url, kind)) throw UnsupportedExternalChapterException("browser-input", kind, url)
+        val started = System.nanoTime()
+        diagnostics.event("lock-wait", "kind=$kind, url=${com.breakyuna.esjzone.util.diagnosticUrl(url)}")
         try {
             lock.lockInterruptibly()
         } catch (error: InterruptedException) {
@@ -75,6 +80,7 @@ internal class WenkuWebViewSession(
         try {
             if (Looper.myLooper() == Looper.getMainLooper()) throw IOException("Browser request on main thread")
             val token = generation.incrementAndGet()
+            diagnostics.event("lock-acquired", "generation=$token, waitMs=${(System.nanoTime() - started) / 1_000_000}")
             AppLogger.i("WenkuWebViewSession", "Browser request: kind=$kind, ready=$ready, url=${wenkuDiagnosticUrl(url)}")
             val browser = onMain {
                 cleanup?.let(main::removeCallbacks)
@@ -91,13 +97,16 @@ internal class WenkuWebViewSession(
                     }
                     android.webkit.CookieManager.getInstance().setAcceptCookie(true)
                     android.webkit.CookieManager.getInstance().setAcceptThirdPartyCookies(created, false)
+                    diagnostics.attach(created)
                     view = created
                 }
             }
             val cookiesRestored = CountDownLatch(1)
+            diagnostics.event("cookie-restore-start", "generation=$token")
             onMain { restoreCookies { cookiesRestored.countDown() } }
             if (!cookiesRestored.await(5, TimeUnit.SECONDS)) throw CloudflareWebViewUnavailableException()
-            if (token != generation.get()) throw WenkuBrowserSessionClosedException()
+            diagnostics.event("cookie-restore-end", "generation=$token, current=${generation.get()}")
+            if (token != generation.get()) throw WenkuBrowserSessionClosedException("browser-cookie-restore")
             val deadline = System.currentTimeMillis() + REQUEST_MS
             var response: Wenku8PageResponse? = null
             if (ready) {
@@ -115,6 +124,7 @@ internal class WenkuWebViewSession(
             val captured = response ?: navigate(browser, url, kind, token, deadline)
             val html = captured.html
             val final = captured.url
+            AppLogger.trace("WenkuWebViewSession") { "stage=captured, generation=$token, ${com.breakyuna.esjzone.util.diagnosticHtml(html)}" }
             AppLogger.i("WenkuWebViewSession", "Browser captured: kind=$kind, requested=${wenkuDiagnosticUrl(url)}, final=${wenkuDiagnosticUrl(final)}, htmlChars=${html.length}")
             if (Wenku8Urls.isLogin(final)) throw Wenku8LoginRequiredException()
             if (!wenku8PageAllowed(final, kind)) throw UnsupportedExternalChapterException("browser-final-url", kind, url, final)
@@ -130,12 +140,14 @@ internal class WenkuWebViewSession(
             Thread.currentThread().interrupt()
             throw IOException("Browser request cancelled", error)
         } finally {
+            diagnostics.event("request-end", "elapsedMs=${(System.nanoTime() - started) / 1_000_000}, generation=${generation.get()}")
             main.post { view?.stopLoading() }
             val token = generation.get()
             main.post {
                 cleanup?.let(main::removeCallbacks)
                 cleanup = Runnable {
                     if (generation.get() == token && System.currentTimeMillis() - lastUse >= IDLE_MS) {
+                        diagnostics.event("idle-destroy", "generation=$token")
                         view?.stopLoading()
                         view?.destroy()
                         view = null
@@ -156,14 +168,16 @@ internal class WenkuWebViewSession(
         var emptyLogged = false
         onMain {
             browser.stopLoading()
-            browser.webViewClient = object : WebViewClient() {
+            browser.webViewClient = object : DiagnosticWebViewClient(diagnostics) {
                 override fun onPageStarted(view: WebView, url: String, favicon: Bitmap?) {
+                    super.onPageStarted(view, url, favicon)
                     started = true
                     completedUrl = null
                     if (Wenku8Urls.isLogin(url)) loginRequired = true
                 }
 
                 override fun onPageFinished(view: WebView, url: String) {
+                    super.onPageFinished(view, url)
                     if (started && token == generation.get()) {
                         completedUrl = url
                         AppLogger.i("WenkuWebViewSession", "Browser document finished: kind=$kind, url=${wenkuDiagnosticUrl(url)}")
@@ -173,6 +187,7 @@ internal class WenkuWebViewSession(
                 override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
                     if (request.isForMainFrame && Wenku8Urls.isLogin(request.url.toString())) loginRequired = true
                     val blocked = request.isForMainFrame && !wenku8PageAllowed(request.url.toString(), kind)
+                    diagnostics.event("navigation", "generation=$token, kind=$kind, blocked=$blocked, redirect=${request.isRedirect}, url=${com.breakyuna.esjzone.util.diagnosticUrl(request.url.toString())}")
                     if (request.isForMainFrame) AppLogger.i("WenkuWebViewSession",
                         "Browser navigation: kind=$kind, blocked=$blocked, url=${wenkuDiagnosticUrl(request.url.toString())}")
                     return blocked
@@ -180,7 +195,9 @@ internal class WenkuWebViewSession(
 
                 override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): WebResourceResponse? {
                     val uri = request.url
-                    if (uri.scheme == "https" && (uri.port == -1 || uri.port == 443) && uri.host in ALLOWED_RESOURCE_HOSTS) return null
+                    val allowed = uri.scheme == "https" && (uri.port == -1 || uri.port == 443) && uri.host in ALLOWED_RESOURCE_HOSTS
+                    diagnostics.resource(request, allowed)
+                    if (allowed) return null
                     return WebResourceResponse("text/plain", "utf-8", ByteArrayInputStream(ByteArray(0)))
                 }
             }
@@ -188,7 +205,7 @@ internal class WenkuWebViewSession(
         }
         while (System.currentTimeMillis() < deadline) {
             Thread.sleep(POLL_MS)
-            if (token != generation.get()) throw WenkuBrowserSessionClosedException()
+            if (token != generation.get()) throw WenkuBrowserSessionClosedException("browser-navigation")
             val (requiresLogin, allowed) = onMain {
                 val current = browser.url.orEmpty()
                 (loginRequired || Wenku8Urls.isLogin(current)) to current.takeIf { it == completedUrl }.orEmpty()
@@ -246,7 +263,7 @@ internal class WenkuWebViewSession(
         evaluate(browser, script, deadline)
         while (System.currentTimeMillis() < deadline) {
             Thread.sleep(POLL_MS)
-            if (token != generation.get()) throw WenkuBrowserSessionClosedException()
+            if (token != generation.get()) throw WenkuBrowserSessionClosedException("browser-fetch")
             val state = evaluate(browser, "window.__esjWenkuResult===false?-1:typeof window.__esjWenkuResult==='string'?1:0", deadline)
             if (state == "-1") {
                 val stage = evaluate(browser, "window.__esjWenkuFailure", deadline)
@@ -291,6 +308,7 @@ internal class WenkuWebViewSession(
     }
 
     private fun evaluate(browser: WebView, script: String, deadline: Long): String {
+        val started = System.nanoTime()
         val latch = CountDownLatch(1)
         var result: String? = null
         var failure: Throwable? = null
@@ -306,6 +324,7 @@ internal class WenkuWebViewSession(
         if (remaining <= 0 || !latch.await(remaining, TimeUnit.MILLISECONDS)) throw IOException("Browser request timed out")
         failure?.let { throw IOException("Browser script failed", it) }
         val raw = result ?: throw IOException("Browser returned no result")
+        diagnostics.event("script-completed", "generation=${generation.get()}, scriptChars=${script.length}, resultChars=${raw.length}, elapsedMs=${(System.nanoTime() - started) / 1_000_000}")
         return if (raw.startsWith('"')) try {
             org.json.JSONArray("[$raw]").getString(0)
         } catch (error: org.json.JSONException) {

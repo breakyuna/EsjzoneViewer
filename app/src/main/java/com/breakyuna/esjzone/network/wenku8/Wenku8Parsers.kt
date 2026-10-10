@@ -47,6 +47,9 @@ object Wenku8Parsers {
     private const val EXTRA = "//*[@id='content']/div[1]/table[2]/tbody/tr"
 
     private fun document(html: String, url: String): Document {
+        com.breakyuna.esjzone.util.AppLogger.trace("Wenku8Parsers") {
+            "stage=parse-document, url=${com.breakyuna.esjzone.util.diagnosticUrl(url)}, ${com.breakyuna.esjzone.util.diagnosticHtml(html)}"
+        }
         if (CloudflareChallenge.hasChallengeDocumentMarkers(html)) throw Wenku8ParseException()
         return Jsoup.parse(html, url).also {
             if (it.selectFirst("input[name=username]") != null && it.selectFirst("input[name=password]") != null) throw Wenku8LoginRequiredException()
@@ -57,7 +60,10 @@ object Wenku8Parsers {
     fun detail(html: String, url: String, catalog: NovelChapterList): DetailedNovel {
         if (Wenku8Urls.detailIdentity(url) == null) throw Wenku8ParseException()
         val doc = document(html, url)
-        fun field(path: String): Element = doc.selectXpath(path).firstOrNull() ?: throw Wenku8ParseException()
+        fun field(path: String): Element = doc.selectXpath(path).firstOrNull() ?: run {
+            com.breakyuna.esjzone.util.AppLogger.trace("Wenku8Parsers") { "stage=missing-field, xpath=$path" }
+            throw Wenku8ParseException()
+        }
         fun text(path: String): String = field(path).text().trim()
         fun value(column: Int, label: String): String = text("$INFO/tr[2]/td[$column]").removePrefix(label).trim()
         val name = text("$INFO/tr[1]/td/table/tbody/tr/td[1]/span/b").takeIf(String::isNotBlank)

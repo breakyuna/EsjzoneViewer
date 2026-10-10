@@ -27,6 +27,7 @@ internal class WenkuCookieJar(context: Context) : CookieJar {
     val processSessionFromPreviousRun = preferences.getBoolean(PROCESS_ONLY, false)
 
     fun recordBrowserLogin(usecookie: String) = synchronized(lock) {
+        com.breakyuna.esjzone.util.AppLogger.trace("WenkuCookieJar") { "stage=record-login-policy, processOnly=${usecookie == "0"}" }
         require(usecookie in setOf("0", "86400", "2592000", "315360000"))
         check(preferences.edit().putBoolean(PROCESS_ONLY, usecookie == "0").commit()) {
             "Unable to save Wenku session policy"
@@ -75,7 +76,11 @@ internal class WenkuCookieJar(context: Context) : CookieJar {
             persistBrowserSnapshots()
         }
         val normal = active.filter { it.matches(url) }
-        wenkuBrowserCookiesForRequest(url, browserPairs, normal)
+        wenkuBrowserCookiesForRequest(url, browserPairs, normal).also {
+            com.breakyuna.esjzone.util.AppLogger.trace("WenkuCookieJar") {
+                "stage=load-cookies, url=${com.breakyuna.esjzone.util.diagnosticUrl(url.toString())}, stored=${stored.size}, active=${active.size}, native=${normal.size}, sent=${it.size}, browserScopes=${browserPairs.size}"
+            }
+        }
     }
 
     override fun saveFromResponse(url: HttpUrl, cookies: List<Cookie>) = synchronized(lock) {
@@ -83,6 +88,7 @@ internal class WenkuCookieJar(context: Context) : CookieJar {
         if (requestScope.get()?.let { it != cacheScope() } == true) return@synchronized
         val accepted = cookies.filter { (origin.host == it.domain || origin.host.endsWith(".${it.domain}")) &&
             it.name != "ews_key" && it.name != "ews_token" }
+        com.breakyuna.esjzone.util.AppLogger.trace("WenkuCookieJar") { "stage=save-cookies, received=${cookies.size}, accepted=${accepted.size}" }
         accepted.forEach { cookie ->
             persist(cookie)
             browserPairs.entries.forEach { entry ->
@@ -138,10 +144,12 @@ internal class WenkuCookieJar(context: Context) : CookieJar {
             }.distinctBy { (_, cookie) -> "${cookie.domain}|${cookie.path}|${cookie.name}" }
         }
         if (pending.isEmpty()) {
+            com.breakyuna.esjzone.util.AppLogger.trace("WenkuCookieJar") { "stage=browser-restore, pending=0" }
             onRestored()
             return
         }
         var remaining = pending.size
+        com.breakyuna.esjzone.util.AppLogger.trace("WenkuCookieJar") { "stage=browser-restore, pending=${pending.size}" }
         pending.forEach { (url, cookie) ->
             synchronized(lock) {
                 if (scope != cacheScope()) {
@@ -169,6 +177,7 @@ internal class WenkuCookieJar(context: Context) : CookieJar {
             else pair[0] to pair[1]
         }.toMap()
         val previous = browserPairs[source]
+        com.breakyuna.esjzone.util.AppLogger.trace("WenkuCookieJar") { "stage=browser-import, url=${com.breakyuna.esjzone.util.diagnosticUrl(sourceUrl)}, count=${next.size}, previousCount=${previous?.size ?: 0}, newScope=$forceNewScope" }
         val changed = if (source == origin) previous.orEmpty() != next || browserPairs.keys.any { it != origin }
             else previous != null && previous != next
         // The root browser snapshot is authoritative for persisted cookies applicable at the root.

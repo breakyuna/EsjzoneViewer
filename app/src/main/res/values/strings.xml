@@ -412,7 +412,9 @@
     <string name="settings_domain">定向网址</string>
     <string name="settings_domain_description">在可用的 ESJ Zone 站点之间切换</string>
     <string name="system_logs">系统日志</string>
-    <string name="logs_copy_all">复制全部</string>
+    <string name="logs_copy_all">复制当前日志</string>
+    <string name="settings_debug_logging">Debug 日志模式</string>
+    <string name="logs_export_failure">日志导出失败</string>
     <string name="logs_share">分享日志</string>
     <string name="logs_clear">清空日志</string>
     <string name="logs_clear_title">清空日志记录</string>

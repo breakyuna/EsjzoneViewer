@@ -52,6 +52,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -75,6 +76,11 @@ import com.breakyuna.esjzone.util.AppLogger
 import com.breakyuna.esjzone.util.LogSource
 import com.breakyuna.esjzone.util.LogEntry
 import com.breakyuna.esjzone.util.LogLevel
+import androidx.core.content.FileProvider
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /** Diagnostics surface. AppLogger remains the sole owner of redaction and persistence. */
 object LogsPage : AppDestination {
@@ -92,6 +98,9 @@ object LogsPage : AppDestination {
         val copiedToast = stringResource(R.string.logs_copied_toast)
         val clearedToast = stringResource(R.string.logs_cleared_toast)
         val shareLabel = stringResource(R.string.logs_share)
+        val exportFailure = stringResource(R.string.logs_export_failure)
+        val scope = rememberCoroutineScope()
+        var exporting by remember { mutableStateOf(false) }
         val logs by AppLogger.logsFlow.collectAsState()
         val crashReport by AppLogger.crashReportFlow.collectAsState()
         var filter by remember { mutableStateOf<LogLevel?>(null) }
@@ -116,12 +125,30 @@ object LogsPage : AppDestination {
                     actions = {
                         if (crashReport != null) IconButton(onClick = { crashDialog = true }) { Icon(Icons.Filled.BugReport, stringResource(R.string.logs_crash_report_btn), tint = logCrashErrorColor()) }
                         IconButton(onClick = { copyText(context, AppLogger.exportLogsText()); Toast.makeText(context, copiedToast, Toast.LENGTH_SHORT).show() }) { Icon(Icons.Filled.ContentCopy, stringResource(R.string.logs_copy_all)) }
-                        IconButton(onClick = {
-                            val intent = Intent(Intent.ACTION_SEND).apply { type = "text/plain"; putExtra(Intent.EXTRA_TEXT, AppLogger.exportLogsText()); putExtra(Intent.EXTRA_SUBJECT, "Esjzone System Logs") }
-                            val chooser = Intent.createChooser(intent, shareLabel).apply {
-                                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        IconButton(enabled = !exporting, onClick = {
+                            exporting = true
+                            scope.launch {
+                                try {
+                                    val file = withContext(Dispatchers.IO) { AppLogger.exportLogsFile(context.cacheDir) }
+                                    val uri = FileProvider.getUriForFile(context, "${context.packageName}.logs", file)
+                                    val intent = Intent(Intent.ACTION_SEND).apply {
+                                        type = "text/plain"
+                                        putExtra(Intent.EXTRA_STREAM, uri)
+                                        clipData = ClipData.newRawUri("Esjzone Logs", uri)
+                                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                    }
+                                    context.startActivity(Intent.createChooser(intent, shareLabel).apply {
+                                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                    })
+                                } catch (error: CancellationException) {
+                                    throw error
+                                } catch (error: Exception) {
+                                    AppLogger.e("LogsPage", "Failed to export diagnostics", error)
+                                    Toast.makeText(context, exportFailure, Toast.LENGTH_SHORT).show()
+                                } finally {
+                                    exporting = false
+                                }
                             }
-                            context.startActivity(chooser)
                         }) { Icon(Icons.Filled.Share, stringResource(R.string.logs_share)) }
                         IconButton(onClick = { clearDialog = true }) { Icon(Icons.Filled.Delete, stringResource(R.string.logs_clear)) }
                     },

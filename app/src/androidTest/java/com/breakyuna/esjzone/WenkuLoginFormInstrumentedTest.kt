@@ -20,6 +20,29 @@ import org.junit.runner.RunWith
 class WenkuLoginFormInstrumentedTest {
     private val instrumentation = InstrumentationRegistry.getInstrumentation()
 
+    @Test fun compatibleDocumentEnablesNativeForm() = withForm("") { view ->
+        assertEquals("form", evaluate(view, Wenku8LoginForm.inspect("fixture-attempt")).getString("state"))
+    }
+
+    @Test fun emptyDocumentWaitsInsteadOfRejectingForm() = withForm("") { view ->
+        evaluate(view, "(function(){window.fixtureForm=document.frmlogin;document.body.replaceChildren();return {};})()")
+        val result = evaluate(view, Wenku8LoginForm.inspect("fixture-attempt"))
+        assertEquals("preparing", result.getString("state"))
+        assertEquals("empty-document", result.getString("reason"))
+        evaluate(view, "(function(){document.body.appendChild(window.fixtureForm);return {};})()")
+        assertEquals("form", evaluate(view, Wenku8LoginForm.inspect("fixture-attempt")).getString("state"))
+    }
+
+    @Test fun extraInteractiveFieldReportsStructuralReason() = withForm("") { view ->
+        evaluate(view, """
+            (function(){const input=document.createElement('input');input.name='fixture-extra';
+                document.frmlogin.appendChild(input);return {};})()
+        """.trimIndent())
+        val result = evaluate(view, Wenku8LoginForm.inspect("fixture-attempt"))
+        assertEquals("incompatible", result.getString("state"))
+        assertEquals("extra-input", result.getString("reason"))
+    }
+
     @Test fun invalidFormClearsPasswordWithoutSubmitting() = withForm("pattern='[0-9]+'") { view ->
         assertEquals("invalid", submit(view).getString("state"))
         val fields = evaluate(view, "({empty:document.frmlogin.password.value==='',submitted:!!window.fixtureSubmitted})")

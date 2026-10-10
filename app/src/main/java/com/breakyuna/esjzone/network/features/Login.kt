@@ -47,6 +47,7 @@ internal fun EsjzoneClient.loginWithOutcome(
         var loginResponseUrl: HttpUrl? = null
         val cookieJar = LoginCookieJar()
         val httpClient = OkHttpClient.Builder()
+            .eventListenerFactory(com.breakyuna.esjzone.network.DebugHttpEvents)
             .cookieJar(cookieJar)
             .connectTimeout(10, TimeUnit.SECONDS)
             .readTimeout(15, TimeUnit.SECONDS)

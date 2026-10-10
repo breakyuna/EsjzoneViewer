@@ -35,6 +35,7 @@ internal class WenkuChapterClient(context: Context, userAgent: String) {
     private val sessionLock = Any()
     private val sessionEpoch = java.util.concurrent.atomic.AtomicLong()
     private val client = OkHttpClient.Builder()
+        .eventListenerFactory(com.breakyuna.esjzone.network.DebugHttpEvents)
         .cookieJar(jar)
         .addInterceptor { chain ->
             jar.withinRequest(chain.request().tag(String::class.java)) { chain.proceed(chain.request()) }
@@ -83,14 +84,16 @@ internal class WenkuChapterClient(context: Context, userAgent: String) {
     }
 
     fun importBrowserCookies(raw: String?, sourceUrl: String = "https://www.wenku8.net/") = synchronized(sessionLock) {
+        com.breakyuna.esjzone.util.AppLogger.i("WenkuChapterClient",
+            "Browser session invalidated: reason=cookie-import, source=${wenkuDiagnosticUrl(sourceUrl)}")
         sessionEpoch.incrementAndGet()
-        browser.close()
+        browser.close("cookie-import")
         jar.importBrowserCookies(raw, sourceUrl, forceNewScope = true)
     }
     fun clearSession(onCleared: () -> Unit = {}) {
         val cookies = synchronized(sessionLock) {
             sessionEpoch.incrementAndGet()
-            browser.close()
+            browser.close("session-clear")
             jar.clear()
         }
         android.os.Handler(android.os.Looper.getMainLooper()).post {
@@ -266,6 +269,10 @@ internal class WenkuChapterClient(context: Context, userAgent: String) {
             PageCache.remove(initialKey)
         }
         val result = request(url, kind, scope)
+        com.breakyuna.esjzone.util.AppLogger.trace("WenkuChapterClient") {
+            "stage=page-response, kind=$kind, epoch=$epoch, currentEpoch=${sessionEpoch.get()}, " +
+                "autoSolve=$allowAutoSolve, status=${result.status}, ${com.breakyuna.esjzone.util.diagnosticHtml(result.html)}"
+        }
         if (sessionEpoch.get() != epoch) throw WenkuBrowserSessionClosedException()
         var resultKey = initialKey
         val page = if (result.challenge) {
@@ -294,6 +301,9 @@ internal class WenkuChapterClient(context: Context, userAgent: String) {
     }
 
     private fun validatePage(page: Wenku8PageResponse, kind: Wenku8PageKind) {
+        com.breakyuna.esjzone.util.AppLogger.trace("WenkuChapterClient") {
+            "stage=validate-page, kind=$kind, url=${com.breakyuna.esjzone.util.diagnosticUrl(page.url)}"
+        }
         if (!wenku8PageAllowed(page.url, kind)) throw UnsupportedExternalChapterException("page-validation", kind, actualUrl = page.url)
         val parsers = com.breakyuna.esjzone.network.wenku8.Wenku8Parsers
         when (kind) {

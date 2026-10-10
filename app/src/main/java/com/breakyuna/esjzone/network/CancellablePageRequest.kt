@@ -8,6 +8,7 @@ import okhttp3.Call
 
 /** Bridges the synchronous HTML parser APIs to page jobs that users can cancel. */
 internal suspend fun <T> cancellablePageRequest(block: () -> T): T = suspendCancellableCoroutine { continuation ->
+    val trace = com.breakyuna.esjzone.util.AppLogger.newTraceId("page-job")
     val state = PageRequestCancellation()
     continuation.invokeOnCancellation { state.cancel() }
     Dispatchers.IO.dispatch(continuation.context, Runnable {
@@ -16,8 +17,17 @@ internal suspend fun <T> cancellablePageRequest(block: () -> T): T = suspendCanc
         pageRequestCancellation.set(state)
         state.attach(Thread.currentThread())
         try {
-            if (continuation.isActive) continuation.resume(block())
+            if (continuation.isActive) continuation.resume(com.breakyuna.esjzone.util.AppLogger.withTrace(trace) {
+                val started = System.nanoTime()
+                com.breakyuna.esjzone.util.AppLogger.trace("PageRequest") { "stage=start, id=$trace" }
+                try { block() } finally {
+                    com.breakyuna.esjzone.util.AppLogger.trace("PageRequest") {
+                        "stage=end, id=$trace, active=${continuation.isActive}, elapsedMs=${(System.nanoTime() - started) / 1_000_000}"
+                    }
+                }
+            })
         } catch (error: Throwable) {
+            com.breakyuna.esjzone.util.AppLogger.trace("PageRequest") { "stage=failed, id=$trace, type=${error.javaClass.name}" }
             if (continuation.isActive) continuation.resumeWithException(error)
         } finally {
             state.detach()
@@ -50,6 +60,7 @@ internal class PageRequestCancellation {
     @Synchronized fun detach() { thread = null; call = null }
 
     @Synchronized fun cancel() {
+        com.breakyuna.esjzone.util.AppLogger.trace("PageRequest") { "stage=cancel, attachedCall=${call != null}, attachedThread=${thread != null}" }
         cancelled = true
         call?.cancel()
         thread?.interrupt() // Wakes a permit or coalesced-future wait.

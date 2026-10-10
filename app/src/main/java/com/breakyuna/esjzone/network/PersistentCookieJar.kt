@@ -57,10 +57,15 @@ internal class PersistentCookieJar(context: Context) : CookieJar {
 
     fun loadForRequest(url: HttpUrl, expectedEpoch: Long?): List<Cookie> {
         synchronized(lock) {
-            if (expectedEpoch != null && expectedEpoch != epoch) return emptyList()
+            if (expectedEpoch != null && expectedEpoch != epoch) {
+                AppLogger.trace(TAG) { "stage=cookie-read-rejected, epoch=$expectedEpoch/$epoch" }
+                return emptyList()
+            }
             val changed = removeExpiredCookies()
             if (changed) persistLocked()
-            return cookies.mapNotNull { it.toCookie() }.filter { it.matches(url) }
+            return cookies.mapNotNull { it.toCookie() }.filter { it.matches(url) }.also {
+                AppLogger.trace(TAG) { "stage=cookie-read, url=${com.breakyuna.esjzone.util.diagnosticUrl(url.toString())}, count=${it.size}, expiredRemoved=$changed, epoch=$epoch" }
+            }
         }
     }
 
@@ -77,6 +82,7 @@ internal class PersistentCookieJar(context: Context) : CookieJar {
     }
 
     fun saveFromResponse(url: HttpUrl, responseCookies: List<Cookie>, expectedEpoch: Long?) {
+        AppLogger.trace(TAG) { "stage=cookie-write, url=${com.breakyuna.esjzone.util.diagnosticUrl(url.toString())}, count=${responseCookies.size}, expectedEpoch=$expectedEpoch" }
         if (responseCookies.isEmpty()) return
         synchronized(lock) {
             if (expectedEpoch != null && expectedEpoch != epoch) return

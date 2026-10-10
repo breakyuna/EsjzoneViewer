@@ -24,6 +24,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.stateIn
 import java.io.IOException
 import com.breakyuna.esjzone.util.AppLogger
@@ -60,8 +61,14 @@ class SettingsDataStore(
 
     private val defaults = SettingsValues()
     private val values: StateFlow<SettingsValues> = dataStore.data
-        .catch { error -> if (error is IOException) emit(emptyPreferences()) else throw error }
+        .catch { error ->
+            if (error is IOException) {
+                AppLogger.e("SettingsDataStore", "Failed to read settings; using defaults", error)
+                emit(emptyPreferences())
+            } else throw error
+        }
         .map { it.toSettingsValues() }
+        .onEach { AppLogger.setDebugMode(it.debugLogging) }
         .stateIn(scope, SharingStarted.Eagerly, defaults)
 
     override val adult: StateFlow<Boolean> = values.map { it.adult }
@@ -90,31 +97,46 @@ class SettingsDataStore(
         .stateIn(scope, SharingStarted.Eagerly, defaults.startTab)
     override val wenkuLoginDuration: StateFlow<String> = values.map { it.wenkuLoginDuration }
         .stateIn(scope, SharingStarted.Eagerly, defaults.wenkuLoginDuration)
+    override val debugLogging: StateFlow<Boolean> = values.map { it.debugLogging }
+        .stateIn(scope, SharingStarted.Eagerly, defaults.debugLogging)
 
-    override fun setAdult(value: Boolean) = write { it[ADULT] = value }
-    override fun setThemeMode(value: AppThemeMode) = write { it[THEME_MODE] = value.name }
-    override fun setHideHomeRecommendations(value: Boolean) = write { it[HIDE_HOME_RECOMMENDATIONS] = value }
-    override fun setDomain(value: String) {
-        write { it[DOMAIN] = value.takeIf { candidate -> candidate in SettingsDefaults.DOMAINS } ?: defaults.domain }
+    suspend fun restoreLoggingMode() {
+        try {
+            AppLogger.setDebugMode(dataStore.data.first()[DEBUG_LOGGING] ?: false)
+        } catch (error: IOException) {
+            AppLogger.e("SettingsDataStore", "Failed to restore logging mode", error)
+        }
     }
-    override fun setLanguage(value: AppLanguage) = write { it[LANGUAGE] = value.code }
-    override fun setReadingStatisticsIncognito(value: Boolean) = write { it[READING_STATISTICS_INCOGNITO] = value }
-    override fun setReaderAutoSave(value: Boolean) = write { it[READER_AUTO_SAVE] = value }
-    override fun setDownloadConcurrency(value: Int) = write {
+
+    override fun setDebugLogging(value: Boolean) {
+        AppLogger.setDebugMode(value)
+        write("debug_logging", onFailure = { AppLogger.setDebugMode(debugLogging.value) }) { it[DEBUG_LOGGING] = value }
+    }
+
+    override fun setAdult(value: Boolean) = write("adult") { it[ADULT] = value }
+    override fun setThemeMode(value: AppThemeMode) = write("theme_mode") { it[THEME_MODE] = value.name }
+    override fun setHideHomeRecommendations(value: Boolean) = write("hide_home_recommendations") { it[HIDE_HOME_RECOMMENDATIONS] = value }
+    override fun setDomain(value: String) {
+        write("domain") { it[DOMAIN] = value.takeIf { candidate -> candidate in SettingsDefaults.DOMAINS } ?: defaults.domain }
+    }
+    override fun setLanguage(value: AppLanguage) = write("language") { it[LANGUAGE] = value.code }
+    override fun setReadingStatisticsIncognito(value: Boolean) = write("reading_statistics_incognito") { it[READING_STATISTICS_INCOGNITO] = value }
+    override fun setReaderAutoSave(value: Boolean) = write("reader_auto_save") { it[READER_AUTO_SAVE] = value }
+    override fun setDownloadConcurrency(value: Int) = write("download_concurrency") {
         it[DOWNLOAD_CONCURRENCY] = value.coerceIn(
             SettingsDefaults.MIN_DOWNLOAD_CONCURRENCY,
             SettingsDefaults.MAX_DOWNLOAD_CONCURRENCY
         )
     }
-    override fun setNovelListGridView(value: Boolean) = write { it[NOVEL_LIST_GRID_VIEW] = value }
-    override fun setNovelListAdultOnly(value: Boolean) = write { it[NOVEL_LIST_ADULT_ONLY] = value }
-    override fun setNavigationOrder(value: List<String>) = write {
+    override fun setNovelListGridView(value: Boolean) = write("novel_list_grid_view") { it[NOVEL_LIST_GRID_VIEW] = value }
+    override fun setNovelListAdultOnly(value: Boolean) = write("novel_list_adult_only") { it[NOVEL_LIST_ADULT_ONLY] = value }
+    override fun setNavigationOrder(value: List<String>) = write("navigation_order") {
         it[NAVIGATION_ORDER] = normalizeNavigationOrder(value).joinToString(",")
     }
-    override fun setStartTab(value: String) = write {
+    override fun setStartTab(value: String) = write("start_tab") {
         it[START_TAB] = value.takeIf { candidate -> candidate in SettingsDefaults.VALID_START_TABS } ?: defaults.startTab
     }
-    override fun setWenkuLoginDuration(value: String) = write {
+    override fun setWenkuLoginDuration(value: String) = write("wenku_login_duration") {
         it[WENKU_LOGIN_DURATION] = value.takeIf { candidate -> candidate in SettingsDefaults.WENKU_LOGIN_DURATIONS }
             ?: defaults.wenkuLoginDuration
     }
@@ -158,12 +180,17 @@ class SettingsDataStore(
         }
     }
 
-    private fun write(update: suspend (androidx.datastore.preferences.core.MutablePreferences) -> Unit) {
+    private fun write(setting: String, onFailure: () -> Unit = {}, update: suspend (androidx.datastore.preferences.core.MutablePreferences) -> Unit) {
         scope.launch {
+            val id = AppLogger.newTraceId("settings")
+            val started = System.nanoTime()
             try {
+                AppLogger.trace("SettingsDataStore") { "id=$id, setting=$setting, stage=write-start" }
                 dataStore.edit { preferences -> update(preferences) }
+                AppLogger.trace("SettingsDataStore") { "id=$id, setting=$setting, stage=write-end, elapsedMs=${(System.nanoTime() - started) / 1_000_000}" }
             } catch (e: IOException) {
-                AppLogger.e("SettingsDataStore", "Failed to persist setting update", e)
+                AppLogger.e("SettingsDataStore", "Failed to persist setting update: id=$id, setting=$setting", e)
+                onFailure()
             }
         }
     }
@@ -181,7 +208,8 @@ class SettingsDataStore(
         val novelListAdultOnly: Boolean = false,
         val navigationOrder: List<String> = SettingsDefaults.NAVIGATION_ORDER,
         val startTab: String = SettingsDefaults.DEFAULT_START_TAB,
-        val wenkuLoginDuration: String = SettingsDefaults.DEFAULT_WENKU_LOGIN_DURATION
+        val wenkuLoginDuration: String = SettingsDefaults.DEFAULT_WENKU_LOGIN_DURATION,
+        val debugLogging: Boolean = false
     )
 
     private fun Preferences.toSettingsValues(): SettingsValues = SettingsValues(
@@ -202,7 +230,8 @@ class SettingsDataStore(
         ),
         startTab = this[START_TAB]?.takeIf { it in SettingsDefaults.VALID_START_TABS } ?: defaults.startTab,
         wenkuLoginDuration = this[WENKU_LOGIN_DURATION]?.takeIf { it in SettingsDefaults.WENKU_LOGIN_DURATIONS }
-            ?: defaults.wenkuLoginDuration
+            ?: defaults.wenkuLoginDuration,
+        debugLogging = this[DEBUG_LOGGING] ?: defaults.debugLogging
     )
 
     private fun normalizeNavigationOrder(value: List<String>): List<String> {
@@ -226,6 +255,7 @@ class SettingsDataStore(
         val NAVIGATION_ORDER = stringPreferencesKey("navigation_order")
         val START_TAB = stringPreferencesKey("start_tab")
         val WENKU_LOGIN_DURATION = stringPreferencesKey("wenku_login_duration")
+        val DEBUG_LOGGING = booleanPreferencesKey("debug_logging")
         val MIGRATION_COMPLETE = booleanPreferencesKey("legacy_room_migration_complete")
     }
 }

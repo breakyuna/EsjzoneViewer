@@ -6,7 +6,8 @@ import android.webkit.CookieManager
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
 import android.webkit.WebView
-import android.webkit.WebViewClient
+import com.breakyuna.esjzone.util.DiagnosticWebViewClient
+import com.breakyuna.esjzone.util.WebViewDiagnostics
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -49,13 +50,14 @@ internal fun WenkuVerificationDialog(
     onDismiss: () -> Unit
 ) {
     val context = LocalContext.current
+    val diagnostics = remember(url) { WebViewDiagnostics("WenkuVerificationDialog") }
     val browser = remember(url) { runCatching { WebView(context) }.getOrNull() }
     val completed = remember(url) { AtomicBoolean(false) }
     val checking = remember(url) { AtomicBoolean(false) }
     val active = remember(url) { AtomicBoolean(true) }
     val timedOut = remember(url) { mutableStateOf(false) }
     DisposableEffect(browser) {
-        onDispose { active.set(false); browser?.stopLoading(); browser?.destroy() }
+        onDispose { diagnostics.event("dispose", "completed=${completed.get()}"); active.set(false); browser?.stopLoading(); browser?.destroy() }
     }
     if (browser == null) {
         AlertDialog(
@@ -91,6 +93,7 @@ internal fun WenkuVerificationDialog(
                     var checkStartedAtMillis = SystemClock.elapsedRealtime()
                     fun complete(rawCookies: String?, html: String?) {
                         if (!active.get() || completed.get()) return
+                        diagnostics.event("complete", "cookiesPresent=${!rawCookies.isNullOrEmpty()}, htmlChars=${html?.length ?: 0}")
                         cookieManager.flush()
                         if (!EsjzoneClient.importWenkuBrowserCookies(rawCookies, url)) {
                             if (completed.compareAndSet(false, true)) onUnavailable()
@@ -189,7 +192,9 @@ internal fun WenkuVerificationDialog(
                             // The policy handles chapter readiness and its clearance fallback.
                             val hasClearance = clearanceValue(rawCookies) != null
                             val now = SystemClock.elapsedRealtime()
-                            when (policy.next(result == "true", hasClearance, now)) {
+                            val decision = policy.next(result == "true", hasClearance, now)
+                            diagnostics.event("verification-check", "readable=${result == "true"}, clearancePresent=$hasClearance, decision=$decision, elapsedMs=${now - checkStartedAtMillis}")
+                            when (decision) {
                                 WenkuVerificationPolicy.Decision.USE_CHAPTER_CONTENT -> captureChapter(view, rawCookies)
                                 WenkuVerificationPolicy.Decision.USE_CLEARANCE -> complete(rawCookies, null)
                                 WenkuVerificationPolicy.Decision.WAIT -> {
@@ -222,21 +227,28 @@ internal fun WenkuVerificationDialog(
                         }
                         cookieManager.setAcceptCookie(true)
                         cookieManager.setAcceptThirdPartyCookies(this, false)
-                        webViewClient = object : WebViewClient() {
-                            override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean =
-                                request.isForMainFrame &&
+                        diagnostics.attach(this)
+                        webViewClient = object : DiagnosticWebViewClient(diagnostics) {
+                            override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
+                                val blocked = request.isForMainFrame &&
                                     (request.url.scheme != "https" || request.url.host != "www.wenku8.net" ||
                                         (request.url.port != -1 && request.url.port != 443) || request.url.userInfo != null)
+                                diagnostics.event("navigation", "blocked=$blocked, redirect=${request.isRedirect}, url=${com.breakyuna.esjzone.util.diagnosticUrl(request.url.toString())}")
+                                return blocked
+                            }
 
                             override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): WebResourceResponse? {
                                 val host = request.url.host.orEmpty()
-                                if (request.url.scheme == "https" && (request.url.port == -1 || request.url.port == 443) &&
+                                val allowed = request.url.scheme == "https" && (request.url.port == -1 || request.url.port == 443) &&
                                     request.url.userInfo == null && host in setOf(
-                                        "www.wenku8.net", "challenges.cloudflare.com", "www.cloudflare.com")) return null
+                                        "www.wenku8.net", "challenges.cloudflare.com", "www.cloudflare.com")
+                                diagnostics.resource(request, allowed)
+                                if (allowed) return null
                                 return WebResourceResponse("text/plain", "utf-8", java.io.ByteArrayInputStream(ByteArray(0)))
                             }
 
                             override fun onPageFinished(view: WebView, finishedUrl: String) {
+                                super.onPageFinished(view, finishedUrl)
                                 startCheck(view)
                             }
                         }
