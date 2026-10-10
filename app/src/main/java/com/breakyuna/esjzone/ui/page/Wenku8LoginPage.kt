@@ -2,12 +2,11 @@
 
 package com.breakyuna.esjzone.ui.page
 
-import android.app.Activity
-import android.content.ContextWrapper
 import android.view.View
 import android.view.ViewGroup
 import android.webkit.WebView
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.LocalActivity
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -77,8 +76,8 @@ object Wenku8LoginPage : AppDestination {
         val navigator = LocalBaseNavigator.current
         val keyboard = LocalSoftwareKeyboardController.current
         val model = rememberAppViewModel { Wenku8LoginModel(context.applicationContext) }
-        val activity = generateSequence(context) { (it as? ContextWrapper)?.baseContext }
-            .filterIsInstance<Activity>().firstOrNull()
+        // LocalContext is localized with createConfigurationContext and cannot expose the Activity.
+        val activity = LocalActivity.current
         if (activity == null) {
             Text(stringResource(R.string.wenku8_login_window_unavailable))
             return
