@@ -62,7 +62,8 @@ fun AppTheme(
             bodyMedium = AppTypography.bodyMedium,
             bodySmall = AppTypography.bodySmall,
             labelLarge = AppTypography.labelLarge,
-            labelMedium = AppTypography.labelMedium
+            labelMedium = AppTypography.labelMedium,
+            labelSmall = AppTypography.labelSmall
         ),
         shapes = androidx.compose.material3.Shapes(
             extraSmall = AppShapes.compact,
