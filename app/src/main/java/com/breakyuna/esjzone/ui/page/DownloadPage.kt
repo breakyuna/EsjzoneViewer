@@ -116,7 +116,12 @@ object DownloadPage : AppDestination {
             topBar = {
                 Column {
                     TopAppBar(
-                        title = { Text(if (editing) "${stringResource(R.string.download_edit)} (${selected.size})" else stringResource(R.string.downloads), style = AppTypography.titleLarge) },
+                        title = {
+                            SourceTitle(if (editing) "${stringResource(R.string.download_edit)} (${selected.size})" else stringResource(R.string.downloads)) {
+                                SourceSelector(sourceFilter, { sourceFilter = it; selected = emptySet() },
+                                    includeAll = true, enabled = !editing && !deleting)
+                            }
+                        },
                         navigationIcon = { BackIconButton { if (editing) { editing = false; selected = emptySet() } else navigator?.pop() } },
                         actions = {
                             if (editing) {
@@ -147,8 +152,6 @@ object DownloadPage : AppDestination {
                             containerColor = MaterialTheme.colorScheme.background
                         )
                     )
-                    SourceSelector(sourceFilter, { sourceFilter = it; selected = emptySet() },
-                        includeAll = true, enabled = !editing && !deleting)
                 }
             }
         ) { padding ->

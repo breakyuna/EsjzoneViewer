@@ -10,6 +10,7 @@ import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import com.breakyuna.esjzone.ui.discovery.LibrarySource
 import com.breakyuna.esjzone.ui.discovery.LocalDiscoverySource
 import com.breakyuna.esjzone.ui.discovery.SourceSelector
+import com.breakyuna.esjzone.ui.discovery.SourceTitle
 import com.breakyuna.esjzone.ui.page.WenkuDiscoveryScreen
 
 import androidx.compose.animation.core.Animatable
@@ -383,7 +384,12 @@ object HomeTab : AppTab {
         }
 
         DiscoveryScaffold(
-            title = stringResource(R.string.home_discover),
+            titleContent = {
+                val source = LocalDiscoverySource.current
+                SourceTitle(stringResource(R.string.home_discover)) {
+                    SourceSelector(source.value, { it?.let { source.value = it } })
+                }
+            },
             actions = {
                 androidx.compose.material3.IconButton(onClick = { navigator?.pushIfNotCurrent(SearchTab) }) {
                     androidx.compose.material3.Icon(Icons.Filled.Search, stringResource(R.string.search_action))
@@ -394,8 +400,6 @@ object HomeTab : AppTab {
             }
         ) { padding ->
             Column(Modifier.fillMaxSize().padding(top = padding.calculateTopPadding())) {
-                val source = LocalDiscoverySource.current
-                SourceSelector(source.value, { it?.let { source.value = it } })
                 PullToRefreshBox(
                     isRefreshing = (state as? HomeTabModel.State.Result)?.isRefreshing == true,
                     onRefresh = {

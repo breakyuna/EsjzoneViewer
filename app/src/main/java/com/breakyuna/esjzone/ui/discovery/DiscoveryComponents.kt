@@ -135,7 +135,8 @@ fun DiscoverySearchTopBar(
     onSearch: () -> Unit,
     onClear: () -> Unit,
     onBack: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    sourceControl: @Composable () -> Unit = {}
 ) {
     Surface(
         color = MaterialTheme.colorScheme.background,
@@ -167,6 +168,7 @@ fun DiscoverySearchTopBar(
                 onClear = onClear,
                 modifier = Modifier.weight(1f)
             )
+            sourceControl()
         }
     }
 }

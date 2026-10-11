@@ -55,7 +55,14 @@ internal fun WenkuDiscoveryScreen(showBack: Boolean = false) {
     val navigator = LocalBaseNavigator.current
     val source = LocalDiscoverySource.current
     DiscoveryScaffold(
-        title = stringResource(R.string.home_discover),
+        titleContent = {
+            SourceTitle(stringResource(R.string.home_discover)) {
+                SourceSelector(LibrarySource.WENKU8, { selected ->
+                    selected?.let { source.value = it }
+                    if (showBack && selected == LibrarySource.ESJZONE) navigator?.pop()
+                })
+            }
+        },
         onBack = if (showBack) ({ navigator?.pop(); Unit }) else null,
         actions = {
             IconButton(onClick = { navigator?.pushIfNotCurrent(SearchTab) }) {
@@ -67,10 +74,6 @@ internal fun WenkuDiscoveryScreen(showBack: Boolean = false) {
         }
     ) { padding ->
         Column(Modifier.fillMaxSize().padding(padding)) {
-            SourceSelector(LibrarySource.WENKU8, { selected ->
-                selected?.let { source.value = it }
-                if (showBack && selected == LibrarySource.ESJZONE) navigator?.pop()
-            })
             WenkuFeed(modifier = Modifier.weight(1f))
         }
     }

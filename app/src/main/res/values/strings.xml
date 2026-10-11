@@ -814,6 +814,8 @@
     <string name="wenku8_check_session">核对会话</string>
     <string name="wenku8_reload_login">重新打开登录页</string>
     <string name="source_esjzone">ESJZone</string>
+    <string name="source_esjzone_short">E</string>
+    <string name="source_wenku8_short">W</string>
     <string name="source_wenku8">文库8</string>
     <string name="source_all">全部</string>
     <string name="source_cloud_history">ESJZone 云端</string>

@@ -230,7 +230,11 @@ object HistoryPage : AppDestination {
                 TopAppBar(
                     title = {
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(AppSpacing.xs)) {
-                            Text(stringResource(R.string.history), style = AppTypography.titleLarge)
+                            Text(stringResource(R.string.history), modifier = Modifier.weight(1f, fill = false),
+                                style = AppTypography.titleLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            if (selectedPage == 0) SourceSelector(sourceFilter, {
+                                sourceFilter = it; localSelected = emptySet()
+                            }, includeAll = true, enabled = !localEditing && !deletingLocal)
                             HistoryCloudSyncStatusIndicator(
                                 state = cloudState,
                                 expanded = showCloudSyncStatusMenu,
@@ -331,9 +335,6 @@ object HistoryPage : AppDestination {
                         unselectedContentColor = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
-                if (selectedPage == 0) SourceSelector(sourceFilter, {
-                    sourceFilter = it; localSelected = emptySet()
-                }, includeAll = true, enabled = !localEditing && !deletingLocal)
                 HorizontalPager(state = pager, modifier = Modifier.fillMaxSize()) { page ->
                     if (page == 0) {
                         LocalHistoryContent(

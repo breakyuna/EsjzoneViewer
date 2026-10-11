@@ -116,10 +116,11 @@ object SearchTab : AppTab {
                 Column {
                     DiscoverySearchTopBar(query, { query = it }, { submit(query) }, {
                         query = ""; activeKeyword = null
-                    }, { navigator?.pop() })
-                    SourceSelector(source, { selected -> selected?.let {
-                        source = it; discoverySource.value = it
-                    } })
+                    }, { navigator?.pop() }, sourceControl = {
+                        SourceSelector(source, { selected -> selected?.let {
+                            source = it; discoverySource.value = it
+                        } })
+                    })
                     if (source == LibrarySource.WENKU8) Row(
                         Modifier.padding(horizontal = AppSpacing.lg),
                         horizontalArrangement = Arrangement.spacedBy(AppSpacing.sm)

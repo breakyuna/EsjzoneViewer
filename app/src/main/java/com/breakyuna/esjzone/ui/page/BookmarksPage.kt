@@ -117,7 +117,12 @@ object BookmarksPage : AppDestination {
             topBar = {
                 Column {
                     TopAppBar(
-                        title = { Text(stringResource(R.string.bookmarks), style = AppTypography.titleLarge) },
+                        title = {
+                            SourceTitle(stringResource(R.string.bookmarks)) {
+                                SourceSelector(sourceFilter, { sourceFilter = it; selected = emptySet() },
+                                    includeAll = true, enabled = !editing && !deleting)
+                            }
+                        },
                         navigationIcon = { BackIconButton { if (editing) exitEditing() else navigator?.pop() } },
                         actions = {
                             if (editing) {
@@ -146,8 +151,6 @@ object BookmarksPage : AppDestination {
                             containerColor = MaterialTheme.colorScheme.background
                         )
                     )
-                    SourceSelector(sourceFilter, { sourceFilter = it; selected = emptySet() },
-                        includeAll = true, enabled = !editing && !deleting)
                 }
             }
         ) { padding ->

@@ -5,6 +5,7 @@ package com.breakyuna.esjzone.ui.tab
 import com.breakyuna.esjzone.ui.discovery.LibrarySource
 import com.breakyuna.esjzone.ui.discovery.LocalDiscoverySource
 import com.breakyuna.esjzone.ui.discovery.SourceSelector
+import com.breakyuna.esjzone.ui.discovery.SourceTitle
 import com.breakyuna.esjzone.ui.page.WenkuFeed
 import com.breakyuna.esjzone.network.wenku8.Wenku8Browse
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
@@ -71,12 +72,7 @@ class CategoryBrowserPage : AppDestination {
         val navigator = LocalBaseNavigator.current
         val authorization = LocalAuthorization.current
         val model = rememberAppViewModel { CategoryModel(authorization) }
-        DiscoveryScaffold(
-            title = stringResource(R.string.categories),
-            onBack = { navigator?.pop() }
-        ) { padding ->
-            IntegratedCategoryContent(model, Modifier.fillMaxSize().padding(padding))
-        }
+        IntegratedCategoryContent(model, onBack = { navigator?.pop() })
     }
 }
 
@@ -95,25 +91,26 @@ object CategoryTab : AppTab {
     override fun Content() {
         val authorization = LocalAuthorization.current
         val model = rememberAppViewModel { CategoryModel(authorization) }
-        DiscoveryScaffold(
-            title = stringResource(R.string.categories)
-        ) { padding ->
-            IntegratedCategoryContent(model, Modifier.fillMaxSize().padding(padding))
-        }
+        IntegratedCategoryContent(model)
     }
 }
 
 @Composable
-private fun IntegratedCategoryContent(model: CategoryModel, modifier: Modifier) {
+private fun IntegratedCategoryContent(model: CategoryModel, onBack: (() -> Unit)? = null) {
     val discoverySource = LocalDiscoverySource.current
     var source by rememberSaveable { mutableStateOf(discoverySource.value) }
     val holder = rememberSaveableStateHolder()
-    Column(modifier) {
-        SourceSelector(source, { selected -> selected?.let { source = it; discoverySource.value = it } })
-        holder.SaveableStateProvider(source.name) {
-            if (source == LibrarySource.WENKU8) WenkuFeed(initialBrowse = Wenku8Browse.ALL,
-                showBrowse = true, modifier = Modifier.weight(1f))
-            else CategoryBrowserContent(model, Modifier.weight(1f))
+    DiscoveryScaffold(onBack = onBack, titleContent = {
+        SourceTitle(stringResource(R.string.categories)) {
+            SourceSelector(source, { selected -> selected?.let { source = it; discoverySource.value = it } })
+        }
+    }) { padding ->
+        Column(Modifier.fillMaxSize().padding(padding)) {
+            holder.SaveableStateProvider(source.name) {
+                if (source == LibrarySource.WENKU8) WenkuFeed(initialBrowse = Wenku8Browse.ALL,
+                    showBrowse = true, modifier = Modifier.weight(1f))
+                else CategoryBrowserContent(model, Modifier.weight(1f))
+            }
         }
     }
 }

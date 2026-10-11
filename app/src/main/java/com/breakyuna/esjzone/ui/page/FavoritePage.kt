@@ -782,10 +782,13 @@ private fun BookshelfTopBar(
                         Text(
                             if (editing) stringResource(R.string.bookshelf_selected_header, selectedCount)
                             else stringResource(R.string.bookshelf),
+                            modifier = Modifier.weight(1f, fill = false),
                             style = AppTypography.titleLarge,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
                         )
+                        if (!editing) SourceSelector(if (wenku8) LibrarySource.WENKU8 else LibrarySource.ESJZONE,
+                            { onSwitchSource() }, enabled = !deleting)
                         if (!editing && !wenku8) {
                             BookshelfSyncStatusIndicator(
                                 syncing = syncing,
@@ -814,8 +817,6 @@ private fun BookshelfTopBar(
                     IconButton(onClick = onStatistics) { Icon(Icons.Filled.QueryStats, stringResource(R.string.reading_stats_title)) }
                 }
             }
-            if (!editing) SourceSelector(if (wenku8) LibrarySource.WENKU8 else LibrarySource.ESJZONE,
-                { onSwitchSource() }, enabled = !deleting)
         }
     }
 }

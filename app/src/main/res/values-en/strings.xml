@@ -813,6 +813,8 @@
     <string name="wenku8_check_session">Check session</string>
     <string name="wenku8_reload_login">Reopen sign-in page</string>
     <string name="source_esjzone">ESJZone</string>
+    <string name="source_esjzone_short">E</string>
+    <string name="source_wenku8_short">W</string>
     <string name="source_wenku8">Wenku8</string>
     <string name="source_all">All</string>
     <string name="source_cloud_history">ESJZone cloud</string>
