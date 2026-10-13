@@ -85,6 +85,7 @@ class DataStoreAcceptanceInstrumentedTest {
             assertEquals("www.esjzone.cc", settings.domain.first())
             assertEquals(AppLanguage.SYSTEM, settings.language.first())
             assertTrue(settings.readerAutoSave.first())
+            assertFalse(settings.bookshelfListView.first())
             assertFalse(settings.novelListGridView.first())
             assertFalse(settings.novelListAdultOnly.first())
         } finally {
@@ -103,10 +104,12 @@ class DataStoreAcceptanceInstrumentedTest {
             first.setDomain("www.esjzone.one")
             first.setLanguage(AppLanguage.SIMPLIFIED_CHINESE)
             first.setReaderAutoSave(false)
+            first.setBookshelfListView(true)
             first.setNovelListGridView(true)
             first.setNovelListAdultOnly(true)
             assertFalse(first.adult.first { !it })
             assertFalse(first.hideHomeRecommendations.first { !it })
+            assertTrue(first.bookshelfListView.first { it })
             assertTrue(first.novelListGridView.first { it })
             assertTrue(first.novelListAdultOnly.first { it })
         } finally {
@@ -121,6 +124,7 @@ class DataStoreAcceptanceInstrumentedTest {
             assertEquals("www.esjzone.one", second.domain.first())
             assertEquals(AppLanguage.SIMPLIFIED_CHINESE, second.language.first())
             assertFalse(second.readerAutoSave.first())
+            assertTrue(second.bookshelfListView.first { it })
             assertTrue(second.novelListGridView.first())
             assertTrue(second.novelListAdultOnly.first())
         } finally {

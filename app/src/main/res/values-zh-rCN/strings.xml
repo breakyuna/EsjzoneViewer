@@ -405,6 +405,8 @@
     <string name="settings_page_cache">页面解析缓存</string>
     <string name="settings_image_cache">封面与图片缓存</string>
     <string name="settings_cache_note">清理缓存不会影响已下载的数据。</string>
+    <string name="settings_cache_analysis">存储占用分析</string>
+    <string name="settings_cache_total">存储总量</string>
     <string name="settings_diagnostics_section">诊断与系统维护</string>
     <string name="settings_logs_description">实时日志、严重级别过滤、崩溃捕获与日志导出</string>
     <string name="settings_about_section">关于与开源协议</string>
@@ -542,6 +544,8 @@
     <string name="local_cache_images">图片：%1$s</string>
     <string name="local_cache_loading">正在计算缓存占用…</string>
     <string name="local_cache_stats_failed">暂时无法计算缓存占用。</string>
+    <string name="storage_usage_loading">正在计算存储占用…</string>
+    <string name="storage_usage_failed">暂时无法计算存储占用。</string>
     <string name="local_cache_clear_failed">缓存清理失败，请重试。</string>
     <string name="local_cache_clear_pages">清理页面</string>
     <string name="local_cache_clear_images">清理图片</string>
@@ -763,4 +767,10 @@
     <string name="image_save_failed">图片保存失败，请长按重试</string>
     <string name="novel_export_selected_action">导出 %1$d 章</string>
     <string name="novel_export_no_chapters">暂无可导出的已下载章节</string>
+    <string name="storage_application">应用安装文件</string>
+    <string name="storage_downloads">离线下载</string>
+    <string name="storage_backups">自动备份</string>
+    <string name="storage_cache">缓存</string>
+    <string name="storage_reading_resources">阅读资源</string>
+    <string name="storage_app_data">应用数据</string>
 </resources>

@@ -138,6 +138,7 @@ object SettingsStateBoundary {
     val downloadConcurrency: State<Int> get() { repository(); return _downloadConcurrency }
     val downloadConcurrencyFlow: StateFlow<Int> get() = repository().downloadConcurrency
     val novelListGridView: State<Boolean> get() { repository(); return _novelListGridView }
+    val bookshelfListViewFlow: StateFlow<Boolean> get() = repository().bookshelfListView
     val novelListGridViewFlow: StateFlow<Boolean> get() = repository().novelListGridView
     val novelListAdultOnly: State<Boolean> get() { repository(); return _novelListAdultOnly }
     val novelListAdultOnlyFlow: StateFlow<Boolean> get() = repository().novelListAdultOnly
@@ -156,6 +157,7 @@ object SettingsStateBoundary {
     fun setLanguage(value: AppLanguage) = repository().setLanguage(value)
     fun setReaderAutoSave(value: Boolean) = repository().setReaderAutoSave(value)
     fun setDownloadConcurrency(value: Int) = repository().setDownloadConcurrency(value)
+    fun setBookshelfListView(value: Boolean) = repository().setBookshelfListView(value)
     fun setNovelListGridView(value: Boolean) = repository().setNovelListGridView(value)
     fun setNovelListAdultOnly(value: Boolean) = repository().setNovelListAdultOnly(value)
     fun setNavigationOrder(value: List<String>) = repository().setNavigationOrder(value)

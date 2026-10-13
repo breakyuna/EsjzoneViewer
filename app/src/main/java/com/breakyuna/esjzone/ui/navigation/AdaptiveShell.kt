@@ -36,17 +36,7 @@ import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.AutoStories
-import androidx.compose.material.icons.filled.History
-import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.Person
-import androidx.compose.material.icons.outlined.AutoStories
-import androidx.compose.material.icons.outlined.History
-import androidx.compose.material.icons.outlined.Home
-import androidx.compose.material.icons.outlined.Person
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBarDefaults
 import androidx.compose.material3.NavigationRail
@@ -79,13 +69,13 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import com.breakyuna.esjzone.R
 import com.breakyuna.esjzone.app.PresentationAccess
+import com.breakyuna.esjzone.ui.designsystem.AppMotion
 import com.breakyuna.esjzone.ui.discovery.DiscoveryScaffold
 import com.breakyuna.esjzone.ui.product.EmptyState
 import androidx.compose.ui.graphics.drawscope.scale
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.lerp
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.semantics.Role
@@ -122,15 +112,11 @@ val LocalFloatingNavPadding = compositionLocalOf { PaddingValues(0.dp) }
 /** Root tab content can yield the floating island to an edit surface or modal. */
 val LocalFloatingNavSuppression = compositionLocalOf<(Boolean) -> Unit> { {} }
 
-private enum class AppTabId(
-    val route: AppNavKey,
-    val filledIcon: ImageVector,
-    val outlinedIcon: ImageVector
-) {
-    HOME(AppNavKey.HomeTab, Icons.Filled.Home, Icons.Outlined.Home),
-    HISTORY(AppNavKey.HistoryTab, Icons.Filled.History, Icons.Outlined.History),
-    BOOKSHELF(AppNavKey.BookshelfTab, Icons.Filled.AutoStories, Icons.Outlined.AutoStories),
-    PROFILE(AppNavKey.ProfileTab, Icons.Filled.Person, Icons.Outlined.Person)
+internal enum class AppTabId(val route: AppNavKey) {
+    HOME(AppNavKey.HomeTab),
+    HISTORY(AppNavKey.HistoryTab),
+    BOOKSHELF(AppNavKey.BookshelfTab),
+    PROFILE(AppNavKey.ProfileTab)
 }
 
 /**
@@ -506,67 +492,66 @@ private fun AppNavigationBar(
             verticalAlignment = Alignment.CenterVertically
         ) {
             tabs.forEach { tab ->
-                val isSelected = selected == tab
-                // One progress keeps the background, tint and icon variants in sync.
-                val selectionProgress by animateFloatAsState(
-                    targetValue = if (isSelected) 1f else 0f,
-                    animationSpec = tween(durationMillis = 150),
-                    label = "${tab.name}BottomIndicator"
-                )
-                val indicatorColor = MaterialTheme.colorScheme.secondaryContainer
-                val backgroundColor = indicatorColor.copy(alpha = indicatorColor.alpha * selectionProgress)
-                val contentColor = lerp(
-                    MaterialTheme.colorScheme.onSurfaceVariant,
-                    MaterialTheme.colorScheme.primary,
-                    selectionProgress
-                )
-                Box(
-                    modifier = Modifier.weight(1f),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Column(
-                        modifier = Modifier
-                            .size(BottomBarSelectionSize)
-                            .clip(CircleShape)
-                            .background(backgroundColor)
-                            .selectable(
-                                selected = isSelected,
-                                interactionSource = remember(tab) { MutableInteractionSource() },
-                                indication = ripple(color = MaterialTheme.colorScheme.onSurfaceVariant),
-                                role = Role.Tab,
-                                onClick = { onSelected(tab) }
-                            ),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(2.dp, Alignment.CenterVertically)
-                    ) {
-                        Box(modifier = Modifier.size(24.dp)) {
-                            Icon(
-                                imageVector = tab.outlinedIcon,
-                                contentDescription = null,
-                                tint = contentColor,
-                                modifier = Modifier
-                                    .matchParentSize()
-                                    .graphicsLayer { alpha = 1f - selectionProgress }
-                            )
-                            Icon(
-                                imageVector = tab.filledIcon,
-                                contentDescription = null,
-                                tint = contentColor,
-                                modifier = Modifier
-                                    .matchParentSize()
-                                    .graphicsLayer { alpha = selectionProgress }
-                            )
-                        }
-                        Text(
-                            text = tabLabel(tab),
-                            color = contentColor,
-                            style = MaterialTheme.typography.labelMedium,
-                            fontWeight = FontWeight.Medium,
-                            maxLines = 1
-                        )
-                    }
+                key(tab) {
+                    AppNavigationBarItem(
+                        tab = tab,
+                        selected = selected == tab,
+                        onSelected = onSelected,
+                        modifier = Modifier.weight(1f)
+                    )
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun AppNavigationBarItem(
+    tab: AppTabId,
+    selected: Boolean,
+    onSelected: (AppTabId) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    // Keep per-frame background and label color updates local to this item.
+    val selectionProgress = animateFloatAsState(
+        targetValue = if (selected) 1f else 0f,
+        animationSpec = AppMotion.standardSpec(),
+        label = "${tab.name}BottomSelection"
+    )
+    val indicatorColor = MaterialTheme.colorScheme.secondaryContainer
+    val backgroundColor = indicatorColor.copy(alpha = indicatorColor.alpha * selectionProgress.value)
+    val contentColor = lerp(
+        MaterialTheme.colorScheme.onSurfaceVariant,
+        MaterialTheme.colorScheme.primary,
+        selectionProgress.value
+    )
+    Box(
+        modifier = modifier,
+        contentAlignment = Alignment.Center
+    ) {
+        Column(
+            modifier = Modifier
+                .size(BottomBarSelectionSize)
+                .clip(CircleShape)
+                .background(backgroundColor)
+                .selectable(
+                    selected = selected,
+                    interactionSource = remember(tab) { MutableInteractionSource() },
+                    indication = ripple(color = MaterialTheme.colorScheme.onSurfaceVariant),
+                    role = Role.Tab,
+                    onClick = { onSelected(tab) }
+                ),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(2.dp, Alignment.CenterVertically)
+        ) {
+            AppNavigationIcon(tab, selected, tint = contentColor)
+            Text(
+                text = tabLabel(tab),
+                color = contentColor,
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.Medium,
+                maxLines = 1
+            )
         }
     }
 }
@@ -586,33 +571,32 @@ private fun AppSideNavigationBar(
     ) {
         Spacer(modifier = Modifier.weight(1f))
         tabs.forEach { tab ->
-            val isSelected = selected == tab
-            NavigationRailItem(
-                selected = isSelected,
-                onClick = { onSelected(tab) },
-                icon = {
-                    Icon(
-                        imageVector = if (isSelected) tab.filledIcon else tab.outlinedIcon,
-                        contentDescription = tabLabel(tab)
+            key(tab) {
+                val isSelected = selected == tab
+                NavigationRailItem(
+                    selected = isSelected,
+                    onClick = { onSelected(tab) },
+                    icon = {
+                        AppNavigationIcon(tab, isSelected)
+                    },
+                    label = {
+                        Text(
+                            text = tabLabel(tab),
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.Medium,
+                            maxLines = 1
+                        )
+                    },
+                    alwaysShowLabel = true,
+                    colors = NavigationRailItemDefaults.colors(
+                        selectedIconColor = MaterialTheme.colorScheme.primary,
+                        selectedTextColor = MaterialTheme.colorScheme.primary,
+                        indicatorColor = MaterialTheme.colorScheme.secondaryContainer,
+                        unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                        unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant
                     )
-                },
-                label = {
-                    Text(
-                        text = tabLabel(tab),
-                        style = MaterialTheme.typography.labelMedium,
-                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-                        maxLines = 1
-                    )
-                },
-                alwaysShowLabel = true,
-                colors = NavigationRailItemDefaults.colors(
-                    selectedIconColor = MaterialTheme.colorScheme.primary,
-                    selectedTextColor = MaterialTheme.colorScheme.primary,
-                    indicatorColor = MaterialTheme.colorScheme.secondaryContainer,
-                    unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                    unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-            )
+            }
         }
         Spacer(modifier = Modifier.weight(1f))
     }

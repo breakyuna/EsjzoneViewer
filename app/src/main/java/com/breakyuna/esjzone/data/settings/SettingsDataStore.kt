@@ -78,6 +78,8 @@ class SettingsDataStore(
         .stateIn(scope, SharingStarted.Eagerly, defaults.readerAutoSave)
     override val downloadConcurrency: StateFlow<Int> = values.map { it.downloadConcurrency }
         .stateIn(scope, SharingStarted.Eagerly, defaults.downloadConcurrency)
+    override val bookshelfListView: StateFlow<Boolean> = values.map { it.bookshelfListView }
+        .stateIn(scope, SharingStarted.Eagerly, defaults.bookshelfListView)
     override val novelListGridView: StateFlow<Boolean> = values.map { it.novelListGridView }
         .stateIn(scope, SharingStarted.Eagerly, defaults.novelListGridView)
     override val novelListAdultOnly: StateFlow<Boolean> = values.map { it.novelListAdultOnly }
@@ -102,6 +104,7 @@ class SettingsDataStore(
             SettingsDefaults.MAX_DOWNLOAD_CONCURRENCY
         )
     }
+    override fun setBookshelfListView(value: Boolean) = write { it[BOOKSHELF_LIST_VIEW] = value }
     override fun setNovelListGridView(value: Boolean) = write { it[NOVEL_LIST_GRID_VIEW] = value }
     override fun setNovelListAdultOnly(value: Boolean) = write { it[NOVEL_LIST_ADULT_ONLY] = value }
     override fun setNavigationOrder(value: List<String>) = write {
@@ -169,6 +172,7 @@ class SettingsDataStore(
         val readingStatisticsIncognito: Boolean = false,
         val readerAutoSave: Boolean = true,
         val downloadConcurrency: Int = SettingsDefaults.DEFAULT_DOWNLOAD_CONCURRENCY,
+        val bookshelfListView: Boolean = false,
         val novelListGridView: Boolean = false,
         val novelListAdultOnly: Boolean = false,
         val navigationOrder: List<String> = SettingsDefaults.NAVIGATION_ORDER,
@@ -186,6 +190,7 @@ class SettingsDataStore(
         downloadConcurrency = this[DOWNLOAD_CONCURRENCY]
             ?.coerceIn(SettingsDefaults.MIN_DOWNLOAD_CONCURRENCY, SettingsDefaults.MAX_DOWNLOAD_CONCURRENCY)
             ?: defaults.downloadConcurrency,
+        bookshelfListView = this[BOOKSHELF_LIST_VIEW] ?: defaults.bookshelfListView,
         novelListGridView = this[NOVEL_LIST_GRID_VIEW] ?: defaults.novelListGridView,
         novelListAdultOnly = this[NOVEL_LIST_ADULT_ONLY] ?: defaults.novelListAdultOnly,
         navigationOrder = normalizeNavigationOrder(
@@ -210,6 +215,7 @@ class SettingsDataStore(
         val READING_STATISTICS_INCOGNITO = booleanPreferencesKey("reading_statistics_incognito")
         val READER_AUTO_SAVE = booleanPreferencesKey("reader_auto_save")
         val DOWNLOAD_CONCURRENCY = intPreferencesKey("download_concurrency")
+        val BOOKSHELF_LIST_VIEW = booleanPreferencesKey("bookshelf_list_view")
         val NOVEL_LIST_GRID_VIEW = booleanPreferencesKey("novel_list_grid_view")
         val NOVEL_LIST_ADULT_ONLY = booleanPreferencesKey("novel_list_adult_only")
         val NAVIGATION_ORDER = stringPreferencesKey("navigation_order")

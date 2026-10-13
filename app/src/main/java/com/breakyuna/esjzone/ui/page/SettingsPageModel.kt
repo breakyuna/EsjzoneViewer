@@ -22,6 +22,8 @@ class SettingsPageModel : AppStateViewModel<SettingsPageModel.State>(State()) {
         val cacheStats: LocalCacheStats? = null,
         val cacheOperation: CacheOperation? = null,
         val cacheStatsError: Boolean = false,
+        val storageUsage: List<StorageUsage>? = null,
+        val storageStatsError: Boolean = false,
         val cacheClearError: Boolean = false,
         val logoutInProgress: Boolean = false,
         val logoutCompleted: Boolean = false,
@@ -68,7 +70,7 @@ class SettingsPageModel : AppStateViewModel<SettingsPageModel.State>(State()) {
     }
 
     fun refreshCacheStats() {
-        mutableState.value = mutableState.value.copy(cacheStatsError = false)
+        mutableState.value = mutableState.value.copy(cacheStatsError = false, storageStatsError = false)
         viewModelScope.launch(Dispatchers.IO) {
             try {
                 val pageStats = PresentationAccess.client.pageCacheStats()
@@ -82,6 +84,18 @@ class SettingsPageModel : AppStateViewModel<SettingsPageModel.State>(State()) {
             } catch (e: Exception) {
                 AppLogger.e("SettingsPageModel", "Failed to calculate cache statistics", e)
                 mutableState.value = mutableState.value.copy(cacheStatsError = true)
+            }
+            try {
+                val usage = readStorageUsage(com.breakyuna.esjzone.EsjzoneApplication.instance)
+                mutableState.value = mutableState.value.copy(
+                    storageUsage = usage,
+                    storageStatsError = false
+                )
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                AppLogger.e("SettingsPageModel", "Failed to calculate storage usage", e)
+                mutableState.value = mutableState.value.copy(storageStatsError = true)
             }
         }
     }

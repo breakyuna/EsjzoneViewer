@@ -497,6 +497,12 @@ object SettingsPage : AppDestination {
                     }
                     if (displayedSection == "STORAGE") {
                         SettingsSection {
+                            CacheStorageChart(state.storageUsage, state.storageStatsError)
+                            if (state.storageStatsError) {
+                                TextButton(onClick = model::refreshCacheStats) { Text(stringResource(R.string.retry)) }
+                            }
+                        }
+                        SettingsSection {
                             LinkRow(Icons.Filled.Download, stringResource(R.string.local_backup)) {
                                 navigator?.pushIfNotCurrent(LocalBackupPage)
                             }

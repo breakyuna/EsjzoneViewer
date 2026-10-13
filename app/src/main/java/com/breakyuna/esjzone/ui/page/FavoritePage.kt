@@ -167,7 +167,8 @@ object FavoritePage : AppDestination {
         var editing by rememberSaveable { mutableStateOf(false) }
         var activeFilter by rememberSaveable { mutableStateOf(BookshelfFilter.ALL) }
         var activeSort by rememberSaveable { mutableStateOf(BookshelfSort.Order.RECENT_READ) }
-        var listView by rememberSaveable { mutableStateOf(false) }
+        val settings = PresentationAccess.settings
+        val listView by settings.bookshelfListViewFlow.collectAsStateWithLifecycle()
         var selected by rememberSaveable(stateSaver = listSaver<Set<String>, String>(
             save = { it.toList() }, restore = { it.toSet() }
         )) { mutableStateOf(emptySet()) }
@@ -424,7 +425,10 @@ object FavoritePage : AppDestination {
                     },
                     onSyncStatusMenuChange = { showSyncStatusMenu = it },
                     listView = listView,
-                    onToggleView = { focusManager.clearFocus(force = true); listView = !listView },
+                    onToggleView = {
+                        focusManager.clearFocus(force = true)
+                        settings.setBookshelfListView(!listView)
+                    },
                     onStatistics = { navigator?.pushIfNotCurrent(ReadingStatisticsPage) },
                     onDone = ::exitEdit,
                     onSelectAll = { selected = if (selected == visibleKeys) emptySet() else visibleKeys }

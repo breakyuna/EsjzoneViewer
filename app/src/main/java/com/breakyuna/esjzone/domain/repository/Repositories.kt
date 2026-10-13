@@ -40,6 +40,7 @@ interface SettingsRepository {
     val readingStatisticsIncognito: StateFlow<Boolean>
     val readerAutoSave: StateFlow<Boolean>
     val downloadConcurrency: StateFlow<Int>
+    val bookshelfListView: StateFlow<Boolean>
     val novelListGridView: StateFlow<Boolean>
     val novelListAdultOnly: StateFlow<Boolean>
     val navigationOrder: StateFlow<List<String>>
@@ -52,6 +53,7 @@ interface SettingsRepository {
     fun setReadingStatisticsIncognito(value: Boolean)
     fun setReaderAutoSave(value: Boolean)
     fun setDownloadConcurrency(value: Int)
+    fun setBookshelfListView(value: Boolean)
     fun setNovelListGridView(value: Boolean)
     fun setNovelListAdultOnly(value: Boolean)
     fun setNavigationOrder(value: List<String>)

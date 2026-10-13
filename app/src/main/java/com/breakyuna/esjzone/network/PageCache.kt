@@ -177,14 +177,22 @@ internal object PageCache {
     fun clear() {
         synchronized(ioLock) {
             val cacheDirectory = directory ?: return
-            cacheDirectory.listFiles()?.forEach { file ->
-                if (file.name.startsWith(FILE_PREFIX)) file.delete()
+            val files = cacheDirectory.listFiles()
+                ?: throw java.io.IOException("Unable to list page cache files")
+            var deletionFailed = false
+            files.forEach { file ->
+                if (file.name.startsWith(FILE_PREFIX) && !file.delete() && file.exists()) {
+                    deletionFailed = true
+                }
             }
             val remaining = cacheDirectory.listFiles()
                 ?.filter { it.isFile && it.name.startsWith(FILE_PREFIX) }
-                .orEmpty()
+                ?: throw java.io.IOException("Unable to verify page cache clearing")
             cachedSizeBytes = remaining.sumOf { it.length() }
             cachedEntryCount = remaining.size
+            if (deletionFailed || remaining.isNotEmpty()) {
+                throw java.io.IOException("Unable to delete all page cache files")
+            }
         }
     }
 

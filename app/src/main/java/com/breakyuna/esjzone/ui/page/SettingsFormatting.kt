@@ -7,6 +7,12 @@ data class LocalCacheStats(
     val imageBytes: Long
 )
 
+enum class StorageCategory {
+    APPLICATION, DOWNLOADS, CACHE, BACKUPS, READING_RESOURCES, APP_DATA
+}
+
+data class StorageUsage(val category: StorageCategory, val bytes: Long)
+
 internal fun formatBytes(bytes: Long): String {
     val safeBytes = bytes.coerceAtLeast(0L)
     val kib = 1024.0
