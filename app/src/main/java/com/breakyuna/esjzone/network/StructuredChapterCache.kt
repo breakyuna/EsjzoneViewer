@@ -13,21 +13,22 @@ internal object StructuredChapterCache {
         val html: String?, val previous: Chapter?, val next: Chapter?)
 
     fun read(key: String, url: String): DetailedChapter? {
-        val encoded = PageCache.read(PageCache.structuredKey(key), PageCacheTtl.CHAPTER) ?: return null
+        val entry = PageCache.readEntry(PageCache.structuredKey(key), PageCacheTtl.CHAPTER, sourceKey = key) ?: return null
+        val encoded = entry.body
         return runCatching {
             val stored = requireNotNull(gson.fromJson(encoded, Snapshot::class.java))
             require(stored.sourceUrl == url) // Absolute resources belong to the acquisition mirror.
             stored.body.validate()
             DetailedChapter(stored.name, stored.body.components(), stored.previous, stored.next,
-                stored.html, stored.sourceUrl, stored.body)
+                stored.html, stored.sourceUrl, stored.body, sourceCacheReference = entry.reference)
         }.getOrElse { PageCache.remove(PageCache.structuredKey(key)); null }
     }
 
-    fun write(key: String, sourceHtml: String, detail: DetailedChapter) {
+    fun write(key: String, sourceHtml: String, detail: DetailedChapter): String? {
         val ready = detail.withStructuredBody()
-        if (ready.content.isEmpty()) return
+        if (ready.content.isEmpty()) return null
         val json = gson.toJson(Snapshot(ready.name, ready.sourceUrl.orEmpty(), requireNotNull(ready.body),
             ready.contentHtml, ready.previous, ready.next))
-        PageCache.writeDerived(key, sourceHtml, json)
+        return PageCache.writeDerived(key, sourceHtml, json)
     }
 }

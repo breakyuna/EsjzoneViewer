@@ -110,7 +110,7 @@ object SearchTab : AppTab {
             containerColor = MaterialTheme.colorScheme.background
         ) { padding ->
             PullToRefreshBox(
-                isRefreshing = activeKeyword != null && searchState is SearchPageModel.State.Loading,
+                isRefreshing = searchModel.isRefreshing,
                 onRefresh = {
                     activeKeyword?.let { searchModel.refresh(it, category, sort) }
                 },

@@ -44,9 +44,9 @@ internal class WenkuChapterClient(context: Context, userAgent: String) {
     fun importBrowserChapter(chapter: Chapter, url: String, html: String): Boolean {
         if (resolveChapterSource(url) != ChapterSource.WENKU8 ||
             html.toByteArray(Charsets.UTF_8).size > MAX_BROWSER_CHAPTER_HTML_BYTES) return false
+        val token = PageCache.beginWrite(cacheKey(url))
         val detail = runCatching { validateAndParse(html, chapter, url) }.getOrNull() ?: return false
-        val cachedDocument = cacheChapter(url, detail)
-        return PageCache.read(cacheKey(url), PageCacheTtl.CHAPTER) == cachedDocument
+        return cacheChapter(url, detail, token).sourceCacheReference != null
     }
 
     fun userAgent(): String = userAgentHeader
@@ -75,17 +75,16 @@ internal class WenkuChapterClient(context: Context, userAgent: String) {
         if (!forceRefresh) StructuredChapterCache.read(key, url)?.let { return it }
         if (!forceRefresh) PageCache.read(key, PageCacheTtl.CHAPTER)?.let { cached ->
             runCatching { validateAndParse(cached, chapter, url) }.getOrNull()?.let {
-                StructuredChapterCache.write(key, cached, it)
-                return it
+                return it.copy(sourceCacheReference = StructuredChapterCache.write(key, cached, it))
             }
             PageCache.remove(key)
         }
+        val writeToken = PageCache.beginWrite(key)
         if (allowAutoSolve && browser.isReady()) {
             try {
                 val detail = validateAndParse(browser.fetch(url), chapter, url)
                 syncBrowserCookies(url)
-                cacheChapter(url, detail)
-                return detail
+                return cacheChapter(url, detail, writeToken)
             } catch (error: CloudflareChallengeRequiredException) {
                 throw error
             } catch (error: WenkuBrowserSessionClosedException) {
@@ -101,13 +100,11 @@ internal class WenkuChapterClient(context: Context, userAgent: String) {
             val html = browser.fetch(url)
             val detail = validateAndParse(html, chapter, url)
             syncBrowserCookies(url)
-            cacheChapter(url, detail)
-            return detail
+            return cacheChapter(url, detail, writeToken)
         }
         if (result.status !in 200..299) throw NetworkHttpException("https://www.wenku8.net/", result.status)
         val detail = validateAndParse(result.html, chapter, url)
-        cacheChapter(url, detail)
-        return detail
+        return cacheChapter(url, detail, writeToken)
     }
 
     private fun cacheKey(url: String): String = "wenku8|${EsjzoneUrls.canonicalPageKey(url)}"
@@ -123,11 +120,12 @@ internal class WenkuChapterClient(context: Context, userAgent: String) {
         }
     }
 
-    private fun cacheChapter(url: String, detail: DetailedChapter): String =
-        ExternalChapterHtml.cacheDocument(detail, url).also {
-            PageCache.write(cacheKey(url), it)
-            StructuredChapterCache.write(cacheKey(url), it, detail)
-        }
+    private fun cacheChapter(url: String, detail: DetailedChapter, token: PageCache.WriteToken): DetailedChapter {
+        val document = ExternalChapterHtml.cacheDocument(detail, url)
+        val key = cacheKey(url)
+        if (!PageCache.write(key, document, expected = token)) return detail
+        return detail.copy(sourceCacheReference = StructuredChapterCache.write(key, document, detail))
+    }
 
     private fun validateAndParse(html: String, chapter: Chapter, url: String): DetailedChapter {
         if (!PageResponsePolicy.validate(200, html, url, kind = PageKind.EXTERNAL_CHAPTER).trusted) {

@@ -119,7 +119,7 @@ class SearchPage(private val keyword: String) : AppDestination {
             containerColor = MaterialTheme.colorScheme.background
         ) { padding ->
             PullToRefreshBox(
-                isRefreshing = activeQuery.isNotBlank() && state is SearchPageModel.State.Loading,
+                isRefreshing = model.isRefreshing,
                 onRefresh = {
                     activeQuery.takeIf { it.isNotBlank() }?.let { model.refresh(it, category, sort) }
                 },
@@ -190,6 +190,11 @@ fun DiscoverySearchResults(
                 )
             }
             is SearchPageModel.State.Result -> {
+                model.refreshFailure?.let { failure ->
+                    item(key = "search-refresh-error", contentType = "error") {
+                        DiscoveryErrorState(message = stringResource(searchFailureMessage(failure)), onRetry = onRetry)
+                    }
+                }
                 val visible = model.visibleItems
                 if (visible.isEmpty()) {
                     item(key = "search-empty", contentType = "empty") {
@@ -216,7 +221,7 @@ fun DiscoverySearchResults(
         }
     }
 
-    LaunchedEffect(listState, model.currentPage, model.moreFailed, model.visibleItems.size, state) {
+    LaunchedEffect(listState, model.currentPage, model.moreFailed, model.visibleItems.size, model.isRefreshing, state) {
         if (state !is SearchPageModel.State.Result) return@LaunchedEffect
         snapshotFlow {
             val last = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
@@ -312,6 +317,10 @@ class SearchPageModel(
         private set
     var moreFailure by mutableStateOf<LoadFailureKind?>(null)
         private set
+    var isRefreshing by mutableStateOf(false)
+        private set
+    var refreshFailure by mutableStateOf<LoadFailureKind?>(null)
+        private set
     private var requestJob: Job? = null
     private var moreJob: Job? = null
     private var generation = 0L
@@ -334,9 +343,12 @@ class SearchPageModel(
         val normalizedKeyword = keyword.trim()
         if (normalizedKeyword.isBlank()) return
         if (!forceRefresh && activeKeyword == normalizedKeyword && activeCategory == category && activeSort == sort &&
-            (requestJob?.isActive == true || mutableState.value is State.Result)
+            (requestJob?.isActive == true || (mutableState.value as? State.Result)?.requester?.isCurrent() == true)
         ) return
 
+        val previous = (mutableState.value as? State.Result)?.takeIf {
+            activeKeyword == normalizedKeyword && activeCategory == category && activeSort == sort
+        }
         generation += 1
         val token = generation
         activeKeyword = normalizedKeyword
@@ -344,12 +356,16 @@ class SearchPageModel(
         activeSort = sort
         requestJob?.cancel()
         moreJob?.cancel()
-        pageItems.clear()
-        currentPage = 2
+        if (previous == null) {
+            pageItems.clear()
+            currentPage = 2
+            mutableState.value = State.Loading
+        }
+        isRefreshing = true
+        refreshFailure = null
         loadingMore = false
         moreFailed = false
         moreFailure = null
-        mutableState.value = State.Loading
         requestJob = viewModelScope.launch {
             try {
                 val (requester, novels) = withContext(Dispatchers.IO) {
@@ -363,26 +379,37 @@ class SearchPageModel(
                 }
                 ensureActive()
                 if (token != generation) return@launch
-                pageItems.addAll(novels)
-                mutableState.value = State.Result(requester)
+                refreshFailure = requester.fallbackFailure()
+                if (refreshFailure == null || previous == null || !previous.requester.isCurrent()) {
+                    pageItems.clear()
+                    pageItems.addAll(novels)
+                    currentPage = 2
+                    mutableState.value = State.Result(requester)
+                }
             } catch (error: CancellationException) {
                 throw error
             } catch (error: Exception) {
-                if (token == generation) mutableState.value = State.Error(error.loadFailureKind())
+                if (token == generation) {
+                    refreshFailure = error.loadFailureKind()
+                    mutableState.value = previous ?: State.Error(error.loadFailureKind())
+                }
                 com.breakyuna.esjzone.util.AppLogger.e("SearchPageModel", "Failed to search for keyword", error)
+            } finally {
+                if (token == generation) isRefreshing = false
             }
         }
     }
 
     fun refresh(keyword: String, category: Int = 0, sort: Int = 1) {
-        activeKeyword = null
-        activeCategory = null
-        activeSort = null
         search(keyword, category, sort, forceRefresh = true)
     }
 
     fun loadMore(requester: PageableRequester<CoveredNovel>) {
-        if ((mutableState.value as? State.Result)?.requester !== requester || loadingMore || currentPage > requester.pages()) return
+        if ((mutableState.value as? State.Result)?.requester !== requester || isRefreshing || loadingMore || currentPage > requester.pages()) return
+        if (!requester.isCurrent()) {
+            search(activeKeyword ?: return, activeCategory ?: 0, activeSort ?: 1)
+            return
+        }
         val page = currentPage
         val token = generation
         loadingMore = true
@@ -393,13 +420,19 @@ class SearchPageModel(
                 val loaded = cancellablePageRequest { requester.more(page) }
                 ensureActive()
                 if (token != generation) return@launch
+                if (!requester.isCurrent()) {
+                    search(activeKeyword ?: return@launch, activeCategory ?: 0, activeSort ?: 1)
+                    return@launch
+                }
                 val keys = pageItems.mapTo(mutableSetOf()) { novelKey(it) }
                 pageItems.addAll(loaded.filter { keys.add(novelKey(it)) })
                 currentPage = page + 1
             } catch (error: CancellationException) {
                 throw error
             } catch (error: Exception) {
-                if (token == generation) {
+                if (token == generation && !requester.isCurrent()) {
+                    search(activeKeyword ?: return@launch, activeCategory ?: 0, activeSort ?: 1)
+                } else if (token == generation) {
                     moreFailed = true
                     moreFailure = error.loadFailureKind()
                 }

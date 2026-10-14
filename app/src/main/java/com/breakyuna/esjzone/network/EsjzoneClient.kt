@@ -156,7 +156,10 @@ object EsjzoneClient {
         forceRefresh: Boolean = false,
         pageKind: PageKind = PageKind.GENERIC,
         allowStaleOnError: Boolean = !forceRefresh,
-        coalesceRequests: Boolean = true
+        coalesceRequests: Boolean = true,
+        cacheResponse: Boolean = true,
+        awaitFresh: Boolean = false,
+        validateBody: ((String) -> Unit)? = null
     ): String {
         val cacheKey = pageCacheKey(authorization, url)
         val legacyKey = if (authorization.hasCredentials() &&
@@ -165,12 +168,21 @@ object EsjzoneClient {
                 ?.let { persistentCookieJar?.legacyPageCacheKey(it) }
         } else null
         val requestEpoch = cacheEpoch.get()
+        fun validCached(body: String): Boolean =
+            PageResponsePolicy.validate(200, body, url, kind = pageKind).trusted &&
+                runCatching { validateBody?.invoke(body) }.isSuccess
         if (!forceRefresh) {
             val current = PageCache.read(cacheKey, maxAgeMillis)
             val cached = current ?: legacyKey?.let { PageCache.read(it, maxAgeMillis) }
             cached?.let {
-                if (PageResponsePolicy.validate(200, it, url, kind = pageKind).trusted) {
-                    if (current == null) PageCache.write(cacheKey, it)
+                if (validCached(it)) {
+                    if (current == null && legacyKey != null) {
+                        val legacy = PageCache.readEntry(legacyKey, maxAgeMillis)
+                        if (legacy != null && legacy.body == it &&
+                            PageCache.write(cacheKey, it, legacy.fetchedAt, PageCache.currentToken(cacheKey))) {
+                            PageCache.remove(legacyKey)
+                        }
+                    }
                     return it
                 }
                 // A previous app version could have cached an HTML block/challenge page.
@@ -181,7 +193,7 @@ object EsjzoneClient {
         val currentStale = PageCache.readStale(cacheKey)
         val staleCandidate = currentStale ?: legacyKey?.let(PageCache::readStale)
         val stalePage = staleCandidate?.let { candidate ->
-            if (PageResponsePolicy.validate(200, candidate, url, kind = pageKind).trusted) {
+            if (validCached(candidate)) {
                 candidate
             } else {
                 PageCache.remove(if (currentStale != null) cacheKey else legacyKey ?: cacheKey)
@@ -189,7 +201,9 @@ object EsjzoneClient {
             }
         }
 
-        if (!forceRefresh && stalePage != null) {
+        val writeToken = if (forceRefresh || !coalesceRequests) PageCache.beginWrite(cacheKey)
+            else PageCache.currentToken(cacheKey)
+        if (!forceRefresh && !awaitFresh && stalePage != null) {
             refreshScope.launch {
                 runCatching {
                     fetchPageCoalesced(
@@ -200,7 +214,7 @@ object EsjzoneClient {
                         requestEpoch,
                         pageKind,
                         allowStaleOnError,
-                        coalesceRequests
+                        coalesceRequests, writeToken, cacheResponse, validateBody, forceRefresh || !coalesceRequests
                     )
                 }
             }
@@ -215,7 +229,7 @@ object EsjzoneClient {
             requestEpoch,
             pageKind,
             allowStaleOnError,
-            coalesceRequests
+            coalesceRequests, writeToken, cacheResponse, validateBody, forceRefresh || !coalesceRequests
         )
     }
 
@@ -227,10 +241,16 @@ object EsjzoneClient {
         requestEpoch: Long,
         pageKind: PageKind,
         allowStaleOnError: Boolean,
-        coalesceRequests: Boolean = true
+        coalesceRequests: Boolean,
+        writeToken: PageCache.WriteToken,
+        cacheResponse: Boolean,
+        validateBody: ((String) -> Unit)?,
+        replaceRequest: Boolean
     ): String {
         val owner = CompletableFuture<String>()
-        val existing = if (coalesceRequests) inFlightPages.putIfAbsent(cacheKey, owner) else null
+        val requestKey = "$cacheKey|$requestEpoch|${writeToken.epoch}|${pageKind.name}|$cacheResponse|" +
+            if (replaceRequest) writeToken.request.toString() else "shared"
+        val existing = if (coalesceRequests) inFlightPages.putIfAbsent(requestKey, owner) else null
         if (existing != null) {
             return try {
                 existing.get(35, TimeUnit.SECONDS)
@@ -247,7 +267,7 @@ object EsjzoneClient {
                     // false network failure to every remaining waiter.
                     return fetchPageCoalesced(
                         authorization, url, cacheKey, stalePage, requestEpoch, pageKind, allowStaleOnError,
-                        coalesceRequests
+                        coalesceRequests, writeToken, cacheResponse, validateBody, replaceRequest
                     )
                 }
                 if (cause is Exception) throw cause
@@ -258,6 +278,7 @@ object EsjzoneClient {
             }
         }
 
+        val commitToken = if (replaceRequest) writeToken else PageCache.beginWrite(cacheKey)
         return try {
             val permitAcquired = try {
                 networkPermits.tryAcquire(NETWORK_PERMIT_WAIT_SECONDS, TimeUnit.SECONDS)
@@ -317,10 +338,11 @@ object EsjzoneClient {
                 persistentCookieJar?.invalidateVerification(authorization)
             }
             if (validation.trusted) {
+                validateBody?.invoke(responseData.body)
                 requestCookieJar.commitDeferredResponses()
-                if (requestEpoch == cacheEpoch.get()) {
+                if (cacheResponse && requestEpoch == cacheEpoch.get() &&
+                    PageCache.write(cacheKey, responseData.body, expected = commitToken)) {
                     NovelDetailCache.remove(cacheKey)
-                    PageCache.write(cacheKey, responseData.body)
                 }
             }
             if (!validation.trusted) {
@@ -349,19 +371,21 @@ object EsjzoneClient {
             owner.complete(result)
             result
         } catch (error: CancellationException) {
-            inFlightPages.remove(cacheKey, owner)
+            inFlightPages.remove(requestKey, owner)
             owner.completeExceptionally(error)
             throw error
         } catch (error: Throwable) {
             if (pageRequestCancellation.get()?.isCancelled() == true) {
                 val cancelled = CancellationException("Page request cancelled")
-                inFlightPages.remove(cacheKey, owner)
+                inFlightPages.remove(requestKey, owner)
                 owner.completeExceptionally(cancelled)
                 throw cancelled
             }
             // A previously fetched page is preferable to a blank screen during a transient
             // timeout or offline period. The page remains scoped to this account and URL.
-            val result = if (error is Exception) stalePage.takeIf { allowStaleOnError } else null
+            val result = if (error is Exception && error.loadFailureKind() == LoadFailureKind.NETWORK) {
+                stalePage.takeIf { allowStaleOnError }
+            } else null
             if (result != null) {
                 owner.complete(result)
                 result
@@ -371,7 +395,7 @@ object EsjzoneClient {
                 throw java.lang.RuntimeException(error)
             }
         } finally {
-            inFlightPages.remove(cacheKey, owner)
+            inFlightPages.remove(requestKey, owner)
         }
     }
 
@@ -393,7 +417,6 @@ object EsjzoneClient {
     internal fun invalidatePage(authorization: Authorization, url: String) {
         val cacheKey = pageCacheKey(authorization, url)
         cacheEpoch.incrementAndGet()
-        inFlightPages.remove(cacheKey)
         NovelDetailCache.remove(cacheKey)
         PageCache.remove(cacheKey)
     }
@@ -411,6 +434,10 @@ object EsjzoneClient {
             "${EsjzoneUrls.My.Favorite}/new/",
             "${EsjzoneUrls.My.Favorite}/udate/"
         ).forEach { url -> invalidatePage(authorization, url) }
+        listOf("new", "udate").forEach { sort ->
+            ListPageCache.invalidate(authorization,
+                com.breakyuna.esjzone.network.features.favoritePageUrl(sort, 1, authorization.domain))
+        }
         PageCacheInvalidation.favoritesChanged()
     }
 
@@ -530,6 +557,7 @@ object EsjzoneClient {
         // still be reclaimed by the normal cache size policy.
         cacheEpoch.incrementAndGet()
         inFlightPages.clear()
+        PageCache.cancelPendingWrites()
         persistentCookieJar?.clear(host)
     }
 
@@ -551,7 +579,7 @@ object EsjzoneClient {
         .callTimeout(timeoutMillis.coerceAtLeast(1L), TimeUnit.MILLISECONDS)
         .build()
 
-    private fun pageCacheKey(authorization: Authorization, url: String): String {
+    internal fun pageCacheKey(authorization: Authorization, url: String): String {
         val scope = if (authorization.hasCredentials()) {
             accountScope(authorization)
         } else {

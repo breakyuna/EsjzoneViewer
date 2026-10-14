@@ -104,3 +104,7 @@
 -keep class com.breakyuna.esjzone.domain.reader.ReaderUnderline { *; }
 -keep class com.breakyuna.esjzone.domain.reader.ReaderUnderlineRange { *; }
 -keep class com.breakyuna.esjzone.database.entity.LocalReadingActivity { *; }
+
+# Persistent list batches are decoded by Gson after process restarts.
+-keep class com.breakyuna.esjzone.network.ListPageCache$Snapshot { *; }
+-keep class com.breakyuna.esjzone.network.ListPageCache$Page { *; }

@@ -5,6 +5,8 @@ import com.breakyuna.esjzone.network.EsjzoneClient
 import com.breakyuna.esjzone.network.EsjzoneUrls
 import com.breakyuna.esjzone.network.PageCacheTtl
 import com.breakyuna.esjzone.network.PageKind
+import com.breakyuna.esjzone.network.ListPageCache
+import com.breakyuna.esjzone.network.ParsedListPage
 import com.breakyuna.esjzone.network.PageableRequester
 import com.breakyuna.esjzone.novellibrary.novel.CoveredNovel
 import org.jsoup.Jsoup
@@ -16,80 +18,27 @@ fun EsjzoneClient.search(
     sort: Int = 1,
     forceRefresh: Boolean = false
 ): Pair<PageableRequester<CoveredNovel>, List<CoveredNovel>> {
-    val searchUrl = EsjzoneUrls.tagsUrl(
-        keyword = keyword,
-        category = category,
-        sort = sort
-    )
-    val responseBody = getPage(
-        authorization,
-        searchUrl,
-        PageCacheTtl.SEARCH,
-        forceRefresh = forceRefresh,
-        pageKind = PageKind.SEARCH
-    )
-
-    val document = Jsoup.parse(responseBody)
-
-    val pages = pageCount(document)
-
-    val novels = mutableListOf<CoveredNovel>()
-
-    for (novelData in selectNovelCards(document)) {
-        novels.add(
-            parseNovelCard(novelData, false, NovelCardLayout.LIST)
-        )
+    val searchUrl = EsjzoneUrls.tagsUrl(keyword = keyword, category = category, sort = sort)
+    val (session, items) = ListPageCache.open(
+        authorization, searchUrl, pageUrl = { page -> if (page == 1) searchUrl else EsjzoneUrls.tagsUrl(keyword, sort = sort, category = category, page = page) },
+        maxAgeMillis = PageCacheTtl.SEARCH, kind = PageKind.SEARCH, forceRefresh = forceRefresh
+    ) { html, _ ->
+        val document = Jsoup.parse(html)
+        ParsedListPage(pageCount(document), selectNovelCards(document).map {
+            parseNovelCard(it, false, NovelCardLayout.LIST)
+        })
     }
-
-    return SearchNovelRequester(authorization, keyword, category, sort, pages) to novels
+    return SearchNovelRequester(session) to items
 }
 
 private class SearchNovelRequester(
-    private val authorization: Authorization,
-    private val keyword: String,
-    private val category: Int,
-    private val sort: Int,
-    private val pages: Int
+    private val session: ListPageCache.Session<CoveredNovel>
 ) : PageableRequester<CoveredNovel> {
-
-    private var current: Int = 2
-    override fun pages(): Int {
-        return this.pages
-    }
-
-    override fun more(): List<CoveredNovel> {
-        val more = more(this.current)
-        current += 1
-        return more
-    }
-
-    override fun more(page: Int): List<CoveredNovel> {
-        val pageUrl = EsjzoneUrls.tagsUrl(
-            keyword = keyword,
-            category = category,
-            sort = sort,
-            page = page
-        )
-        val responseBody = EsjzoneClient.getPage(
-            authorization,
-            pageUrl,
-            PageCacheTtl.SEARCH,
-            pageKind = PageKind.SEARCH
-        )
-
-        val document = Jsoup.parse(responseBody)
-
-        val novels = mutableListOf<CoveredNovel>()
-
-        for (novelData in selectNovelCards(document)) {
-            novels.add(parseNovelCard(novelData, false, NovelCardLayout.LIST))
-        }
-
-        return novels.toList()
-    }
-
-    override fun end(): Boolean {
-        return current > pages
-    }
-
+    private var current = 2
+    override fun pages(): Int = session.pageCount
+    override fun isCurrent(): Boolean = session.isCurrent()
+    override fun fallbackFailure() = session.fallbackFailure
+    override fun more(): List<CoveredNovel> = more(current).also { current += 1 }
+    override fun more(page: Int): List<CoveredNovel> = session.more(page)
+    override fun end(): Boolean = current > pages()
 }

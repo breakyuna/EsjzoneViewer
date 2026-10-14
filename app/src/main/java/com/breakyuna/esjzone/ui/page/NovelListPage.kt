@@ -144,7 +144,7 @@ class NovelListPage(
             }
         ) { padding ->
             PullToRefreshBox(
-                isRefreshing = state is NovelListPageModel.State.Loading,
+                isRefreshing = model.isRefreshing,
                 onRefresh = model::retry,
                 modifier = Modifier.fillMaxSize()
             ) {
@@ -234,20 +234,29 @@ private fun NovelListResult(
     val pageErrorMessage = pageFailure?.let { stringResource(listFailureMessage(it)) }
 
     fun loadMore() {
-        if (loading || page > maxPage) return
+        if (loading || model.isRefreshing || page > maxPage) return
+        if (!result.requester.isCurrent()) {
+            model.getRequester()
+            return
+        }
         val targetPage = page
         loading = true
         pageFailure = null
         scope.launch {
             try {
                 val loaded = withContext(Dispatchers.IO) { result.requester.more(targetPage) }
+                if (!result.requester.isCurrent()) {
+                    model.getRequester()
+                    return@launch
+                }
                 val existing = items.mapTo(mutableSetOf()) { novelKey(it) }
                 loaded.forEach { novel -> if (existing.add(novelKey(novel))) items.add(novel) }
                 page = targetPage + 1
             } catch (error: CancellationException) {
                 throw error
             } catch (error: Exception) {
-                pageFailure = error.loadFailureKind()
+                if (!result.requester.isCurrent()) model.getRequester()
+                else pageFailure = error.loadFailureKind()
                 com.breakyuna.esjzone.util.AppLogger.e(
                     "NovelListPage",
                     "Failed to load novel page $targetPage",
@@ -284,6 +293,11 @@ private fun NovelListResult(
                 contentPadding = PaddingValues(start = 16.dp, top = AppSpacing.sm, end = 16.dp, bottom = 12.dp),
                 verticalArrangement = Arrangement.spacedBy(if (gridView) AppSpacing.lg else 10.dp)
             ) {
+            model.refreshFailure?.let { failure ->
+                item(key = "novel-list-refresh-error", contentType = "error") {
+                    DiscoveryErrorState(message = stringResource(listFailureMessage(failure)), onRetry = model::retry)
+                }
+            }
             if (visibleItems.isEmpty()) {
                 item(key = "novel-list-empty", contentType = "empty") {
                     com.breakyuna.esjzone.ui.discovery.DiscoveryEmptyState(
@@ -334,7 +348,7 @@ private fun NovelListResult(
         }
     }
 
-    LaunchedEffect(listState, visibleItems.size, page, pageFailure) {
+    LaunchedEffect(listState, visibleItems.size, page, pageFailure, model.isRefreshing) {
         snapshotFlow {
             val last = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
             val total = listState.layoutInfo.totalItemsCount
@@ -457,6 +471,13 @@ class NovelListPageModel(
         private set
     private var requestJob: kotlinx.coroutines.Job? = null
     private var initialRequestStarted = false
+    private var generation = 0L
+    private var displayedNovelType = initialNovelType
+    private var displayedSortType = initialSortType
+    var isRefreshing by mutableStateOf(false)
+        private set
+    var refreshFailure by mutableStateOf<LoadFailureKind?>(null)
+        private set
 
     sealed class State {
         data object Loading : State()
@@ -475,30 +496,50 @@ class NovelListPageModel(
     }
 
     fun getRequester(forceRefresh: Boolean = false) {
-        if (!forceRefresh && initialRequestStarted) return
+        if (!forceRefresh && initialRequestStarted && (requestJob?.isActive == true ||
+                (mutableState.value as? State.Result)?.requester?.isCurrent() == true)) return
+        val requestedNovelType = novelType
+        val requestedSortType = sortType
+        val previous = (mutableState.value as? State.Result)?.takeIf {
+            displayedNovelType == requestedNovelType && displayedSortType == requestedSortType
+        }
+        generation += 1
+        val token = generation
         initialRequestStarted = true
         requestJob?.cancel()
+        isRefreshing = true
+        refreshFailure = null
+        if (previous == null) mutableState.value = State.Loading
         requestJob = viewModelScope.launch(Dispatchers.IO) {
-            mutableState.value = State.Loading
             try {
                 val (requester, firstPage) = PresentationAccess.client.novels(
                     authorization = authorization,
-                    novelType = novelType,
-                    sortType = sortType,
+                    novelType = requestedNovelType,
+                    sortType = requestedSortType,
                     forceRefresh = forceRefresh
                 )
                 ensureActive()
-                mutableState.value = State.Result(requester, firstPage)
+                if (token != generation) return@launch
+                displayedNovelType = requestedNovelType
+                displayedSortType = requestedSortType
+                refreshFailure = requester.fallbackFailure()
+                if (refreshFailure == null || previous == null || !previous.requester.isCurrent()) {
+                    mutableState.value = State.Result(requester, firstPage)
+                }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                initialRequestStarted = false
-                mutableState.value = State.Error(e.loadFailureKind())
+                if (token != generation) return@launch
+                initialRequestStarted = previous != null
+                refreshFailure = e.loadFailureKind()
+                mutableState.value = previous ?: State.Error(e.loadFailureKind())
                 com.breakyuna.esjzone.util.AppLogger.e(
                     "NovelListPageModel",
                     "Failed to load novel list for type=$novelType, sort=$sortType",
                     e
                 )
+            } finally {
+                if (token == generation) isRefreshing = false
             }
         }
     }

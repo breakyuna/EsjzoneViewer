@@ -4,10 +4,12 @@ import android.content.Context
 import com.breakyuna.esjzone.util.storedTextReader
 import com.breakyuna.esjzone.util.writeCompressedText
 import java.io.File
+import java.io.Writer
 import java.nio.charset.StandardCharsets
 import java.nio.file.Files
 import java.nio.file.StandardCopyOption
 import java.security.MessageDigest
+import java.util.WeakHashMap
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -56,6 +58,44 @@ internal object PageCache {
     private var directory: File? = null
 
     private val ioLock = Any()
+    @Volatile private var epoch = 0L
+    val currentEpoch: Long get() = epoch
+    // Tokens stay live only while a requester or an in-flight operation owns them.
+    private val requests = WeakHashMap<WriteToken, String>()
+    private val versions = mutableMapOf<String, Long>()
+    private var nextRequest = 0L
+    private var nextVersion = 0L
+
+    internal data class WriteToken(val epoch: Long, val request: Long)
+    internal data class Entry(val fetchedAt: Long, val body: String, val reference: String)
+
+    fun beginWrite(key: String): WriteToken = synchronized(ioLock) {
+        val id = digest(key)
+        requests.values.remove(id)
+        WriteToken(epoch, ++nextRequest).also { requests[it] = id }
+    }
+
+    fun currentToken(key: String): WriteToken = synchronized(ioLock) {
+        val id = digest(key)
+        requests.entries.firstOrNull { it.value == id }?.key
+            ?: WriteToken(epoch, ++nextRequest).also { requests[it] = id }
+    }
+
+    fun accepts(key: String, token: WriteToken): Boolean = synchronized(ioLock) {
+        token.epoch == epoch && requests[token] == digest(key)
+    }
+
+    fun commitIfCurrent(key: String, token: WriteToken, action: () -> Unit): Boolean = synchronized(ioLock) {
+        if (!accepts(key, token)) return@synchronized false
+        action()
+        true
+    }
+
+    fun cancelPendingWrites() = synchronized(ioLock) {
+        epoch += 1L
+        requests.clear()
+        versions.clear()
+    }
 
     @Volatile
     private var cachedSizeBytes = 0L
@@ -79,6 +119,7 @@ internal object PageCache {
 
     internal fun initializeDirectory(cacheDirectory: File) {
         if (cacheDirectory.isDirectory || cacheDirectory.mkdirs()) {
+            cancelPendingWrites()
             directory = cacheDirectory
             // v3 replaces cookie-derived cache keys with a stable session namespace.
             // Remove older snapshots once so they cannot remain as unreachable files.
@@ -92,90 +133,116 @@ internal object PageCache {
         }
     }
 
-    fun read(key: String, maxAgeMillis: Long, nowMillis: Long = System.currentTimeMillis()): String? {
-        if (maxAgeMillis <= 0L) return null
-        val file = fileFor(key) ?: return null
-        if (!file.isFile) return null
-        return try {
+    fun read(key: String, maxAgeMillis: Long, nowMillis: Long = System.currentTimeMillis()): String? =
+        readEntry(key, maxAgeMillis, nowMillis)?.body
+
+    fun readEntry(key: String, maxAgeMillis: Long = Long.MAX_VALUE,
+                  nowMillis: Long = System.currentTimeMillis(), sourceKey: String = key): Entry? = synchronized(ioLock) {
+        if (maxAgeMillis <= 0L) return@synchronized null
+        val file = fileFor(key) ?: return@synchronized null
+        if (!file.isFile) return@synchronized null
+        try {
             file.storedTextReader().use { reader ->
-                val fetchedAt = reader.readLine()?.toLongOrNull() ?: return null
-                if (fetchedAt > nowMillis || nowMillis - fetchedAt > maxAgeMillis) return null
+                val fetchedAt = reader.readLine()?.toLongOrNull() ?: return@synchronized null
+                if (fetchedAt > nowMillis || nowMillis - fetchedAt > maxAgeMillis) return@synchronized null
                 val body = reader.readText()
-                if (nowMillis - file.lastModified() >= ACCESS_TOUCH_INTERVAL_MILLIS) {
-                    file.setLastModified(nowMillis)
-                }
-                body
+                if (nowMillis - file.lastModified() >= ACCESS_TOUCH_INTERVAL_MILLIS) file.setLastModified(nowMillis)
+                val version = versions.getOrPut(digest(key)) { ++nextVersion }
+                val id = digest(sourceKey)
+                Entry(fetchedAt, body, "$id:${digest(structuredKey(sourceKey))}:$epoch:${versions[id] ?: version}")
             }
-        } catch (_: Exception) {
-            null
-        }
+        } catch (_: Exception) { null }
     }
 
     fun readStale(key: String): String? = read(key, Long.MAX_VALUE)
 
-    fun write(key: String, body: String, nowMillis: Long = System.currentTimeMillis()) {
-        val file = fileFor(key) ?: return
-        runCatching {
-            synchronized(ioLock) {
-                if (!key.startsWith("chapter-structured-v2|")) remove(structuredKey(key))
-                val existed = file.isFile
-                val previousSize = if (existed) file.length() else 0L
-                val temporary = File(file.parentFile, "${file.name}.tmp")
-                temporary.writeCompressedText { writer ->
-                    writer.write(nowMillis.toString())
-                    writer.write("\n")
-                    writer.write(body)
-                }
-                try {
-                    Files.move(
-                        temporary.toPath(),
-                        file.toPath(),
-                        StandardCopyOption.ATOMIC_MOVE,
-                        StandardCopyOption.REPLACE_EXISTING
-                    )
-                } catch (_: Exception) {
-                    Files.move(
-                        temporary.toPath(),
-                        file.toPath(),
-                        StandardCopyOption.REPLACE_EXISTING
-                    )
-                }
-                cachedSizeBytes += file.length() - previousSize
-                if (!existed) cachedEntryCount += 1
-                if (cachedSizeBytes > MAX_CACHE_BYTES) trimToSize()
+    internal fun reference(key: String): String? = synchronized(ioLock) {
+        val id = digest(key)
+        versions[id]?.let { "$id:${digest(structuredKey(key))}:$epoch:$it" }
+    }
+
+    internal fun isCurrentReference(reference: String): Boolean = synchronized(ioLock) {
+        matchesReference(reference.split(':'))
+    }
+
+    private fun matchesReference(parts: List<String>): Boolean =
+        parts.size == 4 && parts.take(2).all { it.matches(Regex("[a-f0-9]{64}")) } &&
+            parts[2].toLongOrNull() == epoch &&
+            parts[3].toLongOrNull()?.let { it == (versions[parts[0]] ?: versions[parts[1]]) } == true
+
+    /** A failed commit keeps both the previous response and its parsed snapshot. */
+    fun write(key: String, body: String, nowMillis: Long = System.currentTimeMillis(),
+              expected: WriteToken? = null, trim: Boolean = true): Boolean =
+        write(key, nowMillis, expected, trim) { it.write(body) }
+
+    internal fun write(key: String, nowMillis: Long = System.currentTimeMillis(),
+              expected: WriteToken? = null, trim: Boolean = true,
+              writeBody: (Writer) -> Unit): Boolean = synchronized(ioLock) {
+        if (expected != null && !accepts(key, expected)) return@synchronized false
+        val file = fileFor(key) ?: return@synchronized false
+        val temporary = File(file.parentFile, "${file.name}.tmp")
+        try {
+            val existed = file.isFile
+            val previousSize = if (existed) file.length() else 0L
+            temporary.writeCompressedText { writer ->
+                writer.write(nowMillis.toString())
+                writer.write("\n")
+                writeBody(writer)
             }
+            try {
+                Files.move(temporary.toPath(), file.toPath(), StandardCopyOption.ATOMIC_MOVE,
+                    StandardCopyOption.REPLACE_EXISTING)
+            } catch (_: java.nio.file.AtomicMoveNotSupportedException) {
+                Files.move(temporary.toPath(), file.toPath(), StandardCopyOption.REPLACE_EXISTING)
+            }
+            cachedSizeBytes += file.length() - previousSize
+            if (!existed) cachedEntryCount += 1
+            val id = digest(key)
+            versions[id] = ++nextVersion
+            if (!key.startsWith("chapter-structured-v2|")) remove(structuredKey(key))
+            if (trim && cachedSizeBytes > MAX_CACHE_BYTES) trimToSize()
+            true
+        } catch (_: Exception) {
+            false
+        } finally { runCatching { temporary.delete() } }
+    }
+
+    /** Remove exactly the response used by a completed download, preserving a newer response. */
+    fun removeReference(reference: String) = synchronized(ioLock) {
+        val parts = reference.split(':')
+        if (!matchesReference(parts)) return@synchronized
+        val id = parts[0]
+        removeId(id)
+        removeId(parts[1])
+    }
+
+    private fun removeId(id: String) {
+        requests.values.remove(id)
+        versions.remove(id)
+        val file = directory?.let { File(it, "$FILE_PREFIX-$id.html") } ?: return
+        val length = file.length()
+        if (runCatching { file.delete() }.getOrDefault(false)) {
+            cachedSizeBytes = (cachedSizeBytes - length).coerceAtLeast(0L)
+            cachedEntryCount = (cachedEntryCount - 1).coerceAtLeast(0)
         }
     }
 
     internal fun structuredKey(key: String): String = "chapter-structured-v2|$key"
 
-    internal fun writeDerived(key: String, sourceBody: String, json: String) = synchronized(ioLock) {
-        val file = fileFor(key) ?: return@synchronized
-        val fetchedAt = runCatching {
-            file.storedTextReader().use { reader ->
-                val timestamp = reader.readLine()?.toLongOrNull()
-                timestamp?.takeIf { reader.readText() == sourceBody }
-            }
-        }.getOrNull() ?: return@synchronized
-        write(structuredKey(key), json, fetchedAt)
+    internal fun writeDerived(key: String, sourceBody: String, json: String): String? = synchronized(ioLock) {
+        val source = readEntry(key)?.takeIf { it.body == sourceBody } ?: return@synchronized null
+        write(structuredKey(key), json, source.fetchedAt)
+        source.reference
     }
 
-    fun remove(key: String) {
-        val file = fileFor(key) ?: return
-        runCatching {
-            synchronized(ioLock) {
-                if (!key.startsWith("chapter-structured-v2|")) remove(structuredKey(key))
-                val length = file.length()
-                if (file.delete()) {
-                    cachedSizeBytes = (cachedSizeBytes - length).coerceAtLeast(0L)
-                    cachedEntryCount = (cachedEntryCount - 1).coerceAtLeast(0)
-                }
-            }
-        }
+    fun remove(key: String) = synchronized(ioLock) {
+        removeId(digest(key))
+        if (!key.startsWith("chapter-structured-v2|")) removeId(digest(structuredKey(key)))
     }
 
     fun clear() {
         synchronized(ioLock) {
+            cancelPendingWrites()
             val cacheDirectory = directory ?: return
             val files = cacheDirectory.listFiles()
                 ?: throw java.io.IOException("Unable to list page cache files")
@@ -202,11 +269,14 @@ internal object PageCache {
 
     private fun fileFor(key: String): File? {
         val cacheDirectory = directory ?: return null
-        val digest = MessageDigest.getInstance("SHA-256")
-            .digest(key.toByteArray(StandardCharsets.UTF_8))
-            .joinToString("") { byte -> "%02x".format(byte.toInt() and 0xff) }
-        return File(cacheDirectory, "$FILE_PREFIX-$digest.html")
+        return File(cacheDirectory, "$FILE_PREFIX-${digest(key)}.html")
     }
+
+    private fun digest(key: String): String = MessageDigest.getInstance("SHA-256")
+        .digest(key.toByteArray(StandardCharsets.UTF_8))
+        .joinToString("") { byte -> "%02x".format(byte.toInt() and 0xff) }
+
+    fun trim() = synchronized(ioLock) { if (cachedSizeBytes > MAX_CACHE_BYTES) trimToSize() }
 
     private fun trimToSize() {
         val files = directory?.listFiles()
@@ -219,6 +289,9 @@ internal object PageCache {
             if (total <= MAX_CACHE_BYTES) break
             val length = file.length()
             if (file.delete()) {
+                val id = file.name.removePrefix("$FILE_PREFIX-").removeSuffix(".html")
+                requests.values.remove(id)
+                versions.remove(id)
                 total -= length
                 count -= 1
             }

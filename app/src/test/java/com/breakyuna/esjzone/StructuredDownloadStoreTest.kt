@@ -2,8 +2,11 @@ package com.breakyuna.esjzone
 
 import com.breakyuna.esjzone.domain.reader.sourceText
 import com.breakyuna.esjzone.data.reader.ChapterBody
+import com.breakyuna.esjzone.data.reader.withStructuredBody
 import com.breakyuna.esjzone.database.entity.LocalReadingActivity
 import com.breakyuna.esjzone.domain.reader.ReaderSearchHit
+import com.breakyuna.esjzone.network.PageCache
+import com.breakyuna.esjzone.network.StructuredChapterCache
 import com.breakyuna.esjzone.network.Authorization
 import com.breakyuna.esjzone.novellibrary.component.ChapterItem
 import com.breakyuna.esjzone.novellibrary.component.TextComponent
@@ -37,6 +40,43 @@ class StructuredDownloadStoreTest {
         val root = Files.createTempDirectory("structured-download-").toFile()
         NovelDownloadStore.initializeDirectory(root)
         try { block(root) } finally { root.deleteRecursively() }
+    }
+
+    @Test
+    fun committedOfflineChapterReclaimsMatchingSourceCacheAndKeepsReadableBody() = withStorage {
+        val cache = Files.createTempDirectory("saved-chapter-cache-").toFile()
+        PageCache.initializeDirectory(cache)
+        try {
+            val source = detail(1)
+            val key = "fixture-account|chapter-1"
+            val html = "<html><p>正文 1</p></html>"
+            PageCache.write(key, html)
+            val reference = requireNotNull(StructuredChapterCache.write(key, html, source))
+            val manifest = requireNotNull(NovelDownloadStore.saveChapter("Novel", novelUrl, "",
+                listOf(chapter(1)), chapter(1), source.copy(sourceCacheReference = reference), auth))
+            assertTrue(manifest.chapters.single().downloaded)
+            assertEquals(0, PageCache.stats().entryCount)
+            val offline = requireNotNull(NovelDownloadStore.readChapter(chapter(1).url))
+            assertEquals(source.contentHtml, offline.contentHtml)
+            assertEquals(source.withStructuredBody().body, offline.body)
+        } finally { cache.deleteRecursively() }
+    }
+
+    @Test
+    fun savingAnOlderChapterDoesNotReclaimANewerResponse() = withStorage {
+        val cache = Files.createTempDirectory("newer-chapter-cache-").toFile()
+        PageCache.initializeDirectory(cache)
+        try {
+            val source = detail(1)
+            val key = "fixture-account|chapter-1"
+            PageCache.write(key, "old")
+            val reference = requireNotNull(StructuredChapterCache.write(key, "old", source))
+            PageCache.write(key, "new")
+            NovelDownloadStore.saveChapter("Novel", novelUrl, "", listOf(chapter(1)), chapter(1),
+                source.copy(sourceCacheReference = reference), auth)
+            assertEquals("new", PageCache.readStale(key))
+            assertNotNull(NovelDownloadStore.readChapter(chapter(1).url))
+        } finally { cache.deleteRecursively() }
     }
 
     @Test

@@ -9,6 +9,7 @@ import com.breakyuna.esjzone.app.PresentationAccess
 import com.breakyuna.esjzone.data.settings.SettingsDefaults
 import com.breakyuna.esjzone.network.Authorization
 import com.breakyuna.esjzone.network.EsjzoneClient
+import com.breakyuna.esjzone.network.PageCache
 import com.breakyuna.esjzone.network.EsjzoneUrls
 import com.breakyuna.esjzone.network.features.ChapterPasswordRequiredException
 import com.breakyuna.esjzone.network.features.getChapterDetail
@@ -34,6 +35,7 @@ import java.nio.charset.StandardCharsets
 import java.nio.file.Files
 import java.nio.file.StandardCopyOption
 import java.security.MessageDigest
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
@@ -533,6 +535,7 @@ object NovelDownloadStore {
                     chapterKey(record.url) == chapterKey(current.url)
             }
         ) {
+            reclaimSavedChapter(previous, chapter, detail)
             return previous
         }
 
@@ -556,7 +559,7 @@ object NovelDownloadStore {
                 if (image != null) component.url to image else null
             }.toMap()
 
-        return synchronized(ioLock) {
+        val committed = synchronized(ioLock) {
             ensureWriteAllowed(writeGuard)
             saveChapterLocked(
                 novelName = novelName,
@@ -569,6 +572,22 @@ object NovelDownloadStore {
                 writeGuard = writeGuard
             )
         }
+        if (committed != null) reclaimSavedChapter(committed, chapter, detail)
+        return committed
+    }
+
+    private fun reclaimSavedChapter(manifest: DownloadedNovelManifest, chapter: Chapter, detail: DetailedChapter) {
+        val reference = detail.sourceCacheReference ?: return
+        val matches = synchronized(ioLock) {
+            val record = manifest.chapters.firstOrNull { chapterKey(it.url) == chapterKey(chapter.url) }
+                ?.takeIf { it.downloaded } ?: return@synchronized false
+            val directory = directoryFor(manifest.url, create = false) ?: return@synchronized false
+            val stored = resolveLocalFile(directory, record.fileName)?.let { readStoredChapter(directory, it) }
+                ?: return@synchronized false
+            stored.hasAllImagesOnDisk(directory) && stored.body == detail.withStructuredBody().body &&
+                stored.contentHtml == detail.contentHtml
+        }
+        if (matches) PageCache.removeReference(reference)
     }
 
     private fun saveChapterLocked(
@@ -767,6 +786,14 @@ object NovelDownloadStore {
 
         reportProgress("", force = true)
 
+        val pendingCacheReclaims = ConcurrentHashMap<String, String>()
+        fun reclaimCommitted(manifest: DownloadedNovelManifest) {
+            manifest.chapters.filter { it.downloaded }.forEach { record ->
+                val reference = pendingCacheReclaims.remove(chapterKey(record.url)) ?: return@forEach
+                PageCache.removeReference(reference)
+            }
+        }
+
         val pendingChapters = targetRecords.filter { !it.downloaded }
         if (pendingChapters.isNotEmpty()) {
             val wenkuBlocked = java.util.concurrent.atomic.AtomicBoolean(false)
@@ -801,7 +828,8 @@ object NovelDownloadStore {
                                                 record = record,
                                                 directory = directory,
                                                 baseUrl = baseUrl,
-                                                writeGuard = writeGuard
+                                                writeGuard = writeGuard,
+                                                onCacheReady = { pendingCacheReclaims[chapterKey(record.url)] = it }
                                             )
                                         }
                                         if (com.breakyuna.esjzone.novellibrary.novel.resolveChapterSource(record.url) ==
@@ -824,7 +852,8 @@ object NovelDownloadStore {
                                                     directory = directory,
                                                     baseUrl = baseUrl,
                                                     writeGuard = writeGuard,
-                                                    password = previousCommonPassword
+                                                    password = previousCommonPassword,
+                                                    onCacheReady = { pendingCacheReclaims[chapterKey(record.url)] = it }
                                                 )
                                                 success = true
                                                 isPasswordProtected = false
@@ -851,6 +880,7 @@ object NovelDownloadStore {
 
                                 if (success) {
                                     val finished = completedCounter.incrementAndGet()
+                                    var published: DownloadedNovelManifest? = null
                                     synchronized(ioLock) {
                                         currentRecords[record.index] = record.copy(downloaded = true, requiresPassword = false)
                                         if (finished % MANIFEST_CHECKPOINT_INTERVAL == 0 ||
@@ -862,9 +892,11 @@ object NovelDownloadStore {
                                                 complete = currentRecords.all { it.downloaded },
                                                 commonPassword = previousCommonPassword
                                             )
-                                            writeManifest(directory, currentManifest, writeGuard)
+                                            currentManifest = writeManifest(directory, currentManifest, writeGuard)
+                                            published = currentManifest
                                         }
                                     }
+                                    published?.let(::reclaimCommitted)
                                     reportProgress(record.name)
                                 } else if (isPasswordProtected) {
                                     AppLogger.i(
@@ -891,7 +923,7 @@ object NovelDownloadStore {
             } finally {
                 // Cancellation and partial failure must still publish completed chapters,
                 // but only if the directory was not deleted concurrently by the user.
-                synchronized(ioLock) {
+                val published = synchronized(ioLock) {
                     if (directory.isDirectory) {
                         currentManifest = manifestFrom(
                             novel = novel,
@@ -900,9 +932,11 @@ object NovelDownloadStore {
                             complete = currentRecords.all { it.downloaded },
                             commonPassword = previousCommonPassword
                         )
-                        writeManifest(directory, currentManifest, writeGuard)
-                    }
+                        currentManifest = writeManifest(directory, currentManifest, writeGuard)
+                        currentManifest
+                    } else null
                 }
+                published?.let(::reclaimCommitted)
             }
 
             if (failedErrors.isNotEmpty()) {
@@ -925,17 +959,23 @@ object NovelDownloadStore {
         directory: File,
         baseUrl: String?,
         writeGuard: DownloadWriteGuard,
-        password: String? = null
+        password: String? = null,
+        onCacheReady: (String) -> Unit = {}
     ): DownloadedChapterContent {
         val chapterFile = File(directory, record.fileName)
         val existing = synchronized(ioLock) { readStoredChapter(directory, chapterFile) }
         val chapter = Chapter(record.name, record.url, false)
-        val stored = existing ?: (if (!password.isNullOrBlank()) {
-            EsjzoneClient.unlockPasswordProtectedChapter(authorization, chapter, password, baseUrl)
-        } else {
-            EsjzoneClient.getChapterDetail(authorization, chapter, preferDownloaded = false,
-                forceRefresh = false, baseUrl = baseUrl, allowAutoSolve = false)
-        }).toStoredContent(chapter)
+        var sourceReference: String? = null
+        val stored = existing ?: run {
+            val detail = if (!password.isNullOrBlank()) {
+                EsjzoneClient.unlockPasswordProtectedChapter(authorization, chapter, password, baseUrl)
+            } else {
+                EsjzoneClient.getChapterDetail(authorization, chapter, preferDownloaded = false,
+                    forceRefresh = false, baseUrl = baseUrl, allowAutoSolve = false)
+            }
+            sourceReference = detail.sourceCacheReference
+            detail.toStoredContent(chapter)
+        }
         require(stored.body?.blocks?.isNotEmpty() == true) { "Chapter content is empty" }
         val completed = stored.copy(components = stored.components.map { component ->
             if (component.type != IMAGE_COMPONENT || component.localFile?.let {
@@ -944,14 +984,19 @@ object NovelDownloadStore {
             else component.withDownloadedImage(downloadImage(authorization, directory, component.value,
                 stored.baseUrl ?: baseUrl, writeGuard))
         })
-        synchronized(ioLock) {
+        val committed = synchronized(ioLock) {
             ensureWriteAllowed(writeGuard)
             val latest = readStoredChapter(directory, chapterFile)
             val committed = if (latest != null) mergeChapterAssets(directory, latest, completed) else completed
             if (latest != committed) writeJson(chapterFile, committed, writeGuard)
+            committed
         }
-        if (!completed.hasAllImagesOnDisk(directory)) throw IOException("Chapter images are incomplete")
-        return completed
+        if (committed.body == stored.body && committed.contentHtml == stored.contentHtml) {
+            // Keep the source version across image retries; reclamation still waits for the manifest.
+            sourceReference?.let(onCacheReady)
+        }
+        if (!committed.hasAllImagesOnDisk(directory)) throw IOException("Chapter images are incomplete")
+        return committed
     }
 
     private fun mergeChapterAssets(directory: File, existing: DownloadedChapterContent, incoming: DownloadedChapterContent): DownloadedChapterContent {

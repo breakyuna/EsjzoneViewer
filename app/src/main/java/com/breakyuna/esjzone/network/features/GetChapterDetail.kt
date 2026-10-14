@@ -71,13 +71,24 @@ fun EsjzoneClient.getChapterDetail(
     val cacheKey = novelDetailCacheKey(authorization, targetUrl)
     if (!forceRefresh) StructuredChapterCache.read(cacheKey, targetUrl)?.let { return it }
     AppLogger.i("GetChapterDetail", "Fetching ESJ chapter: ${chapter.name} at $targetUrl")
+    var parsedHtml: String? = null
+    var parsedDetail: DetailedChapter? = null
+    fun validatedDetail(html: String): DetailedChapter {
+        parsedDetail?.takeIf { parsedHtml == html }?.let { return it }
+        return parseChapterResponse(html, chapter, targetUrl).also {
+            parsedHtml = html
+            parsedDetail = it
+        }
+    }
     val responseBody = try {
         getPage(
             authorization,
             targetUrl,
             PageCacheTtl.CHAPTER,
             forceRefresh,
-            PageKind.CHAPTER
+            PageKind.CHAPTER,
+            awaitFresh = true,
+            validateBody = { html -> validatedDetail(html) }
         )
     } catch (error: Exception) {
         NovelDownloadStore.readChapter(targetUrl)
@@ -92,10 +103,16 @@ fun EsjzoneClient.getChapterDetail(
         throw error
     }
 
-    val document = Jsoup.parse(responseBody, targetUrl)
+    val detail = validatedDetail(responseBody)
+    val reference = StructuredChapterCache.write(cacheKey, responseBody, detail)
+    return detail.copy(sourceCacheReference = reference)
+}
+
+private fun parseChapterResponse(html: String, chapter: Chapter, url: String): DetailedChapter {
+    val document = Jsoup.parse(html, url)
     if (document.isPasswordProtectedChapter()) throw ChapterPasswordRequiredException()
-    return document.toDetailedChapter(chapter, targetUrl).also {
-        StructuredChapterCache.write(cacheKey, responseBody, it)
+    return document.toDetailedChapter(chapter, url).also {
+        if (it.content.isEmpty()) throw IOException("Chapter content is empty")
     }
 }
 

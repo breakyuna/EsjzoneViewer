@@ -37,7 +37,7 @@ internal class HomeRecommendationPool(
 
     val hasMore: Boolean
         get() = sources.any { source ->
-            source.requester == null || source.visitedPages.size < source.pageCount ||
+            source.requester?.isCurrent() == false || source.requester == null || source.visitedPages.size < source.pageCount ||
                 source.pending.any { novelKey(it) !in seenNovelKeys }
         }
 
@@ -53,6 +53,11 @@ internal class HomeRecommendationPool(
             var requestedPages = 0
             while (selected < source.quota) {
                 currentCoroutineContext().ensureActive()
+                if (source.requester?.isCurrent() == false) {
+                    source.requester = null
+                    source.visitedPages.clear()
+                    source.pending.clear()
+                }
                 if (source.pending.isNotEmpty()) {
                     val novel = source.pending.removeAt(0)
                     if ((adult || !novel.isAdult) && workingSeen.add(novelKey(novel))) {
@@ -73,9 +78,16 @@ internal class HomeRecommendationPool(
                     val page = (1..source.pageCount)
                         .filterNot { it in source.visitedPages }
                         .randomOrNull() ?: break
-                    val result = cancellablePageRequest { requester.more(page) }
-                    source.visitedPages += page
-                    result
+                    try {
+                        val result = cancellablePageRequest { requester.more(page) }
+                        source.visitedPages += page
+                        result
+                    } catch (error: com.breakyuna.esjzone.network.StaleListBatchException) {
+                        source.requester = null
+                        source.visitedPages.clear()
+                        requestedPages += 1
+                        continue
+                    }
                 }
                 requestedPages += 1
                 source.pending += novels.filter { adult || !it.isAdult }.shuffled()
