@@ -146,6 +146,7 @@ object NovelDownloadStore {
 
     private val gson = Gson()
     private val ioLock = Any()
+    private val imageIndex = DownloadedImageIndex()
     /** Every successful commit publishes the latest manifest under ioLock. Keys are directory paths. */
     private val manifestCache = HashMap<String, DownloadedNovelManifest?>()
     private val deletionGenerations = HashMap<String, Long>()
@@ -190,6 +191,7 @@ object NovelDownloadStore {
 
     internal fun initializeDirectory(directory: File) = synchronized(ioLock) {
         if (!directory.isDirectory && !directory.mkdirs()) throw IOException("Unable to create the novel download directory")
+        imageIndex.clear()
         chapterIndex.clear()
         chapterKeysByDirectory.clear()
         chapterIndexLoaded = false
@@ -230,6 +232,7 @@ object NovelDownloadStore {
     /** Keep existing novels intact, including any active download writes. */
     fun importBackup(source: File) = synchronized(ioLock) {
         val root = checkNotNull(rootDirectory)
+        imageIndex.clear()
         source.listFiles().orEmpty().filter(File::isDirectory).forEach { directory ->
             val manifest = requireNotNull(readManifest(directory))
             require(manifest.version in 1..2 && manifest.url.isNotBlank())
@@ -341,6 +344,7 @@ object NovelDownloadStore {
         val directory = directoryFor(novelUrl, create = false) ?: return@synchronized false
         deletionGenerations[directory.absolutePath] = (deletionGenerations[directory.absolutePath] ?: 0L) + 1L
         manifestCache.remove(directory.absolutePath)
+        imageIndex.remove(directory)
         removeChapterIndex(directory)
         inventorySnapshot = null
         mutableChanges.value += 1
@@ -357,6 +361,7 @@ object NovelDownloadStore {
                 val directory = directoryFor(url, create = false) ?: return@count false
                 deletionGenerations[directory.absolutePath] = (deletionGenerations[directory.absolutePath] ?: 0L) + 1L
                 manifestCache.remove(directory.absolutePath)
+                imageIndex.remove(directory)
                 removeChapterIndex(directory)
                 directory.deleteRecursively()
             }
@@ -1389,11 +1394,7 @@ object NovelDownloadStore {
     ): DownloadedImage? {
         if (rawUrl.isBlank()) return null
         val url = EsjzoneUrls.resolve(rawUrl, baseUrl ?: EsjzoneUrls.Base)
-        val imagePrefix = "image-${digest(url)}."
-        val imagesDirectory = File(novelDirectory, "images")
-        val existing = imagesDirectory.listFiles()
-            ?.firstOrNull { it.isFile && it.length() > 0L && it.name.startsWith(imagePrefix) }
-            ?: return null
+        val existing = synchronized(ioLock) { imageIndex.find(novelDirectory, digest(url)) } ?: return null
         return DownloadedImage(
             relativeName = "images/${existing.name}",
             mediaType = mediaTypeFromUrl(existing.name)
@@ -1412,8 +1413,7 @@ object NovelDownloadStore {
             val url = EsjzoneUrls.resolve(rawUrl, baseUrl ?: EsjzoneUrls.Base)
             val imagePrefix = "image-${digest(url)}."
             val imagesDirectory = File(novelDirectory, "images")
-            imagesDirectory.listFiles()
-                ?.firstOrNull { it.isFile && it.length() > 0L && it.name.startsWith(imagePrefix) }
+            synchronized(ioLock) { imageIndex.find(novelDirectory, digest(url)) }
                 ?.let { existing ->
                     return@runCatching DownloadedImage(
                         relativeName = "images/${existing.name}",
@@ -1440,6 +1440,7 @@ object NovelDownloadStore {
                         synchronized(ioLock) {
                             ensureWriteAllowed(writeGuard)
                             moveReplacing(temporary, destination)
+                            imageIndex.committed(novelDirectory, destination)
                         }
                     } finally {
                         if (temporary.isFile) temporary.delete()
@@ -1505,6 +1506,7 @@ object NovelDownloadStore {
                                 synchronized(ioLock) {
                                     ensureWriteAllowed(writeGuard)
                                     moveReplacing(temporary, destination)
+                                    imageIndex.committed(novelDirectory, destination)
                                 }
                             } finally {
                                 if (temporary.isFile) temporary.delete()

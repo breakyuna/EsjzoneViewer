@@ -14,7 +14,9 @@ internal data class CoverLoadingState(
     val homePreloads: Int = 0
 ) {
     val preloadHome: Boolean get() = !firstLaunch || visiblePage == "HOME"
-    fun allowNetwork(page: String): Boolean = when {
+    fun allowNetwork(page: String): Boolean = page == visiblePage
+
+    fun allowBackgroundNetwork(page: String): Boolean = when {
         firstLaunch -> page == visiblePage
         page == "HOME" -> true
         else -> !homeDataLoading && homePreloads == 0

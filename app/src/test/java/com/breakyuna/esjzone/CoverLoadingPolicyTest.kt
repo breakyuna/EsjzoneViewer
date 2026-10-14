@@ -21,15 +21,17 @@ class CoverLoadingPolicyTest {
     }
 
     @Test
-    fun `later launches prioritize home even while shelf is visible`() {
+    fun `visible shelf is never blocked by background home preloads`() {
         val loading = CoverLoadingState(firstLaunch = false, visiblePage = "BOOKSHELF")
         assertTrue(loading.preloadHome)
-        assertTrue(loading.allowNetwork("HOME"))
-        assertFalse(loading.allowNetwork("BOOKSHELF"))
+        assertFalse(loading.allowNetwork("HOME"))
+        assertTrue(loading.allowNetwork("BOOKSHELF"))
+        assertFalse(loading.allowBackgroundNetwork("BOOKSHELF"))
 
         val preloading = loading.copy(homeDataLoading = false, homePreloads = 1)
-        assertFalse(preloading.allowNetwork("BOOKSHELF"))
-        assertTrue(preloading.copy(homePreloads = 0).allowNetwork("BOOKSHELF"))
+        assertTrue(preloading.allowNetwork("BOOKSHELF"))
+        assertFalse(preloading.allowBackgroundNetwork("BOOKSHELF"))
+        assertTrue(preloading.copy(homePreloads = 0).allowBackgroundNetwork("BOOKSHELF"))
     }
 
     @Test

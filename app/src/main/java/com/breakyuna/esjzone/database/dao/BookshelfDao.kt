@@ -20,6 +20,10 @@ interface BookshelfDao {
     @Query("SELECT * FROM bookshelf WHERE scope = :scope ORDER BY added_at DESC")
     suspend fun getAll(scope: String): List<BookshelfEntry>
 
+    /** Cover files are shared across accounts and mirrors. */
+    @Query("SELECT * FROM bookshelf WHERE visible = 1 AND cover_url != ''")
+    suspend fun getAllVisibleWithCovers(): List<BookshelfEntry>
+
     @Query("SELECT * FROM bookshelf WHERE scope = :scope AND book_key = :bookKey LIMIT 1")
     fun observe(scope: String, bookKey: String): Flow<BookshelfEntry?>
 

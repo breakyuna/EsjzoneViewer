@@ -58,7 +58,7 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.collectLatest
@@ -194,34 +194,57 @@ object HomeTab : AppTab {
             else emptyList()
         }
 
-        val homeCoverUrls = remember(
+        val homeCoverRows = remember(
             weeklyPopularNovels, editorPicksRows, translatedRows, originalRows,
-            translatedAdultRows, originalAdultRows, hideHomeRecommendations
+            translatedAdultRows, originalAdultRows, hideHomeRecommendations,
+            weeklyNovelsByDay, weeklyIndex, randomState.items, adult,
+            editorPicksTitle, translatedTitle, originalTitle, translatedAdultTitle, originalAdultTitle
         ) {
-            buildList<CoveredNovel> {
-                addAll(weeklyPopularNovels.take(2))
-                if (!hideHomeRecommendations) addAll(editorPicksRows.flatten())
-                addAll(translatedRows.flatten())
-                addAll(originalRows.flatten())
-                addAll(translatedAdultRows.flatten())
-                addAll(originalAdultRows.flatten())
-                addAll(weeklyPopularNovels.drop(2))
-            }.map { EsjzoneUrls.coverOrEmpty(it.coverUrl) }
-                .filter(String::isNotBlank)
-                .distinct()
+            fun covers(novels: List<CoveredNovel>) = novels.map { EsjzoneUrls.coverOrEmpty(it.coverUrl) }
+            buildList {
+                if (weeklyPopularNovels.isNotEmpty()) add(HomeCoverRow("home-weekly-popular", covers(weeklyPopularNovels.take(2))))
+                add(HomeCoverRow("home-actions"))
+                fun collection(title: String, rows: List<List<CoveredNovel>>) {
+                    add(HomeCoverRow("home-divider-$title"))
+                    add(HomeCoverRow("home-section-$title"))
+                    if (rows.isEmpty()) add(HomeCoverRow("home-empty-$title"))
+                    rows.forEach { row -> add(HomeCoverRow(homeGridRowKey(title, row), covers(row))) }
+                }
+                if (!hideHomeRecommendations) collection(editorPicksTitle, editorPicksRows)
+                collection(translatedTitle, translatedRows)
+                collection(originalTitle, originalRows)
+                if (adult) {
+                    collection(translatedAdultTitle, translatedAdultRows)
+                    collection(originalAdultTitle, originalAdultRows)
+                }
+                if (weeklyNovelsByDay.isNotEmpty()) {
+                    add(HomeCoverRow("home-weekly-divider"))
+                    add(HomeCoverRow("home-weekly-header"))
+                    add(HomeCoverRow("home-weekly-content", covers(weeklyNovelsByDay.getOrNull(weeklyIndex).orEmpty())))
+                }
+                if (randomState.items.isNotEmpty()) {
+                    add(HomeCoverRow("home-random-divider"))
+                    add(HomeCoverRow("home-random-header"))
+                    randomState.items.chunked(HOME_GRID_COLUMNS).forEach { row ->
+                        add(HomeCoverRow("home-random-row:${novelKey(row.first())}", covers(row)))
+                    }
+                }
+            }
         }
-        val latestHomeCoverUrls by rememberUpdatedState(homeCoverUrls)
+        val latestHomeCoverRows by rememberUpdatedState(homeCoverRows)
         val coverDomain by PresentationAccess.settings.domain
-        LaunchedEffect(adult, hideHomeRecommendations, coverDomain) {
-            CoverLoadingPolicy.state.map { it.preloadHome }.distinctUntilChanged()
-                .collectLatest { allowed ->
-                    if (allowed) coroutineScope {
-                        val scheduled = mutableSetOf<String>()
-                        snapshotFlow { latestHomeCoverUrls }.collect { urls ->
-                            val added = urls.filter { scheduled.add(it) }
-                            if (added.isNotEmpty()) launch {
-                                BookshelfCoverStore.preloadHomeCovers(added)
-                            }
+        val refreshing = (state as? HomeTabModel.State.Result)?.isRefreshing == true
+        LaunchedEffect(adult, hideHomeRecommendations, coverDomain, refreshing) {
+            val successful = mutableSetOf<String>()
+            CoverLoadingPolicy.state.map { it.preloadHome to it.visiblePage }.distinctUntilChanged()
+                .collectLatest { (allowed, visiblePage) ->
+                    if (allowed) {
+                        snapshotFlow {
+                            upcomingHomeCovers(latestHomeCoverRows, if (visiblePage == "HOME")
+                                listState.layoutInfo.visibleItemsInfo.map { it.key.toString() }.toSet() else emptySet())
+                        }.collectLatest { urls ->
+                            delay(150) // Let visible requests enter the queue first; avoid fling churn.
+                            successful += BookshelfCoverStore.preloadHomeCovers(urls.filterNot { it in successful })
                         }
                     }
                 }

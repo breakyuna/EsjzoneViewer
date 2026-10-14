@@ -292,6 +292,9 @@ private fun formatWeeklyHeat(value: Int): String = when {
     else -> value.toString()
 }
 
+internal fun homeGridRowKey(title: String, row: List<CoveredNovel>): String =
+    "home-grid-$title-row:${novelKey(row.first())}"
+
 internal fun LazyListScope.homeCollection(
     title: String,
     rows: List<List<CoveredNovel>>,
@@ -334,7 +337,7 @@ internal fun LazyListScope.homeCollection(
     } else {
         items(
             count = rows.size,
-            key = { rowIndex -> "home-grid-$title-row:${novelKey(rows[rowIndex].first())}" },
+            key = { rowIndex -> homeGridRowKey(title, rows[rowIndex]) },
             contentType = { "home-grid-row" }
         ) { rowIndex ->
             val row = rows[rowIndex]

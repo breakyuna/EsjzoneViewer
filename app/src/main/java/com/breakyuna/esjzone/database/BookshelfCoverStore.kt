@@ -9,12 +9,14 @@ import com.breakyuna.esjzone.network.EsjzoneUrls
 import com.breakyuna.esjzone.util.AppLogger
 import coil3.request.CachePolicy
 import coil3.request.ImageRequest
+import coil3.request.SuccessResult
+import coil3.decode.BlackholeDecoder
+import androidx.room.withTransaction
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.key
 import java.io.File
 import java.security.MessageDigest
-import java.util.concurrent.ConcurrentHashMap
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.map
@@ -24,6 +26,13 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
@@ -47,34 +56,37 @@ object BookshelfCoverStore {
     private const val BATCH_SIZE = 4
     private const val BATCH_COOLDOWN_MILLIS = 300L
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-    private val activeKeys = ConcurrentHashMap.newKeySet<String>()
+    private val maintenanceMutex = Mutex()
+    private var maintenanceJob: Job? = null
+    private var scheduledKeys = emptySet<Pair<String, String>>()
+    private val changes = MutableStateFlow(0L)
     private val downloadSemaphore = Semaphore(2)
-    private val homePreloadSemaphore = Semaphore(8)
+    private val homePreloadSemaphore = Semaphore(2)
 
     /** Home covers enter the shared image queue before new shelf persistence downloads. */
-    suspend fun preloadHomeCovers(urls: List<String>) {
-        if (urls.isEmpty()) return
+    suspend fun preloadHomeCovers(urls: List<String>): Set<String> {
+        if (urls.isEmpty()) return emptySet()
         CoverLoadingPolicy.homePreloadStarted()
         try {
-            coroutineScope {
+            return coroutineScope {
                 urls.map { source ->
                     async {
                         homePreloadSemaphore.withPermit {
                             val request = ImageRequest.Builder(EsjzoneApplication.instance)
                                 .data(EsjzoneUrls.resolve(source))
-                                .size(320, 480)
+                                .memoryCachePolicy(CachePolicy.DISABLED)
+                                .decoderFactory(BlackholeDecoder.Factory())
                                 .apply {
                                     if (source.toHttpUrlOrNull()?.host?.let(EsjzoneUrls::isEsjHost) == true) {
                                         val key = EsjzoneUrls.canonicalCacheUrl(source)
-                                        memoryCacheKey(key)
                                         diskCacheKey(key)
                                     }
                                 }
                                 .build()
-                            PresentationAccess.imageLoader.execute(request)
+                            source.takeIf { PresentationAccess.imageLoader.execute(request) is SuccessResult }
                         }
                     }
-                }.awaitAll()
+                }.awaitAll().filterNotNull().toSet()
             }
         } finally {
             CoverLoadingPolicy.homePreloadFinished()
@@ -103,8 +115,11 @@ object BookshelfCoverStore {
     internal fun fileName(entry: BookshelfEntry): String {
         val source = canonicalSource(entry.coverUrl)
         val identity = "${entry.bookKey}|$source"
-        return "cover_${digest(identity)}.img"
+        return "thumb_v1_${digest(identity)}.img"
     }
+
+    internal fun originalFileNames(entry: BookshelfEntry): List<String> =
+        listOf(fileName(entry).replaceFirst("thumb_v1_", "cover_")) + legacyFileNames(entry)
 
     internal fun legacyFileNames(entry: BookshelfEntry): List<String> {
         val trimmed = EsjzoneUrls.coverOrEmpty(entry.coverUrl).trim()
@@ -132,10 +147,9 @@ object BookshelfCoverStore {
     private fun fileFor(entry: BookshelfEntry): File {
         val target = File(directory, fileName(entry))
         if (target.isFile && target.length() > 0L) return target
-        for (legacyName in legacyFileNames(entry)) {
+        for (legacyName in originalFileNames(entry)) {
             val legacy = File(directory, legacyName)
             if (legacy.isFile && legacy.length() > 0L) {
-                if (legacy.renameTo(target)) return target
                 return legacy
             }
         }
@@ -155,73 +169,112 @@ object BookshelfCoverStore {
         return key(entry.bookKey, entry.coverUrl) {
             // Wait for the local lookup before requesting a remote cover.
             produceState(initialValue = "") {
-                value = withContext(Dispatchers.IO) { localOrRemote(entry) }
+                changes.collect {
+                    value = withContext(Dispatchers.IO) { localOrRemote(entry) }
+                }
             }.value
         }
     }
 
     /** Schedules a throttled, best-effort persistence pass without blocking shelf UI. */
+    @Synchronized
     fun schedulePersist(entries: List<BookshelfEntry>) {
-        scope.launch {
-            val pending = entries.filter { entry ->
-                entry.visible && EsjzoneUrls.coverOrEmpty(entry.coverUrl).isNotBlank() &&
-                    !fileFor(entry).isFile && activeKeys.add(fileName(entry))
-            }
-            if (pending.isEmpty()) return@launch
+        val keys = entries.filter { it.visible }.map { it.bookKey to it.coverUrl }.toSet()
+        if (maintenanceJob?.isActive == true && keys == scheduledKeys) return
+        scheduledKeys = keys
+        maintenanceJob?.cancel()
+        maintenanceJob = scope.launch {
             try {
-                pending.chunked(BATCH_SIZE).forEachIndexed { index, batch ->
-                    coroutineScope {
-                        batch.map { entry ->
-                            async {
-                                downloadSemaphore.withPermit {
-                                    CoverLoadingPolicy.state
-                                        .map { it.allowNetwork("BOOKSHELF") }
-                                        .distinctUntilChanged()
-                                        .transformLatest { allowed ->
-                                            if (allowed) emit(persist(entry))
-                                        }.first()
-                                }
-                            }
-                        }.awaitAll()
-                    }
-                    if (index < pending.lastIndex / BATCH_SIZE) delay(BATCH_COOLDOWN_MILLIS)
+                maintenanceMutex.withLock {
+                    val allEntries = pruneUnused()
+                    // Shrink existing files across accounts before waiting on any network work.
+                    val pending = (entries + allEntries.filter { fileFor(it).isFile })
+                        .filter { it.visible && EsjzoneUrls.coverOrEmpty(it.coverUrl).isNotBlank() }
+                        .distinctBy(::fileName)
+                        .filter { File(directory, fileName(it)).length() <= 0L }
+                    val (local, remote) = pending.partition { fileFor(it).isFile }
+                    persistBatches(local)
+                    pruneUnused()
+                    persistBatches(remote)
+                    pruneUnused()
                 }
-            } finally {
-                pending.forEach { activeKeys.remove(fileName(it)) }
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                AppLogger.w("BookshelfCoverStore", "Unable to maintain shelf covers", error)
             }
         }
     }
 
+    private suspend fun persistBatches(entries: List<BookshelfEntry>) {
+        entries.chunked(BATCH_SIZE).forEachIndexed { index, batch ->
+            coroutineScope {
+                batch.map { entry -> async { downloadSemaphore.withPermit { persist(entry) } } }.awaitAll()
+            }
+            if (index < entries.lastIndex / BATCH_SIZE) delay(BATCH_COOLDOWN_MILLIS)
+        }
+    }
+
+    private suspend fun pruneUnused(): List<BookshelfEntry> {
+        val database = PresentationAccess.database
+        return database.withTransaction {
+            val entries = database.bookshelfDao().getAllVisibleWithCovers()
+            pruneUnused(directory, entries)
+            entries
+        }
+    }
+
+    /** Called with all scopes, never a filtered/current-account shelf. */
+    internal fun pruneUnused(directory: File, entries: List<BookshelfEntry>) {
+        val retained = entries.filter { it.visible }.flatMap { entry ->
+            val thumbnail = fileName(entry)
+            if (File(directory, thumbnail).length() > 0L) listOf(thumbnail)
+            else listOf(thumbnail) + originalFileNames(entry)
+        }.toHashSet()
+        directory.listFiles()?.filter { file ->
+            file.isFile && file.name.endsWith(".img") &&
+                (file.name.startsWith("cover_") || file.name.startsWith("thumb_v1_")) &&
+                file.name !in retained
+        }?.forEach { it.delete() }
+    }
+
     private suspend fun persist(entry: BookshelfEntry) = withContext(Dispatchers.IO) {
-        val target = fileFor(entry)
+        val target = File(directory, fileName(entry))
         if (target.isFile && target.length() > 0L) return@withContext
         val source = EsjzoneUrls.coverOrEmpty(entry.coverUrl)
         if (source.isBlank()) return@withContext
 
         // First use an already-downloaded Coil source.  This avoids duplicate
         // transfers for the covers visible while the shelf is opened.
-        val cached = BookmarkCoverStore.findCoilCachedCover(source)
-        if (cached != null && copyAtomically(cached, target)) return@withContext
+        val existing = fileFor(entry).takeIf { it.isFile && it.length() > 0L }
+        val cached = existing ?: BookmarkCoverStore.findCoilCachedCover(source)
+        if (cached != null && writeThumbnail(cached, target)) return@withContext
 
         // A cold shelf still needs to become fully offline-capable.  Loading via
         // the app-scoped Coil loader keeps this request in the same cache and
         // networking pipeline as normal image rendering.
         try {
-            val request = ImageRequest.Builder(EsjzoneApplication.instance)
-                .data(EsjzoneUrls.resolve(source))
-                .apply {
-                    if (source.toHttpUrlOrNull()?.host?.let(EsjzoneUrls::isEsjHost) == true) {
-                        val key = EsjzoneUrls.canonicalCacheUrl(source)
-                        memoryCacheKey(key)
-                        diskCacheKey(key)
-                    }
-                }
-                .memoryCachePolicy(CachePolicy.ENABLED)
-                .diskCachePolicy(CachePolicy.ENABLED)
-                .networkCachePolicy(CachePolicy.ENABLED)
-                .build()
-            PresentationAccess.imageLoader.execute(request)
-            BookmarkCoverStore.findCoilCachedCover(source)?.let { copyAtomically(it, target) }
+            CoverLoadingPolicy.state
+                .map { it.allowBackgroundNetwork("BOOKSHELF") }
+                .distinctUntilChanged()
+                .transformLatest { allowed ->
+                    if (!allowed) return@transformLatest
+                    val request = ImageRequest.Builder(EsjzoneApplication.instance)
+                        .data(EsjzoneUrls.resolve(source))
+                        .decoderFactory(BlackholeDecoder.Factory())
+                        .apply {
+                            if (source.toHttpUrlOrNull()?.host?.let(EsjzoneUrls::isEsjHost) == true) {
+                                diskCacheKey(EsjzoneUrls.canonicalCacheUrl(source))
+                            }
+                        }
+                        .memoryCachePolicy(CachePolicy.DISABLED)
+                        .diskCachePolicy(CachePolicy.ENABLED)
+                        .networkCachePolicy(CachePolicy.ENABLED)
+                        .build()
+                    PresentationAccess.imageLoader.execute(request)
+                    BookmarkCoverStore.findCoilCachedCover(source)?.let { writeThumbnail(it, target) }
+                    emit(Unit)
+                }.first()
         } catch (error: CancellationException) {
             throw error
         } catch (error: Exception) {
@@ -229,17 +282,17 @@ object BookshelfCoverStore {
         }
     }
 
-    private fun copyAtomically(source: File, target: File): Boolean {
+    private suspend fun writeThumbnail(source: File, target: File): Boolean {
         if (!source.isFile || source.length() <= 0L) return false
-        return runCatching {
-            val temp = File(directory, "${target.name}.tmp")
-            source.copyTo(temp, overwrite = true)
-            if (temp.renameTo(target)) true else {
-                temp.delete()
-                false
-            }
-        }.getOrElse { error ->
-            AppLogger.w("BookshelfCoverStore", "Unable to copy ${target.name}", error)
+        return try {
+            val context = currentCoroutineContext()
+            writeBookshelfThumbnail(source, target) { context.ensureActive() }
+            changes.update { it + 1 }
+            true
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Exception) {
+            AppLogger.w("BookshelfCoverStore", "Unable to prepare shelf cover", error)
             false
         }
     }

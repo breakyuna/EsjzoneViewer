@@ -6,8 +6,33 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.junit.Assert.assertFalse
+import java.io.File
+import java.nio.file.Files
 
 class BookshelfCoverStoreTest {
+
+    @Test
+    fun cleanupRetainsOtherAccountsAndOldFilesUntilThumbnailCommit() {
+        val root = Files.createTempDirectory("shelf-cover-prune-").toFile()
+        try {
+            val removed = BookshelfEntry("account-a", "book-a", url = "/detail/a.html", title = "A",
+                coverUrl = "https://images.example.com/a.jpg", visible = false)
+            val retained = removed.copy(scope = "account-b", visible = true)
+            val original = File(root, BookshelfCoverStore.originalFileNames(retained).first()).apply { writeText("original") }
+            val obsolete = File(root, BookshelfCoverStore.fileName(retained.copy(coverUrl = "https://images.example.com/old.jpg")))
+                .apply { writeText("obsolete") }
+            BookshelfCoverStore.pruneUnused(root, listOf(removed, retained))
+            assertTrue(original.exists())
+            assertFalse(obsolete.exists())
+            val thumbnail = File(root, BookshelfCoverStore.fileName(retained)).apply { writeText("small") }
+            BookshelfCoverStore.pruneUnused(root, listOf(removed, retained))
+            assertFalse(original.exists())
+            assertTrue(thumbnail.exists())
+            BookshelfCoverStore.pruneUnused(root, listOf(removed))
+            assertFalse(thumbnail.exists())
+        } finally { root.deleteRecursively() }
+    }
 
     @Test
     fun canonicalSource_normalizesEsjDomains() {
