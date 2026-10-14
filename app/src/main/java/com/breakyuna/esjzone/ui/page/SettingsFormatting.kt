@@ -7,6 +7,8 @@ data class LocalCacheStats(
     val imageBytes: Long
 )
 
+data class LocalDownloadStats(val novelCount: Int, val bytes: Long)
+
 enum class StorageCategory {
     APPLICATION, DOWNLOADS, CACHE, BACKUPS, READING_RESOURCES, APP_DATA
 }

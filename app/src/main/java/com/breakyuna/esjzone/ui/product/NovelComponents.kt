@@ -33,6 +33,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.breakyuna.esjzone.ui.designsystem.AppCoverImage
+import com.breakyuna.esjzone.novellibrary.novel.CoverState
 import com.breakyuna.esjzone.ui.designsystem.AppShapes
 import com.breakyuna.esjzone.ui.designsystem.AppSpacing
 import com.breakyuna.esjzone.ui.designsystem.AppTheme
@@ -41,12 +42,18 @@ import com.breakyuna.esjzone.ui.designsystem.appAdultColors
 import com.breakyuna.esjzone.ui.designsystem.appStateColors
 
 @Immutable
-data class NovelCoverModel(val model: Any?, val contentDescription: String, val aspectRatio: Float = 0.7f)
+data class NovelCoverModel(
+    val model: Any?,
+    val contentDescription: String,
+    val aspectRatio: Float = 0.7f,
+    val state: CoverState? = null
+)
 
 @Composable
 fun NovelCover(model: NovelCoverModel, modifier: Modifier = Modifier) {
     AppCoverImage(
         model = model.model,
+        sourceState = model.state,
         contentDescription = model.contentDescription,
         modifier = modifier.aspectRatio(model.aspectRatio).clip(AppShapes.standard)
     )

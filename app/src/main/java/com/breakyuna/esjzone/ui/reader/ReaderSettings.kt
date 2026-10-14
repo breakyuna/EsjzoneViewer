@@ -111,6 +111,7 @@ data class ReaderSettings(
     val toolbarTools: List<ReaderTool> = ReaderTool.defaults,
     // -1 follows the system; otherwise this is a reader-only window override.
     val brightness: Float = -1f,
+    val keepScreenOn: Boolean = false,
     val autoResumeLastReading: Boolean = false,
     val leftTapForward: Boolean = false,
     val eyeProtectionEnabled: Boolean = false,

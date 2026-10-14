@@ -15,6 +15,10 @@ import androidx.room.withTransaction
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.key
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.collectAsState
+import com.breakyuna.esjzone.novellibrary.novel.CoverSource
+import com.breakyuna.esjzone.novellibrary.novel.CoverState
 import java.io.File
 import java.security.MessageDigest
 import kotlinx.coroutines.CancellationException
@@ -165,14 +169,18 @@ object BookshelfCoverStore {
 
     /** Resolve each visible cover off the UI thread; keep it stable across recompositions. */
     @Composable
-    fun rememberLocalOrRemote(entry: BookshelfEntry): String {
-        return key(entry.bookKey, entry.coverUrl) {
+    fun rememberCover(entry: BookshelfEntry): CoverSource {
+        val metadata by BookshelfRepository.coverStates.collectAsState()
+        val local = key(entry.scope, entry.bookKey, entry.coverUrl) {
             // Wait for the local lookup before requesting a remote cover.
-            produceState(initialValue = "") {
+            produceState<String?>(initialValue = null) {
                 changes.collect {
                     value = withContext(Dispatchers.IO) { localOrRemote(entry) }
                 }
             }.value
+        }
+        return if (local == null) CoverSource(state = CoverState.Resolving) else {
+            CoverSource.fromUrl(local, metadata[entry.scope to entry.bookKey] ?: CoverState.Unknown)
         }
     }
 

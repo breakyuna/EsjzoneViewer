@@ -16,6 +16,8 @@ import com.breakyuna.esjzone.network.hasCredentials
 import com.breakyuna.esjzone.novellibrary.novel.Novel
 import com.breakyuna.esjzone.novellibrary.novel.CoveredNovel
 import com.breakyuna.esjzone.novellibrary.novel.FavoriteNovel
+import com.breakyuna.esjzone.novellibrary.novel.CoverState
+import com.breakyuna.esjzone.novellibrary.novel.coverFailure
 import com.breakyuna.esjzone.util.AppLogger
 import androidx.room.withTransaction
 import java.util.concurrent.ConcurrentHashMap
@@ -24,6 +26,9 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.withContext
@@ -66,6 +71,8 @@ object BookshelfRepository {
     private val pendingSupplementAuthorizations = mutableMapOf<String, Authorization>()
     private val metadataAttempts = ConcurrentHashMap<String, Long>()
     private val metadataSemaphore = Semaphore(6)
+    private val mutableCoverStates = MutableStateFlow<Map<Pair<String, String>, CoverState>>(emptyMap())
+    val coverStates = mutableCoverStates.asStateFlow()
 
     /** Avoid repeatedly refetching rows with missing metadata. */
     private const val METADATA_RETRY_INTERVAL_MILLIS = 30 * 60 * 1000L
@@ -423,6 +430,9 @@ object BookshelfRepository {
                         batch.forEach { row ->
                             launch {
                                 metadataSemaphore.withPermit {
+                                    val coverKey = row.scope to row.bookKey
+                                    val needsCover = EsjzoneUrls.coverOrEmpty(row.coverUrl).isBlank()
+                                    if (needsCover) mutableCoverStates.update { it + (coverKey to CoverState.Resolving) }
                                     try {
                                         val detail = EsjzoneClient.getNovelDetail(
                                             authorization,
@@ -439,9 +449,18 @@ object BookshelfRepository {
                                             coverUrl = EsjzoneUrls.coverOrEmpty(detail.coverUrl),
                                             isAdult = detail.isAdult
                                         )
+                                        if (needsCover) mutableCoverStates.update {
+                                            if (EsjzoneUrls.coverOrEmpty(detail.coverUrl).isBlank()) {
+                                                it + (coverKey to CoverState.Missing)
+                                            } else it - coverKey
+                                        }
                                     } catch (error: CancellationException) {
+                                        if (needsCover) mutableCoverStates.update { it - coverKey }
                                         throw error
                                     } catch (error: Exception) {
+                                        if (needsCover) mutableCoverStates.update {
+                                            it + (coverKey to CoverState.Failed(error.coverFailure()))
+                                        }
                                         AppLogger.w(
                                             "BookshelfRepository",
                                             "Metadata supplement unavailable for ${row.bookKey}",

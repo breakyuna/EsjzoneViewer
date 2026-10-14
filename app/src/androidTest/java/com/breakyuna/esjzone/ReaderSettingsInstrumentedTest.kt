@@ -19,6 +19,28 @@ import org.junit.runner.RunWith
 class ReaderSettingsInstrumentedTest {
     @get:Rule val composeRule = createComposeRule()
 
+    @Test fun moreTabCanEnableAndDisableKeepScreenOn() {
+        val initial = ReaderSettings()
+        var settings by mutableStateOf(initial)
+        var moreLabel = ""
+        var keepScreenOnLabel = ""
+        composeRule.setContent {
+            moreLabel = globalStringResource(R.string.reader_tab_controls)
+            keepScreenOnLabel = globalStringResource(R.string.reader_keep_screen_on)
+            MaterialTheme {
+                ReaderSettingsSheet(visible = true, settings = settings,
+                    onSettingsChange = { settings = it }, onDismiss = {})
+            }
+        }
+        composeRule.onNodeWithText(moreLabel).performClick()
+        val toggle = composeRule.onNode(isToggleable() and hasAnySibling(hasText(keepScreenOnLabel)))
+        toggle.performScrollTo().assertIsOff().performClick()
+        composeRule.runOnIdle { assertEquals(initial.copy(keepScreenOn = true), settings) }
+        toggle.assertIsOn().performClick()
+        composeRule.runOnIdle { assertEquals(initial, settings) }
+        toggle.assertIsOff()
+    }
+
     @Test fun moreTabCanEnableAndDisableLongPressUnderlining() {
         val initial = ReaderSettings(tapPagingEnabled = false)
         var settings by mutableStateOf(initial)

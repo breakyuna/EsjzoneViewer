@@ -37,6 +37,7 @@ class DataStoreAcceptanceInstrumentedTest {
                 pagedBookmarkGesturesEnabled = false,
                 toolbarTools = listOf(com.breakyuna.esjzone.ui.reader.ReaderTool.BRIGHTNESS, com.breakyuna.esjzone.ui.reader.ReaderTool.CONTENTS),
                 brightness = 0.35f,
+                keepScreenOn = true,
                 leftTapForward = true,
                 eyeProtectionEnabled = true,
                 showSystemStatusBar = true,
@@ -50,6 +51,7 @@ class DataStoreAcceptanceInstrumentedTest {
             assertFalse(first.pagedBookmarkGesturesEnabled)
             assertEquals(listOf(com.breakyuna.esjzone.ui.reader.ReaderTool.BRIGHTNESS, com.breakyuna.esjzone.ui.reader.ReaderTool.CONTENTS), first.toolbarTools)
             assertEquals(0.35f, first.brightness, 0.001f)
+            assertTrue(first.keepScreenOn)
             assertTrue(first.leftTapForward)
             assertTrue(first.eyeProtectionEnabled)
             assertTrue(first.showSystemStatusBar)
@@ -69,6 +71,7 @@ class DataStoreAcceptanceInstrumentedTest {
             assertTrue(reset.pagedBookmarkGesturesEnabled)
             assertEquals(com.breakyuna.esjzone.ui.reader.ReaderTool.defaults, reset.toolbarTools)
             assertEquals(-1f, reset.brightness, 0.001f)
+            assertFalse(reset.keepScreenOn)
             assertFalse(reset.leftTapForward)
         } finally {
             scope.cancel()

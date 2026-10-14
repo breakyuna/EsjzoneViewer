@@ -92,6 +92,7 @@ import com.breakyuna.esjzone.ui.reader.rememberReaderSidePanelsState
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.breakyuna.esjzone.ui.reader.ReaderBackground
 import com.breakyuna.esjzone.ui.reader.ReaderBrightness
+import com.breakyuna.esjzone.ui.reader.ReaderKeepScreenOn
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
@@ -276,6 +277,7 @@ class ChapterPage(
             null
         }
         ReaderBrightness(window, readerSettings.brightness)
+        ReaderKeepScreenOn(window, readerSettings.keepScreenOn)
         val isLightBackground = readerSettings.background.containerColor().luminance() > 0.5f
         val appThemeMode by PresentationAccess.settings.themeMode
         val systemDark = isSystemInDarkTheme()

@@ -45,8 +45,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.breakyuna.esjzone.R
-import com.breakyuna.esjzone.network.EsjzoneUrls
 import com.breakyuna.esjzone.novellibrary.novel.CoveredNovel
+import com.breakyuna.esjzone.novellibrary.novel.CoverSource
+import com.breakyuna.esjzone.novellibrary.novel.CoverState
 import com.breakyuna.esjzone.ui.designsystem.AppContentType
 import com.breakyuna.esjzone.ui.designsystem.AppCoverImage
 import com.breakyuna.esjzone.ui.designsystem.AppLayout
@@ -95,16 +96,18 @@ fun AppNovelCover(
     coverUrl: String,
     title: String,
     modifier: Modifier,
-    isAdult: Boolean = false
+    isAdult: Boolean = false,
+    coverState: CoverState? = null
 ) {
     Box(
         modifier = modifier
             .clip(AppShapes.compact)
             .background(MaterialTheme.colorScheme.surfaceContainerHighest)
     ) {
+        val cover = CoverSource.fromUrl(coverUrl, coverState ?: CoverState.Missing)
         AppCoverImage(
-            model = EsjzoneUrls.coverOrEmpty(coverUrl).takeIf(String::isNotBlank)
-                ?: R.drawable.missing_cover,
+            model = cover.url,
+            sourceState = coverState ?: cover.state,
             contentDescription = title,
             modifier = Modifier.fillMaxSize(),
             contentScale = ContentScale.Crop
@@ -172,6 +175,7 @@ fun AppHomeNovelTile(
     ) {
         AppNovelCover(
             coverUrl = novel.coverUrl,
+            coverState = novel.coverState,
             title = novel.name,
             modifier = Modifier
                 .fillMaxWidth()
@@ -208,6 +212,7 @@ fun AppFeaturedNovelCard(
         ) {
             AppNovelCover(
                 coverUrl = novel.coverUrl,
+                coverState = novel.coverState,
                 title = novel.name,
                 modifier = Modifier.size(AppLayout.featureCoverWidth, AppLayout.featureCoverHeight),
                 isAdult = novel.isAdult
@@ -276,6 +281,7 @@ fun AppNovelListItem(
         ) {
             AppNovelCover(
                 coverUrl = novel.coverUrl,
+                coverState = novel.coverState,
                 title = novel.name,
                 modifier = Modifier.size(coverWidth, coverHeight),
                 isAdult = novel.isAdult
@@ -343,6 +349,7 @@ fun AppNovelPreviewCard(
         ) {
             AppNovelCover(
                 coverUrl = novel.coverUrl,
+                coverState = novel.coverState,
                 title = novel.name,
                 modifier = Modifier.size(coverWidth, coverHeight),
                 isAdult = novel.isAdult

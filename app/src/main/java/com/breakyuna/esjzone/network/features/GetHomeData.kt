@@ -8,6 +8,7 @@ import com.breakyuna.esjzone.network.PageKind
 import com.breakyuna.esjzone.network.cancellablePageRequest
 import com.breakyuna.esjzone.novellibrary.data.HomeData
 import com.breakyuna.esjzone.novellibrary.data.WeeklyPopularNovel
+import com.breakyuna.esjzone.novellibrary.novel.coverFailure
 import com.breakyuna.esjzone.novellibrary.novel.CoveredNovel
 import com.breakyuna.esjzone.novellibrary.novel.NovelDescription
 import com.breakyuna.esjzone.novellibrary.novel.analyseDescription
@@ -163,7 +164,7 @@ suspend fun EsjzoneClient.getHomeData(
     // Publish each completed item immediately, keeping the original ranking order.
     val seedsToEnrich = popularSeeds.filterIndexed { index, _ ->
         val item = initialPopular.getOrNull(index)
-        item == null || item.coverUrl.isBlank()
+        item == null || (item.coverResolved != true && item.coverUrl.isBlank())
     }
 
     var currentPopular = initialPopular
@@ -177,30 +178,29 @@ suspend fun EsjzoneClient.getHomeData(
                     throw error
                 } catch (error: Exception) {
                     AppLogger.w("GetHomeData", "Failed to enrich weekly popular item: ${seed.name}", error)
-                    null
+                    seedToInitialWeeklyPopular(seed).copy(coverFailure = error.coverFailure())
                 }
-                if (enriched != null) {
-                    progressLock.withLock {
-                        val previous = currentPopular.firstOrNull { it.url == seed.url }
-                        currentPopular = currentPopular.map { item ->
-                            if (item.url == seed.url) enriched else item
-                        }
-                        if (previous != null && enriched != previous &&
-                            (enriched.coverUrl.isNotBlank() || enriched.isAdult != previous.isAdult)
-                        ) {
-                            onProgress?.invoke(
-                                HomeData(
-                                    recentlyUpdateTranslatedNovels,
-                                    recentlyUpdateOriginalNovels,
-                                    recentlyUpdateTranslatedR18Novels,
-                                    recentlyUpdateOriginalR18Novels,
-                                    recommendationNovels,
-                                    if (weeklyUpdatesDeferred.isCompleted) weeklyUpdatesDeferred.await()
-                                    else initialWeeklyUpdates,
-                                    currentPopular
-                                )
+                progressLock.withLock {
+                    val previous = currentPopular.firstOrNull { it.url == seed.url }
+                    currentPopular = currentPopular.map { item ->
+                        if (item.url == seed.url) enriched else item
+                    }
+                    if (previous != null && enriched != previous &&
+                        (enriched.coverUrl.isNotBlank() || enriched.isAdult != previous.isAdult ||
+                            enriched.coverState != previous.coverState)
+                    ) {
+                        onProgress?.invoke(
+                            HomeData(
+                                recentlyUpdateTranslatedNovels,
+                                recentlyUpdateOriginalNovels,
+                                recentlyUpdateTranslatedR18Novels,
+                                recentlyUpdateOriginalR18Novels,
+                                recommendationNovels,
+                                if (weeklyUpdatesDeferred.isCompleted) weeklyUpdatesDeferred.await()
+                                else initialWeeklyUpdates,
+                                currentPopular
                             )
-                        }
+                        )
                     }
                 }
             }
@@ -221,6 +221,7 @@ suspend fun EsjzoneClient.getHomeData(
 
 internal fun seedToInitialWeeklyPopular(seed: WeeklyPopularSeed): WeeklyPopularNovel =
     WeeklyPopularNovel(
+        coverResolved = false,
         rank = seed.rank,
         weeklyViews = seed.weeklyViews,
         descriptionPreview = "",
@@ -288,6 +289,7 @@ private fun EsjzoneClient.enrichWeeklyPopular(
         .trim()
 
     return WeeklyPopularNovel(
+        coverResolved = true,
         rank = seed.rank,
         weeklyViews = seed.weeklyViews,
         descriptionPreview = description.preview(100),

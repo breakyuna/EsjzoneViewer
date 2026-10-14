@@ -11,6 +11,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.ContentScale
@@ -23,11 +26,16 @@ import com.breakyuna.esjzone.app.CoverLoadingPolicy
 import com.breakyuna.esjzone.app.LocalCoverPage
 import com.breakyuna.esjzone.app.PresentationAccess
 import com.breakyuna.esjzone.network.EsjzoneUrls
+import com.breakyuna.esjzone.novellibrary.novel.CoverFailure
+import com.breakyuna.esjzone.novellibrary.novel.CoverSource
+import com.breakyuna.esjzone.novellibrary.novel.CoverState
+import com.breakyuna.esjzone.novellibrary.novel.coverFailure
 import coil3.compose.AsyncImage
 import coil3.compose.SubcomposeAsyncImage
 import coil3.ImageLoader
 import coil3.request.CachePolicy
 import coil3.request.ImageRequest
+import coil3.network.HttpException
 import me.saket.telephoto.zoomable.DoubleClickToZoomListener
 import me.saket.telephoto.zoomable.EnabledZoomGestures
 import me.saket.telephoto.zoomable.ZoomableImageState
@@ -52,9 +60,19 @@ fun AppImage(
     alignment: Alignment = Alignment.Center,
     loading: (@Composable () -> Unit)? = null,
     error: (@Composable () -> Unit)? = null,
-    imageLoader: ImageLoader = PresentationAccess.imageLoader
+    imageLoader: ImageLoader = PresentationAccess.imageLoader,
+    onLoading: (() -> Unit)? = null,
+    onSuccess: (() -> Unit)? = null,
+    onError: ((Throwable) -> Unit)? = null,
+    errorResource: Int? = null
 ) {
     val imageRequest = sharedMirrorImageRequest(model)
+    var errorState by remember(imageRequest) { mutableStateOf<CoverState>(CoverState.Missing) }
+    val fallbackResource = errorResource ?: coverFallbackResource(errorState)
+    val handleError: (Throwable) -> Unit = { failure ->
+        errorState = CoverState.Failed(failure.imageFailure())
+        onError?.invoke(failure)
+    }
     if (loading != null || error != null) {
         SubcomposeAsyncImage(
             model = imageRequest,
@@ -64,17 +82,23 @@ fun AppImage(
             contentScale = contentScale,
             alignment = alignment,
             loading = { loading?.invoke() ?: AppImageLoading() },
-            error = { error?.invoke() ?: AppImageError() }
+            error = { error?.invoke() ?: AppImageError() },
+            onLoading = { errorState = CoverState.Missing; onLoading?.invoke() },
+            onSuccess = { onSuccess?.invoke() },
+            onError = { handleError(it.result.throwable) }
         )
     } else {
         AsyncImage(
             model = imageRequest,
             imageLoader = imageLoader,
             contentDescription = contentDescription,
-            error = painterResource(R.drawable.missing_cover),
+            error = painterResource(fallbackResource),
             modifier = modifier,
             contentScale = contentScale,
-            alignment = alignment
+            alignment = alignment,
+            onLoading = { errorState = CoverState.Missing; onLoading?.invoke() },
+            onSuccess = { onSuccess?.invoke() },
+            onError = { handleError(it.result.throwable) }
         )
     }
 }
@@ -87,20 +111,59 @@ fun AppCoverImage(
     modifier: Modifier = Modifier,
     contentScale: ContentScale = ContentScale.Crop,
     loading: (@Composable () -> Unit)? = null,
-    error: (@Composable () -> Unit)? = null
+    error: (@Composable () -> Unit)? = null,
+    sourceState: CoverState? = null,
+    onStateChanged: ((CoverState) -> Unit)? = null
 ) {
     val policy by CoverLoadingPolicy.state.collectAsState()
     val page = LocalCoverPage.current
     val allowed = page.isBlank() || policy.allowNetwork(page)
-    val request = sharedMirrorImageRequest(model, allowed)
+    val source = sourceState ?: when (model) {
+        null -> CoverState.Unknown
+        is String -> CoverSource.fromUrl(model).state
+        else -> CoverState.Loading
+    }
+    val hasImage = source == CoverState.Loading || source == CoverState.Loaded
+    val request = sharedMirrorImageRequest(if (hasImage) model else coverFallbackResource(source), allowed)
+    var imageState by remember(request, source) { mutableStateOf(source) }
+    val state = if (hasImage) imageState else source
+    SideEffect { onStateChanged?.invoke(state) }
     AppImage(
         model = request,
         contentDescription = contentDescription,
         modifier = modifier,
         contentScale = contentScale,
         loading = loading,
-        error = error
+        error = error,
+        onLoading = { if (hasImage) imageState = CoverState.Loading },
+        onSuccess = { if (hasImage) imageState = CoverState.Loaded },
+        onError = { failure ->
+            if (hasImage) imageState = CoverState.Failed(
+                if (allowed) failure.imageFailure() else CoverFailure.UNAVAILABLE
+            )
+        },
+        errorResource = coverFallbackResource(state)
     )
+}
+
+/** Only confirmed network failures use the network-error artwork. */
+private fun coverFallbackResource(state: CoverState): Int = when (state) {
+    is CoverState.Failed -> when (state.reason) {
+        CoverFailure.TIMEOUT, CoverFailure.NETWORK -> R.drawable.cover_network_error
+        CoverFailure.UNAVAILABLE, CoverFailure.OTHER -> R.drawable.cover_missing
+    }
+    else -> R.drawable.cover_missing
+}
+
+/** Coil's HTTP errors are known request failures, unlike generic file/decoder IO errors. */
+private fun Throwable.imageFailure(): CoverFailure {
+    var current: Throwable? = this
+    val seen = mutableSetOf<Throwable>()
+    while (current != null && seen.add(current)) {
+        if (current is HttpException) return CoverFailure.NETWORK
+        current = current.cause
+    }
+    return coverFailure()
 }
 
 /**

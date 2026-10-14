@@ -54,6 +54,10 @@ import com.breakyuna.esjzone.app.PresentationAccess
 import com.breakyuna.esjzone.database.BookmarkCoverStore
 import com.breakyuna.esjzone.database.entity.Bookmark as LocalBookmark
 import com.breakyuna.esjzone.novellibrary.novel.Chapter
+import com.breakyuna.esjzone.novellibrary.novel.CoverSource
+import com.breakyuna.esjzone.novellibrary.novel.CoverState
+import com.breakyuna.esjzone.novellibrary.novel.CoverFailure
+import com.breakyuna.esjzone.novellibrary.novel.coverFailure
 import com.breakyuna.esjzone.ui.component.AppNovelCover
 import com.breakyuna.esjzone.ui.designsystem.AppSpacing
 import com.breakyuna.esjzone.ui.designsystem.AppTypography
@@ -167,7 +171,7 @@ object BookmarksPage : AppDestination {
                         ) { bookmark ->
                             BookmarkCard(
                                 bookmark = bookmark,
-                                coverUrl = model.coverUrlFor(bookmark),
+                                cover = model.coverFor(bookmark),
                                 onOpen = {
                                     if (editing) {
                                         selected = if (bookmark.chapterUrl in selected) selected - bookmark.chapterUrl else selected + bookmark.chapterUrl
@@ -181,7 +185,7 @@ object BookmarksPage : AppDestination {
                                                 history = ChapterStateHolder(chapter),
                                                 novelName = bookmark.novelName,
                                                 novelUrl = "/detail/$cleanId.html",
-                                                novelCoverUrl = model.coverUrlFor(bookmark)
+                                                novelCoverUrl = model.coverFor(bookmark).url
                                             )
                                         )
                                     }
@@ -233,7 +237,7 @@ object BookmarksPage : AppDestination {
 @Composable
 private fun BookmarkCard(
     bookmark: LocalBookmark,
-    coverUrl: String,
+    cover: CoverSource,
     onOpen: () -> Unit,
     onDelete: () -> Unit,
     editing: Boolean,
@@ -251,7 +255,8 @@ private fun BookmarkCard(
         horizontalArrangement = Arrangement.spacedBy(AppSpacing.md)
     ) {
         AppNovelCover(
-            coverUrl = coverUrl,
+            coverUrl = cover.url,
+            coverState = cover.state,
             title = bookmark.novelName.ifBlank { bookmark.novelId },
             modifier = Modifier.size(width = 56.dp, height = 76.dp)
         )
@@ -281,7 +286,7 @@ private class BookmarksPageModel : AppStateViewModel<BookmarksPageModel.State>(S
     }
 
     private var loadStarted = false
-    val resolvedCovers = mutableStateMapOf<String, String>()
+    private val resolvedCovers = mutableStateMapOf<String, CoverSource>()
 
     fun load() {
         if (loadStarted) return
@@ -305,29 +310,28 @@ private class BookmarksPageModel : AppStateViewModel<BookmarksPageModel.State>(S
     private suspend fun ensureCovers(bookmarks: List<LocalBookmark>) {
         for (bookmark in bookmarks) {
             val cleanId = BookmarkCoverStore.cleanNovelId(bookmark.novelId, bookmark.chapterUrl)
-            val uri = BookmarkCoverStore.getCoverUri(bookmark.novelId, bookmark.chapterUrl)
-            if (uri != null) {
-                withContext(Dispatchers.Main) {
-                    resolvedCovers[cleanId] = uri
-                }
-            } else {
-                // If the cover file wasn't created yet, copy from existing Coil cache or download store (0 network)
-                val copied = BookmarkCoverStore.saveCoverFromCacheOrDownload(
-                    novelId = bookmark.novelId,
-                    chapterUrl = bookmark.chapterUrl
-                )
-                if (copied != null) {
-                    withContext(Dispatchers.Main) {
-                        resolvedCovers[cleanId] = copied
-                    }
-                }
+            val cover = try {
+                val uri = BookmarkCoverStore.getCoverUri(bookmark.novelId, bookmark.chapterUrl)
+                    ?: BookmarkCoverStore.saveCoverFromCacheOrDownload(
+                        novelId = bookmark.novelId,
+                        chapterUrl = bookmark.chapterUrl
+                    )
+                // A missing local copy says nothing about the site's actual cover.
+                CoverSource.fromUrl(uri, CoverState.Failed(CoverFailure.UNAVAILABLE))
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                CoverSource(state = CoverState.Failed(error.coverFailure()))
+            }
+            withContext(Dispatchers.Main) {
+                resolvedCovers[cleanId] = cover
             }
         }
     }
 
-    fun coverUrlFor(bookmark: LocalBookmark): String {
+    fun coverFor(bookmark: LocalBookmark): CoverSource {
         val cleanId = BookmarkCoverStore.cleanNovelId(bookmark.novelId, bookmark.chapterUrl)
-        return resolvedCovers[cleanId].orEmpty()
+        return resolvedCovers[cleanId] ?: CoverSource(state = CoverState.Resolving)
     }
 
     fun retry() {

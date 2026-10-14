@@ -201,6 +201,7 @@ internal fun HomeGridNovelTile(
     ) {
         AppNovelCover(
             coverUrl = novel.coverUrl,
+            coverState = novel.coverState,
             title = novel.name,
             isAdult = novel.isAdult,
             modifier = Modifier.fillMaxWidth().aspectRatio(0.7f)

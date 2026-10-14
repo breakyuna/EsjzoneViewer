@@ -74,8 +74,10 @@ fun AppBookshelfRecentReads(
                 val entry = books[rank]
                 key(entry.bookKey) {
                     val rankDescription = stringResource(R.string.bookshelf_recent_rank, rank + 1)
+                    val cover = BookshelfCoverStore.rememberCover(entry)
                     AppNovelCover(
-                        coverUrl = BookshelfCoverStore.rememberLocalOrRemote(entry),
+                        coverUrl = cover.url,
+                        coverState = cover.state,
                         title = entry.title.ifBlank { stringResource(R.string.download_unknown_novel) },
                         modifier = Modifier
                             .shadow(

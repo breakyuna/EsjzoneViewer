@@ -61,6 +61,7 @@ import com.breakyuna.esjzone.ui.designsystem.accountContentWidth
 import com.breakyuna.esjzone.R
 import com.breakyuna.esjzone.app.PresentationAccess
 import com.breakyuna.esjzone.offline.DownloadedNovelSummary
+import com.breakyuna.esjzone.novellibrary.novel.CoverState
 import com.breakyuna.esjzone.ui.component.AppNovelCover
 import com.breakyuna.esjzone.ui.designsystem.AppShapes
 import com.breakyuna.esjzone.ui.designsystem.AppSpacing
@@ -199,11 +200,19 @@ private fun DownloadList(
     onDelete: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val totalBytes = remember(novels) { novels.sumOf { it.storageBytes } }
     LazyColumn(
         modifier = modifier,
         contentPadding = PaddingValues(AppSpacing.lg),
         verticalArrangement = Arrangement.spacedBy(AppSpacing.sm)
     ) {
+        item(key = "download_summary", contentType = "download_summary") {
+            Text(
+                stringResource(R.string.download_total_summary, novels.size, formatStorageSize(totalBytes)),
+                style = AppTypography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
         items(novels, key = { it.novelUrl }, contentType = { "download" }) { summary ->
             DownloadCard(summary, editing, summary.novelUrl in selected, deleting, { onToggle(summary.novelUrl) }, { onDelete(summary.novelUrl) })
         }
@@ -239,6 +248,7 @@ private fun DownloadCard(
         if (editing) Checkbox(checked = selected, onCheckedChange = { onToggle() }, enabled = !deleting)
         AppNovelCover(
             coverUrl = summary.coverUrl,
+            coverState = if (summary.coverUrl.isBlank()) CoverState.Unknown else null,
             title = summary.novelName,
             modifier = Modifier.size(width = 64.dp, height = 88.dp)
         )

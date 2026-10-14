@@ -229,7 +229,7 @@ private fun ProfileHero(profile: UserProfile?, domain: String, loading: Boolean,
             } else if (profile == null) {
                 AccountIconBadge(Icons.Filled.Person)
             } else {
-                AppAvatarImage(EsjzoneUrls.resolve(profile.avatarUrl, EsjzoneUrls.baseForDomain(domain)).takeIf(String::isNotBlank) ?: R.drawable.missing_cover, profile.name, Modifier.size(72.dp).clip(CircleShape), ContentScale.Crop)
+                AppAvatarImage(EsjzoneUrls.resolve(profile.avatarUrl, EsjzoneUrls.baseForDomain(domain)).takeIf(String::isNotBlank) ?: R.drawable.cover_missing, profile.name, Modifier.size(72.dp).clip(CircleShape), ContentScale.Crop)
             }
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(AppSpacing.xs)) {
                 if (profile == null && loading) {

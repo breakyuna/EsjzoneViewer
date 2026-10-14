@@ -90,9 +90,9 @@ class FavoritePageModel(private val authorization: Authorization) :
             else groupDao.move(groupScope, keys.toList(), name)
         }
 
-    /** Hot snapshots prevent an empty Room frame from resetting the restored shelf position. */
-    val entries: StateFlow<List<BookshelfEntry>> = BookshelfRepository.observe(authorization)
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    /** Null until Room delivers its first snapshot; an empty snapshot means an empty shelf. */
+    val entries: StateFlow<List<BookshelfEntry>?> = BookshelfRepository.observe(authorization)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
     /** Latest local activity for the showcase, grid progress labels, and reactive ordering. */
     data class ReadingIndex(

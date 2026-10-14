@@ -90,6 +90,9 @@ import com.breakyuna.esjzone.network.loadFailureKind
 import com.breakyuna.esjzone.novellibrary.novel.Chapter
 import com.breakyuna.esjzone.novellibrary.novel.FavoriteNovel
 import com.breakyuna.esjzone.novellibrary.novel.HistoryNovel
+import com.breakyuna.esjzone.novellibrary.novel.CoverSource
+import com.breakyuna.esjzone.novellibrary.novel.CoverState
+import com.breakyuna.esjzone.novellibrary.novel.coverFailure
 import com.breakyuna.esjzone.ui.component.AppNovelCover
 import com.breakyuna.esjzone.ui.designsystem.AppSpacing
 import com.breakyuna.esjzone.ui.designsystem.AppSyncStatusDot
@@ -545,7 +548,7 @@ private fun LocalHistoryContent(
                     items(rows, key = { it.activityId }, contentType = { "history" }) { activity ->
                         LocalHistoryCard(
                             activity = activity,
-                            coverUrl = model.coverUrlFor(activity),
+                            cover = model.coverFor(activity),
                             onOpen = {
                                 if (editing) {
                                     onToggleSelected(activity.activityId)
@@ -579,14 +582,14 @@ private fun LocalHistoryContent(
 @Composable
 private fun LocalHistoryCard(
     activity: LocalReadingActivity,
-    coverUrl: String,
+    cover: CoverSource,
     onOpen: () -> Unit,
     onLongClick: () -> Unit,
     onCoverNeeded: () -> Unit,
     editing: Boolean,
     selected: Boolean
 ) {
-    if (coverUrl.isBlank()) LaunchedEffect(activity.activityId) { onCoverNeeded() }
+    if (cover.url.isBlank()) LaunchedEffect(activity.activityId) { onCoverNeeded() }
     val progress = ((activity.bookProgress ?: fullBookProgress(activity.chapterIndex, activity.totalChapters, activity.chapterProgress)) * 100).roundToInt()
     val position = if (activity.chapterIndex >= 0 && activity.totalChapters > 0) {
         stringResource(R.string.history_local_position, activity.chapterIndex + 1, activity.totalChapters, progress)
@@ -609,7 +612,8 @@ private fun LocalHistoryCard(
             horizontalArrangement = Arrangement.spacedBy(AppSpacing.md)
         ) {
             AppNovelCover(
-                coverUrl = coverUrl,
+                coverUrl = cover.url,
+                coverState = cover.state,
                 title = activity.novelName,
                 modifier = Modifier.size(width = 96.dp, height = 132.dp)
             )
@@ -870,7 +874,7 @@ class LocalHistoryPageModel(private val authorization: Authorization) : AppState
     private val requestedCovers = mutableSetOf<String>()
     private val coverFailureTimes = mutableMapOf<String, Long>()
     private val coverPermits = Semaphore(2)
-    val resolvedCovers = mutableStateMapOf<String, String>()
+    private val resolvedCovers = mutableStateMapOf<String, CoverSource>()
 
     fun observe() {
         if (observeStarted) return
@@ -908,10 +912,10 @@ class LocalHistoryPageModel(private val authorization: Authorization) : AppState
         }
     }
 
-    fun coverUrlFor(activity: LocalReadingActivity): String {
-        val stored = EsjzoneUrls.coverOrEmpty(activity.novelCoverUrl)
-        if (stored.isNotBlank()) return stored
-        return resolvedCovers[coverKey(coverLookupUrl(activity))].orEmpty()
+    fun coverFor(activity: LocalReadingActivity): CoverSource {
+        val stored = CoverSource.fromUrl(activity.novelCoverUrl, CoverState.Unknown)
+        if (stored.url.isNotBlank()) return stored
+        return resolvedCovers[coverKey(coverLookupUrl(activity))] ?: stored
     }
 
     fun loadCover(activity: LocalReadingActivity) {
@@ -925,16 +929,19 @@ class LocalHistoryPageModel(private val authorization: Authorization) : AppState
             } else requestedCovers.add(key)
         }) return
         viewModelScope.launch(Dispatchers.IO) {
+            withContext(Dispatchers.Main) {
+                resolvedCovers[key] = CoverSource(state = CoverState.Resolving)
+            }
             try {
                 val cover = coverPermits.withPermit {
                     EsjzoneUrls.coverOrEmpty(PresentationAccess.client.getNovelDetail(
                         authorization, FavoriteNovel(activity.novelName, target)
                     ).coverUrl)
                 }
+                withContext(Dispatchers.Main) {
+                    resolvedCovers[key] = CoverSource.fromUrl(cover)
+                }
                 if (cover.isNotBlank()) {
-                    withContext(Dispatchers.Main) {
-                        resolvedCovers[key] = cover
-                    }
                     runCatching { PresentationAccess.database.localReadingActivityDao().updateCover(activity.activityId, cover) }
                 } else synchronized(coverLock) {
                     requestedCovers.remove(key)
@@ -947,6 +954,9 @@ class LocalHistoryPageModel(private val authorization: Authorization) : AppState
                 synchronized(coverLock) {
                     requestedCovers.remove(key)
                     coverFailureTimes[key] = System.currentTimeMillis()
+                }
+                withContext(Dispatchers.Main) {
+                    resolvedCovers[key] = CoverSource(state = CoverState.Failed(e.coverFailure()))
                 }
                 AppLogger.w("LocalHistoryPageModel", "Failed to recover local history cover", e)
             }

@@ -13,6 +13,8 @@ interface Novel : Serializable {
 @Immutable
 interface CoveredNovel : Novel {
     val coverUrl: String
+    val coverState: CoverState
+        get() = CoverSource.fromUrl(coverUrl).state
     val views: Int
     val likes: Int
     val isAdult: Boolean

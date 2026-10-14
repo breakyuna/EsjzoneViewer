@@ -387,7 +387,7 @@
     <string name="settings_reader_section">阅读设置</string>
     <string name="settings_navigation_section">导航与启动</string>
     <string name="settings_navigation_description">单击导航项设为默认启动页；长按拖动调整底部导航栏顺序。</string>
-    <string name="settings_navigation_reset">恢复默认顺序</string>
+    <string name="settings_navigation_reset">恢复默认</string>
     <string name="settings_startup_page_title">启动默认页</string>
     <string name="settings_startup_page_description">选择应用打开并加载完成后默认进入的页面。</string>
     <string name="settings_startup_follow_nav">跟随导航栏首项</string>
@@ -681,6 +681,7 @@
     <string name="reader_show_system_navigation">显示系统导航栏</string>
     <string name="reader_show_chapter_name">显示章节名</string>
     <string name="reader_show_time_battery">显示时间电量</string>
+    <string name="reader_keep_screen_on">保持亮屏</string>
     <string name="reader_reset_confirmation">将全部阅读设置恢复为默认值？</string>
 
     <string name="local_backup">备份与恢复</string>
@@ -707,7 +708,7 @@
     <string name="open_source_licenses">开源许可</string>
     <string name="settings_general_section">General</string>
     <string name="settings_preferences_section">Preferences</string>
-    <string name="settings_reading_download_section">Reading and downloads</string>
+    <string name="settings_reading_section">阅读设置</string>
     <string name="reading_stats_bar_chart">柱状图</string>
     <string name="reading_stats_line_chart">折线图</string>
     <string name="settings_language_system_short">系统</string>

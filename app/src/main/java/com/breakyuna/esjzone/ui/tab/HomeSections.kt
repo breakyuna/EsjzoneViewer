@@ -193,6 +193,7 @@ private fun WeeklyPopularCard(
             ) {
                 AppNovelCover(
                     coverUrl = novel.coverUrl,
+                    coverState = novel.coverState,
                     title = novel.name,
                     modifier = Modifier.fillMaxSize(),
                     isAdult = novel.isAdult

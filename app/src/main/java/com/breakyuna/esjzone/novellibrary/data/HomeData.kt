@@ -2,6 +2,9 @@ package com.breakyuna.esjzone.novellibrary.data
 
 import androidx.compose.runtime.Immutable
 import com.breakyuna.esjzone.novellibrary.novel.CoveredNovel
+import com.breakyuna.esjzone.novellibrary.novel.CoverFailure
+import com.breakyuna.esjzone.novellibrary.novel.CoverSource
+import com.breakyuna.esjzone.novellibrary.novel.CoverState
 import com.google.gson.annotations.SerializedName
 import java.io.Serializable
 
@@ -41,5 +44,17 @@ data class WeeklyPopularNovel(
     @SerializedName("isAdult")
     override val isAdult: Boolean = false,
     @SerializedName("author")
-    override val author: String? = null
-) : CoveredNovel, Serializable
+    override val author: String? = null,
+    @SerializedName("coverResolved")
+    val coverResolved: Boolean? = null,
+    @SerializedName("coverFailure")
+    val coverFailure: CoverFailure? = null
+) : CoveredNovel, Serializable {
+    override val coverState: CoverState
+        get() = CoverSource.fromUrl(coverUrl, when {
+            coverFailure != null -> CoverState.Failed(coverFailure)
+            coverResolved == true -> CoverState.Missing
+            coverResolved == false -> CoverState.Resolving
+            else -> CoverState.Unknown
+        }).state
+}

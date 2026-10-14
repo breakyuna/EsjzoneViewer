@@ -110,6 +110,7 @@ import com.breakyuna.esjzone.ui.navigation.BooleanStateHolder
 import com.breakyuna.esjzone.ui.navigation.LocalBaseNavigator
 import com.breakyuna.esjzone.ui.navigation.rememberAppViewModel
 import com.breakyuna.esjzone.ui.product.EmptyState
+import com.breakyuna.esjzone.ui.product.LoadingSkeleton
 import com.breakyuna.esjzone.ui.product.OfflineState
 import kotlin.math.roundToInt
 
@@ -140,7 +141,8 @@ object FavoritePage : AppDestination {
         val focusManager = LocalFocusManager.current
         val authorization = LocalAuthorization.current
         val model = rememberAppViewModel { FavoritePageModel(authorization) }
-        val entries by model.entries.collectAsStateWithLifecycle()
+        val shelfEntries by model.entries.collectAsStateWithLifecycle()
+        val entries = shelfEntries.orEmpty()
         val groups by model.groups.collectAsStateWithLifecycle()
         val members by model.groupMembers.collectAsStateWithLifecycle()
         var activeGroup by rememberSaveable { mutableStateOf<String?>(null) }
@@ -613,7 +615,9 @@ object FavoritePage : AppDestination {
                     }
                     if (shown.isEmpty()) {
                         item(key = "bookshelf_empty", contentType = "bookshelf_empty") {
-                            if (syncState is FavoritePageModel.State.Failed && entries.isEmpty()) {
+                            if (shelfEntries == null) {
+                                LoadingSkeleton()
+                            } else if (syncState is FavoritePageModel.State.Failed && entries.isEmpty()) {
                                 OfflineState(
                                     title = stringResource(R.string.bookshelf_sync_failed),
                                     message = stringResource(R.string.bookshelf_sync_failed),
@@ -881,8 +885,10 @@ private fun ShelfCard(
                 onLongClick = onLongClick
             )
         ) {
+            val cover = BookshelfCoverStore.rememberCover(entry)
             AppNovelCover(
-                coverUrl = BookshelfCoverStore.rememberLocalOrRemote(entry),
+                coverUrl = cover.url,
+                coverState = cover.state,
                 title = entry.title,
                 modifier = Modifier.fillMaxSize().clip(shape)
             )
@@ -968,10 +974,12 @@ private fun ShelfListItem(
                 onLongClick = onLongClick
             )
         ) {
+            val cover = BookshelfCoverStore.rememberCover(entry)
             AppNovelCover(
-                BookshelfCoverStore.rememberLocalOrRemote(entry),
-                entry.title,
-                Modifier.fillMaxSize().clip(AppShapes.compact)
+                coverUrl = cover.url,
+                title = entry.title,
+                modifier = Modifier.fillMaxSize().clip(AppShapes.compact),
+                coverState = cover.state
             )
             if (editing) Surface(
                 modifier = Modifier.align(Alignment.TopStart).padding(AppSpacing.xs),

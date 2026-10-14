@@ -206,6 +206,7 @@ internal fun ReaderSettingsSheet(
                         ReaderToggle(stringResource(R.string.reader_show_system_navigation), draft.showSystemNavigationBar) { commit(draft.copy(showSystemNavigationBar = it)) }
                         ReaderToggle(stringResource(R.string.reader_show_chapter_name), draft.showChapterName) { commit(draft.copy(showChapterName = it)) }
                         ReaderToggle(stringResource(R.string.reader_show_time_battery), draft.showTimeBattery) { commit(draft.copy(showTimeBattery = it)) }
+                        ReaderToggle(stringResource(R.string.reader_keep_screen_on), draft.keepScreenOn) { commit(draft.copy(keepScreenOn = it)) }
                         ReaderToggle(stringResource(R.string.settings_auto_resume_reading), draft.autoResumeLastReading) { commit(draft.copy(autoResumeLastReading = it)) }
                         HorizontalDivider(Modifier.padding(vertical = 8.dp))
                         ReaderToggle(stringResource(R.string.reader_long_press_underline), draft.longPressUnderline) { commit(draft.copy(longPressUnderline = it)) }

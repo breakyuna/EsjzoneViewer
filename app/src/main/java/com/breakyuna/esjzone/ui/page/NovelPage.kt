@@ -946,9 +946,9 @@ private fun RebuiltNovelHero(novel: DetailedNovel, metrics: AppAdaptiveMetrics) 
             id = novel.id().ifBlank { novel.url },
             title = novel.name,
             cover = NovelCoverModel(
-                model = coverUrl.takeIf(String::isNotBlank)
-                    ?: R.drawable.missing_cover,
-                contentDescription = novel.name
+                model = coverUrl,
+                contentDescription = novel.name,
+                state = novel.coverState
             ),
             metadata = NovelMetadataModel(
                 author = novel.author.trim().takeIf(String::isNotBlank),

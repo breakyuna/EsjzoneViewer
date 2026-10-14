@@ -109,7 +109,8 @@ class ReaderSettingsDataStore(
                 SCROLL_SIDE_GESTURES,
                 PAGED_BOOKMARK_GESTURES,
                 TOOLBAR_TOOLS,
-                BRIGHTNESS
+                BRIGHTNESS,
+                KEEP_SCREEN_ON
             ).any { current.contains(it) }
             if (!hasCurrentSettings) {
                 dataStore.edit { preferences ->
@@ -158,6 +159,7 @@ class ReaderSettingsDataStore(
             pagedBookmarkGesturesEnabled = this[PAGED_BOOKMARK_GESTURES] ?: defaults.pagedBookmarkGesturesEnabled,
             toolbarTools = ReaderTool.decode(this[TOOLBAR_TOOLS]),
             brightness = this[BRIGHTNESS].safeBrightness(),
+            keepScreenOn = this[KEEP_SCREEN_ON] ?: defaults.keepScreenOn,
             autoResumeLastReading = this[AUTO_RESUME_LAST_READING] ?: defaults.autoResumeLastReading,
             leftTapForward = this[LEFT_TAP_FORWARD] ?: defaults.leftTapForward,
             eyeProtectionEnabled = this[EYE_PROTECTION] ?: defaults.eyeProtectionEnabled,
@@ -197,6 +199,7 @@ class ReaderSettingsDataStore(
         preferences[PAGED_BOOKMARK_GESTURES] = pagedBookmarkGesturesEnabled
         preferences[TOOLBAR_TOOLS] = toolbarTools.joinToString(",") { it.name }
         preferences[BRIGHTNESS] = brightness
+        preferences[KEEP_SCREEN_ON] = keepScreenOn
         preferences[AUTO_RESUME_LAST_READING] = autoResumeLastReading
         preferences[LEFT_TAP_FORWARD] = leftTapForward
         preferences[EYE_PROTECTION] = eyeProtectionEnabled
@@ -257,6 +260,7 @@ class ReaderSettingsDataStore(
         val PAGED_BOOKMARK_GESTURES = booleanPreferencesKey("paged_bookmark_gestures")
         val TOOLBAR_TOOLS = stringPreferencesKey("toolbar_tools")
         val BRIGHTNESS = floatPreferencesKey("brightness")
+        val KEEP_SCREEN_ON = booleanPreferencesKey("keep_screen_on")
         val VOLUME_KEY_PAGING = booleanPreferencesKey("volume_key_paging")
         val AUTO_RESUME_LAST_READING = booleanPreferencesKey("auto_resume_last_reading")
         val LEFT_TAP_FORWARD = booleanPreferencesKey("left_tap_forward")

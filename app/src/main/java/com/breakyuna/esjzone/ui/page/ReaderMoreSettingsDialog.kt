@@ -80,6 +80,9 @@ internal fun ReaderMoreSettingsContent(
         }
     }
     SettingsSection(title = stringResource(R.string.reader_more_display)) {
+        MoreReaderToggle(stringResource(R.string.reader_keep_screen_on), draft.keepScreenOn) {
+            commit(draft.copy(keepScreenOn = it))
+        }
         MoreReaderToggle(stringResource(R.string.reader_eye_protection), draft.eyeProtectionEnabled) {
             commit(draft.copy(eyeProtectionEnabled = it))
         }

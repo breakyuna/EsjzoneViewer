@@ -22,6 +22,8 @@ class SettingsPageModel : AppStateViewModel<SettingsPageModel.State>(State()) {
         val cacheStats: LocalCacheStats? = null,
         val cacheOperation: CacheOperation? = null,
         val cacheStatsError: Boolean = false,
+        val downloadStats: LocalDownloadStats? = null,
+        val downloadStatsError: Boolean = false,
         val storageUsage: List<StorageUsage>? = null,
         val storageStatsError: Boolean = false,
         val cacheClearError: Boolean = false,
@@ -70,8 +72,22 @@ class SettingsPageModel : AppStateViewModel<SettingsPageModel.State>(State()) {
     }
 
     fun refreshCacheStats() {
-        mutableState.value = mutableState.value.copy(cacheStatsError = false, storageStatsError = false)
+        mutableState.value = mutableState.value.copy(
+            cacheStatsError = false, downloadStatsError = false, storageStatsError = false
+        )
         viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val novels = PresentationAccess.downloads.listDownloadedNovels()
+                mutableState.value = mutableState.value.copy(
+                    downloadStats = LocalDownloadStats(novels.size, novels.sumOf { it.storageBytes }),
+                    downloadStatsError = false
+                )
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                AppLogger.e("SettingsPageModel", "Failed to calculate download statistics", e)
+                mutableState.value = mutableState.value.copy(downloadStatsError = true)
+            }
             try {
                 val pageStats = PresentationAccess.client.pageCacheStats()
                 val imageBytes = PresentationAccess.imageCacheSizeBytes()

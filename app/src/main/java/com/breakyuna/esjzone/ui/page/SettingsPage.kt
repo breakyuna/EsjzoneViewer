@@ -64,6 +64,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableFloatStateOf
@@ -98,6 +99,7 @@ import com.breakyuna.esjzone.app.PresentationAccess
 import com.breakyuna.esjzone.network.LocalAuthorization
 import com.breakyuna.esjzone.network.hasCredentials
 import com.breakyuna.esjzone.database.BookshelfRepository
+import com.breakyuna.esjzone.data.settings.SettingsDefaults
 import com.breakyuna.esjzone.network.features.CommunitySyncManager
 import com.breakyuna.esjzone.ui.navigation.AppDestination
 import com.breakyuna.esjzone.ui.navigation.LocalAppNavigator
@@ -144,7 +146,7 @@ object SettingsPage : AppDestination {
         BackHandler(enabled = section != "MAIN") { section = "MAIN" }
         val pageTitle = stringResource(when (section) {
             "NAVIGATION" -> R.string.settings_navigation_section
-            "READING" -> R.string.settings_reading_download_section
+            "READING" -> R.string.settings_reading_section
             "STORAGE" -> R.string.settings_storage_section
             "ABOUT" -> R.string.about
             else -> R.string.settings_screen_title
@@ -159,8 +161,9 @@ object SettingsPage : AppDestination {
         LaunchedEffect(Unit) {
             ReleaseUpdateChecker.initialize(context)
         }
-        LaunchedEffect(section) {
+        LifecycleResumeEffect(section) {
             if (section == "STORAGE") model.refreshCacheStats()
+            onPauseOrDispose { }
         }
         LaunchedEffect(state.logoutCompleted) { if (state.logoutCompleted) rootNavigator?.replaceAll(LoginScreen) }
 
@@ -281,7 +284,7 @@ object SettingsPage : AppDestination {
                     }
                     SettingsSection(title = stringResource(R.string.settings_preferences_section)) {
                         LinkRow(Icons.Filled.Reorder, stringResource(R.string.settings_navigation_section)) { section = "NAVIGATION" }
-                        LinkRow(Icons.Filled.MenuBook, stringResource(R.string.settings_reading_download_section)) { section = "READING" }
+                        LinkRow(Icons.Filled.MenuBook, stringResource(R.string.settings_reading_section)) { section = "READING" }
                         LinkRow(Icons.Filled.Storage, stringResource(R.string.settings_storage_section)) { section = "STORAGE" }
                     }
                     SettingsSection(title = stringResource(R.string.settings_diagnostics_section)) {
@@ -416,13 +419,14 @@ object SettingsPage : AppDestination {
                             TextButton(
                                 onClick = {
                                     PresentationAccess.settings.setNavigationOrder(
-                                        com.breakyuna.esjzone.data.settings.SettingsDefaults.NAVIGATION_ORDER
+                                        SettingsDefaults.NAVIGATION_ORDER
                                     )
-                                    editableNavigationOrder =
-                                        com.breakyuna.esjzone.data.settings.SettingsDefaults.NAVIGATION_ORDER
+                                    PresentationAccess.settings.setStartTab(SettingsDefaults.DEFAULT_START_TAB)
+                                    editableNavigationOrder = SettingsDefaults.NAVIGATION_ORDER
                                     draggingNavigationItem = null
                                 },
-                                enabled = editableNavigationOrder != com.breakyuna.esjzone.data.settings.SettingsDefaults.NAVIGATION_ORDER
+                                enabled = editableNavigationOrder != SettingsDefaults.NAVIGATION_ORDER ||
+                                    startTab != SettingsDefaults.DEFAULT_START_TAB
                             ) {
                                 Icon(Icons.Filled.RestartAlt, contentDescription = null)
                                 Text(stringResource(R.string.settings_navigation_reset), modifier = Modifier.padding(start = 8.dp))
@@ -435,7 +439,31 @@ object SettingsPage : AppDestination {
                     }
                     if (displayedSection == "READING") {
                         ReaderMoreSettingsContent(readerSettings, PresentationAccess.readerSettings::saveDebounced)
+                    }
+                    if (displayedSection == "STORAGE") {
+                        SettingsSection {
+                            CacheStorageChart(state.storageUsage, state.storageStatsError)
+                            if (state.storageStatsError) {
+                                TextButton(onClick = model::refreshCacheStats) { Text(stringResource(R.string.retry)) }
+                            }
+                        }
                         SettingsSection(title = stringResource(R.string.settings_download_section)) {
+                            val downloads = state.downloadStats
+                            LinkRow(
+                                Icons.Filled.Download,
+                                stringResource(R.string.download_library),
+                                subtitle = when {
+                                    state.downloadStatsError -> stringResource(R.string.storage_usage_failed)
+                                    downloads == null -> stringResource(R.string.storage_usage_loading)
+                                    else -> stringResource(R.string.download_total_summary, downloads.novelCount, formatBytes(downloads.bytes))
+                                }
+                            ) {
+                                navigator?.pushIfNotCurrent(DownloadPage)
+                            }
+                            if (state.downloadStatsError) {
+                                TextButton(onClick = model::refreshCacheStats) { Text(stringResource(R.string.retry)) }
+                            }
+                            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = .45f))
                             ToggleRow(
                                 stringResource(R.string.download_auto_save),
                                 autoSave
@@ -494,14 +522,6 @@ object SettingsPage : AppDestination {
                             }
                         }
 
-                    }
-                    if (displayedSection == "STORAGE") {
-                        SettingsSection {
-                            CacheStorageChart(state.storageUsage, state.storageStatsError)
-                            if (state.storageStatsError) {
-                                TextButton(onClick = model::refreshCacheStats) { Text(stringResource(R.string.retry)) }
-                            }
-                        }
                         SettingsSection {
                             LinkRow(Icons.Filled.Download, stringResource(R.string.local_backup)) {
                                 navigator?.pushIfNotCurrent(LocalBackupPage)
