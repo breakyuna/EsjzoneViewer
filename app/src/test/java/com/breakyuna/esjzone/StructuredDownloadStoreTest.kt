@@ -250,9 +250,10 @@ class StructuredDownloadStoreTest {
         try {
             val order = listOf(chapter(1), chapter(2))
             save(1, order)
+            NovelDownloadStore.initializeDirectory(root)
             assertNull(NovelDownloadStore.readChapter(chapter(2).url))
             val scans = root.scans
-            assertEquals(1, scans)
+            assertEquals(0, scans)
             val committed = save(2, order)
             assertSame(committed, NovelDownloadStore.manifest(novelUrl))
             assertNotNull(NovelDownloadStore.readChapter(chapter(2).url))
@@ -382,6 +383,65 @@ class StructuredDownloadStoreTest {
             assertEquals(2, count)
             assertTrue(backup.listFiles()!!.isEmpty())
         } finally { executor.shutdownNow(); backup.deleteRecursively() }
+    }
+
+    @Test
+    fun externalChapterUsesItsParentAfterRestartWithoutScanningOtherNovels() {
+        val root = CountingDirectory(Files.createTempDirectory("external-parent-").toFile())
+        NovelDownloadStore.initializeDirectory(root)
+        try {
+            val external = Chapter("External", "https://www.wenku8.net/novel/1/1000/2000.htm", false)
+            NovelDownloadStore.saveChapter("Novel", novelUrl, "", listOf(external), external,
+                DetailedChapter("External", listOf(TextComponent("离线正文")), null, null), auth)
+            NovelDownloadStore.initializeDirectory(root)
+            val read = requireNotNull(NovelDownloadStore.readChapter(external.url, novelUrl))
+            assertEquals("离线正文", read.toReaderDocument(external).blocks.single().sourceText())
+            assertNull(NovelDownloadStore.readChapter(external.url.replace("2000.htm", "2001.htm"), novelUrl))
+            assertEquals(0, root.scans)
+            // Callers without a parent still find externally hosted chapters through the full index.
+            NovelDownloadStore.initializeDirectory(root)
+            assertNotNull(NovelDownloadStore.readChapter(external.url))
+            assertEquals(1, root.scans)
+        } finally { root.deleteRecursively() }
+    }
+
+    @Test
+    fun shelfMembershipSkipsSizeWalkAndInventoryAllowsConcurrentReading() {
+        val rootFile = Files.createTempDirectory("inventory-reading-").toFile()
+        val executor = Executors.newSingleThreadExecutor()
+        var sizeWalks = 0
+        val root = object : File(rootFile.path) {
+            override fun listFiles(): Array<File>? = super.listFiles()?.map { file ->
+                object : File(file.path) {
+                    override fun listFiles(): Array<File>? {
+                        sizeWalks++
+                        // A size traversal holding ioLock would deadlock this independent reader.
+                        assertNotNull(executor.submit<DetailedChapter?> {
+                            NovelDownloadStore.readChapter(chapter(1).url)
+                        }.get(5, TimeUnit.SECONDS))
+                        return super.listFiles()
+                    }
+                }
+            }?.toTypedArray()
+        }
+        NovelDownloadStore.initializeDirectory(root)
+        try {
+            save(1, listOf(chapter(1), chapter(2)))
+            assertEquals(setOf(novelUrl), NovelDownloadStore.downloadedNovelUrls())
+            assertEquals(0, sizeWalks)
+            val inventory = NovelDownloadStore.listDownloadedNovels()
+            assertTrue(sizeWalks > 0)
+            assertEquals(1, inventory.single().downloadedChapterCount)
+            assertEquals(rootFile.walkTopDown().filter(File::isFile).sumOf(File::length),
+                inventory.single().storageBytes)
+            save(2, listOf(chapter(1), chapter(2)))
+            val updated = NovelDownloadStore.listDownloadedNovels().single()
+            assertEquals(2, updated.downloadedChapterCount)
+            assertEquals(rootFile.walkTopDown().filter(File::isFile).sumOf(File::length), updated.storageBytes)
+            assertTrue(NovelDownloadStore.delete(novelUrl))
+            assertTrue(NovelDownloadStore.downloadedNovelUrls().isEmpty())
+            assertTrue(NovelDownloadStore.listDownloadedNovels().isEmpty())
+        } finally { executor.shutdownNow(); rootFile.deleteRecursively() }
     }
 
     private class CountingDirectory(file: File) : File(file.path) {

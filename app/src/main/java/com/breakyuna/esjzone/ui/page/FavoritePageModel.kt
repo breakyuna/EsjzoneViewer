@@ -157,10 +157,10 @@ class FavoritePageModel(private val authorization: Authorization) :
         if (isRefreshingDownloaded.getAndSet(true)) return
         viewModelScope.launch(Dispatchers.IO) {
             try {
-                _downloadedBookKeys.value = PresentationAccess.downloads.listDownloadedNovels()
-                    .mapTo(LinkedHashSet()) { summary ->
-                        BookshelfRepository.keyFor(summary.novelUrl)
-                            .ifBlank { EsjzoneUrls.canonicalPageKey(summary.novelUrl) }
+                _downloadedBookKeys.value = PresentationAccess.downloads.downloadedNovelUrls()
+                    .mapTo(LinkedHashSet()) { url ->
+                        BookshelfRepository.keyFor(url)
+                            .ifBlank { EsjzoneUrls.canonicalPageKey(url) }
                     }
             } finally {
                 isRefreshingDownloaded.set(false)

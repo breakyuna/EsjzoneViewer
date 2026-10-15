@@ -12,6 +12,30 @@ import org.junit.Test
 
 class PageCacheStorageTest {
     @Test
+    fun startupCleansLegacyFilesAndCountsCurrentCacheInOnePass() {
+        val directory = Files.createTempDirectory("startup-cache-scan-").toFile()
+        PageCache.initializeDirectory(directory)
+        try {
+            assertTrue(PageCache.write("fixture", "cached body"))
+            val currentSize = PageCache.stats().sizeBytes
+            val legacy = java.io.File(directory, "esj-page-v2-legacy.html").apply { writeText("old") }
+            var scans = 0
+            val countedDirectory = object : java.io.File(directory.path) {
+                override fun listFiles(): Array<java.io.File>? {
+                    scans++
+                    return super.listFiles()
+                }
+            }
+            PageCache.initializeDirectory(countedDirectory)
+            assertEquals(1, scans)
+            assertFalse(legacy.exists())
+            assertEquals(1, PageCache.stats().entryCount)
+            assertEquals(currentSize, PageCache.stats().sizeBytes)
+            assertEquals("cached body", PageCache.readStale("fixture"))
+        } finally { directory.deleteRecursively() }
+    }
+
+    @Test
     fun compressedCachePreservesTextAndCountsPhysicalBytes() {
         val directory = Files.createTempDirectory("page-storage-").toFile()
         PageCache.initializeDirectory(directory)

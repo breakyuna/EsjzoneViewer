@@ -54,6 +54,9 @@ class ChapterPageModel(
     private val novelCoverUrl: String = ""
 ) : AppStateViewModel<ChapterPageModel.State>(State.Loading) {
 
+    private val downloadNovelUrl = novelUrl.takeIf(String::isNotBlank)
+        ?: novelId.takeIf(String::isNotBlank)?.let { "/detail/$it.html" }
+
     override fun onCleared() {
         com.breakyuna.esjzone.network.EsjzoneClient.closeWenkuBrowserSession()
         super.onCleared()
@@ -578,14 +581,14 @@ class ChapterPageModel(
                 PresentationAccess.client.getChapterDetail(authorization, chapter,
                     onSecurityCheck = if (showSecurityCheck) {
                         { mutableState.value = State.SecurityCheck }
-                    } else null)
+                    } else null, novelUrl = downloadNovelUrl)
             }
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
             if (e.loadFailureKind() == LoadFailureKind.NETWORK) {
                 val downloaded = runCatching {
-                    PresentationAccess.downloads.readChapter(chapter.url)
+                    PresentationAccess.downloads.readChapter(chapter.url, downloadNovelUrl)
                 }.getOrNull()
                 if (downloaded != null) {
                     synchronized(lock) { offlineChapterKeys += key }
@@ -648,7 +651,9 @@ class ChapterPageModel(
             }
             prefetchJobs[key] = viewModelScope.launch(Dispatchers.IO) {
                 val detail = try {
-                    cancellablePageRequest { PresentationAccess.client.getChapterDetail(authorization, chapter) }
+                    cancellablePageRequest {
+                        PresentationAccess.client.getChapterDetail(authorization, chapter, novelUrl = downloadNovelUrl)
+                    }
                 } catch (e: CancellationException) {
                     synchronized(lock) {
                         prefetchJobs.remove(key)

@@ -117,19 +117,26 @@ internal object PageCache {
             ?.forEach { runCatching { it.delete() } }
     }
 
-    internal fun initializeDirectory(cacheDirectory: File) {
+    internal fun initializeDirectory(cacheDirectory: File): Unit = synchronized(ioLock) {
         if (cacheDirectory.isDirectory || cacheDirectory.mkdirs()) {
             cancelPendingWrites()
             directory = cacheDirectory
             // v3 replaces cookie-derived cache keys with a stable session namespace.
             // Remove older snapshots once so they cannot remain as unreachable files.
-            cacheDirectory.listFiles()
-                ?.filter {
-                    it.isFile && it.name.startsWith("esj-page-") &&
-                        !it.name.startsWith(FILE_PREFIX)
+            // Count current entries during migration cleanup instead of enumerating the directory twice.
+            cachedSizeBytes = 0L
+            cachedEntryCount = 0
+            cacheDirectory.listFiles().orEmpty().forEach { file ->
+                if (file.isFile && file.name.startsWith("esj-page-")) {
+                    if (file.name.startsWith(FILE_PREFIX)) {
+                        cachedSizeBytes += file.length()
+                        cachedEntryCount += 1
+                    } else {
+                        runCatching { file.delete() }
+                    }
                 }
-                ?.forEach { runCatching { it.delete() } }
-            refreshStats(cacheDirectory)
+            }
+            if (cachedSizeBytes > MAX_CACHE_BYTES) trimToSize()
         }
     }
 
@@ -300,16 +307,6 @@ internal object PageCache {
         cachedEntryCount = count.coerceAtLeast(0)
     }
 
-    private fun refreshStats(cacheDirectory: File) {
-        synchronized(ioLock) {
-            val files = cacheDirectory.listFiles()
-                ?.filter { it.isFile && it.name.startsWith(FILE_PREFIX) }
-                .orEmpty()
-            cachedSizeBytes = files.sumOf { it.length() }
-            cachedEntryCount = files.size
-            if (cachedSizeBytes > MAX_CACHE_BYTES) trimToSize()
-        }
-    }
 }
 
 data class PageCacheStats(

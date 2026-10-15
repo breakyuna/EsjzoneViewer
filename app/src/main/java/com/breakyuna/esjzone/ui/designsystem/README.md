@@ -13,8 +13,7 @@ This package is the only presentation entry point for the rebuilt visual system.
   loader owned by `AppContainer`, so covers, avatars, reader images, and downloaded covers share
   the same memory/disk cache.
 - `AppCoverImage.sourceState` preserves unknown, resolving, and confirmed missing metadata;
-  actual image callbacks report loading, loaded, or a categorized failure through
-  `onStateChanged`. `coverFallbackResource()` uses `cover_network_error.jpg` only for confirmed
+  actual image callbacks track loading, loaded, or a categorized failure internally. `coverFallbackResource()` uses `cover_network_error.jpg` only for confirmed
   network failures (including timeouts and HTTP errors); all other fallback states use
   `cover_missing.jpg`. Avatars, description images, and reader images use the same error policy.
   A successfully loaded fallback never marks the actual cover loaded.

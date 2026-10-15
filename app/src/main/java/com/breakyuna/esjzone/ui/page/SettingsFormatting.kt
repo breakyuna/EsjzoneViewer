@@ -19,7 +19,9 @@ internal fun formatBytes(bytes: Long): String {
     val safeBytes = bytes.coerceAtLeast(0L)
     val kib = 1024.0
     val mib = kib * 1024.0
+    val gib = mib * 1024.0
     return when {
+        safeBytes >= gib -> String.format("%.1f GiB", safeBytes / gib)
         safeBytes >= mib -> String.format("%.1f MiB", safeBytes / mib)
         safeBytes >= kib -> String.format("%.1f KiB", safeBytes / kib)
         else -> "$safeBytes B"

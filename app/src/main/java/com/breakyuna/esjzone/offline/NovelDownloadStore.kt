@@ -285,48 +285,66 @@ object NovelDownloadStore {
 
     fun isDownloaded(novelUrl: String): Boolean = manifest(novelUrl)?.complete == true
 
-    /**
-     * Lists every novel with at least one persisted chapter, including partial
-     * auto-saves and interrupted background downloads.
-     */
-    fun listDownloadedNovels(): List<DownloadedNovelSummary> = synchronized(ioLock) {
-        inventorySnapshot?.let { cached ->
-            if (dirtyInventorySizes.isEmpty()) return@synchronized cached
-            val refreshed = cached.map { summary ->
-                val key = canonicalKey(summary.novelUrl)
-                if (key !in dirtyInventorySizes) summary else {
-                    val directory = directoryFor(summary.novelUrl, create = false)
-                    summary.copy(storageBytes = directory?.walkTopDown()
-                        ?.filter(File::isFile)?.sumOf(File::length) ?: 0L)
+    /** Shelf membership needs one readable chapter, not a recursive storage-size scan. */
+    fun downloadedNovelUrls(): Set<String> {
+        val directories = synchronized(ioLock) { rootDirectory?.listFiles().orEmpty() }
+        return directories.mapNotNullTo(LinkedHashSet()) { directory ->
+            synchronized(ioLock) {
+                val stored = readManifest(directory.takeIf(File::isDirectory))
+                    ?: return@synchronized null
+                stored.url.takeIf {
+                    stored.chapters.any { record ->
+                        (record.bodyAvailable || record.downloaded) &&
+                            resolveLocalFile(directory, record.fileName)?.isFile == true
+                    }
                 }
             }
-            dirtyInventorySizes.clear()
-            inventorySnapshot = refreshed
-            return@synchronized refreshed
         }
-        val snapshot = rootDirectory?.listFiles()
-            .orEmpty()
-            .asSequence()
-            .filter(File::isDirectory)
-            .mapNotNull { directory ->
-                val stored = readManifest(directory) ?: return@mapNotNull null
-                val count = stored.chapters.count { record ->
-                    (record.bodyAvailable || record.downloaded) && resolveLocalFile(directory, record.fileName)?.isFile == true
+    }
+
+    /** Lists partial and complete downloads; recursive size scans never hold the reader's lock. */
+    fun listDownloadedNovels(): List<DownloadedNovelSummary> {
+        val root: File
+        val revision: Long
+        val cached: List<DownloadedNovelSummary>?
+        val dirty: Set<String>
+        synchronized(ioLock) {
+            root = rootDirectory ?: return emptyList()
+            revision = mutableChanges.value
+            cached = inventorySnapshot
+            dirty = dirtyInventorySizes.toSet()
+        }
+        if (cached != null && dirty.isEmpty()) return cached
+        val snapshot = if (cached != null) {
+            cached.map { summary ->
+                val key = canonicalKey(summary.novelUrl)
+                if (key !in dirty) summary else {
+                    val directory = File(root, digest(key))
+                    summary.copy(storageBytes = directory.walkTopDown()
+                        .filter(File::isFile).sumOf(File::length))
                 }
-                if (count == 0) return@mapNotNull null
-                DownloadedNovelSummary(
-                    manifest = stored,
-                    downloadedChapterCount = count,
-                    storageBytes = directory.walkTopDown()
-                        .filter(File::isFile)
-                        .sumOf(File::length)
-                )
             }
-            .sortedByDescending { it.manifest.downloadedAt }
-            .toList()
-        inventorySnapshot = snapshot
-        dirtyInventorySizes.clear()
-        snapshot
+        } else {
+            root.listFiles().orEmpty().asSequence().filter(File::isDirectory).mapNotNull { directory ->
+                val summary = synchronized(ioLock) {
+                    val stored = readManifest(directory) ?: return@synchronized null
+                    val count = stored.chapters.count { record ->
+                        (record.bodyAvailable || record.downloaded) &&
+                            resolveLocalFile(directory, record.fileName)?.isFile == true
+                    }
+                    if (count == 0) null else DownloadedNovelSummary(stored, count, 0L)
+                } ?: return@mapNotNull null
+                summary.copy(storageBytes = directory.walkTopDown().filter(File::isFile).sumOf(File::length))
+            }.sortedByDescending { it.manifest.downloadedAt }.toList()
+        }
+        synchronized(ioLock) {
+            // A download or deletion during the scan must not publish an obsolete inventory cache.
+            if (rootDirectory == root && mutableChanges.value == revision) {
+                inventorySnapshot = snapshot
+                dirtyInventorySizes.clear()
+            }
+        }
+        return snapshot
     }
 
     /** Returns the on-disk size of one downloaded novel, including its manifest. */
@@ -1014,8 +1032,8 @@ object NovelDownloadStore {
     }
 
     /** Returns a downloaded chapter without touching the network. */
-    fun readChapter(chapterUrl: String): DetailedChapter? = synchronized(ioLock) {
-        val match = findChapter(chapterUrl) ?: return@synchronized null
+    fun readChapter(chapterUrl: String, novelUrl: String? = null): DetailedChapter? = synchronized(ioLock) {
+        val match = findChapter(chapterUrl, novelUrl) ?: return@synchronized null
         val chapterFile = resolveLocalFile(match.directory, match.record.fileName)
             ?: return@synchronized null
         val stored = readStoredChapter(match.directory, chapterFile) ?: return@synchronized null
@@ -1193,10 +1211,22 @@ object NovelDownloadStore {
         catalogComplete = previous?.catalogComplete == true || previous?.complete == true
     )
 
-    private fun findChapter(chapterUrl: String): ChapterMatch? {
+    private fun findChapter(chapterUrl: String, novelUrl: String?): ChapterMatch? {
         val target = chapterKey(chapterUrl)
         chapterIndex[target]?.let { return it }
         if (chapterIndexLoaded) return null
+        // The reader supplies its parent for external chapters. ESJ chapter routes carry it directly.
+        val parent = novelUrl?.takeIf(String::isNotBlank)
+            ?: Regex("^/forum/([^/]+)/[^/]+\\.html(?:#.*)?$").matchEntire(target)
+                ?.groupValues?.get(1)?.let { "/detail/$it.html" }
+        if (parent != null) {
+            val directory = directoryFor(parent, create = false) ?: return null
+            if (directory.absolutePath !in chapterKeysByDirectory) {
+                val manifest = readManifest(directory) ?: return null
+                indexChapterManifest(directory, manifest, recoverUnpublishedFiles = true)
+            }
+            return chapterIndex[target]
+        }
         rootDirectory?.listFiles()
             ?.asSequence()
             ?.filter(File::isDirectory)
@@ -1329,7 +1359,9 @@ object NovelDownloadStore {
         writeJson(File(directory, MANIFEST_FILE), manifest, writeGuard)
         manifestCache[directory.absolutePath] = manifest
         mutableChanges.value += 1
-        if (chapterIndexLoaded) indexChapterManifest(directory, manifest)
+        if (chapterIndexLoaded || directory.absolutePath in chapterKeysByDirectory) {
+            indexChapterManifest(directory, manifest)
+        }
         if (previousInventory != null) {
             // Successful chapter writes precede manifest publication. Avoid filesystem
             // checks here; inventory reconstruction still validates persisted files.

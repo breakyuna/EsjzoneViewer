@@ -74,6 +74,14 @@ object BookshelfRepository {
     private val mutableCoverStates = MutableStateFlow<Map<Pair<String, String>, CoverState>>(emptyMap())
     val coverStates = mutableCoverStates.asStateFlow()
 
+    // Transient display states must stay bounded across books and account scopes.
+    private fun setCoverState(key: Pair<String, String>, state: CoverState) {
+        mutableCoverStates.update { states ->
+            ((states - key) + (key to state)).entries.toList().takeLast(256)
+                .associate { it.key to it.value }
+        }
+    }
+
     /** Avoid repeatedly refetching rows with missing metadata. */
     private const val METADATA_RETRY_INTERVAL_MILLIS = 30 * 60 * 1000L
     private const val METADATA_BATCH_SIZE = 36
@@ -432,7 +440,7 @@ object BookshelfRepository {
                                 metadataSemaphore.withPermit {
                                     val coverKey = row.scope to row.bookKey
                                     val needsCover = EsjzoneUrls.coverOrEmpty(row.coverUrl).isBlank()
-                                    if (needsCover) mutableCoverStates.update { it + (coverKey to CoverState.Resolving) }
+                                    if (needsCover) setCoverState(coverKey, CoverState.Resolving)
                                     try {
                                         val detail = EsjzoneClient.getNovelDetail(
                                             authorization,
@@ -449,18 +457,16 @@ object BookshelfRepository {
                                             coverUrl = EsjzoneUrls.coverOrEmpty(detail.coverUrl),
                                             isAdult = detail.isAdult
                                         )
-                                        if (needsCover) mutableCoverStates.update {
+                                        if (needsCover) {
                                             if (EsjzoneUrls.coverOrEmpty(detail.coverUrl).isBlank()) {
-                                                it + (coverKey to CoverState.Missing)
-                                            } else it - coverKey
+                                                setCoverState(coverKey, CoverState.Missing)
+                                            } else mutableCoverStates.update { it - coverKey }
                                         }
                                     } catch (error: CancellationException) {
                                         if (needsCover) mutableCoverStates.update { it - coverKey }
                                         throw error
                                     } catch (error: Exception) {
-                                        if (needsCover) mutableCoverStates.update {
-                                            it + (coverKey to CoverState.Failed(error.coverFailure()))
-                                        }
+                                        if (needsCover) setCoverState(coverKey, CoverState.Failed(error.coverFailure()))
                                         AppLogger.w(
                                             "BookshelfRepository",
                                             "Metadata supplement unavailable for ${row.bookKey}",

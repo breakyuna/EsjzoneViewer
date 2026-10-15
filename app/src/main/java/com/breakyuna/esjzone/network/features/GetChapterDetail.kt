@@ -43,7 +43,8 @@ fun EsjzoneClient.getChapterDetail(
     forceRefresh: Boolean = false,
     baseUrl: String? = null,
     allowAutoSolve: Boolean = true,
-    onSecurityCheck: (() -> Unit)? = null
+    onSecurityCheck: (() -> Unit)? = null,
+    novelUrl: String? = null
 ): DetailedChapter {
     val targetUrl = baseUrl?.let { EsjzoneUrls.resolve(chapter.url, it) }
         ?: EsjzoneUrls.resolve(chapter.url)
@@ -51,7 +52,7 @@ fun EsjzoneClient.getChapterDetail(
     if (source == ChapterSource.UNSUPPORTED_EXTERNAL) throw UnsupportedExternalChapterException()
 
     if (preferDownloaded) {
-        NovelDownloadStore.readChapter(targetUrl)
+        NovelDownloadStore.readChapter(targetUrl, novelUrl)
             ?.let { downloaded ->
             AppLogger.i("GetChapterDetail", "Using downloaded ${source.name} chapter")
             return downloaded
@@ -63,7 +64,7 @@ fun EsjzoneClient.getChapterDetail(
         return try {
             getWenkuChapter(chapter, targetUrl, forceRefresh, allowAutoSolve, onSecurityCheck)
         } catch (error: Exception) {
-            NovelDownloadStore.readChapter(targetUrl)?.let { return it }
+            NovelDownloadStore.readChapter(targetUrl, novelUrl)?.let { return it }
             throw error
         }
     }
@@ -91,7 +92,7 @@ fun EsjzoneClient.getChapterDetail(
             validateBody = { html -> validatedDetail(html) }
         )
     } catch (error: Exception) {
-        NovelDownloadStore.readChapter(targetUrl)
+        NovelDownloadStore.readChapter(targetUrl, novelUrl)
             ?.let { downloaded ->
             AppLogger.w(
                 "GetChapterDetail",

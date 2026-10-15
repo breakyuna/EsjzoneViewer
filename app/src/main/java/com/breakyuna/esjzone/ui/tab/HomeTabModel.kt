@@ -202,17 +202,18 @@ class HomeTabModel(
                     forceRefresh = forceRefresh,
                     onProgress = { partialData ->
                         ensureActive()
-                        HomeDataCache.writeSnapshot(authorization, partialData)
                         mutableState.value = State.Result(
                             partialData,
                             isSyncing = true,
                             isRefreshing = forceRefresh
                         )
+                        HomeDataCache.updateMemorySnapshot(authorization, partialData)
                     }
                 )
                 ensureActive()
-                HomeDataCache.writeSnapshot(authorization, data)
                 mutableState.value = State.Result(data, isSyncing = false)
+                HomeDataCache.updateMemorySnapshot(authorization, data)
+                HomeDataCache.writeSnapshot(authorization, data)
             } catch (e: CancellationException) {
                 loadStarted = false
                 throw e

@@ -7,6 +7,8 @@ import com.breakyuna.esjzone.network.EsjzoneUrls
 import com.breakyuna.esjzone.network.HtmlSelector
 import com.breakyuna.esjzone.network.JsoupHtmlSelector
 import com.breakyuna.esjzone.network.PageCacheTtl
+import com.breakyuna.esjzone.network.PageCache
+import com.breakyuna.esjzone.network.PageResponsePolicy
 import com.breakyuna.esjzone.network.PageKind
 import com.breakyuna.esjzone.network.NetworkRequestException
 import com.breakyuna.esjzone.network.NetworkHttpException
@@ -115,6 +117,17 @@ fun EsjzoneClient.getPageComments(
     pageUrl: String,
     forceRefresh: Boolean = false
 ): List<Comment> = getCommentPageSnapshot(authorization, pageUrl, forceRefresh).comments
+
+/** Initial display only: a cache miss must not start a request before the explicit refresh. */
+internal fun EsjzoneClient.getCachedCommentPageSnapshot(
+    authorization: Authorization,
+    pageUrl: String
+): CommentPageSnapshot? {
+    val targetUrl = EsjzoneUrls.resolve(pageUrl).substringBefore('#')
+    val html = PageCache.readStale(pageCacheKey(authorization, targetUrl)) ?: return null
+    if (!PageResponsePolicy.validate(200, html, targetUrl, kind = PageKind.COMMUNITY).trusted) return null
+    return parseCommentPageSnapshot(Jsoup.parse(html, targetUrl), targetUrl)
+}
 
 fun EsjzoneClient.getCommentPageSnapshot(
     authorization: Authorization,

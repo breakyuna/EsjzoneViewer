@@ -8,6 +8,7 @@ import com.breakyuna.esjzone.database.ReadingStatisticsRecorder
 import com.breakyuna.esjzone.database.BookshelfRepository
 import com.breakyuna.esjzone.network.Authorization
 import com.breakyuna.esjzone.network.LoadFailureKind
+import com.breakyuna.esjzone.network.cancellablePageRequest
 import com.breakyuna.esjzone.network.features.getNovelDetail
 import com.breakyuna.esjzone.network.loadFailureKind
 import com.breakyuna.esjzone.novellibrary.novel.DetailedNovel
@@ -18,7 +19,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 
-/** Loads detail data and falls back to an offline manifest without UI coupling. */
+/** Displays downloaded detail immediately, then refreshes it without hiding readable content. */
 class NovelPageModel(
     private val authorization: Authorization,
     private val novel: Novel
@@ -30,7 +31,7 @@ class NovelPageModel(
     sealed class State {
         data object Loading : State()
         data class Error(val failure: LoadFailureKind) : State()
-        data class Result(val detailed: DetailedNovel) : State()
+        data class Result(val detailed: DetailedNovel, val fromDownload: Boolean = false) : State()
     }
 
     fun getDetail() {
@@ -40,27 +41,34 @@ class NovelPageModel(
         }
         viewModelScope.launch(Dispatchers.IO) {
             mutableState.value = State.Loading
+            val downloaded = runCatching { PresentationAccess.downloads.readDetailedNovel(novel.url) }
+                .onFailure { AppLogger.w("NovelPageModel", "Failed to read downloaded detail", it) }
+                .getOrNull()
+            ensureActive()
+            if (downloaded != null) mutableState.value = State.Result(downloaded, fromDownload = true)
             try {
-                val fetchedDetail = PresentationAccess.client.getNovelDetail(
-                    authorization = authorization,
-                    novel = novel,
-                    includeComments = false
-                )
+                val fetchedDetail = cancellablePageRequest {
+                    PresentationAccess.client.getNovelDetail(
+                        authorization = authorization,
+                        novel = novel,
+                        includeComments = false
+                    )
+                }
                 val detail = if (fetchedDetail.chapterList.orderedChapters.isEmpty()) {
-                    PresentationAccess.downloads.readDetailedNovel(novel.url) ?: fetchedDetail
+                    downloaded ?: fetchedDetail
                 } else {
                     fetchedDetail
                 }
                 ensureActive()
+                mutableState.value = State.Result(detail, fromDownload = detail === downloaded)
                 ReadingStatisticsRecorder.recordTags(detail)
-                mutableState.value = State.Result(detail)
             } catch (error: CancellationException) {
                 throw error
             } catch (error: Exception) {
-                val downloaded = PresentationAccess.downloads.readDetailedNovel(novel.url)
+                ensureActive()
                 if (downloaded != null) {
+                    mutableState.value = State.Result(downloaded, fromDownload = true)
                     ReadingStatisticsRecorder.recordTags(downloaded)
-                    mutableState.value = State.Result(downloaded)
                     AppLogger.w("NovelPageModel", "Using downloaded novel detail for ${novel.name}", error)
                 } else {
                     mutableState.value = State.Error(error.loadFailureKind())

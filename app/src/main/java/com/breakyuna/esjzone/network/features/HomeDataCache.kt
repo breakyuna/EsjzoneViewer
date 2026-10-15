@@ -31,10 +31,7 @@ object HomeDataCache {
     private val ioLock = Any()
 
     @Volatile
-    private var memoryCache: HomeData? = null
-
-    @Volatile
-    private var memoryDomain: String? = null
+    private var memorySnapshot: Pair<String, HomeData>? = null
 
     @Volatile
     private var storageDir: File? = null
@@ -43,12 +40,7 @@ object HomeDataCache {
         val dir = context.applicationContext.filesDir
         storageDir = dir
         synchronized(ioLock) {
-            if (memoryDomain == null) {
-                loadFromDisk(dir)?.let { (domain, data) ->
-                    memoryDomain = domain
-                    memoryCache = data
-                }
-            }
+            if (memorySnapshot == null) memorySnapshot = loadFromDisk(dir)
         }
     }
 
@@ -59,20 +51,16 @@ object HomeDataCache {
 
     fun readSnapshot(authorization: Authorization): HomeData? {
         val normalizedDomain = EsjzoneClient.accountScope(authorization)
-        val dir = storageDir ?: runCatching {
-            EsjzoneApplication.instance.filesDir
-        }.getOrNull() ?: return null
+        // initialize() loaded the disk snapshot in the background. UI reads never wait for a disk write.
+        return memorySnapshot?.takeIf { it.first == normalizedDomain }?.second
+    }
 
-        return synchronized(ioLock) {
-            if (memoryDomain == normalizedDomain) {
-                memoryCache
-            } else {
-                loadFromDisk(dir)?.let { (diskDomain, data) ->
-                    memoryDomain = diskDomain
-                    memoryCache = data
-                    if (diskDomain == normalizedDomain) data else null
-                }
-            }
+    /** Keep progressive results available without rewriting the complete JSON for every cover. */
+    fun updateMemorySnapshot(authorization: Authorization, data: HomeData) {
+        val normalizedDomain = EsjzoneClient.accountScope(authorization)
+        synchronized(ioLock) {
+            if (normalizedDomain != EsjzoneClient.activeAccountScopeOrNull()) return
+            memorySnapshot = normalizedDomain to data
         }
     }
 
@@ -105,8 +93,7 @@ object HomeDataCache {
                         StandardCopyOption.REPLACE_EXISTING
                     )
                 }
-                memoryDomain = normalizedDomain
-                memoryCache = data
+                memorySnapshot = normalizedDomain to data
             } catch (e: Exception) {
                 AppLogger.w("HomeDataCache", "Failed to write home data snapshot", e)
             }

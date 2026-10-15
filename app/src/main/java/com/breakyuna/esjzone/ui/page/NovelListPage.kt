@@ -77,9 +77,9 @@ import com.breakyuna.esjzone.ui.navigation.LocalBaseNavigator
 import com.breakyuna.esjzone.ui.navigation.rememberAppViewModel
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import com.breakyuna.esjzone.network.cancellablePageRequest
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 
 private fun typeResource(type: Int): Int = when (type) {
     1 -> R.string.novel_list_japanese
@@ -244,7 +244,7 @@ private fun NovelListResult(
         pageFailure = null
         scope.launch {
             try {
-                val loaded = withContext(Dispatchers.IO) { result.requester.more(targetPage) }
+                val loaded = cancellablePageRequest { result.requester.more(targetPage) }
                 if (!result.requester.isCurrent()) {
                     model.getRequester()
                     return@launch
@@ -513,12 +513,14 @@ class NovelListPageModel(
         if (previous == null) mutableState.value = State.Loading
         requestJob = viewModelScope.launch(Dispatchers.IO) {
             try {
-                val (requester, firstPage) = PresentationAccess.client.novels(
-                    authorization = authorization,
-                    novelType = requestedNovelType,
-                    sortType = requestedSortType,
-                    forceRefresh = forceRefresh
-                )
+                val (requester, firstPage) = cancellablePageRequest {
+                    PresentationAccess.client.novels(
+                        authorization = authorization,
+                        novelType = requestedNovelType,
+                        sortType = requestedSortType,
+                        forceRefresh = forceRefresh
+                    )
+                }
                 ensureActive()
                 if (token != generation) return@launch
                 displayedNovelType = requestedNovelType

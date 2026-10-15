@@ -1,12 +1,11 @@
 package com.breakyuna.esjzone.ui.navigation
 
 import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
-import androidx.compose.material3.LocalContentColor
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.State
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
@@ -21,22 +20,21 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.graphics.drawscope.scale
 import androidx.compose.ui.unit.dp
-import com.breakyuna.esjzone.ui.designsystem.AppMotion
 import kotlin.math.PI
 import kotlin.math.cos
 import kotlin.math.sin
 
+internal val NavigationSelectionAnimationSpec = tween<Float>(
+    durationMillis = 600,
+    easing = FastOutSlowInEasing
+)
+
 @Composable
 internal fun AppNavigationIcon(
     tab: AppTabId,
-    selected: Boolean,
-    tint: Color = LocalContentColor.current
+    progress: State<Float>,
+    tint: Color
 ) {
-    val progress = animateFloatAsState(
-        targetValue = if (selected) 1f else 0f,
-        animationSpec = tween(AppMotion.expressive, easing = FastOutSlowInEasing),
-        label = "${tab.name}IconParts"
-    )
     val path = remember { Path() }
     val stroke = remember {
         Stroke(width = 1.8f, cap = StrokeCap.Round, join = StrokeJoin.Round)
@@ -61,6 +59,22 @@ internal fun AppNavigationIcon(
 }
 
 private fun DrawScope.drawHomeIcon(progress: Float, tint: Color, path: Path, stroke: Stroke) {
+    // The doorway is a notch in the silhouette, so its interior remains transparent.
+    path.reset()
+    path.moveTo(3f, 10f)
+    path.lineTo(12f, 3f)
+    path.lineTo(21f, 10f)
+    path.lineTo(19f, 10f)
+    path.lineTo(19f, 21f)
+    path.lineTo(15f, 21f)
+    path.lineTo(15f, 13f)
+    path.lineTo(9f, 13f)
+    path.lineTo(9f, 21f)
+    path.lineTo(5f, 21f)
+    path.lineTo(5f, 10f)
+    path.close()
+    drawPath(path, tint.copy(alpha = tint.alpha * progress))
+
     path.reset()
     path.moveTo(3f, 10f)
     path.lineTo(12f, 3f)
@@ -89,28 +103,28 @@ private fun DrawScope.drawHomeIcon(progress: Float, tint: Color, path: Path, str
     path.lineTo(edge, 21f - depth)
     path.lineTo(9f, 21f)
     path.close()
-    drawPath(path, tint.copy(alpha = tint.alpha * 0.2f * progress))
-    drawPath(path, tint, style = stroke)
+    drawPath(path, tint.copy(alpha = tint.alpha * (1f - progress)))
+    drawPath(path, tint.copy(alpha = tint.alpha * (1f - progress)), style = stroke)
 }
 
 private fun DrawScope.drawHistoryIcon(progress: Float, tint: Color, path: Path, stroke: Stroke) {
-    drawArc(
-        color = tint,
-        startAngle = 210f,
-        sweepAngle = 300f,
-        useCenter = false,
-        topLeft = Offset(3f, 3f),
-        size = Size(18f, 18f),
-        style = stroke
-    )
-    path.reset()
-    path.moveTo(4.2f, 3.7f)
-    path.lineTo(4.2f, 7.5f)
-    path.lineTo(8f, 7.5f)
-    drawPath(path, tint, style = stroke)
-
-    // Only the clock hands turn; the history arrow remains anchored.
+    // Rotate the complete history mark, including its outer arrow and clock hands.
     rotate(360f * progress, pivot = Offset(12f, 12f)) {
+        drawArc(
+            color = tint,
+            startAngle = 210f,
+            sweepAngle = 300f,
+            useCenter = false,
+            topLeft = Offset(3f, 3f),
+            size = Size(18f, 18f),
+            style = stroke
+        )
+        path.reset()
+        path.moveTo(4.2f, 3.7f)
+        path.lineTo(4.2f, 7.5f)
+        path.lineTo(8f, 7.5f)
+        drawPath(path, tint, style = stroke)
+
         path.reset()
         path.moveTo(12f, 6.8f)
         path.lineTo(12f, 12f)
@@ -129,6 +143,7 @@ private fun DrawScope.drawBookshelfIcon(progress: Float, tint: Color, path: Path
     path.lineTo(21.5f, 4.5f)
     path.cubicTo(19f, 3.5f, 15f, 4f, 12f, 6f)
     path.close()
+    drawPath(path, tint.copy(alpha = tint.alpha * progress))
     drawPath(path, tint, style = stroke)
     drawLine(tint, Offset(12f, 6f), Offset(12f, 20f), strokeWidth = stroke.width)
 
@@ -151,7 +166,7 @@ private fun DrawScope.drawBookshelfIcon(progress: Float, tint: Color, path: Path
     )
     path.close()
     val leafColor = tint.copy(alpha = tint.alpha * sin(angle).coerceIn(0f, 1f))
-    drawPath(path, leafColor.copy(alpha = leafColor.alpha * 0.18f))
+    drawPath(path, leafColor)
     drawPath(path, leafColor, style = stroke)
 }
 
@@ -160,7 +175,7 @@ private fun DrawScope.drawProfileIcon(progress: Float, tint: Color, path: Path, 
     val headCenter = Offset(12f + 1.6f * nod, 7f + 0.8f * nod)
     val headSize = Size(7f, 7f - 0.8f * nod)
     val headTopLeft = headCenter - Offset(headSize.width / 2f, headSize.height / 2f)
-    drawOval(tint.copy(alpha = tint.alpha * 0.18f * progress), headTopLeft, headSize)
+    drawOval(tint.copy(alpha = tint.alpha * progress), headTopLeft, headSize)
     drawOval(tint, headTopLeft, headSize, style = stroke)
 
     // A small shoulder follow-through makes the head movement read as a nod.
@@ -172,6 +187,6 @@ private fun DrawScope.drawProfileIcon(progress: Float, tint: Color, path: Path, 
     path.cubicTo(16f, 14f - shoulder, 20f, 15.5f - shoulder, 20f, 18.5f)
     path.lineTo(20f, 21f)
     path.close()
-    drawPath(path, tint.copy(alpha = tint.alpha * 0.18f * progress))
+    drawPath(path, tint.copy(alpha = tint.alpha * progress))
     drawPath(path, tint, style = stroke)
 }

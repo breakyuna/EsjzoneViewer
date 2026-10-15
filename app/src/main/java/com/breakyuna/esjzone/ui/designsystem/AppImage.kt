@@ -11,7 +11,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -112,8 +111,7 @@ fun AppCoverImage(
     contentScale: ContentScale = ContentScale.Crop,
     loading: (@Composable () -> Unit)? = null,
     error: (@Composable () -> Unit)? = null,
-    sourceState: CoverState? = null,
-    onStateChanged: ((CoverState) -> Unit)? = null
+    sourceState: CoverState? = null
 ) {
     val policy by CoverLoadingPolicy.state.collectAsState()
     val page = LocalCoverPage.current
@@ -127,7 +125,6 @@ fun AppCoverImage(
     val request = sharedMirrorImageRequest(if (hasImage) model else coverFallbackResource(source), allowed)
     var imageState by remember(request, source) { mutableStateOf(source) }
     val state = if (hasImage) imageState else source
-    SideEffect { onStateChanged?.invoke(state) }
     AppImage(
         model = request,
         contentDescription = contentDescription,

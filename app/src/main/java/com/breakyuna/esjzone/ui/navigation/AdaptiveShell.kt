@@ -64,9 +64,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import com.breakyuna.esjzone.ui.designsystem.globalStringResource as stringResource
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.drawWithCache
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import com.breakyuna.esjzone.R
 import com.breakyuna.esjzone.app.PresentationAccess
 import com.breakyuna.esjzone.ui.designsystem.AppMotion
@@ -515,7 +519,7 @@ private fun AppNavigationBarItem(
     // Keep per-frame background and label color updates local to this item.
     val selectionProgress = animateFloatAsState(
         targetValue = if (selected) 1f else 0f,
-        animationSpec = AppMotion.standardSpec(),
+        animationSpec = NavigationSelectionAnimationSpec,
         label = "${tab.name}BottomSelection"
     )
     val indicatorColor = MaterialTheme.colorScheme.secondaryContainer
@@ -523,6 +527,11 @@ private fun AppNavigationBarItem(
     val contentColor = lerp(
         MaterialTheme.colorScheme.onSurfaceVariant,
         MaterialTheme.colorScheme.primary,
+        selectionProgress.value
+    )
+    val iconColor = lerp(
+        MaterialTheme.colorScheme.onSurfaceVariant,
+        MaterialTheme.colorScheme.onSecondaryContainer,
         selectionProgress.value
     )
     Box(
@@ -544,7 +553,7 @@ private fun AppNavigationBarItem(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(2.dp, Alignment.CenterVertically)
         ) {
-            AppNavigationIcon(tab, selected, tint = contentColor)
+            AppNavigationIcon(tab, selectionProgress, tint = iconColor)
             Text(
                 text = tabLabel(tab),
                 color = contentColor,
@@ -573,15 +582,47 @@ private fun AppSideNavigationBar(
         tabs.forEach { tab ->
             key(tab) {
                 val isSelected = selected == tab
+                val selectionProgress = animateFloatAsState(
+                    targetValue = if (isSelected) 1f else 0f,
+                    animationSpec = NavigationSelectionAnimationSpec,
+                    label = "${tab.name}SideSelection"
+                )
+                val contentColor = lerp(
+                    MaterialTheme.colorScheme.onSurfaceVariant,
+                    MaterialTheme.colorScheme.primary,
+                    selectionProgress.value
+                )
+                val iconColor = lerp(
+                    MaterialTheme.colorScheme.onSurfaceVariant,
+                    MaterialTheme.colorScheme.onSecondaryContainer,
+                    selectionProgress.value
+                )
+                val indicatorColor = MaterialTheme.colorScheme.secondaryContainer
                 NavigationRailItem(
                     selected = isSelected,
                     onClick = { onSelected(tab) },
                     icon = {
-                        AppNavigationIcon(tab, isSelected)
+                        Box(
+                            Modifier.drawBehind {
+                                val width = 56.dp.toPx()
+                                val height = 32.dp.toPx()
+                                drawRoundRect(
+                                    color = indicatorColor.copy(
+                                        alpha = indicatorColor.alpha * selectionProgress.value
+                                    ),
+                                    topLeft = Offset((size.width - width) / 2f, (size.height - height) / 2f),
+                                    size = Size(width, height),
+                                    cornerRadius = CornerRadius(height / 2f)
+                                )
+                            }
+                        ) {
+                            AppNavigationIcon(tab, selectionProgress, tint = iconColor)
+                        }
                     },
                     label = {
                         Text(
                             text = tabLabel(tab),
+                            color = contentColor,
                             style = MaterialTheme.typography.labelMedium,
                             fontWeight = FontWeight.Medium,
                             maxLines = 1
@@ -589,9 +630,9 @@ private fun AppSideNavigationBar(
                     },
                     alwaysShowLabel = true,
                     colors = NavigationRailItemDefaults.colors(
-                        selectedIconColor = MaterialTheme.colorScheme.primary,
+                        selectedIconColor = MaterialTheme.colorScheme.onSecondaryContainer,
                         selectedTextColor = MaterialTheme.colorScheme.primary,
-                        indicatorColor = MaterialTheme.colorScheme.secondaryContainer,
+                        indicatorColor = Color.Transparent,
                         unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
                         unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant
                     )

@@ -87,6 +87,8 @@ import com.breakyuna.esjzone.ui.navigation.AppStateViewModel
 import com.breakyuna.esjzone.R
 import com.breakyuna.esjzone.util.CommentRequestTiming
 import com.breakyuna.esjzone.network.Authorization
+import com.breakyuna.esjzone.network.cancellablePageRequest
+import com.breakyuna.esjzone.network.features.getCachedCommentPageSnapshot
 import com.breakyuna.esjzone.network.EsjzoneUrls
 import com.breakyuna.esjzone.network.LoadFailureKind
 import com.breakyuna.esjzone.network.loadFailureKind
@@ -1164,11 +1166,7 @@ internal class CommentPageModel(
             val cachedComments = if (!forceRefresh && currentResult == null) {
                 runCatching {
                     timing.stage("initial_comments_read") {
-                        PresentationAccess.client.getPageComments(
-                            authorization,
-                            pageUrl,
-                            forceRefresh = false
-                        )
+                        PresentationAccess.client.getCachedCommentPageSnapshot(authorization, pageUrl)?.comments
                     }
                 }.getOrNull()
             } else null
@@ -1186,12 +1184,14 @@ internal class CommentPageModel(
             }
 
             try {
-                val snapshot = timing.stage("comments_refresh_parse") {
-                    PresentationAccess.client.getCommentPageSnapshot(
-                        authorization,
-                        pageUrl,
-                        forceRefresh = true
-                    )
+                val snapshot = timing.suspendingStage("comments_refresh_parse") {
+                    cancellablePageRequest {
+                        PresentationAccess.client.getCommentPageSnapshot(
+                            authorization,
+                            pageUrl,
+                            forceRefresh = true
+                        )
+                    }
                 }
                 val comments = snapshot.comments
                 ensureActive()

@@ -10,5 +10,6 @@ class SettingsFormattingTest {
         assertEquals("0 B", formatBytes(-1))
         assertEquals("1.0 KiB", formatBytes(1024))
         assertEquals("1.0 MiB", formatBytes(1024 * 1024))
+        assertEquals("2.0 GiB", formatBytes(2L * 1024 * 1024 * 1024))
     }
 }

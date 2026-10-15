@@ -330,7 +330,7 @@ class NovelPage(
                     var showAllChapters by rememberSaveable(novel.url) {
                         mutableStateOf(false)
                     }
-                    val expandedChapterGroups = rememberSaveable(novel.url) {
+                    val expandedChapterGroups = rememberSaveable(novel.url, snapshot.fromDownload) {
                         mutableStateOf(initiallyExpandedChapterKeys(chapterList.items))
                     }
                     val visibleRows = remember(chapterList, expandedChapterGroups.value) {
@@ -341,7 +341,11 @@ class NovelPage(
                     }
 
                     LaunchedEffect(chapterList, localReading) {
-                        if (historyState.value == null) historyState.value = chapterList.toRead
+                        // A downloaded first chapter is a fallback, not a reading-history marker.
+                        // Leave the holder empty so a later server history marker can still take effect.
+                        if (historyState.value == null && chapterList.hasHistory) {
+                            historyState.value = chapterList.toRead
+                        }
                         // A first chapter chosen as the default target is not
                         // a resume marker. Only server history or a chapter
                         // explicitly supplied by the source task means
@@ -349,10 +353,10 @@ class NovelPage(
                         hasHistory.value = chapterList.hasHistory || hasExplicitHistory || localReading != null
                     }
 
-                    LaunchedEffect(detailed.isFavorite, localShelfEntry?.operationVersion) {
+                    LaunchedEffect(detailed.isFavorite, localShelfEntry?.operationVersion, snapshot.fromDownload) {
                         // A local row is authoritative for the visual toggle;
                         // the detail response only supplements missing metadata.
-                        if (localShelfEntry != null || detailed.isFavorite) {
+                        if (!snapshot.fromDownload && (localShelfEntry != null || detailed.isFavorite)) {
                             screenModel.seedFavoriteMetadata(
                                 author = detailed.author,
                                 coverUrl = detailed.coverUrl,

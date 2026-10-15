@@ -208,7 +208,7 @@ private fun DownloadList(
     ) {
         item(key = "download_summary", contentType = "download_summary") {
             Text(
-                stringResource(R.string.download_total_summary, novels.size, formatStorageSize(totalBytes)),
+                stringResource(R.string.download_total_summary, novels.size, formatBytes(totalBytes)),
                 style = AppTypography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -255,7 +255,7 @@ private fun DownloadCard(
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(AppSpacing.xs)) {
             Text(summary.novelName.ifBlank { stringResource(R.string.download_unknown_novel) }, style = AppTypography.labelLarge, maxLines = 2, overflow = TextOverflow.Ellipsis)
             Text(stringResource(R.string.download_chapters_count, summary.downloadedChapterCount), style = AppTypography.bodyMedium, color = MaterialTheme.colorScheme.primary)
-            Text(formatStorageSize(summary.storageBytes), style = AppTypography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(formatBytes(summary.storageBytes), style = AppTypography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         IconButton(onClick = onDelete, enabled = !deleting) { Icon(Icons.Filled.DeleteOutline, stringResource(R.string.download_delete), tint = MaterialTheme.colorScheme.error) }
     }
@@ -301,11 +301,4 @@ private class DownloadPageModel : AppStateViewModel<DownloadPageModel.State>(Sta
             } catch (e: CancellationException) { throw e } catch (e: Exception) { AppLogger.e("DownloadPageModel", "Failed to persist reader auto-save preference", e) }
         }
     }
-}
-
-private fun formatStorageSize(bytes: Long): String = when {
-    bytes < 1024L -> "$bytes B"
-    bytes < 1024L * 1024L -> "%.1f KB".format(bytes / 1024.0)
-    bytes < 1024L * 1024L * 1024L -> "%.1f MB".format(bytes / (1024.0 * 1024.0))
-    else -> "%.2f GB".format(bytes / (1024.0 * 1024.0 * 1024.0))
 }

@@ -708,7 +708,7 @@
     <string name="open_source_licenses">开源许可</string>
     <string name="settings_general_section">General</string>
     <string name="settings_preferences_section">Preferences</string>
-    <string name="settings_reading_section">阅读设置</string>
+    <string name="settings_reading_section">Reading settings</string>
     <string name="reading_stats_bar_chart">柱状图</string>
     <string name="reading_stats_line_chart">折线图</string>
     <string name="settings_language_system_short">系统</string>
