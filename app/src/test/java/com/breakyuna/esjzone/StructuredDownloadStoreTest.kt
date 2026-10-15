@@ -191,7 +191,7 @@ class StructuredDownloadStoreTest {
             val restored = requireNotNull(NovelDownloadStore.readChapter(item.url))
             assertTrue(restored.content.all { it is TextComponent })
             assertTrue(restored.body!!.readerBlocks().joinToString("") { it.sourceText() }.isNotBlank())
-            assertEquals(restored.body!!.fingerprint, NovelDownloadStore.readChapter(item.url)!!.body!!.fingerprint)
+            assertEquals(restored.body.fingerprint, NovelDownloadStore.readChapter(item.url)!!.body!!.fingerprint)
         }
     }
 

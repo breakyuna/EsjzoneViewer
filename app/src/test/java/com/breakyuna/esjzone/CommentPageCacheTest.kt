@@ -16,7 +16,7 @@ class CommentPageCacheTest {
         PageCache.initializeDirectory(directory)
         val auth = Authorization()
         // No server is running: a cache-only miss must simply return null.
-        val url = "http://127.0.0.1:1/forum/9001/1.html"
+        val url = "https://www.esjzone.cc/forum/9001/1.html"
         val key = EsjzoneClient.pageCacheKey(auth, url)
         try {
             assertNull(EsjzoneClient.getCachedCommentPageSnapshot(auth, url))
