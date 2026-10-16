@@ -8,7 +8,8 @@ import com.breakyuna.esjzone.ui.navigation.usesContainerTransform
 import com.breakyuna.esjzone.ui.navigation.containerTransformMetadata
 import androidx.navigation3.runtime.NavEntry
 import androidx.navigation3.runtime.NavKey
-import androidx.navigation3.scene.SinglePaneScene
+import androidx.compose.runtime.Composable
+import androidx.navigation3.scene.Scene
 import kotlinx.serialization.json.Json
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
@@ -109,9 +110,14 @@ class NavigationRouteContractTest {
         ))
     }
 
-    private fun scene(key: AppNavKey): SinglePaneScene<NavKey> {
+    private fun scene(key: AppNavKey): Scene<NavKey> {
         val entry = NavEntry<NavKey>(key, metadata = containerTransformMetadata(key)) {}
-        return SinglePaneScene(key = entry.contentKey, entry = entry, previousEntries = emptyList())
+        return object : Scene<NavKey> {
+            override val key: Any = entry.contentKey
+            override val entries: List<NavEntry<NavKey>> = listOf(entry)
+            override val previousEntries: List<NavEntry<NavKey>> = emptyList()
+            override val content: @Composable () -> Unit = {}
+        }
     }
 
     @Test
