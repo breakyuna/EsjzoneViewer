@@ -20,6 +20,14 @@ import org.junit.Test
 /** Pure JVM coverage for the value objects stored by Navigation 3. */
 class NavigationRouteContractTest {
     @Test
+    fun cacheRecordsRouteRestoresWithoutAnInMemoryRegistry() {
+        val navigator = com.breakyuna.esjzone.ui.navigation.AppNavigator(
+            mutableListOf(), mutableMapOf())
+        assertEquals(com.breakyuna.esjzone.ui.page.CacheRecordsPage,
+            navigator.destination(LegacyRoute.Static("CacheRecordsPage")))
+    }
+
+    @Test
     fun featureRoutesAreStableValueObjects() {
         assertEquals(LegacyRoute.Search("keyword"), LegacyRoute.Search("keyword"))
         assertNotEquals(LegacyRoute.Search("keyword"), LegacyRoute.Search("other"))

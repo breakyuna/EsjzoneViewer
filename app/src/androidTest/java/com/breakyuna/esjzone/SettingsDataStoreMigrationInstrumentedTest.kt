@@ -2,6 +2,7 @@ package com.breakyuna.esjzone
 
 import android.content.Context
 import androidx.room.Room
+import androidx.datastore.preferences.preferencesDataStoreFile
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.breakyuna.esjzone.data.settings.SettingsDataStore
@@ -11,6 +12,8 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
@@ -22,6 +25,31 @@ import org.junit.runner.RunWith
 /** Verifies settings migration against Room's real generated DAO implementation. */
 @RunWith(AndroidJUnit4::class)
 class SettingsDataStoreMigrationInstrumentedTest {
+
+    @Test
+    fun cacheLimitSurvivesStoreRecreationAndRejectsOutOfRangeInput() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val name = "instrument-cache-limit-${System.nanoTime()}.preferences_pb"
+        val firstScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        val secondScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        try {
+            val first = SettingsDataStore(context, firstScope, name)
+            assertEquals(100, first.readPageCacheLimitMiB())
+            first.setPageCacheLimitMiB(64)
+            firstScope.coroutineContext[Job]!!.cancelAndJoin()
+            val restored = SettingsDataStore(context, secondScope, name)
+            assertEquals(64, restored.readPageCacheLimitMiB())
+            try {
+                restored.setPageCacheLimitMiB(0)
+                org.junit.Assert.fail("An invalid cache limit must be rejected")
+            } catch (_: IllegalArgumentException) { }
+            assertEquals(64, restored.readPageCacheLimitMiB())
+        } finally {
+            firstScope.coroutineContext[Job]!!.cancelAndJoin()
+            secondScope.coroutineContext[Job]!!.cancelAndJoin()
+            context.preferencesDataStoreFile(name).delete()
+        }
+    }
 
     @Test
     fun migration_copiesRowsAndLeavesSessionData() = runBlocking {

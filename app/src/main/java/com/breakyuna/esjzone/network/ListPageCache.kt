@@ -92,7 +92,10 @@ internal object ListPageCache {
                 parsePage(requireNotNull(old.snapshot.pages[1]).html, 1)
             } catch (error: CancellationException) {
                 throw error
+            } catch (error: StaleListBatchException) {
+                throw error
             } catch (_: Exception) {
+                CacheDiagnostics.record(CacheEventType.FAILURE, CacheLayer.LIST, CacheEventReason.INVALID_DATA, key)
                 null // An unreadable cached page must get a chance to recover from the network.
             }
             if (parsed != null) {
@@ -107,9 +110,13 @@ internal object ListPageCache {
                         }) throw StaleListBatchException()
                     session(old, initialToken)
                 }
+                PageCache.touch(key)
+                CacheDiagnostics.record(CacheEventType.HIT, CacheLayer.LIST, CacheEventReason.FRESH, key)
+                CacheAnalysis.lookup(CacheLayer.LIST, fresh = true)
                 return opened to parsed.items
             }
         }
+        CacheAnalysis.lookup(CacheLayer.LIST, fresh = false, forced = forceRefresh || complete)
         val token = PageCache.beginWrite(key)
         try {
             val pages = linkedMapOf<Int, Page>()
@@ -150,6 +157,7 @@ internal object ListPageCache {
                 }
                 session(old, token, error.loadFailureKind())
             }
+            CacheDiagnostics.record(CacheEventType.HIT, CacheLayer.LIST, CacheEventReason.STALE, key)
             return opened to parsed.items
         }
     }
@@ -206,15 +214,26 @@ internal object ListPageCache {
                         ?.let { Page(it.fetchedAt, it.body) }
                 } else null
             }
-            if (cached != null && System.currentTimeMillis() - cached.fetchedAt <= maxAgeMillis) {
-                val parsed = parse(cached.html, page)
+            val cachedParsed = if (cached != null && System.currentTimeMillis() - cached.fetchedAt <= maxAgeMillis) {
+                try {
+                    parse(cached.html, page)
+                } catch (error: CancellationException) {
+                    throw error
+                } catch (error: StaleListBatchException) {
+                    throw error
+                } catch (_: Exception) {
+                    CacheDiagnostics.record(CacheEventType.FAILURE, CacheLayer.LIST, CacheEventReason.INVALID_DATA, key)
+                    null // A bad later page gets the same network recovery as page one.
+                }
+            } else null
+            if (cachedParsed != null) {
                 synchronized(lock) {
                     if (!isCurrent()) throw StaleListBatchException()
                     if (batch.snapshot.pages[page] == null) {
                         val migrationToken = PageCache.currentToken(key)
                         if (!PageCache.commitIfCurrent(key, migrationToken) {
                             val latest = batch.snapshot
-                            val updated = latest.copy(pages = latest.pages + (page to cached))
+                            val updated = latest.copy(pages = latest.pages + (page to requireNotNull(cached)))
                             if (PageCache.write(key, expected = migrationToken, trim = false) { gson.toJson(updated, it) }) {
                                 batch.snapshot = updated
                                 batch.reference = requireNotNull(PageCache.reference(key))
@@ -224,8 +243,12 @@ internal object ListPageCache {
                         }) throw StaleListBatchException()
                     }
                 }
-                return parsed.items
+                PageCache.touch(key)
+                CacheDiagnostics.record(CacheEventType.HIT, CacheLayer.LIST, CacheEventReason.FRESH, key)
+                CacheAnalysis.lookup(CacheLayer.LIST, fresh = true)
+                return cachedParsed.items
             }
+            CacheAnalysis.lookup(CacheLayer.LIST, fresh = false)
             val requestToken = PageCache.currentToken(key)
             // Failed updates leave cached pages intact and let callers retry the same page.
             val html = EsjzoneClient.getPage(authorization, pageUrl(page), maxAgeMillis,

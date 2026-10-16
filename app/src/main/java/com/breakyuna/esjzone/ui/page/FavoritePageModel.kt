@@ -113,8 +113,9 @@ class FavoritePageModel(private val authorization: Authorization) :
                     ?.let(latestByBookKey::get)
     }
 
+    // Null until local history is loaded; an empty index then means no recent reads.
     // Exclude unread recent additions from the showcase; no remote history or extra requests.
-    val readingIndex: StateFlow<ReadingIndex> =
+    val readingIndex: StateFlow<ReadingIndex?> =
         PresentationAccess.database.localReadingActivityDao().observeAll()
         .combine(PresentationAccess.downloads.changes) { rows, _ -> rows.map(PresentationAccess.downloads::refreshProgress) }
         .map { activities ->
@@ -146,7 +147,7 @@ class FavoritePageModel(private val authorization: Authorization) :
         }
         .distinctUntilChanged()
         .flowOn(Dispatchers.IO)
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), ReadingIndex())
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
     private val _downloadedBookKeys = MutableStateFlow<Set<String>>(emptySet())
     val downloadedBookKeys: StateFlow<Set<String>> = _downloadedBookKeys

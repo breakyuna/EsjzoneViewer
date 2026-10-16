@@ -63,6 +63,11 @@ import java.util.Locale
 
 class MainActivity : ComponentActivity() {
 
+    override fun onStop() {
+        super.onStop()
+        com.breakyuna.esjzone.network.CacheAnalysis.requestCheckpoint()
+    }
+
     // Handle volume keys before a focused reader control can consume them.
     @SuppressLint("RestrictedApi")
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {

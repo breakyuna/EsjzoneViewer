@@ -9,6 +9,7 @@ import com.breakyuna.esjzone.app.CoverLoadingPolicy
 import com.breakyuna.esjzone.app.PresentationAccess
 import com.breakyuna.esjzone.network.Authorization
 import com.breakyuna.esjzone.network.LoadFailureKind
+import com.breakyuna.esjzone.network.PageCache
 import com.breakyuna.esjzone.network.features.HomeDataCache
 import com.breakyuna.esjzone.network.features.getHomeData
 import com.breakyuna.esjzone.network.features.novels
@@ -189,6 +190,7 @@ class HomeTabModel(
     fun getHomeData(forceRefresh: Boolean = false) {
         if (loadStarted) return
         loadStarted = true
+        val cacheEpoch = PageCache.currentEpoch
         CoverLoadingPolicy.homeDataLoading(true)
         viewModelScope.launch(Dispatchers.IO) {
             val visibleData = mutableState.value as? State.Result
@@ -207,13 +209,13 @@ class HomeTabModel(
                             isSyncing = true,
                             isRefreshing = forceRefresh
                         )
-                        HomeDataCache.updateMemorySnapshot(authorization, partialData)
+                        HomeDataCache.updateMemorySnapshot(authorization, partialData, cacheEpoch)
                     }
                 )
                 ensureActive()
                 mutableState.value = State.Result(data, isSyncing = false)
-                HomeDataCache.updateMemorySnapshot(authorization, data)
-                HomeDataCache.writeSnapshot(authorization, data)
+                HomeDataCache.updateMemorySnapshot(authorization, data, cacheEpoch)
+                HomeDataCache.writeSnapshot(authorization, data, cacheEpoch)
             } catch (e: CancellationException) {
                 loadStarted = false
                 throw e

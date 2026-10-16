@@ -45,8 +45,11 @@ overlay clip and reusable path, rather than during composition. Back navigation 
 transform. Carousel navigation preserves the clicked pager instance in its saved
 route so repeated books have distinct transition keys. Ordinary cover-bearing novel entries share the clicked cover with the detail hero.
 Each rendered occurrence has a saved key, so repeated books in different rails do not
-match each other. The detail loading state displays the source cover at the final hero
-size, with hero text arriving separately. Full-card carousel transforms remain separate.
+match each other. Detail loading and results retain the same keyed list and hero;
+metadata updates keep the hero text's arrival identity. The entry cover stays in place
+during the initial shared transition, then adopts the detail response's cover.
+Reading history and download metadata begin loading when the page opens, before the
+detail response arrives. Full-card carousel transforms remain separate.
 Routes without a cover keep their ordinary navigation animation.
 
 Bookshelf list/grid changes, filtering, sorting and deletion share cover and title bounds

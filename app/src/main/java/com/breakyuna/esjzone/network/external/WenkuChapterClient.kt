@@ -4,6 +4,11 @@ import android.content.Context
 import com.breakyuna.esjzone.network.EsjzoneUrls
 import com.breakyuna.esjzone.network.StructuredChapterCache
 import com.breakyuna.esjzone.network.PageCache
+import com.breakyuna.esjzone.network.CacheDiagnostics
+import com.breakyuna.esjzone.network.CacheAnalysis
+import com.breakyuna.esjzone.network.CacheEventType
+import com.breakyuna.esjzone.network.CacheLayer
+import com.breakyuna.esjzone.network.CacheEventReason
 import com.breakyuna.esjzone.network.PageCacheTtl
 import com.breakyuna.esjzone.network.PageKind
 import com.breakyuna.esjzone.network.PageResponsePolicy
@@ -75,10 +80,13 @@ internal class WenkuChapterClient(context: Context, userAgent: String) {
         if (!forceRefresh) StructuredChapterCache.read(key, url)?.let { return it }
         if (!forceRefresh) PageCache.read(key, PageCacheTtl.CHAPTER)?.let { cached ->
             runCatching { validateAndParse(cached, chapter, url) }.getOrNull()?.let {
+                CacheDiagnostics.record(CacheEventType.HIT, CacheLayer.PAGE, CacheEventReason.FRESH, key)
+                CacheAnalysis.lookup(CacheLayer.PAGE, fresh = true)
                 return it.copy(sourceCacheReference = StructuredChapterCache.write(key, cached, it))
             }
-            PageCache.remove(key)
+            PageCache.remove(key, CacheEventReason.INVALID_DATA)
         }
+        CacheAnalysis.lookup(CacheLayer.PAGE, fresh = false, forced = forceRefresh)
         val writeToken = PageCache.beginWrite(key)
         if (allowAutoSolve && browser.isReady()) {
             try {

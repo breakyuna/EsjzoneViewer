@@ -1,6 +1,7 @@
 package com.breakyuna.esjzone.network
 
 import android.content.Context
+import com.breakyuna.esjzone.data.settings.SettingsDefaults
 import com.breakyuna.esjzone.util.storedTextReader
 import com.breakyuna.esjzone.util.writeCompressedText
 import java.io.File
@@ -51,7 +52,9 @@ internal object PageCacheInvalidation {
 internal object PageCache {
 
     private const val FILE_PREFIX = "esj-page-v3"
-    private const val MAX_CACHE_BYTES = 256L * 1024L * 1024L
+    private val mutableLimitMiB = MutableStateFlow(SettingsDefaults.DEFAULT_PAGE_CACHE_MIB)
+    val limitMiB = mutableLimitMiB.asStateFlow()
+    private val maxCacheBytes: Long get() = mutableLimitMiB.value.toLong() * 1024L * 1024L
     private const val ACCESS_TOUCH_INTERVAL_MILLIS = 5L * 60L * 1000L
 
     @Volatile
@@ -103,6 +106,14 @@ internal object PageCache {
     @Volatile
     private var cachedEntryCount = 0
 
+    fun setLimitMiB(value: Int) = synchronized(ioLock) {
+        require(value in SettingsDefaults.MIN_PAGE_CACHE_MIB..SettingsDefaults.MAX_PAGE_CACHE_MIB)
+        if (value == mutableLimitMiB.value) return@synchronized
+        CacheAnalysis.limitChanged(value, stats())
+        mutableLimitMiB.value = value
+        if (cachedSizeBytes > maxCacheBytes) trimToSize()
+    }
+
     fun initialize(context: Context) {
         // Novel chapters are useful after an app restart and while offline, so
         // keep their HTML in the app's persistent files area rather than the
@@ -136,7 +147,8 @@ internal object PageCache {
                     }
                 }
             }
-            if (cachedSizeBytes > MAX_CACHE_BYTES) trimToSize()
+            CacheAnalysis.observe(stats())
+            if (cachedSizeBytes > maxCacheBytes) trimToSize()
         }
     }
 
@@ -158,7 +170,10 @@ internal object PageCache {
                 val id = digest(sourceKey)
                 Entry(fetchedAt, body, "$id:${digest(structuredKey(sourceKey))}:$epoch:${versions[id] ?: version}")
             }
-        } catch (_: Exception) { null }
+        } catch (_: Exception) {
+            CacheDiagnostics.record(CacheEventType.FAILURE, diagnosticLayer(key), CacheEventReason.READ_FAILED, key)
+            null
+        }
     }
 
     fun readStale(key: String): String? = read(key, Long.MAX_VALUE)
@@ -170,6 +185,20 @@ internal object PageCache {
 
     internal fun isCurrentReference(reference: String): Boolean = synchronized(ioLock) {
         matchesReference(reference.split(':'))
+    }
+
+    internal fun commitIfCurrentReference(reference: String, action: () -> Unit): Boolean = synchronized(ioLock) {
+        if (!matchesReference(reference.split(':'))) return@synchronized false
+        action()
+        true
+    }
+
+    /** Record an in-memory hit without decompressing the persisted snapshot. */
+    internal fun touch(key: String, nowMillis: Long = System.currentTimeMillis()) = synchronized(ioLock) {
+        val file = fileFor(key) ?: return@synchronized
+        if (file.isFile && nowMillis - file.lastModified() >= ACCESS_TOUCH_INTERVAL_MILLIS) {
+            file.setLastModified(nowMillis)
+        }
     }
 
     private fun matchesReference(parts: List<String>): Boolean =
@@ -185,8 +214,14 @@ internal object PageCache {
     internal fun write(key: String, nowMillis: Long = System.currentTimeMillis(),
               expected: WriteToken? = null, trim: Boolean = true,
               writeBody: (Writer) -> Unit): Boolean = synchronized(ioLock) {
-        if (expected != null && !accepts(key, expected)) return@synchronized false
-        val file = fileFor(key) ?: return@synchronized false
+        if (expected != null && !accepts(key, expected)) {
+            CacheDiagnostics.record(CacheEventType.FAILURE, diagnosticLayer(key), CacheEventReason.SUPERSEDED, key)
+            return@synchronized false
+        }
+        val file = fileFor(key) ?: run {
+            CacheDiagnostics.record(CacheEventType.FAILURE, diagnosticLayer(key), CacheEventReason.WRITE_FAILED, key)
+            return@synchronized false
+        }
         val temporary = File(file.parentFile, "${file.name}.tmp")
         try {
             val existed = file.isFile
@@ -206,10 +241,14 @@ internal object PageCache {
             if (!existed) cachedEntryCount += 1
             val id = digest(key)
             versions[id] = ++nextVersion
-            if (!key.startsWith("chapter-structured-v2|")) remove(structuredKey(key))
-            if (trim && cachedSizeBytes > MAX_CACHE_BYTES) trimToSize()
+            CacheDiagnostics.record(CacheEventType.UPDATE, diagnosticLayer(key),
+                if (existed) CacheEventReason.REPLACED else CacheEventReason.STORED, fileId = id, bytes = file.length())
+            if (!key.startsWith("chapter-structured-v2|")) remove(structuredKey(key), CacheEventReason.SOURCE_UPDATED)
+            CacheAnalysis.observe(stats())
+            if (trim && cachedSizeBytes > maxCacheBytes) trimToSize()
             true
         } catch (_: Exception) {
+            CacheDiagnostics.record(CacheEventType.FAILURE, diagnosticLayer(key), CacheEventReason.WRITE_FAILED, key)
             false
         } finally { runCatching { temporary.delete() } }
     }
@@ -219,11 +258,11 @@ internal object PageCache {
         val parts = reference.split(':')
         if (!matchesReference(parts)) return@synchronized
         val id = parts[0]
-        removeId(id)
-        removeId(parts[1])
+        removeId(id, CacheEventReason.DOWNLOADED)
+        removeId(parts[1], CacheEventReason.DOWNLOADED, CacheLayer.CHAPTER)
     }
 
-    private fun removeId(id: String) {
+    private fun removeId(id: String, reason: CacheEventReason, layer: CacheLayer = CacheLayer.PAGE) {
         requests.values.remove(id)
         versions.remove(id)
         val file = directory?.let { File(it, "$FILE_PREFIX-$id.html") } ?: return
@@ -231,6 +270,9 @@ internal object PageCache {
         if (runCatching { file.delete() }.getOrDefault(false)) {
             cachedSizeBytes = (cachedSizeBytes - length).coerceAtLeast(0L)
             cachedEntryCount = (cachedEntryCount - 1).coerceAtLeast(0)
+            CacheDiagnostics.record(CacheEventType.EVICT, layer, reason, fileId = id, bytes = length)
+        } else if (file.exists()) {
+            CacheDiagnostics.record(CacheEventType.FAILURE, layer, CacheEventReason.DELETE_FAILED, fileId = id)
         }
     }
 
@@ -242,9 +284,11 @@ internal object PageCache {
         source.reference
     }
 
-    fun remove(key: String) = synchronized(ioLock) {
-        removeId(digest(key))
-        if (!key.startsWith("chapter-structured-v2|")) removeId(digest(structuredKey(key)))
+    fun remove(key: String, reason: CacheEventReason = CacheEventReason.INVALIDATED) = synchronized(ioLock) {
+        removeId(digest(key), reason, diagnosticLayer(key))
+        if (!key.startsWith("chapter-structured-v2|")) {
+            removeId(digest(structuredKey(key)), reason, CacheLayer.CHAPTER)
+        }
     }
 
     fun clear() {
@@ -255,8 +299,17 @@ internal object PageCache {
                 ?: throw java.io.IOException("Unable to list page cache files")
             var deletionFailed = false
             files.forEach { file ->
-                if (file.name.startsWith(FILE_PREFIX) && !file.delete() && file.exists()) {
-                    deletionFailed = true
+                if (file.name.startsWith(FILE_PREFIX)) {
+                    val length = file.length()
+                    val id = file.name.removePrefix("$FILE_PREFIX-").removeSuffix(".html")
+                    if (file.delete()) {
+                        CacheDiagnostics.record(CacheEventType.EVICT, CacheLayer.PAGE, CacheEventReason.CLEARED,
+                            fileId = id, bytes = length)
+                    } else if (file.exists()) {
+                        deletionFailed = true
+                        CacheDiagnostics.record(CacheEventType.FAILURE, CacheLayer.PAGE, CacheEventReason.DELETE_FAILED,
+                            fileId = id)
+                    }
                 }
             }
             val remaining = cacheDirectory.listFiles()
@@ -271,7 +324,7 @@ internal object PageCache {
     }
 
     fun stats(): PageCacheStats = synchronized(ioLock) {
-        PageCacheStats(cachedEntryCount, cachedSizeBytes, MAX_CACHE_BYTES)
+        PageCacheStats(cachedEntryCount, cachedSizeBytes, maxCacheBytes)
     }
 
     private fun fileFor(key: String): File? {
@@ -283,9 +336,16 @@ internal object PageCache {
         .digest(key.toByteArray(StandardCharsets.UTF_8))
         .joinToString("") { byte -> "%02x".format(byte.toInt() and 0xff) }
 
-    fun trim() = synchronized(ioLock) { if (cachedSizeBytes > MAX_CACHE_BYTES) trimToSize() }
+    private fun diagnosticLayer(key: String): CacheLayer = when {
+        key.startsWith("chapter-structured-v2|") -> CacheLayer.CHAPTER
+        key.startsWith("list-snapshot-v1|") -> CacheLayer.LIST
+        else -> CacheLayer.PAGE
+    }
+
+    fun trim() = synchronized(ioLock) { if (cachedSizeBytes > maxCacheBytes) trimToSize() }
 
     private fun trimToSize() {
+        CacheAnalysis.evictionPass()
         val files = directory?.listFiles()
             ?.filter { it.isFile && it.name.startsWith(FILE_PREFIX) }
             ?.sortedBy { it.lastModified() }
@@ -293,7 +353,7 @@ internal object PageCache {
         var total = cachedSizeBytes
         var count = cachedEntryCount
         for (file in files) {
-            if (total <= MAX_CACHE_BYTES) break
+            if (total <= maxCacheBytes) break
             val length = file.length()
             if (file.delete()) {
                 val id = file.name.removePrefix("$FILE_PREFIX-").removeSuffix(".html")
@@ -301,6 +361,10 @@ internal object PageCache {
                 versions.remove(id)
                 total -= length
                 count -= 1
+                CacheDiagnostics.record(CacheEventType.EVICT, CacheLayer.PAGE, CacheEventReason.CAPACITY,
+                    fileId = id, bytes = length)
+            } else if (file.exists()) {
+                CacheDiagnostics.record(CacheEventType.FAILURE, CacheLayer.PAGE, CacheEventReason.DELETE_FAILED)
             }
         }
         cachedSizeBytes = total.coerceAtLeast(0L)

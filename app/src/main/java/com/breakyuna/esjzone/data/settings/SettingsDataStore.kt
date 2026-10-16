@@ -30,6 +30,9 @@ import com.breakyuna.esjzone.util.AppLogger
 
 /** Stable application setting keys and values shared by the DataStore boundary and UI adapter. */
 object SettingsDefaults {
+    const val DEFAULT_PAGE_CACHE_MIB = 100
+    const val MIN_PAGE_CACHE_MIB = 1
+    const val MAX_PAGE_CACHE_MIB = 2048
     const val READER_AUTO_SAVE_KEY = "reader_auto_save"
     const val DOWNLOAD_CONCURRENCY_KEY = "download_concurrency"
     const val DEFAULT_DOWNLOAD_CONCURRENCY = 5
@@ -88,6 +91,17 @@ class SettingsDataStore(
         .stateIn(scope, SharingStarted.Eagerly, defaults.navigationOrder)
     override val startTab: StateFlow<String> = values.map { it.startTab }
         .stateIn(scope, SharingStarted.Eagerly, defaults.startTab)
+
+    suspend fun readPageCacheLimitMiB(): Int = dataStore.data
+        .catch { error -> if (error is IOException) emit(emptyPreferences()) else throw error }
+        .first()[PAGE_CACHE_LIMIT_MIB]
+        ?.takeIf { it in SettingsDefaults.MIN_PAGE_CACHE_MIB..SettingsDefaults.MAX_PAGE_CACHE_MIB }
+        ?: SettingsDefaults.DEFAULT_PAGE_CACHE_MIB
+
+    suspend fun setPageCacheLimitMiB(value: Int) {
+        require(value in SettingsDefaults.MIN_PAGE_CACHE_MIB..SettingsDefaults.MAX_PAGE_CACHE_MIB)
+        dataStore.edit { it[PAGE_CACHE_LIMIT_MIB] = value }
+    }
 
     override fun setAdult(value: Boolean) = write { it[ADULT] = value }
     override fun setThemeMode(value: AppThemeMode) = write { it[THEME_MODE] = value.name }
@@ -207,6 +221,7 @@ class SettingsDataStore(
     private companion object {
         const val FILE_NAME = "settings.preferences_pb"
         const val READER_AUTO_SAVE_KEY = SettingsDefaults.READER_AUTO_SAVE_KEY
+        val PAGE_CACHE_LIMIT_MIB = intPreferencesKey("page_cache_limit_mib")
         val ADULT = booleanPreferencesKey("adult")
         val THEME_MODE = stringPreferencesKey("theme_mode")
         val HIDE_HOME_RECOMMENDATIONS = booleanPreferencesKey("hide_home_recommendations")

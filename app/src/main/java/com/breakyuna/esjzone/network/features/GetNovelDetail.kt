@@ -6,8 +6,13 @@ import com.breakyuna.esjzone.network.EsjzoneUrls
 import com.breakyuna.esjzone.network.HtmlSelector
 import com.breakyuna.esjzone.network.JsoupHtmlSelector
 import com.breakyuna.esjzone.network.PageCacheTtl
+import com.breakyuna.esjzone.network.PageCache
 import com.breakyuna.esjzone.network.PageKind
 import com.breakyuna.esjzone.network.NovelDetailCache
+import com.breakyuna.esjzone.network.CacheDiagnostics
+import com.breakyuna.esjzone.network.CacheEventType
+import com.breakyuna.esjzone.network.CacheLayer
+import com.breakyuna.esjzone.network.CacheEventReason
 import com.breakyuna.esjzone.novellibrary.novel.DetailedNovel
 import com.breakyuna.esjzone.novellibrary.novel.Novel
 import com.breakyuna.esjzone.novellibrary.novel.NovelChapterList
@@ -29,10 +34,14 @@ fun EsjzoneClient.getNovelDetail(
     val targetUrl = baseUrl?.let { EsjzoneUrls.resolve(novel.url, it) }
         ?: EsjzoneUrls.resolve(novel.url)
     val detailCacheKey = novelDetailCacheKey(authorization, targetUrl)
+    val detailCacheEpoch = NovelDetailCache.currentEpoch
     if (!includeComments && !forceRefresh) {
         NovelDetailCache.read(detailCacheKey)?.takeIf { cached ->
             cached.name.isNotBlank() && !cached.name.all(Char::isDigit)
-        }?.let { return it }
+        }?.let {
+            CacheDiagnostics.record(CacheEventType.HIT, CacheLayer.DETAIL, CacheEventReason.MEMORY, detailCacheKey)
+            return it
+        }
     }
 
     AppLogger.i("GetNovelDetail", "Fetching novel detail: ${novel.name} at $targetUrl")
@@ -43,6 +52,9 @@ fun EsjzoneClient.getNovelDetail(
         forceRefresh = forceRefresh,
         pageKind = PageKind.DETAIL
     )
+    val sourceReference = if (!includeComments) {
+        PageCache.readEntry(detailCacheKey)?.takeIf { it.body == responseBody }?.reference
+    } else null
 
     val document = Jsoup.parse(responseBody, targetUrl)
 
@@ -150,8 +162,8 @@ fun EsjzoneClient.getNovelDetail(
         sourceUrl,
         updatedAt
     )
-    if (!includeComments) {
-        NovelDetailCache.write(detailCacheKey, detailedNovel)
+    if (sourceReference != null) {
+        NovelDetailCache.write(detailCacheKey, detailedNovel, sourceReference, detailCacheEpoch)
     }
     return detailedNovel
 }

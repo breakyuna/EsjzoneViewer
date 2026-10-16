@@ -12,6 +12,28 @@ import org.junit.Test
 
 class PageCacheStorageTest {
     @Test
+    fun loweringLimitImmediatelyReclaimsOversizedCache() {
+        val directory = Files.createTempDirectory("page-cache-limit-").toFile()
+        val previousLimit = PageCache.limitMiB.value
+        PageCache.initializeDirectory(directory)
+        try {
+            PageCache.setLimitMiB(100)
+            assertTrue(PageCache.write("fixture", "cached content"))
+            val file = directory.listFiles()!!.single()
+            java.io.RandomAccessFile(file, "rw").use { it.setLength(2L * 1024L * 1024L) }
+            PageCache.initializeDirectory(directory)
+            assertTrue(file.exists())
+            PageCache.setLimitMiB(1)
+            assertFalse(file.exists())
+            assertEquals(1024L * 1024L, PageCache.stats().maxSizeBytes)
+            assertEquals(0L, PageCache.stats().sizeBytes)
+        } finally {
+            PageCache.setLimitMiB(previousLimit)
+            directory.deleteRecursively()
+        }
+    }
+
+    @Test
     fun startupCleansLegacyFilesAndCountsCurrentCacheInOnePass() {
         val directory = Files.createTempDirectory("startup-cache-scan-").toFile()
         PageCache.initializeDirectory(directory)

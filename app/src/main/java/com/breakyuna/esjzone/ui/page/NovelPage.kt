@@ -31,6 +31,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.MenuBook
@@ -80,6 +81,7 @@ import androidx.compose.material3.rememberModalBottomSheetState
 import com.breakyuna.esjzone.network.features.unlockPasswordProtectedChapter
 import com.breakyuna.esjzone.ui.navigation.rememberSharedCoverOrigin
 import com.breakyuna.esjzone.ui.navigation.novelCoverDestination
+import com.breakyuna.esjzone.ui.navigation.LocalContainerTransformScope
 import com.breakyuna.esjzone.novellibrary.novel.CoveredNovel
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
@@ -138,7 +140,6 @@ import com.breakyuna.esjzone.ui.designsystem.AppSpacing
 import com.breakyuna.esjzone.ui.designsystem.AppTypography
 import com.breakyuna.esjzone.ui.designsystem.AppTouchTarget
 import com.breakyuna.esjzone.ui.designsystem.appStateColors
-import com.breakyuna.esjzone.ui.designsystem.AppAdaptiveMetrics
 import com.breakyuna.esjzone.ui.designsystem.AppWindowSizeClass
 import com.breakyuna.esjzone.ui.designsystem.rememberAppAdaptiveMetrics
 import com.breakyuna.esjzone.ui.designsystem.AppImageViewer
@@ -185,8 +186,23 @@ class NovelPage(
         val screenModel = rememberAppViewModel { NovelPageModel(authorization, novel) }
         val commentModel = rememberAppViewModel { CommentPageModel(authorization, novel.url) }
         val state by screenModel.state.collectAsState()
-        val localShelfEntry by BookshelfRepository.observeEntry(authorization, novel.url)
-            .collectAsState(initial = null)
+        val localShelfEntry by remember(authorization, novel.url) {
+            BookshelfRepository.observeEntry(authorization, novel.url)
+        }.collectAsState(initial = null)
+        val detailed = (state as? NovelPageModel.State.Result)?.detailed
+        val readingId = detailed?.id()?.takeIf(String::isNotBlank)
+            ?: BookshelfRepository.novelIdFor(novel.url)
+        val readingUrl = detailed?.url ?: novel.url
+        val localReading by remember(readingId, readingUrl) {
+            PresentationAccess.database.localReadingActivityDao()
+                .observeLatestForIdentity(readingId, readingUrl)
+        }.collectAsState(initial = null)
+        var downloaded by remember(novel.url) { mutableStateOf<DownloadedNovelManifest?>(null) }
+        LaunchedEffect(novel.url) {
+            downloaded = withContext(Dispatchers.IO) {
+                PresentationAccess.downloads.manifest(novel.url)
+            }
+        }
         var showMoreActions by rememberSaveable(novel.url) { mutableStateOf(false) }
         var exportFormat by rememberSaveable(novel.url) { mutableStateOf<NovelExportFormat?>(null) }
         var exportSelection by rememberSaveable(novel.url, stateSaver = DownloadChapterSelectionSaver) {
@@ -273,58 +289,19 @@ class NovelPage(
                 onMore = { showMoreActions = true }
             )
 
-            when (val snapshot = state) {
-                NovelPageModel.State.Loading -> Box(
-                    modifier = Modifier.weight(1f).fillMaxWidth(),
-                    contentAlignment = Alignment.TopCenter
-                ) {
-                    val metrics = rememberAppAdaptiveMetrics()
-                    val inset = when (metrics.sizeClass) {
-                        AppWindowSizeClass.Compact -> AppSpacing.sm
-                        AppWindowSizeClass.Medium -> AppSpacing.md
-                        AppWindowSizeClass.Expanded -> AppSpacing.lg
-                    }
-                    Column(Modifier.widthIn(max = metrics.contentMaxWidth).fillMaxWidth().padding(horizontal = inset)) {
-                        val preview = novel as? CoveredNovel
-                        val sourceCover = rememberSharedCoverOrigin(novel.url)
-                        NovelHero(
-                            novel = com.breakyuna.esjzone.ui.product.NovelCardModel(
-                                id = novel.url, title = novel.name,
-                                cover = NovelCoverModel(sourceCover?.coverUrl ?: preview?.coverUrl, novel.name, state = sourceCover?.state ?: preview?.coverState)
-                            ),
-                            coverModifier = Modifier.novelCoverDestination(novel.url),
-                            modifier = Modifier.padding(vertical = AppSpacing.sm)
-                        )
-                        LoadingSkeleton(modifier = Modifier.fillMaxWidth())
+            val detailItems: LazyListScope.() -> Unit = when (val snapshot = state) {
+                NovelPageModel.State.Loading -> {
+                    {
+                        item(key = "detail-loading", contentType = "loading") {
+                            LoadingSkeleton(modifier = Modifier.fillMaxWidth())
+                        }
                     }
                 }
-
-                is NovelPageModel.State.Error -> Box(
-                    modifier = Modifier.weight(1f).fillMaxWidth(),
-                    contentAlignment = Alignment.Center
-                ) {
-                    if (snapshot.failure == LoadFailureKind.NETWORK) {
-                        OfflineState(
-                            modifier = Modifier.fillMaxWidth(),
-                            onRetry = screenModel::retry
-                        )
-                    } else {
-                        ErrorState(
-                            title = stringResource(R.string.community_load_failed),
-                            message = stringResource(R.string.community_empty_guidance),
-                            modifier = Modifier.fillMaxWidth(),
-                            onRetry = screenModel::retry
-                        )
-                    }
-                }
+                is NovelPageModel.State.Error -> { {} }
 
                 is NovelPageModel.State.Result -> {
                     val detailed = snapshot.detailed
                     val chapterList = detailed.chapterList
-                    val localReading by remember(detailed.id(), detailed.url) {
-                        PresentationAccess.database.localReadingActivityDao()
-                            .observeLatestForIdentity(detailed.id(), detailed.url)
-                    }.collectAsState(initial = null)
                     LaunchedEffect(localReading?.activityId, localReading?.novelName, detailed.name) {
                         val activity = localReading ?: return@LaunchedEffect
                         if (detailed.name.isNotBlank() && detailed.name != activity.novelId &&
@@ -344,12 +321,10 @@ class NovelPage(
                         }
                     }
                     val historyState = history.state()
-                    val hasHistory = rememberSaveable(novel.url) {
-                        mutableStateOf(chapterList.hasHistory)
-                    }
+                    val hasHistory = chapterList.hasHistory || historyState.value != null || localReading != null
                     val favoriteState = favorite.state()
                     var rememberedFavorite by rememberSaveable(novel.url) {
-                        mutableStateOf(favoriteState.value)
+                        mutableStateOf(localShelfEntry?.visible ?: (favoriteState.value || detailed.isFavorite))
                     }
                     var descriptionExpanded by rememberSaveable(novel.url) {
                         mutableStateOf(false)
@@ -363,21 +338,12 @@ class NovelPage(
                     val visibleRows = remember(chapterList, expandedChapterGroups.value) {
                         visibleChapterRows(chapterList.items, expandedChapterGroups.value)
                     }
-                    val hasExplicitHistory = remember(chapterList) {
-                        historyState.value != null
-                    }
-
                     LaunchedEffect(chapterList, localReading) {
                         // A downloaded first chapter is a fallback, not a reading-history marker.
                         // Leave the holder empty so a later server history marker can still take effect.
                         if (historyState.value == null && chapterList.hasHistory) {
                             historyState.value = chapterList.toRead
                         }
-                        // A first chapter chosen as the default target is not
-                        // a resume marker. Only server history or a chapter
-                        // explicitly supplied by the source task means
-                        // "Continue reading".
-                        hasHistory.value = chapterList.hasHistory || hasExplicitHistory || localReading != null
                     }
 
                     LaunchedEffect(detailed.isFavorite, localShelfEntry?.operationVersion, snapshot.fromDownload) {
@@ -391,14 +357,16 @@ class NovelPage(
                             )
                         }
                     }
-                    LaunchedEffect(localShelfEntry?.operationVersion, localShelfEntry?.visible) {
+                    LaunchedEffect(localShelfEntry?.operationVersion, localShelfEntry?.visible, detailed.isFavorite) {
                         localShelfEntry?.let {
                             favoriteState.value = it.visible
                             rememberedFavorite = it.visible
+                        } ?: run {
+                            if (!snapshot.fromDownload) rememberedFavorite = detailed.isFavorite
                         }
                     }
 
-                    NovelDetailContent(
+                    novelDetailItems(
                         detailed = detailed,
                         authorization = authorization,
                         history = history,
@@ -434,10 +402,35 @@ class NovelPage(
                         commentModel = commentModel,
                         navigator = navigator,
                         context = context,
-                        modifier = Modifier.weight(1f)
+                        downloaded = downloaded,
+                        onDownloadedChange = { downloaded = it }
                     )
                 }
             }
+
+            val error = state as? NovelPageModel.State.Error
+            if (error != null) {
+                Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
+                    if (error.failure == LoadFailureKind.NETWORK) {
+                        OfflineState(modifier = Modifier.fillMaxWidth(), onRetry = screenModel::retry)
+                    } else {
+                        ErrorState(
+                            title = stringResource(R.string.community_load_failed),
+                            message = stringResource(R.string.community_empty_guidance),
+                            modifier = Modifier.fillMaxWidth(),
+                            onRetry = screenModel::retry
+                        )
+                    }
+                }
+            } else {
+                // Keep the list and hero mounted when loading becomes readable content.
+                NovelDetailLayout(
+                    hero = { RebuiltNovelHero(novel, detailed) },
+                    modifier = Modifier.weight(1f),
+                    content = detailItems
+                )
+            }
+            if (detailed != null) CommentComposerHost(model = commentModel)
         }
 
         if (showMoreActions) {
@@ -465,13 +458,49 @@ class NovelPage(
 }
 
 @Composable
-private fun NovelDetailContent(
+internal fun NovelDetailLayout(
+    hero: @Composable () -> Unit,
+    modifier: Modifier = Modifier,
+    content: LazyListScope.() -> Unit
+) {
+    val metrics = rememberAppAdaptiveMetrics()
+    val horizontalPadding = when (metrics.sizeClass) {
+        AppWindowSizeClass.Compact -> AppSpacing.sm
+        AppWindowSizeClass.Medium -> AppSpacing.md
+        AppWindowSizeClass.Expanded -> AppSpacing.lg
+    }
+    Box(modifier.fillMaxWidth(), contentAlignment = Alignment.TopCenter) {
+        LazyColumn(
+            modifier = Modifier
+                .then(
+                    if (metrics.sizeClass != AppWindowSizeClass.Compact) {
+                        Modifier.widthIn(max = metrics.contentMaxWidth)
+                    } else {
+                        Modifier
+                    }
+                )
+                .fillMaxSize(),
+            contentPadding = PaddingValues(
+                start = horizontalPadding,
+                end = horizontalPadding,
+                bottom = AppSpacing.lg
+            ),
+            verticalArrangement = Arrangement.spacedBy(AppSpacing.sm)
+        ) {
+            item(key = "detail-hero", contentType = "novel-hero") { hero() }
+            content()
+        }
+    }
+}
+
+@Composable
+private fun novelDetailItems(
     detailed: DetailedNovel,
     authorization: Authorization,
     history: ChapterStateHolder,
     historyState: androidx.compose.runtime.MutableState<com.breakyuna.esjzone.novellibrary.novel.Chapter?>,
     localReading: LocalReadingActivity?,
-    hasHistory: androidx.compose.runtime.MutableState<Boolean>,
+    hasHistory: Boolean,
     onExportTxt: () -> Unit,
     onExportEpub: () -> Unit,
     favorite: Boolean,
@@ -487,15 +516,10 @@ private fun NovelDetailContent(
     commentModel: CommentPageModel,
     navigator: AppNavigator?,
     context: Context,
-    modifier: Modifier = Modifier
-) {
+    downloaded: DownloadedNovelManifest?,
+    onDownloadedChange: (DownloadedNovelManifest?) -> Unit
+): LazyListScope.() -> Unit {
     val orderedChapters = detailed.chapterList.orderedChapters
-    var downloaded by remember(detailed.url) { mutableStateOf<com.breakyuna.esjzone.offline.DownloadedNovelManifest?>(null) }
-    LaunchedEffect(detailed.url) {
-        downloaded = kotlinx.coroutines.withContext(Dispatchers.IO) {
-            PresentationAccess.downloads.manifest(detailed.url)
-        }
-    }
     val passwordRequiredChapterKeys = remember(downloaded) {
         downloaded?.pendingPasswordChapters.orEmpty()
             .map { com.breakyuna.esjzone.offline.NovelDownloadStore.chapterKey(it.url) }
@@ -508,7 +532,6 @@ private fun NovelDetailContent(
             ?.let { Chapter(activity.chapterName, it, true) }
     }
     val targetChapter = localChapter ?: historyState.value ?: detailed.chapterList.toRead
-    val metrics = rememberAppAdaptiveMetrics()
     var hasVisualOverflow by remember(detailed.description) {
         mutableStateOf(false)
     }
@@ -537,7 +560,6 @@ private fun NovelDetailContent(
                 openExternal(context, EsjzoneUrls.resolve(chapter.url))
             } else {
                 historyState.value = chapter
-                hasHistory.value = true
                 navigator?.pushIfNotCurrent(
                     ChapterPage(
                         novelId = detailed.id(),
@@ -553,425 +575,411 @@ private fun NovelDetailContent(
         }
     }
 
-    val horizontalPadding = when (metrics.sizeClass) {
-        AppWindowSizeClass.Compact -> AppSpacing.sm
-        AppWindowSizeClass.Medium -> AppSpacing.md
-        AppWindowSizeClass.Expanded -> AppSpacing.lg
-    }
-
-    Column(modifier = modifier.fillMaxWidth()) {
-        LazyColumn(
-            modifier = Modifier
-                .weight(1f)
-                .then(
-                    if (metrics.sizeClass != AppWindowSizeClass.Compact) {
-                        Modifier.widthIn(max = metrics.contentMaxWidth)
-                    } else {
-                        Modifier
-                    }
+    return {
+        if (detailed.tags.isNotEmpty()) {
+            item(key = "detail-tags", contentType = "novel-tags") {
+                RebuiltNovelTags(
+                    tags = detailed.tags,
+                    onTagClick = { tag -> navigator?.pushIfNotCurrent(SearchPage(tag)) }
                 )
-                .fillMaxWidth()
-                .align(Alignment.CenterHorizontally),
-            contentPadding = PaddingValues(
-                start = horizontalPadding,
-                end = horizontalPadding,
-                bottom = AppSpacing.lg
-            ),
-            verticalArrangement = Arrangement.spacedBy(AppSpacing.sm)
-        ) {
-            item(key = "detail-hero", contentType = "novel-hero") {
-                RebuiltNovelHero(detailed, metrics)
             }
+        }
 
-            if (detailed.tags.isNotEmpty()) {
-                item(key = "detail-tags", contentType = "novel-tags") {
-                    RebuiltNovelTags(
-                        tags = detailed.tags,
-                        onTagClick = { tag -> navigator?.pushIfNotCurrent(SearchPage(tag)) }
-                    )
-                }
-            }
-
-            item(key = "detail-actions", contentType = "novel-actions") {
-                Column(
+        item(key = "detail-actions", contentType = "novel-actions") {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(AppSpacing.sm)
+            ) {
+                Row(
                     modifier = Modifier.fillMaxWidth(),
-                    verticalArrangement = Arrangement.spacedBy(AppSpacing.sm)
+                    horizontalArrangement = Arrangement.spacedBy(AppSpacing.sm)
                 ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(AppSpacing.sm)
-                    ) {
-                        Button(
-                            enabled = targetChapter != null,
-                            onClick = {
-                                targetChapter?.let { chapter ->
-                                    if (chapter.isExternal) {
-                                        openExternal(context, EsjzoneUrls.resolve(chapter.url))
-                                    } else {
-                                        navigator?.pushIfNotCurrent(
-                                            ChapterPage(
-                                                novelId = detailed.id(),
-                                                chapter = chapter,
-                                                history = history,
-                                                chapterOrder = orderedChapters,
-                                                novelName = detailed.name,
-                                                novelUrl = detailed.url,
-                                                novelCoverUrl = detailed.coverUrl,
-                                                resumeChapterProgress = localReading?.chapterProgress
-                                                    ?.takeIf { localChapter != null &&
-                                                        EsjzoneUrls.canonicalPageKey(chapter.url) ==
-                                                        EsjzoneUrls.canonicalPageKey(localChapter.url) }
-                                            )
+                    Button(
+                        enabled = targetChapter != null,
+                        onClick = {
+                            targetChapter?.let { chapter ->
+                                if (chapter.isExternal) {
+                                    openExternal(context, EsjzoneUrls.resolve(chapter.url))
+                                } else {
+                                    navigator?.pushIfNotCurrent(
+                                        ChapterPage(
+                                            novelId = detailed.id(),
+                                            chapter = chapter,
+                                            history = history,
+                                            chapterOrder = orderedChapters,
+                                            novelName = detailed.name,
+                                            novelUrl = detailed.url,
+                                            novelCoverUrl = detailed.coverUrl,
+                                            resumeChapterProgress = localReading?.chapterProgress
+                                                ?.takeIf { localChapter != null &&
+                                                    EsjzoneUrls.canonicalPageKey(chapter.url) ==
+                                                    EsjzoneUrls.canonicalPageKey(localChapter.url) }
                                         )
-                                    }
+                                    )
                                 }
+                            }
+                        },
+                        modifier = Modifier
+                            .weight(1f)
+                            .heightIn(min = AppTouchTarget.minimum),
+                        shape = AppShapes.standard,
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = Color(0xFF1976D2),
+                            contentColor = Color.White,
+                            disabledContainerColor = Color(0xFF1976D2).copy(alpha = 0.38f),
+                            disabledContentColor = Color.White.copy(alpha = 0.38f)
+                        ),
+                        contentPadding = PaddingValues(horizontal = AppSpacing.sm, vertical = AppSpacing.sm)
+                    ) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.MenuBook,
+                            contentDescription = null,
+                            modifier = Modifier.size(19.dp)
+                        )
+                        Spacer(modifier = Modifier.width(7.dp))
+                        Text(
+                            text = stringResource(
+                                if (hasHistory) R.string.continue_reading else R.string.start_reading
+                            ),
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                    Button(
+                        onClick = onToggleFavorite,
+                        modifier = Modifier
+                            .weight(1f)
+                            .heightIn(min = AppTouchTarget.minimum),
+                        shape = AppShapes.standard,
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = Color(0xFFE53935),
+                            contentColor = Color.White
+                        ),
+                        contentPadding = PaddingValues(horizontal = AppSpacing.sm, vertical = AppSpacing.sm)
+                    ) {
+                        Icon(
+                            imageVector = if (favorite) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder,
+                            contentDescription = stringResource(
+                                if (favorite) R.string.novel_favorited else R.string.novel_favorite
+                            ),
+                            modifier = Modifier.size(19.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = if (favoriteFailed) {
+                                stringResource(R.string.novel_favorite_failed)
+                            } else if (favoritePending) {
+                                stringResource(R.string.novel_favorite_pending)
+                            } else {
+                                stringResource(
+                                    if (favorite) R.string.novel_favorited else R.string.novel_favorite
+                                )
+                            },
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(AppSpacing.sm)
+                ) {
+                    NovelDownloadActions(
+                        novel = detailed,
+                        authorization = authorization,
+                        downloaded = downloaded,
+                        onDownloadedChange = onDownloadedChange,
+                        onExportTxt = onExportTxt,
+                        onExportEpub = onExportEpub,
+                        modifier = if (detailed.forumUrl.isBlank()) {
+                            Modifier.fillMaxWidth()
+                        } else {
+                            Modifier.weight(1f)
+                        }
+                    )
+                    if (detailed.forumUrl.isNotBlank()) {
+                        OutlinedButton(
+                            onClick = {
+                                openSystemBrowser(context, EsjzoneUrls.resolve(detailed.forumUrl))
                             },
                             modifier = Modifier
                                 .weight(1f)
                                 .heightIn(min = AppTouchTarget.minimum),
                             shape = AppShapes.standard,
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = Color(0xFF1976D2),
-                                contentColor = Color.White,
-                                disabledContainerColor = Color(0xFF1976D2).copy(alpha = 0.38f),
-                                disabledContentColor = Color.White.copy(alpha = 0.38f)
-                            ),
                             contentPadding = PaddingValues(horizontal = AppSpacing.sm, vertical = AppSpacing.sm)
                         ) {
                             Icon(
-                                imageVector = Icons.AutoMirrored.Filled.MenuBook,
-                                contentDescription = null,
-                                modifier = Modifier.size(19.dp)
-                            )
-                            Spacer(modifier = Modifier.width(7.dp))
-                            Text(
-                                text = stringResource(
-                                    if (hasHistory.value) R.string.continue_reading else R.string.start_reading
-                                ),
-                                maxLines = 2,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                        }
-                        Button(
-                            onClick = onToggleFavorite,
-                            modifier = Modifier
-                                .weight(1f)
-                                .heightIn(min = AppTouchTarget.minimum),
-                            shape = AppShapes.standard,
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = Color(0xFFE53935),
-                                contentColor = Color.White
-                            ),
-                            contentPadding = PaddingValues(horizontal = AppSpacing.sm, vertical = AppSpacing.sm)
-                        ) {
-                            Icon(
-                                imageVector = if (favorite) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder,
-                                contentDescription = stringResource(
-                                    if (favorite) R.string.novel_favorited else R.string.novel_favorite
-                                ),
+                                imageVector = Icons.Filled.Forum,
+                                contentDescription = stringResource(R.string.novel_open_forum),
                                 modifier = Modifier.size(19.dp)
                             )
                             Spacer(modifier = Modifier.width(6.dp))
                             Text(
-                                text = if (favoriteFailed) {
-                                    stringResource(R.string.novel_favorite_failed)
-                                } else if (favoritePending) {
-                                    stringResource(R.string.novel_favorite_pending)
-                                } else {
-                                    stringResource(
-                                        if (favorite) R.string.novel_favorited else R.string.novel_favorite
-                                    )
-                                },
+                                text = stringResource(R.string.novel_open_forum),
                                 maxLines = 2,
                                 overflow = TextOverflow.Ellipsis
                             )
                         }
                     }
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(AppSpacing.sm)
-                    ) {
-                        NovelDownloadActions(
-                            novel = detailed,
-                            authorization = authorization,
-                            downloaded = downloaded,
-                            onDownloadedChange = { downloaded = it },
-                            onExportTxt = onExportTxt,
-                            onExportEpub = onExportEpub,
-                            modifier = if (detailed.forumUrl.isBlank()) {
-                                Modifier.fillMaxWidth()
-                            } else {
-                                Modifier.weight(1f)
-                            }
-                        )
-                        if (detailed.forumUrl.isNotBlank()) {
-                            OutlinedButton(
-                                onClick = {
-                                    openSystemBrowser(context, EsjzoneUrls.resolve(detailed.forumUrl))
-                                },
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .heightIn(min = AppTouchTarget.minimum),
-                                shape = AppShapes.standard,
-                                contentPadding = PaddingValues(horizontal = AppSpacing.sm, vertical = AppSpacing.sm)
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Filled.Forum,
-                                    contentDescription = stringResource(R.string.novel_open_forum),
-                                    modifier = Modifier.size(19.dp)
-                                )
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text(
-                                    text = stringResource(R.string.novel_open_forum),
-                                    maxLines = 2,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                            }
-                        }
-                    }
-                }
-            }
-
-            if (descriptionText.isNotBlank() || detailed.description.components.isNotEmpty()) {
-                item(key = "detail-description", contentType = "novel-description") {
-                    Column(
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        RebuiltSectionHeading(title = stringResource(R.string.description))
-                        Spacer(modifier = Modifier.height(AppSpacing.sm))
-                        if (isExpanded || descriptionText.isBlank()) {
-                            Description(
-                                description = detailed.description,
-                                showHeader = false,
-                                modifier = Modifier.fillMaxWidth()
-                            )
-                        } else {
-                            Column(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .then(
-                                        if (showDescriptionToggle) {
-                                            Modifier.clickable { onDescriptionExpandedChange(true) }
-                                        } else {
-                                            Modifier
-                                        }
-                                    )
-                            ) {
-                                Text(
-                                    text = descriptionText,
-                                    style = AppTypography.bodyMedium.copy(
-                                        lineHeight = 22.sp
-                                    ),
-                                    color = MaterialTheme.colorScheme.onSurface,
-                                    maxLines = 5,
-                                    overflow = TextOverflow.Ellipsis,
-                                    onTextLayout = { result ->
-                                        if (result.hasVisualOverflow) {
-                                            hasVisualOverflow = true
-                                        }
-                                    }
-                                )
-                            }
-                        }
-                        if (showDescriptionToggle) {
-                            TextButton(
-                                onClick = {
-                                    onDescriptionExpandedChange(!descriptionExpanded)
-                                },
-                                modifier = Modifier.align(Alignment.End)
-                            ) {
-                                Icon(
-                                    imageVector = if (isExpanded) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(18.dp)
-                                )
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text(
-                                    text = stringResource(
-                                        if (isExpanded) {
-                                            R.string.novel_description_collapse
-                                        } else {
-                                            R.string.novel_description_expand
-                                        }
-                                    )
-                                )
-                            }
-                        }
-                    }
-                }
-            }
-
-            item(key = "detail-chapters-heading", contentType = "chapter-heading") {
-                Column(
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    RebuiltRule()
-                    Spacer(modifier = Modifier.height(AppSpacing.lg))
-                    RebuiltSectionHeading(
-                        title = stringResource(R.string.novel_chapterlist),
-                        supportingText = orderedChapters.takeIf { it.isNotEmpty() }?.let {
-                            stringResource(R.string.novel_chapter_count, it.size)
-                        },
-                        actionLabel = if (orderedChapters.isNotEmpty()) {
-                            stringResource(
-                                if (showAllChapters) R.string.novel_show_fewer_chapters
-                                else R.string.novel_show_all_chapters
-                            )
-                        } else null,
-                        onAction = if (orderedChapters.isNotEmpty()) {
-                            { onShowAllChaptersChange(!showAllChapters) }
-                        } else null
-                    )
-                }
-            }
-
-            if (orderedChapters.isEmpty()) {
-                item(key = "detail-chapters-empty", contentType = "chapter-empty") {
-                    Text(
-                        text = stringResource(R.string.reader_contents_empty),
-                        style = AppTypography.bodyMedium,
-                        color = appStateColors().contentMuted,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = AppSpacing.lg)
-                    )
-                }
-            } else if (!showAllChapters) {
-                item(key = "detail-chapter-preview", contentType = "chapter-preview") {
-                    Column(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalArrangement = Arrangement.spacedBy(AppSpacing.sm)
-                    ) {
-                        previewChapters.forEachIndexed { index, chapter ->
-                            key("chapter-preview:${chapter.url}:$index") {
-                                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                                    when {
-                                        hasHistory.value && targetChapter?.url == chapter.url -> {
-                                            Text(
-                                                text = stringResource(R.string.novel_last_read),
-                                                style = AppTypography.labelMedium,
-                                                color = appStateColors().contentMuted
-                                            )
-                                        }
-                                        latestChapter?.url == chapter.url -> {
-                                            Text(
-                                                text = stringResource(R.string.novel_latest_chapter),
-                                                style = AppTypography.labelMedium,
-                                                color = appStateColors().contentMuted
-                                            )
-                                        }
-                                    }
-                                    val isPw = passwordRequiredChapterKeys.contains(
-                                        com.breakyuna.esjzone.offline.NovelDownloadStore.chapterKey(chapter.url)
-                                    )
-                                    RebuiltChapterRow(
-                                        row = VisibleChapterItem(
-                                            item = ChapterItem(chapter),
-                                            key = "chapter-preview:${chapter.url}:$index",
-                                            depth = 0
-                                        ),
-                                        currentChapter = historyState.value,
-                                        hasHistory = hasHistory.value,
-                                        onChapterOpen = onChapterOpen,
-                                        onGroupToggle = {},
-                                        isPasswordRequired = isPw
-                                    )
-                                }
-                            }
-                        }
-                    }
-                }
-            } else {
-                items(
-                    visibleRows,
-                    key = { it.key },
-                    contentType = { row ->
-                        when (row) {
-                            is VisibleChapterGroup -> "chapter-group"
-                            is VisibleChapterItem -> "chapter-item"
-                        }
-                    }
-                ) { row ->
-                    val isPw = (row as? VisibleChapterItem)?.let { item ->
-                        (item.item as? ChapterItem)?.let { ci ->
-                            passwordRequiredChapterKeys.contains(
-                                com.breakyuna.esjzone.offline.NovelDownloadStore.chapterKey(ci.chapter.url)
-                            )
-                        }
-                    } == true
-                    Box(Modifier.animateItem(
-                        fadeInSpec = tween(AppMotion.quick),
-                        placementSpec = null,
-                        fadeOutSpec = tween(AppMotion.quick)
-                    )) {
-                    RebuiltChapterRow(
-                        row = row,
-                        currentChapter = historyState.value,
-                        hasHistory = hasHistory.value,
-                        onChapterOpen = onChapterOpen,
-                        onGroupToggle = onGroupToggle,
-                        isPasswordRequired = isPw
-                    )
-                    }
-                }
-                item(key = "detail-chapters-collapse", contentType = "chapter-collapse") {
-                    TextButton(
-                        onClick = { onShowAllChaptersChange(false) },
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text(stringResource(R.string.novel_show_fewer_chapters))
-                    }
-                }
-            }
-
-            item(key = "detail-comments-rule", contentType = "section-divider") {
-                Column(
-                    modifier = Modifier.fillMaxWidth()
-                ) { RebuiltRule() }
-            }
-            item(key = "detail-comments", contentType = "comments") {
-                Column(
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    RebuiltSectionHeading(title = stringResource(R.string.comments))
-                    Spacer(modifier = Modifier.height(AppSpacing.sm))
-                    CommentSectionContent(
-                        model = commentModel,
-                        showHeader = false,
-                        modifier = Modifier.fillMaxWidth()
-                    )
                 }
             }
         }
-        CommentComposerHost(model = commentModel)
+
+        if (descriptionText.isNotBlank() || detailed.description.components.isNotEmpty()) {
+            item(key = "detail-description", contentType = "novel-description") {
+                Column(
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    RebuiltSectionHeading(title = stringResource(R.string.description))
+                    Spacer(modifier = Modifier.height(AppSpacing.sm))
+                    if (isExpanded || descriptionText.isBlank()) {
+                        Description(
+                            description = detailed.description,
+                            showHeader = false,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    } else {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .then(
+                                    if (showDescriptionToggle) {
+                                        Modifier.clickable { onDescriptionExpandedChange(true) }
+                                    } else {
+                                        Modifier
+                                    }
+                                )
+                        ) {
+                            Text(
+                                text = descriptionText,
+                                style = AppTypography.bodyMedium.copy(
+                                    lineHeight = 22.sp
+                                ),
+                                color = MaterialTheme.colorScheme.onSurface,
+                                maxLines = 5,
+                                overflow = TextOverflow.Ellipsis,
+                                onTextLayout = { result ->
+                                    if (result.hasVisualOverflow) {
+                                        hasVisualOverflow = true
+                                    }
+                                }
+                            )
+                        }
+                    }
+                    if (showDescriptionToggle) {
+                        TextButton(
+                            onClick = {
+                                onDescriptionExpandedChange(!descriptionExpanded)
+                            },
+                            modifier = Modifier.align(Alignment.End)
+                        ) {
+                            Icon(
+                                imageVector = if (isExpanded) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                text = stringResource(
+                                    if (isExpanded) {
+                                        R.string.novel_description_collapse
+                                    } else {
+                                        R.string.novel_description_expand
+                                    }
+                                )
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        item(key = "detail-chapters-heading", contentType = "chapter-heading") {
+            Column(
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                RebuiltRule()
+                Spacer(modifier = Modifier.height(AppSpacing.lg))
+                RebuiltSectionHeading(
+                    title = stringResource(R.string.novel_chapterlist),
+                    supportingText = orderedChapters.takeIf { it.isNotEmpty() }?.let {
+                        stringResource(R.string.novel_chapter_count, it.size)
+                    },
+                    actionLabel = if (orderedChapters.isNotEmpty()) {
+                        stringResource(
+                            if (showAllChapters) R.string.novel_show_fewer_chapters
+                            else R.string.novel_show_all_chapters
+                        )
+                    } else null,
+                    onAction = if (orderedChapters.isNotEmpty()) {
+                        { onShowAllChaptersChange(!showAllChapters) }
+                    } else null
+                )
+            }
+        }
+
+        if (orderedChapters.isEmpty()) {
+            item(key = "detail-chapters-empty", contentType = "chapter-empty") {
+                Text(
+                    text = stringResource(R.string.reader_contents_empty),
+                    style = AppTypography.bodyMedium,
+                    color = appStateColors().contentMuted,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = AppSpacing.lg)
+                )
+            }
+        } else if (!showAllChapters) {
+            item(key = "detail-chapter-preview", contentType = "chapter-preview") {
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(AppSpacing.sm)
+                ) {
+                    previewChapters.forEachIndexed { index, chapter ->
+                        key("chapter-preview:${chapter.url}:$index") {
+                            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                when {
+                                    hasHistory && targetChapter?.url == chapter.url -> {
+                                        Text(
+                                            text = stringResource(R.string.novel_last_read),
+                                            style = AppTypography.labelMedium,
+                                            color = appStateColors().contentMuted
+                                        )
+                                    }
+                                    latestChapter?.url == chapter.url -> {
+                                        Text(
+                                            text = stringResource(R.string.novel_latest_chapter),
+                                            style = AppTypography.labelMedium,
+                                            color = appStateColors().contentMuted
+                                        )
+                                    }
+                                }
+                                val isPw = passwordRequiredChapterKeys.contains(
+                                    com.breakyuna.esjzone.offline.NovelDownloadStore.chapterKey(chapter.url)
+                                )
+                                RebuiltChapterRow(
+                                    row = VisibleChapterItem(
+                                        item = ChapterItem(chapter),
+                                        key = "chapter-preview:${chapter.url}:$index",
+                                        depth = 0
+                                    ),
+                                    currentChapter = historyState.value,
+                                    hasHistory = hasHistory,
+                                    onChapterOpen = onChapterOpen,
+                                    onGroupToggle = {},
+                                    isPasswordRequired = isPw
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        } else {
+            items(
+                visibleRows,
+                key = { it.key },
+                contentType = { row ->
+                    when (row) {
+                        is VisibleChapterGroup -> "chapter-group"
+                        is VisibleChapterItem -> "chapter-item"
+                    }
+                }
+            ) { row ->
+                val isPw = (row as? VisibleChapterItem)?.let { item ->
+                    (item.item as? ChapterItem)?.let { ci ->
+                        passwordRequiredChapterKeys.contains(
+                            com.breakyuna.esjzone.offline.NovelDownloadStore.chapterKey(ci.chapter.url)
+                        )
+                    }
+                } == true
+                Box(Modifier.animateItem(
+                    fadeInSpec = tween(AppMotion.quick),
+                    placementSpec = null,
+                    fadeOutSpec = tween(AppMotion.quick)
+                )) {
+                RebuiltChapterRow(
+                    row = row,
+                    currentChapter = historyState.value,
+                    hasHistory = hasHistory,
+                    onChapterOpen = onChapterOpen,
+                    onGroupToggle = onGroupToggle,
+                    isPasswordRequired = isPw
+                )
+                }
+            }
+            item(key = "detail-chapters-collapse", contentType = "chapter-collapse") {
+                TextButton(
+                    onClick = { onShowAllChaptersChange(false) },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(stringResource(R.string.novel_show_fewer_chapters))
+                }
+            }
+        }
+
+        item(key = "detail-comments-rule", contentType = "section-divider") {
+            Column(
+                modifier = Modifier.fillMaxWidth()
+            ) { RebuiltRule() }
+        }
+        item(key = "detail-comments", contentType = "comments") {
+            Column(
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                RebuiltSectionHeading(title = stringResource(R.string.comments))
+                Spacer(modifier = Modifier.height(AppSpacing.sm))
+                CommentSectionContent(
+                    model = commentModel,
+                    showHeader = false,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+        }
     }
 }
 
 /** Feature-owned detail building blocks. They intentionally consume only the
  * rebuilt token/component layer; networking and domain models stay untouched. */
 @Composable
-private fun RebuiltNovelHero(novel: DetailedNovel, metrics: AppAdaptiveMetrics) {
-    val coverUrl = EsjzoneUrls.coverOrEmpty(novel.coverUrl)
+private fun RebuiltNovelHero(preview: Novel, detailed: DetailedNovel?) {
+    val sourceCover = rememberSharedCoverOrigin(preview.url)
+    val previewCover = preview as? CoveredNovel
+    val transitionActive = LocalContainerTransformScope.current?.isTransitionActive == true
+    val previewCoverUrl = sourceCover?.coverUrl ?: previewCover?.coverUrl
+    var entryCoverReleased by rememberSaveable(preview.url) { mutableStateOf(false) }
+    LaunchedEffect(detailed != null, transitionActive) {
+        if (detailed != null && !transitionActive) entryCoverReleased = true
+    }
+    val usePreviewCover = detailed == null ||
+        (!entryCoverReleased && transitionActive && !previewCoverUrl.isNullOrBlank())
+    val coverUrl = if (usePreviewCover) {
+        previewCoverUrl
+    } else {
+        detailed?.coverUrl
+    }?.let(EsjzoneUrls::coverOrEmpty).orEmpty()
+    val coverState = if (usePreviewCover) sourceCover?.state ?: previewCover?.coverState else detailed?.coverState
+    val novel = detailed ?: previewCover
+    val title = detailed?.name?.takeIf(String::isNotBlank) ?: preview.name
     var viewingCover by rememberSaveable(coverUrl) { mutableStateOf(false) }
     val adultLabel = stringResource(R.string.adult_badge)
     val metadataDescription = listOfNotNull(
-        novel.type.trim().takeIf(String::isNotBlank),
-        novel.updatedAt?.trim()?.takeIf(String::isNotBlank)
+        detailed?.type?.trim()?.takeIf(String::isNotBlank),
+        detailed?.updatedAt?.trim()?.takeIf(String::isNotBlank)
     ).joinToString(" · ").takeIf(String::isNotBlank)
     val stats = listOfNotNull(
-        novel.views.takeIf { it > 0 }?.let {
+        novel?.views?.takeIf { it > 0 }?.let {
             NovelMetricModel(
                 label = stringResource(R.string.novel_views_label),
                 value = it.toString()
             )
         },
-        novel.likes.takeIf { it > 0 }?.let {
+        novel?.likes?.takeIf { it > 0 }?.let {
             NovelMetricModel(
                 label = stringResource(R.string.novel_likes_label),
                 value = it.toString()
             )
         },
-        novel.words.takeIf { it > 0 }?.let {
+        novel?.words?.takeIf { it > 0 }?.let {
             NovelMetricModel(
                 label = stringResource(R.string.novel_words_label),
                 value = it.toString()
@@ -980,30 +988,30 @@ private fun RebuiltNovelHero(novel: DetailedNovel, metrics: AppAdaptiveMetrics) 
     )
     NovelHero(
         novel = com.breakyuna.esjzone.ui.product.NovelCardModel(
-            id = novel.id().ifBlank { novel.url },
-            title = novel.name,
+            id = EsjzoneUrls.canonicalPageKey(preview.url),
+            title = title,
             cover = NovelCoverModel(
                 model = coverUrl,
-                contentDescription = novel.name,
-                state = novel.coverState
+                contentDescription = title,
+                state = coverState
             ),
             metadata = NovelMetadataModel(
-                author = novel.author.trim().takeIf(String::isNotBlank),
+                author = novel?.author?.trim()?.takeIf(String::isNotBlank),
                 description = metadataDescription,
                 tags = listOfNotNull(
-                    adultLabel.takeIf { novel.isAdult }?.let { NovelTagModel(it) }
+                    adultLabel.takeIf { novel?.isAdult == true }?.let { NovelTagModel(it) }
                 ),
                 metrics = stats
             )
         ),
-        coverModifier = Modifier.novelCoverDestination(novel.url),
+        coverModifier = Modifier.novelCoverDestination(preview.url),
         onCoverClick = if (coverUrl.isNotBlank()) ({ viewingCover = true }) else null,
         modifier = Modifier
             .fillMaxWidth()
             .padding(vertical = AppSpacing.sm)
     )
     if (viewingCover && coverUrl.isNotBlank()) {
-        AppImageViewer(model = coverUrl, contentDescription = novel.name,
+        AppImageViewer(model = coverUrl, contentDescription = title,
             onDismiss = { viewingCover = false })
     }
 }
@@ -1262,11 +1270,6 @@ private fun NovelDownloadActions(
     }
     var verificationSelection by remember(novel.url) { mutableStateOf<Set<String>?>(null) }
     val downloadScope = rememberCoroutineScope()
-
-    LaunchedEffect(novel.url) {
-        val current = withContext(Dispatchers.IO) { PresentationAccess.downloads.manifest(novel.url) }
-        onDownloadedChange(current)
-    }
 
     LaunchedEffect(novel.url, requestedWorkId) {
         NovelDownloadManager.statusFlow(context, novel.url).collect { status ->

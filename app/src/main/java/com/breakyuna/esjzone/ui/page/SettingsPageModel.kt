@@ -90,9 +90,17 @@ class SettingsPageModel : AppStateViewModel<SettingsPageModel.State>(State()) {
             }
             try {
                 val pageStats = PresentationAccess.client.pageCacheStats()
+                val filesDir = com.breakyuna.esjzone.EsjzoneApplication.instance.filesDir
+                val historyDir = java.io.File(filesDir, "history_cache")
+                val snapshots = (listOf(java.io.File(filesDir, "home_data_snapshot.json")) +
+                    if (historyDir.exists()) {
+                        historyDir.listFiles()?.toList()
+                            ?: throw java.io.IOException("Unable to list history snapshots")
+                    } else emptyList()).filter { it.isFile }
                 val imageBytes = PresentationAccess.imageCacheSizeBytes()
                 mutableState.value = mutableState.value.copy(
-                    cacheStats = LocalCacheStats(pageStats.sizeBytes, pageStats.entryCount, imageBytes),
+                    cacheStats = LocalCacheStats(pageStats.sizeBytes + snapshots.sumOf { it.length() },
+                        pageStats.entryCount + snapshots.size, imageBytes),
                     cacheStatsError = false
                 )
             } catch (e: CancellationException) {

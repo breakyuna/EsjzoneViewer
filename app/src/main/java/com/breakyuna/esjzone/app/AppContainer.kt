@@ -120,7 +120,11 @@ class AppContainer(context: Context) {
         database.cacheDao().deleteObsoleteReaderUnderlines()
         CoverLoadingPolicy.initialize(appContext)
         coroutineScope {
-            val clientJob = launch { EsjzoneClient.initialize(appContext) }
+            val clientJob = launch {
+                com.breakyuna.esjzone.network.PageCache.setLimitMiB(settingsDataStore.readPageCacheLimitMiB())
+                com.breakyuna.esjzone.network.CacheAnalysis.initialize(appContext)
+                EsjzoneClient.initialize(appContext)
+            }
             val downloadJob = launch { NovelDownloadStore.initialize(appContext) }
             val homeCacheJob = launch { HomeDataCache.initialize(appContext) }
             val legacyCacheCleanupJob = launch {

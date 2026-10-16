@@ -318,6 +318,81 @@ class ListPageCacheTest {
     }
 
     @Test
+    fun invalidFreshLaterPageRecoversWithoutReplacingTheBatch() {
+        val directory = Files.createTempDirectory("list-invalid-later-").toFile()
+        PageCache.initializeDirectory(directory)
+        try {
+            listOf("<html>invalid</html>", html(2).replace("Page 2", "Rejected page")).forEach { badHtml ->
+                withResponses(listOf(html(2))) { firstUrl ->
+                    val now = System.currentTimeMillis()
+                    val snapshotKey = store(firstUrl, ListPageCache.Snapshot("batch-a", 2, mapOf(
+                        1 to ListPageCache.Page(now, html(1)),
+                        2 to ListPageCache.Page(now, badHtml)
+                    )))
+                    val (session, _) = ListPageCache.open(authorization, firstUrl,
+                        { page -> if (page == 1) firstUrl else "$firstUrl/$page.html" },
+                        60_000L, PageKind.LIST, forceRefresh = false
+                    ) { body, _ ->
+                        if (body.contains("Rejected page")) throw IOException("Cached page cannot be parsed")
+                        ParsedListPage(2, listOf(body))
+                    }
+                    assertEquals(listOf(html(2)), session.more(2))
+                    val stored = Gson().fromJson(PageCache.readStale(snapshotKey), ListPageCache.Snapshot::class.java)
+                    assertEquals("batch-a", stored.revision)
+                    assertEquals(html(1), stored.pages[1]?.html)
+                    assertEquals(html(2), stored.pages[2]?.html)
+                }
+            }
+        } finally { directory.deleteRecursively() }
+    }
+
+    @Test
+    fun failedBadPageRecoveryPreservesBatchAndRetriesTheSamePage() {
+        val directory = Files.createTempDirectory("list-bad-page-retry-").toFile()
+        PageCache.initializeDirectory(directory)
+        try {
+            withResponses(listOf("<html>invalid</html>", html(2))) { firstUrl ->
+                val now = System.currentTimeMillis()
+                val snapshotKey = store(firstUrl, ListPageCache.Snapshot("batch-a", 2, mapOf(
+                    1 to ListPageCache.Page(now, html(1)),
+                    2 to ListPageCache.Page(now, "<html>invalid</html>")
+                )))
+                val (session, _) = open(firstUrl)
+                val before = PageCache.readStale(snapshotKey)
+                try {
+                    session.more(2)
+                    fail("An invalid replacement must report failure")
+                } catch (_: IOException) { }
+                assertEquals(before, PageCache.readStale(snapshotKey))
+                assertTrue(session.isCurrent())
+                assertEquals(2, session.pageCount)
+                assertEquals(listOf(html(2)), session.more(2))
+            }
+        } finally { directory.deleteRecursively() }
+    }
+
+    @Test
+    fun warmFirstAndLaterPageHitsUpdateDiskRecencyWithoutChangingFreshness() {
+        val directory = Files.createTempDirectory("list-memory-hit-recency-").toFile()
+        PageCache.initializeDirectory(directory)
+        try {
+            store("batch-a")
+            val (session, _) = open()
+            val before = PageCache.readStale(key)
+            val file = directory.listFiles()!!.single()
+            val oldAccess = System.currentTimeMillis() - 600_000L
+            assertTrue(file.setLastModified(oldAccess))
+            val (reopened, _) = open()
+            assertTrue(file.lastModified() > oldAccess)
+            assertTrue(reopened.isCurrent())
+            assertTrue(file.setLastModified(oldAccess))
+            assertEquals(listOf(html(2)), session.more(2))
+            assertTrue(file.lastModified() > oldAccess)
+            assertEquals(before, PageCache.readStale(key))
+        } finally { directory.deleteRecursively() }
+    }
+
+    @Test
     fun networkBodyValidationErrorsAreNotHiddenByStalePages() {
         val directory = Files.createTempDirectory("page-validation-errors-").toFile()
         PageCache.initializeDirectory(directory)

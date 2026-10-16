@@ -8,6 +8,10 @@ import com.breakyuna.esjzone.network.HtmlSelector
 import com.breakyuna.esjzone.network.JsoupHtmlSelector
 import com.breakyuna.esjzone.network.PageCacheTtl
 import com.breakyuna.esjzone.network.PageCache
+import com.breakyuna.esjzone.network.CacheDiagnostics
+import com.breakyuna.esjzone.network.CacheEventType
+import com.breakyuna.esjzone.network.CacheLayer
+import com.breakyuna.esjzone.network.CacheEventReason
 import com.breakyuna.esjzone.network.PageResponsePolicy
 import com.breakyuna.esjzone.network.PageKind
 import com.breakyuna.esjzone.network.NetworkRequestException
@@ -124,9 +128,12 @@ internal fun EsjzoneClient.getCachedCommentPageSnapshot(
     pageUrl: String
 ): CommentPageSnapshot? {
     val targetUrl = EsjzoneUrls.resolve(pageUrl).substringBefore('#')
-    val html = PageCache.readStale(pageCacheKey(authorization, targetUrl)) ?: return null
+    val cacheKey = pageCacheKey(authorization, targetUrl)
+    val html = PageCache.readStale(cacheKey) ?: return null
     if (!PageResponsePolicy.validate(200, html, targetUrl, kind = PageKind.COMMUNITY).trusted) return null
-    return parseCommentPageSnapshot(Jsoup.parse(html, targetUrl), targetUrl)
+    return parseCommentPageSnapshot(Jsoup.parse(html, targetUrl), targetUrl).also {
+        CacheDiagnostics.record(CacheEventType.HIT, CacheLayer.PAGE, CacheEventReason.DISK, cacheKey)
+    }
 }
 
 fun EsjzoneClient.getCommentPageSnapshot(

@@ -15,6 +15,8 @@ import com.breakyuna.esjzone.offline.NovelDownloadStore
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
@@ -56,6 +58,13 @@ object PresentationAccess {
 
     val client: EsjzoneClient
         get() = EsjzoneClient
+
+    internal suspend fun setPageCacheLimitMiB(value: Int) {
+        withContext(NonCancellable + Dispatchers.IO) {
+            container.settingsDataStore.setPageCacheLimitMiB(value)
+            com.breakyuna.esjzone.network.PageCache.setLimitMiB(value)
+        }
+    }
 
     val downloads: NovelDownloadStore
         get() = NovelDownloadStore

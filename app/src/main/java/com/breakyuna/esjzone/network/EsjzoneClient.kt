@@ -162,6 +162,7 @@ object EsjzoneClient {
         validateBody: ((String) -> Unit)? = null
     ): String {
         val cacheKey = pageCacheKey(authorization, url)
+        if (forceRefresh) CacheAnalysis.lookup(CacheLayer.PAGE, fresh = false, forced = true)
         val legacyKey = if (authorization.hasCredentials() &&
             accountScope(authorization) == activeAccountScopeOrNull()) {
             url.toHttpUrlOrNull()?.takeIf { EsjzoneUrls.isEsjHost(it.host) }
@@ -183,20 +184,23 @@ object EsjzoneClient {
                             PageCache.remove(legacyKey)
                         }
                     }
+                    CacheDiagnostics.record(CacheEventType.HIT, CacheLayer.PAGE, CacheEventReason.FRESH, cacheKey)
+                    CacheAnalysis.lookup(CacheLayer.PAGE, fresh = true)
                     return it
                 }
                 // A previous app version could have cached an HTML block/challenge page.
                 // Do not keep returning it after the network becomes healthy.
-                PageCache.remove(if (current != null) cacheKey else legacyKey ?: cacheKey)
+                PageCache.remove(if (current != null) cacheKey else legacyKey ?: cacheKey, CacheEventReason.INVALID_DATA)
             }
         }
+        if (!forceRefresh) CacheAnalysis.lookup(CacheLayer.PAGE, fresh = false)
         val currentStale = PageCache.readStale(cacheKey)
         val staleCandidate = currentStale ?: legacyKey?.let(PageCache::readStale)
         val stalePage = staleCandidate?.let { candidate ->
             if (validCached(candidate)) {
                 candidate
             } else {
-                PageCache.remove(if (currentStale != null) cacheKey else legacyKey ?: cacheKey)
+                PageCache.remove(if (currentStale != null) cacheKey else legacyKey ?: cacheKey, CacheEventReason.INVALID_DATA)
                 null
             }
         }
@@ -218,6 +222,7 @@ object EsjzoneClient {
                     )
                 }
             }
+            CacheDiagnostics.record(CacheEventType.HIT, CacheLayer.PAGE, CacheEventReason.STALE, cacheKey)
             return stalePage
         }
 
@@ -340,9 +345,12 @@ object EsjzoneClient {
             if (validation.trusted) {
                 validateBody?.invoke(responseData.body)
                 requestCookieJar.commitDeferredResponses()
-                if (cacheResponse && requestEpoch == cacheEpoch.get() &&
-                    PageCache.write(cacheKey, responseData.body, expected = commitToken)) {
-                    NovelDetailCache.remove(cacheKey)
+                if (cacheResponse) {
+                    if (requestEpoch != cacheEpoch.get()) {
+                        CacheDiagnostics.record(CacheEventType.FAILURE, CacheLayer.PAGE, CacheEventReason.SUPERSEDED, cacheKey)
+                    } else if (PageCache.write(cacheKey, responseData.body, expected = commitToken)) {
+                        NovelDetailCache.remove(cacheKey)
+                    }
                 }
             }
             if (!validation.trusted) {
@@ -356,6 +364,7 @@ object EsjzoneClient {
                     null
                 }
                 if (fallback != null) {
+                    CacheDiagnostics.record(CacheEventType.HIT, CacheLayer.PAGE, CacheEventReason.STALE, cacheKey)
                     owner.complete(fallback)
                     return fallback
                 }
@@ -387,6 +396,7 @@ object EsjzoneClient {
                 stalePage.takeIf { allowStaleOnError }
             } else null
             if (result != null) {
+                CacheDiagnostics.record(CacheEventType.HIT, CacheLayer.PAGE, CacheEventReason.STALE, cacheKey)
                 owner.complete(result)
                 result
             } else {
@@ -402,8 +412,20 @@ object EsjzoneClient {
     fun clearPageCache() {
         cacheEpoch.incrementAndGet()
         inFlightPages.clear()
-        NovelDetailCache.clear()
-        PageCache.clear()
+        var failure: Exception? = null
+        listOf<() -> Unit>(
+            NovelDetailCache::clear,
+            PageCache::clear,
+            com.breakyuna.esjzone.network.features.HomeDataCache::clearSnapshot,
+            com.breakyuna.esjzone.network.features.HistoryDataCache::clearAll
+        ).forEach { clear ->
+            try {
+                clear()
+            } catch (error: Exception) {
+                if (failure == null) failure = error else failure?.addSuppressed(error)
+            }
+        }
+        failure?.let { throw it }
     }
 
     /** Parsed models contain absolute links from the previous mirror; raw HTML stays shared. */

@@ -9,6 +9,7 @@ import com.breakyuna.esjzone.app.PresentationAccess
 import com.breakyuna.esjzone.ui.navigation.AppStateViewModel
 import com.breakyuna.esjzone.network.Authorization
 import com.breakyuna.esjzone.network.LoadFailureKind
+import com.breakyuna.esjzone.network.PageCache
 import com.breakyuna.esjzone.network.features.HistoryDataCache
 import com.breakyuna.esjzone.network.features.getHistories
 import com.breakyuna.esjzone.network.features.removeHistories
@@ -52,6 +53,7 @@ class HistoryPageModel(
         if (loadStarted || deleting) return
         loadStarted = true
         val generation = ++loadGeneration
+        val cacheEpoch = PageCache.currentEpoch
         loadJob?.cancel()
         loadJob = viewModelScope.launch(Dispatchers.IO) {
             val visibleData = mutableState.value as? State.Result
@@ -68,7 +70,7 @@ class HistoryPageModel(
                     )
                 }
                 ensureActive()
-                HistoryDataCache.writeSnapshot(authorization, histories)
+                HistoryDataCache.writeSnapshot(authorization, histories, cacheEpoch)
                 mutableState.value = State.Result(
                     historyNovels = histories,
                     isSyncing = false,
@@ -131,6 +133,7 @@ class HistoryPageModel(
                 val visible = (mutableState.value as? State.Result) ?: current
                 mutableState.value = visible.copy(isSyncing = false)
                 val epoch = PresentationAccess.client.sessionEpoch()
+                val cacheEpoch = PageCache.currentEpoch
                 val deleted = runInterruptible(Dispatchers.IO) {
                     PresentationAccess.client.removeHistories(authorization, ids)
                 }
@@ -140,7 +143,7 @@ class HistoryPageModel(
                 mutableState.value = visible.copy(historyNovels = remaining, isSyncing = false)
                 // An uncertain response requires a fresh read; do not persist it as a known snapshot.
                 if (deleted == ids) withContext(Dispatchers.IO) {
-                    HistoryDataCache.writeSnapshot(authorization, remaining)
+                    HistoryDataCache.writeSnapshot(authorization, remaining, cacheEpoch)
                 }
                 onComplete(deleted)
             } catch (e: CancellationException) {

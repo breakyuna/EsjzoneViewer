@@ -5,6 +5,11 @@ import com.breakyuna.esjzone.EsjzoneApplication
 import com.breakyuna.esjzone.network.EsjzoneUrls
 import com.breakyuna.esjzone.network.EsjzoneClient
 import com.breakyuna.esjzone.network.Authorization
+import com.breakyuna.esjzone.network.PageCache
+import com.breakyuna.esjzone.network.CacheDiagnostics
+import com.breakyuna.esjzone.network.CacheEventType
+import com.breakyuna.esjzone.network.CacheLayer
+import com.breakyuna.esjzone.network.CacheEventReason
 import com.breakyuna.esjzone.novellibrary.data.HomeData
 import com.breakyuna.esjzone.novellibrary.data.WeeklyUpdateDay
 import com.breakyuna.esjzone.novellibrary.data.WeeklyPopularNovel
@@ -37,9 +42,13 @@ object HomeDataCache {
     private var storageDir: File? = null
 
     fun initialize(context: Context) {
-        val dir = context.applicationContext.filesDir
-        storageDir = dir
+        initializeDirectory(context.applicationContext.filesDir)
+    }
+
+    internal fun initializeDirectory(dir: File) {
         synchronized(ioLock) {
+            if (storageDir != dir) memorySnapshot = null
+            storageDir = dir
             if (memorySnapshot == null) memorySnapshot = loadFromDisk(dir)
         }
     }
@@ -52,19 +61,26 @@ object HomeDataCache {
     fun readSnapshot(authorization: Authorization): HomeData? {
         val normalizedDomain = EsjzoneClient.accountScope(authorization)
         // initialize() loaded the disk snapshot in the background. UI reads never wait for a disk write.
-        return memorySnapshot?.takeIf { it.first == normalizedDomain }?.second
-    }
-
-    /** Keep progressive results available without rewriting the complete JSON for every cover. */
-    fun updateMemorySnapshot(authorization: Authorization, data: HomeData) {
-        val normalizedDomain = EsjzoneClient.accountScope(authorization)
-        synchronized(ioLock) {
-            if (normalizedDomain != EsjzoneClient.activeAccountScopeOrNull()) return
-            memorySnapshot = normalizedDomain to data
+        return memorySnapshot?.takeIf { it.first == normalizedDomain }?.second?.also {
+            CacheDiagnostics.record(CacheEventType.HIT, CacheLayer.HOME, CacheEventReason.MEMORY, "home|$normalizedDomain")
         }
     }
 
-    fun writeSnapshot(authorization: Authorization, data: HomeData) {
+    /** Keep progressive results available without rewriting the complete JSON for every cover. */
+    fun updateMemorySnapshot(authorization: Authorization, data: HomeData, expectedEpoch: Long = PageCache.currentEpoch) {
+        val normalizedDomain = EsjzoneClient.accountScope(authorization)
+        synchronized(ioLock) {
+            if (expectedEpoch != PageCache.currentEpoch) {
+                CacheDiagnostics.record(CacheEventType.FAILURE, CacheLayer.HOME, CacheEventReason.SUPERSEDED, "home|$normalizedDomain")
+                return
+            }
+            if (normalizedDomain != EsjzoneClient.activeAccountScopeOrNull()) return
+            memorySnapshot = normalizedDomain to data
+            CacheDiagnostics.record(CacheEventType.UPDATE, CacheLayer.HOME, CacheEventReason.MEMORY, "home|$normalizedDomain")
+        }
+    }
+
+    fun writeSnapshot(authorization: Authorization, data: HomeData, expectedEpoch: Long = PageCache.currentEpoch) {
         val normalizedDomain = EsjzoneClient.accountScope(authorization)
         if (normalizedDomain != EsjzoneClient.activeAccountScopeOrNull()) return
         val dir = storageDir ?: runCatching {
@@ -72,6 +88,10 @@ object HomeDataCache {
         }.getOrNull() ?: return
 
         synchronized(ioLock) {
+            if (expectedEpoch != PageCache.currentEpoch) {
+                CacheDiagnostics.record(CacheEventType.FAILURE, CacheLayer.HOME, CacheEventReason.SUPERSEDED, "home|$normalizedDomain")
+                return
+            }
             if (normalizedDomain != EsjzoneClient.activeAccountScopeOrNull()) return
             try {
                 val snapshot = data.toSnapshot(normalizedDomain)
@@ -94,8 +114,33 @@ object HomeDataCache {
                     )
                 }
                 memorySnapshot = normalizedDomain to data
+                CacheDiagnostics.record(CacheEventType.UPDATE, CacheLayer.HOME, CacheEventReason.STORED,
+                    "home|$normalizedDomain", bytes = targetFile.length())
             } catch (e: Exception) {
+                CacheDiagnostics.record(CacheEventType.FAILURE, CacheLayer.HOME, CacheEventReason.WRITE_FAILED, "home|$normalizedDomain")
                 AppLogger.w("HomeDataCache", "Failed to write home data snapshot", e)
+            }
+        }
+    }
+
+    fun clearSnapshot() {
+        synchronized(ioLock) {
+            val cacheKey = memorySnapshot?.first?.let { "home|$it" }
+            if (memorySnapshot != null) {
+                CacheDiagnostics.record(CacheEventType.EVICT, CacheLayer.HOME, CacheEventReason.CLEARED, cacheKey)
+            }
+            memorySnapshot = null
+            val dir = storageDir ?: EsjzoneApplication.instance.filesDir
+            listOf(FILE_NAME, "$FILE_NAME.tmp").forEach { name ->
+                val file = File(dir, name)
+                val length = file.length()
+                if (file.delete()) {
+                    CacheDiagnostics.record(CacheEventType.EVICT, CacheLayer.HOME, CacheEventReason.CLEARED,
+                        cacheKey, bytes = length)
+                } else if (file.exists()) {
+                    CacheDiagnostics.record(CacheEventType.FAILURE, CacheLayer.HOME, CacheEventReason.DELETE_FAILED, cacheKey)
+                    throw java.io.IOException("Unable to delete home snapshot")
+                }
             }
         }
     }
@@ -112,8 +157,11 @@ object HomeDataCache {
             } ?: normalizeLegacyDomain("")
             domain to data
         } catch (e: Exception) {
+            CacheDiagnostics.record(CacheEventType.FAILURE, CacheLayer.HOME, CacheEventReason.READ_FAILED)
             AppLogger.w("HomeDataCache", "Failed to read home data snapshot", e)
-            runCatching { file.delete() }
+            if (runCatching { file.delete() }.getOrDefault(false)) {
+                CacheDiagnostics.record(CacheEventType.EVICT, CacheLayer.HOME, CacheEventReason.INVALID_DATA)
+            }
             null
         }
     }

@@ -174,7 +174,9 @@ object FavoritePage : AppDestination {
         LaunchedEffect(entries) {
             BookshelfCoverStore.schedulePersist(entries)
         }
-        val readingIndex by model.readingIndex.collectAsStateWithLifecycle()
+        val readingSnapshot by model.readingIndex.collectAsStateWithLifecycle()
+        val loadingShelf = shelfEntries == null || readingSnapshot == null
+        val readingIndex = readingSnapshot ?: FavoritePageModel.ReadingIndex()
         val downloaded by model.downloadedBookKeys.collectAsStateWithLifecycle()
         val syncState by model.state.collectAsStateWithLifecycle()
         val deleteState by model.deleteState.collectAsStateWithLifecycle()
@@ -513,6 +515,11 @@ object FavoritePage : AppDestination {
                 modifier = Modifier.fillMaxSize().padding(top = padding.calculateTopPadding())
             ) {
             BoxWithConstraints(Modifier.fillMaxSize()) {
+                // Show the header and books together once both local snapshots are ready.
+                if (loadingShelf) {
+                    LoadingSkeleton(Modifier.padding(AppSpacing.lg))
+                    return@BoxWithConstraints
+                }
                 val startPadding = AppSpacing.lg + navPadding.calculateStartPadding(layoutDirection)
                 val endPadding = AppSpacing.lg
                 val adaptiveColumns = bookshelfColumnCount((maxWidth - startPadding - endPadding).value, AppSpacing.xl.value)
@@ -665,9 +672,7 @@ object FavoritePage : AppDestination {
                             }
                             if (displayedBooks.isEmpty()) {
                                 item(key = "bookshelf_empty", contentType = "bookshelf_empty") {
-                                    if (shelfEntries == null) {
-                                        LoadingSkeleton()
-                                    } else if (syncState is FavoritePageModel.State.Failed && entries.isEmpty()) {
+                                    if (syncState is FavoritePageModel.State.Failed && entries.isEmpty()) {
                                         OfflineState(
                                             title = stringResource(R.string.bookshelf_sync_failed),
                                             message = stringResource(R.string.bookshelf_sync_failed),

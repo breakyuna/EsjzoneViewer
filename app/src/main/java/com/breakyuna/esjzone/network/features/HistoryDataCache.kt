@@ -5,6 +5,11 @@ import com.breakyuna.esjzone.EsjzoneApplication
 import com.breakyuna.esjzone.network.Authorization
 import com.breakyuna.esjzone.network.EsjzoneClient
 import com.breakyuna.esjzone.network.EsjzoneUrls
+import com.breakyuna.esjzone.network.PageCache
+import com.breakyuna.esjzone.network.CacheDiagnostics
+import com.breakyuna.esjzone.network.CacheEventType
+import com.breakyuna.esjzone.network.CacheLayer
+import com.breakyuna.esjzone.network.CacheEventReason
 import com.breakyuna.esjzone.network.hasCredentials
 import com.breakyuna.esjzone.novellibrary.novel.Chapter
 import com.breakyuna.esjzone.novellibrary.novel.HistoryNovel
@@ -42,7 +47,14 @@ object HistoryDataCache {
     }
 
     fun initialize(context: Context) {
-        storageDir = resolveDirectory(context.applicationContext)
+        initializeDirectory(resolveDirectory(context.applicationContext))
+    }
+
+    internal fun initializeDirectory(dir: File) {
+        synchronized(ioLock) {
+            storageDir = dir
+            memoryCache.clear()
+        }
     }
 
     private fun resolveDirectory(context: Context): File {
@@ -58,25 +70,39 @@ object HistoryDataCache {
 
     fun readSnapshot(authorization: Authorization): List<HistoryNovel>? {
         val scope = scopeFor(authorization) ?: return null
-        memoryCache[scope]?.let { return it }
+        memoryCache[scope]?.let {
+            CacheDiagnostics.record(CacheEventType.HIT, CacheLayer.HISTORY, CacheEventReason.MEMORY, "history|$scope")
+            return it
+        }
 
         val dir = storageDir ?: runCatching {
             resolveDirectory(EsjzoneApplication.instance)
         }.getOrNull() ?: return null
 
         return synchronized(ioLock) {
-            memoryCache[scope] ?: loadFromDisk(dir, scope)?.also { memoryCache[scope] = it }
+            val inMemory = memoryCache[scope]
+            val cached = inMemory ?: loadFromDisk(dir, scope)?.also { memoryCache[scope] = it }
+            if (cached != null) {
+                CacheDiagnostics.record(CacheEventType.HIT, CacheLayer.HISTORY,
+                    if (inMemory != null) CacheEventReason.MEMORY else CacheEventReason.DISK, "history|$scope")
+            }
+            cached
         }
     }
 
-    fun writeSnapshot(authorization: Authorization, histories: List<HistoryNovel>) {
+    fun writeSnapshot(authorization: Authorization, histories: List<HistoryNovel>, expectedEpoch: Long = PageCache.currentEpoch) {
         val scope = scopeFor(authorization) ?: return
-        memoryCache[scope] = histories
         val dir = storageDir ?: runCatching {
             resolveDirectory(EsjzoneApplication.instance)
         }.getOrNull() ?: return
 
         synchronized(ioLock) {
+            if (expectedEpoch != PageCache.currentEpoch) {
+                CacheDiagnostics.record(CacheEventType.FAILURE, CacheLayer.HISTORY, CacheEventReason.SUPERSEDED, "history|$scope")
+                return
+            }
+            memoryCache[scope] = histories
+            CacheDiagnostics.record(CacheEventType.UPDATE, CacheLayer.HISTORY, CacheEventReason.MEMORY, "history|$scope")
             try {
                 val json = gson.toJson(HistorySnapshot(histories.map(::toSnapshot)))
                 val fileName = "history_snapshot_$scope.json"
@@ -97,7 +123,10 @@ object HistoryDataCache {
                         StandardCopyOption.REPLACE_EXISTING
                     )
                 }
+                CacheDiagnostics.record(CacheEventType.UPDATE, CacheLayer.HISTORY, CacheEventReason.STORED,
+                    "history|$scope", bytes = targetFile.length())
             } catch (e: Exception) {
+                CacheDiagnostics.record(CacheEventType.FAILURE, CacheLayer.HISTORY, CacheEventReason.WRITE_FAILED, "history|$scope")
                 AppLogger.w("HistoryDataCache", "Failed to write history snapshot for scope $scope", e)
             }
         }
@@ -105,29 +134,54 @@ object HistoryDataCache {
 
     fun clearSnapshot(authorization: Authorization) {
         val scope = scopeFor(authorization) ?: return
-        memoryCache.remove(scope)
+        if (memoryCache.remove(scope) != null) {
+            CacheDiagnostics.record(CacheEventType.EVICT, CacheLayer.HISTORY, CacheEventReason.INVALIDATED, "history|$scope")
+        }
         val dir = storageDir ?: runCatching {
             resolveDirectory(EsjzoneApplication.instance)
         }.getOrNull() ?: return
 
         synchronized(ioLock) {
             val targetFile = File(dir, "history_snapshot_$scope.json")
-            runCatching { targetFile.delete() }
+            val length = targetFile.length()
+            if (runCatching { targetFile.delete() }.getOrDefault(false)) {
+                CacheDiagnostics.record(CacheEventType.EVICT, CacheLayer.HISTORY, CacheEventReason.INVALIDATED,
+                    "history|$scope", bytes = length)
+            } else if (targetFile.exists()) {
+                CacheDiagnostics.record(CacheEventType.FAILURE, CacheLayer.HISTORY, CacheEventReason.DELETE_FAILED, "history|$scope")
+            }
         }
     }
 
-    fun clearMemory() {
+    fun clearMemory() = synchronized(ioLock) {
+        memoryCache.keys.forEach { scope ->
+            CacheDiagnostics.record(CacheEventType.EVICT, CacheLayer.HISTORY, CacheEventReason.CLEARED, "history|$scope")
+        }
         memoryCache.clear()
     }
 
     fun clearAll() {
-        memoryCache.clear()
         val dir = storageDir ?: runCatching {
             resolveDirectory(EsjzoneApplication.instance)
         }.getOrNull() ?: return
 
         synchronized(ioLock) {
-            dir.listFiles()?.forEach { file -> runCatching { file.delete() } }
+            clearMemory()
+            if (!dir.exists()) return
+            val files = dir.listFiles() ?: throw java.io.IOException("Unable to list history snapshots")
+            var failed = false
+            files.forEach { file ->
+                val scope = file.name.removeSuffix(".tmp").removeSuffix(".json").removePrefix("history_snapshot_")
+                val length = file.length()
+                if (file.delete()) {
+                    CacheDiagnostics.record(CacheEventType.EVICT, CacheLayer.HISTORY, CacheEventReason.CLEARED,
+                        "history|$scope", bytes = length)
+                } else if (file.exists()) {
+                    failed = true
+                    CacheDiagnostics.record(CacheEventType.FAILURE, CacheLayer.HISTORY, CacheEventReason.DELETE_FAILED, "history|$scope")
+                }
+            }
+            if (failed) throw java.io.IOException("Unable to delete all history snapshots")
         }
     }
 
@@ -138,8 +192,12 @@ object HistoryDataCache {
             val snapshot = gson.fromJson(file.readText(StandardCharsets.UTF_8), HistorySnapshot::class.java)
             snapshot?.histories.orEmpty().map { it.toHistoryNovel() }
         } catch (e: Exception) {
+            CacheDiagnostics.record(CacheEventType.FAILURE, CacheLayer.HISTORY, CacheEventReason.READ_FAILED, "history|$scope")
             AppLogger.w("HistoryDataCache", "Failed to read history snapshot for scope $scope", e)
-            runCatching { file.delete() }
+            if (runCatching { file.delete() }.getOrDefault(false)) {
+                CacheDiagnostics.record(CacheEventType.EVICT, CacheLayer.HISTORY, CacheEventReason.INVALID_DATA,
+                    "history|$scope")
+            }
             null
         }
     }
