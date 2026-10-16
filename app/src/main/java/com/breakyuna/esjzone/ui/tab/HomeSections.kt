@@ -53,6 +53,8 @@ import com.breakyuna.esjzone.ui.component.AppNovelCover
 import com.breakyuna.esjzone.ui.designsystem.AppSpacing
 import com.breakyuna.esjzone.ui.discovery.DiscoveryEmptyState
 import com.breakyuna.esjzone.ui.navigation.ContainerTransformTarget
+import com.breakyuna.esjzone.ui.navigation.HomeCarouselElement
+import com.breakyuna.esjzone.ui.navigation.homeCarouselSharedElement
 import com.breakyuna.esjzone.ui.navigation.containerTransformContent
 import com.breakyuna.esjzone.ui.navigation.containerTransformSource
 import kotlinx.coroutines.CancellationException
@@ -135,14 +137,14 @@ internal fun LazyListScope.weeklyPopularCarousel(
                 modifier = Modifier.fillMaxWidth()
             ) { page ->
                 val novel = visible[page % visible.size]
+                val target = ContainerTransformTarget.homeCarousel(
+                    EsjzoneUrls.canonicalPageKey(novel.url).ifBlank { novel.name.trim() },
+                    page
+                )
                 WeeklyPopularCard(
                     novel = novel,
-                    modifier = Modifier.containerTransformSource(
-                        ContainerTransformTarget.homeCarousel(
-                            EsjzoneUrls.canonicalPageKey(novel.url).ifBlank { novel.name.trim() },
-                            page
-                        )
-                    ),
+                    target = target,
+                    modifier = Modifier.containerTransformSource(target),
                     onClick = { onNovelClick(novel, page) }
                 )
             }
@@ -172,6 +174,7 @@ internal fun LazyListScope.weeklyPopularCarousel(
 @Composable
 private fun WeeklyPopularCard(
     novel: WeeklyPopularNovel,
+    target: ContainerTransformTarget,
     modifier: Modifier = Modifier,
     onClick: () -> Unit
 ) {
@@ -209,7 +212,9 @@ private fun WeeklyPopularCard(
                     coverUrl = novel.coverUrl,
                     coverState = novel.coverState,
                     title = novel.name,
-                    modifier = Modifier.fillMaxSize(),
+                    modifier = Modifier
+                        .homeCarouselSharedElement(target, HomeCarouselElement.COVER)
+                        .fillMaxSize(),
                     isAdult = novel.isAdult
                 )
                 Text(
@@ -232,6 +237,7 @@ private fun WeeklyPopularCard(
             ) {
                 Text(
                     text = novel.name,
+                    modifier = Modifier.homeCarouselSharedElement(target, HomeCarouselElement.TITLE),
                     style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.Bold,
                     maxLines = 2,
@@ -253,6 +259,7 @@ private fun WeeklyPopularCard(
                         ?.takeIf(String::isNotBlank)
                         ?.let { stringResource(R.string.home_weekly_popular_author, it) }
                         ?: " ",
+                    modifier = Modifier.homeCarouselSharedElement(target, HomeCarouselElement.AUTHOR),
                     style = MaterialTheme.typography.bodySmall,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis

@@ -4,6 +4,7 @@ import android.app.usage.StorageStatsManager
 import android.content.Context
 import android.os.Process
 import android.os.storage.StorageManager
+import com.breakyuna.esjzone.R
 import java.io.File
 import java.nio.file.Files
 
@@ -17,38 +18,87 @@ internal fun readStorageUsage(context: Context): List<StorageUsage> {
         .map { storageManager.getUuidForPath(it) }.distinct()
     val totals = volumes.map { statsManager.queryStatsForUid(it, Process.myUid()) }
     val dataBytes = totals.sumOf { it.dataBytes }
-    val files = context.filesDir
+    val appInfo = context.applicationInfo
+    val apkBytes = (listOf(appInfo.sourceDir) + appInfo.splitSourceDirs.orEmpty())
+        .distinct().sumOf { directoryBytes(File(it)) }
+    return classifyStorageUsage(context.dataDir, context.filesDir, context.cacheDir,
+        totals.sumOf { it.appBytes }, apkBytes, dataBytes)
+}
+
+/** Each file belongs to one detail; category totals and ring segments share these values. */
+internal fun classifyStorageUsage(
+    data: File, files: File, cache: File, appBytes: Long, apkBytes: Long, dataBytes: Long
+): List<StorageUsage> {
+    fun part(label: Int, file: File) = StorageUsagePart(label, directoryBytes(file))
+    val installation = apkBytes.coerceIn(0L, appBytes)
+    val downloads = directoryParts(File(files, "downloaded_novels"), listOf(
+        R.string.storage_download_chapters, R.string.storage_download_images, R.string.storage_download_records
+    )) { file ->
+        when {
+            file.parentFile?.name == "images" || file.name == "cover.jpg" -> R.string.storage_download_images
+            file.name.startsWith("chapter-") && file.extension == "json" -> R.string.storage_download_chapters
+            else -> R.string.storage_download_records
+        }
+    }
+    val backups = directoryParts(File(files, "auto_backups"), listOf(
+        R.string.storage_backup_archives, R.string.storage_backup_pending
+    )) { file ->
+        if (file.name.startsWith("esjzone-auto-") && file.extension == "zip") R.string.storage_backup_archives
+        else R.string.storage_backup_pending
+    }
     val usage = listOf(
-        StorageUsage(StorageCategory.APPLICATION, totals.sumOf { it.appBytes }),
-        StorageUsage(StorageCategory.DOWNLOADS, directoryBytes(File(files, "downloaded_novels"))),
-        StorageUsage(StorageCategory.CACHE, directoryBytes(File(files, "novel_page_cache"))),
-        StorageUsage(StorageCategory.CACHE, directoryBytes(File(context.cacheDir, "image_cache"))),
-        StorageUsage(StorageCategory.READING_RESOURCES, directoryBytes(File(files, "bookshelf_covers"))),
-        StorageUsage(StorageCategory.READING_RESOURCES, directoryBytes(File(files, "reader_fonts"))),
-        StorageUsage(StorageCategory.BACKUPS, directoryBytes(File(files, "auto_backups"))),
-        StorageUsage(StorageCategory.APP_DATA, directoryBytes(File(context.dataDir, "databases"))),
-        StorageUsage(StorageCategory.CACHE, directoryBytes(File(files, "history_cache")) +
-            directoryBytes(File(files, "home_data_snapshot.json"))),
-        StorageUsage(StorageCategory.APP_DATA, directoryBytes(File(context.dataDir, "app_webview"))),
-        StorageUsage(StorageCategory.APP_DATA, directoryBytes(File(context.dataDir, "shared_prefs")) +
-            directoryBytes(File(files, "datastore")))
+        StorageUsage(StorageCategory.APPLICATION, listOf(
+            StorageUsagePart(R.string.storage_installation_apk, installation),
+            StorageUsagePart(R.string.storage_installation_other, appBytes - installation))),
+        StorageUsage(StorageCategory.DOWNLOADS, downloads),
+        StorageUsage(StorageCategory.CACHE, listOf(
+            part(R.string.storage_page_cache, File(files, "novel_page_cache")),
+            part(R.string.settings_image_cache, File(cache, "image_cache")),
+            part(R.string.cache_layer_home, File(files, "home_data_snapshot.json")),
+            part(R.string.cache_layer_history, File(files, "history_cache")))),
+        StorageUsage(StorageCategory.BACKUPS, backups),
+        StorageUsage(StorageCategory.READING_RESOURCES, listOf(
+            part(R.string.storage_bookshelf_covers, File(files, "bookshelf_covers")),
+            part(R.string.storage_reader_fonts, File(files, "reader_fonts")))),
+        StorageUsage(StorageCategory.APP_DATA, listOf(
+            part(R.string.storage_databases, File(data, "databases")),
+            part(R.string.storage_webview, File(data, "app_webview")),
+            StorageUsagePart(R.string.storage_settings, directoryBytes(File(data, "shared_prefs")) +
+                directoryBytes(File(files, "datastore"))),
+            part(R.string.storage_analysis_log, File(files, "cache_analysis"))))
     )
     val classifiedData = usage.filter { it.category != StorageCategory.APPLICATION }.sumOf { it.bytes }
     // Files may change while scanning; never produce a negative remainder or slice.
-    val combined = usage + StorageUsage(StorageCategory.APP_DATA, (dataBytes - classifiedData).coerceAtLeast(0L))
-    return StorageCategory.entries.map { category ->
-        StorageUsage(category, combined.filter { it.category == category }.sumOf { it.bytes })
+    return usage.map { entry ->
+        if (entry.category == StorageCategory.APP_DATA) entry.copy(parts = entry.parts +
+            StorageUsagePart(R.string.storage_other_data, (dataBytes - classifiedData).coerceAtLeast(0L)))
+        else entry
     }
 }
 
 internal fun directoryBytes(file: File): Long {
-    if (Files.isSymbolicLink(file.toPath())) return 0L
-    if (file.isFile) return file.length()
-    if (!file.exists()) return 0L
+    var bytes = 0L
+    forEachStorageFile(file) { bytes += it.length() }
+    return bytes
+}
+
+private fun directoryParts(file: File, labels: List<Int>, labelFor: (File) -> Int): List<StorageUsagePart> {
+    val bytes = labels.associateWith { 0L }.toMutableMap()
+    forEachStorageFile(file) { child ->
+        val label = labelFor(child)
+        bytes[label] = bytes.getValue(label) + child.length()
+    }
+    return labels.map { StorageUsagePart(it, bytes.getValue(it)) }
+}
+
+private fun forEachStorageFile(file: File, action: (File) -> Unit) {
+    if (Files.isSymbolicLink(file.toPath())) return
+    if (file.isFile) { action(file); return }
+    if (!file.exists()) return
     val children = file.listFiles() ?: run {
         // A directory may disappear between the existence check and listing it.
-        if (!file.exists()) return 0L
+        if (!file.exists()) return
         throw java.io.IOException("Unable to calculate storage usage")
     }
-    return children.sumOf(::directoryBytes)
+    children.forEach { forEachStorageFile(it, action) }
 }

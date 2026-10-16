@@ -19,10 +19,12 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Outline
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.LayoutDirection
@@ -40,6 +42,7 @@ import com.breakyuna.esjzone.ui.page.SettingsPage
 
 private const val ContainerTransformDurationMillis = 500
 internal val LocalContainerTransformScope = compositionLocalOf<SharedTransitionScope?> { null }
+internal val LocalHomeCarouselTransformTarget = compositionLocalOf<ContainerTransformTarget?> { null }
 private const val ContainerTransformRouteMetadata = "com.breakyuna.esjzone.containerTransformRoute"
 
 // Routes are runtime metadata; contentKey must remain a Bundle-saveable value.
@@ -116,11 +119,51 @@ internal fun ContainerTransformLayout(modifier: Modifier = Modifier, content: @C
 internal fun Modifier.containerTransformSource(target: ContainerTransformTarget): Modifier =
     containerTransformBounds(target, fullScreen = false)
 
-/** Keep card/page contents at their own final size while only the outer bounds change. */
+/** Keep the base card/page layout at its final size while the container changes bounds. */
 @Composable
 internal fun Modifier.containerTransformContent(): Modifier {
     val sharedScope = LocalContainerTransformScope.current ?: return this
     return with(sharedScope) { skipToLookaheadSize() }
+}
+
+internal enum class HomeCarouselElement { COVER, TITLE, AUTHOR }
+
+/** Pair each element with the clicked pager instance, including repeated novels. */
+@Composable
+internal fun Modifier.homeCarouselSharedElement(
+    target: ContainerTransformTarget?,
+    element: HomeCarouselElement
+): Modifier {
+    if (target?.homeCarouselPage == null) return this
+    val sharedScope = LocalContainerTransformScope.current ?: return this
+    val visibilityScope = LocalNavAnimatedContentScope.current
+    return with(sharedScope) {
+        val sharedState = rememberSharedContentState(target to element)
+        if (element == HomeCarouselElement.COVER) {
+            sharedElement(
+                sharedContentState = sharedState,
+                animatedVisibilityScope = visibilityScope,
+                boundsTransform = { _, _ ->
+                    tween(ContainerTransformDurationMillis, easing = FastOutSlowInEasing)
+                }
+            )
+        } else {
+            sharedBounds(
+                sharedContentState = sharedState,
+                animatedVisibilityScope = visibilityScope,
+                boundsTransform = { _, _ ->
+                    tween(ContainerTransformDurationMillis, easing = FastOutSlowInEasing)
+                },
+                enter = fadeIn(tween(ContainerTransformDurationMillis)),
+                exit = fadeOut(tween(ContainerTransformDurationMillis)),
+                // Keep text laid out once at each endpoint and scale it along the path.
+                resizeMode = SharedTransitionScope.ResizeMode.scaleToBounds(
+                    contentScale = ContentScale.Fit,
+                    alignment = Alignment.TopStart
+                )
+            )
+        }
+    }
 }
 
 @Composable
@@ -187,8 +230,11 @@ internal fun ContainerTransformDestination(
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
     ) {
-        // Reveal the page at its final layout size, rather than reflowing or scaling its text.
-        CompositionLocalProvider(LocalSharedCoverDestinationEnabled provides false) {
+        // Keep the page layout stable while its container and shared elements animate.
+        CompositionLocalProvider(
+            LocalSharedCoverDestinationEnabled provides false,
+            LocalHomeCarouselTransformTarget provides target.takeIf { it.homeCarouselPage != null }
+        ) {
             Box(Modifier.containerTransformContent().fillMaxSize()) { content() }
         }
     }

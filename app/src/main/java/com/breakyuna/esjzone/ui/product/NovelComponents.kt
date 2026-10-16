@@ -127,11 +127,12 @@ fun NovelMetadata(
     metadata: NovelMetadataModel,
     modifier: Modifier = Modifier,
     showMetrics: Boolean = true,
-    onTagClick: ((NovelTagModel) -> Unit)? = null
+    onTagClick: ((NovelTagModel) -> Unit)? = null,
+    authorModifier: Modifier = Modifier
 ) {
     Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(AppSpacing.sm)) {
         metadata.author?.takeIf { it.isNotBlank() }?.let {
-            Text(it, style = AppTypography.labelLarge, color = appStateColors().contentMuted)
+            Text(it, modifier = authorModifier, style = AppTypography.labelLarge, color = appStateColors().contentMuted)
         }
         metadata.description?.takeIf { it.isNotBlank() }?.let {
             Text(it, style = AppTypography.bodyMedium, maxLines = 3, overflow = TextOverflow.Ellipsis)
@@ -198,7 +199,10 @@ fun NovelHero(
     onAction: (() -> Unit)? = null,
     actionLabel: String? = null,
     onCoverClick: (() -> Unit)? = null,
-    coverModifier: Modifier = Modifier
+    coverModifier: Modifier = Modifier,
+    titleModifier: Modifier = Modifier,
+    authorModifier: Modifier = Modifier,
+    animateContentArrival: Boolean = true
 ) {
     Row(
         modifier = modifier.fillMaxWidth(),
@@ -210,13 +214,13 @@ fun NovelHero(
         Column(
             modifier = Modifier
                 .weight(1f)
-                .contentArrival(novel.id, delayMillis = 80)
+                .then(if (animateContentArrival) Modifier.contentArrival(novel.id, delayMillis = 80) else Modifier)
                 .heightIn(min = 148.dp),
             verticalArrangement = Arrangement.SpaceBetween
         ) {
             Column(verticalArrangement = Arrangement.spacedBy(AppSpacing.xs)) {
-                Text(novel.title, style = AppTypography.titleLarge, maxLines = 3, overflow = TextOverflow.Ellipsis)
-                NovelMetadata(novel.metadata, showMetrics = false)
+                Text(novel.title, modifier = titleModifier, style = AppTypography.titleLarge, maxLines = 3, overflow = TextOverflow.Ellipsis)
+                NovelMetadata(novel.metadata, showMetrics = false, authorModifier = authorModifier)
             }
             if (novel.metadata.metrics.isNotEmpty() || (actionLabel != null && onAction != null)) {
                 Column(verticalArrangement = Arrangement.spacedBy(AppSpacing.xs)) {

@@ -13,7 +13,11 @@ enum class StorageCategory {
     APPLICATION, DOWNLOADS, CACHE, BACKUPS, READING_RESOURCES, APP_DATA
 }
 
-data class StorageUsage(val category: StorageCategory, val bytes: Long)
+data class StorageUsagePart(val labelRes: Int, val bytes: Long)
+
+data class StorageUsage(val category: StorageCategory, val parts: List<StorageUsagePart>) {
+    val bytes: Long get() = parts.sumOf { it.bytes }
+}
 
 internal fun formatBytes(bytes: Long): String {
     val safeBytes = bytes.coerceAtLeast(0L)

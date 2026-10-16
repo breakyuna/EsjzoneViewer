@@ -1,9 +1,15 @@
 package com.breakyuna.esjzone.ui.page
 
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -19,15 +25,21 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -46,14 +58,22 @@ internal fun CacheStorageChart(storage: List<StorageUsage>?, failed: Boolean) {
     val available = snapshot != null
     val usage = snapshot.orEmpty()
     val totalBytes = usage.sumOf { it.bytes }
+    var expandedCategories by rememberSaveable { mutableIntStateOf(0) }
     val fractions = usage.map { entry ->
-        val fraction = if (totalBytes > 0) entry.bytes.toDouble() / totalBytes else 0.0
-        val animated by animateFloatAsState(
-            targetValue = fraction.toFloat(),
-            animationSpec = AppMotion.expressiveSpec(),
-            label = "storageFraction${entry.category}"
-        )
-        animated
+        key(entry.category) {
+            val fraction = if (totalBytes > 0) entry.bytes.toDouble() / totalBytes else 0.0
+            val animated by animateFloatAsState(
+                targetValue = fraction.toFloat(),
+                animationSpec = AppMotion.expressiveSpec(),
+                label = "storageFraction${entry.category}"
+            )
+            val detailProgress by animateFloatAsState(
+                targetValue = if (expandedCategories and (1 shl entry.category.ordinal) != 0) 1f else 0f,
+                animationSpec = AppMotion.expressiveSpec(),
+                label = "storageDetails${entry.category}"
+            )
+            animated to detailProgress
+        }
     }
     val reveal = remember { Animatable(0f) }
     LaunchedEffect(available, totalBytes > 0) {
@@ -84,13 +104,14 @@ internal fun CacheStorageChart(storage: List<StorageUsage>?, failed: Boolean) {
                 val arcSize = Size(diameter, diameter)
                 drawCircle(trackColor, radius = diameter / 2, style = Stroke(stroke))
                 var startAngle = -90f
-                fractions.forEachIndexed { index, fraction ->
+                fractions.forEachIndexed { index, (fraction, detailProgress) ->
+                    val entry = usage[index]
                     val sweep = fraction * 360f
                     // Scale the gap for small slices so their relative size stays visible.
                     val gap = if (sweep < 360f) minOf(3f, sweep / 4f) else 0f
-                    if (sweep > 0f) {
+                    if (sweep > 0f && detailProgress == 0f) {
                         drawArc(
-                            color = storageColor(usage[index].category),
+                            color = storageColor(entry.category),
                             startAngle = startAngle + gap / 2,
                             sweepAngle = (sweep - gap) * reveal.value,
                             useCenter = false,
@@ -98,6 +119,27 @@ internal fun CacheStorageChart(storage: List<StorageUsage>?, failed: Boolean) {
                             size = arcSize,
                             style = Stroke(stroke)
                         )
+                    } else {
+                        val parts = entry.parts.withIndex().filter { it.value.bytes > 0L }
+                        var partStart = startAngle + gap / 2
+                        parts.forEachIndexed { partIndex, (colorIndex, part) ->
+                            val partSweep = (sweep - gap) * (part.bytes.toDouble() / entry.bytes).toFloat()
+                            val detailGap = minOf(2f, partSweep / 4f) * detailProgress
+                            val leadingGap = if (partIndex == 0) 0f else detailGap / 2
+                            val trailingGap = if (partIndex == parts.lastIndex) 0f else detailGap / 2
+                            if (partSweep > 0f) {
+                                drawArc(
+                                    color = lerp(storageColor(entry.category), storagePartColor(entry.category, colorIndex), detailProgress),
+                                    startAngle = partStart + leadingGap,
+                                    sweepAngle = (partSweep - leadingGap - trailingGap) * reveal.value,
+                                    useCenter = false,
+                                    topLeft = topLeft,
+                                    size = arcSize,
+                                    style = Stroke(stroke)
+                                )
+                            }
+                            partStart += partSweep
+                        }
                     }
                     startAngle += sweep
                 }
@@ -125,11 +167,38 @@ internal fun CacheStorageChart(storage: List<StorageUsage>?, failed: Boolean) {
         }
         if (available) {
             usage.forEach { entry ->
-                CacheChartLegend(
-                    stringResource(storageLabel(entry.category)), storageColor(entry.category),
-                    formatBytes(entry.bytes),
-                    percentFormat.format(if (totalBytes > 0) entry.bytes.toDouble() / totalBytes else 0.0)
-                )
+                key(entry.category) {
+                    val expanded = expandedCategories and (1 shl entry.category.ordinal) != 0
+                    Column(Modifier.fillMaxWidth()) {
+                        CacheChartLegend(
+                            stringResource(storageLabel(entry.category)), storageColor(entry.category),
+                            formatBytes(entry.bytes),
+                            percentFormat.format(if (totalBytes > 0) entry.bytes.toDouble() / totalBytes else 0.0),
+                            Modifier.clickable(
+                                role = Role.Button,
+                                onClickLabel = stringResource(if (expanded) R.string.storage_collapse_details else R.string.storage_expand_details)
+                            ) { expandedCategories = expandedCategories xor (1 shl entry.category.ordinal) }
+                        )
+                        AnimatedVisibility(
+                            visible = expanded,
+                            enter = expandVertically(AppMotion.expressiveSpec()) + fadeIn(AppMotion.standardSpec()),
+                            exit = shrinkVertically(AppMotion.expressiveSpec()) + fadeOut(AppMotion.standardSpec())
+                        ) {
+                            Column(
+                                Modifier.fillMaxWidth().padding(start = AppSpacing.lg, top = AppSpacing.md),
+                                verticalArrangement = Arrangement.spacedBy(AppSpacing.md)
+                            ) {
+                                entry.parts.forEachIndexed { index, part ->
+                                    CacheChartLegend(
+                                        stringResource(part.labelRes), storagePartColor(entry.category, index),
+                                        formatBytes(part.bytes),
+                                        percentFormat.format(if (totalBytes > 0) part.bytes.toDouble() / totalBytes else 0.0)
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
             }
         } else {
             Text(
@@ -143,9 +212,9 @@ internal fun CacheStorageChart(storage: List<StorageUsage>?, failed: Boolean) {
 }
 
 @Composable
-private fun CacheChartLegend(label: String, color: Color, size: String, percentage: String) {
+private fun CacheChartLegend(label: String, color: Color, size: String, percentage: String, modifier: Modifier = Modifier) {
     Row(
-        modifier = Modifier.fillMaxWidth().semantics(mergeDescendants = true) {},
+        modifier = modifier.fillMaxWidth().semantics(mergeDescendants = true) {},
         horizontalArrangement = Arrangement.spacedBy(AppSpacing.sm),
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -156,6 +225,12 @@ private fun CacheChartLegend(label: String, color: Color, size: String, percenta
             Text(percentage, style = AppTypography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
+}
+
+private fun storagePartColor(category: StorageCategory, index: Int): Color {
+    val base = storageColor(category)
+    if (index == 0) return base
+    return lerp(base, if (index % 2 == 1) Color.White else Color.Black, ((index + 1) / 2) * .22f)
 }
 
 private fun storageLabel(category: StorageCategory): Int = when (category) {

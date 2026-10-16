@@ -82,6 +82,9 @@ import com.breakyuna.esjzone.network.features.unlockPasswordProtectedChapter
 import com.breakyuna.esjzone.ui.navigation.rememberSharedCoverOrigin
 import com.breakyuna.esjzone.ui.navigation.novelCoverDestination
 import com.breakyuna.esjzone.ui.navigation.LocalContainerTransformScope
+import com.breakyuna.esjzone.ui.navigation.LocalHomeCarouselTransformTarget
+import com.breakyuna.esjzone.ui.navigation.HomeCarouselElement
+import com.breakyuna.esjzone.ui.navigation.homeCarouselSharedElement
 import com.breakyuna.esjzone.novellibrary.novel.CoveredNovel
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
@@ -942,6 +945,7 @@ private fun novelDetailItems(
  * rebuilt token/component layer; networking and domain models stay untouched. */
 @Composable
 private fun RebuiltNovelHero(preview: Novel, detailed: DetailedNovel?) {
+    val carouselTarget = LocalHomeCarouselTransformTarget.current
     val sourceCover = rememberSharedCoverOrigin(preview.url)
     val previewCover = preview as? CoveredNovel
     val transitionActive = LocalContainerTransformScope.current?.isTransitionActive == true
@@ -958,8 +962,10 @@ private fun RebuiltNovelHero(preview: Novel, detailed: DetailedNovel?) {
         detailed?.coverUrl
     }?.let(EsjzoneUrls::coverOrEmpty).orEmpty()
     val coverState = if (usePreviewCover) sourceCover?.state ?: previewCover?.coverState else detailed?.coverState
-    val novel = detailed ?: previewCover
-    val title = detailed?.name?.takeIf(String::isNotBlank) ?: preview.name
+    // Loading a newer detail response must not replace shared text mid-transition.
+    val useEntryMetadata = carouselTarget != null && !entryCoverReleased
+    val novel = if (useEntryMetadata) previewCover else detailed ?: previewCover
+    val title = if (useEntryMetadata) preview.name else detailed?.name?.takeIf(String::isNotBlank) ?: preview.name
     var viewingCover by rememberSaveable(coverUrl) { mutableStateOf(false) }
     val adultLabel = stringResource(R.string.adult_badge)
     val metadataDescription = listOfNotNull(
@@ -1004,7 +1010,12 @@ private fun RebuiltNovelHero(preview: Novel, detailed: DetailedNovel?) {
                 metrics = stats
             )
         ),
-        coverModifier = Modifier.novelCoverDestination(preview.url),
+        coverModifier = Modifier
+            .homeCarouselSharedElement(carouselTarget, HomeCarouselElement.COVER)
+            .novelCoverDestination(preview.url),
+        titleModifier = Modifier.homeCarouselSharedElement(carouselTarget, HomeCarouselElement.TITLE),
+        authorModifier = Modifier.homeCarouselSharedElement(carouselTarget, HomeCarouselElement.AUTHOR),
+        animateContentArrival = carouselTarget == null,
         onCoverClick = if (coverUrl.isNotBlank()) ({ viewingCover = true }) else null,
         modifier = Modifier
             .fillMaxWidth()

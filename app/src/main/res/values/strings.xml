@@ -434,7 +434,7 @@
     <string name="cache_limit_unit">上限（MiB）</string>
     <string name="cache_limit_range">请输入 %1$d–%2$d MiB</string>
     <string name="cache_analysis_export">导出缓存分析日志</string>
-    <string name="cache_analysis_hit_rate">%1$s：%2$s（%3$d / %4$d）</string>
+    <string name="cache_analysis_hit_rate">%1$s命中率：%2$s（%3$d / %4$d）</string>
     <string name="cache_analysis_eviction_rate">容量淘汰：%1$s 个文件/小时 · 累计 %2$d 个</string>
     <string name="cache_analysis_storage">缓存占用 %1$s · 分析日志 %2$s</string>
     <string name="cache_analysis_failed">缓存设置或分析日志操作失败，请重试。</string>
@@ -829,4 +829,21 @@
     <string name="storage_cache">缓存</string>
     <string name="storage_reading_resources">阅读资源</string>
     <string name="storage_app_data">应用数据</string>
+    <string name="storage_installation_apk">安装包</string>
+    <string name="storage_installation_other">其他安装文件</string>
+    <string name="storage_download_chapters">章节内容</string>
+    <string name="storage_download_images">下载图片</string>
+    <string name="storage_download_records">下载记录与其他文件</string>
+    <string name="storage_backup_archives">备份归档</string>
+    <string name="storage_backup_pending">临时备份与其他文件</string>
+    <string name="storage_page_cache">页面缓存</string>
+    <string name="storage_bookshelf_covers">书架封面</string>
+    <string name="storage_reader_fonts">阅读字体</string>
+    <string name="storage_databases">数据库</string>
+    <string name="storage_webview">网页浏览数据</string>
+    <string name="storage_settings">应用设置</string>
+    <string name="storage_analysis_log">缓存分析日志</string>
+    <string name="storage_other_data">其他应用数据</string>
+    <string name="storage_expand_details">展开明细</string>
+    <string name="storage_collapse_details">收起明细</string>
 </resources>

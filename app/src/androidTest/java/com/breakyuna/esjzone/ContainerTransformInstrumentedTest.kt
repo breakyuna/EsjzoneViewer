@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
@@ -31,6 +32,9 @@ import com.breakyuna.esjzone.ui.navigation.AppNavKey
 import com.breakyuna.esjzone.ui.navigation.ContainerTransformDestination
 import com.breakyuna.esjzone.ui.navigation.ContainerTransformLayout
 import com.breakyuna.esjzone.ui.navigation.ContainerTransformTarget
+import com.breakyuna.esjzone.ui.navigation.HomeCarouselElement
+import com.breakyuna.esjzone.ui.navigation.LocalHomeCarouselTransformTarget
+import com.breakyuna.esjzone.ui.navigation.homeCarouselSharedElement
 import com.breakyuna.esjzone.ui.navigation.LegacyRoute
 import com.breakyuna.esjzone.ui.navigation.containerContentTransform
 import com.breakyuna.esjzone.ui.navigation.containerTransformContent
@@ -56,7 +60,7 @@ class ContainerTransformInstrumentedTest {
     @Test fun guestbookExpandsFromItsCardAndReturns() = assertExpansion(ContainerTransformTarget.GUESTBOOK)
     @Test fun waterCoolerExpandsFromItsCardAndReturns() = assertExpansion(ContainerTransformTarget.WATER_COOLER)
     @Test fun settingsExpandsFromItsCardAndReturns() = assertExpansion(ContainerTransformTarget.SETTINGS)
-    @Test fun carouselExpandsWithRepeatedBooksInAdjacentPages() = assertExpansion(
+    @Test fun carouselContainerAndSharedElementsMoveTogetherWithRepeatedBooks() = assertExpansion(
         ContainerTransformTarget.homeCarousel("/detail/123.html", page = 100)
     )
 
@@ -111,7 +115,11 @@ class ContainerTransformInstrumentedTest {
                                     Box(
                                         Modifier.fillMaxSize().background(Color.Blue)
                                             .onSizeChanged { destinationContentSizes.add(it) }
-                                    )
+                                    ) {
+                                        LocalHomeCarouselTransformTarget.current?.let {
+                                            SharedElements(it, destination = true)
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -122,23 +130,36 @@ class ContainerTransformInstrumentedTest {
         composeRule.waitForIdle()
         composeRule.mainClock.autoAdvance = false
         val card = bluePixelBounds()
+        val sourceElements = if (target.homeCarouselPage != null) sharedElementPixelBounds() else emptyList()
         composeRule.runOnIdle { stack.add(AppNavKey.Legacy(target.route, target.homeCarouselPage)) }
         composeRule.mainClock.advanceTimeByFrame()
         composeRule.mainClock.advanceTimeBy(120)
         val expanding = bluePixelBounds()
+        val movingElements = if (sourceElements.isNotEmpty()) sharedElementPixelBounds() else emptyList()
         assertStableContentSizes()
-        composeRule.mainClock.advanceTimeBy(350)
+        composeRule.mainClock.advanceTimeBy(500)
         val fullScreen = bluePixelBounds()
         assertBetween(card, expanding, fullScreen)
+        val destinationElements = if (sourceElements.isNotEmpty()) sharedElementPixelBounds() else emptyList()
+        for (index in sourceElements.indices) {
+            assertElementBetween(sourceElements[index], movingElements[index], destinationElements[index])
+        }
 
         composeRule.runOnIdle { stack.removeLastOrNull() }
         composeRule.mainClock.advanceTimeByFrame()
         composeRule.mainClock.advanceTimeBy(120)
         val contracting = bluePixelBounds()
         assertBetween(card, contracting, fullScreen)
+        if (sourceElements.isNotEmpty()) {
+            val returningElements = sharedElementPixelBounds()
+            for (index in sourceElements.indices) {
+                assertElementBetween(sourceElements[index], returningElements[index], destinationElements[index])
+            }
+        }
         assertStableContentSizes()
-        composeRule.mainClock.advanceTimeBy(350)
+        composeRule.mainClock.advanceTimeBy(500)
         assertEquals(card, bluePixelBounds())
+        if (sourceElements.isNotEmpty()) assertEquals(sourceElements, sharedElementPixelBounds())
     }
 
     @androidx.compose.runtime.Composable
@@ -156,10 +177,41 @@ class ContainerTransformInstrumentedTest {
                 Box(
                     Modifier.containerTransformContent().fillMaxSize()
                         .onSizeChanged { sourceContentSizes.add(it) }
-                )
+                ) {
+                    if (target.homeCarouselPage != null) SharedElements(target, destination = false)
+                }
             }
         }
     }
+
+    @androidx.compose.runtime.Composable
+    private fun SharedElements(target: ContainerTransformTarget, destination: Boolean) {
+        // Different positions and sizes distinguish element motion from the outer bounds.
+        HomeCarouselElement.entries.forEachIndexed { index, element ->
+            Box(
+                Modifier.offset(
+                    x = if (destination) 20.dp else 100.dp,
+                    y = (if (destination) 24.dp else 12.dp) + (index * 44).dp
+                )
+                    .homeCarouselSharedElement(target, element)
+                    .size(if (destination) 64.dp else 24.dp, if (destination) 32.dp else 20.dp)
+                    .background(listOf(Color.Green, Color.Yellow, Color.Cyan)[index])
+            )
+        }
+    }
+
+    private fun assertElementBetween(source: IntRect, moving: IntRect, destination: IntRect) {
+        assertTrue(moving.left > destination.left && moving.left < source.left)
+        assertTrue(moving.top > destination.top && moving.top < source.top)
+        assertTrue(moving.width > source.width && moving.width < destination.width)
+        assertTrue(moving.height > source.height && moving.height < destination.height)
+    }
+
+    private fun sharedElementPixelBounds(): List<IntRect> = listOf(
+        pixelBounds { it.green > it.red + 0.1f && it.green > it.blue + 0.1f },
+        pixelBounds { minOf(it.red, it.green) > it.blue + 0.1f },
+        pixelBounds { minOf(it.green, it.blue) > it.red + 0.1f }
+    )
 
     private fun assertStableContentSizes() {
         composeRule.runOnIdle {
@@ -175,7 +227,11 @@ class ContainerTransformInstrumentedTest {
         assertTrue(intermediate.top < card.top && intermediate.top > fullScreen.top)
     }
 
-    private fun bluePixelBounds(): IntRect {
+    private fun bluePixelBounds(): IntRect = pixelBounds {
+        it.blue > it.red + 0.1f && it.blue > it.green + 0.1f
+    }
+
+    private fun pixelBounds(matches: (Color) -> Boolean): IntRect {
         val pixels = composeRule.onRoot().captureToImage().toPixelMap()
         var left = pixels.width
         var top = pixels.height
@@ -184,7 +240,7 @@ class ContainerTransformInstrumentedTest {
         for (y in 0 until pixels.height) {
             for (x in 0 until pixels.width) {
                 val pixel = pixels[x, y]
-                if (pixel.blue > pixel.red + 0.1f && pixel.blue > pixel.green + 0.1f) {
+                if (matches(pixel)) {
                     left = minOf(left, x)
                     top = minOf(top, y)
                     right = maxOf(right, x + 1)

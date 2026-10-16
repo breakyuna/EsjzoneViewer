@@ -434,7 +434,7 @@
     <string name="cache_limit_unit">Limit (MiB)</string>
     <string name="cache_limit_range">Enter %1$d–%2$d MiB</string>
     <string name="cache_analysis_export">Export cache analysis log</string>
-    <string name="cache_analysis_hit_rate">%1$s: %2$s (%3$d / %4$d)</string>
+    <string name="cache_analysis_hit_rate">%1$s hit rate: %2$s (%3$d / %4$d)</string>
     <string name="cache_analysis_eviction_rate">Capacity evictions: %1$s files/hour · %2$d total</string>
     <string name="cache_analysis_storage">Cache %1$s · Analysis log %2$s</string>
     <string name="cache_analysis_failed">Cache settings or analysis log operation failed. Please retry.</string>
@@ -828,4 +828,21 @@
     <string name="storage_cache">Cache</string>
     <string name="storage_reading_resources">Reading resources</string>
     <string name="storage_app_data">App data</string>
+    <string name="storage_installation_apk">APK files</string>
+    <string name="storage_installation_other">Other installation files</string>
+    <string name="storage_download_chapters">Chapter content</string>
+    <string name="storage_download_images">Downloaded images</string>
+    <string name="storage_download_records">Download records and other files</string>
+    <string name="storage_backup_archives">Backup archives</string>
+    <string name="storage_backup_pending">Temporary backups and other files</string>
+    <string name="storage_page_cache">Page cache</string>
+    <string name="storage_bookshelf_covers">Bookshelf covers</string>
+    <string name="storage_reader_fonts">Reading fonts</string>
+    <string name="storage_databases">Databases</string>
+    <string name="storage_webview">Web browsing data</string>
+    <string name="storage_settings">App settings</string>
+    <string name="storage_analysis_log">Cache analysis logs</string>
+    <string name="storage_other_data">Other app data</string>
+    <string name="storage_expand_details">Expand details</string>
+    <string name="storage_collapse_details">Collapse details</string>
 </resources>
