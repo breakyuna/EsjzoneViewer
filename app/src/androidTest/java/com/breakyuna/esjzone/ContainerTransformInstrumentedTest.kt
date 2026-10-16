@@ -23,6 +23,8 @@ import androidx.compose.ui.unit.IntSize
 import androidx.navigation3.runtime.NavKey
 import androidx.navigation3.runtime.entryProvider
 import androidx.navigation3.runtime.rememberNavBackStack
+import androidx.navigation3.runtime.rememberSaveableStateHolderNavEntryDecorator
+import androidx.lifecycle.viewmodel.navigation3.rememberViewModelStoreNavEntryDecorator
 import androidx.navigation3.ui.NavDisplay
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.breakyuna.esjzone.ui.navigation.AppNavKey
@@ -33,6 +35,10 @@ import com.breakyuna.esjzone.ui.navigation.LegacyRoute
 import com.breakyuna.esjzone.ui.navigation.containerContentTransform
 import com.breakyuna.esjzone.ui.navigation.containerTransformContent
 import com.breakyuna.esjzone.ui.navigation.containerTransformSource
+import com.breakyuna.esjzone.ui.navigation.containerTransformMetadata
+import com.breakyuna.esjzone.ui.navigation.usesContainerTransform
+import com.breakyuna.esjzone.ui.navigation.pushTransition
+import com.breakyuna.esjzone.ui.navigation.popTransition
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -64,10 +70,20 @@ class ContainerTransformInstrumentedTest {
                         backStack = stack,
                         modifier = Modifier.fillMaxSize(),
                         onBack = { stack.removeLastOrNull() },
-                        transitionSpec = { containerContentTransform() },
-                        popTransitionSpec = { containerContentTransform() },
+                        transitionSpec = {
+                            if (usesContainerTransform(initialState, targetState)) containerContentTransform()
+                            else pushTransition()
+                        },
+                        popTransitionSpec = {
+                            if (usesContainerTransform(initialState, targetState)) containerContentTransform()
+                            else popTransition()
+                        },
+                        entryDecorators = listOf(
+                            rememberSaveableStateHolderNavEntryDecorator(),
+                            rememberViewModelStoreNavEntryDecorator()
+                        ),
                         entryProvider = entryProvider {
-                            entry<AppNavKey.HomeTab> {
+                            entry<AppNavKey.HomeTab>(metadata = ::containerTransformMetadata) {
                                 val page = target.homeCarouselPage
                                 if (page == null) {
                                     SourceCard(target)
@@ -89,8 +105,8 @@ class ContainerTransformInstrumentedTest {
                                     }
                                 }
                             }
-                            entry<AppNavKey.ProfileTab> { SourceCard(target) }
-                            entry<AppNavKey.Legacy> { key ->
+                            entry<AppNavKey.ProfileTab>(metadata = ::containerTransformMetadata) { SourceCard(target) }
+                            entry<AppNavKey.Legacy>(metadata = ::containerTransformMetadata) { key ->
                                 ContainerTransformDestination(checkNotNull(ContainerTransformTarget.forKey(key))) {
                                     Box(
                                         Modifier.fillMaxSize().background(Color.Blue)

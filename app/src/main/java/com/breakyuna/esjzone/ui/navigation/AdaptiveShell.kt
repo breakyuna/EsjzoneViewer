@@ -454,21 +454,21 @@ private fun TabStackDisplay(
                 modifier = Modifier.fillMaxSize(),
                 onBack = { if (!navigator.pop()) Unit },
                 transitionSpec = {
-                    if (usesContainerTransform(initialState.key, targetState.key)) {
+                    if (usesContainerTransform(initialState, targetState)) {
                         containerContentTransform()
                     } else {
                         pushTransition()
                     }
                 },
                 popTransitionSpec = {
-                    if (usesContainerTransform(initialState.key, targetState.key)) {
+                    if (usesContainerTransform(initialState, targetState)) {
                         containerContentTransform()
                     } else {
                         popTransition()
                     }
                 },
                 predictivePopTransitionSpec = { edge ->
-                    if (usesContainerTransform(initialState.key, targetState.key)) {
+                    if (usesContainerTransform(initialState, targetState)) {
                         containerContentTransform()
                     } else {
                         predictivePopTransition(edge)
@@ -479,11 +479,11 @@ private fun TabStackDisplay(
                     rememberViewModelStoreNavEntryDecorator()
                 ),
                 entryProvider = entryProvider {
-                    entry<AppNavKey.HomeTab>(clazzContentKey = { it }) { HomeTab.Content() }
-                    entry<AppNavKey.HistoryTab>(clazzContentKey = { it }) { HistoryTab.Content() }
-                    entry<AppNavKey.BookshelfTab>(clazzContentKey = { it }) { FavoriteTab.Content() }
-                    entry<AppNavKey.ProfileTab>(clazzContentKey = { it }) { ProfileTab.Content() }
-                    entry<AppNavKey.Legacy>(clazzContentKey = { it }) { key ->
+                    entry<AppNavKey.HomeTab>(metadata = ::containerTransformMetadata) { HomeTab.Content() }
+                    entry<AppNavKey.HistoryTab>(metadata = ::containerTransformMetadata) { HistoryTab.Content() }
+                    entry<AppNavKey.BookshelfTab>(metadata = ::containerTransformMetadata) { FavoriteTab.Content() }
+                    entry<AppNavKey.ProfileTab>(metadata = ::containerTransformMetadata) { ProfileTab.Content() }
+                    entry<AppNavKey.Legacy>(metadata = ::containerTransformMetadata) { key ->
                         val destination = navigator.destination(key.route)
                         if (destination != null) {
                             val containerTarget = ContainerTransformTarget.forKey(key)

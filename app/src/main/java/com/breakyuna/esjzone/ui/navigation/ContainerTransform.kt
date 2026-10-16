@@ -28,6 +28,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.navigation3.runtime.NavKey
+import androidx.navigation3.scene.Scene
 import androidx.navigation3.ui.LocalNavAnimatedContentScope
 import com.breakyuna.esjzone.network.EsjzoneUrls
 import com.breakyuna.esjzone.ui.page.ForumPage
@@ -36,6 +37,11 @@ import com.breakyuna.esjzone.ui.page.SettingsPage
 
 private const val ContainerTransformDurationMillis = 300
 private val LocalContainerTransformScope = compositionLocalOf<SharedTransitionScope?> { null }
+private const val ContainerTransformRouteMetadata = "com.breakyuna.esjzone.containerTransformRoute"
+
+// Routes are runtime metadata; contentKey must remain a Bundle-saveable value.
+internal fun containerTransformMetadata(key: AppNavKey): Map<String, Any> =
+    mapOf(ContainerTransformRouteMetadata to key)
 
 internal data class ContainerTransformTarget(
     val name: String,
@@ -59,7 +65,7 @@ internal data class ContainerTransformTarget(
             homeCarouselPage = page
         )
 
-        fun forKey(key: Any?): ContainerTransformTarget? {
+        fun forKey(key: NavKey?): ContainerTransformTarget? {
             val destination = key as? AppNavKey.Legacy ?: return null
             val route = destination.route
             val page = destination.homeCarouselPage
@@ -73,9 +79,16 @@ internal data class ContainerTransformTarget(
 }
 
 /** Only linked home/profile cards replace the ordinary navigation transition. */
-internal fun usesContainerTransform(from: Any?, to: Any?): Boolean =
+internal fun usesContainerTransform(from: NavKey?, to: NavKey?): Boolean =
     ContainerTransformTarget.forKey(to)?.let { it.origin == from } == true ||
         ContainerTransformTarget.forKey(from)?.let { it.origin == to } == true
+
+// Read each scene's retained entry, including the outgoing scene after a pop.
+internal fun usesContainerTransform(from: Scene<NavKey>, to: Scene<NavKey>): Boolean =
+    usesContainerTransform(
+        from.entries.lastOrNull()?.metadata?.get(ContainerTransformRouteMetadata) as? AppNavKey,
+        to.entries.lastOrNull()?.metadata?.get(ContainerTransformRouteMetadata) as? AppNavKey
+    )
 
 internal fun containerContentTransform() =
     fadeIn(tween(ContainerTransformDurationMillis)) togetherWith
