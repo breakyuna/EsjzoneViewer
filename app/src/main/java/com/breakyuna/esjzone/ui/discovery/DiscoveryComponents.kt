@@ -415,19 +415,17 @@ fun DiscoverySearchField(
 @Composable
 fun DiscoveryLoadingState(modifier: Modifier = Modifier) {
     Column(
-        modifier = modifier
-            .fillMaxWidth()
-            .padding(horizontal = AppSpacing.lg, vertical = AppSpacing.xl),
+        modifier = modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(AppSpacing.md)
     ) {
-        repeat(3) { index ->
+        repeat(3) {
             Row(
-                modifier = Modifier.fillMaxWidth().padding(vertical = AppSpacing.md),
+                modifier = Modifier.fillMaxWidth().padding(AppSpacing.md),
                 horizontalArrangement = Arrangement.spacedBy(AppSpacing.md),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 AppShimmerPlaceholder(
-                    modifier = Modifier.size(width = 76.dp, height = if (index == 0) 108.dp else 96.dp)
+                    modifier = Modifier.size(width = 88.dp, height = 120.dp)
                 )
                 Column(
                     modifier = Modifier.weight(1f),

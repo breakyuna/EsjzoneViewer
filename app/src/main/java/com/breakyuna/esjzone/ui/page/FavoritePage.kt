@@ -22,6 +22,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -57,6 +58,20 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import com.breakyuna.esjzone.ui.designsystem.GlobalText as Text
 import androidx.compose.material3.TextButton
+import com.breakyuna.esjzone.ui.navigation.rememberNovelCoverSource
+import com.breakyuna.esjzone.ui.designsystem.AppSelectionReveal
+import com.breakyuna.esjzone.ui.designsystem.AppAnimatedTitle
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.SharedTransitionLayout
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
+import androidx.compose.animation.core.tween
+import androidx.compose.runtime.SideEffect
+import com.breakyuna.esjzone.ui.designsystem.AppMotion
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -107,7 +122,10 @@ import com.breakyuna.esjzone.ui.designsystem.AppSyncStatusDot
 import com.breakyuna.esjzone.ui.designsystem.AppTypography
 import com.breakyuna.esjzone.ui.navigation.AppDestination
 import com.breakyuna.esjzone.ui.navigation.BooleanStateHolder
+import com.breakyuna.esjzone.ui.navigation.ContainerTransformTarget
 import com.breakyuna.esjzone.ui.navigation.LocalBaseNavigator
+import com.breakyuna.esjzone.ui.navigation.containerTransformContent
+import com.breakyuna.esjzone.ui.navigation.containerTransformSource
 import com.breakyuna.esjzone.ui.navigation.rememberAppViewModel
 import com.breakyuna.esjzone.ui.product.EmptyState
 import com.breakyuna.esjzone.ui.product.LoadingSkeleton
@@ -166,6 +184,8 @@ object FavoritePage : AppDestination {
         val snackbar = remember { SnackbarHostState() }
         val uiScope = rememberCoroutineScope()
         val listState = rememberLazyListState()
+        val gridState = rememberLazyListState()
+        var gridColumns by remember { mutableStateOf(3) }
         var editing by rememberSaveable { mutableStateOf(false) }
         var activeFilter by rememberSaveable { mutableStateOf(BookshelfFilter.ALL) }
         var activeSort by rememberSaveable { mutableStateOf(BookshelfSort.Order.RECENT_READ) }
@@ -429,6 +449,17 @@ object FavoritePage : AppDestination {
                     listView = listView,
                     onToggleView = {
                         focusManager.clearFocus(force = true)
+                        val current = if (listView) listState else gridState
+                        val target = if (listView) gridState else listState
+                        val firstKey = current.layoutInfo.visibleItemsInfo
+                            .firstOrNull { (it.key as? String)?.startsWith("bookshelf_row:") == true }
+                            ?.key?.toString()?.removePrefix("bookshelf_row:")
+                        val targetIndex = bookshelfAnchorRow(
+                            shown.map { it.bookKey }, firstKey,
+                            columns = if (listView) gridColumns else 1,
+                            headerVisible = current.firstVisibleItemIndex == 0
+                        )
+                        target.requestScrollToItem(targetIndex, if (targetIndex == 0) current.firstVisibleItemScrollOffset else 0)
                         settings.setBookshelfListView(!listView)
                     },
                     onStatistics = { navigator?.pushIfNotCurrent(ReadingStatisticsPage) },
@@ -437,7 +468,11 @@ object FavoritePage : AppDestination {
                 )
             },
             bottomBar = {
-                if (editing) {
+                AnimatedVisibility(
+                    visible = editing,
+                    enter = expandVertically(tween(AppMotion.standard)) + fadeIn(tween(AppMotion.quick)),
+                    exit = shrinkVertically(tween(AppMotion.standard)) + fadeOut(tween(AppMotion.quick))
+                ) {
                     Surface(color = MaterialTheme.colorScheme.surfaceContainerHigh) {
                         Row(
                             Modifier.fillMaxWidth().padding(AppSpacing.md),
@@ -480,213 +515,246 @@ object FavoritePage : AppDestination {
             BoxWithConstraints(Modifier.fillMaxSize()) {
                 val startPadding = AppSpacing.lg + navPadding.calculateStartPadding(layoutDirection)
                 val endPadding = AppSpacing.lg
-                val columns = if (listView) 1 else bookshelfColumnCount(
-                    (maxWidth - startPadding - endPadding).value,
-                    AppSpacing.xl.value
-                )
-                val rows = remember(shown, columns) { shown.chunked(columns) }
-                LazyColumn(
-                    state = listState,
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(
-                            top = 0.dp,
-                            bottom = if (editing) padding.calculateBottomPadding() else 0.dp
-                        ),
-                    contentPadding = PaddingValues(
-                        start = startPadding,
-                        end = AppSpacing.lg,
-                        top = AppSpacing.lg,
-                        bottom = AppSpacing.lg + (if (editing) 0.dp else navPadding.calculateBottomPadding())
-                    ),
-                    verticalArrangement = Arrangement.spacedBy(if (listView) AppSpacing.sm else AppSpacing.lg)
-                ) {
-                    // Keep the showcase inside the first stable item. Inserting a new item above
-                    // the header after Room loads would preserve the header anchor and hide it.
-                    item(key = "bookshelf_collection_header", contentType = "bookshelf_header") {
-                        Column(verticalArrangement = Arrangement.spacedBy(AppSpacing.sm)) {
-                            if (groupNames.isNotEmpty() || activeGroup != null) {
-                                ShelfGroupControls(
-                                    names = groupNames,
-                                    active = activeGroup,
-                                    enabled = !editing && !savingGroup,
-                                    onSelect = { activeGroup = it },
-                                    onManage = { model.clearGroupResult(); groupDialog = ShelfGroupDialog.MANAGE }
-                                )
+                val adaptiveColumns = bookshelfColumnCount((maxWidth - startPadding - endPadding).value, AppSpacing.xl.value)
+                SideEffect { gridColumns = adaptiveColumns }
+                SharedTransitionLayout {
+                    val layoutScope = this
+                    AnimatedContent(
+                        targetState = listView to shown,
+                        contentKey = { (mode, books) -> mode to books.map { it.bookKey } },
+                        transitionSpec = { fadeIn(tween(AppMotion.standard)) togetherWith fadeOut(tween(AppMotion.standard)) },
+                        label = "BookshelfLayout"
+                    ) { (displayedListView, displayedBooks) ->
+                        val layoutVisibility = this
+                        val columns = if (displayedListView) 1 else adaptiveColumns
+                        val rows = remember(displayedBooks, columns) { displayedBooks.chunked(columns) }
+                        val liveState = if (displayedListView) listState else gridState
+                        val currentLayout = displayedListView == listView &&
+                            displayedBooks.map { it.bookKey } == shown.map { it.bookKey }
+                        // Outgoing content retains its viewport; two composed lists must not share state.
+                        val outgoingState = remember(currentLayout) {
+                            LazyListState(liveState.firstVisibleItemIndex, liveState.firstVisibleItemScrollOffset)
+                        }
+                        LazyColumn(
+                            state = if (currentLayout) liveState else outgoingState,
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .padding(
+                                    top = 0.dp,
+                                    bottom = if (editing) padding.calculateBottomPadding() else 0.dp
+                                ),
+                            contentPadding = PaddingValues(
+                                start = startPadding,
+                                end = AppSpacing.lg,
+                                top = AppSpacing.lg,
+                                bottom = AppSpacing.lg + (if (editing) 0.dp else navPadding.calculateBottomPadding())
+                            ),
+                            verticalArrangement = Arrangement.spacedBy(if (displayedListView) AppSpacing.sm else AppSpacing.lg)
+                        ) {
+                            // Keep the showcase inside the first stable item. Inserting a new item above
+                            // the header after Room loads would preserve the header anchor and hide it.
+                            item(key = "bookshelf_collection_header", contentType = "bookshelf_header") {
+                                Column(verticalArrangement = Arrangement.spacedBy(AppSpacing.sm)) {
+                                    if (groupNames.isNotEmpty() || activeGroup != null) {
+                                        ShelfGroupControls(
+                                            names = groupNames,
+                                            active = activeGroup,
+                                            enabled = !editing && !savingGroup,
+                                            onSelect = { activeGroup = it },
+                                            onManage = { model.clearGroupResult(); groupDialog = ShelfGroupDialog.MANAGE }
+                                        )
+                                    }
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Row(
+                                            modifier = Modifier.weight(1f),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(AppSpacing.xs)
+                                        ) {
+                                            Text(
+                                                stringResource(R.string.bookshelf_count, visible.size),
+                                                style = AppTypography.bodyMedium,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                        }
+                                        FilterChip(
+                                            selected = activeFilter == BookshelfFilter.DOWNLOADED,
+                                            enabled = !editing,
+                                            onClick = {
+                                                activeFilter = if (activeFilter == BookshelfFilter.DOWNLOADED) {
+                                                    BookshelfFilter.ALL
+                                                } else {
+                                                    BookshelfFilter.DOWNLOADED
+                                                }
+                                            },
+                                            label = { Text(stringResource(R.string.bookshelf_filter_downloaded)) }
+                                        )
+                                        FilterChip(
+                                            selected = activeFilter == BookshelfFilter.UPDATES,
+                                            enabled = !editing,
+                                            onClick = {
+                                                activeFilter = if (activeFilter == BookshelfFilter.UPDATES) {
+                                                    BookshelfFilter.ALL
+                                                } else {
+                                                    BookshelfFilter.UPDATES
+                                                }
+                                            },
+                                            label = { Text(stringResource(R.string.bookshelf_filter_updates)) },
+                                            modifier = Modifier.padding(start = AppSpacing.sm)
+                                        )
+                                        Box {
+                                            IconButton(
+                                                onClick = { showSortMenu = true },
+                                                modifier = Modifier.size(40.dp)
+                                            ) {
+                                                Icon(
+                                                    Icons.Filled.Sort,
+                                                    contentDescription = stringResource(R.string.bookshelf_sort)
+                                                )
+                                            }
+                                            DropdownMenu(
+                                                expanded = showSortMenu,
+                                                onDismissRequest = { showSortMenu = false }
+                                            ) {
+                                                BookshelfSort.Order.values().forEach { order ->
+                                                    DropdownMenuItem(
+                                                        text = { Text(stringResource(order.labelRes())) },
+                                                        onClick = {
+                                                            activeSort = order
+                                                            showSortMenu = false
+                                                        },
+                                                        leadingIcon = {
+                                                            if (activeSort == order) Icon(Icons.Filled.Check, null)
+                                                        }
+                                                    )
+                                                }
+                                            }
+                                        }
+                                    }
+                                    if (!editing && legacyBookshelfCount > 0) {
+                                        Surface(
+                                            color = MaterialTheme.colorScheme.surfaceContainer,
+                                            shape = AppShapes.standard
+                                        ) {
+                                            Column(Modifier.padding(AppSpacing.md)) {
+                                                Text(
+                                                    stringResource(R.string.bookshelf_legacy_recovery_message, legacyBookshelfCount),
+                                                    style = AppTypography.bodyMedium
+                                                )
+                                                if (legacyRecoveryFailed) {
+                                                    Text(
+                                                        stringResource(R.string.bookshelf_legacy_recovery_failed),
+                                                        color = MaterialTheme.colorScheme.error
+                                                    )
+                                                }
+                                                TextButton(onClick = { showLegacyRecoveryDialog = true }) {
+                                                    Text(stringResource(R.string.bookshelf_legacy_recovery_action))
+                                                }
+                                            }
+                                        }
+                                    }
+                                    if (!editing && recentReads.isNotEmpty()) {
+                                        AppBookshelfRecentReads(
+                                            books = recentReads,
+                                            modifier = Modifier.padding(bottom = AppSpacing.md),
+                                            onBookClick = { entry ->
+                                                openBook(entry)
+                                            }
+                                        )
+                                    }
+                                }
                             }
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Row(
-                                    modifier = Modifier.weight(1f),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(AppSpacing.xs)
-                                ) {
-                                    Text(
-                                        stringResource(R.string.bookshelf_count, visible.size),
-                                        style = AppTypography.bodyMedium,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                            if (displayedBooks.isEmpty()) {
+                                item(key = "bookshelf_empty", contentType = "bookshelf_empty") {
+                                    if (shelfEntries == null) {
+                                        LoadingSkeleton()
+                                    } else if (syncState is FavoritePageModel.State.Failed && entries.isEmpty()) {
+                                        OfflineState(
+                                            title = stringResource(R.string.bookshelf_sync_failed),
+                                            message = stringResource(R.string.bookshelf_sync_failed),
+                                            onRetry = { if (!syncing) model.sync() },
+                                            modifier = Modifier.fillMaxWidth().padding(vertical = AppSpacing.xxxl)
+                                        )
+                                    } else EmptyState(
+                                        title = stringResource(
+                                            when {
+                                                activeFilter != BookshelfFilter.ALL -> R.string.bookshelf_empty_filtered
+                                                activeGroup != null -> R.string.group_empty
+                                                visible.isEmpty() && entries.isNotEmpty() -> R.string.bookshelf_empty_filtered
+                                                else -> R.string.bookshelf_empty
+                                            }
+                                        ),
+                                        message = stringResource(
+                                            when {
+                                                activeFilter == BookshelfFilter.DOWNLOADED -> R.string.download_empty_hint
+                                                activeFilter == BookshelfFilter.UPDATES -> R.string.bookshelf_empty_filtered_hint
+                                                activeGroup != null -> R.string.group_empty_hint
+                                                visible.isEmpty() && entries.isNotEmpty() -> R.string.bookshelf_empty_filtered_hint
+                                                else -> R.string.bookshelf_empty_hint
+                                            }
+                                        ),
+                                        modifier = Modifier.fillMaxWidth().padding(vertical = AppSpacing.xxxl)
                                     )
                                 }
-                                FilterChip(
-                                    selected = activeFilter == BookshelfFilter.DOWNLOADED,
-                                    enabled = !editing,
-                                    onClick = {
-                                        activeFilter = if (activeFilter == BookshelfFilter.DOWNLOADED) {
-                                            BookshelfFilter.ALL
-                                        } else {
-                                            BookshelfFilter.DOWNLOADED
-                                        }
-                                    },
-                                    label = { Text(stringResource(R.string.bookshelf_filter_downloaded)) }
-                                )
-                                FilterChip(
-                                    selected = activeFilter == BookshelfFilter.UPDATES,
-                                    enabled = !editing,
-                                    onClick = {
-                                        activeFilter = if (activeFilter == BookshelfFilter.UPDATES) {
-                                            BookshelfFilter.ALL
-                                        } else {
-                                            BookshelfFilter.UPDATES
-                                        }
-                                    },
-                                    label = { Text(stringResource(R.string.bookshelf_filter_updates)) },
-                                    modifier = Modifier.padding(start = AppSpacing.sm)
-                                )
-                                Box {
-                                    IconButton(
-                                        onClick = { showSortMenu = true },
-                                        modifier = Modifier.size(40.dp)
+                            } else {
+                                items(
+                                    rows,
+                                    key = { "bookshelf_row:${it.first().bookKey}" },
+                                    contentType = { if (displayedListView) "bookshelf_list" else "bookshelf_row:$columns" }
+                                ) { row ->
+                                    Row(
+                                        Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.spacedBy(AppSpacing.xl)
                                     ) {
-                                        Icon(
-                                            Icons.Filled.Sort,
-                                            contentDescription = stringResource(R.string.bookshelf_sort)
-                                        )
-                                    }
-                                    DropdownMenu(
-                                        expanded = showSortMenu,
-                                        onDismissRequest = { showSortMenu = false }
-                                    ) {
-                                        BookshelfSort.Order.values().forEach { order ->
-                                            DropdownMenuItem(
-                                                text = { Text(stringResource(order.labelRes())) },
-                                                onClick = {
-                                                    activeSort = order
-                                                    showSortMenu = false
-                                                },
-                                                leadingIcon = {
-                                                    if (activeSort == order) Icon(Icons.Filled.Check, null)
+                                        row.forEach { entry ->
+                                            key(entry.bookKey) {
+                                                val coverMorph = with(layoutScope) {
+                                                    Modifier.sharedElement(
+                                                        rememberSharedContentState("shelf-cover:${entry.bookKey}"),
+                                                        layoutVisibility,
+                                                        boundsTransform = { _, _ -> tween(AppMotion.expressive, easing = AppMotion.standardEasing) }
+                                                    )
                                                 }
-                                            )
-                                        }
-                                    }
-                                }
-                            }
-                            if (!editing && legacyBookshelfCount > 0) {
-                                Surface(
-                                    color = MaterialTheme.colorScheme.surfaceContainer,
-                                    shape = AppShapes.standard
-                                ) {
-                                    Column(Modifier.padding(AppSpacing.md)) {
-                                        Text(
-                                            stringResource(R.string.bookshelf_legacy_recovery_message, legacyBookshelfCount),
-                                            style = AppTypography.bodyMedium
-                                        )
-                                        if (legacyRecoveryFailed) {
-                                            Text(
-                                                stringResource(R.string.bookshelf_legacy_recovery_failed),
-                                                color = MaterialTheme.colorScheme.error
-                                            )
-                                        }
-                                        TextButton(onClick = { showLegacyRecoveryDialog = true }) {
-                                            Text(stringResource(R.string.bookshelf_legacy_recovery_action))
-                                        }
-                                    }
-                                }
-                            }
-                            if (!editing && recentReads.isNotEmpty()) {
-                                AppBookshelfRecentReads(
-                                    books = recentReads,
-                                    modifier = Modifier.padding(bottom = AppSpacing.md),
-                                    onBookClick = { entry ->
-                                        openBook(entry)
-                                    }
-                                )
-                            }
-                        }
-                    }
-                    if (shown.isEmpty()) {
-                        item(key = "bookshelf_empty", contentType = "bookshelf_empty") {
-                            if (shelfEntries == null) {
-                                LoadingSkeleton()
-                            } else if (syncState is FavoritePageModel.State.Failed && entries.isEmpty()) {
-                                OfflineState(
-                                    title = stringResource(R.string.bookshelf_sync_failed),
-                                    message = stringResource(R.string.bookshelf_sync_failed),
-                                    onRetry = { if (!syncing) model.sync() },
-                                    modifier = Modifier.fillMaxWidth().padding(vertical = AppSpacing.xxxl)
-                                )
-                            } else EmptyState(
-                                title = stringResource(
-                                    when {
-                                        activeFilter != BookshelfFilter.ALL -> R.string.bookshelf_empty_filtered
-                                        activeGroup != null -> R.string.group_empty
-                                        visible.isEmpty() && entries.isNotEmpty() -> R.string.bookshelf_empty_filtered
-                                        else -> R.string.bookshelf_empty
-                                    }
-                                ),
-                                message = stringResource(
-                                    when {
-                                        activeFilter == BookshelfFilter.DOWNLOADED -> R.string.download_empty_hint
-                                        activeFilter == BookshelfFilter.UPDATES -> R.string.bookshelf_empty_filtered_hint
-                                        activeGroup != null -> R.string.group_empty_hint
-                                        visible.isEmpty() && entries.isNotEmpty() -> R.string.bookshelf_empty_filtered_hint
-                                        else -> R.string.bookshelf_empty_hint
-                                    }
-                                ),
-                                modifier = Modifier.fillMaxWidth().padding(vertical = AppSpacing.xxxl)
-                            )
-                        }
-                    } else {
-                        items(
-                            rows,
-                            key = { "bookshelf_row:${it.first().bookKey}" },
-                            contentType = { if (listView) "bookshelf_list" else "bookshelf_row:$columns" }
-                        ) { row ->
-                            Row(
-                                Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(AppSpacing.xl)
-                            ) {
-                                row.forEach { entry ->
-                                    key(entry.bookKey) {
-                                        Box(Modifier.weight(1f)) {
-                                            if (listView) ShelfListItem(
-                                                entry = entry, enabled = !deleting && !savingGroup,
-                                                editing = editing,
-                                                selected = entry.bookKey in selected,
-                                                onClick = {
-                                                    if (editing) {
-                                                        selected = if (entry.bookKey in selected) selected - entry.bookKey else selected + entry.bookKey
-                                                    } else openBook(entry)
-                                                },
-                                                onLongClick = { selectBook(entry) }
-                                            ) else ShelfCard(
-                                                entry = entry,
-                                                readingActivity = readingIndex.activityFor(entry),
-                                                selected = entry.bookKey in selected,
-                                                editing = editing,
-                                                enabled = !deleting && !savingGroup,
-                                                onLongClick = { selectBook(entry) },
-                                                onClick = {
-                                                    if (editing) {
-                                                        selected = if (entry.bookKey in selected) selected - entry.bookKey else selected + entry.bookKey
-                                                    } else {
-                                                        openBook(entry)
-                                                    }
+                                                val titleMorph = with(layoutScope) {
+                                                    Modifier.sharedBounds(
+                                                        rememberSharedContentState("shelf-title:${entry.bookKey}"),
+                                                        layoutVisibility,
+                                                        boundsTransform = { _, _ -> tween(AppMotion.expressive, easing = AppMotion.standardEasing) }
+                                                    )
                                                 }
-                                            )
+                                                Box(Modifier.weight(1f)) {
+                                                    if (displayedListView) ShelfListItem(
+                                                        entry = entry, coverModifier = coverMorph, titleModifier = titleMorph, enabled = !deleting && !savingGroup,
+                                                        editing = editing,
+                                                        selected = entry.bookKey in selected,
+                                                        onClick = {
+                                                            if (editing) {
+                                                                selected = if (entry.bookKey in selected) selected - entry.bookKey else selected + entry.bookKey
+                                                            } else openBook(entry)
+                                                        },
+                                                        onLongClick = { selectBook(entry) }
+                                                    ) else ShelfCard(
+                                                        entry = entry,
+                                                        coverModifier = coverMorph,
+                                                        titleModifier = titleMorph,
+                                                        readingActivity = readingIndex.activityFor(entry),
+                                                        selected = entry.bookKey in selected,
+                                                        editing = editing,
+                                                        enabled = !deleting && !savingGroup,
+                                                        onLongClick = { selectBook(entry) },
+                                                        onClick = {
+                                                            if (editing) {
+                                                                selected = if (entry.bookKey in selected) selected - entry.bookKey else selected + entry.bookKey
+                                                            } else {
+                                                                openBook(entry)
+                                                            }
+                                                        }
+                                                    )
+                                                }
+                                            }
                                         }
+                                        repeat(columns - row.size) { Spacer(Modifier.weight(1f)) }
                                     }
                                 }
-                                repeat(columns - row.size) { Spacer(Modifier.weight(1f)) }
                             }
                         }
                     }
@@ -761,7 +829,7 @@ private fun BookshelfTopBar(
             if (showBack) IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.reader_back)) }
             Column(Modifier.weight(1f).padding(horizontal = AppSpacing.sm)) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(AppSpacing.xs)) {
-                    Text(
+                    AppAnimatedTitle(
                         if (editing) stringResource(R.string.bookshelf_selected_header, selectedCount)
                         else stringResource(R.string.bookshelf),
                         style = AppTypography.titleLarge,
@@ -778,22 +846,45 @@ private fun BookshelfTopBar(
                         )
                     }
                 }
-                if (editing) Text(
-                    stringResource(R.string.bookshelf_total_header, totalCount),
-                    style = AppTypography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+                AnimatedVisibility(
+                    visible = editing,
+                    enter = expandVertically(tween(AppMotion.standard)) + fadeIn(tween(AppMotion.quick)),
+                    exit = shrinkVertically(tween(AppMotion.standard)) + fadeOut(tween(AppMotion.quick))
+                ) {
+                    Text(
+                        stringResource(R.string.bookshelf_total_header, totalCount),
+                        style = AppTypography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
             }
-            if (editing) {
-                IconButton(onClick = onSelectAll, enabled = totalCount > 0 && !deleting) {
-                    Icon(Icons.Filled.SelectAll, stringResource(R.string.bookshelf_select_all))
+            AnimatedContent(
+                targetState = editing,
+                transitionSpec = { fadeIn(tween(AppMotion.standard)) togetherWith fadeOut(tween(AppMotion.quick)) },
+                label = "BookshelfActions"
+            ) { displayedEditing ->
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (displayedEditing) {
+                        IconButton(onClick = onSelectAll, enabled = totalCount > 0 && !deleting) {
+                            Icon(Icons.Filled.SelectAll, stringResource(R.string.bookshelf_select_all))
+                        }
+                        IconButton(onClick = onDone, enabled = !deleting) { Icon(Icons.Filled.Done, stringResource(R.string.bookshelf_edit_done)) }
+                    } else {
+                        IconButton(onClick = onToggleView) {
+                            Icon(if (listView) Icons.Filled.GridView else Icons.Filled.ViewList, "切换书架展示方式")
+                        }
+                        IconButton(
+                            onClick = onStatistics,
+                            modifier = Modifier.containerTransformSource(ContainerTransformTarget.BOOKSHELF_READING_STATISTICS)
+                        ) {
+                            Icon(
+                                Icons.Filled.QueryStats,
+                                stringResource(R.string.reading_stats_title),
+                                modifier = Modifier.containerTransformContent()
+                            )
+                        }
+                    }
                 }
-                IconButton(onClick = onDone, enabled = !deleting) { Icon(Icons.Filled.Done, stringResource(R.string.bookshelf_edit_done)) }
-            } else {
-                IconButton(onClick = onToggleView) {
-                    Icon(if (listView) Icons.Filled.GridView else Icons.Filled.ViewList, "切换书架展示方式")
-                }
-                IconButton(onClick = onStatistics) { Icon(Icons.Filled.QueryStats, stringResource(R.string.reading_stats_title)) }
             }
         }
     }
@@ -861,6 +952,8 @@ private fun BookshelfSyncStatusIndicator(
 @Composable
 private fun ShelfCard(
     entry: BookshelfEntry,
+    coverModifier: Modifier = Modifier,
+    titleModifier: Modifier = Modifier,
     readingActivity: LocalReadingActivity?,
     selected: Boolean,
     editing: Boolean,
@@ -868,29 +961,31 @@ private fun ShelfCard(
     onLongClick: () -> Unit,
     onClick: () -> Unit
 ) {
+    val cover = BookshelfCoverStore.rememberCover(entry)
+    val coverSource = rememberNovelCoverSource(entry.url, cover.url, cover.state)
+    val open = { if (editing) onClick() else coverSource.open(onClick) }
     // Keep bookshelf covers aligned with the compact 8dp corners used by
     // the home discovery tiles.
     val shape = AppShapes.compact
     Column(
         Modifier.fillMaxWidth().clip(shape).then(
             if (selected && editing) Modifier.border(2.dp, MaterialTheme.colorScheme.primary, shape) else Modifier
-        ).clickable(enabled = enabled, onClick = onClick).padding(if (selected && editing) AppSpacing.xs else AppSpacing.zero),
+        ).clickable(enabled = enabled, onClick = open),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Box(
             Modifier.fillMaxWidth().aspectRatio(0.7f).clip(shape).combinedClickable(
                 enabled = enabled,
-                onClick = onClick,
+                onClick = open,
                 onLongClickLabel = stringResource(R.string.bookshelf_edit),
                 onLongClick = onLongClick
             )
         ) {
-            val cover = BookshelfCoverStore.rememberCover(entry)
             AppNovelCover(
                 coverUrl = cover.url,
                 coverState = cover.state,
                 title = entry.title,
-                modifier = Modifier.fillMaxSize().clip(shape)
+                modifier = Modifier.then(coverModifier).then(coverSource.modifier).fillMaxSize().clip(shape)
             )
             if (entry.hasUpdate) {
                 BookshelfUpdateDot(
@@ -899,9 +994,8 @@ private fun ShelfCard(
                         .padding(AppSpacing.xs)
                 )
             }
-            if (editing) {
+            AppSelectionReveal(editing, Modifier.padding(AppSpacing.sm)) {
                 Surface(
-                    modifier = Modifier.padding(AppSpacing.sm),
                     shape = CircleShape,
                     color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surface.copy(alpha = 0.88f)
                 ) {
@@ -919,7 +1013,7 @@ private fun ShelfCard(
             style = AppTypography.bodyMedium,
             maxLines = 2,
             overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.fillMaxWidth().padding(top = AppSpacing.sm, start = AppSpacing.xs, end = AppSpacing.xs)
+            modifier = titleModifier.fillMaxWidth().padding(top = AppSpacing.sm, start = AppSpacing.xs, end = AppSpacing.xs)
         )
         Text(
             text = readingActivity?.let { activity ->
@@ -953,40 +1047,45 @@ private fun BookshelfUpdateDot(modifier: Modifier = Modifier) {
 @Composable
 private fun ShelfListItem(
     entry: BookshelfEntry,
+    coverModifier: Modifier = Modifier,
+    titleModifier: Modifier = Modifier,
     enabled: Boolean,
     editing: Boolean,
     selected: Boolean,
     onClick: () -> Unit,
     onLongClick: () -> Unit
 ) {
+    val cover = BookshelfCoverStore.rememberCover(entry)
+    val coverSource = rememberNovelCoverSource(entry.url, cover.url, cover.state)
+    val open = { if (editing) onClick() else coverSource.open(onClick) }
     Row(
         Modifier.fillMaxWidth().clip(AppShapes.compact)
             .then(if (editing && selected) Modifier.background(MaterialTheme.colorScheme.secondaryContainer) else Modifier)
-            .combinedClickable(enabled = enabled, onClick = onClick, onLongClick = onLongClick)
+            .combinedClickable(enabled = enabled, onClick = open, onLongClick = onLongClick)
             .padding(vertical = AppSpacing.xs),
         horizontalArrangement = Arrangement.spacedBy(AppSpacing.md), verticalAlignment = Alignment.Top
     ) {
         Box(
             Modifier.size(width = 100.dp, height = 140.dp).clip(AppShapes.compact).combinedClickable(
                 enabled = enabled,
-                onClick = onClick,
+                onClick = open,
                 onLongClickLabel = stringResource(R.string.bookshelf_edit),
                 onLongClick = onLongClick
             )
         ) {
-            val cover = BookshelfCoverStore.rememberCover(entry)
             AppNovelCover(
                 coverUrl = cover.url,
                 title = entry.title,
-                modifier = Modifier.fillMaxSize().clip(AppShapes.compact),
+                modifier = Modifier.then(coverModifier).then(coverSource.modifier).fillMaxSize().clip(AppShapes.compact),
                 coverState = cover.state
             )
-            if (editing) Surface(
-                modifier = Modifier.align(Alignment.TopStart).padding(AppSpacing.xs),
-                shape = CircleShape,
-                color = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f)
-            ) {
-                Checkbox(checked = selected, onCheckedChange = null, enabled = enabled)
+            AppSelectionReveal(editing, Modifier.align(Alignment.TopStart).padding(AppSpacing.xs)) {
+                Surface(
+                    shape = CircleShape,
+                    color = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f)
+                ) {
+                    Checkbox(checked = selected, onCheckedChange = null, enabled = enabled)
+                }
             }
             if (entry.hasUpdate) {
                 BookshelfUpdateDot(
@@ -997,7 +1096,7 @@ private fun ShelfListItem(
             }
         }
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(AppSpacing.xs)) {
-            Text(entry.title, style = AppTypography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            Text(entry.title, modifier = titleModifier, style = AppTypography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
             entry.latestChapterTitle.takeIf { it.isNotBlank() }?.let { Text(stringResource(R.string.bookshelf_entry_latest, it), style = AppTypography.bodyMedium, maxLines = 2, overflow = TextOverflow.Ellipsis) }
             entry.remoteUpdatedAt.takeIf { it.isNotBlank() }?.let { Text(stringResource(R.string.bookshelf_entry_updated_at, it), style = AppTypography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
             entry.remoteLastViewedTitle.takeIf { it.isNotBlank() }?.let { Text(stringResource(R.string.bookshelf_entry_last_viewed, it), style = AppTypography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis) }

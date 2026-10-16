@@ -43,6 +43,46 @@ class StructuredDownloadStoreTest {
     }
 
     @Test
+    fun resumedUnlockSkipsCompletedTargetsAndLeavesUnselectedPasswordChaptersAlone() = withStorage { root ->
+        val order = listOf(chapter(1), chapter(2))
+        val saved = save(1, order)
+        val manifestFile = File(root.listFiles()!!.single(), "manifest.json")
+        manifestFile.writeText(Gson().toJson(saved.copy(commonPassword = "fixture", chapters =
+            saved.chapters.map { if (it.index == 1) it.copy(requiresPassword = true) else it })))
+        NovelDownloadStore.initializeDirectory(root)
+        val progress = mutableListOf<DownloadProgress>()
+
+        val result = runBlocking {
+            NovelDownloadStore.unlockChaptersWithCommonPassword(auth, novelUrl,
+                setOf("/forum/9001/1.html"), "https://www.esjzone.one/") { progress += it }
+        }
+
+        assertEquals(1, result.totalCount)
+        assertEquals(1, result.unlockedCount)
+        assertEquals(0, result.failedCount)
+        assertEquals(listOf(DownloadProgress(1, 1, "")), progress)
+        val restored = requireNotNull(result.updatedManifest)
+        assertFalse(restored.complete)
+        assertEquals(listOf(chapter(2).url), restored.pendingPasswordChapters.map { it.url })
+        assertEquals("fixture", restored.commonPassword)
+        assertEquals("正文 1", NovelDownloadStore.readChapter(chapter(1).url)!!.body!!.readerBlocks().single().sourceText())
+    }
+
+    @Test
+    fun unlockRejectsMissingQueuedChaptersWithoutExpandingToOtherChapters() = withStorage {
+        save(1, listOf(chapter(1)))
+        NovelDownloadStore.updateCommonPassword(novelUrl, "fixture")
+
+        assertThrows(IllegalArgumentException::class.java) {
+            runBlocking {
+                NovelDownloadStore.unlockChaptersWithCommonPassword(auth, novelUrl,
+                    setOf(chapter(2).url), "https://www.esjzone.one/")
+            }
+        }
+        assertEquals(1, NovelDownloadStore.manifest(novelUrl)!!.chapters.size)
+    }
+
+    @Test
     fun committedOfflineChapterReclaimsMatchingSourceCacheAndKeepsReadableBody() = withStorage {
         val cache = Files.createTempDirectory("saved-chapter-cache-").toFile()
         PageCache.initializeDirectory(cache)

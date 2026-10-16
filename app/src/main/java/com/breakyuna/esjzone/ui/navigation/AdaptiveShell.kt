@@ -486,7 +486,7 @@ private fun TabStackDisplay(
                     entry<AppNavKey.Legacy>(metadata = ::containerTransformMetadata) { key ->
                         val destination = navigator.destination(key.route)
                         if (destination != null) {
-                            val containerTarget = ContainerTransformTarget.forKey(key)
+                            val containerTarget = ContainerTransformTarget.forKey(key, origin = tabId.route)
                             if (containerTarget != null) {
                                 ContainerTransformDestination(containerTarget) { destination.Content() }
                             } else {

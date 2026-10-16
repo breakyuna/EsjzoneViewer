@@ -12,6 +12,7 @@ import com.breakyuna.esjzone.network.EsjzoneClient
 import com.breakyuna.esjzone.network.PageCache
 import com.breakyuna.esjzone.network.EsjzoneUrls
 import com.breakyuna.esjzone.network.features.ChapterPasswordRequiredException
+import com.breakyuna.esjzone.network.features.ChapterPasswordRejectedException
 import com.breakyuna.esjzone.network.features.getChapterDetail
 import com.breakyuna.esjzone.network.features.isPasswordProtectedChapterHtml
 import com.breakyuna.esjzone.network.features.unlockPasswordProtectedChapter
@@ -442,71 +443,71 @@ object NovelDownloadStore {
 
     suspend fun unlockChaptersWithCommonPassword(
         authorization: Authorization,
-        novel: DetailedNovel,
-        commonPassword: String,
-        onProgress: (current: Int, total: Int) -> Unit = { _, _ -> }
+        novelUrl: String,
+        selectedChapterUrls: Set<String>,
+        baseUrl: String,
+        onProgress: (DownloadProgress) -> Unit = {}
     ): BatchUnlockResult {
-        val trimmed = commonPassword.trim()
-        val unlockBaseUrl = EsjzoneUrls.resolve(
-            novel.url,
-            EsjzoneUrls.baseForDomain(authorization.domain.ifBlank { EsjzoneUrls.BaseWithoutProtocol })
-        ).ifBlank { EsjzoneUrls.baseForDomain(authorization.domain.ifBlank { EsjzoneUrls.BaseWithoutProtocol }) }
-        val directory = directoryFor(novel.url, create = true)
-            ?: return BatchUnlockResult(0, 0, 0, null)
-        val writeGuard = newWriteGuard(directory)
+        val directory = directoryFor(novelUrl, create = false)
+            ?: throw IOException("Novel download storage is unavailable")
+        val initialManifest = synchronized(ioLock) { readManifest(directory) }
+            ?: throw IOException("Novel download manifest is unavailable")
+        val password = initialManifest.commonPassword?.takeIf(String::isNotBlank)
+            ?: throw IOException("Common chapter password is unavailable")
+        require(selectedChapterUrls.isNotEmpty())
+        val selectedKeys = requireNotNull(selectionKeys(initialManifest.chapters.map { it.url }, selectedChapterUrls))
+        // Keep the queued scope, including bodies whose images need another attempt.
+        val targets = initialManifest.chapters.filter { chapterKey(it.url) in selectedKeys }
+            .distinctBy { chapterKey(it.url) }
+        val chapterOrder = initialManifest.chapters.filterNot { it.localOnly }
+            .map { Chapter(it.name, it.url, false) }
 
-        val initialManifest = synchronized(ioLock) {
-            val existing = readManifest(directory)
-            val withPw = (existing ?: manifestFrom(
-                novel = novel,
-                records = emptyList(),
-                downloadedAt = System.currentTimeMillis(),
-                complete = false
-            )).copy(commonPassword = trimmed)
-            writeManifest(directory, withPw, writeGuard, updatePassword = true)
-            inventorySnapshot = null
-            mutableChanges.value += 1
-            withPw
-        }
-
-        val pending = initialManifest.pendingPasswordChapters
-        if (pending.isEmpty()) {
-            return BatchUnlockResult(0, 0, 0, initialManifest)
-        }
-
-        var unlocked = 0
+        var unlocked = targets.count { it.downloaded }
         var failed = 0
-        val total = pending.size
+        val total = targets.size
+        var retryableError: Exception? = null
+        var processed = unlocked
 
-        for ((idx, record) in pending.withIndex()) {
+        onProgress(DownloadProgress(processed, total, ""))
+        for (record in targets.filterNot { it.downloaded }) {
             currentCoroutineContext().ensureActive()
-            onProgress(idx + 1, total)
+            onProgress(DownloadProgress(processed, total, record.name))
             try {
                 val detail = EsjzoneClient.unlockPasswordProtectedChapter(
                     authorization = authorization,
                     chapter = Chapter(record.name, record.url, false),
-                    password = trimmed,
-                    baseUrl = unlockBaseUrl
+                    password = password,
+                    baseUrl = baseUrl
                 )
                 currentCoroutineContext().ensureActive()
-                saveChapter(
-                    novelName = novel.name,
-                    novelUrl = novel.url,
-                    coverUrl = novel.coverUrl,
-                    chapterOrder = novel.chapterList.orderedChapters,
+                val saved = saveChapter(
+                    novelName = initialManifest.name,
+                    novelUrl = novelUrl,
+                    coverUrl = initialManifest.coverUrl,
+                    chapterOrder = chapterOrder,
                     chapter = Chapter(record.name, record.url, false),
                     detail = detail,
                     authorization = authorization
                 )
+                if (saved?.chapters?.any { chapterKey(it.url) == chapterKey(record.url) && it.downloaded } != true) {
+                    throw IOException("Unlocked chapter download is incomplete")
+                }
                 currentCoroutineContext().ensureActive()
                 unlocked++
             } catch (e: CancellationException) {
                 throw e
+            } catch (e: ChapterPasswordRejectedException) {
+                failed++
             } catch (e: Exception) {
                 AppLogger.w("NovelDownloadStore", "Common password unlock failed for chapter ${record.name}", e)
                 failed++
+                if (retryableError == null) retryableError = e
             }
+            processed++
+            onProgress(DownloadProgress(processed, total, record.name))
         }
+
+        retryableError?.let { throw IOException("Batch chapter unlock needs retry", it) }
 
         val finalManifest = synchronized(ioLock) { readManifest(directory) }
         return BatchUnlockResult(

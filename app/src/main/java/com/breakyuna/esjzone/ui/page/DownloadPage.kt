@@ -40,6 +40,15 @@ import com.breakyuna.esjzone.ui.designsystem.GlobalText as Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
+import com.breakyuna.esjzone.ui.designsystem.AppSelectionReveal
+import com.breakyuna.esjzone.ui.designsystem.AppAnimatedTitle
+import com.breakyuna.esjzone.ui.designsystem.contentArrival
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
+import androidx.compose.animation.core.tween
+import com.breakyuna.esjzone.ui.designsystem.AppMotion
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -112,29 +121,37 @@ object DownloadPage : AppDestination {
         Scaffold(
             topBar = {
                 TopAppBar(
-                    title = { Text(if (editing) "${stringResource(R.string.download_edit)} (${selected.size})" else stringResource(R.string.downloads), style = AppTypography.titleLarge) },
+                    title = { AppAnimatedTitle(if (editing) "${stringResource(R.string.download_edit)} (${selected.size})" else stringResource(R.string.downloads), style = AppTypography.titleLarge) },
                     navigationIcon = { BackIconButton { if (editing) { editing = false; selected = emptySet() } else navigator?.pop() } },
                     actions = {
-                        if (editing) {
-                            IconButton(onClick = { selected = if (selected.size == entries.size) emptySet() else entries.mapTo(LinkedHashSet()) { it.novelUrl } }, enabled = entries.isNotEmpty() && !deleting) {
-                                Icon(Icons.Filled.SelectAll, stringResource(R.string.download_select_all))
-                            }
-                            IconButton(onClick = { requestDelete(selected) }, enabled = selected.isNotEmpty() && !deleting) {
-                                Icon(Icons.Filled.DeleteOutline, stringResource(R.string.download_delete_selected), tint = MaterialTheme.colorScheme.error)
-                            }
-                            IconButton(onClick = { editing = false; selected = emptySet() }, enabled = !deleting) {
-                                Icon(Icons.Filled.Done, stringResource(R.string.download_edit_done))
-                            }
-                        } else {
-                            IconButton(onClick = { editing = true }, enabled = entries.isNotEmpty()) { Icon(Icons.Filled.Edit, stringResource(R.string.download_edit)) }
-                            Box {
-                                IconButton(onClick = { showSettings = true }) { Icon(Icons.Filled.Settings, stringResource(R.string.download_settings)) }
-                                DropdownMenu(expanded = showSettings, onDismissRequest = { showSettings = false }) {
-                                    DropdownMenuItem(
-                                        text = { Text(stringResource(R.string.download_auto_save), style = AppTypography.labelLarge) },
-                                        trailingIcon = { Switch(checked = autoSave, onCheckedChange = { model.setAutoSave(it) }) },
-                                        onClick = { model.setAutoSave(!autoSave) }
-                                    )
+                        AnimatedContent(
+                            targetState = editing,
+                            transitionSpec = { fadeIn(tween(AppMotion.standard)) togetherWith fadeOut(tween(AppMotion.quick)) },
+                            label = "SelectionActions"
+                        ) { displayedEditing ->
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                if (displayedEditing) {
+                                    IconButton(onClick = { selected = if (selected.size == entries.size) emptySet() else entries.mapTo(LinkedHashSet()) { it.novelUrl } }, enabled = entries.isNotEmpty() && !deleting) {
+                                        Icon(Icons.Filled.SelectAll, stringResource(R.string.download_select_all))
+                                    }
+                                    IconButton(onClick = { requestDelete(selected) }, enabled = selected.isNotEmpty() && !deleting) {
+                                        Icon(Icons.Filled.DeleteOutline, stringResource(R.string.download_delete_selected), tint = MaterialTheme.colorScheme.error)
+                                    }
+                                    IconButton(onClick = { editing = false; selected = emptySet() }, enabled = !deleting) {
+                                        Icon(Icons.Filled.Done, stringResource(R.string.download_edit_done))
+                                    }
+                                } else {
+                                    IconButton(onClick = { editing = true }, enabled = entries.isNotEmpty()) { Icon(Icons.Filled.Edit, stringResource(R.string.download_edit)) }
+                                    Box {
+                                        IconButton(onClick = { showSettings = true }) { Icon(Icons.Filled.Settings, stringResource(R.string.download_settings)) }
+                                        DropdownMenu(expanded = showSettings, onDismissRequest = { showSettings = false }) {
+                                            DropdownMenuItem(
+                                                text = { Text(stringResource(R.string.download_auto_save), style = AppTypography.labelLarge) },
+                                                trailingIcon = { Switch(checked = autoSave, onCheckedChange = { model.setAutoSave(it) }) },
+                                                onClick = { model.setAutoSave(!autoSave) }
+                                            )
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -202,7 +219,7 @@ private fun DownloadList(
 ) {
     val totalBytes = remember(novels) { novels.sumOf { it.storageBytes } }
     LazyColumn(
-        modifier = modifier,
+        modifier = modifier.contentArrival(),
         contentPadding = PaddingValues(AppSpacing.lg),
         verticalArrangement = Arrangement.spacedBy(AppSpacing.sm)
     ) {
@@ -214,7 +231,7 @@ private fun DownloadList(
             )
         }
         items(novels, key = { it.novelUrl }, contentType = { "download" }) { summary ->
-            DownloadCard(summary, editing, summary.novelUrl in selected, deleting, { onToggle(summary.novelUrl) }, { onDelete(summary.novelUrl) })
+            DownloadCard(summary, editing, summary.novelUrl in selected, deleting, { onToggle(summary.novelUrl) }, { onDelete(summary.novelUrl) }, Modifier.animateItem())
         }
     }
 }
@@ -226,10 +243,11 @@ private fun DownloadCard(
     selected: Boolean,
     deleting: Boolean,
     onToggle: () -> Unit,
-    onDelete: () -> Unit
+    onDelete: () -> Unit,
+    modifier: Modifier = Modifier
 ) {
     Row(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .clip(AppShapes.standard)
             .then(
@@ -241,11 +259,11 @@ private fun DownloadCard(
             )
             .then(if (editing && !deleting) Modifier.clickable { onToggle() } else Modifier)
             .semantics { if (editing) role = Role.Button }
-            .padding(vertical = AppSpacing.sm, horizontal = if (selected) AppSpacing.sm else AppSpacing.xs),
+            .padding(vertical = AppSpacing.sm, horizontal = AppSpacing.sm),
         verticalAlignment = Alignment.Top,
         horizontalArrangement = Arrangement.spacedBy(AppSpacing.md)
     ) {
-        if (editing) Checkbox(checked = selected, onCheckedChange = { onToggle() }, enabled = !deleting)
+        AppSelectionReveal(editing) { Checkbox(checked = selected, onCheckedChange = { onToggle() }, enabled = !deleting) }
         AppNovelCover(
             coverUrl = summary.coverUrl,
             coverState = if (summary.coverUrl.isBlank()) CoverState.Unknown else null,

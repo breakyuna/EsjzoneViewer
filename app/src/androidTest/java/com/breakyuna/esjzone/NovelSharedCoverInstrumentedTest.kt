@@ -1,0 +1,121 @@
+package com.breakyuna.esjzone
+
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.size
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toPixelMap
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.test.captureToImage
+import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.onRoot
+import androidx.compose.ui.test.performClick
+import androidx.compose.ui.unit.IntRect
+import androidx.compose.ui.unit.dp
+import androidx.navigation3.runtime.NavKey
+import androidx.navigation3.runtime.entryProvider
+import androidx.navigation3.runtime.rememberNavBackStack
+import androidx.navigation3.runtime.rememberSaveableStateHolderNavEntryDecorator
+import androidx.navigation3.ui.NavDisplay
+import androidx.test.ext.junit.runners.AndroidJUnit4
+import com.breakyuna.esjzone.ui.navigation.AppNavKey
+import com.breakyuna.esjzone.ui.navigation.ContainerTransformLayout
+import com.breakyuna.esjzone.ui.navigation.LegacyRoute
+import com.breakyuna.esjzone.ui.navigation.novelCoverDestination
+import com.breakyuna.esjzone.ui.navigation.popTransition
+import com.breakyuna.esjzone.ui.navigation.pushTransition
+import com.breakyuna.esjzone.ui.navigation.rememberNovelCoverSource
+import com.breakyuna.esjzone.ui.navigation.rememberSharedCoverOrigin
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
+import org.junit.Rule
+import org.junit.Test
+import org.junit.runner.RunWith
+
+@RunWith(AndroidJUnit4::class)
+class NovelSharedCoverInstrumentedTest {
+    @get:Rule val composeRule = createComposeRule()
+
+    @Test fun repeatedBookUsesClickedCoverAndReturnsToItsOwnPosition() {
+        val url = "/detail/123.html"
+        lateinit var stack: MutableList<NavKey>
+        var destinationPreview: String? = null
+        composeRule.setContent {
+            MaterialTheme {
+                stack = rememberNavBackStack(AppNavKey.HomeTab)
+                ContainerTransformLayout(Modifier.size(320.dp, 480.dp).background(Color.White)) {
+                    NavDisplay(
+                        backStack = stack,
+                        modifier = Modifier.fillMaxSize(),
+                        onBack = { stack.removeLastOrNull() },
+                        transitionSpec = pushTransition,
+                        popTransitionSpec = popTransition,
+                        entryDecorators = listOf(rememberSaveableStateHolderNavEntryDecorator()),
+                        entryProvider = entryProvider {
+                            entry<AppNavKey.HomeTab> {
+                                val first = rememberNovelCoverSource(url, "first-cover")
+                                val second = rememberNovelCoverSource(url, "clicked-cover")
+                                Box(Modifier.fillMaxSize()) {
+                                    Box(Modifier.offset(16.dp, 16.dp).then(first.modifier)
+                                        .size(48.dp, 72.dp).background(Color.Green))
+                                    Box(Modifier.offset(16.dp, 300.dp).then(second.modifier)
+                                        .size(48.dp, 72.dp).background(Color.Blue).testTag("open-book")
+                                        .clickable {
+                                            second.open { stack.add(AppNavKey.Legacy(LegacyRoute.Novel(url))) }
+                                        })
+                                }
+                            }
+                            entry<AppNavKey.Legacy> {
+                                destinationPreview = rememberSharedCoverOrigin(url)?.coverUrl
+                                Box(Modifier.fillMaxSize()) {
+                                    Box(Modifier.offset(160.dp, 24.dp).novelCoverDestination(url)
+                                        .size(104.dp, 148.dp).background(Color.Blue))
+                                }
+                            }
+                        }
+                    )
+                }
+            }
+        }
+        composeRule.waitForIdle()
+        val source = blueBounds()
+        composeRule.mainClock.autoAdvance = false
+        composeRule.onNodeWithTag("open-book").performClick()
+        composeRule.mainClock.advanceTimeByFrame()
+        composeRule.mainClock.advanceTimeBy(120)
+        val moving = blueBounds()
+        composeRule.mainClock.advanceTimeBy(600)
+        val destination = blueBounds()
+        assertEquals("clicked-cover", destinationPreview)
+        assertTrue(moving.width > source.width && moving.width < destination.width)
+        assertTrue(moving.top < source.top && moving.top > destination.top)
+        composeRule.runOnIdle { stack.removeLastOrNull() }
+        composeRule.mainClock.advanceTimeBy(700)
+        assertEquals(source, blueBounds())
+    }
+
+    private fun blueBounds(): IntRect {
+        val pixels = composeRule.onRoot().captureToImage().toPixelMap()
+        var left = pixels.width
+        var top = pixels.height
+        var right = 0
+        var bottom = 0
+        for (y in 0 until pixels.height) for (x in 0 until pixels.width) {
+            val pixel = pixels[x, y]
+            if (pixel.blue > pixel.red + 0.1f && pixel.blue > pixel.green + 0.1f) {
+                left = minOf(left, x)
+                top = minOf(top, y)
+                right = maxOf(right, x + 1)
+                bottom = maxOf(bottom, y + 1)
+            }
+        }
+        assertTrue("The shared cover remains visible", right > left && bottom > top)
+        return IntRect(left, top, right, bottom)
+    }
+}

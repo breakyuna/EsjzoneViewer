@@ -29,6 +29,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import com.breakyuna.esjzone.ui.designsystem.GlobalText as Text
+import com.breakyuna.esjzone.ui.navigation.rememberNovelCoverSource
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -167,17 +168,19 @@ fun AppHomeNovelTile(
     modifier: Modifier = Modifier,
     onClick: (() -> Unit)? = null
 ) {
+    val coverSource = rememberNovelCoverSource(novel.url, novel.coverUrl, novel.coverState)
+    val open = onClick?.let { action -> { coverSource.open(action) } }
     Column(
         modifier = modifier
             .widthIn(min = AppLayout.homeTileWidth, max = AppLayout.homeTileWidth)
-            .then(novelClickModifier(onClick)),
+            .then(novelClickModifier(open)),
         verticalArrangement = Arrangement.spacedBy(AppSpacing.sm)
     ) {
         AppNovelCover(
             coverUrl = novel.coverUrl,
             coverState = novel.coverState,
             title = novel.name,
-            modifier = Modifier
+            modifier = Modifier.then(coverSource.modifier)
                 .fillMaxWidth()
                 .height(AppLayout.homeTileCoverHeight),
             isAdult = novel.isAdult
@@ -200,10 +203,12 @@ fun AppFeaturedNovelCard(
     modifier: Modifier = Modifier,
     onClick: (() -> Unit)? = null
 ) {
+    val coverSource = rememberNovelCoverSource(novel.url, novel.coverUrl, novel.coverState)
+    val open = onClick?.let { action -> { coverSource.open(action) } }
     Column(
         modifier = modifier
             .widthIn(min = AppLayout.featureCoverWidth + 160.dp, max = 320.dp)
-            .then(novelClickModifier(onClick))
+            .then(novelClickModifier(open))
     ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -214,7 +219,7 @@ fun AppFeaturedNovelCard(
                 coverUrl = novel.coverUrl,
                 coverState = novel.coverState,
                 title = novel.name,
-                modifier = Modifier.size(AppLayout.featureCoverWidth, AppLayout.featureCoverHeight),
+                modifier = Modifier.then(coverSource.modifier).size(AppLayout.featureCoverWidth, AppLayout.featureCoverHeight),
                 isAdult = novel.isAdult
             )
             Column(
@@ -263,6 +268,8 @@ fun AppNovelListItem(
     compact: Boolean = false,
     summary: String? = null
 ) {
+    val coverSource = rememberNovelCoverSource(novel.url, novel.coverUrl, novel.coverState)
+    val open = onClick?.let { action -> { coverSource.open(action) } }
     val coverWidth = if (compact) AppLayout.listCoverWidth - 4.dp else AppLayout.listCoverWidth + 8.dp
     val coverHeight = if (compact) AppLayout.listCoverHeight - 4.dp else AppLayout.listCoverHeight + 12.dp
     Column(
@@ -270,7 +277,7 @@ fun AppNovelListItem(
             .fillMaxWidth()
             .background(MaterialTheme.colorScheme.surface, AppShapes.standard)
             .border(1.dp, MaterialTheme.colorScheme.outlineVariant, AppShapes.standard)
-            .then(novelClickModifier(onClick))
+            .then(novelClickModifier(open))
     ) {
         Row(
             modifier = Modifier
@@ -283,7 +290,7 @@ fun AppNovelListItem(
                 coverUrl = novel.coverUrl,
                 coverState = novel.coverState,
                 title = novel.name,
-                modifier = Modifier.size(coverWidth, coverHeight),
+                modifier = Modifier.then(coverSource.modifier).size(coverWidth, coverHeight),
                 isAdult = novel.isAdult
             )
             Column(
@@ -331,6 +338,8 @@ fun AppNovelPreviewCard(
     showLatestChapter: Boolean = compact,
     onClick: (() -> Unit)? = null
 ) {
+    val coverSource = rememberNovelCoverSource(novel.url, novel.coverUrl, novel.coverState)
+    val open = onClick?.let { action -> { coverSource.open(action) } }
     val coverWidth = if (compact) 76.dp else 88.dp
     val coverHeight = if (compact) 96.dp else 120.dp
     Column(
@@ -338,7 +347,7 @@ fun AppNovelPreviewCard(
             .fillMaxWidth()
             .background(MaterialTheme.colorScheme.surface, AppShapes.standard)
             .border(1.dp, MaterialTheme.colorScheme.outlineVariant, AppShapes.standard)
-            .then(novelClickModifier(onClick))
+            .then(novelClickModifier(open))
     ) {
         Row(
             modifier = Modifier
@@ -351,7 +360,7 @@ fun AppNovelPreviewCard(
                 coverUrl = novel.coverUrl,
                 coverState = novel.coverState,
                 title = novel.name,
-                modifier = Modifier.size(coverWidth, coverHeight),
+                modifier = Modifier.then(coverSource.modifier).size(coverWidth, coverHeight),
                 isAdult = novel.isAdult
             )
             Column(

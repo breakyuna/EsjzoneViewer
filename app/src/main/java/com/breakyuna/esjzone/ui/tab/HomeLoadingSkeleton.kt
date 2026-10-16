@@ -3,6 +3,7 @@ package com.breakyuna.esjzone.ui.tab
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -26,21 +27,22 @@ import com.breakyuna.esjzone.ui.designsystem.AppSpacing
 internal fun LazyListScope.homeLoadingHero() {
     item(key = "home-weekly-popular", contentType = "home-weekly-popular") {
         val loadingLabel = stringResource(R.string.loading_content)
-        AppShimmerPlaceholder(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(196.dp)
-                .semantics { contentDescription = loadingLabel },
-            shape = AppShapes.prominent
-        )
+        Column(verticalArrangement = Arrangement.spacedBy(AppSpacing.sm)) {
+            AppShimmerPlaceholder(
+                modifier = Modifier.fillMaxWidth().height(HOME_WEEKLY_POPULAR_CARD_HEIGHT)
+                    .semantics { contentDescription = loadingLabel },
+                shape = AppShapes.prominent
+            )
+            Spacer(Modifier.height(HOME_WEEKLY_POPULAR_INDICATOR_SIZE))
+        }
     }
 }
 
 internal fun LazyListScope.homeLoadingCollection(title: String) {
-    item(key = "home-loading-divider-$title", contentType = "home-section-divider") {
+    item(key = "home-divider-$title", contentType = "home-section-divider") {
         HomeSectionDividerItem()
     }
-    item(key = "home-loading-section-$title", contentType = "home-section") {
+    item(key = "home-section-$title", contentType = "home-section") {
         Text(
             text = homeSectionTitleText(title),
             style = MaterialTheme.typography.titleMedium,
@@ -53,10 +55,10 @@ internal fun LazyListScope.homeLoadingCollection(title: String) {
 }
 
 internal fun LazyListScope.homeLoadingWeeklyUpdates() {
-    item(key = "home-weekly-loading-divider", contentType = "home-section-divider") {
+    item(key = "home-weekly-divider", contentType = "home-section-divider") {
         HomeSectionDividerItem()
     }
-    item(key = "home-weekly-loading-header", contentType = "home-weekly-header") {
+    item(key = "home-weekly-header", contentType = "home-weekly-header") {
         Column(verticalArrangement = Arrangement.spacedBy(AppSpacing.sm)) {
             Text(
                 text = stringResource(R.string.home_weekly_updates),
@@ -66,7 +68,7 @@ internal fun LazyListScope.homeLoadingWeeklyUpdates() {
             AppShimmerPlaceholder(Modifier.fillMaxWidth().height(44.dp))
         }
     }
-    item(key = "home-weekly-loading-grid", contentType = "home-grid-row") {
+    item(key = "home-weekly-content", contentType = "home-weekly-content") {
         HomeLoadingGridRow()
     }
 }

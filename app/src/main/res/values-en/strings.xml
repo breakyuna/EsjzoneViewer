@@ -188,10 +188,13 @@
     <string name="novel_download_clear_common_password">Clear password</string>
     <string name="novel_download_common_password_cleared">Common password cleared for this book</string>
     <string name="novel_download_batch_unlock_action">Unlock all with common password (%1$d)</string>
+    <string name="novel_download_unlock_waiting_count">Waiting to unlock (%1$d/%2$d)</string>
+    <string name="novel_download_unlock_notification_title">Unlocking: %1$s</string>
+    <string name="novel_download_unlock_completed_title">Batch unlock finished: %1$s</string>
     <string name="novel_download_batch_unlocking">Unlocking (%1$d/%2$d)…</string>
     <string name="novel_download_batch_unlock_success">Successfully unlocked all %1$d chapter(s)</string>
-    <string name="novel_download_batch_unlock_partial">Unlocked %1$d chapter(s); %2$d chapter(s) password mismatch</string>
-    <string name="novel_download_batch_unlock_failed">Batch unlock failed; password did not match</string>
+    <string name="novel_download_batch_unlock_partial">Unlocked %1$d chapter(s); %2$d chapter(s) remain incomplete</string>
+    <string name="novel_download_batch_unlock_failed">Batch unlock failed; check the password or network connection</string>
     <string name="novel_download_save_as_common_password">Also save as common password for this book</string>
     <string name="novel_download_use_common_password">Fill common password</string>
     <string name="novel_download_save_and_unlock">Save &amp; unlock</string>

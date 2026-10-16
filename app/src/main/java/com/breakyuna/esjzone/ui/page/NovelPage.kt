@@ -78,6 +78,13 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberModalBottomSheetState
 import com.breakyuna.esjzone.network.features.unlockPasswordProtectedChapter
+import com.breakyuna.esjzone.ui.navigation.rememberSharedCoverOrigin
+import com.breakyuna.esjzone.ui.navigation.novelCoverDestination
+import com.breakyuna.esjzone.novellibrary.novel.CoveredNovel
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.ui.graphics.graphicsLayer
+import com.breakyuna.esjzone.ui.designsystem.AppMotion
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -270,7 +277,27 @@ class NovelPage(
                 NovelPageModel.State.Loading -> Box(
                     modifier = Modifier.weight(1f).fillMaxWidth(),
                     contentAlignment = Alignment.TopCenter
-                ) { LoadingSkeleton(modifier = Modifier.fillMaxWidth()) }
+                ) {
+                    val metrics = rememberAppAdaptiveMetrics()
+                    val inset = when (metrics.sizeClass) {
+                        AppWindowSizeClass.Compact -> AppSpacing.sm
+                        AppWindowSizeClass.Medium -> AppSpacing.md
+                        AppWindowSizeClass.Expanded -> AppSpacing.lg
+                    }
+                    Column(Modifier.widthIn(max = metrics.contentMaxWidth).fillMaxWidth().padding(horizontal = inset)) {
+                        val preview = novel as? CoveredNovel
+                        val sourceCover = rememberSharedCoverOrigin(novel.url)
+                        NovelHero(
+                            novel = com.breakyuna.esjzone.ui.product.NovelCardModel(
+                                id = novel.url, title = novel.name,
+                                cover = NovelCoverModel(sourceCover?.coverUrl ?: preview?.coverUrl, novel.name, state = sourceCover?.state ?: preview?.coverState)
+                            ),
+                            coverModifier = Modifier.novelCoverDestination(novel.url),
+                            modifier = Modifier.padding(vertical = AppSpacing.sm)
+                        )
+                        LoadingSkeleton(modifier = Modifier.fillMaxWidth())
+                    }
+                }
 
                 is NovelPageModel.State.Error -> Box(
                     modifier = Modifier.weight(1f).fillMaxWidth(),
@@ -872,6 +899,11 @@ private fun NovelDetailContent(
                             )
                         }
                     } == true
+                    Box(Modifier.animateItem(
+                        fadeInSpec = tween(AppMotion.quick),
+                        placementSpec = null,
+                        fadeOutSpec = tween(AppMotion.quick)
+                    )) {
                     RebuiltChapterRow(
                         row = row,
                         currentChapter = historyState.value,
@@ -880,6 +912,7 @@ private fun NovelDetailContent(
                         onGroupToggle = onGroupToggle,
                         isPasswordRequired = isPw
                     )
+                    }
                 }
                 item(key = "detail-chapters-collapse", contentType = "chapter-collapse") {
                     TextButton(
@@ -963,6 +996,7 @@ private fun RebuiltNovelHero(novel: DetailedNovel, metrics: AppAdaptiveMetrics) 
                 metrics = stats
             )
         ),
+        coverModifier = Modifier.novelCoverDestination(novel.url),
         onCoverClick = if (coverUrl.isNotBlank()) ({ viewingCover = true }) else null,
         modifier = Modifier
             .fillMaxWidth()
@@ -1084,8 +1118,13 @@ private fun RebuiltChapterRow(
             ) {
                 Icon(Icons.Filled.Folder, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
                 Text(row.group.name.text, style = AppTypography.titleMedium, modifier = Modifier.weight(1f))
+                val rotation = animateFloatAsState(
+                    if (row.expanded) 180f else 0f,
+                    tween(AppMotion.standard), label = "ChapterGroupArrow"
+                )
                 Icon(
-                    imageVector = if (row.expanded) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
+                    modifier = Modifier.graphicsLayer { rotationZ = rotation.value },
+                    imageVector = Icons.Filled.ExpandMore,
                     contentDescription = stringResource(
                         if (row.expanded) R.string.chapter_group_collapse else R.string.chapter_group_expand
                     ),
@@ -1208,7 +1247,6 @@ private fun NovelDownloadActions(
     var unlockingRecord by remember(novel.url) { mutableStateOf<DownloadedChapterRecord?>(null) }
     var showCommonPasswordDialog by rememberSaveable(novel.url) { mutableStateOf(false) }
     var batchUnlocking by remember(novel.url) { mutableStateOf(false) }
-    var batchProgress by remember(novel.url) { mutableStateOf<Pair<Int, Int>?>(null) }
     var downloadStatus by remember(novel.url) { mutableStateOf<BackgroundDownloadStatus?>(null) }
     var downloading by remember(novel.url) { mutableStateOf(false) }
     var preflighting by remember(novel.url) { mutableStateOf(false) }
@@ -1240,6 +1278,9 @@ private fun NovelDownloadActions(
             val waitingForEnqueue = requestedWorkId != null &&
                 (status == null || (status.id != requestedWorkId && !status.running))
             downloading = preflighting || (status?.running == true && !pausing) || waitingForEnqueue
+            if (!preflighting && !waitingForEnqueue) {
+                batchUnlocking = status?.running == true && status.unlockOnly && !pausing
+            }
             // WorkManager keeps an already-running unique job when enqueue is
             // called again. In that case the returned request id can differ
             // from the job currently reported for this novel; the unique-job
@@ -1254,7 +1295,17 @@ private fun NovelDownloadActions(
                 onDownloadedChange(updated)
                 if (requestedWorkId == status.id && !status.cancelled) {
                     val pendingPasswordCount = updated?.pendingPasswordChapters?.size ?: 0
-                    if (status.succeeded && pendingPasswordCount > 0) {
+                    if (status.unlockOnly) {
+                        val message = when {
+                            !status.succeeded || status.unlockedCount == 0 ->
+                                appContext.getString(R.string.novel_download_batch_unlock_failed)
+                            status.failedCount > 0 -> appContext.getString(
+                                R.string.novel_download_batch_unlock_partial, status.unlockedCount, status.failedCount)
+                            else -> appContext.getString(
+                                R.string.novel_download_batch_unlock_success, status.unlockedCount)
+                        }
+                        Toast.makeText(context, message, Toast.LENGTH_LONG).show()
+                    } else if (status.succeeded && pendingPasswordCount > 0) {
                         Toast.makeText(
                             context,
                             appContext.getString(R.string.novel_download_completed_with_passwords, pendingPasswordCount),
@@ -1389,6 +1440,7 @@ private fun NovelDownloadActions(
         if (!downloading || pausing) return
         pausing = true
         downloading = false
+        batchUnlocking = false
         requestedWorkId = null
         NovelDownloadManager.cancel(context, novel.url)
         downloadScope.launch {
@@ -1456,43 +1508,42 @@ private fun NovelDownloadActions(
 
     fun triggerBatchUnlock(password: String) {
         val trimmed = password.trim()
-        if (trimmed.isBlank() || batchUnlocking) return
+        if (trimmed.isBlank() || batchUnlocking || downloading || deletingDownload) return
+        pausing = false
         batchUnlocking = true
-        downloadScope.launch(Dispatchers.IO) {
-            val result = PresentationAccess.downloads.unlockChaptersWithCommonPassword(
-                authorization = authorization,
-                novel = novel,
-                commonPassword = trimmed,
-                onProgress = { cur, tot -> batchProgress = Pair(cur, tot) }
-            )
-            withContext(Dispatchers.Main) {
-                batchUnlocking = false
-                batchProgress = null
-                onDownloadedChange(result.updatedManifest)
-                if (result.unlockedCount > 0 && result.failedCount == 0) {
-                    Toast.makeText(
-                        context,
-                        appContext.getString(R.string.novel_download_batch_unlock_success, result.unlockedCount),
-                        Toast.LENGTH_SHORT
-                    ).show()
-                } else if (result.unlockedCount > 0) {
-                    Toast.makeText(
-                        context,
-                        appContext.getString(R.string.novel_download_batch_unlock_partial, result.unlockedCount, result.failedCount),
-                        Toast.LENGTH_LONG
-                    ).show()
-                } else if (result.failedCount > 0) {
-                    Toast.makeText(
-                        context,
-                        R.string.novel_download_batch_unlock_failed,
-                        Toast.LENGTH_LONG
-                    ).show()
+        downloading = true
+        preflighting = true
+        progress = DownloadProgress(0, downloaded?.pendingPasswordChapters?.size ?: 0, "")
+        downloadScope.launch {
+            try {
+                requestedWorkId = withContext(Dispatchers.IO) {
+                    NovelDownloadManager.enqueueUnlock(appContext, authorization, novel, trimmed)?.toString()
                 }
+                onDownloadedChange(withContext(Dispatchers.IO) {
+                    PresentationAccess.downloads.manifest(novel.url)
+                })
+                preflighting = false
+                if (requestedWorkId == null) {
+                    batchUnlocking = false
+                    downloading = false
+                }
+            } catch (error: CancellationException) {
+                preflighting = false
+                batchUnlocking = false
+                downloading = false
+                throw error
+            } catch (error: Exception) {
+                preflighting = false
+                batchUnlocking = false
+                downloading = false
+                AppLogger.e("NovelPage", "Unable to schedule background chapter unlock", error)
+                Toast.makeText(context, R.string.novel_download_batch_unlock_failed, Toast.LENGTH_LONG).show()
             }
         }
     }
 
     fun clearCommonPassword() {
+        if (downloading || batchUnlocking) return
         downloadScope.launch(Dispatchers.IO) {
             val updated = PresentationAccess.downloads.updateCommonPassword(novel, null)
             withContext(Dispatchers.Main) {
@@ -1509,8 +1560,8 @@ private fun NovelDownloadActions(
             status = downloadStatus,
             progress = progress,
             downloading = downloading,
+            preparing = preflighting,
             batchUnlocking = batchUnlocking,
-            batchProgress = batchProgress,
             sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
             onDismiss = { showSheet = false },
             onDownload = { enqueueDownload() },
@@ -1740,8 +1791,8 @@ private fun NovelDownloadSheet(
     status: BackgroundDownloadStatus?,
     progress: DownloadProgress?,
     downloading: Boolean,
+    preparing: Boolean,
     batchUnlocking: Boolean,
-    batchProgress: Pair<Int, Int>?,
     sheetState: SheetState,
     onDismiss: () -> Unit,
     onDownload: () -> Unit,
@@ -1810,8 +1861,12 @@ private fun NovelDownloadSheet(
                             val current = progress ?: DownloadProgress(completed, actualTotal, "")
                             Text(
                                 text = stringResource(
-                                    if (status?.waiting == true) R.string.novel_download_waiting_count
-                                    else R.string.novel_downloading_count,
+                                    when {
+                                        batchUnlocking && status?.waiting == true -> R.string.novel_download_unlock_waiting_count
+                                        batchUnlocking -> R.string.novel_download_batch_unlocking
+                                        status?.waiting == true -> R.string.novel_download_waiting_count
+                                        else -> R.string.novel_downloading_count
+                                    },
                                     current.completed,
                                     current.total),
                                 style = AppTypography.titleMedium
@@ -1939,13 +1994,7 @@ private fun NovelDownloadSheet(
                                 CircularProgressIndicator(modifier = Modifier.size(18.dp))
                             }
                         }
-                        if (batchUnlocking && batchProgress != null) {
-                            Text(
-                                text = stringResource(R.string.novel_download_batch_unlocking, batchProgress.first, batchProgress.second),
-                                style = AppTypography.bodySmall,
-                                color = MaterialTheme.colorScheme.error
-                            )
-                        } else {
+                        if (!batchUnlocking) {
                             val hasCommon = !manifest?.commonPassword.isNullOrBlank()
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
@@ -1954,7 +2003,7 @@ private fun NovelDownloadSheet(
                             ) {
                                 TextButton(
                                     onClick = onBatchUnlock,
-                                    enabled = !batchUnlocking
+                                    enabled = !batchUnlocking && !downloading
                                 ) {
                                     Text(
                                         if (hasCommon) {
@@ -1967,7 +2016,7 @@ private fun NovelDownloadSheet(
                                 if (hasCommon) {
                                     TextButton(
                                         onClick = onClearCommonPassword,
-                                        enabled = !batchUnlocking
+                                        enabled = !batchUnlocking && !downloading
                                     ) {
                                         Text(stringResource(R.string.novel_download_clear_common_password))
                                     }
@@ -1997,7 +2046,7 @@ private fun NovelDownloadSheet(
                                     )
                                     TextButton(
                                         onClick = { onUnlockChapter(record) },
-                                        enabled = !batchUnlocking
+                                        enabled = !batchUnlocking && !downloading
                                     ) {
                                         Text(stringResource(R.string.novel_download_unlock_chapter))
                                     }
@@ -2024,7 +2073,7 @@ private fun NovelDownloadSheet(
                             style = AppTypography.bodySmall,
                             color = appStateColors().contentMuted
                         )
-                        TextButton(onClick = onClearCommonPassword) {
+                        TextButton(onClick = onClearCommonPassword, enabled = !downloading) {
                             Text(stringResource(R.string.novel_download_clear_common_password))
                         }
                     }
@@ -2033,6 +2082,7 @@ private fun NovelDownloadSheet(
             if (downloading) {
                 FilledTonalButton(
                     onClick = onPauseDownload,
+                    enabled = !preparing,
                     modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp),
                     shape = AppShapes.standard
                 ) {

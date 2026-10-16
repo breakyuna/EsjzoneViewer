@@ -188,10 +188,13 @@
     <string name="novel_download_clear_common_password">清除密码</string>
     <string name="novel_download_common_password_cleared">已清除本书通用密码</string>
     <string name="novel_download_batch_unlock_action">使用通用密码解锁全部 (%1$d)</string>
+    <string name="novel_download_unlock_waiting_count">等待解锁 (%1$d/%2$d)</string>
+    <string name="novel_download_unlock_notification_title">正在解锁：%1$s</string>
+    <string name="novel_download_unlock_completed_title">批量解锁结束：%1$s</string>
     <string name="novel_download_batch_unlocking">正在解锁 (%1$d/%2$d)…</string>
     <string name="novel_download_batch_unlock_success">已成功解锁全部 %1$d 个加密章节</string>
-    <string name="novel_download_batch_unlock_partial">已解锁 %1$d 个章节，剩余 %2$d 个章节密码不匹配</string>
-    <string name="novel_download_batch_unlock_failed">通用密码解锁失败，所有加密章节密码均不匹配</string>
+    <string name="novel_download_batch_unlock_partial">已解锁 %1$d 个章节，仍有 %2$d 个章节未完成</string>
+    <string name="novel_download_batch_unlock_failed">批量解锁失败，请检查密码或网络连接</string>
     <string name="novel_download_save_as_common_password">同时保存为此书通用密码</string>
     <string name="novel_download_use_common_password">填入本书通用密码</string>
     <string name="novel_download_save_and_unlock">保存并解锁</string>

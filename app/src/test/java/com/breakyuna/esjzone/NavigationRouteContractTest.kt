@@ -93,6 +93,10 @@ class NavigationRouteContractTest {
             ContainerTransformTarget.FORUM,
             ContainerTransformTarget.GUESTBOOK,
             ContainerTransformTarget.WATER_COOLER,
+            ContainerTransformTarget.READING_STATISTICS,
+            ContainerTransformTarget.BOOKSHELF_READING_STATISTICS,
+            ContainerTransformTarget.BOOKMARKS,
+            ContainerTransformTarget.DOWNLOADS,
             ContainerTransformTarget.SETTINGS,
             ContainerTransformTarget.homeCarousel("/detail/123.html", 100)
         )
@@ -102,12 +106,29 @@ class NavigationRouteContractTest {
             assertTrue(usesContainerTransform(origin, destination))
             // The outgoing entry's metadata remains available after it leaves the back stack.
             assertTrue(usesContainerTransform(destination, origin))
-            assertFalse(usesContainerTransform(scene(AppNavKey.BookshelfTab), destination))
+            assertFalse(usesContainerTransform(scene(AppNavKey.HistoryTab), destination))
         }
         assertFalse(usesContainerTransform(
             scene(AppNavKey.HomeTab),
             scene(AppNavKey.Legacy(LegacyRoute.Novel("/detail/123.html")))
         ))
+    }
+
+    @Test
+    fun readingStatisticsMatchesTheEntryPointInEachTab() {
+        val destination = AppNavKey.Legacy(LegacyRoute.Static("ReadingStatisticsPage"))
+        assertEquals(
+            ContainerTransformTarget.READING_STATISTICS,
+            ContainerTransformTarget.forKey(destination, origin = AppNavKey.ProfileTab)
+        )
+        assertEquals(
+            ContainerTransformTarget.BOOKSHELF_READING_STATISTICS,
+            ContainerTransformTarget.forKey(destination, origin = AppNavKey.BookshelfTab)
+        )
+        assertFalse(usesContainerTransform(AppNavKey.HomeTab, destination))
+        for (target in listOf(ContainerTransformTarget.BOOKMARKS, ContainerTransformTarget.DOWNLOADS, ContainerTransformTarget.SETTINGS)) {
+            assertFalse(usesContainerTransform(AppNavKey.BookshelfTab, AppNavKey.Legacy(target.route)))
+        }
     }
 
     private fun scene(key: AppNavKey): Scene<NavKey> {

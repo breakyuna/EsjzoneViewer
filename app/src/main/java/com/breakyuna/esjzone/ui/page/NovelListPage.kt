@@ -31,6 +31,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import com.breakyuna.esjzone.ui.designsystem.GlobalText as Text
+import com.breakyuna.esjzone.ui.designsystem.contentArrival
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -268,7 +269,7 @@ private fun NovelListResult(
         }
     }
 
-    BoxWithConstraints(modifier = modifier) {
+    BoxWithConstraints(modifier = modifier.contentArrival()) {
         val columns = if (gridView) bookshelfColumnCount(
             availableWidth = maxWidth.value - 32.dp.value,
             gap = AppSpacing.md.value

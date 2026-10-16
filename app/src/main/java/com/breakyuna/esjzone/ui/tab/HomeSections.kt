@@ -28,6 +28,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import com.breakyuna.esjzone.ui.designsystem.GlobalText as Text
 import androidx.compose.material3.TextButton
+import com.breakyuna.esjzone.ui.designsystem.contentArrival
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.snapshotFlow
@@ -63,7 +64,8 @@ import kotlinx.coroutines.withTimeoutOrNull
 
 private val HOME_WEEKLY_POPULAR_COVER_WIDTH = 106.dp
 private val HOME_WEEKLY_POPULAR_CONTENT_HEIGHT = 172.dp
-private val HOME_WEEKLY_POPULAR_CARD_HEIGHT = 196.dp
+internal val HOME_WEEKLY_POPULAR_CARD_HEIGHT = 196.dp
+internal val HOME_WEEKLY_POPULAR_INDICATOR_SIZE = 7.dp
 private const val HOME_WEEKLY_POPULAR_AUTO_PLAY_MS = 4_000L
 private const val HOME_WEEKLY_POPULAR_ANIMATION_MS = 800
 private const val HOME_COLLECTION_MAX_ITEMS = 16
@@ -126,7 +128,7 @@ internal fun LazyListScope.weeklyPopularCarousel(
                 }
             }
         }
-        Column(verticalArrangement = Arrangement.spacedBy(AppSpacing.sm)) {
+        Column(modifier = Modifier.contentArrival(), verticalArrangement = Arrangement.spacedBy(AppSpacing.sm)) {
             HorizontalPager(
                 state = pagerState,
                 pageSpacing = AppSpacing.sm,
@@ -153,8 +155,8 @@ internal fun LazyListScope.weeklyPopularCarousel(
                     Box(
                         Modifier
                             .padding(horizontal = 3.dp)
-                            .width(if (index == pagerState.currentPage % visible.size) 28.dp else 7.dp)
-                            .height(7.dp)
+                            .width(if (index == pagerState.currentPage % visible.size) 28.dp else HOME_WEEKLY_POPULAR_INDICATOR_SIZE)
+                            .height(HOME_WEEKLY_POPULAR_INDICATOR_SIZE)
                             .clip(CircleShape)
                             .background(
                                 if (index == pagerState.currentPage % visible.size) MaterialTheme.colorScheme.primary
@@ -358,7 +360,7 @@ internal fun LazyListScope.homeCollection(
                 row = row,
                 showLatestTitle = false,
                 onNovelClick = onNovelClick,
-                modifier = Modifier
+                modifier = Modifier.contentArrival()
                     .padding(bottom = if (rowIndex < rows.size - 1) AppSpacing.lg else AppSpacing.zero)
                     .semantics { contentDescription = "$title row $rowIndex" }
             )

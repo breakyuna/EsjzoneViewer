@@ -209,14 +209,14 @@ object ProfileTab : AppTab {
     }
 }
 
-private data class ProfileMenuItem(val id: String, val icon: ImageVector, val title: String, val destination: com.breakyuna.esjzone.ui.navigation.AppDestination)
+private data class ProfileMenuItem(val target: ContainerTransformTarget, val icon: ImageVector, val title: String, val destination: com.breakyuna.esjzone.ui.navigation.AppDestination)
 
 @Composable
 private fun profileMenuItems(): List<ProfileMenuItem> = listOf(
-    ProfileMenuItem("reading_stats", Icons.Filled.QueryStats, stringResource(R.string.reading_stats_title), ReadingStatisticsPage),
-    ProfileMenuItem("bookmarks", Icons.Filled.Bookmark, stringResource(R.string.bookmarks), BookmarksPage),
-    ProfileMenuItem("downloads", Icons.Filled.Download, stringResource(R.string.downloads), DownloadPage),
-    ProfileMenuItem("settings", Icons.Filled.Settings, stringResource(R.string.settings), SettingsPage)
+    ProfileMenuItem(ContainerTransformTarget.READING_STATISTICS, Icons.Filled.QueryStats, stringResource(R.string.reading_stats_title), ReadingStatisticsPage),
+    ProfileMenuItem(ContainerTransformTarget.BOOKMARKS, Icons.Filled.Bookmark, stringResource(R.string.bookmarks), BookmarksPage),
+    ProfileMenuItem(ContainerTransformTarget.DOWNLOADS, Icons.Filled.Download, stringResource(R.string.downloads), DownloadPage),
+    ProfileMenuItem(ContainerTransformTarget.SETTINGS, Icons.Filled.Settings, stringResource(R.string.settings), SettingsPage)
 )
 
 @Composable
@@ -289,12 +289,8 @@ private fun ProfileHero(profile: UserProfile?, domain: String, loading: Boolean,
 
 @Composable
 private fun ProfileAction(item: ProfileMenuItem, modifier: Modifier = Modifier, onClick: () -> Unit) {
-    val containerModifier = if (item.id == "settings") {
-        modifier.containerTransformSource(ContainerTransformTarget.SETTINGS)
-    } else {
-        modifier
-    }
-    val contentModifier = if (item.id == "settings") Modifier.containerTransformContent() else Modifier
+    val containerModifier = modifier.containerTransformSource(item.target)
+    val contentModifier = Modifier.containerTransformContent()
     Surface(onClick = onClick, modifier = containerModifier, shape = AppShapes.standard, color = MaterialTheme.colorScheme.surface) {
         Column(
             contentModifier.fillMaxWidth().heightIn(min = 96.dp).padding(AppSpacing.lg),

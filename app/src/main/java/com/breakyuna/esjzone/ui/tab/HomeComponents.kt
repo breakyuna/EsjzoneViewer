@@ -27,6 +27,7 @@ import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import com.breakyuna.esjzone.ui.designsystem.GlobalText as Text
+import com.breakyuna.esjzone.ui.navigation.rememberNovelCoverSource
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -198,8 +199,9 @@ internal fun HomeGridNovelTile(
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val coverSource = rememberNovelCoverSource(novel.url, novel.coverUrl, novel.coverState)
     Column(
-        modifier = modifier.clickable(onClick = onClick),
+        modifier = modifier.clickable { coverSource.open(onClick) },
         verticalArrangement = Arrangement.spacedBy(AppSpacing.xs)
     ) {
         AppNovelCover(
@@ -207,7 +209,7 @@ internal fun HomeGridNovelTile(
             coverState = novel.coverState,
             title = novel.name,
             isAdult = novel.isAdult,
-            modifier = Modifier.fillMaxWidth().aspectRatio(0.7f)
+            modifier = Modifier.then(coverSource.modifier).fillMaxWidth().aspectRatio(0.7f)
         )
         Text(
             text = novel.name,

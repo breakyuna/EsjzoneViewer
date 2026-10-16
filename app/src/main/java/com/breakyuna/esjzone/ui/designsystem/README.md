@@ -43,8 +43,25 @@ content keep their own final layout sizes while the outer container changes.
 Corner animation state is read during clipping/layer updates, with a remembered
 overlay clip and reusable path, rather than during composition. Back navigation reverses the
 transform. Carousel navigation preserves the clicked pager instance in its saved
-route so repeated books have distinct transition keys. Other novel-list entries
-and routes retain their existing transitions.
+route so repeated books have distinct transition keys. Ordinary cover-bearing novel entries share the clicked cover with the detail hero.
+Each rendered occurrence has a saved key, so repeated books in different rails do not
+match each other. The detail loading state displays the source cover at the final hero
+size, with hero text arriving separately. Full-card carousel transforms remain separate.
+Routes without a cover keep their ordinary navigation animation.
+
+Bookshelf list/grid changes, filtering, sorting and deletion share cover and title bounds
+by book identity. Incoming and outgoing layouts have independent scroll states; layout
+switches map the first visible book into its new row. Selection controls expand locally,
+action groups and titles crossfade, and history/download/search rows animate insertion,
+removal and placement. Reader toolbar reordering keeps the dragged item under the finger
+while neighbouring rows ease into their new positions; chapter groups rotate their chevrons
+and fade visible chapter rows without animating the height of the entire directory.
+
+Loading placeholders preserve home hero/pager spacing and discovery cover dimensions.
+Content arrival uses a short, saved one-time fade, rather than restarting on refresh.
+All new motion uses Compose animation clocks, which respect the platform animator scale.
+Runtime acceptance still requires device checks for rapid reversal, duplicate books,
+back navigation, large fonts, and the system remove-animations setting.
 
 Static hygiene: `python3 tools/qa/verify_static_contracts.py` and `git diff --check`.
 These checks do not compile Kotlin or validate rendering on a device.

@@ -1,5 +1,10 @@
 package com.breakyuna.esjzone.ui.page
 
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.snap
+import androidx.compose.animation.core.tween
+import com.breakyuna.esjzone.ui.designsystem.AppMotion
+import com.breakyuna.esjzone.ui.designsystem.AppTouchTarget
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -56,22 +61,29 @@ internal fun ReaderToolbarSettings(
     var dragging by remember { mutableStateOf<ReaderTool?>(null) }
     var dragStartIndex by remember { mutableIntStateOf(0) }
     var dragDistance by remember { mutableFloatStateOf(0f) }
-    val rowHeight = with(LocalDensity.current) { 48.dp.toPx() }
+    val rowHeightDp = AppTouchTarget.minimum
+    val rowHeight = with(LocalDensity.current) { rowHeightDp.toPx() }
     val commitOrder by rememberUpdatedState(onOrderChange)
     LaunchedEffect(order) { ordered = order }
     Text(stringResource(R.string.reader_toolbar_selected_count, tools.size, ReaderTool.MAX_VISIBLE),
         style = MaterialTheme.typography.labelLarge)
-    Column {
+    Box(Modifier.fillMaxWidth().height(rowHeightDp * ordered.size)) {
+        // Keyed rows retain their animation state as the display order changes.
         ordered.forEach { tool ->
             key(tool) {
                 val selected = tool in tools
                 val isDragging = dragging == tool
+                val position = animateFloatAsState(
+                    targetValue = if (isDragging) dragStartIndex * rowHeight + dragDistance
+                        else ordered.indexOf(tool) * rowHeight,
+                    animationSpec = if (isDragging) snap() else tween(AppMotion.standard, easing = AppMotion.standardEasing),
+                    label = "ToolbarToolPosition"
+                )
                 Row(
-                    Modifier.fillMaxWidth().height(48.dp)
+                    Modifier.fillMaxWidth().height(rowHeightDp)
                         .zIndex(if (isDragging) 1f else 0f)
                         .graphicsLayer {
-                            translationY = if (isDragging)
-                                dragDistance - (ordered.indexOf(tool) - dragStartIndex) * rowHeight else 0f
+                            translationY = position.value
                         }
                         .background(if (isDragging) MaterialTheme.colorScheme.surface else Color.Transparent),
                     verticalAlignment = Alignment.CenterVertically
@@ -89,7 +101,7 @@ internal fun ReaderToolbarSettings(
                     if (selected) {
                         val dragLabel = stringResource(R.string.reader_tool_drag)
                         Box(
-                            Modifier.size(48.dp)
+                            Modifier.size(rowHeightDp)
                                 .semantics { contentDescription = dragLabel }
                                 .pointerInput(tool, rowHeight) {
                                     detectDragGesturesAfterLongPress(

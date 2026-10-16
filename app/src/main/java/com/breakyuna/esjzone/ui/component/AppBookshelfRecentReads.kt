@@ -4,6 +4,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.material3.MaterialTheme
+import com.breakyuna.esjzone.ui.navigation.rememberNovelCoverSource
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.key
 import androidx.compose.runtime.remember
@@ -75,11 +76,12 @@ fun AppBookshelfRecentReads(
                 key(entry.bookKey) {
                     val rankDescription = stringResource(R.string.bookshelf_recent_rank, rank + 1)
                     val cover = BookshelfCoverStore.rememberCover(entry)
+                    val transition = rememberNovelCoverSource(entry.url, cover.url, cover.state)
                     AppNovelCover(
                         coverUrl = cover.url,
                         coverState = cover.state,
                         title = entry.title.ifBlank { stringResource(R.string.download_unknown_novel) },
-                        modifier = Modifier
+                        modifier = Modifier.then(transition.modifier)
                             .shadow(
                                 elevation = if (rank == 0) 10.dp else 5.dp,
                                 shape = shape,
@@ -88,7 +90,7 @@ fun AppBookshelfRecentReads(
                                 spotColor = Color.Black.copy(alpha = 0.24f)
                             )
                             .clip(shape)
-                            .clickable(role = Role.Button, onClick = { onBookClick(entry) })
+                            .clickable(role = Role.Button, onClick = { transition.open { onBookClick(entry) } })
                             .semantics(mergeDescendants = true) {
                                 stateDescription = rankDescription
                                 // TalkBack reads newest first, independent of the visual stacking.

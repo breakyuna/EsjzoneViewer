@@ -31,12 +31,15 @@ import androidx.navigation3.runtime.NavKey
 import androidx.navigation3.scene.Scene
 import androidx.navigation3.ui.LocalNavAnimatedContentScope
 import com.breakyuna.esjzone.network.EsjzoneUrls
+import com.breakyuna.esjzone.ui.page.BookmarksPage
+import com.breakyuna.esjzone.ui.page.DownloadPage
 import com.breakyuna.esjzone.ui.page.ForumPage
 import com.breakyuna.esjzone.ui.page.GuestbookPage
+import com.breakyuna.esjzone.ui.page.ReadingStatisticsPage
 import com.breakyuna.esjzone.ui.page.SettingsPage
 
 private const val ContainerTransformDurationMillis = 300
-private val LocalContainerTransformScope = compositionLocalOf<SharedTransitionScope?> { null }
+internal val LocalContainerTransformScope = compositionLocalOf<SharedTransitionScope?> { null }
 private const val ContainerTransformRouteMetadata = "com.breakyuna.esjzone.containerTransformRoute"
 
 // Routes are runtime metadata; contentKey must remain a Bundle-saveable value.
@@ -54,8 +57,12 @@ internal data class ContainerTransformTarget(
         val FORUM = ContainerTransformTarget("FORUM", AppNavKey.HomeTab, LegacyRoute.Static(ForumPage.key), 18.dp)
         val GUESTBOOK = ContainerTransformTarget("GUESTBOOK", AppNavKey.HomeTab, LegacyRoute.Static(GuestbookPage.key), 18.dp)
         val WATER_COOLER = ContainerTransformTarget("WATER_COOLER", AppNavKey.HomeTab, LegacyRoute.ForumPost(EsjzoneUrls.WATER_COOLER_PATH), 18.dp)
+        val READING_STATISTICS = ContainerTransformTarget("READING_STATISTICS", AppNavKey.ProfileTab, LegacyRoute.Static(ReadingStatisticsPage.key), 16.dp)
+        val BOOKSHELF_READING_STATISTICS = ContainerTransformTarget("BOOKSHELF_READING_STATISTICS", AppNavKey.BookshelfTab, LegacyRoute.Static(ReadingStatisticsPage.key), 24.dp)
+        val BOOKMARKS = ContainerTransformTarget("BOOKMARKS", AppNavKey.ProfileTab, LegacyRoute.Static(BookmarksPage.key), 16.dp)
+        val DOWNLOADS = ContainerTransformTarget("DOWNLOADS", AppNavKey.ProfileTab, LegacyRoute.Static(DownloadPage.key), 16.dp)
         val SETTINGS = ContainerTransformTarget("SETTINGS", AppNavKey.ProfileTab, LegacyRoute.Static(SettingsPage.key), 16.dp)
-        private val shortcuts = listOf(FORUM, GUESTBOOK, WATER_COOLER, SETTINGS)
+        private val shortcuts = listOf(FORUM, GUESTBOOK, WATER_COOLER, READING_STATISTICS, BOOKSHELF_READING_STATISTICS, BOOKMARKS, DOWNLOADS, SETTINGS)
 
         fun homeCarousel(novelIdentity: String, page: Int) = ContainerTransformTarget(
             name = "HOME_CAROUSEL",
@@ -65,23 +72,23 @@ internal data class ContainerTransformTarget(
             homeCarouselPage = page
         )
 
-        fun forKey(key: NavKey?): ContainerTransformTarget? {
+        fun forKey(key: NavKey?, origin: NavKey? = null): ContainerTransformTarget? {
             val destination = key as? AppNavKey.Legacy ?: return null
             val route = destination.route
             val page = destination.homeCarouselPage
             return if (route is LegacyRoute.Novel && page != null) {
                 homeCarousel(route.identity, page)
             } else {
-                shortcuts.firstOrNull { it.route == route }
+                shortcuts.firstOrNull { it.route == route && (origin == null || it.origin == origin) }
             }
         }
     }
 }
 
-/** Only linked home/profile cards replace the ordinary navigation transition. */
+/** Only linked entry points replace the ordinary navigation transition. */
 internal fun usesContainerTransform(from: NavKey?, to: NavKey?): Boolean =
-    ContainerTransformTarget.forKey(to)?.let { it.origin == from } == true ||
-        ContainerTransformTarget.forKey(from)?.let { it.origin == to } == true
+    ContainerTransformTarget.forKey(to, origin = from)?.let { it.origin == from } == true ||
+        ContainerTransformTarget.forKey(from, origin = to)?.let { it.origin == to } == true
 
 // Read each scene's retained entry, including the outgoing scene after a pop.
 internal fun usesContainerTransform(from: Scene<NavKey>, to: Scene<NavKey>): Boolean =
@@ -97,7 +104,11 @@ internal fun containerContentTransform() =
 @Composable
 internal fun ContainerTransformLayout(modifier: Modifier = Modifier, content: @Composable () -> Unit) {
     SharedTransitionLayout(modifier) {
-        CompositionLocalProvider(LocalContainerTransformScope provides this) { content() }
+        val covers = remember { NovelSharedCovers() }
+        CompositionLocalProvider(
+            LocalContainerTransformScope provides this,
+            LocalNovelSharedCovers provides covers
+        ) { content() }
     }
 }
 
@@ -177,6 +188,8 @@ internal fun ContainerTransformDestination(
             .background(MaterialTheme.colorScheme.background)
     ) {
         // Reveal the page at its final layout size, rather than reflowing or scaling its text.
-        Box(Modifier.containerTransformContent().fillMaxSize()) { content() }
+        CompositionLocalProvider(LocalSharedCoverDestinationEnabled provides false) {
+            Box(Modifier.containerTransformContent().fillMaxSize()) { content() }
+        }
     }
 }

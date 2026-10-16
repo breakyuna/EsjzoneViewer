@@ -55,7 +55,10 @@ data class BackgroundDownloadStatus(
     val succeeded: Boolean,
     val progress: DownloadProgress?,
     val cancelled: Boolean = false,
-    val waiting: Boolean = false
+    val waiting: Boolean = false,
+    val unlockOnly: Boolean = false,
+    val unlockedCount: Int = 0,
+    val failedCount: Int = 0
 )
 
 /** Compresses large tables of contents to fit WorkManager's 10 KiB input limit. */
@@ -77,14 +80,36 @@ internal object ChapterSelectionCodec {
 object NovelDownloadManager {
     internal const val TOTAL_TAG_PREFIX = "novel-download-total:"
     internal const val SELECTION_TAG_PREFIX = "novel-download-selection:"
+    internal const val UNLOCK_TAG = "novel-download-unlock"
 
+    /**
+     * Persist the password locally; WorkManager only receives the chapter scope.
+     * Performs storage IO and waits for enqueue persistence; call from an IO dispatcher.
+     */
+    fun enqueueUnlock(
+        context: Context,
+        authorization: Authorization,
+        novel: DetailedNovel,
+        password: String
+    ): UUID? {
+        require(password.isNotBlank())
+        val manifest = NovelDownloadStore.updateCommonPassword(novel, password)
+            ?: error("Novel download storage is unavailable")
+        val selected = manifest.pendingPasswordChapters.map { it.url }.toSet()
+        if (selected.isEmpty()) return null
+        return enqueue(context, authorization, novel, selected, unlockOnly = true)
+    }
+
+    /** Unlock-only requests block until enqueue persistence completes; use an IO dispatcher for them. */
     fun enqueue(
         context: Context,
         authorization: Authorization,
         novel: DetailedNovel,
-        selectedChapterUrls: Set<String>? = null
+        selectedChapterUrls: Set<String>? = null,
+        unlockOnly: Boolean = false
     ): UUID {
         require(selectedChapterUrls == null || selectedChapterUrls.isNotEmpty())
+        require(!unlockOnly || selectedChapterUrls != null)
         // A session's domain is authoritative for queued work.  The DataStore
         // value is only the fallback for sessions that predate domain capture.
         val domain = authorization.domain.trim().ifBlank {
@@ -97,7 +122,7 @@ object NovelDownloadManager {
         }.getOrDefault(NovelDownloadStore.DEFAULT_DOWNLOAD_CONCURRENCY)
         val encodedSelection = selectedChapterUrls?.let(ChapterSelectionCodec::encode).orEmpty()
         val selectedKeys = selectedChapterUrls?.map(NovelDownloadStore::chapterKey)?.toSet()
-        val total = novel.chapterList.orderedChapters
+        val total = if (unlockOnly) requireNotNull(selectedKeys).size else novel.chapterList.orderedChapters
             .filter { !it.isExternal && (selectedKeys == null || NovelDownloadStore.chapterKey(it.url) in selectedKeys) }
             .distinctBy { NovelDownloadStore.chapterKey(it.url) }.size
         val request = OneTimeWorkRequestBuilder<NovelDownloadWorker>()
@@ -113,7 +138,8 @@ object NovelDownloadManager {
                     NovelDownloadWorker.KEY_FORUM_URL to novel.forumUrl,
                     NovelDownloadWorker.KEY_DOMAIN to domain,
                     NovelDownloadWorker.KEY_CONCURRENCY to concurrency,
-                    NovelDownloadWorker.KEY_SELECTED_CHAPTERS to encodedSelection
+                    NovelDownloadWorker.KEY_SELECTED_CHAPTERS to encodedSelection,
+                    NovelDownloadWorker.KEY_UNLOCK_ONLY to unlockOnly
                 )
             )
             .addTag(TAG)
@@ -121,12 +147,15 @@ object NovelDownloadManager {
             // before the worker can publish progress, including after an offline restart.
             .addTag(TOTAL_TAG_PREFIX + total)
             .addTag(SELECTION_TAG_PREFIX + encodedSelection)
+            .apply { if (unlockOnly) addTag(UNLOCK_TAG) }
             .build()
-        WorkManager.getInstance(context.applicationContext).enqueueUniqueWork(
+        val operation = WorkManager.getInstance(context.applicationContext).enqueueUniqueWork(
             uniqueWorkName(novel.url),
-            ExistingWorkPolicy.KEEP,
+            // Serialize with an existing download instead of dropping the unlock request.
+            if (unlockOnly) ExistingWorkPolicy.APPEND_OR_REPLACE else ExistingWorkPolicy.KEEP,
             request
         )
+        if (unlockOnly) operation.result.get()
         return request.id
     }
 
@@ -176,7 +205,10 @@ object NovelDownloadManager {
             succeeded = state == WorkInfo.State.SUCCEEDED,
             progress = current,
             cancelled = state == WorkInfo.State.CANCELLED,
-            waiting = active && state != WorkInfo.State.RUNNING)
+            waiting = active && state != WorkInfo.State.RUNNING,
+            unlockOnly = UNLOCK_TAG in tags,
+            unlockedCount = outputData.getInt(NovelDownloadWorker.KEY_UNLOCKED, 0),
+            failedCount = outputData.getInt(NovelDownloadWorker.KEY_FAILED, 0))
     }
 
     internal fun restoredProgress(tags: Set<String>, chapters: List<DownloadedChapterRecord>): DownloadProgress? {
@@ -185,7 +217,8 @@ object NovelDownloadManager {
         val selectedKeys = encoded.takeIf(String::isNotEmpty)?.let(ChapterSelectionCodec::decode)
             ?.map(NovelDownloadStore::chapterKey)?.toSet()
         val targets = chapters.filter {
-            !it.localOnly && (selectedKeys == null || NovelDownloadStore.chapterKey(it.url) in selectedKeys)
+            (!it.localOnly || UNLOCK_TAG in tags) &&
+                (selectedKeys == null || NovelDownloadStore.chapterKey(it.url) in selectedKeys)
         }.distinctBy { NovelDownloadStore.chapterKey(it.url) }
         val queuedTotal = tags.firstOrNull { it.startsWith(TOTAL_TAG_PREFIX) }
             ?.removePrefix(TOTAL_TAG_PREFIX)?.toIntOrNull() ?: targets.size
@@ -215,6 +248,8 @@ class NovelDownloadWorker(
     appContext: Context,
     params: WorkerParameters
 ) : CoroutineWorker(appContext, params) {
+
+    private val unlockOnly: Boolean get() = inputData.getBoolean(KEY_UNLOCK_ONLY, false)
 
     @SuppressLint("MissingPermission")
     override suspend fun doWork(): Result {
@@ -255,6 +290,25 @@ class NovelDownloadWorker(
             } else taskBaseUrl
             val authorization = EsjzoneClient.restoreAuthorization(host)
                 ?: Authorization("", "", host)
+            if (unlockOnly) {
+                val result = kotlinx.coroutines.withContext(Dispatchers.IO) {
+                    NovelDownloadStore.unlockChaptersWithCommonPassword(
+                        authorization, rawUrl, requireNotNull(selectedChapterUrls), actualBaseUrl,
+                        onProgress = ::publishProgress
+                    )
+                }
+                val message = when {
+                    result.failedCount == 0 -> applicationContext.getString(
+                        R.string.novel_download_batch_unlock_success, result.unlockedCount)
+                    result.unlockedCount > 0 -> applicationContext.getString(
+                        R.string.novel_download_batch_unlock_partial, result.unlockedCount, result.failedCount)
+                    else -> applicationContext.getString(R.string.novel_download_batch_unlock_failed)
+                }
+                sendResultNotification(rawUrl, applicationContext.getString(
+                    R.string.novel_download_unlock_completed_title, name), message)
+                return Result.success(workDataOf(
+                    KEY_UNLOCKED to result.unlockedCount, KEY_FAILED to result.failedCount))
+            }
             val detail = EsjzoneClient.getNovelDetail(
                 authorization = authorization,
                 novel = CategoryNovel(name = name, url = rawUrl, forumUrl = forumUrl),
@@ -264,16 +318,7 @@ class NovelDownloadWorker(
             )
             val manifest = NovelDownloadStore.download(authorization, detail, actualBaseUrl, concurrency,
                 selectedChapterUrls) { next ->
-                setProgressAsync(next.toWorkData())
-                if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
-                    ContextCompat.checkSelfPermission(
-                        applicationContext,
-                        Manifest.permission.POST_NOTIFICATIONS
-                    ) == android.content.pm.PackageManager.PERMISSION_GRANTED
-                ) {
-                    applicationContext.getSystemService(NotificationManager::class.java)
-                        .notify(notificationId(), createNotification(name, next))
-                }
+                publishProgress(next)
             }
             val selectedKeys = selectedChapterUrls?.map(NovelDownloadStore::chapterKey)?.toSet()
             val pendingPasswordCount = manifest.pendingPasswordChapters.count { record ->
@@ -293,7 +338,23 @@ class NovelDownloadWorker(
                 sendWenkuVerificationNotification(name, rawUrl)
                 return Result.failure()
             }
-            if (runAttemptCount < MAX_RETRIES) Result.retry() else Result.failure()
+            if (runAttemptCount < MAX_RETRIES) Result.retry() else {
+                if (unlockOnly) sendResultNotification(rawUrl, applicationContext.getString(
+                    R.string.novel_download_unlock_completed_title, name),
+                    applicationContext.getString(R.string.novel_download_batch_unlock_failed))
+                Result.failure()
+            }
+        }
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun publishProgress(progress: DownloadProgress) {
+        setProgressAsync(progress.toWorkData())
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
+            ContextCompat.checkSelfPermission(applicationContext, Manifest.permission.POST_NOTIFICATIONS) ==
+            android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            applicationContext.getSystemService(NotificationManager::class.java)
+                .notify(notificationId(), createNotification(inputData.getString(KEY_NAME).orEmpty(), progress))
         }
     }
 
@@ -343,11 +404,15 @@ class NovelDownloadWorker(
     ) = NotificationCompat.Builder(applicationContext, CHANNEL_ID)
         .setSmallIcon(android.R.drawable.stat_sys_download)
         .setContentTitle(
-            applicationContext.getString(R.string.novel_download_notification_title, novelName)
+            applicationContext.getString(
+                if (unlockOnly) R.string.novel_download_unlock_notification_title
+                else R.string.novel_download_notification_title, novelName)
         )
         .setContentText(
             progress?.let {
-                if (it.chapterName.isBlank()) {
+                if (unlockOnly) {
+                    applicationContext.getString(R.string.novel_download_batch_unlocking, it.completed, it.total)
+                } else if (it.chapterName.isBlank()) {
                     applicationContext.getString(
                         R.string.novel_downloading_count,
                         it.completed,
@@ -388,6 +453,12 @@ class NovelDownloadWorker(
         novelUrl: String,
         passwordCount: Int
     ) {
+        sendResultNotification(novelUrl,
+            applicationContext.getString(R.string.novel_download_password_required_title, novelName, passwordCount),
+            applicationContext.getString(R.string.novel_download_password_required_desc))
+    }
+
+    private fun sendResultNotification(novelUrl: String, title: String, message: String) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
             ContextCompat.checkSelfPermission(
                 applicationContext,
@@ -411,16 +482,8 @@ class NovelDownloadWorker(
 
         val notification = NotificationCompat.Builder(applicationContext, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.stat_sys_download_done)
-            .setContentTitle(
-                applicationContext.getString(
-                    R.string.novel_download_password_required_title,
-                    novelName,
-                    passwordCount
-                )
-            )
-            .setContentText(
-                applicationContext.getString(R.string.novel_download_password_required_desc)
-            )
+            .setContentTitle(title)
+            .setContentText(message)
             .setContentIntent(pendingIntent)
             .setAutoCancel(true)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
@@ -436,6 +499,9 @@ class NovelDownloadWorker(
         internal const val KEY_DOMAIN = "domain"
         internal const val KEY_CONCURRENCY = "download_concurrency"
         internal const val KEY_SELECTED_CHAPTERS = "selected_chapters"
+        internal const val KEY_UNLOCK_ONLY = "unlock_only"
+        internal const val KEY_UNLOCKED = "unlocked"
+        internal const val KEY_FAILED = "failed"
         internal const val KEY_COMPLETED = "completed"
         internal const val KEY_TOTAL = "total"
         internal const val KEY_CHAPTER = "chapter"

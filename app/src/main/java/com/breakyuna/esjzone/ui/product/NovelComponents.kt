@@ -20,10 +20,12 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
 import com.breakyuna.esjzone.ui.designsystem.GlobalText as Text
+import com.breakyuna.esjzone.ui.designsystem.contentArrival
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.role
@@ -50,12 +52,12 @@ data class NovelCoverModel(
 )
 
 @Composable
-fun NovelCover(model: NovelCoverModel, modifier: Modifier = Modifier) {
+fun NovelCover(model: NovelCoverModel, modifier: Modifier = Modifier, shape: Shape = AppShapes.standard) {
     AppCoverImage(
         model = model.model,
         sourceState = model.state,
         contentDescription = model.contentDescription,
-        modifier = modifier.aspectRatio(model.aspectRatio).clip(AppShapes.standard)
+        modifier = modifier.aspectRatio(model.aspectRatio).clip(shape)
     )
 }
 
@@ -195,18 +197,20 @@ fun NovelHero(
     modifier: Modifier = Modifier,
     onAction: (() -> Unit)? = null,
     actionLabel: String? = null,
-    onCoverClick: (() -> Unit)? = null
+    onCoverClick: (() -> Unit)? = null,
+    coverModifier: Modifier = Modifier
 ) {
     Row(
         modifier = modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(AppSpacing.md)
     ) {
-        NovelCover(novel.cover, Modifier.width(104.dp).then(
+        NovelCover(novel.cover, Modifier.then(coverModifier).width(104.dp).then(
             if (onCoverClick != null) Modifier.clickable(onClick = onCoverClick) else Modifier
-        ))
+        ), shape = AppShapes.compact)
         Column(
             modifier = Modifier
                 .weight(1f)
+                .contentArrival(novel.id, delayMillis = 80)
                 .heightIn(min = 148.dp),
             verticalArrangement = Arrangement.SpaceBetween
         ) {

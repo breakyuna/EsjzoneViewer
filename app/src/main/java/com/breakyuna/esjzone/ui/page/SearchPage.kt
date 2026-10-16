@@ -210,6 +210,7 @@ fun DiscoverySearchResults(
                     contentType = { "novel" }
                 ) { novel ->
                     DiscoveryNovelCard(
+                        modifier = Modifier.animateItem(),
                         novel = novel,
                         onClick = { navigator?.pushIfNotCurrent(NovelPage(novel)) }
                     )

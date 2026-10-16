@@ -52,6 +52,15 @@ import com.breakyuna.esjzone.ui.designsystem.GlobalText as Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
+import com.breakyuna.esjzone.ui.navigation.rememberNovelCoverSource
+import com.breakyuna.esjzone.ui.designsystem.AppSelectionReveal
+import com.breakyuna.esjzone.ui.designsystem.AppAnimatedTitle
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
+import androidx.compose.animation.core.tween
+import com.breakyuna.esjzone.ui.designsystem.AppMotion
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -227,7 +236,13 @@ object HistoryPage : AppDestination {
                 TopAppBar(
                     title = {
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(AppSpacing.xs)) {
-                            Text(stringResource(R.string.history), style = AppTypography.titleLarge)
+                            AppAnimatedTitle(
+                                if (localEditing || cloudEditing) stringResource(
+                                    R.string.bookshelf_selected_header,
+                                    if (selectedPage == 0) localSelected.size else cloudSelected.size
+                                ) else stringResource(R.string.history),
+                                style = AppTypography.titleLarge
+                            )
                             HistoryCloudSyncStatusIndicator(
                                 state = cloudState,
                                 expanded = showCloudSyncStatusMenu,
@@ -237,56 +252,64 @@ object HistoryPage : AppDestination {
                     },
                     navigationIcon = { if (showBack) BackIconButton { navigator?.pop() } },
                     actions = {
-                        IconButton(onClick = { searchOpen = !searchOpen; if (!searchOpen) query = "" }) {
-                            Icon(if (searchOpen) Icons.Filled.Close else Icons.Filled.Search, stringResource(R.string.history_search))
-                        }
-                        if (selectedPage == 0) {
-                            if (localEditing) {
-                                IconButton(
-                                    onClick = {
-                                        localSelected = if (localSelected == localRowIds) emptySet() else localRowIds
-                                    },
-                                    enabled = localRowIds.isNotEmpty()
-                                ) {
-                                    Icon(Icons.Filled.SelectAll, stringResource(R.string.history_local_select_all))
+                        AnimatedContent(
+                            targetState = if (selectedPage == 0) localEditing else cloudEditing,
+                            transitionSpec = { fadeIn(tween(AppMotion.standard)) togetherWith fadeOut(tween(AppMotion.quick)) },
+                            label = "SelectionActions"
+                        ) { displayedEditing ->
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                IconButton(onClick = { searchOpen = !searchOpen; if (!searchOpen) query = "" }) {
+                                    Icon(if (searchOpen) Icons.Filled.Close else Icons.Filled.Search, stringResource(R.string.history_search))
                                 }
-                                IconButton(onClick = ::requestLocalDelete, enabled = localSelected.isNotEmpty()) {
-                                    Icon(Icons.Filled.Delete, stringResource(R.string.history_local_delete_selected))
+                                if (selectedPage == 0) {
+                                    if (displayedEditing) {
+                                        IconButton(
+                                            onClick = {
+                                                localSelected = if (localSelected == localRowIds) emptySet() else localRowIds
+                                            },
+                                            enabled = localRowIds.isNotEmpty()
+                                        ) {
+                                            Icon(Icons.Filled.SelectAll, stringResource(R.string.history_local_select_all))
+                                        }
+                                        IconButton(onClick = ::requestLocalDelete, enabled = localSelected.isNotEmpty()) {
+                                            Icon(Icons.Filled.Delete, stringResource(R.string.history_local_delete_selected))
+                                        }
+                                        IconButton(onClick = ::finishLocalEditing) {
+                                            Icon(Icons.Filled.Check, stringResource(R.string.history_local_edit_done))
+                                        }
+                                    } else {
+                                        IconButton(onClick = { localEditing = true; localSelected = emptySet() }) {
+                                            Icon(Icons.Filled.Edit, stringResource(R.string.history_local_edit))
+                                        }
+                                    }
+                                } else if (displayedEditing) {
+                                    IconButton(
+                                        onClick = { cloudSelected = if (cloudSelected == cloudRowIds) emptySet() else cloudRowIds },
+                                        enabled = cloudRowIds.isNotEmpty() && !cloudModel.deleting
+                                    ) {
+                                        Icon(Icons.Filled.SelectAll, stringResource(R.string.history_cloud_select_all))
+                                    }
+                                    IconButton(
+                                        onClick = {
+                                            pendingCloudDelete = cloudSelected
+                                            cloudDeleteError = false
+                                            showCloudDeleteDialog = true
+                                        },
+                                        enabled = cloudSelected.isNotEmpty() && !cloudModel.deleting
+                                    ) {
+                                        Icon(Icons.Filled.Delete, stringResource(R.string.history_cloud_delete_selected))
+                                    }
+                                    IconButton(onClick = ::finishCloudEditing, enabled = !cloudModel.deleting) {
+                                        Icon(Icons.Filled.Check, stringResource(R.string.history_local_edit_done))
+                                    }
+                                } else {
+                                    IconButton(
+                                        onClick = { cloudEditing = true; cloudSelected = emptySet() },
+                                        enabled = cloudRowIds.isNotEmpty() && !cloudModel.deleting
+                                    ) {
+                                        Icon(Icons.Filled.Edit, stringResource(R.string.history_cloud_edit))
+                                    }
                                 }
-                                IconButton(onClick = ::finishLocalEditing) {
-                                    Icon(Icons.Filled.Check, stringResource(R.string.history_local_edit_done))
-                                }
-                            } else {
-                                IconButton(onClick = { localEditing = true; localSelected = emptySet() }) {
-                                    Icon(Icons.Filled.Edit, stringResource(R.string.history_local_edit))
-                                }
-                            }
-                        } else if (cloudEditing) {
-                            IconButton(
-                                onClick = { cloudSelected = if (cloudSelected == cloudRowIds) emptySet() else cloudRowIds },
-                                enabled = cloudRowIds.isNotEmpty() && !cloudModel.deleting
-                            ) {
-                                Icon(Icons.Filled.SelectAll, stringResource(R.string.history_cloud_select_all))
-                            }
-                            IconButton(
-                                onClick = {
-                                    pendingCloudDelete = cloudSelected
-                                    cloudDeleteError = false
-                                    showCloudDeleteDialog = true
-                                },
-                                enabled = cloudSelected.isNotEmpty() && !cloudModel.deleting
-                            ) {
-                                Icon(Icons.Filled.Delete, stringResource(R.string.history_cloud_delete_selected))
-                            }
-                            IconButton(onClick = ::finishCloudEditing, enabled = !cloudModel.deleting) {
-                                Icon(Icons.Filled.Check, stringResource(R.string.history_local_edit_done))
-                            }
-                        } else {
-                            IconButton(
-                                onClick = { cloudEditing = true; cloudSelected = emptySet() },
-                                enabled = cloudRowIds.isNotEmpty() && !cloudModel.deleting
-                            ) {
-                                Icon(Icons.Filled.Edit, stringResource(R.string.history_cloud_edit))
                             }
                         }
                     },
@@ -547,6 +570,7 @@ private fun LocalHistoryContent(
                 ) {
                     items(rows, key = { it.activityId }, contentType = { "history" }) { activity ->
                         LocalHistoryCard(
+                            modifier = Modifier.animateItem(),
                             activity = activity,
                             cover = model.coverFor(activity),
                             onOpen = {
@@ -587,7 +611,8 @@ private fun LocalHistoryCard(
     onLongClick: () -> Unit,
     onCoverNeeded: () -> Unit,
     editing: Boolean,
-    selected: Boolean
+    selected: Boolean,
+    modifier: Modifier = Modifier
 ) {
     if (cover.url.isBlank()) LaunchedEffect(activity.activityId) { onCoverNeeded() }
     val progress = ((activity.bookProgress ?: fullBookProgress(activity.chapterIndex, activity.totalChapters, activity.chapterProgress)) * 100).roundToInt()
@@ -596,7 +621,7 @@ private fun LocalHistoryCard(
     } else stringResource(R.string.history_local_percent, progress)
     val relative = DateUtils.getRelativeTimeSpanString(activity.lastReadAt, System.currentTimeMillis(), DateUtils.MINUTE_IN_MILLIS)
     Column(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .then(if (selected) Modifier.background(MaterialTheme.colorScheme.primaryContainer) else Modifier)
             .combinedClickable(
@@ -624,7 +649,7 @@ private fun LocalHistoryCard(
                 Text(position, style = AppTypography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Text(stringResource(R.string.history_local_meta, relative, localDurationText(activity.durationMs)), style = AppTypography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
             }
-            if (editing) {
+            AppSelectionReveal(editing) {
                 androidx.compose.material3.Checkbox(checked = selected, onCheckedChange = { onOpen() })
             }
         }
@@ -690,6 +715,7 @@ private fun CloudHistoryContent(
                             } else CloudHistoryDetailLoading()
                         } else if (PresentationAccess.settings.adult.value || !detail.isAdult) {
                             CloudHistoryCard(
+                                modifier = Modifier.animateItem(),
                                 history = history,
                                 coverUrl = detail.coverUrl,
                                 chapterIndex = detail.chapterList.orderedChapters.indexOfFirst {
@@ -722,8 +748,11 @@ private fun CloudHistoryCard(
     editing: Boolean,
     selected: Boolean,
     onLongClick: () -> Unit,
-    onOpen: () -> Unit
+    onOpen: () -> Unit,
+    modifier: Modifier = Modifier
 ) {
+    val coverSource = rememberNovelCoverSource(history.url, coverUrl)
+    val open = { if (editing) onOpen() else coverSource.open(onOpen) }
     val progress = fullBookProgress(chapterIndex, totalChapters, 1f)
     val progressPercent = (progress * 100).roundToInt()
     val position = if (chapterIndex >= 0 && totalChapters > 0) {
@@ -732,11 +761,11 @@ private fun CloudHistoryCard(
         stringResource(R.string.history_local_percent, progressPercent)
     }
     Row(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .then(if (selected) Modifier.background(MaterialTheme.colorScheme.primaryContainer) else Modifier)
             .combinedClickable(
-                onClick = onOpen,
+                onClick = open,
                 onLongClickLabel = stringResource(R.string.history_cloud_edit),
                 onLongClick = onLongClick.takeIf { history.vid.isNotBlank() }
             )
@@ -748,7 +777,7 @@ private fun CloudHistoryCard(
         AppNovelCover(
             coverUrl = coverUrl,
             title = history.name,
-            modifier = Modifier.size(width = 96.dp, height = 132.dp)
+            modifier = Modifier.then(coverSource.modifier).size(width = 96.dp, height = 132.dp)
         )
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(AppSpacing.xs)) {
             Text(history.name, style = AppTypography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
@@ -756,7 +785,7 @@ private fun CloudHistoryCard(
             androidx.compose.material3.LinearProgressIndicator(progress = progress, modifier = Modifier.fillMaxWidth())
             Text(position, style = AppTypography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
-        if (editing) {
+        AppSelectionReveal(editing) {
             androidx.compose.material3.Checkbox(
                 checked = selected,
                 enabled = history.vid.isNotBlank(),

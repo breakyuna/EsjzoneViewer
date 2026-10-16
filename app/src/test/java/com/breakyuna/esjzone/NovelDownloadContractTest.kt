@@ -38,6 +38,31 @@ class NovelDownloadContractTest {
     }
 
     @Test
+    fun queuedUnlock_restoresOnlyItsTargetsIncludingChaptersOutsideCurrentCatalog() {
+        val tags = setOf(NovelDownloadManager.UNLOCK_TAG,
+            NovelDownloadManager.TOTAL_TAG_PREFIX + 2,
+            NovelDownloadManager.SELECTION_TAG_PREFIX + ChapterSelectionCodec.encode(
+                setOf("/forum/9001/1.html", "/forum/9001/3.html")))
+        val chapters = listOf(progressRecord(1, true).copy(localOnly = true),
+            progressRecord(2, true), progressRecord(3, false).copy(requiresPassword = true),
+            progressRecord(4, false).copy(requiresPassword = true))
+
+        assertEquals(DownloadProgress(1, 2, ""), NovelDownloadManager.restoredProgress(tags, chapters))
+        assertEquals(DownloadProgress(2, 2, ""), NovelDownloadManager.restoredProgress(tags,
+            chapters.map { if (it.index == 2) it.copy(downloaded = true, requiresPassword = false) else it }))
+    }
+
+    @Test
+    fun queuedUnlock_keepsIncompleteImageTargetsAfterPasswordGateIsRemoved() {
+        val tags = setOf(NovelDownloadManager.UNLOCK_TAG,
+            NovelDownloadManager.TOTAL_TAG_PREFIX + 1,
+            NovelDownloadManager.SELECTION_TAG_PREFIX + ChapterSelectionCodec.encode(setOf("/forum/9001/1.html")))
+        val chapter = progressRecord(1, false).copy(bodyAvailable = true, requiresPassword = false)
+
+        assertEquals(DownloadProgress(0, 1, ""), NovelDownloadManager.restoredProgress(tags, listOf(chapter)))
+    }
+
+    @Test
     fun queuedDownload_keepsTotalBeforeAnyChapterHasBeenSaved() {
         val tags = setOf(NovelDownloadManager.TOTAL_TAG_PREFIX + 12,
             NovelDownloadManager.SELECTION_TAG_PREFIX)
