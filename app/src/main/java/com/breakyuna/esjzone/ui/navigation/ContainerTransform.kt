@@ -59,7 +59,7 @@ internal data class ContainerTransformTarget(
             homeCarouselPage = page
         )
 
-        fun forKey(key: NavKey?): ContainerTransformTarget? {
+        fun forKey(key: Any?): ContainerTransformTarget? {
             val destination = key as? AppNavKey.Legacy ?: return null
             val route = destination.route
             val page = destination.homeCarouselPage
@@ -73,7 +73,7 @@ internal data class ContainerTransformTarget(
 }
 
 /** Only linked home/profile cards replace the ordinary navigation transition. */
-internal fun usesContainerTransform(from: NavKey?, to: NavKey?): Boolean =
+internal fun usesContainerTransform(from: Any?, to: Any?): Boolean =
     ContainerTransformTarget.forKey(to)?.let { it.origin == from } == true ||
         ContainerTransformTarget.forKey(from)?.let { it.origin == to } == true
 
