@@ -27,7 +27,6 @@ composeShimmer = "1.5.0"
 lottie = "6.7.1"
 gson = "2.14.0"
 jsoup = "1.23.2"
-haze = "2.0.0-beta02"
 telephoto = "0.19.0"
 markwon = "4.6.2"
 
@@ -52,8 +51,6 @@ okhttp = { group = 'com.squareup.okhttp3', name = 'okhttp', version.ref = "okhtt
 gson = { group = "com.google.code.gson", name = "gson", version.ref = "gson" }
 jsoup = { group = "org.jsoup", name = "jsoup", version.ref = "jsoup" }
 markwon-core = { group = "io.noties.markwon", name = "core", version.ref = "markwon" }
-haze = { group = "dev.chrisbanes.haze", name = "haze", version.ref = "haze" }
-haze-glass = { group = "dev.chrisbanes.haze", name = "haze-glass", version.ref = "haze" }
 telephoto-zoomable-image-coil3 = { group = "me.saket.telephoto", name = "zoomable-image-coil3", version.ref = "telephoto" }
 kotlinx-coroutines-android = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-android", version.ref = "coroutines" }
 

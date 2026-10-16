@@ -3,22 +3,44 @@ package com.breakyuna.esjzone.novellibrary.novel
 import androidx.compose.runtime.Immutable
 import com.breakyuna.esjzone.novellibrary.component.Component
 import com.breakyuna.esjzone.novellibrary.component.TextComponent
-import com.breakyuna.esjzone.novellibrary.component.analyseComponents
+import com.breakyuna.esjzone.novellibrary.component.analyseParagraph
+import com.breakyuna.esjzone.novellibrary.component.extractParagraphElements
 import org.jsoup.nodes.Element
 import java.io.Serializable
 
 @Immutable
 data class NovelDescription(
-    val components: List<Component>
+    val components: List<Component>,
+    // One format per component; mixed text/images share alignment, with one final margin.
+    val paragraphFormats: List<DescriptionParagraphFormat> = emptyList()
+) : Serializable
+
+@Immutable
+data class DescriptionParagraphFormat(
+    val alignment: String? = null,
+    val spaceAfter: Boolean = false
 ) : Serializable
 
 private val DESCRIPTION_HEADING_REGEX =
     "^(?:小说|小說)(?:web版)?(?:简介|簡介)[:：]\\s*".toRegex()
 
 fun analyseDescription(element: Element): NovelDescription {
-    return NovelDescription(
-        analyseComponents(element)
-    )
+    val components = mutableListOf<Component>()
+    val formats = mutableListOf<DescriptionParagraphFormat>()
+    for (paragraph in extractParagraphElements(element)) {
+        val parsed = analyseParagraph(paragraph)
+        val alignment = (sequenceOf(paragraph) + paragraph.parents().asSequence())
+            .mapNotNull { node ->
+                node.attr("style").split(';').lastOrNull {
+                    it.substringBefore(':').trim().equals("text-align", ignoreCase = true)
+                }?.substringAfter(':')?.trim()?.lowercase()
+            }.firstOrNull()
+        components.addAll(parsed)
+        parsed.indices.forEach { index ->
+            formats.add(DescriptionParagraphFormat(alignment, paragraph.normalName() == "p" && index == parsed.lastIndex))
+        }
+    }
+    return NovelDescription(components, formats)
 }
 
 /** Returns a compact plain-text preview suitable for a novel list card. */

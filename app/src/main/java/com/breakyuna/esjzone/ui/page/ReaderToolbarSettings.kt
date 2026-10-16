@@ -9,13 +9,19 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowDownward
-import androidx.compose.material.icons.filled.ArrowUpward
+import androidx.compose.material.icons.filled.Menu
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
+import androidx.compose.foundation.background
+import androidx.compose.ui.graphics.Color
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.BrightnessLow
 import androidx.compose.material.icons.filled.BrightnessHigh
 import androidx.compose.material3.*
-import androidx.compose.runtime.Composable
+import androidx.compose.runtime.*
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.zIndex
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.contentDescription
@@ -36,37 +42,92 @@ internal fun ReaderTool.label(): Int = when (this) {
     ReaderTool.EYE_PROTECTION -> R.string.reader_eye_protection
     ReaderTool.BRIGHTNESS -> R.string.reader_brightness
     ReaderTool.DARK_MODE -> R.string.reader_dark_mode
-    ReaderTool.LAYOUT -> R.string.reader_layout_toggle
-    ReaderTool.VOLUME_KEYS -> R.string.reader_volume_paging
-    ReaderTool.SCRIPT -> R.string.reader_script
 }
 
 @Composable
-internal fun ReaderToolbarSettings(tools: List<ReaderTool>, onChange: (List<ReaderTool>) -> Unit) {
+internal fun ReaderToolbarSettings(
+    tools: List<ReaderTool>,
+    order: List<ReaderTool>,
+    onOrderChange: (List<ReaderTool>) -> Unit,
+    onChange: (List<ReaderTool>) -> Unit
+) {
+    var ordered by remember { mutableStateOf(order) }
+    val savedOrder by rememberUpdatedState(order)
+    var dragging by remember { mutableStateOf<ReaderTool?>(null) }
+    var dragStartIndex by remember { mutableIntStateOf(0) }
+    var dragDistance by remember { mutableFloatStateOf(0f) }
+    val rowHeight = with(LocalDensity.current) { 48.dp.toPx() }
+    val commitOrder by rememberUpdatedState(onOrderChange)
+    LaunchedEffect(order) { ordered = order }
     Text(stringResource(R.string.reader_toolbar_selected_count, tools.size, ReaderTool.MAX_VISIBLE),
         style = MaterialTheme.typography.labelLarge)
-    val ordered = tools + ReaderTool.entries.filterNot { it in tools }
-    ordered.forEach { tool ->
-        val index = tools.indexOf(tool)
-        val selected = index >= 0
-        Row(Modifier.fillMaxWidth().heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically) {
-            Checkbox(
-                checked = selected,
-                enabled = selected || tools.size < ReaderTool.MAX_VISIBLE,
-                onCheckedChange = { checked -> onChange(if (checked) tools + tool else tools - tool) }
-            )
-            Text(stringResource(tool.label()), modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
-            if (selected) {
-                fun move(to: Int) {
-                    val moved = tools.toMutableList()
-                    moved.add(to, moved.removeAt(index))
-                    onChange(moved)
-                }
-                IconButton(enabled = index > 0, onClick = { move(index - 1) }) {
-                    Icon(Icons.Default.ArrowUpward, stringResource(R.string.reader_tool_move_before))
-                }
-                IconButton(enabled = index < tools.lastIndex, onClick = { move(index + 1) }) {
-                    Icon(Icons.Default.ArrowDownward, stringResource(R.string.reader_tool_move_after))
+    Column {
+        ordered.forEach { tool ->
+            key(tool) {
+                val selected = tool in tools
+                val isDragging = dragging == tool
+                Row(
+                    Modifier.fillMaxWidth().height(48.dp)
+                        .zIndex(if (isDragging) 1f else 0f)
+                        .graphicsLayer {
+                            translationY = if (isDragging)
+                                dragDistance - (ordered.indexOf(tool) - dragStartIndex) * rowHeight else 0f
+                        }
+                        .background(if (isDragging) MaterialTheme.colorScheme.surface else Color.Transparent),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Checkbox(
+                        checked = selected,
+                        enabled = selected || tools.size < ReaderTool.MAX_VISIBLE,
+                        onCheckedChange = { checked ->
+                            val selection = if (checked) tools + tool else tools - tool
+                            onChange(ordered.filter { it in selection })
+                        }
+                    )
+                    Text(stringResource(tool.label()), modifier = Modifier.weight(1f),
+                        style = MaterialTheme.typography.bodyMedium, maxLines = 1)
+                    if (selected) {
+                        val dragLabel = stringResource(R.string.reader_tool_drag)
+                        Box(
+                            Modifier.size(48.dp)
+                                .semantics { contentDescription = dragLabel }
+                                .pointerInput(tool, rowHeight) {
+                                    detectDragGesturesAfterLongPress(
+                                        onDragStart = {
+                                            dragging = tool
+                                            dragStartIndex = ordered.indexOf(tool)
+                                            dragDistance = 0f
+                                        },
+                                        onDragEnd = {
+                                            commitOrder(ordered)
+                                            dragging = null
+                                            dragDistance = 0f
+                                        },
+                                        onDragCancel = {
+                                            ordered = savedOrder
+                                            dragging = null
+                                            dragDistance = 0f
+                                        },
+                                        onDrag = { change, amount ->
+                                            change.consume()
+                                            dragDistance += amount.y
+                                            val target = (dragStartIndex + dragDistance / rowHeight)
+                                                .roundToInt().coerceIn(0, ordered.lastIndex)
+                                            val current = ordered.indexOf(tool)
+                                            if (target != current) {
+                                                ordered = ordered.toMutableList().apply {
+                                                    add(target, removeAt(current))
+                                                }
+                                            }
+                                        }
+                                    )
+                                },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(Icons.Default.Menu, contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
                 }
             }
         }

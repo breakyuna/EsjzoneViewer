@@ -20,6 +20,9 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
 import com.breakyuna.esjzone.ui.designsystem.globalStringResource as stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.ParagraphStyle
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
@@ -49,7 +52,7 @@ fun Description(
     showHeader: Boolean = true
 ) {
     val textMeasurer = rememberTextMeasurer()
-    val textStyle = LocalTextStyle.current
+    val textStyle = AppTypography.bodyMedium.copy(fontSize = 16.sp, lineHeight = 24.sp)
     val density = LocalDensity.current
 
     Column(
@@ -65,7 +68,8 @@ fun Description(
             )
             Spacer(modifier = Modifier.height(AppSpacing.sm))
         }
-        for (component in description.components) {
+        for ((index, component) in description.components.withIndex()) {
+            val format = description.paragraphFormats.getOrNull(index)
             if (component is TextComponent) {
                 val (str, inlines) = component.toInlineAnnotatedString(
                     textMeasurer,
@@ -73,11 +77,22 @@ fun Description(
                     density
                 )
                 Text(
-                    text = str,
-                    inlineContent = inlines,
-                    style = AppTypography.bodyMedium.copy(
-                        lineHeight = 22.sp
+                    text = descriptionDisplayText(
+                        str,
+                        inlines.values.maxOfOrNull { it.placeholder.height.value } ?: 0f
                     ),
+                    inlineContent = inlines,
+                    modifier = Modifier.fillMaxWidth(),
+                    style = textStyle,
+                    textAlign = when (format?.alignment) {
+                        "center" -> TextAlign.Center
+                        "right" -> TextAlign.Right
+                        "justify" -> TextAlign.Justify
+                        "left" -> TextAlign.Left
+                        "end" -> TextAlign.End
+                        else -> TextAlign.Start
+                    },
+                    softWrap = true,
                     color = MaterialTheme.colorScheme.onSurface
                 )
             } else if (component is ImageComponent) {
@@ -91,8 +106,29 @@ fun Description(
                         .clip(AppShapes.compact)
                 )
             }
+            if (format?.spaceAfter == true) {
+                Spacer(modifier = Modifier.height(16.dp))
+            }
         }
     }
+}
+
+/** Keep the website's 1.5 line spacing, including larger spans within wrapped lines. */
+internal fun descriptionDisplayText(source: AnnotatedString, inlineHeight: Float = 0f): AnnotatedString {
+    // A final HTML <br> ends the current line; it does not add a second empty line.
+    val text = if (source.text.endsWith('\n')) source.subSequence(0, source.length - 1) else source
+    val builder = AnnotatedString.Builder(text)
+    var start = 0
+    do {
+        val end = text.text.indexOf('\n', start).let { if (it < 0) text.length else it + 1 }
+        val fontSize = text.spanStyles.asSequence()
+            .filter { it.start < end && it.end > start && it.item.fontSize.isSp }
+            .maxOfOrNull { it.item.fontSize.value }
+            ?.coerceAtLeast(16f) ?: 16f
+        builder.addStyle(ParagraphStyle(lineHeight = maxOf(fontSize * 1.5f, inlineHeight).sp), start, end)
+        start = end
+    } while (start < text.length)
+    return builder.toAnnotatedString()
 }
 
 @Preview

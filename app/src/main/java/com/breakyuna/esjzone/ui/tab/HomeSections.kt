@@ -45,11 +45,15 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.repeatOnLifecycle
 import com.breakyuna.esjzone.R
+import com.breakyuna.esjzone.network.EsjzoneUrls
 import com.breakyuna.esjzone.novellibrary.data.WeeklyPopularNovel
 import com.breakyuna.esjzone.novellibrary.novel.CoveredNovel
 import com.breakyuna.esjzone.ui.component.AppNovelCover
 import com.breakyuna.esjzone.ui.designsystem.AppSpacing
 import com.breakyuna.esjzone.ui.discovery.DiscoveryEmptyState
+import com.breakyuna.esjzone.ui.navigation.ContainerTransformTarget
+import com.breakyuna.esjzone.ui.navigation.containerTransformContent
+import com.breakyuna.esjzone.ui.navigation.containerTransformSource
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
@@ -77,7 +81,7 @@ internal fun prepareHomeSectionRows(
 
 internal fun LazyListScope.weeklyPopularCarousel(
     novels: List<WeeklyPopularNovel>,
-    onNovelClick: (CoveredNovel) -> Unit
+    onNovelClick: (CoveredNovel, Int) -> Unit
 ) {
     val visible = novels.take(10)
     if (visible.isEmpty()) return
@@ -131,7 +135,13 @@ internal fun LazyListScope.weeklyPopularCarousel(
                 val novel = visible[page % visible.size]
                 WeeklyPopularCard(
                     novel = novel,
-                    onClick = { onNovelClick(novel) }
+                    modifier = Modifier.containerTransformSource(
+                        ContainerTransformTarget.homeCarousel(
+                            EsjzoneUrls.canonicalPageKey(novel.url).ifBlank { novel.name.trim() },
+                            page
+                        )
+                    ),
+                    onClick = { onNovelClick(novel, page) }
                 )
             }
             Row(
@@ -160,11 +170,12 @@ internal fun LazyListScope.weeklyPopularCarousel(
 @Composable
 private fun WeeklyPopularCard(
     novel: WeeklyPopularNovel,
+    modifier: Modifier = Modifier,
     onClick: () -> Unit
 ) {
     Card(
         onClick = onClick,
-        modifier = Modifier.fillMaxWidth().height(HOME_WEEKLY_POPULAR_CARD_HEIGHT),
+        modifier = modifier.fillMaxWidth().height(HOME_WEEKLY_POPULAR_CARD_HEIGHT),
         shape = RoundedCornerShape(26.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
@@ -182,6 +193,7 @@ private fun WeeklyPopularCard(
                         )
                     )
                 )
+                .containerTransformContent()
                 .padding(start = 12.dp, end = 18.dp),
             horizontalArrangement = Arrangement.spacedBy(12.dp),
             verticalAlignment = Alignment.CenterVertically

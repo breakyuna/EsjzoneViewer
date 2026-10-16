@@ -221,7 +221,14 @@ internal fun ReaderSettingsSheet(
                             true to stringResource(R.string.reader_left_tap_next)
                         )) { commit(draft.copy(leftTapForward = it)) }
                     } else {
-                        ReaderToolbarSettings(draft.toolbarTools) { commit(draft.copy(toolbarTools = it)) }
+                        ReaderToolbarSettings(
+                            tools = draft.toolbarTools,
+                            order = draft.toolbarOrder,
+                            onOrderChange = { order ->
+                                commit(draft.copy(toolbarOrder = order, toolbarTools = order.filter { it in draft.toolbarTools }))
+                            },
+                            onChange = { commit(draft.copy(toolbarTools = it)) }
+                        )
                     }
                     }
                 }

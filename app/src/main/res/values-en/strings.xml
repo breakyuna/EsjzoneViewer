@@ -1,9 +1,21 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="update_available_title">New version available</string>
-    <string name="update_available_message">Current version: %1$s\nNew version: %2$s\n\nOpen GitHub Releases to download the update.</string>
+    <string name="update_available_message">Current version: %1$s\nNew version: %2$s</string>
     <string name="update_release_notes">Release notes:</string>
-    <string name="update_download">Go to download</string>
+    <string name="update_download">Download update</string>
+    <string name="update_download_progress">Downloading… %1$d%%</string>
+    <string name="update_download_complete">Download complete</string>
+    <string name="update_download_failed">Download failed or the APK is invalid. Try again.</string>
+    <string name="update_cancel_download">Cancel download</string>
+    <string name="update_notification_channel">App updates</string>
+    <string name="update_notification_title">App update %1$s</string>
+    <string name="update_notification_install">Download complete. Tap to install.</string>
+    <string name="update_install">Install update</string>
+    <string name="update_install_permission_required">Allow installs from this source, then continue installing</string>
+    <string name="update_installer_unavailable">Could not open install permissions or the system installer</string>
+    <string name="update_apk_unavailable">No downloadable APK is available for this release</string>
+    <string name="update_open_release">Release page</string>
     <string name="update_later">Later</string>
     <string name="update_browser_unavailable">No app available to open the release page</string>
     <string name="app_name">Esjzone</string>
@@ -737,10 +749,8 @@
     <string name="reader_tab_toolbar">Toolbar</string>
     <string name="reader_brightness">Reader brightness</string>
     <string name="reader_dark_mode">Dark mode</string>
-    <string name="reader_layout_toggle">Switch reading layout</string>
+    <string name="reader_tool_drag">Drag to reorder</string>
     <string name="reader_toolbar_selected_count">Selected %1$d / %2$d</string>
-    <string name="reader_tool_move_before">Move earlier</string>
-    <string name="reader_tool_move_after">Move later</string>
     <string name="reader_scroll_side_gestures">Scroll: swipe right for contents, left for comments</string>
     <string name="reader_paged_bookmark_gestures">Paged: pull down to add/remove bookmark</string>
     <string name="reader_brightness_system">Use system brightness</string>

@@ -22,22 +22,52 @@ import org.junit.runner.RunWith
 class ReaderToolbarSettingsInstrumentedTest {
     @get:Rule val composeRule = createComposeRule()
 
-    @Test fun movingSelectedToolChangesBothStoredOrderAndVisibleOrder() {
+    @Test fun togglingToolsKeepsRowsInPlaceAndSelectedOrderMatchesRows() {
+        var tools by mutableStateOf(listOf(ReaderTool.CONTENTS))
+        val order = ReaderTool.entries.toList()
+        var darkLabel = ""
+        composeRule.setContent {
+            darkLabel = globalStringResource(ReaderTool.DARK_MODE.label())
+            MaterialTheme {
+                Column { ReaderToolbarSettings(tools, order, {}, { tools = it }) }
+            }
+        }
+        val originalTop = composeRule.onNodeWithText(darkLabel).fetchSemanticsNode().boundsInRoot.top
+        composeRule.onAllNodes(isToggleable())[order.indexOf(ReaderTool.DARK_MODE)].performClick()
+        composeRule.runOnIdle { assertEquals(listOf(ReaderTool.CONTENTS, ReaderTool.DARK_MODE), tools) }
+        assertEquals(originalTop, composeRule.onNodeWithText(darkLabel).fetchSemanticsNode().boundsInRoot.top)
+        composeRule.onAllNodes(isToggleable())[order.indexOf(ReaderTool.CONTENTS)].performClick()
+        composeRule.runOnIdle { assertEquals(listOf(ReaderTool.DARK_MODE), tools) }
+        assertEquals(originalTop, composeRule.onNodeWithText(darkLabel).fetchSemanticsNode().boundsInRoot.top)
+    }
+
+    @Test fun longPressingHandleChangesStoredOrderAndVisibleOrder() {
         var tools by mutableStateOf(listOf(ReaderTool.DARK_MODE, ReaderTool.CONTENTS))
+        var order by mutableStateOf(ReaderTool.decodeOrder(null, tools))
         var darkLabel = ""
         var contentsLabel = ""
-        var moveBeforeLabel = ""
+        var dragLabel = ""
         composeRule.setContent {
             darkLabel = globalStringResource(ReaderTool.DARK_MODE.label())
             contentsLabel = globalStringResource(ReaderTool.CONTENTS.label())
-            moveBeforeLabel = globalStringResource(R.string.reader_tool_move_before)
+            dragLabel = globalStringResource(R.string.reader_tool_drag)
             MaterialTheme {
-                Column { ReaderToolbarSettings(tools) { tools = it } }
+                Column {
+                    ReaderToolbarSettings(tools, order, { moved ->
+                        order = moved
+                        tools = moved.filter { it in tools }
+                    }, { tools = it })
+                }
             }
         }
-        assertTrue(composeRule.onNodeWithText(darkLabel).fetchSemanticsNode().boundsInRoot.top <
-            composeRule.onNodeWithText(contentsLabel).fetchSemanticsNode().boundsInRoot.top)
-        composeRule.onAllNodesWithContentDescription(moveBeforeLabel).filter(isEnabled()).onFirst().performClick()
+        val rowHeight = composeRule.onAllNodesWithContentDescription(dragLabel)[0]
+            .fetchSemanticsNode().boundsInRoot.height
+        composeRule.onAllNodesWithContentDescription(dragLabel)[0].performTouchInput {
+            down(center)
+            advanceEventTime(600)
+            moveTo(center.copy(y = center.y + rowHeight), delayMillis = 200)
+            up()
+        }
         composeRule.runOnIdle { assertEquals(listOf(ReaderTool.CONTENTS, ReaderTool.DARK_MODE), tools) }
         assertTrue(composeRule.onNodeWithText(contentsLabel).fetchSemanticsNode().boundsInRoot.top <
             composeRule.onNodeWithText(darkLabel).fetchSemanticsNode().boundsInRoot.top)

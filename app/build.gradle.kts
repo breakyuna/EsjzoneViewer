@@ -135,8 +135,6 @@ dependencies {
     implementation(libs.gson)
     implementation(libs.jsoup)
     implementation(libs.markwon.core)
-    implementation(libs.haze)
-    implementation(libs.haze.glass)
     implementation(libs.telephoto.zoomable.image.coil3)
 
     implementation(libs.androidx.core.ktx)

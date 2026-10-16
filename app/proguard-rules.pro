@@ -1,5 +1,5 @@
 # App-specific R8 rules. Library consumer rules are supplied transitively by
-# AndroidX, Coil, Haze, Telephoto, and Lottie where those libraries need them.
+# AndroidX, Coil, Telephoto, and Lottie where those libraries need them.
 # You can control the set of applied configuration files using the
 # proguardFiles setting in build.gradle.
 #
@@ -90,7 +90,7 @@
     public <init>(android.content.Context, androidx.work.WorkerParameters);
 }
 
-# Coil 3, Haze, Telephoto, and Lottie use direct APIs here and supply their
+# Coil 3, Telephoto, and Lottie use direct APIs here and supply their
 # own consumer rules where needed; broad library keeps are not warranted.
 
 # Versioned chapter snapshots and precise reading locations have stable wire names.

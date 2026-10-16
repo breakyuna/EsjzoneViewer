@@ -37,6 +37,21 @@ class ReaderToolbarGestureTest {
         assertEquals(6, ReaderTool.decode(ReaderTool.entries.joinToString(",") { it.name }).size)
     }
 
+    @Test fun removedToolbarToolsAreIgnoredWhenRestoringOldPreferences() {
+        assertEquals(listOf(ReaderTool.CONTENTS, ReaderTool.BRIGHTNESS),
+            ReaderTool.decode("SCRIPT,CONTENTS,LAYOUT,VOLUME_KEYS,BRIGHTNESS"))
+    }
+
+    @Test fun fullToolbarOrderRestoresHiddenPositionsAndMigratesExistingSelection() {
+        val selected = listOf(ReaderTool.DARK_MODE, ReaderTool.CONTENTS)
+        val migrated = ReaderTool.decodeOrder(null, selected)
+        assertEquals(selected, migrated.take(2))
+        assertEquals(ReaderTool.entries.toSet(), migrated.toSet())
+        val restored = ReaderTool.decodeOrder("BRIGHTNESS,SCRIPT,CONTENTS,BRIGHTNESS,UNKNOWN")
+        assertEquals(listOf(ReaderTool.BRIGHTNESS, ReaderTool.CONTENTS), restored.take(2))
+        assertEquals(ReaderTool.entries.size, restored.size)
+    }
+
     @Test fun bookmarkGesturesRequireDistanceAndClearVerticalIntent() {
         assertNull(readerSwipeDirection(0f, 95f, false, 96f))
         assertEquals(false, readerSwipeDirection(40f, 96f, false, 96f))

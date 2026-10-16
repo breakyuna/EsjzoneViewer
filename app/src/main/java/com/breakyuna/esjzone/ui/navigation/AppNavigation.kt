@@ -103,7 +103,11 @@ sealed interface AppNavKey : NavKey {
     data object ProfileTab : AppNavKey
 
     @Serializable
-    data class Legacy(val route: LegacyRoute) : AppNavKey
+    data class Legacy(
+        val route: LegacyRoute,
+        /** Infinite-pager instance for the home carousel; absent for ordinary novel links. */
+        val homeCarouselPage: Int? = null
+    ) : AppNavKey
 
     @Serializable
     data class Reader(val route: ReaderRoute) : AppNavKey
@@ -295,13 +299,13 @@ class AppNavigator internal constructor(
     private val root: AppNavigator
         get() = rootNavigator ?: this
 
-    fun push(destination: AppDestination) {
+    fun push(destination: AppDestination, homeCarouselPage: Int? = null) {
         if (destination.isReaderDestination) {
             root.openReader(destination)
             return
         }
         register(destination)
-        backStack.add(AppNavKey.Legacy(routeFromToken(destination.key)))
+        backStack.add(AppNavKey.Legacy(routeFromToken(destination.key), homeCarouselPage))
     }
 
     /** Keep the persisted root reader key aligned with continuous-reading state. */
@@ -309,7 +313,7 @@ class AppNavigator internal constructor(
         root.updateReaderRoute(ReaderRoute(novelId, chapterIdentity), destination)
     }
 
-    fun pushIfNotCurrent(destination: AppDestination): Boolean {
+    fun pushIfNotCurrent(destination: AppDestination, homeCarouselPage: Int? = null): Boolean {
         val existingIndex = backStack.indexOfLast { key ->
             key is AppNavKey.Legacy && key.route.token() == destination.key
         }
@@ -322,7 +326,7 @@ class AppNavigator internal constructor(
             removedList.forEach { cleanupKey(it) }
             return false
         }
-        push(destination)
+        push(destination, homeCarouselPage)
         return true
     }
 

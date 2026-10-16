@@ -14,6 +14,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.isSystemInDarkTheme
@@ -79,9 +80,6 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Brightness6
 import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.Visibility
-import androidx.compose.material.icons.filled.SwapHoriz
-import androidx.compose.material.icons.filled.VolumeUp
-import androidx.compose.material.icons.filled.Translate
 import androidx.compose.material3.IconButtonDefaults
 import com.breakyuna.esjzone.ui.reader.ReaderPageTurnQueue
 import com.breakyuna.esjzone.ui.reader.animateReaderPageTurn
@@ -199,7 +197,6 @@ import com.breakyuna.esjzone.ui.designsystem.AppFeedback
 import com.breakyuna.esjzone.ui.designsystem.AppShapes
 import com.breakyuna.esjzone.ui.designsystem.AppSpacing
 import com.breakyuna.esjzone.ui.designsystem.rememberAppAdaptiveMetrics
-import com.breakyuna.esjzone.ui.designsystem.glass.AppGlassSurface
 import com.breakyuna.esjzone.domain.reader.ReaderAnchor
 import com.breakyuna.esjzone.domain.reader.readerChapterProgress
 import com.breakyuna.esjzone.domain.reader.readerContentPosition
@@ -310,9 +307,6 @@ class ChapterPage(
         var bookmarkStateUrl by remember { mutableStateOf<String?>(null) }
         var updatingBookmark by remember { mutableStateOf(false) }
         var pendingBookmarkDesired by remember { mutableStateOf<Boolean?>(null) }
-        var lastPagedAnimation by rememberSaveable {
-            mutableStateOf(ReaderPageAnimation.HORIZONTAL_SLIDE)
-        }
 
         val readerTextStyle = MaterialTheme.typography.bodyLarge.copy(
             fontFamily = readerSettings.font.family(),
@@ -323,9 +317,6 @@ class ChapterPage(
         val readerContentColor = readerSettings.background.contentColor()
 
         fun updateReaderSettings(settings: ReaderSettings) {
-            if (readerSettings.pageAnimation != ReaderPageAnimation.VERTICAL_SCROLL) {
-                lastPagedAnimation = readerSettings.pageAnimation
-            }
             readerSettings = settings
             PresentationAccess.readerSettings.saveDebounced(settings)
         }
@@ -1575,6 +1566,8 @@ class ChapterPage(
         fun turnReaderPage(forward: Boolean) {
             if (pagedMode) {
                 if (pagedInputEnabled && (pagingEnabled || pagedTurns.hasTurns)) {
+                    // Dismiss chrome with the request, before scrolling starts.
+                    showToolbar = false
                     pagedTurns.enqueue(forward, android.os.SystemClock.uptimeMillis())
                 }
                 return
@@ -1590,12 +1583,14 @@ class ChapterPage(
                         anchorKey = (if (forward) displayItems.lastOrNull() else displayItems.firstOrNull())?.key ?: return,
                         targetChapterKey = chapterIdentity((if (forward) result.next else result.previous) ?: return)
                     )
+                    showToolbar = false
                     if (forward) chapterPageModel.loadNextChapter() else chapterPageModel.loadPreviousChapter()
                 }
                 return
             }
             // Keep a small overlap so the reader never loses the line at the page boundary.
             val distance = viewportHeight * 0.88f * if (forward) 1f else -1f
+            showToolbar = false
             pageTurnInProgress = true
             scope.launch {
                 try {
@@ -2198,15 +2193,16 @@ class ChapterPage(
             )
 
             if ((state as? ChapterPageModel.State.Result)?.isOffline == true) {
-                AppGlassSurface(
+                Surface(
                     modifier = Modifier
                         .align(Alignment.TopEnd)
                         .windowInsetsPadding(WindowInsets.statusBarsIgnoringVisibility.union(WindowInsets.displayCutout).only(WindowInsetsSides.Top))
                         .padding(top = 32.dp, end = AppSpacing.lg),
-                    spec = com.breakyuna.esjzone.ui.designsystem.glass.AppGlassSpec(
-                        tint = MaterialTheme.colorScheme.tertiaryContainer,
-                        alpha = 0.9f,
-                        shape = AppShapes.pill
+                    shape = AppShapes.pill,
+                    color = MaterialTheme.colorScheme.tertiaryContainer,
+                    border = BorderStroke(
+                        1.dp,
+                        MaterialTheme.colorScheme.outline.copy(alpha = 0.14f)
                     )
                 ) {
                     Text(
@@ -2375,10 +2371,7 @@ class ChapterPage(
                                         ReaderTool.BOOKMARK -> isBookmarked
                                         ReaderTool.EYE_PROTECTION -> readerSettings.eyeProtectionEnabled
                                         ReaderTool.DARK_MODE -> !isLightBackground
-                                        ReaderTool.VOLUME_KEYS -> readerSettings.volumeKeyPaging
-                                        ReaderTool.LAYOUT -> pagedMode
                                         ReaderTool.BRIGHTNESS -> readerSettings.brightness >= 0f
-                                        ReaderTool.SCRIPT -> readerSettings.script != ReaderScript.ORIGINAL
                                         else -> false
                                     }
                                     Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
@@ -2394,9 +2387,6 @@ class ChapterPage(
                                                 ReaderTool.EYE_PROTECTION -> Icons.Filled.Visibility
                                                 ReaderTool.BRIGHTNESS -> Icons.Filled.Brightness6
                                                 ReaderTool.DARK_MODE -> Icons.Filled.DarkMode
-                                                ReaderTool.LAYOUT -> Icons.Filled.SwapHoriz
-                                                ReaderTool.VOLUME_KEYS -> Icons.Filled.VolumeUp
-                                                ReaderTool.SCRIPT -> Icons.Filled.Translate
                                             },
                                             selected = active,
                                             enabled = when (tool) {
@@ -2431,17 +2421,6 @@ class ChapterPage(
                                                                 ReaderBackground.PAPER else lightReaderBackground
                                                             updateReaderSettings(readerSettings.copy(background = restored))
                                                         }
-                                                    }
-                                                    ReaderTool.LAYOUT -> {
-                                                        pendingSeekLocation = currentBookLocation
-                                                        updateReaderSettings(readerSettings.copy(pageAnimation = if (pagedMode)
-                                                            ReaderPageAnimation.VERTICAL_SCROLL else lastPagedAnimation))
-                                                    }
-                                                    ReaderTool.VOLUME_KEYS -> updateReaderSettings(readerSettings.copy(volumeKeyPaging = !readerSettings.volumeKeyPaging))
-                                                    ReaderTool.SCRIPT -> {
-                                                        pendingSeekLocation = currentBookLocation
-                                                        val next = ReaderScript.entries[(readerSettings.script.ordinal + 1) % ReaderScript.entries.size]
-                                                        updateReaderSettings(readerSettings.copy(script = next))
                                                     }
                                                 }
                                             }
@@ -3106,18 +3085,19 @@ private fun ReaderFeedbackState(
     actionLabel: String? = stringResource(R.string.retry),
     onAction: (() -> Unit)? = null
 ) {
-    AppGlassSurface(
+    Surface(
         modifier = Modifier
             .fillMaxWidth()
             .padding(vertical = AppSpacing.xl),
-        spec = com.breakyuna.esjzone.ui.designsystem.glass.AppGlassSpec(
-            tint = if (isError) {
-                MaterialTheme.colorScheme.errorContainer
-            } else {
-                MaterialTheme.colorScheme.surfaceVariant
-            },
-            alpha = 0.84f,
-            shape = AppShapes.prominent
+        shape = AppShapes.prominent,
+        color = if (isError) {
+            MaterialTheme.colorScheme.errorContainer
+        } else {
+            MaterialTheme.colorScheme.surfaceVariant
+        },
+        border = BorderStroke(
+            1.dp,
+            MaterialTheme.colorScheme.outline.copy(alpha = 0.14f)
         )
     ) {
         AppFeedback(

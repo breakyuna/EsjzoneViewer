@@ -79,11 +79,19 @@ enum class ReaderPageAnimation {
 
 enum class ReaderTool {
     CONTENTS, SETTINGS, BOOKMARK, COMMENTS, NOVEL_DETAIL,
-    EYE_PROTECTION, BRIGHTNESS, DARK_MODE, LAYOUT, VOLUME_KEYS, SCRIPT;
+    EYE_PROTECTION, BRIGHTNESS, DARK_MODE;
 
     companion object {
         const val MAX_VISIBLE = 6
         val defaults = listOf(CONTENTS, SETTINGS, BOOKMARK, COMMENTS, BRIGHTNESS, DARK_MODE)
+
+        val defaultOrder = defaults + entries.filterNot { it in defaults }
+
+        fun decodeOrder(value: String?, selected: List<ReaderTool> = defaults): List<ReaderTool> {
+            val saved = value?.split(',')?.mapNotNull { name -> entries.find { it.name == name } }
+                ?: selected
+            return (saved + entries).distinct()
+        }
 
         fun decode(value: String?): List<ReaderTool> = if (value == null) defaults else
             value.split(',').mapNotNull { name -> entries.find { it.name == name } }
@@ -109,6 +117,7 @@ data class ReaderSettings(
     val scrollSideGesturesEnabled: Boolean = true,
     val pagedBookmarkGesturesEnabled: Boolean = true,
     val toolbarTools: List<ReaderTool> = ReaderTool.defaults,
+    val toolbarOrder: List<ReaderTool> = ReaderTool.defaultOrder,
     // -1 follows the system; otherwise this is a reader-only window override.
     val brightness: Float = -1f,
     val keepScreenOn: Boolean = false,

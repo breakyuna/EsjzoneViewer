@@ -158,6 +158,7 @@ class ReaderSettingsDataStore(
             scrollSideGesturesEnabled = this[SCROLL_SIDE_GESTURES] ?: defaults.scrollSideGesturesEnabled,
             pagedBookmarkGesturesEnabled = this[PAGED_BOOKMARK_GESTURES] ?: defaults.pagedBookmarkGesturesEnabled,
             toolbarTools = ReaderTool.decode(this[TOOLBAR_TOOLS]),
+            toolbarOrder = ReaderTool.decodeOrder(this[TOOLBAR_ORDER], ReaderTool.decode(this[TOOLBAR_TOOLS])),
             brightness = this[BRIGHTNESS].safeBrightness(),
             keepScreenOn = this[KEEP_SCREEN_ON] ?: defaults.keepScreenOn,
             autoResumeLastReading = this[AUTO_RESUME_LAST_READING] ?: defaults.autoResumeLastReading,
@@ -172,6 +173,7 @@ class ReaderSettingsDataStore(
 
     private fun ReaderSettings.sanitized() = copy(
         toolbarTools = toolbarTools.distinct().take(ReaderTool.MAX_VISIBLE),
+        toolbarOrder = (toolbarOrder + ReaderTool.entries).distinct(),
         brightness = brightness.safeBrightness(),
         fontSizeSp = fontSizeSp.safeValue(18f, 14f, 30f),
         letterSpacingSp = letterSpacingSp.safeValue(0.3f, 0f, 2f),
@@ -198,6 +200,7 @@ class ReaderSettingsDataStore(
         preferences[SCROLL_SIDE_GESTURES] = scrollSideGesturesEnabled
         preferences[PAGED_BOOKMARK_GESTURES] = pagedBookmarkGesturesEnabled
         preferences[TOOLBAR_TOOLS] = toolbarTools.joinToString(",") { it.name }
+        preferences[TOOLBAR_ORDER] = toolbarOrder.joinToString(",") { it.name }
         preferences[BRIGHTNESS] = brightness
         preferences[KEEP_SCREEN_ON] = keepScreenOn
         preferences[AUTO_RESUME_LAST_READING] = autoResumeLastReading
@@ -258,6 +261,7 @@ class ReaderSettingsDataStore(
         val TAP_PAGING = booleanPreferencesKey("tap_paging")
         val SCROLL_SIDE_GESTURES = booleanPreferencesKey("scroll_side_gestures")
         val PAGED_BOOKMARK_GESTURES = booleanPreferencesKey("paged_bookmark_gestures")
+        val TOOLBAR_ORDER = stringPreferencesKey("toolbar_order")
         val TOOLBAR_TOOLS = stringPreferencesKey("toolbar_tools")
         val BRIGHTNESS = floatPreferencesKey("brightness")
         val KEEP_SCREEN_ON = booleanPreferencesKey("keep_screen_on")

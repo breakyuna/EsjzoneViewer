@@ -79,6 +79,9 @@ import com.breakyuna.esjzone.ui.navigation.LocalBaseNavigator
 import com.breakyuna.esjzone.ui.page.BookmarksPage
 import com.breakyuna.esjzone.ui.page.DownloadPage
 import com.breakyuna.esjzone.ui.page.SettingsPage
+import com.breakyuna.esjzone.ui.navigation.ContainerTransformTarget
+import com.breakyuna.esjzone.ui.navigation.containerTransformContent
+import com.breakyuna.esjzone.ui.navigation.containerTransformSource
 import com.breakyuna.esjzone.ui.page.ReadingStatisticsPage
 import com.breakyuna.esjzone.util.AppLogger
 import com.breakyuna.esjzone.util.LocaleHelper
@@ -286,9 +289,15 @@ private fun ProfileHero(profile: UserProfile?, domain: String, loading: Boolean,
 
 @Composable
 private fun ProfileAction(item: ProfileMenuItem, modifier: Modifier = Modifier, onClick: () -> Unit) {
-    Surface(onClick = onClick, modifier = modifier, shape = AppShapes.standard, color = MaterialTheme.colorScheme.surface) {
+    val containerModifier = if (item.id == "settings") {
+        modifier.containerTransformSource(ContainerTransformTarget.SETTINGS)
+    } else {
+        modifier
+    }
+    val contentModifier = if (item.id == "settings") Modifier.containerTransformContent() else Modifier
+    Surface(onClick = onClick, modifier = containerModifier, shape = AppShapes.standard, color = MaterialTheme.colorScheme.surface) {
         Column(
-            Modifier.fillMaxWidth().heightIn(min = 96.dp).padding(AppSpacing.lg),
+            contentModifier.fillMaxWidth().heightIn(min = 96.dp).padding(AppSpacing.lg),
             verticalArrangement = Arrangement.spacedBy(AppSpacing.md)
         ) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween,

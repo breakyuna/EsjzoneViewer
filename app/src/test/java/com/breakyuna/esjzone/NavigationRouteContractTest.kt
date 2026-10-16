@@ -3,9 +3,13 @@ package com.breakyuna.esjzone
 import com.breakyuna.esjzone.ui.navigation.AppNavKey
 import com.breakyuna.esjzone.ui.navigation.LegacyRoute
 import com.breakyuna.esjzone.ui.navigation.ReaderRoute
+import com.breakyuna.esjzone.ui.navigation.ContainerTransformTarget
+import com.breakyuna.esjzone.ui.navigation.usesContainerTransform
+import kotlinx.serialization.json.Json
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
+import org.junit.Assert.assertFalse
 import org.junit.Test
 
 /** Pure JVM coverage for the value objects stored by Navigation 3. */
@@ -25,6 +29,37 @@ class NavigationRouteContractTest {
         val route = ReaderRoute(novelId = "novel", chapterIdentity = "chapter")
         assertEquals(AppNavKey.Reader(route), AppNavKey.Reader(route))
         assertNotEquals(AppNavKey.Reader(route), AppNavKey.Legacy(LegacyRoute.Novel("novel")))
+    }
+
+    @Test
+    fun onlyCarouselNovelEntriesUseTheHomeContainerTransform() {
+        val route = LegacyRoute.Novel("/detail/123.html")
+        val ordinaryEntry = AppNavKey.Legacy(route)
+        val carouselEntry = AppNavKey.Legacy(route, homeCarouselPage = 100)
+        assertFalse(usesContainerTransform(AppNavKey.HomeTab, ordinaryEntry))
+        assertTrue(usesContainerTransform(AppNavKey.HomeTab, carouselEntry))
+        assertTrue(usesContainerTransform(carouselEntry, AppNavKey.HomeTab))
+        assertFalse(usesContainerTransform(AppNavKey.BookshelfTab, carouselEntry))
+        assertEquals(
+            ContainerTransformTarget.homeCarousel(route.identity, 100),
+            ContainerTransformTarget.forKey(carouselEntry)
+        )
+        assertNotEquals(
+            ContainerTransformTarget.forKey(carouselEntry),
+            ContainerTransformTarget.forKey(AppNavKey.Legacy(route, homeCarouselPage = 101))
+        )
+    }
+
+    @Test
+    fun savedNovelRoutesRetainCarouselInstanceAndAcceptOlderEntries() {
+        val route = LegacyRoute.Novel("/detail/123.html")
+        val serializer = AppNavKey.Legacy.serializer()
+        val carouselEntry = AppNavKey.Legacy(route, homeCarouselPage = 100)
+        assertEquals(carouselEntry, Json.decodeFromString(serializer, Json.encodeToString(serializer, carouselEntry)))
+        val olderEntry = AppNavKey.Legacy(route)
+        val savedWithoutCarousel = Json.encodeToString(serializer, olderEntry)
+        assertFalse(savedWithoutCarousel.contains("homeCarouselPage"))
+        assertEquals(olderEntry, Json.decodeFromString(serializer, savedWithoutCarousel))
     }
 
     @Test

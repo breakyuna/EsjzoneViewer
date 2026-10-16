@@ -3,9 +3,11 @@ package com.breakyuna.esjzone.ui.navigation
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.updateTransition
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -109,8 +111,7 @@ import com.breakyuna.esjzone.ui.tab.HomeTab
 import com.breakyuna.esjzone.ui.tab.ProfileTab
 
 /**
- * Bottom / side insets compensation for pages whose content scrolls underneath
- * floating glass islands so terminal list items are never blocked.
+ * Additional bottom / side spacing supplied by the navigation shell to page content.
  */
 val LocalFloatingNavPadding = compositionLocalOf { PaddingValues(0.dp) }
 /** Root tab content can yield the floating island to an edit surface or modal. */
@@ -270,6 +271,7 @@ fun AdaptiveAppShell(
                     ) {
                         TabStacksDisplay(
                             selected = tab,
+                            orderedTabs = orderedTabs,
                             suppressionState = suppressedTabs,
                             homeStack = homeStack,
                             homeNavigator = homeNavigator,
@@ -315,6 +317,7 @@ fun AdaptiveAppShell(
                     ) {
                         TabStacksDisplay(
                             selected = tab,
+                            orderedTabs = orderedTabs,
                             suppressionState = suppressedTabs,
                             homeStack = homeStack,
                             homeNavigator = homeNavigator,
@@ -348,6 +351,7 @@ private fun shellSafeDrawing(top: Boolean, bottom: Boolean): WindowInsets {
 @Composable
 private fun TabStacksDisplay(
     selected: AppTabId,
+    orderedTabs: List<AppTabId>,
     suppressionState: MutableMap<AppTabId, Boolean>,
     homeStack: MutableList<NavKey>,
     homeNavigator: AppNavigator,
@@ -359,6 +363,7 @@ private fun TabStacksDisplay(
     profileNavigator: AppNavigator,
     modifier: Modifier = Modifier
 ) {
+    val transition = updateTransition(targetState = selected, label = "TabSwitch")
     // Keep all four NavDisplays mounted. Their saveable-state holders and
     // entry ViewModel stores therefore survive a tab switch; only the
     // selected display is placed above the others for input and rendering.
@@ -372,11 +377,21 @@ private fun TabStacksDisplay(
                     AppTabId.PROFILE -> profileStack to profileNavigator
                 }
                 val active = selected == tabId
-                val alpha by animateFloatAsState(
-                    targetValue = if (active) 1f else 0f,
-                    animationSpec = tween(durationMillis = 200, easing = FastOutSlowInEasing),
+                val alpha = transition.animateFloat(
+                    transitionSpec = { tween(durationMillis = 300, easing = FastOutSlowInEasing) },
                     label = "${tabId.name}TabAlpha"
-                )
+                ) { targetTab -> if (targetTab == tabId) 1f else 0f }
+                // A short, directional drift follows the user's navigation order.
+                val horizontalOffset = transition.animateFloat(
+                    transitionSpec = { tween(durationMillis = 300, easing = FastOutSlowInEasing) },
+                    label = "${tabId.name}TabOffset"
+                ) { targetTab ->
+                    when {
+                        targetTab == tabId -> 0f
+                        orderedTabs.indexOf(tabId) < orderedTabs.indexOf(targetTab) -> -16f
+                        else -> 16f
+                    }
+                }
                 val zIndex = if (active) 1f else 0f
                 TabStackDisplay(
                     tabId = tabId,
@@ -387,7 +402,10 @@ private fun TabStacksDisplay(
                     modifier = Modifier
                         .fillMaxSize()
                         .zIndex(zIndex)
-                        .graphicsLayer { this.alpha = alpha }
+                        .graphicsLayer {
+                            this.alpha = alpha.value
+                            translationX = horizontalOffset.value.dp.toPx()
+                        }
                         .blockInactiveTabInput(active)
                         .then(if (!active) Modifier.clearAndSetSemantics { } else Modifier)
                 )
@@ -430,43 +448,68 @@ private fun TabStackDisplay(
         LocalLifecycleOwner provides lifecycleOwner,
         LocalNavigationEventDispatcherOwner provides dispatcherOwner
     ) {
-        NavDisplay(
-            backStack = stack,
-            modifier = modifier,
-            onBack = { if (!navigator.pop()) Unit },
-            transitionSpec = pushTransition,
-            popTransitionSpec = popTransition,
-            predictivePopTransitionSpec = predictivePopTransition,
-            entryDecorators = listOf(
-                rememberSaveableStateHolderNavEntryDecorator(),
-                rememberViewModelStoreNavEntryDecorator()
-            ),
-            entryProvider = entryProvider {
-                entry<AppNavKey.HomeTab> { HomeTab.Content() }
-                entry<AppNavKey.HistoryTab> { HistoryTab.Content() }
-                entry<AppNavKey.BookshelfTab> { FavoriteTab.Content() }
-                entry<AppNavKey.ProfileTab> { ProfileTab.Content() }
-                entry<AppNavKey.Legacy> { key ->
-                    val destination = navigator.destination(key.route)
-                    if (destination != null) {
-                        destination.Content()
+        ContainerTransformLayout(modifier) {
+            NavDisplay(
+                backStack = stack,
+                modifier = Modifier.fillMaxSize(),
+                onBack = { if (!navigator.pop()) Unit },
+                transitionSpec = {
+                    if (usesContainerTransform(initialState.entries.lastOrNull()?.key, targetState.entries.lastOrNull()?.key)) {
+                        containerContentTransform()
                     } else {
-                        DiscoveryScaffold(
-                            title = stringResource(R.string.load_failed_short),
-                            onBack = { if (!navigator.pop()) Unit }
-                        ) { padding ->
-                            EmptyState(
+                        pushTransition()
+                    }
+                },
+                popTransitionSpec = {
+                    if (usesContainerTransform(initialState.entries.lastOrNull()?.key, targetState.entries.lastOrNull()?.key)) {
+                        containerContentTransform()
+                    } else {
+                        popTransition()
+                    }
+                },
+                predictivePopTransitionSpec = { edge ->
+                    if (usesContainerTransform(initialState.entries.lastOrNull()?.key, targetState.entries.lastOrNull()?.key)) {
+                        containerContentTransform()
+                    } else {
+                        predictivePopTransition(edge)
+                    }
+                },
+                entryDecorators = listOf(
+                    rememberSaveableStateHolderNavEntryDecorator(),
+                    rememberViewModelStoreNavEntryDecorator()
+                ),
+                entryProvider = entryProvider {
+                    entry<AppNavKey.HomeTab> { HomeTab.Content() }
+                    entry<AppNavKey.HistoryTab> { HistoryTab.Content() }
+                    entry<AppNavKey.BookshelfTab> { FavoriteTab.Content() }
+                    entry<AppNavKey.ProfileTab> { ProfileTab.Content() }
+                    entry<AppNavKey.Legacy> { key ->
+                        val destination = navigator.destination(key.route)
+                        if (destination != null) {
+                            val containerTarget = ContainerTransformTarget.forKey(key)
+                            if (containerTarget != null) {
+                                ContainerTransformDestination(containerTarget) { destination.Content() }
+                            } else {
+                                destination.Content()
+                            }
+                        } else {
+                            DiscoveryScaffold(
                                 title = stringResource(R.string.load_failed_short),
-                                message = stringResource(R.string.community_empty_guidance),
-                                modifier = Modifier.fillMaxSize().padding(padding),
-                                actionLabel = stringResource(R.string.close),
-                                onAction = { if (!navigator.pop()) Unit }
-                            )
+                                onBack = { if (!navigator.pop()) Unit }
+                            ) { padding ->
+                                EmptyState(
+                                    title = stringResource(R.string.load_failed_short),
+                                    message = stringResource(R.string.community_empty_guidance),
+                                    modifier = Modifier.fillMaxSize().padding(padding),
+                                    actionLabel = stringResource(R.string.close),
+                                    onAction = { if (!navigator.pop()) Unit }
+                                )
+                            }
                         }
                     }
                 }
-            }
-        )
+            )
+        }
     }
 }
 
@@ -553,7 +596,7 @@ private fun AppNavigationBarItem(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(2.dp, Alignment.CenterVertically)
         ) {
-            AppNavigationIcon(tab, selectionProgress, tint = iconColor)
+            AppNavigationIcon(tab, selected, selectionProgress, tint = iconColor)
             Text(
                 text = tabLabel(tab),
                 color = contentColor,
@@ -616,7 +659,7 @@ private fun AppSideNavigationBar(
                                 )
                             }
                         ) {
-                            AppNavigationIcon(tab, selectionProgress, tint = iconColor)
+                            AppNavigationIcon(tab, isSelected, selectionProgress, tint = iconColor)
                         }
                     },
                     label = {

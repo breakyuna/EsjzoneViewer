@@ -175,6 +175,10 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun handleNovelIntent(intent: Intent?) {
+        if (intent?.hasExtra(ReleaseUpdateChecker.EXTRA_UPDATE_VERSION) == true) {
+            ReleaseUpdateChecker.openDownload(applicationContext, intent)
+            intent.removeExtra(ReleaseUpdateChecker.EXTRA_UPDATE_VERSION)
+        }
         val novelUrl = intent?.getStringExtra(EXTRA_NOVEL_URL)
         if (!novelUrl.isNullOrBlank()) {
             setPendingNovelUrl(novelUrl)

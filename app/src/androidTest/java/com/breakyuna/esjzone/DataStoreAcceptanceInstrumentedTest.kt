@@ -8,6 +8,7 @@ import com.breakyuna.esjzone.ui.reader.ReaderBackground
 import com.breakyuna.esjzone.ui.reader.ReaderFont
 import com.breakyuna.esjzone.ui.reader.ReaderScript
 import com.breakyuna.esjzone.ui.reader.ReaderSettings
+import com.breakyuna.esjzone.ui.reader.ReaderTool
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -36,6 +37,7 @@ class DataStoreAcceptanceInstrumentedTest {
                 scrollSideGesturesEnabled = true,
                 pagedBookmarkGesturesEnabled = false,
                 toolbarTools = listOf(com.breakyuna.esjzone.ui.reader.ReaderTool.BRIGHTNESS, com.breakyuna.esjzone.ui.reader.ReaderTool.CONTENTS),
+                toolbarOrder = ReaderTool.decodeOrder("BRIGHTNESS,NOVEL_DETAIL,CONTENTS"),
                 brightness = 0.35f,
                 keepScreenOn = true,
                 leftTapForward = true,
@@ -50,6 +52,7 @@ class DataStoreAcceptanceInstrumentedTest {
             assertTrue(first.scrollSideGesturesEnabled)
             assertFalse(first.pagedBookmarkGesturesEnabled)
             assertEquals(listOf(com.breakyuna.esjzone.ui.reader.ReaderTool.BRIGHTNESS, com.breakyuna.esjzone.ui.reader.ReaderTool.CONTENTS), first.toolbarTools)
+            assertEquals(ReaderTool.decodeOrder("BRIGHTNESS,NOVEL_DETAIL,CONTENTS"), first.toolbarOrder)
             assertEquals(0.35f, first.brightness, 0.001f)
             assertTrue(first.keepScreenOn)
             assertTrue(first.leftTapForward)
@@ -70,6 +73,7 @@ class DataStoreAcceptanceInstrumentedTest {
             assertTrue(reset.scrollSideGesturesEnabled)
             assertTrue(reset.pagedBookmarkGesturesEnabled)
             assertEquals(com.breakyuna.esjzone.ui.reader.ReaderTool.defaults, reset.toolbarTools)
+            assertEquals(ReaderTool.defaultOrder, reset.toolbarOrder)
             assertEquals(-1f, reset.brightness, 0.001f)
             assertFalse(reset.keepScreenOn)
             assertFalse(reset.leftTapForward)

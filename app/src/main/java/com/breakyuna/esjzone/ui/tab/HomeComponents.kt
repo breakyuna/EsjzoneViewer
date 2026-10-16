@@ -49,6 +49,9 @@ import com.breakyuna.esjzone.ui.component.AppNovelCover
 import com.breakyuna.esjzone.ui.designsystem.AppShapes
 import com.breakyuna.esjzone.ui.designsystem.AppSpacing
 import com.breakyuna.esjzone.ui.designsystem.AppTypography
+import com.breakyuna.esjzone.ui.navigation.ContainerTransformTarget
+import com.breakyuna.esjzone.ui.navigation.containerTransformContent
+import com.breakyuna.esjzone.ui.navigation.containerTransformSource
 
 internal const val HOME_GRID_COLUMNS = 4
 private val HOME_SECTION_TITLE_PARENTHESIS = Regex("[（(][^（）()]*[）)]")
@@ -108,21 +111,21 @@ internal fun HomeActions(
         HomeShortcut(
             label = stringResource(R.string.forum),
             icon = Icons.Filled.Forum,
-            modifier = Modifier.weight(1f),
+            modifier = Modifier.weight(1f).containerTransformSource(ContainerTransformTarget.FORUM),
             iconTint = Color(162, 25, 23),
             onClick = onForum
         )
         HomeShortcut(
             label = stringResource(R.string.guestbook),
             icon = Icons.Filled.RateReview,
-            modifier = Modifier.weight(1f),
+            modifier = Modifier.weight(1f).containerTransformSource(ContainerTransformTarget.GUESTBOOK),
             iconTint = Color(0xFFC67D0A),
             onClick = onGuestbook
         )
         HomeShortcut(
             label = stringResource(R.string.home_water_cooler),
             icon = Icons.Filled.WaterDrop,
-            modifier = Modifier.weight(1f),
+            modifier = Modifier.weight(1f).containerTransformSource(ContainerTransformTarget.WATER_COOLER),
             iconTint = Color(0xFF0288D1),
             onClick = onWaterCooler
         )
@@ -145,7 +148,7 @@ private fun HomeShortcut(
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f))
     ) {
         Row(
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier.containerTransformContent().fillMaxSize(),
             horizontalArrangement = Arrangement.Center,
             verticalAlignment = Alignment.CenterVertically
         ) {

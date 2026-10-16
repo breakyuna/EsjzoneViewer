@@ -1,9 +1,21 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="update_available_title">发现新版本</string>
-    <string name="update_available_message">当前版本：%1$s\n最新版本：%2$s\n\n前往 GitHub Release 页面下载更新。</string>
+    <string name="update_available_message">当前版本：%1$s\n最新版本：%2$s</string>
     <string name="update_release_notes">更新说明：</string>
-    <string name="update_download">前往下载</string>
+    <string name="update_download">下载更新</string>
+    <string name="update_download_progress">正在下载… %1$d%%</string>
+    <string name="update_download_complete">下载完成</string>
+    <string name="update_download_failed">下载失败或安装包无效，请重试</string>
+    <string name="update_cancel_download">取消下载</string>
+    <string name="update_notification_channel">应用更新</string>
+    <string name="update_notification_title">应用更新 %1$s</string>
+    <string name="update_notification_install">下载完成，点击安装</string>
+    <string name="update_install">安装更新</string>
+    <string name="update_install_permission_required">请允许安装未知应用，然后继续安装</string>
+    <string name="update_installer_unavailable">无法打开安装授权页或系统安装界面</string>
+    <string name="update_apk_unavailable">此版本未提供可下载的 APK</string>
+    <string name="update_open_release">发布页面</string>
     <string name="update_later">稍后</string>
     <string name="update_browser_unavailable">没有可打开发布页面的应用</string>
     <string name="app_name">Esjzone</string>
@@ -738,10 +750,8 @@
     <string name="reader_tab_toolbar">工具欄</string>
     <string name="reader_brightness">閱讀亮度</string>
     <string name="reader_dark_mode">深色模式</string>
-    <string name="reader_layout_toggle">切換閱讀佈局</string>
+    <string name="reader_tool_drag">拖曳排序</string>
     <string name="reader_toolbar_selected_count">已選 %1$d / %2$d 個</string>
-    <string name="reader_tool_move_before">向前移動</string>
-    <string name="reader_tool_move_after">向後移動</string>
     <string name="reader_scroll_side_gestures">上下翻頁：右滑目錄，左滑評論</string>
     <string name="reader_paged_bookmark_gestures">左右翻頁：下拉新增／取消書籤</string>
     <string name="reader_brightness_system">跟隨系統亮度</string>

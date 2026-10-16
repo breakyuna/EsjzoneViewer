@@ -2,7 +2,11 @@ package com.breakyuna.esjzone.update
 
 import com.breakyuna.esjzone.network.readTextBounded
 import android.content.Context
+import android.content.Intent
+import androidx.core.content.ContextCompat
 import com.breakyuna.esjzone.BuildConfig
+import com.breakyuna.esjzone.MainActivity
+import java.io.File
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.CancellationException
@@ -12,12 +16,19 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.json.JSONArray
 
-internal data class ReleaseUpdate(val version: String, val pageUrl: String, val description: String)
+internal data class ReleaseUpdate(
+    val version: String,
+    val pageUrl: String,
+    val description: String,
+    val apk: ReleaseApkAsset?,
+    val downloader: ReleaseApkDownloader = ReleaseApkDownloader()
+)
 
 internal sealed interface ReleaseCheckState {
     data object Idle : ReleaseCheckState
@@ -33,6 +44,8 @@ internal object ReleaseUpdateChecker {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val pending = MutableStateFlow<ReleaseUpdate?>(null)
     val update = pending.asStateFlow()
+    private val _dialogVisible = MutableStateFlow(false)
+    val dialogVisible = _dialogVisible.asStateFlow()
     private val _status = MutableStateFlow<ReleaseCheckState>(ReleaseCheckState.Idle)
     val status = _status.asStateFlow()
     private val _autoCheck = MutableStateFlow(true)
@@ -46,6 +59,7 @@ internal object ReleaseUpdateChecker {
      */
     fun checkOnce(context: Context) {
         initialize(context)
+        if (pending.value != null) return
         if (!_autoCheck.value) return
         val preferences = context.applicationContext.getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE)
         val now = System.currentTimeMillis()
@@ -66,7 +80,89 @@ internal object ReleaseUpdateChecker {
     }
 
     fun checkNow(context: Context) {
+        if (pending.value != null) {
+            showDialog()
+            return
+        }
         check(context)
+    }
+
+    fun showDialog() {
+        _dialogVisible.value = true
+    }
+
+    fun hideDialog() {
+        _dialogVisible.value = false
+    }
+
+    fun startDownload(context: Context) {
+        val release = pending.value ?: return
+        if (release.apk == null || release.downloader.state.value is ReleaseDownloadState.Downloading) return
+        release.downloader.markStarting(release.apk)
+        try {
+            ContextCompat.startForegroundService(context.applicationContext,
+                Intent(context.applicationContext, AppUpdateDownloadService::class.java))
+        } catch (_: RuntimeException) {
+            release.downloader.markFailed()
+        }
+    }
+
+    fun cancelDownload(context: Context) {
+        pending.value?.downloader?.cancel()
+        context.applicationContext.stopService(Intent(context.applicationContext, AppUpdateDownloadService::class.java))
+    }
+
+    /** A small payload also lets a completed notification reopen the APK after process recreation. */
+    fun downloadIntent(context: Context, release: ReleaseUpdate): Intent =
+        Intent(context, MainActivity::class.java)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+            .putExtra(EXTRA_UPDATE_VERSION, release.version)
+            .putExtra("update_page", release.pageUrl)
+            .putExtra("update_apk_name", release.apk?.name)
+            .putExtra("update_apk_url", release.apk?.url)
+            .putExtra("update_apk_size", release.apk?.size ?: 0L)
+            .putExtra("update_apk_digest", release.apk?.digest)
+
+    internal fun releaseFromDownloadIntent(intent: Intent): ReleaseUpdate? {
+        val tag = intent.getStringExtra(EXTRA_UPDATE_VERSION) ?: return null
+        if (!ReleaseVersion.isNewerForInstalledChannel(tag, BuildConfig.VERSION_NAME)) return null
+        val page = intent.getStringExtra("update_page")?.toHttpUrlOrNull() ?: return null
+        if (page.scheme != "https" || page.host != "github.com" || page.port != 443 ||
+            page.username.isNotEmpty() || page.password.isNotEmpty() ||
+            page.pathSegments != listOf("breakyuna", "EsjzoneViewer", "releases", "tag", tag)) return null
+        val asset = ReleaseApkAsset.select(tag, listOf(ReleaseApkAsset(
+            name = intent.getStringExtra("update_apk_name").orEmpty(),
+            url = intent.getStringExtra("update_apk_url").orEmpty(),
+            size = intent.getLongExtra("update_apk_size", 0L),
+            digest = intent.getStringExtra("update_apk_digest")
+        ))) ?: return null
+        return ReleaseUpdate(tag, page.toString(), "", asset)
+    }
+
+    fun openDownload(context: Context, intent: Intent) {
+        val release = releaseFromDownloadIntent(intent) ?: return
+        val current = pending.value
+        if (current != null) {
+            showDialog()
+            return
+        }
+        pending.value = release
+        showDialog()
+        val appContext = context.applicationContext
+        scope.launch {
+            val file = File(appContext.cacheDir, "app_updates/update.apk")
+            val info = if (file.isFile && file.length() == release.apk?.size) {
+                appContext.packageManager.getPackageArchiveInfo(file.absolutePath, 0)
+            } else null
+            if (info != null && info.packageName == appContext.packageName &&
+                info.longVersionCode > BuildConfig.VERSION_CODE) {
+                withContext(Dispatchers.Main.immediate) {
+                    if (pending.value === release && release.downloader.state.value == ReleaseDownloadState.Idle) {
+                        release.downloader.restoreReady(file)
+                    }
+                }
+            }
+        }
     }
 
     private fun check(context: Context) {
@@ -131,7 +227,24 @@ internal object ReleaseUpdateChecker {
                         _status.value = ReleaseCheckState.Error
                         return@launch
                     }
-                    pending.value = ReleaseUpdate(tag, url.toString(), release.optString("body").trim())
+                    val assets = release.optJSONArray("assets")
+                    val apks = (0 until (assets?.length() ?: 0)).mapNotNull { index ->
+                        val asset = assets?.optJSONObject(index) ?: return@mapNotNull null
+                        if (asset.optString("state") != "uploaded") return@mapNotNull null
+                        ReleaseApkAsset(
+                            name = asset.optString("name"),
+                            url = asset.optString("browser_download_url"),
+                            size = asset.optLong("size", 0),
+                            digest = asset.optString("digest").takeIf { it.isNotBlank() }
+                        )
+                    }
+                    withContext(Dispatchers.Main.immediate) {
+                        if (pending.value == null) {
+                            pending.value = ReleaseUpdate(tag, url.toString(), release.optString("body").trim(),
+                                ReleaseApkAsset.select(tag, apks))
+                            showDialog()
+                        }
+                    }
                     _status.value = ReleaseCheckState.Available(tag)
                 }
             } catch (e: CancellationException) {
@@ -146,9 +259,12 @@ internal object ReleaseUpdateChecker {
     }
 
     fun dismiss() {
-        pending.value = null
+        hideDialog()
+        val state = pending.value?.downloader?.state?.value
+        if (state !is ReleaseDownloadState.Downloading && state !is ReleaseDownloadState.Ready) pending.value = null
     }
 
+    internal const val EXTRA_UPDATE_VERSION = "app_update_version"
     private const val PREFERENCES_NAME = "release_update_checker"
     private const val LAST_CHECK_AT_KEY = "last_check_at"
     private const val AUTO_CHECK_KEY = "auto_check"

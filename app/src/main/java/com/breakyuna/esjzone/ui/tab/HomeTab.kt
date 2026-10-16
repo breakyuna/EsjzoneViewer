@@ -490,7 +490,9 @@ object HomeTab : AppTab {
                         is HomeTabModel.State.Result -> {
                             weeklyPopularCarousel(
                                 novels = weeklyPopularNovels,
-                                onNovelClick = onNovelClick
+                                onNovelClick = { novel, page ->
+                                    navigator?.pushIfNotCurrent(NovelPage(novel), homeCarouselPage = page)
+                                }
                             )
                             homeActionsItem(onForum, onGuestbook, onWaterCooler)
                             if (!hideHomeRecommendations) {
