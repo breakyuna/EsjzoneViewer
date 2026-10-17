@@ -25,6 +25,8 @@ import okhttp3.Dns
 import okhttp3.OkHttpClient
 import okhttp3.Request
 
+internal fun wenkuChapterCacheKey(url: String): String = "wenku8|${EsjzoneUrls.canonicalPageKey(url)}"
+
 internal class WenkuChapterClient(context: Context, userAgent: String) {
     private val jar = WenkuCookieJar(context)
     private val browser = WenkuWebViewSession(context, userAgent)
@@ -49,7 +51,7 @@ internal class WenkuChapterClient(context: Context, userAgent: String) {
     fun importBrowserChapter(chapter: Chapter, url: String, html: String): Boolean {
         if (resolveChapterSource(url) != ChapterSource.WENKU8 ||
             html.toByteArray(Charsets.UTF_8).size > MAX_BROWSER_CHAPTER_HTML_BYTES) return false
-        val token = PageCache.beginWrite(cacheKey(url))
+        val token = PageCache.beginWrite(wenkuChapterCacheKey(url))
         val detail = runCatching { validateAndParse(html, chapter, url) }.getOrNull() ?: return false
         return cacheChapter(url, detail, token).sourceCacheReference != null
     }
@@ -76,7 +78,7 @@ internal class WenkuChapterClient(context: Context, userAgent: String) {
     fun load(chapter: Chapter, url: String, forceRefresh: Boolean, allowAutoSolve: Boolean,
              onSecurityCheck: (() -> Unit)? = null): DetailedChapter {
         if (resolveChapterSource(url) != ChapterSource.WENKU8) throw UnsupportedExternalChapterException()
-        val key = cacheKey(url)
+        val key = wenkuChapterCacheKey(url)
         if (!forceRefresh) StructuredChapterCache.read(key, url)?.let { return it }
         if (!forceRefresh) PageCache.read(key, PageCacheTtl.CHAPTER)?.let { cached ->
             runCatching { validateAndParse(cached, chapter, url) }.getOrNull()?.let {
@@ -115,8 +117,6 @@ internal class WenkuChapterClient(context: Context, userAgent: String) {
         return cacheChapter(url, detail, writeToken)
     }
 
-    private fun cacheKey(url: String): String = "wenku8|${EsjzoneUrls.canonicalPageKey(url)}"
-
     private fun syncBrowserCookies(url: String) {
         try {
             browser.cookies(url)?.let(jar::importBrowserCookies)
@@ -130,7 +130,7 @@ internal class WenkuChapterClient(context: Context, userAgent: String) {
 
     private fun cacheChapter(url: String, detail: DetailedChapter, token: PageCache.WriteToken): DetailedChapter {
         val document = ExternalChapterHtml.cacheDocument(detail, url)
-        val key = cacheKey(url)
+        val key = wenkuChapterCacheKey(url)
         if (!PageCache.write(key, document, expected = token)) return detail
         return detail.copy(sourceCacheReference = StructuredChapterCache.write(key, document, detail))
     }

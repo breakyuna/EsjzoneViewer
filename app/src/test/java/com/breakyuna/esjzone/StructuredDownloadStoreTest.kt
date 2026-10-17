@@ -43,6 +43,17 @@ class StructuredDownloadStoreTest {
     }
 
     @Test
+    fun deletingAbsentOrAlreadyDeletedNovelSucceedsWithoutCreatingFiles() = withStorage { root ->
+        assertTrue(NovelDownloadStore.delete(novelUrl))
+        assertTrue(root.listFiles()!!.isEmpty())
+        save(1, listOf(chapter(1)))
+        assertTrue(NovelDownloadStore.delete(novelUrl))
+        assertTrue(NovelDownloadStore.delete(novelUrl))
+        assertNull(NovelDownloadStore.manifest(novelUrl))
+        assertTrue(root.listFiles()!!.isEmpty())
+    }
+
+    @Test
     fun resumedUnlockSkipsCompletedTargetsAndLeavesUnselectedPasswordChaptersAlone() = withStorage { root ->
         val order = listOf(chapter(1), chapter(2))
         val saved = save(1, order)

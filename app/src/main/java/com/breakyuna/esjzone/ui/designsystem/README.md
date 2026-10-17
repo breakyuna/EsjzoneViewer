@@ -8,10 +8,13 @@ This package is the only presentation entry point for the rebuilt visual system.
 - `AppSpacing`, `AppShapes`, `AppTypography`, `AppElevation`, and `AppTouchTarget`: geometry and text tokens.
 - `AppMotion`: duration, easing, and animation specs.
 - `rememberAppAdaptiveMetrics`: compact, medium, and expanded layout metrics.
-- `AppImage`, `AppCoverImage`, `AppAvatarImage`, and `AppReaderImage`: image loading seams;
-  feature code must not import a concrete image loader. All four use the application-scoped
+- `AppImage`, `AppCoverImage`, `AppAvatarImage`, `AppProfileAvatarImage`, and `AppReaderImage`: image loading seams;
+  feature code must not import a concrete image loader. They use the application-scoped
   loader owned by `AppContainer`, so covers, avatars, reader images, and downloaded covers share
   the same memory/disk cache.
+- `AppProfileAvatarImage` restores the account's last successfully loaded avatar from that
+  cache before requesting a replacement. Loading, failed, and empty replacements retain the
+  displayed image; only a successful image updates the persisted avatar pointer.
 - `AppCoverImage.sourceState` preserves unknown, resolving, and confirmed missing metadata;
   actual image callbacks track loading, loaded, or a categorized failure internally. `coverFallbackResource()` uses `cover_network_error.jpg` only for confirmed
   network failures (including timeouts and HTTP errors); all other fallback states use

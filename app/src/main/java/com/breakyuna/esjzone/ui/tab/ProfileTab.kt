@@ -51,7 +51,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLayoutDirection
 import com.breakyuna.esjzone.ui.designsystem.globalStringResource as stringResource
@@ -68,7 +67,7 @@ import com.breakyuna.esjzone.ui.navigation.LocalFloatingNavPadding
 import com.breakyuna.esjzone.network.features.getUserProfile
 import com.breakyuna.esjzone.ui.designsystem.AccountIconBadge
 import com.breakyuna.esjzone.ui.designsystem.accountContentWidth
-import com.breakyuna.esjzone.ui.designsystem.AppAvatarImage
+import com.breakyuna.esjzone.ui.designsystem.AppProfileAvatarImage
 import com.breakyuna.esjzone.ui.designsystem.AppShapes
 import com.breakyuna.esjzone.ui.designsystem.AppShimmerPlaceholder
 import com.breakyuna.esjzone.ui.designsystem.AppSpacing
@@ -105,6 +104,9 @@ object ProfileTab : AppTab {
         val navigator = LocalBaseNavigator.current
         val authorization = LocalAuthorization.current
         val domain = authorization.domain.ifBlank { PresentationAccess.settings.domain.value }
+        val avatarCacheKey = remember(domain, authorization) {
+            "${profileCachePrefix(authorization, domain)}avatar"
+        }
         var profileName by rememberSaveable(domain, authorization.ewsKey) { mutableStateOf<String?>(null) }
         var profileAvatar by rememberSaveable(domain, authorization.ewsKey) { mutableStateOf("") }
         var profileExp by rememberSaveable(domain, authorization.ewsKey) { mutableStateOf<Int?>(null) }
@@ -185,7 +187,7 @@ object ProfileTab : AppTab {
                 ),
                 verticalArrangement = Arrangement.spacedBy(AppSpacing.md)
             ) {
-                item(key = "profile-hero") { ProfileHero(profile, domain, loading, onRetry = { retry++ }) }
+                item(key = "profile-hero") { ProfileHero(profile, domain, avatarCacheKey, loading, onRetry = { retry++ }) }
                 item(key = "profile-menu-title") {
                     Text(stringResource(R.string.profile_tools), style = AppTypography.labelMedium,
                         modifier = Modifier.padding(start = AppSpacing.xs, top = AppSpacing.sm).semantics { heading() },
@@ -220,7 +222,7 @@ private fun profileMenuItems(): List<ProfileMenuItem> = listOf(
 )
 
 @Composable
-private fun ProfileHero(profile: UserProfile?, domain: String, loading: Boolean, onRetry: () -> Unit) {
+private fun ProfileHero(profile: UserProfile?, domain: String, avatarCacheKey: String, loading: Boolean, onRetry: () -> Unit) {
     Card(shape = AppShapes.prominent, colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
         Row(Modifier.fillMaxWidth().padding(AppSpacing.xl), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(AppSpacing.lg)) {
             if (profile == null && loading) {
@@ -232,7 +234,12 @@ private fun ProfileHero(profile: UserProfile?, domain: String, loading: Boolean,
             } else if (profile == null) {
                 AccountIconBadge(Icons.Filled.Person)
             } else {
-                AppAvatarImage(EsjzoneUrls.resolve(profile.avatarUrl, EsjzoneUrls.baseForDomain(domain)).takeIf(String::isNotBlank) ?: R.drawable.cover_missing, profile.name, Modifier.size(72.dp).clip(CircleShape), ContentScale.Crop)
+                AppProfileAvatarImage(
+                    model = EsjzoneUrls.resolve(profile.avatarUrl, EsjzoneUrls.baseForDomain(domain)),
+                    cacheKey = avatarCacheKey,
+                    contentDescription = profile.name,
+                    modifier = Modifier.size(72.dp).clip(CircleShape)
+                )
             }
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(AppSpacing.xs)) {
                 if (profile == null && loading) {

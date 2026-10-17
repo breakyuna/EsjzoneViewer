@@ -36,7 +36,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.platform.LocalConfiguration
@@ -45,11 +44,8 @@ import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.rememberTextMeasurer
-import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.breakyuna.esjzone.R
 import com.breakyuna.esjzone.ui.designsystem.AppMotion
 import com.breakyuna.esjzone.ui.designsystem.AppSpacing
@@ -57,8 +53,6 @@ import com.breakyuna.esjzone.ui.designsystem.AppTypography
 import com.breakyuna.esjzone.ui.designsystem.GlobalText as Text
 import com.breakyuna.esjzone.ui.designsystem.globalStringResource as stringResource
 import java.text.NumberFormat
-import kotlin.math.cos
-import kotlin.math.sin
 
 /** App installation and data usage, with matching colors in the ring and legend. */
 @Composable
@@ -96,29 +90,6 @@ internal fun CacheStorageChart(storage: List<StorageUsage>?, failed: Boolean) {
     }
     val textMeasurer = rememberTextMeasurer(cacheSize = 32)
     val density = LocalDensity.current
-    val callouts = buildList<StorageRingCallout> {
-        var start = -90f
-        usage.forEachIndexed { index, entry ->
-            val sweep = fractions[index].first * 360f
-            val gap = if (sweep < 360f) minOf(3f, sweep / 4f) else 0f
-            if (sweep > 0f) {
-                if (expandedCategories and (1 shl entry.category.ordinal) == 0) {
-                    add(StorageRingCallout(stringResource(storageLabel(entry.category)), storageColor(entry.category), start + sweep / 2))
-                } else {
-                    var partStart = start + gap / 2
-                    entry.parts.forEachIndexed { partIndex, part ->
-                        if (part.bytes > 0L) {
-                            val partSweep = (sweep - gap) * (part.bytes.toDouble() / entry.bytes).toFloat()
-                            add(StorageRingCallout(stringResource(part.labelRes), storagePartColor(entry.category, partIndex),
-                                partStart + partSweep / 2))
-                            partStart += partSweep
-                        }
-                    }
-                }
-            }
-            start += sweep
-        }
-    }
 
     Column(
         modifier = Modifier.fillMaxWidth().padding(AppSpacing.lg),
@@ -131,29 +102,14 @@ internal fun CacheStorageChart(storage: List<StorageUsage>?, failed: Boolean) {
             style = AppTypography.titleMedium
         )
         BoxWithConstraints(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-            val ringDiameter = minOf(196.dp, if (callouts.isEmpty()) maxWidth else maxWidth * .48f)
-            val labelWidth = ((maxWidth - ringDiameter) / 2 - 18.dp).coerceAtLeast(1.dp)
-            val labelStyle = AppTypography.labelSmall.copy(fontSize = 11.sp, lineHeight = 15.sp)
+            val ringDiameter = minOf(196.dp, maxWidth)
             val totalText = if (available) formatBytes(totalBytes) else "—"
             val naturalTotalWidth = textMeasurer.measure(totalText, AppTypography.titleLarge, softWrap = false).size.width
             val totalScale = minOf(1f, with(density) { (ringDiameter - 40.dp).toPx() } / naturalTotalWidth.coerceAtLeast(1))
             val totalStyle = AppTypography.titleLarge.copy(
                 fontSize = AppTypography.titleLarge.fontSize * totalScale,
                 lineHeight = AppTypography.titleLarge.lineHeight * totalScale)
-            val labels = callouts.map { callout ->
-                val right = cos(Math.toRadians(callout.angle.toDouble())) >= 0
-                textMeasurer.measure(callout.label,
-                    style = labelStyle.copy(textAlign = if (right) TextAlign.Start else TextAlign.End),
-                    constraints = Constraints(maxWidth = with(density) { labelWidth.roundToPx().coerceAtLeast(1) }))
-            }
-            val labelGap = with(density) { 10.dp.toPx() }
-            val inset = with(density) { 8.dp.toPx() }
-            val sides = callouts.indices.partition { cos(Math.toRadians(callouts[it].angle.toDouble())) >= 0 }
-            val labelHeight = listOf(sides.first, sides.second).maxOf { side ->
-                side.sumOf { labels[it].size.height } + (side.size - 1).coerceAtLeast(0) * labelGap
-            }
-            val chartHeight = maxOf(ringDiameter + 36.dp, with(density) { (labelHeight + inset * 2).toDp() })
-            Canvas(Modifier.fillMaxWidth().height(chartHeight)) {
+            Canvas(Modifier.fillMaxWidth().height(ringDiameter)) {
                 val stroke = 16.dp.toPx()
                 val outerRadius = ringDiameter.toPx() / 2
                 val arcRadius = outerRadius - stroke / 2
@@ -199,44 +155,6 @@ internal fun CacheStorageChart(storage: List<StorageUsage>?, failed: Boolean) {
                         }
                     }
                     startAngle += sweep
-                }
-                val labelTops = FloatArray(callouts.size)
-                listOf(sides.first, sides.second).forEach { side ->
-                    val sorted = side.sortedBy { sin(Math.toRadians(callouts[it].angle.toDouble())) }
-                    val tops = storageLabelTops(sorted.map { index ->
-                        center.y + sin(Math.toRadians(callouts[index].angle.toDouble())).toFloat() * (outerRadius + 18.dp.toPx())
-                    }, sorted.map { labels[it].size.height.toFloat() }, inset, size.height - inset, labelGap)
-                    sorted.forEachIndexed { position, index -> labelTops[index] = tops[position] }
-                }
-                callouts.forEachIndexed { index, callout ->
-                    val angle = Math.toRadians(callout.angle.toDouble())
-                    val direction = Offset(cos(angle).toFloat(), sin(angle).toFloat())
-                    val right = direction.x >= 0
-                    val label = labels[index]
-                    val labelY = labelTops[index] + label.size.height / 2f
-                    val railX = center.x + (outerRadius + 7.dp.toPx()) * if (right) 1f else -1f
-                    val labelEdge = if (right) size.width - labelWidth.toPx() else labelWidth.toPx()
-                    val end = Offset(labelEdge + if (right) -4.dp.toPx() else 4.dp.toPx(), labelY)
-                    val start = center + direction * (outerRadius + 2.dp.toPx())
-                    val tip = center + direction * (outerRadius + 8.dp.toPx())
-                    val elbow = Offset(railX, labelY)
-                    val lineColor = callout.color.copy(alpha = .65f * reveal.value)
-                    fun line(from: Offset, to: Offset) = drawLine(lineColor, from, to, 1.dp.toPx(), StrokeCap.Round)
-                    line(start, tip)
-                    // Keep displaced leaders outside the ring, even for crowded, tiny slices.
-                    val vector = elbow - tip
-                    val projection = (((center.x - tip.x) * vector.x + (center.y - tip.y) * vector.y) /
-                        vector.getDistanceSquared().coerceAtLeast(1f)).coerceIn(0f, 1f)
-                    if ((tip + vector * projection - center).getDistance() < outerRadius + 2.dp.toPx()) {
-                        val corner = Offset(railX, tip.y)
-                        line(tip, corner)
-                        line(corner, elbow)
-                    } else line(tip, elbow)
-                    line(elbow, end)
-                    drawCircle(callout.color.copy(alpha = reveal.value), 1.8.dp.toPx(), start)
-                    val textX = if (right) labelEdge else labelWidth.toPx() - label.size.width
-                    drawText(label, color = lerp(callout.color, colors.onSurface, .4f),
-                        topLeft = Offset(textX, labelTops[index]), alpha = reveal.value)
                 }
             }
             Column(

@@ -14,9 +14,12 @@ import com.breakyuna.esjzone.network.loadFailureKind
 import com.breakyuna.esjzone.novellibrary.novel.DetailedNovel
 import com.breakyuna.esjzone.novellibrary.novel.Novel
 import com.breakyuna.esjzone.util.AppLogger
+import java.util.concurrent.atomic.AtomicLong
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
 /** Displays downloaded detail immediately, then refreshes it without hiding readable content. */
@@ -27,6 +30,11 @@ class NovelPageModel(
 
     private val detailLoadLock = Any()
     private var detailLoadStarted = false
+    private val favoriteIntentVersion = AtomicLong(0L)
+    private val mutableCleanupState = MutableStateFlow(CleanupState.Idle)
+    val cleanupState = mutableCleanupState.asStateFlow()
+
+    enum class CleanupState { Idle, Offered, Cleaning, Completed, Failed }
 
     sealed class State {
         data object Loading : State()
@@ -84,6 +92,10 @@ class NovelPageModel(
     }
 
     fun persistFavorite(desired: Boolean) {
+        val version = favoriteIntentVersion.incrementAndGet()
+        if (mutableCleanupState.value != CleanupState.Cleaning) {
+            mutableCleanupState.value = CleanupState.Idle
+        }
         viewModelScope.launch(Dispatchers.IO) {
             try {
                 BookshelfRepository.setFavorite(
@@ -91,6 +103,15 @@ class NovelPageModel(
                     novel = novel,
                     desired = desired
                 )
+                if (!desired && favoriteIntentVersion.get() == version) {
+                    val hasLocalContent = PresentationAccess.downloads.storageBytes(novel.url) > 0L ||
+                        PresentationAccess.client.hasCachedNovelPages(authorization, localPageUrls())
+                    ensureActive()
+                    if (hasLocalContent && favoriteIntentVersion.get() == version &&
+                        mutableCleanupState.value != CleanupState.Cleaning) {
+                        mutableCleanupState.value = CleanupState.Offered
+                    }
+                }
             } catch (error: CancellationException) {
                 throw error
             } catch (error: Exception) {
@@ -101,6 +122,42 @@ class NovelPageModel(
                 )
             }
         }
+    }
+
+    fun dismissCleanup() {
+        if (mutableCleanupState.value == CleanupState.Offered ||
+            mutableCleanupState.value == CleanupState.Failed) {
+            mutableCleanupState.value = CleanupState.Idle
+        }
+    }
+
+    fun clearLocalContent() {
+        if (mutableCleanupState.value != CleanupState.Offered &&
+            mutableCleanupState.value != CleanupState.Failed) return
+        mutableCleanupState.value = CleanupState.Cleaning
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                // Read the manifest before deleting it, including chapters no longer in the live TOC.
+                val urls = localPageUrls()
+                val downloadsCleared = PresentationAccess.downloads.delete(novel.url)
+                val pagesCleared = PresentationAccess.client.clearCachedNovelPages(authorization, urls)
+                mutableCleanupState.value = if (downloadsCleared && pagesCleared) {
+                    CleanupState.Completed
+                } else CleanupState.Failed
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                AppLogger.e("NovelPageModel", "Failed to clear novel local content", error)
+                mutableCleanupState.value = CleanupState.Failed
+            }
+        }
+    }
+
+    private fun localPageUrls(): List<String> = buildList {
+        add(novel.url)
+        (mutableState.value as? State.Result)?.detailed?.chapterList?.orderedChapters
+            ?.forEach { add(it.url) }
+        PresentationAccess.downloads.manifest(novel.url)?.chapters?.forEach { add(it.url) }
     }
 
     fun seedFavoriteMetadata(author: String, coverUrl: String, isAdult: Boolean) {

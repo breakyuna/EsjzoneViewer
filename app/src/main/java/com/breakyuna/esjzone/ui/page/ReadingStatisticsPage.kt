@@ -9,8 +9,6 @@ import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
-import androidx.compose.foundation.horizontalScroll
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
@@ -23,6 +21,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.selection.selectable
@@ -31,6 +30,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -652,12 +653,12 @@ private fun StatValue(label: String, value: String, modifier: Modifier = Modifie
 }
 
 @Composable
-private fun ReadingHeatmap(summary: ReadingStatisticsSummary, selectedDate: LocalDate, onSelect: (LocalDate) -> Unit) {
+internal fun ReadingHeatmap(summary: ReadingStatisticsSummary, selectedDate: LocalDate, onSelect: (LocalDate) -> Unit) {
     val locale = LocalConfiguration.current.locales[0]
     val firstDate = summary.today.minusYears(1).plusDays(1)
     val firstWeek = firstDate.minusDays((firstDate.dayOfWeek.value - 1).toLong())
     val weekCount = ((summary.today.toEpochDay() - firstWeek.toEpochDay()) / 7 + 1).toInt()
-    val scrollState = rememberScrollState(initial = Int.MAX_VALUE)
+    val scrollState = rememberLazyListState(initialFirstVisibleItemIndex = weekCount - 1)
     val maximumDuration = remember(summary, firstDate) {
         (0L..(summary.today.toEpochDay() - firstDate.toEpochDay()))
             .maxOf { summary.daily[firstDate.plusDays(it)] ?: 0L }
@@ -671,24 +672,34 @@ private fun ReadingHeatmap(summary: ReadingStatisticsSummary, selectedDate: Loca
         heatColor.copy(alpha = .75f),
         heatColor
     )
-    Column(Modifier.fillMaxWidth().horizontalScroll(scrollState)) {
-        Box(Modifier.width((weekCount * 22 - 4).dp).height(24.dp)) {
-            repeat(weekCount) { week ->
+    // Each lazy item owns one week and its month label, keeping them aligned while scrolling.
+    LazyRow(
+        modifier = Modifier.fillMaxWidth().height(174.dp),
+        state = scrollState,
+        horizontalArrangement = Arrangement.spacedBy(4.dp)
+    ) {
+        items(count = weekCount, key = { firstWeek.plusWeeks(it.toLong()).toEpochDay() }) { week ->
+            Column(Modifier.width(18.dp)) {
                 val start = firstWeek.plusWeeks(week.toLong())
                 val monthStart = (0L..6L).map { start.plusDays(it) }
                     .firstOrNull { it.dayOfMonth == 1 && !it.isBefore(firstDate) && !it.isAfter(summary.today) }
-                if (monthStart != null) {
-                    Text(
-                        monthStart.month.getDisplayName(TextStyle.SHORT, locale),
-                        modifier = Modifier.offset(x = (week * 22).dp),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                Box(Modifier.fillMaxWidth().height(24.dp)) {
+                    if (monthStart != null) {
+                        Text(
+                            monthStart.month.getDisplayName(TextStyle.SHORT, locale),
+                            // Keep the final month's label inside the viewport without
+                            // moving the latest week away from the right edge.
+                            modifier = Modifier.wrapContentWidth(
+                                if (week == weekCount - 1) Alignment.End else Alignment.Start,
+                                unbounded = true
+                            ),
+                            softWrap = false,
+                            maxLines = 1,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                 }
-            }
-        }
-        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-            repeat(weekCount) { week ->
                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     repeat(7) { weekday ->
                         val date = firstWeek.plusDays((week * 7 + weekday).toLong())

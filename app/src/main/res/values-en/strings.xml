@@ -150,6 +150,11 @@
     <string name="novel_favorited">Favorited</string>
     <string name="novel_favorite_pending">Syncing favorite…</string>
     <string name="novel_favorite_failed">Favorite sync will retry</string>
+    <string name="novel_local_cleanup_prompt">This book has cached or downloaded content. Clear it?</string>
+    <string name="novel_local_cleanup_action">Clear</string>
+    <string name="novel_local_cleanup_busy">Clearing this book’s cache and downloads…</string>
+    <string name="novel_local_cleanup_done">This book’s cache and downloads cleared</string>
+    <string name="novel_local_cleanup_failed">Some cached or downloaded content could not be cleared. Please retry.</string>
     <string name="novel_open_source">Open source page</string>
     <string name="novel_more_actions">More novel actions</string>
     <string name="novel_open_forum">Open forum</string>

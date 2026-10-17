@@ -24,7 +24,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -73,6 +72,11 @@ import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.SheetState
+import androidx.compose.material3.Snackbar
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Surface
 import com.breakyuna.esjzone.ui.designsystem.GlobalText as Text
 import androidx.compose.material3.TextButton
@@ -189,6 +193,33 @@ class NovelPage(
         val screenModel = rememberAppViewModel { NovelPageModel(authorization, novel) }
         val commentModel = rememberAppViewModel { CommentPageModel(authorization, novel.url) }
         val state by screenModel.state.collectAsState()
+        val cleanupState by screenModel.cleanupState.collectAsState()
+        val snackbar = remember { SnackbarHostState() }
+        val cleanupPrompt = stringResource(R.string.novel_local_cleanup_prompt)
+        val cleanupAction = stringResource(R.string.novel_local_cleanup_action)
+        val cleanupBusy = stringResource(R.string.novel_local_cleanup_busy)
+        val cleanupDone = stringResource(R.string.novel_local_cleanup_done)
+        val cleanupFailed = stringResource(R.string.novel_local_cleanup_failed)
+        LaunchedEffect(cleanupState) {
+            when (cleanupState) {
+                NovelPageModel.CleanupState.Idle -> snackbar.currentSnackbarData?.dismiss()
+                NovelPageModel.CleanupState.Offered, NovelPageModel.CleanupState.Failed -> {
+                    val result = snackbar.showSnackbar(
+                        message = if (cleanupState == NovelPageModel.CleanupState.Failed) cleanupFailed else cleanupPrompt,
+                        actionLabel = cleanupAction,
+                        withDismissAction = true,
+                        duration = SnackbarDuration.Indefinite
+                    )
+                    if (result == SnackbarResult.ActionPerformed) screenModel.clearLocalContent()
+                    else screenModel.dismissCleanup()
+                }
+                NovelPageModel.CleanupState.Cleaning -> snackbar.showSnackbar(
+                    message = cleanupBusy,
+                    duration = SnackbarDuration.Indefinite
+                )
+                NovelPageModel.CleanupState.Completed -> snackbar.showSnackbar(cleanupDone)
+            }
+        }
         val localShelfEntry by remember(authorization, novel.url) {
             BookshelfRepository.observeEntry(authorization, novel.url)
         }.collectAsState(initial = null)
@@ -201,7 +232,8 @@ class NovelPage(
                 .observeLatestForIdentity(readingId, readingUrl)
         }.collectAsState(initial = null)
         var downloaded by remember(novel.url) { mutableStateOf<DownloadedNovelManifest?>(null) }
-        LaunchedEffect(novel.url) {
+        val downloadChanges by PresentationAccess.downloads.changes.collectAsState()
+        LaunchedEffect(novel.url, downloadChanges) {
             downloaded = withContext(Dispatchers.IO) {
                 PresentationAccess.downloads.manifest(novel.url)
             }
@@ -274,166 +306,178 @@ class NovelPage(
             }
         }
 
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(MaterialTheme.colorScheme.background)
-        ) {
-            RebuiltDetailTopBar(
-                onBack = { navigator?.pop() },
-                onOpenExternal = {
-                    openSystemBrowser(
-                        context,
-                        (state as? NovelPageModel.State.Result)?.detailed?.sourceUrl
-                            ?.takeIf(String::isNotBlank)
-                            ?: EsjzoneUrls.resolve(novel.url)
-                    )
-                },
-                onMore = { showMoreActions = true }
-            )
+        Box(Modifier.fillMaxSize()) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(MaterialTheme.colorScheme.background)
+            ) {
+                RebuiltDetailTopBar(
+                    onBack = { navigator?.pop() },
+                    onOpenExternal = {
+                        openSystemBrowser(
+                            context,
+                            (state as? NovelPageModel.State.Result)?.detailed?.sourceUrl
+                                ?.takeIf(String::isNotBlank)
+                                ?: EsjzoneUrls.resolve(novel.url)
+                        )
+                    },
+                    onMore = { showMoreActions = true }
+                )
 
-            val detailItems: LazyListScope.() -> Unit = when (val snapshot = state) {
-                NovelPageModel.State.Loading -> {
-                    {
-                        item(key = "detail-loading", contentType = "loading") {
-                            LoadingSkeleton(modifier = Modifier.fillMaxWidth())
+                val detailItems: LazyListScope.() -> Unit = when (val snapshot = state) {
+                    NovelPageModel.State.Loading -> {
+                        {
+                            item(key = "detail-loading", contentType = "loading") {
+                                LoadingSkeleton(modifier = Modifier.fillMaxWidth())
+                            }
                         }
                     }
-                }
-                is NovelPageModel.State.Error -> { {} }
+                    is NovelPageModel.State.Error -> { {} }
 
-                is NovelPageModel.State.Result -> {
-                    val detailed = snapshot.detailed
-                    val chapterList = detailed.chapterList
-                    LaunchedEffect(localReading?.activityId, localReading?.novelName, detailed.name) {
-                        val activity = localReading ?: return@LaunchedEffect
-                        if (detailed.name.isNotBlank() && detailed.name != activity.novelId &&
-                            detailed.name != activity.chapterName &&
-                            (activity.novelName.isBlank() || activity.novelName == activity.novelId ||
-                                activity.novelName == activity.chapterName)) {
-                            try {
-                                withContext(Dispatchers.IO) {
-                                    PresentationAccess.database.localReadingActivityDao()
-                                        .updateName(activity.activityId, detailed.name)
+                    is NovelPageModel.State.Result -> {
+                        val detailed = snapshot.detailed
+                        val chapterList = detailed.chapterList
+                        LaunchedEffect(localReading?.activityId, localReading?.novelName, detailed.name) {
+                            val activity = localReading ?: return@LaunchedEffect
+                            if (detailed.name.isNotBlank() && detailed.name != activity.novelId &&
+                                detailed.name != activity.chapterName &&
+                                (activity.novelName.isBlank() || activity.novelName == activity.novelId ||
+                                    activity.novelName == activity.chapterName)) {
+                                try {
+                                    withContext(Dispatchers.IO) {
+                                        PresentationAccess.database.localReadingActivityDao()
+                                            .updateName(activity.activityId, detailed.name)
+                                    }
+                                } catch (error: CancellationException) {
+                                    throw error
+                                } catch (error: Exception) {
+                                    AppLogger.w("NovelPage", "Unable to repair local history title", error)
                                 }
-                            } catch (error: CancellationException) {
-                                throw error
-                            } catch (error: Exception) {
-                                AppLogger.w("NovelPage", "Unable to repair local history title", error)
                             }
                         }
-                    }
-                    val historyState = history.state()
-                    val hasHistory = chapterList.hasHistory || historyState.value != null || localReading != null
-                    val favoriteState = favorite.state()
-                    var rememberedFavorite by rememberSaveable(novel.url) {
-                        mutableStateOf(localShelfEntry?.visible ?: (favoriteState.value || detailed.isFavorite))
-                    }
-                    var descriptionExpanded by rememberSaveable(novel.url) {
-                        mutableStateOf(false)
-                    }
-                    var showAllChapters by rememberSaveable(novel.url) {
-                        mutableStateOf(false)
-                    }
-                    val expandedChapterGroups = rememberSaveable(novel.url, snapshot.fromDownload) {
-                        mutableStateOf(initiallyExpandedChapterKeys(chapterList.items))
-                    }
-                    val visibleRows = remember(chapterList, expandedChapterGroups.value) {
-                        visibleChapterRows(chapterList.items, expandedChapterGroups.value)
-                    }
-                    LaunchedEffect(chapterList, localReading) {
-                        // A downloaded first chapter is a fallback, not a reading-history marker.
-                        // Leave the holder empty so a later server history marker can still take effect.
-                        if (historyState.value == null && chapterList.hasHistory) {
-                            historyState.value = chapterList.toRead
+                        val historyState = history.state()
+                        val hasHistory = chapterList.hasHistory || historyState.value != null || localReading != null
+                        val favoriteState = favorite.state()
+                        var rememberedFavorite by rememberSaveable(novel.url) {
+                            mutableStateOf(localShelfEntry?.visible ?: (favoriteState.value || detailed.isFavorite))
                         }
-                    }
-
-                    LaunchedEffect(detailed.isFavorite, localShelfEntry?.operationVersion, snapshot.fromDownload) {
-                        // A local row is authoritative for the visual toggle;
-                        // the detail response only supplements missing metadata.
-                        if (!snapshot.fromDownload && (localShelfEntry != null || detailed.isFavorite)) {
-                            screenModel.seedFavoriteMetadata(
-                                author = detailed.author,
-                                coverUrl = detailed.coverUrl,
-                                isAdult = detailed.isAdult
-                            )
+                        var descriptionExpanded by rememberSaveable(novel.url) {
+                            mutableStateOf(false)
                         }
-                    }
-                    LaunchedEffect(localShelfEntry?.operationVersion, localShelfEntry?.visible, detailed.isFavorite) {
-                        localShelfEntry?.let {
-                            favoriteState.value = it.visible
-                            rememberedFavorite = it.visible
-                        } ?: run {
-                            if (!snapshot.fromDownload) rememberedFavorite = detailed.isFavorite
+                        var showAllChapters by rememberSaveable(novel.url) {
+                            mutableStateOf(false)
                         }
-                    }
-
-                    novelDetailItems(
-                        detailed = detailed,
-                        authorization = authorization,
-                        history = history,
-                        historyState = historyState,
-                        localReading = localReading,
-                        hasHistory = hasHistory,
-                        onExportTxt = {
-                            exportFormat = NovelExportFormat.TXT
-                        },
-                        onExportEpub = {
-                            exportFormat = NovelExportFormat.EPUB
-                        },
-                        favorite = rememberedFavorite,
-                        favoritePending = localShelfEntry?.syncState != null &&
-                            localShelfEntry?.syncState != BookshelfSyncState.SYNCED,
-                        favoriteFailed = !localShelfEntry?.lastError.isNullOrBlank(),
-                        onToggleFavorite = {
-                            val next = !rememberedFavorite
-                            favoriteState.value = next
-                            rememberedFavorite = next
-                            screenModel.persistFavorite(next)
-                        },
-                        descriptionExpanded = descriptionExpanded,
-                        onDescriptionExpandedChange = { descriptionExpanded = it },
-                        showAllChapters = showAllChapters,
-                        onShowAllChaptersChange = { showAllChapters = it },
-                        onGroupToggle = { key ->
-                            expandedChapterGroups.value = expandedChapterGroups.value.toMutableSet().also {
-                                if (!it.add(key)) it.remove(key)
+                        val expandedChapterGroups = rememberSaveable(novel.url, snapshot.fromDownload) {
+                            mutableStateOf(initiallyExpandedChapterKeys(chapterList.items))
+                        }
+                        val visibleRows = remember(chapterList, expandedChapterGroups.value) {
+                            visibleChapterRows(chapterList.items, expandedChapterGroups.value)
+                        }
+                        LaunchedEffect(chapterList, localReading) {
+                            // A downloaded first chapter is a fallback, not a reading-history marker.
+                            // Leave the holder empty so a later server history marker can still take effect.
+                            if (historyState.value == null && chapterList.hasHistory) {
+                                historyState.value = chapterList.toRead
                             }
-                        },
-                        visibleRows = visibleRows,
-                        commentModel = commentModel,
-                        navigator = navigator,
-                        context = context,
-                        downloaded = downloaded,
-                        onDownloadedChange = { downloaded = it }
-                    )
-                }
-            }
+                        }
 
-            val error = state as? NovelPageModel.State.Error
-            if (error != null) {
-                Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
-                    if (error.failure == LoadFailureKind.NETWORK) {
-                        OfflineState(modifier = Modifier.fillMaxWidth(), onRetry = screenModel::retry)
-                    } else {
-                        ErrorState(
-                            title = stringResource(R.string.community_load_failed),
-                            message = stringResource(R.string.community_empty_guidance),
-                            modifier = Modifier.fillMaxWidth(),
-                            onRetry = screenModel::retry
+                        LaunchedEffect(detailed.isFavorite, localShelfEntry?.operationVersion, snapshot.fromDownload) {
+                            // A local row is authoritative for the visual toggle;
+                            // the detail response only supplements missing metadata.
+                            if (!snapshot.fromDownload && (localShelfEntry != null || detailed.isFavorite)) {
+                                screenModel.seedFavoriteMetadata(
+                                    author = detailed.author,
+                                    coverUrl = detailed.coverUrl,
+                                    isAdult = detailed.isAdult
+                                )
+                            }
+                        }
+                        LaunchedEffect(localShelfEntry?.operationVersion, localShelfEntry?.visible, detailed.isFavorite) {
+                            localShelfEntry?.let {
+                                favoriteState.value = it.visible
+                                rememberedFavorite = it.visible
+                            } ?: run {
+                                if (!snapshot.fromDownload) rememberedFavorite = detailed.isFavorite
+                            }
+                        }
+
+                        novelDetailItems(
+                            detailed = detailed,
+                            authorization = authorization,
+                            history = history,
+                            historyState = historyState,
+                            localReading = localReading,
+                            hasHistory = hasHistory,
+                            onExportTxt = {
+                                exportFormat = NovelExportFormat.TXT
+                            },
+                            onExportEpub = {
+                                exportFormat = NovelExportFormat.EPUB
+                            },
+                            favorite = rememberedFavorite,
+                            favoritePending = localShelfEntry?.syncState != null &&
+                                localShelfEntry?.syncState != BookshelfSyncState.SYNCED,
+                            favoriteFailed = !localShelfEntry?.lastError.isNullOrBlank(),
+                            onToggleFavorite = {
+                                val next = !rememberedFavorite
+                                favoriteState.value = next
+                                rememberedFavorite = next
+                                screenModel.persistFavorite(next)
+                            },
+                            descriptionExpanded = descriptionExpanded,
+                            onDescriptionExpandedChange = { descriptionExpanded = it },
+                            showAllChapters = showAllChapters,
+                            onShowAllChaptersChange = { showAllChapters = it },
+                            onGroupToggle = { key ->
+                                expandedChapterGroups.value = expandedChapterGroups.value.toMutableSet().also {
+                                    if (!it.add(key)) it.remove(key)
+                                }
+                            },
+                            visibleRows = visibleRows,
+                            commentModel = commentModel,
+                            navigator = navigator,
+                            context = context,
+                            downloaded = downloaded,
+                            onDownloadedChange = { downloaded = it }
                         )
                     }
                 }
-            } else {
-                // Keep the list and hero mounted when loading becomes readable content.
-                NovelDetailLayout(
-                    hero = { RebuiltNovelHero(novel, detailed) },
-                    modifier = Modifier.weight(1f),
-                    content = detailItems
-                )
+
+                val error = state as? NovelPageModel.State.Error
+                if (error != null) {
+                    Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
+                        if (error.failure == LoadFailureKind.NETWORK) {
+                            OfflineState(modifier = Modifier.fillMaxWidth(), onRetry = screenModel::retry)
+                        } else {
+                            ErrorState(
+                                title = stringResource(R.string.community_load_failed),
+                                message = stringResource(R.string.community_empty_guidance),
+                                modifier = Modifier.fillMaxWidth(),
+                                onRetry = screenModel::retry
+                            )
+                        }
+                    }
+                } else {
+                    // Keep the list and hero mounted when loading becomes readable content.
+                    NovelDetailLayout(
+                        hero = { RebuiltNovelHero(novel, detailed) },
+                        modifier = Modifier.weight(1f),
+                        snackbarHost = {
+                            SnackbarHost(
+                                hostState = snackbar,
+                                modifier = Modifier
+                                    .padding(horizontal = AppSpacing.sm, vertical = AppSpacing.sm)
+                                    .widthIn(max = 560.dp)
+                            ) { data ->
+                                Snackbar(snackbarData = data, shape = AppShapes.standard)
+                            }
+                        },
+                        content = detailItems
+                    )
+                }
+                if (detailed != null) CommentComposerHost(model = commentModel)
             }
-            if (detailed != null) CommentComposerHost(model = commentModel)
         }
 
         if (showMoreActions) {
@@ -464,6 +508,7 @@ class NovelPage(
 internal fun NovelDetailLayout(
     hero: @Composable () -> Unit,
     modifier: Modifier = Modifier,
+    snackbarHost: @Composable () -> Unit = {},
     content: LazyListScope.() -> Unit
 ) {
     val metrics = rememberAppAdaptiveMetrics()
@@ -493,6 +538,8 @@ internal fun NovelDetailLayout(
             item(key = "detail-hero", contentType = "novel-hero") { hero() }
             content()
         }
+        // The composer is outside this content area, including its system/IME insets.
+        Box(Modifier.align(Alignment.BottomCenter)) { snackbarHost() }
     }
 }
 

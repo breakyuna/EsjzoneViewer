@@ -50,7 +50,7 @@ internal fun hasProfileMarker(document: Document): Boolean =
 /** Keeps the legacy relative avatar URL contract while accepting lazy markup. */
 internal fun profileAvatarUrl(document: Document): String =
     profileSelector.first(document, PROFILE_AVATAR_SELECTORS)?.let { image ->
-        image.attr("src").ifBlank { image.attr("data-src") }
+        image.attr("data-src").trim().ifBlank { image.attr("src").trim() }
     }.orEmpty()
 
 internal fun profileExperience(document: Document): Int? =

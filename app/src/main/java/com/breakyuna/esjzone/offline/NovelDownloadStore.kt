@@ -357,10 +357,11 @@ object NovelDownloadStore {
     /**
      * Deletes only this novel's private download directory. Other local data
      * (bookshelf, reading history, bookmarks and cloud state) is untouched.
+     * Always cancels queued work; an absent directory is already cleared.
      */
     fun delete(novelUrl: String): Boolean = synchronized(ioLock) {
         cancelActiveWork(novelUrl)
-        val directory = directoryFor(novelUrl, create = false) ?: return@synchronized false
+        val directory = directoryFor(novelUrl, create = false) ?: return@synchronized true
         deletionGenerations[directory.absolutePath] = (deletionGenerations[directory.absolutePath] ?: 0L) + 1L
         manifestCache.remove(directory.absolutePath)
         imageIndex.remove(directory)

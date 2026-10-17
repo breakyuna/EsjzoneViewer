@@ -150,6 +150,11 @@
     <string name="novel_favorited">已收藏</string>
     <string name="novel_favorite_pending">收藏同步中…</string>
     <string name="novel_favorite_failed">收藏同步将重试</string>
+    <string name="novel_local_cleanup_prompt">本书有缓存或下载，是否清理？</string>
+    <string name="novel_local_cleanup_action">清理</string>
+    <string name="novel_local_cleanup_busy">正在清理本书缓存和下载…</string>
+    <string name="novel_local_cleanup_done">已清理本书缓存和下载</string>
+    <string name="novel_local_cleanup_failed">本书缓存或下载未完全清理，请重试</string>
     <string name="novel_open_source">打开来源页面</string>
     <string name="novel_more_actions">更多作品操作</string>
     <string name="novel_open_forum">前往论坛</string>

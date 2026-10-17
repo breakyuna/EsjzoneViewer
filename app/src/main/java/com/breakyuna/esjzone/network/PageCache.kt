@@ -178,6 +178,11 @@ internal object PageCache {
 
     fun readStale(key: String): String? = read(key, Long.MAX_VALUE)
 
+    /** Checks disk presence without decoding or touching the cached response. */
+    fun contains(key: String): Boolean = synchronized(ioLock) {
+        fileFor(key)?.isFile == true || fileFor(structuredKey(key))?.isFile == true
+    }
+
     internal fun reference(key: String): String? = synchronized(ioLock) {
         val id = digest(key)
         versions[id]?.let { "$id:${digest(structuredKey(key))}:$epoch:$it" }

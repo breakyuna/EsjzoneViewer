@@ -40,7 +40,7 @@ import com.breakyuna.esjzone.ui.page.GuestbookPage
 import com.breakyuna.esjzone.ui.page.ReadingStatisticsPage
 import com.breakyuna.esjzone.ui.page.SettingsPage
 
-private const val ContainerTransformDurationMillis = 500
+private const val ContainerTransformDurationMillis = 400
 internal val LocalContainerTransformScope = compositionLocalOf<SharedTransitionScope?> { null }
 internal val LocalHomeCarouselTransformTarget = compositionLocalOf<ContainerTransformTarget?> { null }
 private const val ContainerTransformRouteMetadata = "com.breakyuna.esjzone.containerTransformRoute"

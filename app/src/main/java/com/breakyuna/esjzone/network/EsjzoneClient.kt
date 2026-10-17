@@ -11,8 +11,11 @@ import java.util.concurrent.Semaphore
 import java.util.concurrent.TimeoutException
 import java.util.concurrent.atomic.AtomicLong
 import com.breakyuna.esjzone.network.external.WenkuChapterClient
+import com.breakyuna.esjzone.network.external.wenkuChapterCacheKey
 import com.breakyuna.esjzone.network.external.WenkuCookieStoreUnavailableException
 import com.breakyuna.esjzone.novellibrary.novel.Chapter
+import com.breakyuna.esjzone.novellibrary.novel.ChapterSource
+import com.breakyuna.esjzone.novellibrary.novel.resolveChapterSource
 import com.breakyuna.esjzone.novellibrary.novel.DetailedChapter
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -434,6 +437,31 @@ object EsjzoneClient {
     }
 
     fun pageCacheStats(): PageCacheStats = PageCache.stats()
+
+    /** Detail and chapter URLs belonging to one novel; shared list snapshots are excluded. */
+    fun hasCachedNovelPages(authorization: Authorization, urls: List<String>): Boolean =
+        novelPageCacheKeys(authorization, urls).any { key ->
+            PageCache.contains(key) || NovelDetailCache.read(key) != null
+        }
+
+    fun clearCachedNovelPages(authorization: Authorization, urls: List<String>): Boolean {
+        val keys = novelPageCacheKeys(authorization, urls)
+        keys.forEach { key ->
+            PageCache.remove(key, CacheEventReason.CLEARED)
+            NovelDetailCache.remove(key)
+        }
+        return keys.none(PageCache::contains)
+    }
+
+    private fun novelPageCacheKeys(authorization: Authorization, urls: List<String>): List<String> =
+        urls.filter(String::isNotBlank).map { rawUrl ->
+            val url = EsjzoneUrls.resolve(rawUrl).substringBefore('#')
+            if (resolveChapterSource(url) == ChapterSource.WENKU8) {
+                wenkuChapterCacheKey(url)
+            } else {
+                pageCacheKey(authorization, url)
+            }
+        }.distinct()
 
     /** Invalidates one account-scoped page after a successful remote write. */
     internal fun invalidatePage(authorization: Authorization, url: String) {
