@@ -97,6 +97,12 @@ object AppTypography {
         lineHeight = 16.sp,
         fontWeight = FontWeight.Medium
     )
+    val labelSmall = TextStyle(
+        fontFamily = body,
+        fontSize = 11.sp,
+        lineHeight = 16.sp,
+        fontWeight = FontWeight.Medium
+    )
 }
 
 object AppElevation {
