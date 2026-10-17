@@ -50,7 +50,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.breakyuna.esjzone.R
 import com.breakyuna.esjzone.network.CacheDiagnostics
 import com.breakyuna.esjzone.network.CacheAnalysis
-import com.breakyuna.esjzone.network.PageCache
+import com.breakyuna.esjzone.network.CacheStorage
 import com.breakyuna.esjzone.data.settings.SettingsDefaults
 import com.breakyuna.esjzone.network.CacheEvent
 import com.breakyuna.esjzone.network.CacheEventReason
@@ -82,7 +82,7 @@ object CacheRecordsPage : AppDestination {
         val operation by model.state.collectAsStateWithLifecycle()
         val trace by CacheDiagnostics.state.collectAsStateWithLifecycle()
         val analysis by CacheAnalysis.state.collectAsStateWithLifecycle()
-        val limit by PageCache.limitMiB.collectAsStateWithLifecycle()
+        val limit by CacheStorage.limitMiB.collectAsStateWithLifecycle()
         var editLimit by rememberSaveable { mutableStateOf(false) }
         var limitInput by rememberSaveable { mutableStateOf("") }
         val export = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
@@ -122,7 +122,7 @@ object CacheRecordsPage : AppDestination {
                         Column(Modifier.fillMaxWidth().padding(horizontal = AppSpacing.lg),
                             verticalArrangement = Arrangement.spacedBy(AppSpacing.xs)) {
                             val sample = analysis.current?.takeIf { it.limitMiB == limit }
-                            listOf(CacheLayer.PAGE, CacheLayer.CHAPTER, CacheLayer.LIST).forEach { layer ->
+                            CacheLayer.entries.forEach { layer ->
                                 val counts = sample?.layers?.get(layer.name)
                                 val rate = counts?.hitRate()?.let { String.format(Locale.getDefault(), "%.1f%%", it * 100.0) } ?: "—"
                                 Text(stringResource(R.string.cache_analysis_hit_rate, stringResource(layer.label()), rate,
@@ -236,6 +236,7 @@ private fun CacheLayer.label(): Int = when (this) {
     CacheLayer.PAGE -> R.string.cache_layer_page
     CacheLayer.CHAPTER -> R.string.cache_layer_chapter
     CacheLayer.LIST -> R.string.cache_layer_list
+    CacheLayer.IMAGE -> R.string.settings_image_cache
     CacheLayer.DETAIL -> R.string.cache_layer_detail
     CacheLayer.HOME -> R.string.cache_layer_home
     CacheLayer.HISTORY -> R.string.cache_layer_history

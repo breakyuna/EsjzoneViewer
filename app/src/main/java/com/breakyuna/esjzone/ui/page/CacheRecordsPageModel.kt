@@ -17,7 +17,7 @@ internal class CacheRecordsPageModel : AppStateViewModel<CacheRecordsPageModel.S
     init { CacheAnalysis.requestCheckpoint() }
 
     fun saveLimit(value: Int) = perform {
-        PresentationAccess.setPageCacheLimitMiB(value)
+        PresentationAccess.setCacheLimitMiB(value)
         if (!CacheAnalysis.checkpoint()) throw IOException("Cache analysis could not be saved")
     }
 

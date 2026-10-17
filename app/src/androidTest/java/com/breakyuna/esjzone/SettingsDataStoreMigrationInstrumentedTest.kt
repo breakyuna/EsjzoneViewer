@@ -27,6 +27,32 @@ import org.junit.runner.RunWith
 class SettingsDataStoreMigrationInstrumentedTest {
 
     @Test
+    fun sharedCacheLimitInheritsPageLimitAndThenPersistsIndependently() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val name = "instrument-shared-cache-limit-${System.nanoTime()}.preferences_pb"
+        val legacyScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        try {
+            val legacy = androidx.datastore.preferences.core.PreferenceDataStoreFactory.create(
+                scope = legacyScope, produceFile = { context.preferencesDataStoreFile(name) })
+            legacy.updateData { preferences ->
+                preferences.toMutablePreferences().apply {
+                    this[androidx.datastore.preferences.core.intPreferencesKey("page_cache_limit_mib")] = 256
+                }
+            }
+            legacyScope.coroutineContext[Job]!!.cancelAndJoin()
+            val settings = SettingsDataStore(context, scope, name)
+            assertEquals(256, settings.readCacheLimitMiB())
+            settings.setCacheLimitMiB(64)
+            assertEquals(64, settings.readCacheLimitMiB())
+        } finally {
+            legacyScope.coroutineContext[Job]!!.cancelAndJoin()
+            scope.coroutineContext[Job]!!.cancelAndJoin()
+            context.preferencesDataStoreFile(name).delete()
+        }
+    }
+
+    @Test
     fun cacheLimitSurvivesStoreRecreationAndRejectsOutOfRangeInput() = runBlocking {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val name = "instrument-cache-limit-${System.nanoTime()}.preferences_pb"
@@ -34,16 +60,16 @@ class SettingsDataStoreMigrationInstrumentedTest {
         val secondScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
         try {
             val first = SettingsDataStore(context, firstScope, name)
-            assertEquals(100, first.readPageCacheLimitMiB())
-            first.setPageCacheLimitMiB(64)
+            assertEquals(100, first.readCacheLimitMiB())
+            first.setCacheLimitMiB(64)
             firstScope.coroutineContext[Job]!!.cancelAndJoin()
             val restored = SettingsDataStore(context, secondScope, name)
-            assertEquals(64, restored.readPageCacheLimitMiB())
+            assertEquals(64, restored.readCacheLimitMiB())
             try {
-                restored.setPageCacheLimitMiB(0)
+                restored.setCacheLimitMiB(0)
                 org.junit.Assert.fail("An invalid cache limit must be rejected")
             } catch (_: IllegalArgumentException) { }
-            assertEquals(64, restored.readPageCacheLimitMiB())
+            assertEquals(64, restored.readCacheLimitMiB())
         } finally {
             firstScope.coroutineContext[Job]!!.cancelAndJoin()
             secondScope.coroutineContext[Job]!!.cancelAndJoin()

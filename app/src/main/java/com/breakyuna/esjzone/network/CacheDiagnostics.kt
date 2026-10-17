@@ -6,7 +6,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
 internal enum class CacheEventType { HIT, UPDATE, EVICT, FAILURE }
-internal enum class CacheLayer { PAGE, CHAPTER, LIST, DETAIL, HOME, HISTORY }
+internal enum class CacheLayer { PAGE, CHAPTER, LIST, DETAIL, IMAGE, HOME, HISTORY }
 internal enum class CacheEventReason {
     FRESH, STALE, MEMORY, DISK, STORED, REPLACED, CAPACITY, EXPIRED, INVALIDATED,
     SOURCE_UPDATED, DOWNLOADED, CLEARED, INVALID_DATA, READ_FAILED, WRITE_FAILED,
@@ -48,6 +48,7 @@ internal object CacheDiagnostics {
     fun record(type: CacheEventType, layer: CacheLayer, reason: CacheEventReason,
                key: String? = null, fileId: String? = null, bytes: Long? = null) {
         CacheAnalysis.record(type, layer, reason, bytes)
+        if (type == CacheEventType.UPDATE || type == CacheEventType.EVICT) CacheStorage.requestTrim()
         if (!mutableState.value.recording) return
         synchronized(lock) {
             val current = mutableState.value

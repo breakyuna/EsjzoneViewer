@@ -38,6 +38,7 @@ internal data class CacheSample(
     val sizeBytes: Long, val peakBytes: Long, val entries: Int,
     val layers: Map<String, CacheCounters>, val capacityPasses: Long = 0,
     val nextLimitMiB: Int? = null,
+    val cacheScope: String = "ALL_DISK",
     val freshHitRates: Map<String, Double?> = layers.mapValues { it.value.hitRate() },
     val capacityEvictionsPerHour: Double? = durationMillis.takeIf { it > 0L }?.let { duration ->
         layers.values.sumOf { it.capacityEvictions } * 3_600_000.0 / duration
@@ -46,20 +47,20 @@ internal data class CacheSample(
         .takeIf { it > 0L }?.let { count -> layers.values.sumOf { it.capacityEvictions } * 1000.0 / count }
 ) {
     fun merge(other: CacheSample): CacheSample {
-        require(limitMiB == other.limitMiB)
+        require(limitMiB == other.limitMiB && cacheScope == other.cacheScope)
         val latest = if (endMillis > other.endMillis) this else other
         val combined = (layers.keys + other.layers.keys).associateWith { key ->
             (layers[key] ?: CacheCounters()).plus(other.layers[key] ?: CacheCounters())
         }
         return CacheSample(minOf(startMillis, other.startMillis), maxOf(endMillis, other.endMillis),
             durationMillis + other.durationMillis, limitMiB, latest.sizeBytes,
-            maxOf(peakBytes, other.peakBytes), latest.entries, combined, capacityPasses + other.capacityPasses)
+            maxOf(peakBytes, other.peakBytes), latest.entries, combined, capacityPasses + other.capacityPasses, cacheScope = cacheScope)
     }
 }
 
 @Keep
 internal data class CacheAnalysisData(
-    val schemaVersion: Int = 1, val totals: List<CacheSample> = emptyList(),
+    val schemaVersion: Int = 2, val totals: List<CacheSample> = emptyList(),
     val recent: List<CacheSample> = emptyList()
 )
 
@@ -81,25 +82,29 @@ internal class CacheAnalysisJournal(private val directory: File) {
             if (file.length() > MAX_BYTES) throw IOException("Cache analysis file exceeds its limit")
             file.reader(Charsets.UTF_8).use { requireNotNull(gson.fromJson(it, CacheAnalysisData::class.java)) }
         }
-        require(data.schemaVersion == 1)
-        require(data.totals.size <= SettingsDefaults.MAX_PAGE_CACHE_MIB)
+        require(data.schemaVersion in 1..2)
+        val normalized = if (data.schemaVersion == 1) data.copy(schemaVersion = 2,
+            totals = data.totals.map { it.copy(cacheScope = "PAGE_ONLY") },
+            recent = data.recent.map { it.copy(cacheScope = "PAGE_ONLY") }) else data
+        require(normalized.totals.size <= SettingsDefaults.MAX_PAGE_CACHE_MIB * 2)
         require(data.recent.size <= MAX_RECENT)
         (data.totals + data.recent).forEach { sample ->
             require(sample.limitMiB in SettingsDefaults.MIN_PAGE_CACHE_MIB..SettingsDefaults.MAX_PAGE_CACHE_MIB)
             require(sample.durationMillis >= 0L)
         }
-        return data.also { loaded = it }
+        return normalized.also { loaded = it }
     }
 
     fun commit(samples: List<CacheSample>): CacheAnalysisData {
         val old = read()
-        val totals = old.totals.associateBy { it.limitMiB }.toMutableMap()
+        val totals = old.totals.associateBy { it.cacheScope to it.limitMiB }.toMutableMap()
         val recent = old.recent.toMutableList()
         samples.forEach { sample ->
             require(sample.limitMiB in SettingsDefaults.MIN_PAGE_CACHE_MIB..SettingsDefaults.MAX_PAGE_CACHE_MIB)
-            totals[sample.limitMiB] = totals[sample.limitMiB]?.merge(sample) ?: sample.copy(nextLimitMiB = null)
+            val key = sample.cacheScope to sample.limitMiB
+            totals[key] = totals[key]?.merge(sample) ?: sample.copy(nextLimitMiB = null)
             val last = recent.lastOrNull()
-            if (last != null && last.limitMiB == sample.limitMiB && last.nextLimitMiB == null &&
+            if (last != null && last.cacheScope == sample.cacheScope && last.limitMiB == sample.limitMiB && last.nextLimitMiB == null &&
                 sample.nextLimitMiB == null && last.startMillis / WINDOW_MILLIS == sample.startMillis / WINDOW_MILLIS) {
                 recent[recent.lastIndex] = last.merge(sample)
             } else recent += sample
@@ -151,10 +156,10 @@ internal object CacheAnalysis {
             if (initialized) return
             val storage = CacheAnalysisJournal(File(context.filesDir, "cache_analysis"))
             val data = runCatching { storage.read() }
-            val stats = PageCache.stats()
+            val stats = CacheStorage.stats()
             synchronized(lock) {
                 journal = storage
-                limitMiB = PageCache.limitMiB.value
+                limitMiB = CacheStorage.limitMiB.value
                 startedAt = System.currentTimeMillis()
                 startedNanos = System.nanoTime()
                 peakBytes = stats.sizeBytes
@@ -162,7 +167,7 @@ internal object CacheAnalysis {
                     stats.sizeBytes, stats.sizeBytes, stats.entryCount, emptyMap())
                 initialized = true
             }
-            mutableState.value = CacheAnalysisState(data.getOrNull()?.totals?.firstOrNull { it.limitMiB == limitMiB },
+            mutableState.value = CacheAnalysisState(data.getOrNull()?.totals?.firstOrNull { it.cacheScope == "ALL_DISK" && it.limitMiB == limitMiB },
                 storage.file.length(), data.isFailure)
         }
         scope.launch {
@@ -173,10 +178,8 @@ internal object CacheAnalysis {
         }
     }
 
-    private fun tracked(layer: CacheLayer) = layer == CacheLayer.PAGE || layer == CacheLayer.CHAPTER || layer == CacheLayer.LIST
-
     fun lookup(layer: CacheLayer, fresh: Boolean, forced: Boolean = false) = synchronized(lock) {
-        if (!initialized || !tracked(layer)) return@synchronized
+        if (!initialized) return@synchronized
         val old = counters[layer.name] ?: CacheCounters()
         counters[layer.name] = when {
             forced -> old.copy(forcedRefreshes = old.forcedRefreshes + 1L)
@@ -186,20 +189,20 @@ internal object CacheAnalysis {
     }
 
     fun record(type: CacheEventType, layer: CacheLayer, reason: CacheEventReason, bytes: Long?) = synchronized(lock) {
-        if (!initialized || !tracked(layer)) return@synchronized
+        if (!initialized) return@synchronized
         val old = counters[layer.name] ?: CacheCounters()
         val size = bytes?.coerceAtLeast(0L) ?: 0L
         counters[layer.name] = when (type) {
             CacheEventType.HIT -> if (reason == CacheEventReason.STALE) old.copy(staleUses = old.staleUses + 1L) else old
             CacheEventType.UPDATE -> old.copy(updates = old.updates + 1L, writtenBytes = old.writtenBytes + size)
-            CacheEventType.EVICT -> if (reason == CacheEventReason.CAPACITY) {
+            CacheEventType.EVICT -> if (reason == CacheEventReason.CAPACITY && layer != CacheLayer.DETAIL) {
                 old.copy(capacityEvictions = old.capacityEvictions + 1L, evictedBytes = old.evictedBytes + size)
             } else old.copy(otherRemovals = old.otherRemovals + 1L)
             CacheEventType.FAILURE -> old.copy(failures = old.failures + 1L)
         }
     }
 
-    fun observe(stats: PageCacheStats) = synchronized(lock) {
+    fun observe(stats: CacheStorageStats) = synchronized(lock) {
         if (initialized && stats.maxSizeBytes / (1024L * 1024L) == limitMiB.toLong()) {
             peakBytes = maxOf(peakBytes, stats.sizeBytes)
         }
@@ -209,8 +212,8 @@ internal object CacheAnalysis {
         if (initialized) capacityPasses += 1L
     }
 
-    // Called with the PageCache lock held. No journal IO or reverse PageCache calls here.
-    fun limitChanged(value: Int, oldStats: PageCacheStats) = synchronized(lock) {
+    // Called with the storage quota lock held. No journal IO or storage calls here.
+    fun limitChanged(value: Int, oldStats: CacheStorageStats) = synchronized(lock) {
         if (!initialized) return@synchronized
         val sample = capture(oldStats, nextLimitMiB = value)
         queue(sample)
@@ -219,7 +222,7 @@ internal object CacheAnalysis {
         requestCheckpoint()
     }
 
-    private fun capture(stats: PageCacheStats, nextLimitMiB: Int? = null): CacheSample {
+    private fun capture(stats: CacheStorageStats, nextLimitMiB: Int? = null): CacheSample {
         val now = System.currentTimeMillis()
         val nanos = System.nanoTime()
         val sample = CacheSample(startedAt, now, ((nanos - startedNanos) / 1_000_000L).coerceAtLeast(0L),
@@ -245,7 +248,7 @@ internal object CacheAnalysis {
     fun requestCheckpoint() { scope.launch { checkpoint() } }
 
     fun checkpoint(): Boolean = synchronized(ioLock) {
-        val stats = PageCache.stats()
+        val stats = CacheStorage.stats()
         val batch = synchronized(lock) {
             if (!initialized || (pending.isEmpty() && counters.values.all { it == CacheCounters() } && capacityPasses == 0L)) {
                 emptyList()
@@ -259,7 +262,7 @@ internal object CacheAnalysis {
         val storage = journal ?: return@synchronized false
         try {
             val data = storage.commit(batch)
-            mutableState.value = CacheAnalysisState(data.totals.firstOrNull { it.limitMiB == PageCache.limitMiB.value },
+            mutableState.value = CacheAnalysisState(data.totals.firstOrNull { it.cacheScope == "ALL_DISK" && it.limitMiB == CacheStorage.limitMiB.value },
                 storage.file.length(), false)
             true
         } catch (_: Exception) {

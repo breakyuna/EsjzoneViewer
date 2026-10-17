@@ -92,15 +92,15 @@ class SettingsDataStore(
     override val startTab: StateFlow<String> = values.map { it.startTab }
         .stateIn(scope, SharingStarted.Eagerly, defaults.startTab)
 
-    suspend fun readPageCacheLimitMiB(): Int = dataStore.data
+    suspend fun readCacheLimitMiB(): Int = dataStore.data
         .catch { error -> if (error is IOException) emit(emptyPreferences()) else throw error }
-        .first()[PAGE_CACHE_LIMIT_MIB]
+        .first().let { it[CACHE_LIMIT_MIB] ?: it[PAGE_CACHE_LIMIT_MIB] }
         ?.takeIf { it in SettingsDefaults.MIN_PAGE_CACHE_MIB..SettingsDefaults.MAX_PAGE_CACHE_MIB }
         ?: SettingsDefaults.DEFAULT_PAGE_CACHE_MIB
 
-    suspend fun setPageCacheLimitMiB(value: Int) {
+    suspend fun setCacheLimitMiB(value: Int) {
         require(value in SettingsDefaults.MIN_PAGE_CACHE_MIB..SettingsDefaults.MAX_PAGE_CACHE_MIB)
-        dataStore.edit { it[PAGE_CACHE_LIMIT_MIB] = value }
+        dataStore.edit { it[CACHE_LIMIT_MIB] = value }
     }
 
     override fun setAdult(value: Boolean) = write { it[ADULT] = value }
@@ -221,6 +221,7 @@ class SettingsDataStore(
     private companion object {
         const val FILE_NAME = "settings.preferences_pb"
         const val READER_AUTO_SAVE_KEY = SettingsDefaults.READER_AUTO_SAVE_KEY
+        val CACHE_LIMIT_MIB = intPreferencesKey("cache_limit_mib")
         val PAGE_CACHE_LIMIT_MIB = intPreferencesKey("page_cache_limit_mib")
         val ADULT = booleanPreferencesKey("adult")
         val THEME_MODE = stringPreferencesKey("theme_mode")

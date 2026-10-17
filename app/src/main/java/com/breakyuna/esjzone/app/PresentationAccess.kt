@@ -59,10 +59,10 @@ object PresentationAccess {
     val client: EsjzoneClient
         get() = EsjzoneClient
 
-    internal suspend fun setPageCacheLimitMiB(value: Int) {
+    internal suspend fun setCacheLimitMiB(value: Int) {
         withContext(NonCancellable + Dispatchers.IO) {
-            container.settingsDataStore.setPageCacheLimitMiB(value)
-            com.breakyuna.esjzone.network.PageCache.setLimitMiB(value)
+            container.settingsDataStore.setCacheLimitMiB(value)
+            com.breakyuna.esjzone.network.CacheStorage.setLimitMiB(value)
         }
     }
 

@@ -8,6 +8,8 @@ import com.breakyuna.esjzone.network.Authorization
 import com.breakyuna.esjzone.network.PageCache
 import com.breakyuna.esjzone.network.CacheDiagnostics
 import com.breakyuna.esjzone.network.CacheEventType
+import com.breakyuna.esjzone.network.CacheAnalysis
+import com.breakyuna.esjzone.network.CacheStorageEntry
 import com.breakyuna.esjzone.network.CacheLayer
 import com.breakyuna.esjzone.network.CacheEventReason
 import com.breakyuna.esjzone.novellibrary.data.HomeData
@@ -40,6 +42,7 @@ object HomeDataCache {
 
     @Volatile
     private var storageDir: File? = null
+    @Volatile private var lastAccess = 0L
 
     fun initialize(context: Context) {
         initializeDirectory(context.applicationContext.filesDir)
@@ -47,7 +50,10 @@ object HomeDataCache {
 
     internal fun initializeDirectory(dir: File) {
         synchronized(ioLock) {
-            if (storageDir != dir) memorySnapshot = null
+            if (storageDir != dir) {
+                memorySnapshot = null
+                lastAccess = 0L
+            }
             storageDir = dir
             if (memorySnapshot == null) memorySnapshot = loadFromDisk(dir)
         }
@@ -61,9 +67,13 @@ object HomeDataCache {
     fun readSnapshot(authorization: Authorization): HomeData? {
         val normalizedDomain = EsjzoneClient.accountScope(authorization)
         // initialize() loaded the disk snapshot in the background. UI reads never wait for a disk write.
-        return memorySnapshot?.takeIf { it.first == normalizedDomain }?.second?.also {
+        val cached = memorySnapshot?.takeIf { it.first == normalizedDomain }?.second
+        CacheAnalysis.lookup(CacheLayer.HOME, fresh = cached != null)
+        if (cached != null) {
+            lastAccess = System.currentTimeMillis()
             CacheDiagnostics.record(CacheEventType.HIT, CacheLayer.HOME, CacheEventReason.MEMORY, "home|$normalizedDomain")
         }
+        return cached
     }
 
     /** Keep progressive results available without rewriting the complete JSON for every cover. */
@@ -121,6 +131,29 @@ object HomeDataCache {
                 AppLogger.w("HomeDataCache", "Failed to write home data snapshot", e)
             }
         }
+    }
+
+    internal fun storageEntries(): List<CacheStorageEntry> = synchronized(ioLock) {
+        val file = storageDir?.let { File(it, FILE_NAME) } ?: return@synchronized emptyList()
+        if (!file.isFile) return@synchronized emptyList()
+        val length = file.length()
+        val modified = file.lastModified()
+        val accessed = maxOf(lastAccess, modified)
+        val snapshot = memorySnapshot
+        listOf(CacheStorageEntry(length, accessed) {
+            synchronized(ioLock) {
+                if (!file.isFile || file.length() != length || file.lastModified() != modified ||
+                    lastAccess > accessed || memorySnapshot !== snapshot) false
+                else if (file.delete()) {
+                    memorySnapshot = null
+                    CacheDiagnostics.record(CacheEventType.EVICT, CacheLayer.HOME, CacheEventReason.CAPACITY, bytes = length)
+                    true
+                } else {
+                    CacheDiagnostics.record(CacheEventType.FAILURE, CacheLayer.HOME, CacheEventReason.DELETE_FAILED)
+                    false
+                }
+            }
+        })
     }
 
     fun clearSnapshot() {

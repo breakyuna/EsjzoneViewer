@@ -429,13 +429,13 @@
     <string name="settings_domain">Target Domain</string>
     <string name="settings_domain_description">Switch between available ESJ Zone sites</string>
     <string name="system_logs">System Logs</string>
-    <string name="cache_limit">Page cache limit</string>
+    <string name="cache_limit">Total cache limit</string>
     <string name="cache_limit_value">%1$d MiB</string>
     <string name="cache_limit_unit">Limit (MiB)</string>
     <string name="cache_limit_range">Enter %1$d–%2$d MiB</string>
     <string name="cache_analysis_export">Export cache analysis log</string>
     <string name="cache_analysis_hit_rate">%1$s hit rate: %2$s (%3$d / %4$d)</string>
-    <string name="cache_analysis_eviction_rate">Capacity evictions: %1$s files/hour · %2$d total</string>
+    <string name="cache_analysis_eviction_rate">Capacity evictions: %1$s entries/hour · %2$d total</string>
     <string name="cache_analysis_storage">Cache %1$s · Analysis log %2$s</string>
     <string name="cache_analysis_failed">Cache settings or analysis log operation failed. Please retry.</string>
     <string name="cache_analysis_exported">Cache analysis log exported</string>

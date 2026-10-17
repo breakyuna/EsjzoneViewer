@@ -10,6 +10,23 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class CacheAnalysisJournalTest {
+    @Test
+    fun preservesPageOnlyHistoryWithoutCombiningItWithTheSharedQuota() {
+        val directory = Files.createTempDirectory("cache-analysis-scope-").toFile()
+        try {
+            File(directory, "cache-analysis.json").writeText(com.google.gson.Gson().toJson(
+                com.breakyuna.esjzone.network.CacheAnalysisData(schemaVersion = 1,
+                    totals = listOf(sample(100, 0L)), recent = listOf(sample(100, 0L)))))
+            val journal = CacheAnalysisJournal(directory)
+            assertEquals("PAGE_ONLY", journal.read().totals.single().cacheScope)
+            journal.commit(listOf(sample(100, 3_600_000L)))
+            val restored = CacheAnalysisJournal(directory).read()
+            assertEquals(2, restored.schemaVersion)
+            assertEquals(setOf("PAGE_ONLY", "ALL_DISK"), restored.totals.map { it.cacheScope }.toSet())
+            assertTrue(restored.totals.all { it.layers.getValue("PAGE").freshHits == 8L })
+        } finally { directory.deleteRecursively() }
+    }
+
     private fun sample(limit: Int, start: Long, hits: Long = 8L, misses: Long = 2L) = CacheSample(
         start, start + 3_600_000L, 3_600_000L, limit, 1024L, 2048L, 1,
         mapOf("PAGE" to CacheCounters(freshHits = hits, misses = misses, forcedRefreshes = 5L,

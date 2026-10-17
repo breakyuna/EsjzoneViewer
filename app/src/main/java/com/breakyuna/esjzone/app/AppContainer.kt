@@ -4,6 +4,10 @@ import android.content.Context
 import androidx.room.Room
 import coil3.ImageLoader
 import coil3.disk.DiskCache
+import com.breakyuna.esjzone.network.CacheImageDiskCache
+import com.breakyuna.esjzone.network.CacheImageEventListener
+import com.breakyuna.esjzone.network.CacheStorage
+import com.breakyuna.esjzone.network.CacheAnalysis
 import coil3.memory.MemoryCache
 import coil3.network.okhttp.OkHttpNetworkFetcherFactory
 import com.breakyuna.esjzone.data.settings.SettingsDataStore
@@ -31,6 +35,7 @@ import com.breakyuna.esjzone.domain.repository.SessionRepository
 import com.breakyuna.esjzone.domain.repository.SettingsRepository
 import com.breakyuna.esjzone.network.EsjzoneClient
 import com.breakyuna.esjzone.network.features.HomeDataCache
+import com.breakyuna.esjzone.network.features.HistoryDataCache
 import com.breakyuna.esjzone.offline.NovelDownloadStore
 import okhttp3.Dispatcher
 import okhttp3.OkHttpClient
@@ -80,11 +85,12 @@ class AppContainer(context: Context) {
                 .build()
         }
         .diskCache {
-            DiskCache.Builder()
+            CacheImageDiskCache(DiskCache.Builder()
                 .directory(appContext.cacheDir.resolve("image_cache").toOkioPath())
-                .maxSizePercent(0.05)
-                .build()
+                .maxSizeBytes(Long.MAX_VALUE)
+                .build())
         }
+        .eventListener(CacheImageEventListener())
         .components {
             add(OkHttpNetworkFetcherFactory(callFactory = { imageHttpClient }))
         }
@@ -95,6 +101,7 @@ class AppContainer(context: Context) {
         ImageLoader.Builder(appContext)
             .memoryCache { imageLoader.memoryCache ?: error("Image memory cache unavailable") }
             .diskCache { imageLoader.diskCache ?: error("Image disk cache unavailable") }
+            .eventListener(CacheImageEventListener())
             .components {
                 add(OkHttpNetworkFetcherFactory(callFactory = { EsjzoneClient.wenkuImageClient() }))
             }
@@ -119,14 +126,16 @@ class AppContainer(context: Context) {
     suspend fun initializeAsync() = withContext(Dispatchers.IO) {
         database.cacheDao().deleteObsoleteReaderUnderlines()
         CoverLoadingPolicy.initialize(appContext)
+        CacheStorage.initialize(imageLoader.diskCache as CacheImageDiskCache, settingsDataStore.readCacheLimitMiB())
         coroutineScope {
             val clientJob = launch {
-                com.breakyuna.esjzone.network.PageCache.setLimitMiB(settingsDataStore.readPageCacheLimitMiB())
-                com.breakyuna.esjzone.network.CacheAnalysis.initialize(appContext)
                 EsjzoneClient.initialize(appContext)
             }
             val downloadJob = launch { NovelDownloadStore.initialize(appContext) }
-            val homeCacheJob = launch { HomeDataCache.initialize(appContext) }
+            val homeCacheJob = launch {
+                HomeDataCache.initialize(appContext)
+                HistoryDataCache.initialize(appContext)
+            }
             val legacyCacheCleanupJob = launch {
                 val legacyCacheDir = appContext.filesDir.resolve("image_cache")
                 if (legacyCacheDir.exists()) {
@@ -138,5 +147,7 @@ class AppContainer(context: Context) {
             homeCacheJob.join()
             legacyCacheCleanupJob.join()
         }
+        CacheAnalysis.initialize(appContext)
+        CacheStorage.start()
     }
 }

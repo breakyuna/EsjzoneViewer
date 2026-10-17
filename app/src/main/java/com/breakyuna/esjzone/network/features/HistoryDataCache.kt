@@ -8,6 +8,8 @@ import com.breakyuna.esjzone.network.EsjzoneUrls
 import com.breakyuna.esjzone.network.PageCache
 import com.breakyuna.esjzone.network.CacheDiagnostics
 import com.breakyuna.esjzone.network.CacheEventType
+import com.breakyuna.esjzone.network.CacheAnalysis
+import com.breakyuna.esjzone.network.CacheStorageEntry
 import com.breakyuna.esjzone.network.CacheLayer
 import com.breakyuna.esjzone.network.CacheEventReason
 import com.breakyuna.esjzone.network.hasCredentials
@@ -32,6 +34,7 @@ object HistoryDataCache {
     private const val DIRECTORY_NAME = "history_cache"
     private val gson = Gson()
     private val ioLock = Any()
+    private val lastAccess = ConcurrentHashMap<String, Long>()
     private val memoryCache = ConcurrentHashMap<String, List<HistoryNovel>>()
 
     @Volatile
@@ -54,6 +57,7 @@ object HistoryDataCache {
         synchronized(ioLock) {
             storageDir = dir
             memoryCache.clear()
+            lastAccess.clear()
         }
     }
 
@@ -71,18 +75,25 @@ object HistoryDataCache {
     fun readSnapshot(authorization: Authorization): List<HistoryNovel>? {
         val scope = scopeFor(authorization) ?: return null
         memoryCache[scope]?.let {
+            lastAccess[scope] = System.currentTimeMillis()
+            CacheAnalysis.lookup(CacheLayer.HISTORY, fresh = true)
             CacheDiagnostics.record(CacheEventType.HIT, CacheLayer.HISTORY, CacheEventReason.MEMORY, "history|$scope")
             return it
         }
 
         val dir = storageDir ?: runCatching {
             resolveDirectory(EsjzoneApplication.instance)
-        }.getOrNull() ?: return null
+        }.getOrNull() ?: run {
+            CacheAnalysis.lookup(CacheLayer.HISTORY, fresh = false)
+            return null
+        }
 
         return synchronized(ioLock) {
             val inMemory = memoryCache[scope]
             val cached = inMemory ?: loadFromDisk(dir, scope)?.also { memoryCache[scope] = it }
+            CacheAnalysis.lookup(CacheLayer.HISTORY, fresh = cached != null)
             if (cached != null) {
+                lastAccess[scope] = System.currentTimeMillis()
                 CacheDiagnostics.record(CacheEventType.HIT, CacheLayer.HISTORY,
                     if (inMemory != null) CacheEventReason.MEMORY else CacheEventReason.DISK, "history|$scope")
             }
@@ -128,6 +139,35 @@ object HistoryDataCache {
             } catch (e: Exception) {
                 CacheDiagnostics.record(CacheEventType.FAILURE, CacheLayer.HISTORY, CacheEventReason.WRITE_FAILED, "history|$scope")
                 AppLogger.w("HistoryDataCache", "Failed to write history snapshot for scope $scope", e)
+            }
+        }
+    }
+
+    internal fun storageEntries(): List<CacheStorageEntry> = synchronized(ioLock) {
+        storageDir?.listFiles().orEmpty().filter {
+            it.isFile && it.name.startsWith("history_snapshot_") && it.extension == "json"
+        }.map { file ->
+            val scope = file.name.removePrefix("history_snapshot_").removeSuffix(".json")
+            val length = file.length()
+            val modified = file.lastModified()
+            val accessed = maxOf(lastAccess[scope] ?: 0L, modified)
+            val snapshot = memoryCache[scope]
+            CacheStorageEntry(length, accessed) {
+                synchronized(ioLock) {
+                    if (!file.isFile || file.length() != length || file.lastModified() != modified ||
+                        (lastAccess[scope] ?: 0L) > accessed || memoryCache[scope] !== snapshot) false
+                    else if (file.delete()) {
+                        memoryCache.remove(scope)
+                        lastAccess.remove(scope)
+                        CacheDiagnostics.record(CacheEventType.EVICT, CacheLayer.HISTORY, CacheEventReason.CAPACITY,
+                            "history|$scope", bytes = length)
+                        true
+                    } else {
+                        CacheDiagnostics.record(CacheEventType.FAILURE, CacheLayer.HISTORY, CacheEventReason.DELETE_FAILED,
+                            "history|$scope")
+                        false
+                    }
+                }
             }
         }
     }

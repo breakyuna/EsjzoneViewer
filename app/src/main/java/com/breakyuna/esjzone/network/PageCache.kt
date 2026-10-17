@@ -109,9 +109,9 @@ internal object PageCache {
     fun setLimitMiB(value: Int) = synchronized(ioLock) {
         require(value in SettingsDefaults.MIN_PAGE_CACHE_MIB..SettingsDefaults.MAX_PAGE_CACHE_MIB)
         if (value == mutableLimitMiB.value) return@synchronized
-        CacheAnalysis.limitChanged(value, stats())
+        // Standalone page-cache quota is used only before shared storage initialization.
         mutableLimitMiB.value = value
-        if (cachedSizeBytes > maxCacheBytes) trimToSize()
+        trimIfNeeded()
     }
 
     fun initialize(context: Context) {
@@ -147,8 +147,8 @@ internal object PageCache {
                     }
                 }
             }
-            CacheAnalysis.observe(stats())
-            if (cachedSizeBytes > maxCacheBytes) trimToSize()
+            CacheStorage.requestTrim()
+            trimIfNeeded()
         }
     }
 
@@ -244,8 +244,8 @@ internal object PageCache {
             CacheDiagnostics.record(CacheEventType.UPDATE, diagnosticLayer(key),
                 if (existed) CacheEventReason.REPLACED else CacheEventReason.STORED, fileId = id, bytes = file.length())
             if (!key.startsWith("chapter-structured-v2|")) remove(structuredKey(key), CacheEventReason.SOURCE_UPDATED)
-            CacheAnalysis.observe(stats())
-            if (trim && cachedSizeBytes > maxCacheBytes) trimToSize()
+            CacheStorage.requestTrim()
+            if (trim) trimIfNeeded()
             true
         } catch (_: Exception) {
             CacheDiagnostics.record(CacheEventType.FAILURE, diagnosticLayer(key), CacheEventReason.WRITE_FAILED, key)
@@ -342,7 +342,32 @@ internal object PageCache {
         else -> CacheLayer.PAGE
     }
 
-    fun trim() = synchronized(ioLock) { if (cachedSizeBytes > maxCacheBytes) trimToSize() }
+    fun trim() = synchronized(ioLock) { trimIfNeeded() }
+
+    private fun trimIfNeeded() {
+        if (CacheStorage.initialized) CacheStorage.requestTrim()
+        else if (cachedSizeBytes > maxCacheBytes) trimToSize()
+    }
+
+    internal fun storageEntries(): List<CacheStorageEntry> = synchronized(ioLock) {
+        directory?.listFiles().orEmpty().filter {
+            it.isFile && it.name.startsWith("$FILE_PREFIX-") && it.extension == "html"
+        }.map { file ->
+            val length = file.length()
+            val accessed = file.lastModified()
+            val id = file.name.removePrefix("$FILE_PREFIX-").removeSuffix(".html")
+            val version = versions[id]
+            CacheStorageEntry(length, accessed) {
+                synchronized(ioLock) {
+                    if (!file.isFile || file.length() != length || file.lastModified() != accessed || versions[id] != version) false
+                    else {
+                        removeId(id, CacheEventReason.CAPACITY)
+                        !file.exists()
+                    }
+                }
+            }
+        }
+    }
 
     private fun trimToSize() {
         CacheAnalysis.evictionPass()

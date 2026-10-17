@@ -429,13 +429,13 @@
     <string name="settings_domain">定向网址</string>
     <string name="settings_domain_description">在可用的 ESJ Zone 站点之间切换</string>
     <string name="system_logs">系统日志</string>
-    <string name="cache_limit">页面缓存上限</string>
+    <string name="cache_limit">缓存总上限</string>
     <string name="cache_limit_value">%1$d MiB</string>
     <string name="cache_limit_unit">上限（MiB）</string>
     <string name="cache_limit_range">请输入 %1$d–%2$d MiB</string>
     <string name="cache_analysis_export">导出缓存分析日志</string>
     <string name="cache_analysis_hit_rate">%1$s命中率：%2$s（%3$d / %4$d）</string>
-    <string name="cache_analysis_eviction_rate">容量淘汰：%1$s 个文件/小时 · 累计 %2$d 个</string>
+    <string name="cache_analysis_eviction_rate">容量淘汰：%1$s 条/小时 · 累计 %2$d 条</string>
     <string name="cache_analysis_storage">缓存占用 %1$s · 分析日志 %2$s</string>
     <string name="cache_analysis_failed">缓存设置或分析日志操作失败，请重试。</string>
     <string name="cache_analysis_exported">缓存分析日志已导出</string>

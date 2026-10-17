@@ -11,6 +11,7 @@ import com.breakyuna.esjzone.network.PageKind
 import com.breakyuna.esjzone.network.NovelDetailCache
 import com.breakyuna.esjzone.network.CacheDiagnostics
 import com.breakyuna.esjzone.network.CacheEventType
+import com.breakyuna.esjzone.network.CacheAnalysis
 import com.breakyuna.esjzone.network.CacheLayer
 import com.breakyuna.esjzone.network.CacheEventReason
 import com.breakyuna.esjzone.novellibrary.novel.DetailedNovel
@@ -39,11 +40,13 @@ fun EsjzoneClient.getNovelDetail(
         NovelDetailCache.read(detailCacheKey)?.takeIf { cached ->
             cached.name.isNotBlank() && !cached.name.all(Char::isDigit)
         }?.let {
+            CacheAnalysis.lookup(CacheLayer.DETAIL, fresh = true)
             CacheDiagnostics.record(CacheEventType.HIT, CacheLayer.DETAIL, CacheEventReason.MEMORY, detailCacheKey)
             return it
         }
     }
 
+    if (!includeComments) CacheAnalysis.lookup(CacheLayer.DETAIL, fresh = false, forced = forceRefresh)
     AppLogger.i("GetNovelDetail", "Fetching novel detail: ${novel.name} at $targetUrl")
     val responseBody = getPage(
         authorization = authorization,
