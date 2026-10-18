@@ -55,6 +55,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Surface
 import com.breakyuna.esjzone.ui.designsystem.GlobalText as Text
 import androidx.compose.material3.TextButton
@@ -159,6 +160,9 @@ object FavoritePage : AppDestination {
         val focusManager = LocalFocusManager.current
         val authorization = LocalAuthorization.current
         val model = rememberAppViewModel { FavoritePageModel(authorization) }
+        val loginSessionChanges by PresentationAccess.client.loginSessionChanges.collectAsStateWithLifecycle()
+        val loginSessionRevision = loginSessionChanges[authorization.domain] ?: 0L
+        var observedLoginRevision by remember(model) { mutableStateOf(loginSessionRevision) }
         val shelfEntries by model.entries.collectAsStateWithLifecycle()
         val entries = shelfEntries.orEmpty()
         val groups by model.groups.collectAsStateWithLifecycle()
@@ -178,6 +182,7 @@ object FavoritePage : AppDestination {
         val loadingShelf = shelfEntries == null || readingSnapshot == null
         val readingIndex = readingSnapshot ?: FavoritePageModel.ReadingIndex()
         val downloaded by model.downloadedBookKeys.collectAsStateWithLifecycle()
+        val downloadStorageUnavailable by model.downloadStorageUnavailable.collectAsStateWithLifecycle()
         val syncState by model.state.collectAsStateWithLifecycle()
         val deleteState by model.deleteState.collectAsStateWithLifecycle()
         val legacyBookshelfCount by model.legacyBookshelfCount.collectAsStateWithLifecycle()
@@ -212,6 +217,7 @@ object FavoritePage : AppDestination {
         val lifecycleOwner = LocalLifecycleOwner.current
         DisposableEffect(lifecycleOwner) {
             val observer = LifecycleEventObserver { _, event ->
+                if (event == Lifecycle.Event.ON_RESUME) model.refreshDownloaded()
                 if (event == Lifecycle.Event.ON_PAUSE || event == Lifecycle.Event.ON_STOP) {
                     snackbar.currentSnackbarData?.dismiss()
                     showSyncStatusMenu = false
@@ -269,6 +275,8 @@ object FavoritePage : AppDestination {
         val groupMovedMessage = stringResource(R.string.group_move_done)
         val groupDeletedMessage = stringResource(R.string.group_delete_done)
         val ungroupedLabel = stringResource(R.string.group_ungrouped)
+        val storageUnavailableMessage = stringResource(R.string.storage_access_failed)
+        val storageLocationLabel = stringResource(R.string.storage_location)
 
         suspend fun showTransientSnackbar(message: String, durationMillis: Long = 2000L) {
             snackbar.currentSnackbarData?.dismiss()
@@ -315,6 +323,22 @@ object FavoritePage : AppDestination {
 
         LaunchedEffect(Unit) {
             model.initShelf()
+        }
+        LaunchedEffect(downloadStorageUnavailable) {
+            if (downloadStorageUnavailable && snackbar.showSnackbar(
+                    message = storageUnavailableMessage,
+                    actionLabel = storageLocationLabel,
+                    withDismissAction = true,
+                    duration = SnackbarDuration.Long
+                ) == SnackbarResult.ActionPerformed) {
+                navigator?.pushIfNotCurrent(StorageLocationPage)
+            }
+        }
+        LaunchedEffect(loginSessionRevision) {
+            if (observedLoginRevision != loginSessionRevision) {
+                observedLoginRevision = loginSessionRevision
+                model.sync(manualRetry = false)
+            }
         }
         LaunchedEffect(visibleKeys) { selected = selected.intersect(visibleKeys) }
         LaunchedEffect(syncState) {

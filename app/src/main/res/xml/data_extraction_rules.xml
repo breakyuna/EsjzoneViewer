@@ -5,6 +5,7 @@
 -->
 <data-extraction-rules>
     <cloud-backup>
+        <exclude domain="sharedpref" path="download_secrets.xml" />
         <exclude domain="sharedpref" path="esj_session.xml" />
         <exclude domain="sharedpref" path="esj_session_secure.xml" />
         <exclude domain="sharedpref" path="__androidx_security_crypto_encrypted_prefs_key_keyset__.xml" />
@@ -22,8 +23,10 @@
         <exclude domain="file" path="bookmark_covers" />
         <exclude domain="file" path="reader_fonts" />
         <exclude domain="file" path="auto_backups" />
+        <exclude domain="file" path="datastore/user_storage.preferences_pb" />
     </cloud-backup>
     <device-transfer>
+        <exclude domain="sharedpref" path="download_secrets.xml" />
         <exclude domain="sharedpref" path="esj_session.xml" />
         <exclude domain="sharedpref" path="esj_session_secure.xml" />
         <exclude domain="sharedpref" path="__androidx_security_crypto_encrypted_prefs_key_keyset__.xml" />
@@ -41,5 +44,6 @@
         <exclude domain="file" path="bookmark_covers" />
         <exclude domain="file" path="reader_fonts" />
         <exclude domain="file" path="auto_backups" />
+        <exclude domain="file" path="datastore/user_storage.preferences_pb" />
     </device-transfer>
 </data-extraction-rules>

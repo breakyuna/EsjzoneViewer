@@ -19,6 +19,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import android.net.Uri
 import androidx.lifecycle.viewmodel.compose.LocalViewModelStoreOwner
 import androidx.lifecycle.ViewModel
@@ -36,6 +37,7 @@ import com.breakyuna.esjzone.app.PresentationAccess
 import com.breakyuna.esjzone.network.Authorization
 import com.breakyuna.esjzone.network.EsjzoneUrls
 import com.breakyuna.esjzone.network.LocalAuthorization
+import com.breakyuna.esjzone.network.hasCredentials
 import com.breakyuna.esjzone.novellibrary.community.ForumCategory
 import com.breakyuna.esjzone.novellibrary.community.ForumThread
 import com.breakyuna.esjzone.novellibrary.community.ForumTopic
@@ -66,6 +68,8 @@ import com.breakyuna.esjzone.ui.tab.SearchTab
 import com.breakyuna.esjzone.ui.screen.LoadingScreen
 import com.breakyuna.esjzone.ui.screen.LoginScreen
 import com.breakyuna.esjzone.ui.screen.MainScreen
+import com.breakyuna.esjzone.update.ReleaseUpdateChecker
+import com.breakyuna.esjzone.update.ReleaseUpdateDialog
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -473,6 +477,7 @@ private fun LegacyRoute.restore(): AppDestination? = when (this) {
         token == CacheRecordsPage.key || token.endsWith(".CacheRecordsPage") ->
             if (BuildConfig.DEBUG) CacheRecordsPage else SettingsPage
         token == com.breakyuna.esjzone.ui.page.LocalBackupPage.key -> com.breakyuna.esjzone.ui.page.LocalBackupPage
+        token == com.breakyuna.esjzone.ui.page.StorageLocationPage.key -> com.breakyuna.esjzone.ui.page.StorageLocationPage
         token == com.breakyuna.esjzone.ui.page.OpenSourceLicensesPage.key -> com.breakyuna.esjzone.ui.page.OpenSourceLicensesPage
         token == SettingsPage.key || token.endsWith(".SettingsPage") -> SettingsPage
         token == ReadingStatisticsPage.key || token.endsWith(".ReadingStatisticsPage") -> ReadingStatisticsPage
@@ -542,6 +547,10 @@ internal val predictivePopTransition:
         slideOutHorizontally(targetOffsetX = { it })
 }
 
+internal fun canShowAppUpdates(destination: NavKey?, authorization: Authorization?): Boolean =
+    authorization?.hasCredentials() == true && destination != null &&
+        destination != AppNavKey.Loading && destination != AppNavKey.Login
+
 /** Root Navigation 3 host. Loading is the session gate; Main owns tab stacks. */
 @Composable
 fun AppNavigation() {
@@ -557,7 +566,9 @@ fun AppNavigation() {
     // cookie session before composing the root NavDisplay; LoadingScreen still
     // owns the legacy Room import for the normal Loading route.
     val currentDomain by PresentationAccess.settings.domain
-    val authorizationState = remember(currentDomain) {
+    val loginSessionChanges by PresentationAccess.client.loginSessionChanges.collectAsState()
+    val loginSessionRevision = loginSessionChanges[currentDomain] ?: 0L
+    val authorizationState = remember(currentDomain, loginSessionRevision) {
         mutableStateOf(
             PresentationAccess.client.restoreAuthorization(
                 currentDomain
@@ -568,6 +579,12 @@ fun AppNavigation() {
     val currentAuthorizationState = rememberUpdatedState(authorizationState)
     val navigator = remember(backStack, registry) {
         AppNavigator(backStack, registry, setAuthorization = { currentAuthorizationState.value.value = it })
+    }
+
+    val appContext = LocalContext.current.applicationContext
+    val showAppUpdates = canShowAppUpdates(backStack.lastOrNull(), authorization)
+    LaunchedEffect(showAppUpdates) {
+        if (showAppUpdates) ReleaseUpdateChecker.checkOnce(appContext)
     }
 
     LaunchedEffect(Unit) {
@@ -649,5 +666,6 @@ fun AppNavigation() {
                 }
             )
         }
+        if (showAppUpdates) ReleaseUpdateDialog()
     }
 }

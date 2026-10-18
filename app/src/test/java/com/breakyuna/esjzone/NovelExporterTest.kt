@@ -8,6 +8,7 @@ import com.breakyuna.esjzone.offline.NovelExporter
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.io.File
+import com.breakyuna.esjzone.storage.StorageFile
 import java.nio.charset.StandardCharsets
 import java.util.zip.ZipEntry
 import java.util.zip.ZipInputStream
@@ -72,7 +73,7 @@ class NovelExporterTest {
                 ))
             }, output, imageLoader = { component ->
                 loadedImages += component.value
-                image
+                StorageFile(image)
             }, selectedChapterUrls = linkedSetOf(records[2].url, records[0].url))
             val entries = mutableMapOf<String, String>()
             ZipInputStream(ByteArrayInputStream(output.toByteArray())).use { zip ->
@@ -132,7 +133,7 @@ class NovelExporterTest {
             manifest = manifest(),
             chapterLoader = ::chapter,
             output = output,
-            imageLoader = { image }
+            imageLoader = { StorageFile(image) }
         )
 
         val entries = mutableMapOf<String, Pair<Int, String>>()
@@ -197,7 +198,7 @@ class NovelExporterTest {
         val svg = File.createTempFile("novel-active-image", ".svg")
         try {
             svg.writeText("<svg xmlns='http://www.w3.org/2000/svg'><script>alert(1)</script></svg>")
-            NovelExporter.exportEpub(manifest(), ::chapter, output, imageLoader = { svg })
+            NovelExporter.exportEpub(manifest(), ::chapter, output, imageLoader = { StorageFile(svg) })
             assertTrue(!epubChapter(output).contains("<img"))
         } finally { svg.delete() }
     }

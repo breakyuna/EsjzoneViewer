@@ -111,6 +111,7 @@ class AppContainer(context: Context) {
     }
 
     val session: SessionRepository = NetworkSessionRepository()
+    val storage = com.breakyuna.esjzone.storage.UserStorage(appContext)
     val autoBackup = com.breakyuna.esjzone.backup.AutoBackup(appContext)
     val settingsDataStore = SettingsDataStore(appContext)
     val readerSettingsDataStore = ReaderSettingsDataStore(appContext)
@@ -151,13 +152,20 @@ class AppContainer(context: Context) {
         CoverLoadingPolicy.initialize(appContext)
         coroutineScope {
             launch { initializeCaches() }
-            launch { NovelDownloadStore.initialize(appContext) }
+            launch { initializeDownloads() }
             launch {
                 val legacyCacheDir = appContext.filesDir.resolve("image_cache")
                 if (legacyCacheDir.exists()) {
                     runCatching { legacyCacheDir.deleteRecursively() }
                 }
             }
+        }
+    }
+
+    suspend fun initializeDownloads() = withContext(Dispatchers.IO) {
+        storage.initialize()
+        storage.operationMutex.withLock {
+            NovelDownloadStore.initialize(appContext, storage.downloads())
         }
     }
 }

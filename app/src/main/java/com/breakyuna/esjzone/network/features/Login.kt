@@ -39,7 +39,8 @@ fun EsjzoneClient.login(
 internal fun EsjzoneClient.loginWithOutcome(
     email: String,
     password: String,
-    domain: String = EsjzoneUrls.BaseWithoutProtocol
+    domain: String = EsjzoneUrls.BaseWithoutProtocol,
+    sessionBatch: LoginSessionBatch? = null
 ): LoginAttemptResult {
     require(domain in SettingsDefaults.DOMAINS)
     return try {
@@ -118,12 +119,13 @@ internal fun EsjzoneClient.loginWithOutcome(
             return LoginAttemptResult.InvalidResponse
         }
 
-        activateAccountScope(responseUrl.host, email, key)
-        rotatePageCacheScope(responseUrl.host)
-        persistCookies(responseUrl, cookies)
-        val authorization = Authorization(key, token, domain).also {
-            markAuthorizationVerified(it)
+        val authorization = Authorization(key, token, domain)
+        val committed = if (sessionBatch != null) {
+            sessionBatch.commit(responseUrl, email, cookies, authorization)
+        } else {
+            commitLoginSession(responseUrl, email, cookies, authorization) != null
         }
+        if (!committed) throw CancellationException("Login session changed")
         LoginAttemptResult.Success(authorization)
     } catch (e: CancellationException) {
         throw e

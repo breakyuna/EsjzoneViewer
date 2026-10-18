@@ -16,6 +16,8 @@ import java.nio.charset.StandardCharsets
 import java.security.MessageDigest
 import java.util.UUID
 import java.util.Locale
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
 
 /**
  * A small persistent CookieJar for the server-rendered ESJ session.
@@ -39,6 +41,9 @@ internal class PersistentCookieJar(context: Context) : CookieJar {
     private var memoryIdentity: String? = null
     private var memoryEmailDigest: String? = null
     private val memoryActiveHosts = mutableSetOf<String>()
+    private val mutableLoginSessionChanges = MutableStateFlow<Map<String, Long>>(emptyMap())
+    /** Explicit successful logins only; ordinary Cookie rotation does not reload the UI. */
+    val loginSessionChanges = mutableLoginSessionChanges.asStateFlow()
 
     fun sessionEpoch(): Long = synchronized(lock) { epoch }
 
@@ -262,12 +267,17 @@ internal class PersistentCookieJar(context: Context) : CookieJar {
     }
 
     /** Reuse one opaque identity when the same account explicitly logs in again. */
-    fun activateAccountScope(host: String, email: String, newEwsKey: String) = synchronized(lock) {
+    private fun activateAccountScope(
+        host: String,
+        email: String,
+        newEwsKey: String,
+        invalidateRequests: Boolean
+    ) = synchronized(lock) {
         val normalizedEmail = email.trim().lowercase(Locale.ROOT)
         if (normalizedEmail.isBlank()) return@synchronized
         // Invalidate requests from the previous login before changing which
         // account owns this host. Cookie reads and writes check this under lock.
-        epoch++
+        if (invalidateRequests) epoch++
         val identityDigest = normalizedEmailDigest(normalizedEmail)
         val secure = securePreferences
         if (secure == null) {
@@ -331,12 +341,35 @@ internal class PersistentCookieJar(context: Context) : CookieJar {
     }
 
     /** Starts a new cache namespace when an explicit login changes account state. */
-    fun rotateCacheScope(host: String) = synchronized(lock) {
-        epoch++
+    private fun rotateCacheScope(host: String, invalidateRequests: Boolean) = synchronized(lock) {
+        if (invalidateRequests) epoch++
         preferences.edit()
             .putString(cacheScopeKey(host), UUID.randomUUID().toString())
             .commit()
         Unit
+    }
+
+    /** Commit one mirror atomically; a background mirror must not invalidate the first one's requests. */
+    fun commitLoginSession(
+        url: HttpUrl,
+        email: String,
+        responseCookies: List<Cookie>,
+        authorization: Authorization,
+        expectedEpoch: Long?,
+        continuingLogin: Boolean
+    ): Long? = synchronized(lock) {
+        if (expectedEpoch != null && expectedEpoch != epoch) return@synchronized null
+        if (!continuingLogin && matchesActiveAccountEmail(email) != true) {
+            // A newly identified account cannot inherit another mirror's old session.
+            SettingsDefaults.DOMAINS.filter { it != url.host }.forEach(::clear)
+        }
+        activateAccountScope(url.host, email, authorization.ewsKey, invalidateRequests = !continuingLogin)
+        rotateCacheScope(url.host, invalidateRequests = !continuingLogin)
+        replaceHostCookies(url, responseCookies)
+        markVerified(authorization)
+        val changes = mutableLoginSessionChanges.value
+        mutableLoginSessionChanges.value = changes + (url.host to ((changes[url.host] ?: 0L) + 1L))
+        epoch
     }
 
     fun wasVerifiedRecently(authorization: Authorization, maxAgeMillis: Long): Boolean = synchronized(lock) {

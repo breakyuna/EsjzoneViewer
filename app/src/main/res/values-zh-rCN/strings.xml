@@ -810,7 +810,7 @@
     <string name="reader_bookmark_removed">已取消书签</string>
     <string name="reader_bookmark_failed">书签更新失败，请重试</string>
     <string name="auto_backup">自动备份</string>
-    <string name="auto_backup_policy">每天备份一次，保留最近 3 份。备份本地数据，下载内容默认不包含，可选择开启；不含登录凭据。卸载应用会删除备份，请按需导出。</string>
+    <string name="auto_backup_policy">约每天备份一次，保留最近 3 份。下载内容可选，不含登录凭据。选择应用私有目录时，卸载应用会删除备份。</string>
     <string name="backup_downloads_size_warning">开启下载内容备份可能会导致备份文件明显增大</string>
     <string name="auto_backup_empty">暂无自动备份</string>
     <string name="backup_delete">删除备份</string>
@@ -852,4 +852,16 @@
     <string name="storage_other_data">其他应用数据</string>
     <string name="storage_expand_details">展开明细</string>
     <string name="storage_collapse_details">收起明细</string>
+    <string name="storage_location">存储位置</string>
+    <string name="storage_location_private">应用私有目录</string>
+    <string name="storage_location_choose">选择文件夹</string>
+    <string name="storage_location_migrate">迁移现有下载和备份</string>
+    <string name="storage_location_confirm">下载和自动备份将使用此文件夹。迁移成功后删除原文件，遇到冲突文件时不覆盖。不迁移时，原文件保留在原位置。</string>
+    <string name="storage_location_working">正在更新存储…</string>
+    <string name="storage_location_done">存储位置已更新</string>
+    <string name="storage_location_cleanup_failed">存储位置已更新，部分原文件未能删除。</string>
+    <string name="storage_location_failed">无法访问文件夹或迁移文件，请检查目录授权及是否存在冲突文件。</string>
+    <string name="storage_reindex">重新扫描下载</string>
+    <string name="storage_reindex_done">下载已重新扫描</string>
+    <string name="storage_access_failed">无法访问存储目录，请在设置 → 存储位置重新选择文件夹。</string>
 </resources>

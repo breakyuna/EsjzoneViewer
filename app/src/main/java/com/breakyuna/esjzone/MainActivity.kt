@@ -55,7 +55,6 @@ import com.breakyuna.esjzone.ui.designsystem.AppTypography
 import com.breakyuna.esjzone.util.AppLogger
 import com.breakyuna.esjzone.util.CrashHandler
 import com.breakyuna.esjzone.update.ReleaseUpdateChecker
-import com.breakyuna.esjzone.update.ReleaseUpdateDialog
 import com.breakyuna.esjzone.ui.reader.ReaderVolumeKeyDispatcher
 import androidx.core.view.WindowCompat
 import com.breakyuna.esjzone.util.LocaleHelper
@@ -159,7 +158,6 @@ class MainActivity : ComponentActivity() {
                 AppTheme(darkTheme = appDark) {
                     if (state is StartupState.Ready) {
                         App()
-                        ReleaseUpdateDialog()
                     } else {
                         StartupContent(state) {
                             startupCoordinator.retry()
@@ -170,7 +168,6 @@ class MainActivity : ComponentActivity() {
             }
         }
         initScope.launch { initializeOnce(appContext) }
-        ReleaseUpdateChecker.checkOnce(appContext)
     }
 
     override fun onNewIntent(intent: Intent) {

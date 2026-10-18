@@ -2,6 +2,10 @@
 
 本功能使用 GitHub API，与 ESJ Zone 网页接口、认证和小说下载相互独立。
 
+## 检查时机
+
+自动检查在登录成功或恢复本地会话、离开启动/登录页后触发，不阻塞进入主界面；保留自动检查开关与 24 小时间隔。更新弹窗仅在具有本地会话的应用页面显示，进入登录页时暂停展示，避免检查结果或下载通知带来的待显示弹窗覆盖登录界面。登录后的设置、详情和阅读页面共用此弹窗入口，“关于”中的手动检查仍可直接触发检查。
+
 ## 协议依据
 
 2026-10-15 对照 [GitHub Releases 官方接口文档](https://docs.github.com/en/rest/releases/releases?apiVersion=2022-11-28) 与 [Release assets 文档](https://docs.github.com/en/rest/releases/assets?apiVersion=2022-11-28) 实现。以下字段来自官方响应结构；本次未执行真实 APK 下载或设备安装验证。

@@ -21,8 +21,41 @@ internal fun readStorageUsage(context: Context): List<StorageUsage> {
     val appInfo = context.applicationInfo
     val apkBytes = (listOf(appInfo.sourceDir) + appInfo.splitSourceDirs.orEmpty())
         .distinct().sumOf { directoryBytes(File(it)) }
-    return classifyStorageUsage(context.dataDir, context.filesDir, context.cacheDir,
+    val privateUsage = classifyStorageUsage(context.dataDir, context.filesDir, context.cacheDir,
         totals.sumOf { it.appBytes }, apkBytes, dataBytes)
+    val storage = com.breakyuna.esjzone.EsjzoneApplication.instance.container.storage
+    if (storage.location.value.isBlank()) return privateUsage
+    // Shared files are outside the UID totals; add them after calculating private "other data".
+    fun sharedParts(directory: com.breakyuna.esjzone.storage.StorageFile, labels: List<Int>,
+                    labelFor: (com.breakyuna.esjzone.storage.StorageFile) -> Int): List<StorageUsagePart> {
+        val bytes = labels.associateWith { 0L }.toMutableMap()
+        directory.walkTopDown().filter { it.isFile }.forEach { file ->
+            val label = labelFor(file)
+            bytes[label] = bytes.getValue(label) + file.length()
+        }
+        return labels.map { StorageUsagePart(it, bytes.getValue(it)) }
+    }
+    val downloads = sharedParts(storage.downloads(), listOf(R.string.storage_download_chapters,
+        R.string.storage_download_images, R.string.storage_download_records)) { file ->
+        when {
+            file.parentFile?.name == "images" || file.name == "cover.jpg" -> R.string.storage_download_images
+            file.name.startsWith("chapter-") && file.extension == "json" -> R.string.storage_download_chapters
+            else -> R.string.storage_download_records
+        }
+    }
+    val backups = sharedParts(storage.backups(), listOf(R.string.storage_backup_archives,
+        R.string.storage_backup_pending)) { file ->
+        if (com.breakyuna.esjzone.storage.UserStorage.isAutoBackupName(file.name)) R.string.storage_backup_archives
+        else R.string.storage_backup_pending
+    }
+    return privateUsage.map { entry ->
+        val additional = when (entry.category) {
+            StorageCategory.DOWNLOADS -> downloads
+            StorageCategory.BACKUPS -> backups
+            else -> emptyList()
+        }.associateBy { it.labelRes }
+        entry.copy(parts = entry.parts.map { part -> part.copy(bytes = part.bytes + (additional[part.labelRes]?.bytes ?: 0L)) })
+    }
 }
 
 /** Each file belongs to one detail; category totals and ring segments share these values. */

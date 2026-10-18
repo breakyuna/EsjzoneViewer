@@ -35,6 +35,7 @@ import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.MenuBook
 import androidx.compose.material.icons.filled.Reorder
@@ -233,6 +234,9 @@ object SettingsPage : AppDestination {
                         }
                     }
                     SettingsSection {
+                        LinkRow(Icons.Filled.FolderOpen, stringResource(R.string.storage_location)) {
+                            navigator?.pushIfNotCurrent(StorageLocationPage)
+                        }
                         ToggleRow(stringResource(R.string.auto_backup), autoBackup) {
                             model.setAutoBackup(it, BookshelfRepository.scopeFor(authorization))
                         }
@@ -526,6 +530,9 @@ object SettingsPage : AppDestination {
                         }
 
                         SettingsSection {
+                            LinkRow(Icons.Filled.FolderOpen, stringResource(R.string.storage_location)) {
+                                navigator?.pushIfNotCurrent(StorageLocationPage)
+                            }
                             LinkRow(Icons.Filled.Download, stringResource(R.string.local_backup)) {
                                 navigator?.pushIfNotCurrent(LocalBackupPage)
                             }

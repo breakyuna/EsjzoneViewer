@@ -30,6 +30,8 @@ import kotlinx.coroutines.launch
  * alter request, persistence, download, or reader semantics.
  */
 object PresentationAccess {
+    val storage: com.breakyuna.esjzone.storage.UserStorage
+        get() = container.storage
     private val container: AppContainer
         get() = EsjzoneApplication.instance.container
 

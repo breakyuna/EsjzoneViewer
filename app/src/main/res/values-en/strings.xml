@@ -809,7 +809,7 @@
     <string name="reader_bookmark_removed">Bookmark removed</string>
     <string name="reader_bookmark_failed">Could not update bookmark. Try again.</string>
     <string name="auto_backup">Automatic backup</string>
-    <string name="auto_backup_policy">Backs up local data daily, keeping the latest 3 archives. Downloads are excluded by default and can be enabled. Excludes sign-in credentials. Uninstalling removes these backups; export copies to keep them.</string>
+    <string name="auto_backup_policy">Back up approximately daily and keep the latest 3 copies. Downloads are optional; login credentials are excluded. App-private backups are deleted when the app is uninstalled.</string>
     <string name="backup_downloads_size_warning">Including downloaded content may significantly increase the backup file size</string>
     <string name="auto_backup_empty">No automatic backups yet</string>
     <string name="backup_delete">Delete backup</string>
@@ -851,4 +851,16 @@
     <string name="storage_other_data">Other app data</string>
     <string name="storage_expand_details">Expand details</string>
     <string name="storage_collapse_details">Collapse details</string>
+    <string name="storage_location">Storage location</string>
+    <string name="storage_location_private">App-private storage</string>
+    <string name="storage_location_choose">Choose folder</string>
+    <string name="storage_location_migrate">Migrate existing downloads and backups</string>
+    <string name="storage_location_confirm">Downloads and automatic backups will use this folder. Migration removes the original files only after copying succeeds; conflicting files are not overwritten. Without migration, existing files stay in their original location.</string>
+    <string name="storage_location_working">Updating storage…</string>
+    <string name="storage_location_done">Storage location updated</string>
+    <string name="storage_location_cleanup_failed">Storage location updated. Some original files could not be removed.</string>
+    <string name="storage_location_failed">Unable to access the folder or migrate files. Check the folder authorization and whether it contains conflicting files.</string>
+    <string name="storage_reindex">Reindex downloads</string>
+    <string name="storage_reindex_done">Downloads reindexed</string>
+    <string name="storage_access_failed">Unable to access storage. Choose the folder again in Settings → Storage location.</string>
 </resources>

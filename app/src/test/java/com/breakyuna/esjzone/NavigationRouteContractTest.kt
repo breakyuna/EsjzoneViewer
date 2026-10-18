@@ -6,6 +6,8 @@ import com.breakyuna.esjzone.ui.navigation.ReaderRoute
 import com.breakyuna.esjzone.ui.navigation.ContainerTransformTarget
 import com.breakyuna.esjzone.ui.navigation.usesContainerTransform
 import com.breakyuna.esjzone.ui.navigation.containerTransformMetadata
+import com.breakyuna.esjzone.ui.navigation.canShowAppUpdates
+import com.breakyuna.esjzone.network.Authorization
 import androidx.navigation3.runtime.NavEntry
 import androidx.navigation3.runtime.NavKey
 import androidx.compose.runtime.Composable
@@ -19,6 +21,31 @@ import org.junit.Test
 
 /** Pure JVM coverage for the value objects stored by Navigation 3. */
 class NavigationRouteContractTest {
+    @Test
+    fun updatesWaitUntilTheLoginOrLoadingPageHasClosed() {
+        val session = Authorization("fixture-key", "fixture-token", "www.esjzone.cc")
+        // Relogin must also suppress a pending prompt while the old session remains.
+        for (destination in listOf(AppNavKey.Loading, AppNavKey.Login)) {
+            assertFalse(canShowAppUpdates(destination, session))
+        }
+        assertTrue(canShowAppUpdates(AppNavKey.Main, session))
+    }
+
+    @Test
+    fun updatesRemainAvailableInSettingsAndRestoredReadersOnlyWithASession() {
+        val session = Authorization("fixture-key", "fixture-token", "www.esjzone.cc")
+        val destinations = listOf(
+            AppNavKey.Main,
+            AppNavKey.Legacy(LegacyRoute.Static("SettingsPage")),
+            AppNavKey.Reader(ReaderRoute(novelId = "123", chapterIdentity = "/forum/123/456.html"))
+        )
+        for (destination in destinations) {
+            assertTrue(canShowAppUpdates(destination, session))
+            assertFalse(canShowAppUpdates(destination, null))
+            assertFalse(canShowAppUpdates(destination, Authorization()))
+        }
+    }
+
     @Test
     fun cacheRecordsRouteRestoresWithoutAnInMemoryRegistry() {
         val navigator = com.breakyuna.esjzone.ui.navigation.AppNavigator(

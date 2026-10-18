@@ -2,6 +2,7 @@ package com.breakyuna.esjzone
 
 import com.breakyuna.esjzone.offline.DownloadedImageIndex
 import java.io.File
+import com.breakyuna.esjzone.storage.StorageFile
 import java.nio.file.Files
 import org.junit.Assert.*
 import org.junit.Test
@@ -19,15 +20,15 @@ class DownloadedImageIndexTest {
             var scans = 0
             val index = DownloadedImageIndex { scans++; it.listFiles() }
             repeat(20) {
-                assertEquals(first, index.find(root, firstKey))
-                assertNull(index.find(root, nextKey))
+                assertEquals(StorageFile(first), index.find(StorageFile(root), firstKey))
+                assertNull(index.find(StorageFile(root), nextKey))
             }
             val next = File(images, "image-$nextKey.webp").apply { writeText("committed") }
-            index.committed(root, next)
-            assertEquals(next, index.find(root, nextKey))
+            index.committed(StorageFile(root), StorageFile(next))
+            assertEquals(StorageFile(next), index.find(StorageFile(root), nextKey))
             assertEquals(1, scans)
             first.delete()
-            assertNull(index.find(root, firstKey))
+            assertNull(index.find(StorageFile(root), firstKey))
         } finally { root.deleteRecursively() }
     }
 
@@ -39,14 +40,14 @@ class DownloadedImageIndexTest {
             val key = "c".repeat(64)
             val first = File(images, "image-$key.png").apply { writeText("old") }
             val index = DownloadedImageIndex()
-            assertEquals(first, index.find(root, key))
-            index.remove(root)
+            assertEquals(StorageFile(first), index.find(StorageFile(root), key))
+            index.remove(StorageFile(root))
             first.delete()
             val imported = File(images, "image-$key.jpg").apply { writeText("imported") }
-            assertEquals(imported, index.find(root, key))
+            assertEquals(StorageFile(imported), index.find(StorageFile(root), key))
             index.clear()
             imported.writeText("")
-            assertNull(index.find(root, key))
+            assertNull(index.find(StorageFile(root), key))
         } finally { root.deleteRecursively() }
     }
 }

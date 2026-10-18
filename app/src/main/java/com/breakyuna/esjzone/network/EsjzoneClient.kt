@@ -22,6 +22,9 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import okhttp3.Headers
 import okhttp3.Cookie
 import okhttp3.HttpUrl
@@ -525,20 +528,23 @@ object EsjzoneClient {
 
     fun sessionEpoch(): Long = persistentCookieJar?.sessionEpoch() ?: 0L
 
+    private val emptyLoginSessionChanges = MutableStateFlow<Map<String, Long>>(emptyMap()).asStateFlow()
+    val loginSessionChanges: StateFlow<Map<String, Long>>
+        get() = persistentCookieJar?.loginSessionChanges ?: emptyLoginSessionChanges
+
     fun matchesActiveAccountEmail(email: String): Boolean? =
         persistentCookieJar?.matchesActiveAccountEmail(email)
 
-    /** Stores all cookies returned by the login flow without exposing their values to logs. */
-    internal fun persistCookies(url: HttpUrl, cookies: List<Cookie>) {
-        persistentCookieJar?.replaceHostCookies(url, cookies)
-    }
-
-    internal fun rotatePageCacheScope(host: String) {
-        persistentCookieJar?.rotateCacheScope(host)
-    }
-
-    internal fun activateAccountScope(host: String, email: String, ewsKey: String) {
-        persistentCookieJar?.activateAccountScope(host, email, ewsKey)
+    internal fun commitLoginSession(
+        url: HttpUrl,
+        email: String,
+        cookies: List<Cookie>,
+        authorization: Authorization,
+        expectedEpoch: Long? = null,
+        continuingLogin: Boolean = false
+    ): Long? {
+        val jar = persistentCookieJar ?: return 0L
+        return jar.commitLoginSession(url, email, cookies, authorization, expectedEpoch, continuingLogin)
     }
 
     fun pendingLegacyBookshelfScope(authorization: Authorization): String? =

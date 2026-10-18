@@ -25,6 +25,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.breakyuna.esjzone.ui.designsystem.globalStringResource as stringResource
 import androidx.compose.ui.unit.dp
 import com.breakyuna.esjzone.ui.navigation.AppDestination
@@ -50,14 +51,16 @@ class MainScreen(val authorization: Authorization) : AppDestination {
     override fun Content() {
         val appNavigator = LocalAppNavigator.current
         val activeDomain = PresentationAccess.settings.domain.value
-        var authorizationCheckResult by remember(authorization) {
+        val loginSessionChanges by PresentationAccess.client.loginSessionChanges.collectAsStateWithLifecycle()
+        val loginSessionRevision = loginSessionChanges[activeDomain] ?: 0L
+        var authorizationCheckResult by remember(authorization, loginSessionRevision) {
             mutableStateOf<AuthorizationCheckResult?>(null)
         }
         var sessionPromptDismissed by remember(authorization) {
             mutableStateOf(false)
         }
 
-        LaunchedEffect(authorization, activeDomain) {
+        LaunchedEffect(authorization, activeDomain, loginSessionRevision) {
             val sessionDomain = authorization.domain.ifBlank { activeDomain }
             if (sessionDomain != activeDomain) return@LaunchedEffect
             if (!authorization.hasCredentials()) return@LaunchedEffect

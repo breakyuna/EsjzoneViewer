@@ -2,7 +2,6 @@ package com.breakyuna.esjzone.ui.screen
 import com.breakyuna.esjzone.app.PresentationAccess
 import com.breakyuna.esjzone.network.LoadFailureKind
 import com.breakyuna.esjzone.network.loadFailureKind
-import com.breakyuna.esjzone.network.cancellablePageRequest
 
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -54,9 +53,7 @@ import com.breakyuna.esjzone.ui.navigation.LocalAppNavigator
 import com.breakyuna.esjzone.R
 import com.breakyuna.esjzone.database.BookshelfRepository
 import com.breakyuna.esjzone.network.features.CommunitySyncManager
-import com.breakyuna.esjzone.network.features.LoginAttemptResult
-import com.breakyuna.esjzone.network.features.loginWithOutcome
-import com.breakyuna.esjzone.network.mirrorLoginOrder
+import com.breakyuna.esjzone.network.features.loginMirrors
 import kotlinx.coroutines.flow.first
 import com.breakyuna.esjzone.ui.component.AppGroup
 import com.breakyuna.esjzone.ui.component.AppSectionHeader
@@ -64,11 +61,7 @@ import com.breakyuna.esjzone.ui.designsystem.AppShapes
 import com.breakyuna.esjzone.ui.designsystem.AppTypography
 import com.breakyuna.esjzone.util.AppLogger
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
-import java.io.IOException
 
 import com.breakyuna.esjzone.ui.navigation.AppExitBackHandler
 
@@ -96,69 +89,13 @@ object LoginScreen : AppDestination {
             passwordError = password.isBlank()
             accountMismatch = PresentationAccess.client.matchesActiveAccountEmail(email) == false
             if (emailError || passwordError || accountMismatch || loggingIn) return
-            val sameAccountBeforeLogin = PresentationAccess.client.matchesActiveAccountEmail(email) == true
             loggingIn = true
             loginFailed = false
             loginNetworkFailed = false
             val selectedDomain = currentDomain
             scope.launch {
                 try {
-                    val authorization = withContext(Dispatchers.IO) {
-                        val sessions = mutableListOf<com.breakyuna.esjzone.network.Authorization>()
-                        var networkFailure: IOException? = null
-                        var receivedServerResult = false
-                        mirrorLoginOrder(selectedDomain, PresentationAccess.settings.DOMAINS)
-                            .forEach { domain ->
-                                // Once a different account has logged in, an old session on
-                                // the next mirror must not remain attached to that account.
-                                if (sessions.isNotEmpty() && !sameAccountBeforeLogin) {
-                                    PresentationAccess.client.clearSession(domain)
-                                }
-                                var siteSession: com.breakyuna.esjzone.network.Authorization? = null
-                                for (attempt in 0 until 2) {
-                                    try {
-                                        when (val outcome = cancellablePageRequest {
-                                            PresentationAccess.client.loginWithOutcome(email.trim(), password, domain)
-                                        }) {
-                                            is LoginAttemptResult.Success -> siteSession = outcome.authorization
-                                            is LoginAttemptResult.NonSuccessStatus,
-                                            LoginAttemptResult.InvalidResponse -> receivedServerResult = true
-                                            is LoginAttemptResult.IoFailure -> throw outcome.error
-                                        }
-                                        // A complete server result will not improve through an I/O retry.
-                                        break
-                                    } catch (error: CancellationException) {
-                                        throw error
-                                    } catch (error: IOException) {
-                                        networkFailure = error
-                                        if (attempt == 0) delay(600L)
-                                        else AppLogger.w("LoginScreen", "Site login unavailable: host=$domain", error)
-                                    }
-                                }
-                                AppLogger.i("LoginScreen", "Site login result: host=$domain, success=${siteSession != null}")
-                                siteSession?.let(sessions::add)
-                            }
-                        val result = sessions.firstOrNull()
-                        if (result != null) {
-                            // The preferred site may be unavailable on first install.
-                            // Do not keep a different account's old session there.
-                            if (result.domain != selectedDomain && !sameAccountBeforeLogin) {
-                                PresentationAccess.client.clearSession(selectedDomain)
-                            }
-                            sessions.forEach { session ->
-                                try {
-                                    BookshelfRepository.migrateLegacyScopeIfNeeded(session)
-                                } catch (error: CancellationException) {
-                                    throw error
-                                } catch (error: Exception) {
-                                    AppLogger.w("LoginScreen", "Legacy bookshelf migration deferred", error)
-                                }
-                            }
-                        }
-                        // A reachable mirror returned a definite non-network result.
-                        // An I/O error from another mirror must not mask that response.
-                        result ?: if (!receivedServerResult) networkFailure?.let { throw it } else null
-                    }
+                    val authorization = PresentationAccess.client.loginMirrors(email.trim(), password, selectedDomain)
                     if (authorization != null) {
                         if (authorization.domain != selectedDomain) {
                             PresentationAccess.settings.setDomain(authorization.domain)

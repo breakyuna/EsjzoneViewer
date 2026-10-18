@@ -42,6 +42,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -104,6 +105,8 @@ object ProfileTab : AppTab {
         val navigator = LocalBaseNavigator.current
         val authorization = LocalAuthorization.current
         val domain = authorization.domain.ifBlank { PresentationAccess.settings.domain.value }
+        val loginSessionChanges by PresentationAccess.client.loginSessionChanges.collectAsStateWithLifecycle()
+        val loginSessionRevision = loginSessionChanges[domain] ?: 0L
         val avatarCacheKey = remember(domain, authorization) {
             "${profileCachePrefix(authorization, domain)}avatar"
         }
@@ -126,7 +129,7 @@ object ProfileTab : AppTab {
                 .collect { profileExp = it }
         }
 
-        LaunchedEffect(domain, authorization.ewsKey, authorization.ewsToken, retry) {
+        LaunchedEffect(domain, authorization.ewsKey, authorization.ewsToken, retry, loginSessionRevision) {
             loading = true
             val prefix = profileCachePrefix(authorization, domain)
             try {

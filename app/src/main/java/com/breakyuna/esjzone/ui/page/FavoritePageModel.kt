@@ -12,6 +12,7 @@ import com.breakyuna.esjzone.network.Authorization
 import com.breakyuna.esjzone.network.LoadFailureKind
 import com.breakyuna.esjzone.network.loadFailureKind
 import com.breakyuna.esjzone.network.EsjzoneUrls
+import com.breakyuna.esjzone.util.AppLogger
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -113,11 +114,24 @@ class FavoritePageModel(private val authorization: Authorization) :
                     ?.let(latestByBookKey::get)
     }
 
+    private val _downloadStorageUnavailable = MutableStateFlow(false)
+    val downloadStorageUnavailable: StateFlow<Boolean> = _downloadStorageUnavailable
+
     // Null until local history is loaded; an empty index then means no recent reads.
     // Exclude unread recent additions from the showcase; no remote history or extra requests.
     val readingIndex: StateFlow<ReadingIndex?> =
         PresentationAccess.database.localReadingActivityDao().observeAll()
-        .combine(PresentationAccess.downloads.changes) { rows, _ -> rows.map(PresentationAccess.downloads::refreshProgress) }
+        .combine(PresentationAccess.downloads.changes) { rows, _ ->
+            try {
+                rows.map(PresentationAccess.downloads::refreshProgress)
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                _downloadStorageUnavailable.value = true
+                AppLogger.w("FavoritePageModel", "Download progress is unavailable; using local reading records", error)
+                rows
+            }
+        }
         .map { activities ->
             val latestByNovelId = HashMap<String, LocalReadingActivity>()
             val latestByBookKey = HashMap<String, LocalReadingActivity>()
@@ -163,6 +177,12 @@ class FavoritePageModel(private val authorization: Authorization) :
                         BookshelfRepository.keyFor(url)
                             .ifBlank { EsjzoneUrls.canonicalPageKey(url) }
                     }
+                _downloadStorageUnavailable.value = false
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                _downloadStorageUnavailable.value = true
+                AppLogger.w("FavoritePageModel", "Unable to refresh downloaded books", error)
             } finally {
                 isRefreshingDownloaded.set(false)
             }

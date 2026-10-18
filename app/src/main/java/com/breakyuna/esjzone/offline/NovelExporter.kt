@@ -1,6 +1,6 @@
 package com.breakyuna.esjzone.offline
 
-import java.io.File
+import com.breakyuna.esjzone.storage.StorageFile
 import java.io.OutputStream
 import java.nio.charset.StandardCharsets
 import java.text.Normalizer
@@ -63,7 +63,7 @@ object NovelExporter {
         manifest: DownloadedNovelManifest,
         chapterLoader: (DownloadedChapterRecord) -> DownloadedChapterContent?,
         output: OutputStream,
-        imageLoader: (DownloadedComponent) -> File? = { null },
+        imageLoader: (DownloadedComponent) -> StorageFile? = { null },
         selectedChapterUrls: Set<String>? = null
     ) {
         // Keep only the TOC and image references in memory, never every chapter body.
@@ -75,7 +75,7 @@ object NovelExporter {
             chapters += record to chapter.name.ifBlank { record.name }
             chapter.exportComponents().filter { it.type == "image" }.forEach imageLoop@{ component ->
                 val key = component.imageKey()
-                val file = imageLoader(component)?.takeIf(File::isFile) ?: return@imageLoop
+                val file = imageLoader(component)?.takeIf(StorageFile::isFile) ?: return@imageLoop
                 // SVG is active XML; do not copy unsanitized remote documents into an EPUB.
                 if (file.extension.equals("svg", ignoreCase = true) ||
                     component.mediaType?.substringBefore(';')?.trim().equals("image/svg+xml", ignoreCase = true)) {
@@ -264,7 +264,7 @@ object NovelExporter {
         zip.closeEntry()
     }
 
-    private fun addBinaryEntry(zip: ZipOutputStream, name: String, file: File) {
+    private fun addBinaryEntry(zip: ZipOutputStream, name: String, file: StorageFile) {
         zip.putNextEntry(ZipEntry(name))
         file.inputStream().buffered().use { it.copyTo(zip) }
         zip.closeEntry()
@@ -332,7 +332,7 @@ object NovelExporter {
     }
 
     private data class EpubImage(
-        val file: File,
+        val file: StorageFile,
         val href: String,
         val mediaType: String
     )

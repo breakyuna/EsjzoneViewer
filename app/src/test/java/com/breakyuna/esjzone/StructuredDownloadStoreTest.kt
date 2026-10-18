@@ -8,6 +8,7 @@ import com.breakyuna.esjzone.domain.reader.ReaderSearchHit
 import com.breakyuna.esjzone.network.PageCache
 import com.breakyuna.esjzone.network.StructuredChapterCache
 import com.breakyuna.esjzone.network.Authorization
+import com.breakyuna.esjzone.network.EsjzoneClient
 import com.breakyuna.esjzone.novellibrary.component.ChapterItem
 import com.breakyuna.esjzone.novellibrary.component.TextComponent
 import com.breakyuna.esjzone.novellibrary.novel.*
@@ -67,6 +68,54 @@ class StructuredDownloadStoreTest {
         assertEquals(1f / 3f, moved.bookProgress!!, 0.0001f)
         assertTrue(NovelDownloadStore.delete(novelUrl))
         assertEquals(row, NovelDownloadStore.refreshProgress(row))
+    }
+
+    @Test
+    fun reindexDuringDownloadPreservesTheActiveChapterWriteGuard() = withStorage { root ->
+        val cache = Files.createTempDirectory("reindex-cache-").toFile()
+        PageCache.initializeDirectory(cache)
+        try {
+            val key = EsjzoneClient.novelDetailCacheKey(auth, chapter(1).url)
+            PageCache.write(key, "fixture")
+            requireNotNull(StructuredChapterCache.write(key, "fixture", detail(1)))
+            var rescanned = false
+            val manifest = runBlocking {
+                NovelDownloadStore.download(auth, novel(listOf(chapter(1)))) {
+                    if (!rescanned) {
+                        rescanned = true
+                        // Use a new handle for the same location, as UserStorage does.
+                        NovelDownloadStore.reindex(com.breakyuna.esjzone.storage.StorageFile(root))
+                        NovelDownloadStore.listDownloadedNovels()
+                    }
+                }
+            }
+            assertTrue(rescanned)
+            assertTrue(manifest.complete)
+            assertEquals("正文 1", NovelDownloadStore.readChapter(chapter(1).url)!!.content
+                .filterIsInstance<TextComponent>().single().text)
+            assertEquals(1, NovelDownloadStore.listDownloadedNovels().single().downloadedChapterCount)
+        } finally { cache.deleteRecursively() }
+    }
+
+    @Test
+    fun changingStorageDuringDownloadStillRejectsWritesToThePreviousLocation() = withStorage { root ->
+        val cache = Files.createTempDirectory("switch-cache-").toFile()
+        val target = Files.createTempDirectory("switch-target-").toFile()
+        PageCache.initializeDirectory(cache)
+        try {
+            val key = EsjzoneClient.novelDetailCacheKey(auth, chapter(1).url)
+            PageCache.write(key, "fixture")
+            requireNotNull(StructuredChapterCache.write(key, "fixture", detail(1)))
+            assertThrows(kotlinx.coroutines.CancellationException::class.java) {
+                runBlocking {
+                    NovelDownloadStore.download(auth, novel(listOf(chapter(1)))) {
+                        NovelDownloadStore.restoreStorage(com.breakyuna.esjzone.storage.StorageFile(target))
+                    }
+                }
+            }
+            assertNull(NovelDownloadStore.manifest(novelUrl))
+            assertFalse(root.walkTopDown().any { it.name.startsWith("chapter-") })
+        } finally { cache.deleteRecursively(); target.deleteRecursively() }
     }
 
     @Test

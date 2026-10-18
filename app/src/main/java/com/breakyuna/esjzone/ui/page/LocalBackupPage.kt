@@ -25,6 +25,9 @@ import com.breakyuna.esjzone.R
 import com.breakyuna.esjzone.app.PresentationAccess
 import com.breakyuna.esjzone.backup.BackupCategory
 import com.breakyuna.esjzone.backup.LocalBackup
+import com.breakyuna.esjzone.storage.StorageFile
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.sync.withLock
 import com.breakyuna.esjzone.database.BookshelfRepository
 import com.breakyuna.esjzone.network.LocalAuthorization
 import com.breakyuna.esjzone.ui.designsystem.GlobalText as Text
@@ -41,10 +44,17 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 
 class LocalBackupModel : AppStateViewModel<LocalBackupModel.Status>(Status()) {
-    data class Status(val busy: Boolean = false, val result: Int? = null, val archives: List<java.io.File> = emptyList())
+    data class Status(val busy: Boolean = false, val result: Int? = null, val archives: List<StorageFile> = emptyList())
     fun refreshArchives() {
         viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
-            mutableState.value = state.value.copy(archives = PresentationAccess.autoBackup.archives())
+            try {
+                PresentationAccess.storage.operationMutex.withLock {
+                    mutableState.value = state.value.copy(archives = PresentationAccess.autoBackup.archives())
+                }
+            } catch (error: CancellationException) { throw error
+            } catch (_: Exception) {
+                mutableState.value = state.value.copy(result = R.string.backup_failed)
+            }
         }
     }
     fun setAutoBackupDownloads(value: Boolean) {
@@ -69,14 +79,16 @@ class LocalBackupModel : AppStateViewModel<LocalBackupModel.Status>(Status()) {
             }
         }
     }
-    fun deleteArchive(file: java.io.File) {
+    fun deleteArchive(file: StorageFile) {
         if (state.value.busy) return
         mutableState.value = state.value.copy(busy = true, result = null)
-        viewModelScope.launch {
+        viewModelScope.launch(Dispatchers.IO) {
             try {
                 val archives = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-                    check(PresentationAccess.autoBackup.deleteArchive(file))
-                    PresentationAccess.autoBackup.archives()
+                    PresentationAccess.storage.operationMutex.withLock {
+                        check(PresentationAccess.autoBackup.deleteArchive(file))
+                        PresentationAccess.autoBackup.archives()
+                    }
                 }
                 mutableState.value = state.value.copy(busy = false, result = R.string.backup_deleted, archives = archives)
             } catch (error: CancellationException) { throw error
@@ -86,16 +98,18 @@ class LocalBackupModel : AppStateViewModel<LocalBackupModel.Status>(Status()) {
             }
         }
     }
-    fun exportArchive(context: Context, file: java.io.File, uri: Uri) {
+    fun exportArchive(context: Context, file: StorageFile, uri: Uri) {
         if (state.value.busy) return
         mutableState.value = state.value.copy(busy = true, result = null)
         viewModelScope.launch {
             try {
                 kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-                    val transferContext = currentCoroutineContext()
-                    file.inputStream().use { input ->
-                        checkNotNull(context.contentResolver.openOutputStream(uri, "wt")).use { output ->
-                            input.copyWithCancellation(output) { transferContext.ensureActive() }
+                    PresentationAccess.storage.operationMutex.withLock {
+                        val transferContext = currentCoroutineContext()
+                        file.inputStream().use { input ->
+                            checkNotNull(context.contentResolver.openOutputStream(uri, "wt")).use { output ->
+                                input.copyWithCancellation(output) { transferContext.ensureActive() }
+                            }
                         }
                     }
                 }
@@ -106,13 +120,16 @@ class LocalBackupModel : AppStateViewModel<LocalBackupModel.Status>(Status()) {
             }
         }
     }
-    fun run(context: Context, uri: Uri, scope: String, categories: Set<BackupCategory>, restore: Boolean) {
+    fun run(context: Context, uri: Uri?, scope: String, categories: Set<BackupCategory>, restore: Boolean, archive: StorageFile? = null) {
         if (state.value.busy) return
         mutableState.value = state.value.copy(busy = true, result = null)
-        viewModelScope.launch {
+        viewModelScope.launch(Dispatchers.IO) {
             try {
-                if (restore) LocalBackup.restore(context, uri, PresentationAccess.database, scope, categories)
-                else LocalBackup.export(context, uri, PresentationAccess.database, scope, categories)
+                PresentationAccess.storage.operationMutex.withLock {
+                    val document = archive?.uri ?: requireNotNull(uri)
+                    if (restore) LocalBackup.restore(context, document, PresentationAccess.database, scope, categories)
+                    else LocalBackup.export(context, document, PresentationAccess.database, scope, categories)
+                }
                 mutableState.value = state.value.copy(busy = false, result = R.string.backup_done)
             } catch (error: CancellationException) { throw error
             } catch (_: Exception) {
@@ -135,14 +152,16 @@ object LocalBackupPage : AppDestination {
         val state by model.state.collectAsStateWithLifecycle()
         val completedAt by PresentationAccess.autoBackup.completedAt.collectAsStateWithLifecycle()
         val autoBackupEnabled by PresentationAccess.autoBackup.enabled.collectAsStateWithLifecycle()
+        val backupFailed by PresentationAccess.autoBackup.failed.collectAsStateWithLifecycle()
+        val storageLocation by PresentationAccess.storage.location.collectAsStateWithLifecycle()
         val autoBackupDownloads by PresentationAccess.autoBackup.includeDownloads.collectAsStateWithLifecycle()
-        LaunchedEffect(completedAt) { model.refreshArchives() }
+        LaunchedEffect(completedAt, storageLocation) { model.refreshArchives() }
         var pendingArchive by rememberSaveable { mutableStateOf<String?>(null) }
         var restoreArchive by rememberSaveable { mutableStateOf<String?>(null) }
         var deleteArchive by rememberSaveable { mutableStateOf<String?>(null) }
         val exportArchive = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { uri ->
             val path = pendingArchive
-            if (uri != null && path != null) model.exportArchive(context, java.io.File(path), uri)
+            if (uri != null && path != null) state.archives.firstOrNull { it.absolutePath == path }?.let { model.exportArchive(context, it, uri) }
             pendingArchive = null
         }
         var selectedNames by rememberSaveable {
@@ -154,7 +173,7 @@ object LocalBackupPage : AppDestination {
         val create = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { uri ->
             if (uri != null) model.run(context, uri, pendingScope, pendingNames.map { BackupCategory.valueOf(it) }.toSet(), false)
         }
-        val open = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        val openBackup = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
             if (uri != null) model.run(context, uri, pendingScope, pendingNames.map { BackupCategory.valueOf(it) }.toSet(), true)
         }
         Scaffold(topBar = { TopAppBar(title = { Text(stringResource(R.string.local_backup), style = AppTypography.titleMedium) },
@@ -166,6 +185,10 @@ object LocalBackupPage : AppDestination {
                 verticalArrangement = Arrangement.spacedBy(AppSpacing.lg)) {
                 Text(stringResource(R.string.backup_description), style = AppTypography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(horizontal = AppSpacing.xs))
+                TextButton(enabled = !state.busy, onClick = { navigator?.pushIfNotCurrent(StorageLocationPage) }) {
+                    Text(stringResource(R.string.storage_location))
+                }
+                if (backupFailed) Text(stringResource(R.string.backup_failed), color = MaterialTheme.colorScheme.error)
                 SettingsSection {
                     Row(Modifier.fillMaxWidth().heightIn(min = 56.dp)
                         .padding(horizontal = AppSpacing.md, vertical = AppSpacing.xs),
@@ -266,7 +289,7 @@ object LocalBackupPage : AppDestination {
             confirmButton = { TextButton(enabled = !state.busy, onClick = {
                 val path = deleteArchive
                 deleteArchive = null
-                if (path != null) model.deleteArchive(java.io.File(path))
+                if (path != null) state.archives.firstOrNull { it.absolutePath == path }?.let(model::deleteArchive)
             }) { Text(stringResource(R.string.backup_delete), color = MaterialTheme.colorScheme.error) } },
             dismissButton = { TextButton(onClick = { deleteArchive = null }) { Text(stringResource(android.R.string.cancel)) } })
         if (restoreArchive != null) AlertDialog(onDismissRequest = { restoreArchive = null },
@@ -275,8 +298,9 @@ object LocalBackupPage : AppDestination {
             confirmButton = { TextButton(onClick = {
                 val path = restoreArchive
                 restoreArchive = null
-                if (path != null) model.run(context, Uri.fromFile(java.io.File(path)), scope,
-                    selectedNames.map { BackupCategory.valueOf(it) }.toSet(), true)
+                if (path != null) state.archives.firstOrNull { it.absolutePath == path }?.let { file ->
+                    model.run(context, null, scope, selectedNames.map { BackupCategory.valueOf(it) }.toSet(), true, file)
+                }
             }, enabled = selectedNames.isNotEmpty()) { Text(stringResource(android.R.string.ok)) } },
             dismissButton = { TextButton(onClick = { restoreArchive = null }) { Text(stringResource(android.R.string.cancel)) } })
         if (confirmImport) AlertDialog(onDismissRequest = { confirmImport = false },
@@ -284,7 +308,7 @@ object LocalBackupPage : AppDestination {
             text = { Text(stringResource(R.string.backup_merge_hint)) },
             confirmButton = { TextButton(onClick = {
                 confirmImport = false; pendingNames = selectedNames; pendingScope = scope
-                open.launch(arrayOf("application/zip", "application/octet-stream"))
+                openBackup.launch(arrayOf("application/zip", "application/octet-stream"))
             }) { Text(stringResource(android.R.string.ok)) } },
             dismissButton = { TextButton(onClick = { confirmImport = false }) { Text(stringResource(android.R.string.cancel)) } })
     }
