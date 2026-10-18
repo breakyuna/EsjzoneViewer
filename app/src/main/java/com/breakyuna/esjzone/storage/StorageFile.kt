@@ -99,9 +99,10 @@ class StorageFile private constructor(
 
     fun delete(): Boolean {
         if (local != null) return local.delete()
-        val document = tree!!.resolve(relative) ?: return true
-        val deleted = documentAccess { DocumentsContract.deleteDocument(tree.context.contentResolver, document) }
-        if (deleted) tree.invalidate(relative)
+        val currentTree = checkNotNull(tree)
+        val document = currentTree.resolve(relative) ?: return true
+        val deleted = documentAccess { DocumentsContract.deleteDocument(currentTree.context.contentResolver, document) }
+        if (deleted) currentTree.invalidate(relative)
         return deleted
     }
     fun deleteRecursively(): Boolean = local?.deleteRecursively() ?: delete()
@@ -110,14 +111,15 @@ class StorageFile private constructor(
     fun renameTo(destination: StorageFile): Boolean {
         if (local != null && destination.local != null) return local.renameTo(destination.local)
         require(tree === destination.tree && parentFile == destination.parentFile)
+        val currentTree = checkNotNull(tree)
         if (destination.exists()) return false
         val renamed = documentAccess {
-            DocumentsContract.renameDocument(tree!!.context.contentResolver, uri, destination.name)
+            DocumentsContract.renameDocument(currentTree.context.contentResolver, uri, destination.name)
         }
             ?: return false
-        tree.invalidate(relative)
-        tree.invalidate(destination.relative)
-        tree.documents[destination.relative] = renamed
+        currentTree.invalidate(relative)
+        currentTree.invalidate(destination.relative)
+        currentTree.documents[destination.relative] = renamed
         return true
     }
 
@@ -169,8 +171,10 @@ class StorageFile private constructor(
         if (local != null && parent.local != null) {
             return local.canonicalPath.startsWith(parent.local.canonicalPath + File.separator)
         }
-        if (tree == null || parent.tree == null || tree.root.authority != parent.tree.root.authority) return false
-        return documentAccess { DocumentsContract.isChildDocument(tree.context.contentResolver, parent.uri, uri) }
+        val currentTree = tree ?: return false
+        val parentTree = parent.tree ?: return false
+        if (currentTree.root.authority != parentTree.root.authority) return false
+        return documentAccess { DocumentsContract.isChildDocument(currentTree.context.contentResolver, parent.uri, uri) }
     }
     fun copyTo(destination: File, overwrite: Boolean = false) {
         require(overwrite || !destination.exists())
