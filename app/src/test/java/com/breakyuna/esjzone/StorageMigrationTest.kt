@@ -38,7 +38,7 @@ class StorageMigrationTest {
             assertEquals("Novel", NovelDownloadStore.manifest("/detail/81234.html")!!.name)
             assertEquals("Saved text", NovelDownloadStore.chapterContent(novel,
                 NovelDownloadStore.manifest(novel)!!.chapters.single())!!.components.single().value)
-            assertNotNull(NovelDownloadStore.readChapter(chapter.url.replace("www.esjzone.cc", "www.esjzone.me")))
+            assertNotNull(NovelDownloadStore.readChapter(chapter.url.replace("www.esjzone.cc", "www.esjzone.one")))
             assertNull(NovelDownloadStore.readChapter(chapter.url.substringBefore('#')))
             // The caller may roll back a failed location preference write without losing the source.
             NovelDownloadStore.restoreStorage(requireNotNull(migration.source))

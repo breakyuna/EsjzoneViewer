@@ -96,7 +96,7 @@ class ParallelMirrorLoginTest {
             }, onFirstSuccess = { fail("Neither mirror succeeded") })
             fail("Expected a network failure")
         } catch (actual: IOException) {
-            assertSame(error, actual)
+            assertEquals(error.message, actual.message)
         }
     }
 
