@@ -38,6 +38,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.breakyuna.esjzone.ui.designsystem.globalStringResource as stringResource
 import com.breakyuna.esjzone.BuildConfig
 import com.breakyuna.esjzone.R
+import com.breakyuna.esjzone.util.AppLogger
 import com.breakyuna.esjzone.ui.designsystem.AppShapes
 import com.breakyuna.esjzone.ui.designsystem.AppSpacing
 
@@ -83,11 +84,14 @@ internal fun ReleaseUpdateDialog() {
                             .setDataAndType(uri, "application/vnd.android.package-archive")
                             .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION))
                     }
-                } catch (_: ActivityNotFoundException) {
+                } catch (error: ActivityNotFoundException) {
+                    AppLogger.e("ReleaseUpdateDialog", "Update installation activity is unavailable", error)
                     installError = R.string.update_installer_unavailable
-                } catch (_: SecurityException) {
+                } catch (error: SecurityException) {
+                    AppLogger.e("ReleaseUpdateDialog", "Update installation launch was denied", error)
                     installError = R.string.update_installer_unavailable
-                } catch (_: IllegalArgumentException) {
+                } catch (error: IllegalArgumentException) {
+                    AppLogger.e("ReleaseUpdateDialog", "Invalid update installation request", error)
                     installError = R.string.update_installer_unavailable
                 }
             }

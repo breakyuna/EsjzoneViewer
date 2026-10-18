@@ -2,6 +2,7 @@ package com.breakyuna.esjzone.update
 
 import android.content.Context
 import com.breakyuna.esjzone.BuildConfig
+import com.breakyuna.esjzone.util.AppLogger
 import java.io.File
 import java.io.IOException
 import java.io.InputStream
@@ -26,6 +27,18 @@ import okhttp3.Request
 
 // A cancelled transfer may still be unwinding its IO when another download starts.
 private val updateDownloadMutex = Mutex()
+
+/** Called on IO at process startup; shares the download lock so a new APK cannot be deleted mid-transfer. */
+internal suspend fun deleteInstalledUpdateApk(context: Context, installedVersionCode: Long) =
+    updateDownloadMutex.withLock {
+        val file = File(context.cacheDir, "app_updates/update.apk")
+        if (!file.isFile) return@withLock
+        val info = context.packageManager.getPackageArchiveInfo(file.absolutePath, 0) ?: return@withLock
+        if (info.packageName != context.packageName || info.longVersionCode > installedVersionCode) return@withLock
+        check(file.delete()) { "Cannot delete installed update APK" }
+        AppLogger.i("ReleaseApkDownloader",
+            "Deleted installed update APK: installed=$installedVersionCode, cached=${info.longVersionCode}")
+    }
 
 internal sealed interface ReleaseDownloadState {
     data object Idle : ReleaseDownloadState
@@ -73,7 +86,7 @@ internal class ReleaseApkDownloader {
                         val downloadContext = currentCoroutineContext()
                         downloadContext.ensureActive()
                         call.execute().use { response ->
-                            if (!response.isSuccessful) throw IOException("APK download failed")
+                            if (!response.isSuccessful) throw IOException("APK download failed: HTTP ${response.code}")
                             var lastPercent = -1
                             val file = response.body.byteStream().use { input ->
                                 saveReleaseApk(input, directory, asset) { downloaded ->
@@ -86,9 +99,15 @@ internal class ReleaseApkDownloader {
                                 }
                             }
                             try {
-                                val info = requireNotNull(appContext.packageManager.getPackageArchiveInfo(file.absolutePath, 0))
-                                require(info.packageName == appContext.packageName &&
-                                    info.longVersionCode > BuildConfig.VERSION_CODE) { "Invalid update APK" }
+                                val info = requireNotNull(appContext.packageManager.getPackageArchiveInfo(file.absolutePath, 0)) {
+                                    "Cannot parse update APK"
+                                }
+                                require(info.packageName == appContext.packageName) {
+                                    "Update APK package mismatch: expected=${appContext.packageName}, actual=${info.packageName}"
+                                }
+                                require(info.longVersionCode > BuildConfig.VERSION_CODE) {
+                                    "Update APK versionCode must be newer: installed=${BuildConfig.VERSION_CODE}, downloaded=${info.longVersionCode}"
+                                }
                                 downloadContext.ensureActive()
                                 file
                             } catch (error: Exception) {
@@ -101,7 +120,8 @@ internal class ReleaseApkDownloader {
                 _state.value = ReleaseDownloadState.Ready(apk)
             } catch (error: CancellationException) {
                 throw error
-            } catch (_: Exception) {
+            } catch (error: Exception) {
+                AppLogger.e("ReleaseApkDownloader", "Update APK download or validation failed", error)
                 _state.value = ReleaseDownloadState.Failed
             } finally {
                 activeCall = null
@@ -118,6 +138,7 @@ internal class ReleaseApkDownloader {
     }
 
     fun discardMissingFile() {
+        AppLogger.e("ReleaseApkDownloader", "Downloaded update APK is missing before installation")
         markFailed()
     }
 
@@ -148,13 +169,13 @@ internal fun saveReleaseApk(
                 val count = input.read(buffer)
                 if (count < 0) break
                 downloaded += count
-                if (downloaded > asset.size) throw IOException("APK size mismatch")
+                if (downloaded > asset.size) throw IOException("APK size mismatch: expected=${asset.size}, received=$downloaded")
                 output.write(buffer, 0, count)
                 digest.update(buffer, 0, count)
                 onProgress(downloaded)
             }
         }
-        if (downloaded != asset.size) throw IOException("Incomplete APK download")
+        if (downloaded != asset.size) throw IOException("Incomplete APK download: expected=${asset.size}, received=$downloaded")
         val actualDigest = digest.digest().joinToString("") { "%02x".format(it) }
         if (asset.digest != null && !asset.digest.substringAfter(':').equals(actualDigest, ignoreCase = true)) {
             throw IOException("APK checksum mismatch")

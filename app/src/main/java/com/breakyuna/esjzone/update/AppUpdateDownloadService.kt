@@ -15,6 +15,7 @@ import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
 import androidx.core.content.ContextCompat
 import com.breakyuna.esjzone.R
+import com.breakyuna.esjzone.util.AppLogger
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -52,7 +53,8 @@ class AppUpdateDownloadService : Service() {
             ServiceCompat.startForeground(this, DOWNLOAD_NOTIFICATION_ID,
                 notification(current, ReleaseDownloadState.Downloading(0, asset.size)),
                 ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
-        } catch (_: RuntimeException) {
+        } catch (error: RuntimeException) {
+            AppLogger.e("AppUpdateDownloadService", "Failed to enter foreground for update download", error)
             current.downloader.markFailed()
             stopSelf()
             return START_NOT_STICKY
@@ -114,6 +116,7 @@ class AppUpdateDownloadService : Service() {
     }
 
     override fun onTimeout(startId: Int, fgsType: Int) {
+        AppLogger.e("AppUpdateDownloadService", "Update download foreground service timed out: type=$fgsType")
         release?.downloader?.cancel()
         release?.downloader?.markFailed()
         stopForeground(STOP_FOREGROUND_REMOVE)

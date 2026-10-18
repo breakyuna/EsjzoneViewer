@@ -6,6 +6,7 @@ import android.content.Intent
 import androidx.core.content.ContextCompat
 import com.breakyuna.esjzone.BuildConfig
 import com.breakyuna.esjzone.MainActivity
+import com.breakyuna.esjzone.util.AppLogger
 import java.io.File
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
@@ -50,6 +51,20 @@ internal object ReleaseUpdateChecker {
     val status = _status.asStateFlow()
     private val _autoCheck = MutableStateFlow(true)
     val autoCheck = _autoCheck.asStateFlow()
+
+    /** Runs independently of the automatic update-check preference and its daily interval. */
+    fun cleanupInstalledApk(context: Context) {
+        val appContext = context.applicationContext
+        scope.launch {
+            try {
+                deleteInstalledUpdateApk(appContext, BuildConfig.VERSION_CODE.toLong())
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                AppLogger.e("ReleaseUpdateChecker", "Failed to delete installed update APK", error)
+            }
+        }
+    }
 
     /**
      * Performs at most one release lookup per device every 24 hours.
@@ -102,7 +117,8 @@ internal object ReleaseUpdateChecker {
         try {
             ContextCompat.startForegroundService(context.applicationContext,
                 Intent(context.applicationContext, AppUpdateDownloadService::class.java))
-        } catch (_: RuntimeException) {
+        } catch (error: RuntimeException) {
+            AppLogger.e("ReleaseUpdateChecker", "Failed to start update download service", error)
             release.downloader.markFailed()
         }
     }

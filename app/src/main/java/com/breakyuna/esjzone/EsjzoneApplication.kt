@@ -2,6 +2,7 @@ package com.breakyuna.esjzone
 
 import android.app.Application
 import com.breakyuna.esjzone.app.AppContainer
+import com.breakyuna.esjzone.update.ReleaseUpdateChecker
 import com.breakyuna.esjzone.util.AppLogger
 import com.breakyuna.esjzone.util.CrashHandler
 
@@ -20,6 +21,7 @@ class EsjzoneApplication : Application() {
         instance = this
         AppLogger.init(this)
         CrashHandler.init(this)
+        ReleaseUpdateChecker.cleanupInstalledApk(this)
         container = AppContainer(this)
         container.autoBackup.startScheduling()
     }
