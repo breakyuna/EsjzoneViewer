@@ -279,7 +279,7 @@ class NovelDownloadWorker(
             }
             val taskBaseUrl = if (domain.isBlank()) EsjzoneUrls.Base
             else EsjzoneUrls.baseForDomain(domain)
-            EsjzoneClient.initialize(applicationContext)
+            com.breakyuna.esjzone.EsjzoneApplication.instance.container.initializeCaches()
             NovelDownloadStore.initialize(applicationContext)
 
             val resolvedUrl = EsjzoneUrls.resolve(rawUrl, taskBaseUrl)

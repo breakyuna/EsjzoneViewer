@@ -714,13 +714,20 @@ private fun CloudHistoryContent(
                                 )
                             } else CloudHistoryDetailLoading()
                         } else if (PresentationAccess.settings.adult.value || !detail.isAdult) {
+                            val domain by PresentationAccess.settings.domain
+                            val chapterUrl = history.chapter.url
+                            val chapterList = detail.chapterList
+                            val chapterIndex = remember(chapterList, chapterUrl, domain) { mutableStateOf<Int?>(null) }
+                            LaunchedEffect(chapterIndex) {
+                                chapterIndex.value = withContext(Dispatchers.Default) {
+                                    cloudHistoryChapterIndex(chapterList.orderedChapters, chapterUrl)
+                                }
+                            }
                             CloudHistoryCard(
                                 modifier = Modifier.animateItem(),
                                 history = history,
                                 coverUrl = detail.coverUrl,
-                                chapterIndex = detail.chapterList.orderedChapters.indexOfFirst {
-                                    EsjzoneUrls.canonicalPageKey(it.url) == EsjzoneUrls.canonicalPageKey(history.chapter.url)
-                                },
+                                chapterIndex = chapterIndex.value,
                                 totalChapters = detail.chapterList.orderedChapters.size,
                                 editing = editing,
                                 selected = history.vid in selected,
@@ -739,11 +746,20 @@ private fun CloudHistoryContent(
     }
 }
 
+internal fun cloudHistoryChapterIndex(chapters: List<Chapter>, chapterUrl: String): Int {
+    val targetKey = EsjzoneUrls.canonicalPageKey(chapterUrl)
+    return chapters.indexOfFirst { EsjzoneUrls.canonicalPageKey(it.url) == targetKey }
+}
+
+internal fun cloudHistoryBookProgress(chapterIndex: Int?, totalChapters: Int): Float? =
+    chapterIndex?.takeIf { it >= 0 && totalChapters > 0 }
+        ?.let { fullBookProgress(it, totalChapters, 1f) }
+
 @Composable
 private fun CloudHistoryCard(
     history: HistoryNovel,
     coverUrl: String,
-    chapterIndex: Int,
+    chapterIndex: Int?,
     totalChapters: Int,
     editing: Boolean,
     selected: Boolean,
@@ -753,12 +769,11 @@ private fun CloudHistoryCard(
 ) {
     val coverSource = rememberNovelCoverSource(history.url, coverUrl)
     val open = { if (editing) onOpen() else coverSource.open(onOpen) }
-    val progress = fullBookProgress(chapterIndex, totalChapters, 1f)
-    val progressPercent = (progress * 100).roundToInt()
-    val position = if (chapterIndex >= 0 && totalChapters > 0) {
-        stringResource(R.string.history_local_position, chapterIndex + 1, totalChapters, progressPercent)
+    val progress = cloudHistoryBookProgress(chapterIndex, totalChapters)
+    val position = if (progress != null && chapterIndex != null) {
+        stringResource(R.string.history_local_position, chapterIndex + 1, totalChapters, (progress * 100).roundToInt())
     } else {
-        stringResource(R.string.history_local_percent, progressPercent)
+        stringResource(R.string.history_cloud_position_unknown)
     }
     Row(
         modifier = modifier
@@ -782,7 +797,11 @@ private fun CloudHistoryCard(
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(AppSpacing.xs)) {
             Text(history.name, style = AppTypography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
             Text(history.chapter.name, style = AppTypography.bodyMedium, color = MaterialTheme.colorScheme.primary, maxLines = 2, overflow = TextOverflow.Ellipsis)
-            androidx.compose.material3.LinearProgressIndicator(progress = progress, modifier = Modifier.fillMaxWidth())
+            if (progress != null) {
+                androidx.compose.material3.LinearProgressIndicator(progress = progress, modifier = Modifier.fillMaxWidth())
+            } else {
+                Box(Modifier.fillMaxWidth().height(4.dp).background(MaterialTheme.colorScheme.surfaceContainerHighest, CircleShape))
+            }
             Text(position, style = AppTypography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         AppSelectionReveal(editing) {

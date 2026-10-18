@@ -1,5 +1,6 @@
 package com.breakyuna.esjzone.network
 
+import com.breakyuna.esjzone.BuildConfig
 import com.breakyuna.esjzone.data.settings.SettingsDefaults
 import com.breakyuna.esjzone.network.features.HistoryDataCache
 import com.breakyuna.esjzone.network.features.HomeDataCache
@@ -45,7 +46,7 @@ internal object CacheStorage {
     fun initialize(imageCache: CacheImageDiskCache, limit: Int) {
         require(limit in SettingsDefaults.MIN_PAGE_CACHE_MIB..SettingsDefaults.MAX_PAGE_CACHE_MIB)
         images = imageCache
-        mutableLimitMiB.value = limit
+        mutableLimitMiB.value = if (BuildConfig.DEBUG) limit else SettingsDefaults.DEFAULT_PAGE_CACHE_MIB
         initialized = true
     }
 
@@ -62,9 +63,10 @@ internal object CacheStorage {
 
     fun setLimitMiB(value: Int) = synchronized(trimLock) {
         require(value in SettingsDefaults.MIN_PAGE_CACHE_MIB..SettingsDefaults.MAX_PAGE_CACHE_MIB)
-        if (value != mutableLimitMiB.value) {
-            CacheAnalysis.limitChanged(value, stats())
-            mutableLimitMiB.value = value
+        val effectiveLimit = if (BuildConfig.DEBUG) value else SettingsDefaults.DEFAULT_PAGE_CACHE_MIB
+        if (effectiveLimit != mutableLimitMiB.value) {
+            CacheAnalysis.limitChanged(effectiveLimit, stats())
+            mutableLimitMiB.value = effectiveLimit
         }
         trim()
     }
@@ -85,7 +87,9 @@ internal object CacheStorage {
             CacheAnalysis.evictionPass()
             val entries = PageCache.storageEntries() + HomeDataCache.storageEntries() +
                 HistoryDataCache.storageEntries() + images?.storageEntries().orEmpty()
-            reclaimCacheEntries(entries, current.sizeBytes, current.maxSizeBytes)
+            try {
+                reclaimCacheEntries(entries, current.sizeBytes, current.maxSizeBytes)
+            } finally { images?.flushIndex() }
             current = stats()
         }
         CacheAnalysis.observe(current)

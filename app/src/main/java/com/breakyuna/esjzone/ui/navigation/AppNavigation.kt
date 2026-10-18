@@ -31,6 +31,7 @@ import androidx.navigation3.runtime.entryProvider
 import androidx.navigation3.runtime.rememberNavBackStack
 import androidx.navigation3.runtime.rememberSaveableStateHolderNavEntryDecorator
 import androidx.navigation3.ui.NavDisplay
+import com.breakyuna.esjzone.BuildConfig
 import com.breakyuna.esjzone.app.PresentationAccess
 import com.breakyuna.esjzone.network.Authorization
 import com.breakyuna.esjzone.network.EsjzoneUrls
@@ -469,7 +470,8 @@ private fun LegacyRoute.restore(): AppDestination? = when (this) {
         token == FavoritePage.key || token.endsWith(".FavoritePage") -> FavoritePage
         token == HistoryPage.key || token.endsWith(".HistoryPage") -> HistoryPage
         token == LogsPage.key || token.endsWith(".LogsPage") -> LogsPage
-        token == CacheRecordsPage.key || token.endsWith(".CacheRecordsPage") -> CacheRecordsPage
+        token == CacheRecordsPage.key || token.endsWith(".CacheRecordsPage") ->
+            if (BuildConfig.DEBUG) CacheRecordsPage else SettingsPage
         token == com.breakyuna.esjzone.ui.page.LocalBackupPage.key -> com.breakyuna.esjzone.ui.page.LocalBackupPage
         token == com.breakyuna.esjzone.ui.page.OpenSourceLicensesPage.key -> com.breakyuna.esjzone.ui.page.OpenSourceLicensesPage
         token == SettingsPage.key || token.endsWith(".SettingsPage") -> SettingsPage

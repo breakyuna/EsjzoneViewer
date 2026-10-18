@@ -78,3 +78,29 @@ internal fun DownloadedNovelManifest.textProgressIndex(order: List<String>): Boo
     if (prefix.last() <= 0L) return null
     return BookTextProgressIndex(indices, prefix)
 }
+
+/** One immutable catalog projection, shared by history and bookshelf until this novel changes. */
+internal class DownloadedHistoryProgress(manifest: DownloadedNovelManifest) {
+    private val order = manifest.chapters.filterNot { it.localOnly }.map { it.url }
+    private val indices = buildMap<String, Int> {
+        order.forEachIndexed { index, url -> putIfAbsent(NovelDownloadStore.chapterKey(url), index) }
+    }
+    private val textIndex = manifest.textProgressIndex(order)
+    private var previous: com.breakyuna.esjzone.database.entity.LocalReadingActivity? = null
+    private var projected: com.breakyuna.esjzone.database.entity.LocalReadingActivity? = null
+
+    // Called under the download store lock; unchanged rows reuse their previous projection.
+    fun refresh(activity: com.breakyuna.esjzone.database.entity.LocalReadingActivity): com.breakyuna.esjzone.database.entity.LocalReadingActivity {
+        if (previous == activity) return requireNotNull(projected)
+        val index = indices[NovelDownloadStore.chapterKey(activity.chapterUrl)]
+        val result = if (index == null) activity else activity.copy(
+            chapterIndex = index,
+            totalChapters = order.size,
+            bookProgress = textIndex?.progress(index, activity.chapterProgress)
+                ?: com.breakyuna.esjzone.domain.reader.readerBookProgress(index, order.size, activity.chapterProgress)
+        )
+        previous = activity
+        projected = result
+        return result
+    }
+}

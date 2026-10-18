@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.History
@@ -148,7 +149,7 @@ object SearchTab : AppTab {
 }
 
 @Composable
-private fun SearchHistoryList(
+internal fun SearchHistoryList(
     state: SearchHistoryModel.State,
     onClear: () -> Unit,
     onSelect: (String) -> Unit,
@@ -157,6 +158,9 @@ private fun SearchHistoryList(
     if (state.loading) {
         DiscoveryLoadingState(modifier = modifier)
         return
+    }
+    val historyBatches = remember(state.histories) {
+        state.histories.sortedByDescending { it.time }.chunked(12)
     }
     LazyColumn(
         modifier = modifier,
@@ -190,16 +194,13 @@ private fun SearchHistoryList(
                 )
             }
         } else {
-            item(key = "history-chips", contentType = "chips") {
+            items(historyBatches, key = { "history-chips:${it.first().index}" }, contentType = { "chips" }) { histories ->
                 FlowRow(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(AppSpacing.sm),
                     verticalArrangement = Arrangement.spacedBy(AppSpacing.sm)
                 ) {
-                    val sortedHistories = remember(state.histories) {
-                        state.histories.sortedByDescending { it.time }
-                    }
-                    sortedHistories.forEach { history ->
+                    histories.forEach { history ->
                         key("history:${history.index}") {
                             SearchHistoryChip(
                                 keyword = history.keyword,

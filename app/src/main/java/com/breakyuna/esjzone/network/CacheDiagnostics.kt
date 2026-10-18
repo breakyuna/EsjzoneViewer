@@ -1,5 +1,6 @@
 package com.breakyuna.esjzone.network
 
+import com.breakyuna.esjzone.BuildConfig
 import java.nio.charset.StandardCharsets
 import java.security.MessageDigest
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -38,7 +39,7 @@ internal object CacheDiagnostics {
     val state = mutableState.asStateFlow()
 
     fun setRecording(recording: Boolean) = synchronized(lock) {
-        mutableState.value = mutableState.value.copy(recording = recording)
+        mutableState.value = mutableState.value.copy(recording = BuildConfig.DEBUG && recording)
     }
 
     fun clear() = synchronized(lock) {

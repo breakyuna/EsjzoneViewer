@@ -127,17 +127,11 @@ suspend fun EsjzoneClient.getHomeData(
 
     val popularSeeds = selectWeeklyPopularSeeds(document)
 
-    // Build initial popular carousel items: immediately enrich any seeds that are already cached,
-    // and provide baseline fallback items for uncached seeds so initial render is zero-latency.
-    val initialPopular = popularSeeds.map { seed ->
-        val targetUrl = EsjzoneUrls.resolve(seed.url)
-        if (hasCachedPage(authorization, targetUrl, PageCacheTtl.DETAIL)) {
-            runCatching { enrichWeeklyPopular(authorization, seed) }.getOrNull()
-                ?: seedToInitialWeeklyPopular(seed)
-        } else {
-            seedToInitialWeeklyPopular(seed)
-        }
-    }
+    // Reuse already parsed covers without decoding detail files before the first publication.
+    // Detail cache reads and parsing belong to the concurrent enrichment below.
+    val initialPopular = initialWeeklyPopular(
+        popularSeeds, HomeDataCache.readSnapshot(authorization)?.weeklyPopular.orEmpty()
+    )
 
     // Grab weekly updates if already finished
     val initialWeeklyUpdates = if (weeklyUpdatesDeferred.isCompleted) {
@@ -156,23 +150,18 @@ suspend fun EsjzoneClient.getHomeData(
         initialPopular
     )
 
-    // Emit initial parsed home data immediately so UI displays with zero wait!
+    // Publish the home sections before reading or parsing any popular detail pages.
     onProgress?.invoke(initialHomeData)
 
     // Popular covers must not wait for the independent weekly-update request.
     // The page client's existing six-request limit bounds detail enrichment.
     // Publish each completed item immediately, keeping the original ranking order.
-    val seedsToEnrich = popularSeeds.filterIndexed { index, _ ->
-        val item = initialPopular.getOrNull(index)
-        item == null || (item.coverResolved != true && item.coverUrl.isBlank())
-    }
-
     var currentPopular = initialPopular
     val progressLock = Mutex()
     coroutineScope {
-        seedsToEnrich.forEach { seed ->
+        popularSeeds.forEach { seed ->
             launch {
-                val enriched = try {
+                val result = try {
                     cancellablePageRequest { enrichWeeklyPopular(authorization, seed) }
                 } catch (error: kotlinx.coroutines.CancellationException) {
                     throw error
@@ -182,6 +171,7 @@ suspend fun EsjzoneClient.getHomeData(
                 }
                 progressLock.withLock {
                     val previous = currentPopular.firstOrNull { it.url == seed.url }
+                    val enriched = if (previous == null) result else mergeWeeklyPopularEnrichment(previous, result)
                     currentPopular = currentPopular.map { item ->
                         if (item.url == seed.url) enriched else item
                     }
@@ -217,6 +207,27 @@ suspend fun EsjzoneClient.getHomeData(
         finalWeeklyUpdates,
         currentPopular
     )
+}
+
+internal fun mergeWeeklyPopularEnrichment(
+    previous: WeeklyPopularNovel,
+    result: WeeklyPopularNovel
+): WeeklyPopularNovel {
+    if (result.coverFailure == null) return result
+    if (previous.coverResolved == true || EsjzoneUrls.coverOrEmpty(previous.coverUrl).isNotBlank()) return previous
+    return previous.copy(coverFailure = result.coverFailure)
+}
+
+internal fun initialWeeklyPopular(
+    seeds: List<WeeklyPopularSeed>,
+    cached: List<WeeklyPopularNovel>
+): List<WeeklyPopularNovel> {
+    val cachedByKey = cached.associateBy { EsjzoneUrls.canonicalPageKey(it.url) }
+    return seeds.map { seed ->
+        cachedByKey[EsjzoneUrls.canonicalPageKey(seed.url)]?.copy(
+            rank = seed.rank, weeklyViews = seed.weeklyViews, name = seed.name, url = seed.url
+        ) ?: seedToInitialWeeklyPopular(seed)
+    }
 }
 
 internal fun seedToInitialWeeklyPopular(seed: WeeklyPopularSeed): WeeklyPopularNovel =

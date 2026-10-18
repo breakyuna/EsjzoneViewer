@@ -17,19 +17,19 @@ internal data class ReaderScriptSnapshot(
  */
 object ReaderScriptConverter {
 
-    private val traditionalToSimplified by lazy {
+    // ICU transliterators are mutable. Keep one per thread so a background
+    // chapter conversion never holds a lock needed by Compose text.
+    private val traditionalToSimplified = ThreadLocal.withInitial {
         Transliterator.getInstance("Traditional-Simplified")
     }
 
-    private val simplifiedToTraditional by lazy {
+    private val simplifiedToTraditional = ThreadLocal.withInitial {
         Transliterator.getInstance("Simplified-Traditional")
     }
 
     private val convertCache = object : LinkedHashMap<Pair<String, ReaderScript>, com.breakyuna.esjzone.domain.reader.ReaderTextOffsets>(256, 0.75f, true) {
         override fun removeEldestEntry(eldest: MutableMap.MutableEntry<Pair<String, ReaderScript>, com.breakyuna.esjzone.domain.reader.ReaderTextOffsets>?): Boolean = size > 4096
     }
-
-    private val transliteratorLock = Any()
 
     /** Converts on the caller's thread; callers should use a background dispatcher. */
     fun preload(texts: Iterable<String>, script: ReaderScript) {
@@ -99,15 +99,15 @@ object ReaderScriptConverter {
         return ReaderScriptSnapshot(script, result, blocks)
     }
 
-    fun convert(text: String, script: ReaderScript): String = mapping(text, script).text
+    fun convert(text: String, script: ReaderScript): String =
+        if (script == ReaderScript.ORIGINAL || text.isEmpty()) text else mapping(text, script).text
 
     fun mapping(text: String, script: ReaderScript): com.breakyuna.esjzone.domain.reader.ReaderTextOffsets {
         if (script == ReaderScript.ORIGINAL || text.isEmpty()) return com.breakyuna.esjzone.domain.reader.ReaderTextOffsets.identity(text)
         synchronized(convertCache) { convertCache[text to script] }?.let { return it }
         val mapped = ReaderMappedText(text)
-        synchronized(transliteratorLock) {
-            (if (script == ReaderScript.SIMPLIFIED) traditionalToSimplified else simplifiedToTraditional).transliterate(mapped)
-        }
+        (if (script == ReaderScript.SIMPLIFIED) traditionalToSimplified else simplifiedToTraditional)
+            .get().transliterate(mapped)
         return mapped.snapshot().also { synchronized(convertCache) { convertCache[text to script] = it } }
     }
 

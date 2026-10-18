@@ -289,7 +289,9 @@ object SettingsPage : AppDestination {
                     }
                     SettingsSection(title = stringResource(R.string.settings_diagnostics_section)) {
                         LinkRow(Icons.Filled.BugReport, stringResource(R.string.system_logs)) { navigator?.pushIfNotCurrent(LogsPage) }
-                        LinkRow(Icons.Filled.Storage, stringResource(R.string.cache_records)) { navigator?.pushIfNotCurrent(CacheRecordsPage) }
+                        if (BuildConfig.DEBUG) {
+                            LinkRow(Icons.Filled.Storage, stringResource(R.string.cache_records)) { navigator?.pushIfNotCurrent(CacheRecordsPage) }
+                        }
                         LinkRow(Icons.Filled.Info, stringResource(R.string.about)) { section = "ABOUT" }
                     }
                     Surface(

@@ -14,6 +14,9 @@ import java.io.File
 import java.util.zip.ZipEntry
 import java.util.zip.ZipInputStream
 import java.util.zip.ZipOutputStream
+import com.breakyuna.esjzone.util.copyWithCancellation
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -27,6 +30,9 @@ object LocalBackup {
 
     suspend fun export(context: Context, uri: Uri, database: GeneralDatabase, scope: String,
                        selected: Set<BackupCategory>) = withContext(Dispatchers.IO) {
+        val transferContext = currentCoroutineContext()
+        val checkActive = { transferContext.ensureActive() }
+        checkActive()
         require(selected.isNotEmpty())
         val staging = createStaging(context)
         try {
@@ -35,6 +41,7 @@ object LocalBackup {
                 addProperty("version", 2)
             }
             database.withTransaction {
+                checkActive()
                 if (BackupCategory.UNDERLINES in selected) json.add("underlines", gson.toJsonTree(
                     database.cacheDao().getReaderUnderlines().associate { it.key to it.value }))
                 if (BackupCategory.BOOKMARKS in selected) json.add("bookmarks", gson.toJsonTree(database.bookmarkDao().getAll()))
@@ -56,13 +63,14 @@ object LocalBackup {
             File(staging, "backup.json").writeText(gson.toJson(json))
             ZipOutputStream(checkNotNull(context.contentResolver.openOutputStream(uri, "wt"))).use { zip ->
                 fun appendFile(file: File) {
+                    checkActive()
                     zip.putNextEntry(ZipEntry(file.relativeTo(staging).invariantSeparatorsPath))
-                    file.inputStream().use { it.copyTo(zip) }
+                    file.inputStream().use { it.copyWithCancellation(zip, checkActive) }
                     zip.closeEntry()
                 }
                 appendFile(File(staging, "backup.json"))
                 if (BackupCategory.DOWNLOADS in selected) {
-                    NovelDownloadStore.exportBackup(File(staging, "downloads")) { snapshot ->
+                    NovelDownloadStore.exportBackup(File(staging, "downloads"), checkActive) { snapshot ->
                         try {
                             snapshot.walkTopDown().filter(File::isFile).forEach(::appendFile)
                         } finally { snapshot.deleteRecursively() }
@@ -74,6 +82,9 @@ object LocalBackup {
 
     suspend fun restore(context: Context, uri: Uri, database: GeneralDatabase, scope: String,
                         selected: Set<BackupCategory>) = withContext(Dispatchers.IO) {
+        val transferContext = currentCoroutineContext()
+        val checkActive = { transferContext.ensureActive() }
+        checkActive()
         require(selected.isNotEmpty())
         val staging = createStaging(context)
         try {
@@ -82,10 +93,17 @@ object LocalBackup {
                 val limit = (staging.usableSpace - 64L * 1024 * 1024).coerceAtLeast(0)
                 var extracted = 0L
                 while (true) {
+                    checkActive()
                     val entry = zip.nextEntry ?: break
                     val target = safeEntry(staging, entry.name)
                     require(seen.add(entry.name) && seen.size <= 200_000)
                     if (entry.name.startsWith("downloads/") && BackupCategory.DOWNLOADS !in selected) {
+                        // closeEntry alone drains a skipped large chapter without cancellation points.
+                        val buffer = ByteArray(64 * 1024)
+                        while (true) {
+                            checkActive()
+                            if (zip.read(buffer) < 0) break
+                        }
                         zip.closeEntry()
                         continue
                     }
@@ -94,7 +112,9 @@ object LocalBackup {
                         target.outputStream().buffered().use { output ->
                             val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
                             while (true) {
+                                checkActive()
                                 val count = zip.read(buffer)
+                                checkActive()
                                 if (count < 0) break
                                 extracted += count
                                 require(extracted <= limit)
@@ -105,6 +125,7 @@ object LocalBackup {
                     zip.closeEntry()
                 }
             }
+            checkActive()
             val json = JsonParser.parseString(File(staging, "backup.json").readText()).asJsonObject
             require(json["format"]?.asString == "esjzone-local-backup" && json["version"]?.asInt in 1..2)
             require(selected.any { category -> json.has(when (category) {
@@ -143,6 +164,7 @@ object LocalBackup {
             require(reading.all { it.bookKey.isNotBlank() && it.durationMs >= 0 && runCatching { java.time.LocalDate.parse(it.date) }.isSuccess })
             require(groups == null || (groups.names.all { it.isNotBlank() } && groups.members.values.all { it in groups.names }))
             database.withTransaction {
+                checkActive()
                 underlines.forEach { (key, incoming) ->
                     val dao = database.cacheDao()
                     val existing = ReaderUnderlines.decode(dao.findByKey(key)?.value)
@@ -175,8 +197,9 @@ object LocalBackup {
                     }
                 }
             }
+            checkActive()
             if (BackupCategory.DOWNLOADS in selected && json["downloads"]?.asBoolean == true)
-                NovelDownloadStore.importBackup(File(staging, "downloads"))
+                NovelDownloadStore.importBackup(File(staging, "downloads"), checkActive)
         } finally { staging.deleteRecursively() }
     }
 

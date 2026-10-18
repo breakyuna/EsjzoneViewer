@@ -80,6 +80,43 @@ class CacheStorageTest {
     }
 
     @Test
+    fun batchEvictionPersistsSurvivorsAndClearInvalidatesPendingEdits() {
+        val directory = Files.createTempDirectory("image-batch-").toFile()
+        var cache = imageCache(directory)
+        try {
+            val keys = listOf("one", "two", "three")
+            keys.forEach { key ->
+                val editor = requireNotNull(cache.openEditor(key))
+                File(editor.metadata.toString()).writeText("metadata")
+                File(editor.data.toString()).writeText(key)
+                editor.commit()
+            }
+            val retained = requireNotNull(cache.openSnapshot("three"))
+            cache.storageEntries().forEach { it.remove() }
+            cache.flushIndex()
+            assertEquals(1, File(directory, "cache-keys-v1").readLines().size)
+            retained.close()
+            cache.shutdown()
+            cache = imageCache(directory)
+            assertNull(cache.openSnapshot("one"))
+            assertNull(cache.openSnapshot("two"))
+            requireNotNull(cache.openSnapshot("three")).use {
+                assertEquals("three", File(it.data.toString()).readText())
+            }
+            val pending = requireNotNull(cache.openEditor("pending"))
+            File(pending.data.toString()).writeText("unfinished")
+            cache.clear()
+            pending.abort()
+            assertEquals(0, cache.entryCount)
+            assertTrue(File(directory, "cache-keys-v1").readText().isEmpty())
+            cache.shutdown()
+            cache = imageCache(directory)
+            assertNull(cache.openSnapshot("three"))
+            assertNull(cache.openSnapshot("pending"))
+        } finally { cache.shutdown(); directory.deleteRecursively() }
+    }
+
+    @Test
     fun globalEvictionRemovesBothSnapshotLayersWithoutTouchingDownloads() {
         val directory = Files.createTempDirectory("shared-snapshots-").toFile()
         try {

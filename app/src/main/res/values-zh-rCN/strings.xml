@@ -278,6 +278,7 @@
     <string name="history_local_delete">删除本地记录</string>
     <string name="history_local_position">第 %1$d/%2$d 章 · %3$d%%</string>
     <string name="history_local_percent">本章 %1$d%%</string>
+    <string name="history_cloud_position_unknown">—</string>
     <string name="history_local_meta">最近阅读：%1$s · 阅读时长：%2$s</string>
     <string name="history_local_duration_hours">%1$d小时%2$d分钟</string>
     <string name="history_local_duration_minutes">%1$d分钟</string>

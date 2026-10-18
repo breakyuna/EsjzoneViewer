@@ -595,11 +595,6 @@ object EsjzoneClient {
     internal fun novelDetailCacheKey(authorization: Authorization, url: String): String =
         pageCacheKey(authorization, url)
 
-    internal fun hasCachedPage(authorization: Authorization, url: String, maxAgeMillis: Long): Boolean {
-        val cacheKey = pageCacheKey(authorization, url)
-        return PageCache.read(cacheKey, maxAgeMillis) != null
-    }
-
     /** Clears only the selected site's session; a null host clears every persisted session. */
     fun clearSession(host: String? = null) {
         // Prevent an old in-flight response from repopulating a cache namespace after

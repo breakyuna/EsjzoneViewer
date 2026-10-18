@@ -2,6 +2,7 @@ package com.breakyuna.esjzone.network
 
 import android.content.Context
 import androidx.annotation.Keep
+import com.breakyuna.esjzone.BuildConfig
 import com.breakyuna.esjzone.data.settings.SettingsDefaults
 import com.google.gson.Gson
 import java.io.File
@@ -152,6 +153,7 @@ internal object CacheAnalysis {
     val state = mutableState.asStateFlow()
 
     fun initialize(context: Context) {
+        if (!BuildConfig.DEBUG) return
         synchronized(ioLock) {
             if (initialized) return
             val storage = CacheAnalysisJournal(File(context.filesDir, "cache_analysis"))
@@ -245,9 +247,10 @@ internal object CacheAnalysis {
         }
     }
 
-    fun requestCheckpoint() { scope.launch { checkpoint() } }
+    fun requestCheckpoint() { if (BuildConfig.DEBUG) scope.launch { checkpoint() } }
 
     fun checkpoint(): Boolean = synchronized(ioLock) {
+        if (!BuildConfig.DEBUG) return@synchronized true
         val stats = CacheStorage.stats()
         val batch = synchronized(lock) {
             if (!initialized || (pending.isEmpty() && counters.values.all { it == CacheCounters() } && capacityPasses == 0L)) {

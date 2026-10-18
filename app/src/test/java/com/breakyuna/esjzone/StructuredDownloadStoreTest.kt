@@ -43,6 +43,62 @@ class StructuredDownloadStoreTest {
     }
 
     @Test
+    fun historyProgressReusesUnchangedBooksAndRefreshesAfterCatalogChanges() = withStorage { root ->
+        val order = listOf(chapter(1), chapter(2))
+        val saved = save(1, order)
+        File(root.listFiles()!!.single(), "manifest.json").writeText(Gson().toJson(saved.copy(catalogComplete = true)))
+        NovelDownloadStore.initializeDirectory(root)
+        val row = LocalReadingActivity("local:9001", "9001", "Novel", novelUrl,
+            chapter(1).url, "Chapter 1", 0, 2, 0.5f, 1L, 2L, 0L)
+        val initial = NovelDownloadStore.refreshProgress(row)
+        assertEquals(0.25f, initial.bookProgress!!, 0.0001f)
+        assertSame(initial, NovelDownloadStore.refreshProgress(row))
+        val other = Chapter("Other", "https://www.esjzone.cc/forum/9002/1.html", false)
+        NovelDownloadStore.saveChapter("Other", "/detail/9002.html", "", listOf(other), other,
+            DetailedChapter("Other", listOf(TextComponent("other")), null, null), auth)
+        assertSame(initial, NovelDownloadStore.refreshProgress(row))
+
+        save(2, order + chapter(3))
+        val expanded = NovelDownloadStore.refreshProgress(row)
+        assertEquals(3, expanded.totalChapters)
+        assertEquals(1f / 6f, expanded.bookProgress!!, 0.0001f)
+        assertEquals(row.anchor, expanded.anchor)
+        val moved = NovelDownloadStore.refreshProgress(row.copy(chapterProgress = 1f))
+        assertEquals(1f / 3f, moved.bookProgress!!, 0.0001f)
+        assertTrue(NovelDownloadStore.delete(novelUrl))
+        assertEquals(row, NovelDownloadStore.refreshProgress(row))
+    }
+
+    @Test
+    fun cancelledBackupImportRemovesUncommittedNovelAndKeepsStoreUsable() = withStorage { root ->
+        save(1, listOf(chapter(1)))
+        val backup = Files.createTempDirectory("cancelled-backup-").toFile()
+        val restored = Files.createTempDirectory("cancelled-restore-").toFile()
+        try {
+            NovelDownloadStore.exportBackup(backup)
+            val snapshot = backup.listFiles()!!.single()
+            File(snapshot, "large-image.bin").writeBytes(ByteArray(256 * 1024))
+            NovelDownloadStore.initializeDirectory(restored)
+            try {
+                NovelDownloadStore.importBackup(backup) {
+                    if (restored.walkTopDown().any { it.isFile && it.length() >= 64 * 1024 }) {
+                        throw kotlinx.coroutines.CancellationException("Cancelled fixture transfer")
+                    }
+                }
+                fail("Expected cancellation during copy")
+            } catch (_: kotlinx.coroutines.CancellationException) { }
+            assertTrue(restored.listFiles()!!.isEmpty())
+            assertNull(NovelDownloadStore.manifest(novelUrl))
+            NovelDownloadStore.importBackup(backup)
+            assertNotNull(NovelDownloadStore.readChapter(chapter(1).url))
+        } finally {
+            backup.deleteRecursively()
+            restored.deleteRecursively()
+            NovelDownloadStore.initializeDirectory(root)
+        }
+    }
+
+    @Test
     fun deletingAbsentOrAlreadyDeletedNovelSucceedsWithoutCreatingFiles() = withStorage { root ->
         assertTrue(NovelDownloadStore.delete(novelUrl))
         assertTrue(root.listFiles()!!.isEmpty())

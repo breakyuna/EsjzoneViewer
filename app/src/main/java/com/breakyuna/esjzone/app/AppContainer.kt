@@ -43,6 +43,8 @@ import okio.Path.Companion.toOkioPath
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 
 /**
@@ -123,31 +125,39 @@ class AppContainer(context: Context) {
     val community: CommunityRepository = NetworkCommunityRepository()
     val reader: ReaderRepository = novel as ReaderRepository
 
+    private val cacheInitializationMutex = Mutex()
+    private var cachesInitialized = false
+
+    /** Shared by Activity startup and workers before either can open or trim page caches. */
+    suspend fun initializeCaches() = withContext(Dispatchers.IO) {
+        cacheInitializationMutex.withLock {
+            if (cachesInitialized) return@withLock
+            CacheStorage.initialize(imageLoader.diskCache as CacheImageDiskCache, settingsDataStore.readCacheLimitMiB())
+            coroutineScope {
+                launch { EsjzoneClient.initialize(appContext) }
+                launch {
+                    HomeDataCache.initialize(appContext)
+                    HistoryDataCache.initialize(appContext)
+                }
+            }
+            CacheAnalysis.initialize(appContext)
+            CacheStorage.start()
+            cachesInitialized = true
+        }
+    }
+
     suspend fun initializeAsync() = withContext(Dispatchers.IO) {
         database.cacheDao().deleteObsoleteReaderUnderlines()
         CoverLoadingPolicy.initialize(appContext)
-        CacheStorage.initialize(imageLoader.diskCache as CacheImageDiskCache, settingsDataStore.readCacheLimitMiB())
         coroutineScope {
-            val clientJob = launch {
-                EsjzoneClient.initialize(appContext)
-            }
-            val downloadJob = launch { NovelDownloadStore.initialize(appContext) }
-            val homeCacheJob = launch {
-                HomeDataCache.initialize(appContext)
-                HistoryDataCache.initialize(appContext)
-            }
-            val legacyCacheCleanupJob = launch {
+            launch { initializeCaches() }
+            launch { NovelDownloadStore.initialize(appContext) }
+            launch {
                 val legacyCacheDir = appContext.filesDir.resolve("image_cache")
                 if (legacyCacheDir.exists()) {
                     runCatching { legacyCacheDir.deleteRecursively() }
                 }
             }
-            clientJob.join()
-            downloadJob.join()
-            homeCacheJob.join()
-            legacyCacheCleanupJob.join()
         }
-        CacheAnalysis.initialize(appContext)
-        CacheStorage.start()
     }
 }

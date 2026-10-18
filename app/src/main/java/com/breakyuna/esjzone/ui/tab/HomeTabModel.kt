@@ -26,17 +26,27 @@ import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 
 internal const val RANDOM_INACTIVITY_TIMEOUT_MS = 5 * 60 * 1000L
 
-class HomeTabModel(
-    private val authorization: Authorization
+class HomeTabModel internal constructor(
+    private val authorization: Authorization,
+    private val loadHome: suspend (Boolean, (HomeData) -> Unit) -> HomeData
 ) : AppStateViewModel<HomeTabModel.State>(
     HomeDataCache.readSnapshot(authorization)?.let { State.Result(it) } ?: State.Loading
 ) {
 
+    constructor(authorization: Authorization) : this(authorization, { refresh, progress ->
+        PresentationAccess.client.getHomeData(authorization, forceRefresh = refresh, onProgress = progress)
+    })
+
     private var loadStarted = false
+    private var homeLoadJob: Job? = null
+    private val homeLoadMutex = Mutex()
+    private var homeLoadGeneration = 0L
     private var randomLoadJob: Job? = null
     private var inactivityJob: Job? = null
     private var randomPool = createRandomPool()
@@ -188,21 +198,24 @@ class HomeTabModel(
     }
 
     fun getHomeData(forceRefresh: Boolean = false) {
-        if (loadStarted) return
+        if (!forceRefresh && loadStarted) return
         loadStarted = true
-        val cacheEpoch = PageCache.currentEpoch
-        CoverLoadingPolicy.homeDataLoading(true)
-        viewModelScope.launch(Dispatchers.IO) {
-            val visibleData = mutableState.value as? State.Result
-            mutableState.value = visibleData?.copy(
-                isSyncing = true,
-                isRefreshing = forceRefresh
-            ) ?: State.Loading
-            try {
-                val data = PresentationAccess.client.getHomeData(
-                    authorization = authorization,
-                    forceRefresh = forceRefresh,
-                    onProgress = { partialData ->
+        val generation = ++homeLoadGeneration
+        homeLoadJob?.cancel()
+        homeLoadJob = viewModelScope.launch {
+            // Wait for cancelled callbacks and snapshot writes to unwind before publishing
+            // another load, including when several refreshes arrive in quick succession.
+            homeLoadMutex.withLock {
+                ensureActive()
+                val cacheEpoch = PageCache.currentEpoch
+                CoverLoadingPolicy.homeDataLoading(true)
+                val visibleData = mutableState.value as? State.Result
+                mutableState.value = visibleData?.copy(
+                    isSyncing = true,
+                    isRefreshing = forceRefresh
+                ) ?: State.Loading
+                try {
+                    val data = loadHome(forceRefresh) { partialData ->
                         ensureActive()
                         mutableState.value = State.Result(
                             partialData,
@@ -211,31 +224,32 @@ class HomeTabModel(
                         )
                         HomeDataCache.updateMemorySnapshot(authorization, partialData, cacheEpoch)
                     }
-                )
-                ensureActive()
-                mutableState.value = State.Result(data, isSyncing = false)
-                HomeDataCache.updateMemorySnapshot(authorization, data, cacheEpoch)
-                HomeDataCache.writeSnapshot(authorization, data, cacheEpoch)
-            } catch (e: CancellationException) {
-                loadStarted = false
-                throw e
-            } catch (e: Exception) {
-                if (mutableState.value !is State.Result) {
-                    mutableState.value = State.Error(e.loadFailureKind())
-                } else {
-                    val current = mutableState.value as State.Result
-                    mutableState.value = current.copy(isSyncing = false, isRefreshing = false)
+                    ensureActive()
+                    mutableState.value = State.Result(data, isSyncing = false)
+                    withContext(Dispatchers.IO) {
+                        ensureActive()
+                        HomeDataCache.updateMemorySnapshot(authorization, data, cacheEpoch)
+                        HomeDataCache.writeSnapshot(authorization, data, cacheEpoch)
+                    }
+                } catch (e: CancellationException) {
+                    if (generation == homeLoadGeneration) loadStarted = false
+                    throw e
+                } catch (e: Exception) {
+                    if (generation == homeLoadGeneration) {
+                        val current = mutableState.value as? State.Result
+                        mutableState.value = current?.copy(isSyncing = false, isRefreshing = false)
+                            ?: State.Error(e.loadFailureKind())
+                        loadStarted = false
+                    }
+                    com.breakyuna.esjzone.util.AppLogger.e("HomeTabModel", "Failed to load home data", e)
+                } finally {
+                    CoverLoadingPolicy.homeDataLoading(false)
                 }
-                loadStarted = false
-                com.breakyuna.esjzone.util.AppLogger.e("HomeTabModel", "Failed to load home data", e)
-            } finally {
-                CoverLoadingPolicy.homeDataLoading(false)
             }
         }
     }
 
     fun reload() {
-        loadStarted = false
         unloadRandomRecommendations(clearDeduplication = true)
         getHomeData(forceRefresh = true)
     }

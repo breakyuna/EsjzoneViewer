@@ -34,6 +34,9 @@ import com.breakyuna.esjzone.ui.designsystem.AppTypography
 import com.breakyuna.esjzone.ui.designsystem.accountContentWidth
 import com.breakyuna.esjzone.ui.designsystem.globalStringResource as stringResource
 import com.breakyuna.esjzone.ui.navigation.*
+import com.breakyuna.esjzone.util.copyWithCancellation
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 
@@ -89,8 +92,11 @@ class LocalBackupModel : AppStateViewModel<LocalBackupModel.Status>(Status()) {
         viewModelScope.launch {
             try {
                 kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                    val transferContext = currentCoroutineContext()
                     file.inputStream().use { input ->
-                        checkNotNull(context.contentResolver.openOutputStream(uri, "wt")).use { input.copyTo(it) }
+                        checkNotNull(context.contentResolver.openOutputStream(uri, "wt")).use { output ->
+                            input.copyWithCancellation(output) { transferContext.ensureActive() }
+                        }
                     }
                 }
                 mutableState.value = state.value.copy(busy = false, result = R.string.backup_done)

@@ -26,6 +26,7 @@ import com.breakyuna.esjzone.novellibrary.novel.DetailedChapter
 import com.breakyuna.esjzone.novellibrary.novel.DetailedNovel
 import com.breakyuna.esjzone.novellibrary.novel.NovelChapterList
 import com.breakyuna.esjzone.novellibrary.novel.NovelDescription
+import com.breakyuna.esjzone.util.copyWithCancellation
 import com.breakyuna.esjzone.util.AppLogger
 import com.breakyuna.esjzone.util.storedTextReader
 import com.breakyuna.esjzone.util.writeCompressedText
@@ -150,10 +151,11 @@ object NovelDownloadStore {
     private val imageIndex = DownloadedImageIndex()
     /** Every successful commit publishes the latest manifest under ioLock. Keys are directory paths. */
     private val manifestCache = HashMap<String, DownloadedNovelManifest?>()
+    private val historyProgressCache = HashMap<String, DownloadedHistoryProgress>()
     private val deletionGenerations = HashMap<String, Long>()
     /** Built once per store initialization, then updated only for the changed novel. */
     private val chapterIndex = HashMap<String, ChapterMatch>()
-    private val chapterKeysByDirectory = HashMap<String, Set<String>>()
+    private val chapterKeysByDirectory = HashMap<String, MutableSet<String>>()
     private var chapterIndexLoaded = false
     private val dirtyInventorySizes = HashSet<String>()
     /** Rebuilt after a manifest write or deletion; bookshelf refreshes read this snapshot. */
@@ -199,15 +201,18 @@ object NovelDownloadStore {
         inventorySnapshot = null
         dirtyInventorySizes.clear()
         manifestCache.clear()
+        historyProgressCache.clear()
         rootDirectory = directory
         mutableChanges.value += 1
     }
 
     /** Publish each independent snapshot outside ioLock so callers can ZIP and discard it immediately. */
-    fun exportBackup(destination: File, onNovelSnapshot: (File) -> Unit = {}) {
+    fun exportBackup(destination: File, checkActive: () -> Unit = {}, onNovelSnapshot: (File) -> Unit = {}) {
+        checkActive()
         check(destination.isDirectory || destination.mkdirs())
         val sources = synchronized(ioLock) { rootDirectory?.listFiles().orEmpty().filter(File::isDirectory) }
         sources.forEach { source ->
+            checkActive()
             val target = File(destination, source.name)
             // Release the store between novels; ZIP compression runs entirely outside this lock.
             val prepared = synchronized(ioLock) {
@@ -218,9 +223,13 @@ object NovelDownloadStore {
                     .forEach { file ->
                         val output = File(target, file.relativeTo(source).path)
                         output.parentFile?.mkdirs()
-                        file.copyTo(output, overwrite = true)
+                        checkActive()
+                        file.inputStream().use { input ->
+                            output.outputStream().use { input.copyWithCancellation(it, checkActive) }
+                        }
                     }
                 // The manifest is an independent, sanitized snapshot, never a link to local passwords.
+                checkActive()
                 File(target, MANIFEST_FILE).bufferedWriter(StandardCharsets.UTF_8).use {
                     gson.toJson(manifest.copy(version = 2, commonPassword = null), it)
                 }
@@ -231,40 +240,56 @@ object NovelDownloadStore {
     }
 
     /** Keep existing novels intact, including any active download writes. */
-    fun importBackup(source: File) = synchronized(ioLock) {
+    fun importBackup(source: File, checkActive: () -> Unit = {}) = synchronized(ioLock) {
+        checkActive()
         val root = checkNotNull(rootDirectory)
         imageIndex.clear()
-        source.listFiles().orEmpty().filter(File::isDirectory).forEach { directory ->
-            val manifest = requireNotNull(readManifest(directory))
-            require(manifest.version in 1..2 && manifest.url.isNotBlank())
-            manifest.chapters.forEach { record ->
-                val file = requireNotNull(resolveLocalFile(directory, record.fileName))
-                require(!(record.downloaded || record.bodyAvailable) || file.isFile)
-                if (file.isFile) {
-                    val chapter = requireNotNull(readJson(file, DownloadedChapterContent::class.java))
-                    require(chapter.schemaVersion in 0..2)
-                    if (chapter.schemaVersion == 2) requireNotNull(chapter.body).validate()
+        try {
+            source.listFiles().orEmpty().filter(File::isDirectory).forEach { directory ->
+                checkActive()
+                val manifest = requireNotNull(readManifest(directory))
+                require(manifest.version in 1..2 && manifest.url.isNotBlank())
+                manifest.chapters.forEach { record ->
+                    checkActive()
+                    val file = requireNotNull(resolveLocalFile(directory, record.fileName))
+                    require(!(record.downloaded || record.bodyAvailable) || file.isFile)
+                    if (file.isFile) {
+                        val chapter = requireNotNull(readJson(file, DownloadedChapterContent::class.java))
+                        require(chapter.schemaVersion in 0..2)
+                        if (chapter.schemaVersion == 2) requireNotNull(chapter.body).validate()
+                    }
+                }
+                val target = File(root, digest(canonicalKey(manifest.url)))
+                if (!target.exists()) {
+                    val staging = File.createTempFile("restore-", ".tmp", root)
+                    check(staging.delete() && staging.mkdir())
+                    try {
+                        directory.walkTopDown().forEach { file ->
+                            checkActive()
+                            val output = File(staging, file.relativeTo(directory).path)
+                            if (file.isDirectory) check(output.isDirectory || output.mkdirs())
+                            else file.inputStream().use { input ->
+                                output.outputStream().use { input.copyWithCancellation(it, checkActive) }
+                            }
+                        }
+                        File(staging, MANIFEST_FILE).writeText(gson.toJson(manifest.copy(version = 2, commonPassword = null)))
+                        checkActive()
+                        check(staging.renameTo(target))
+                    } finally {
+                        staging.deleteRecursively()
+                    }
                 }
             }
-            val target = File(root, digest(canonicalKey(manifest.url)))
-            if (!target.exists()) {
-                val staging = File.createTempFile("restore-", ".tmp", root)
-                check(staging.delete() && staging.mkdir())
-                try {
-                    directory.copyRecursively(staging, overwrite = true)
-                    File(staging, MANIFEST_FILE).writeText(gson.toJson(manifest.copy(version = 2, commonPassword = null)))
-                    check(staging.renameTo(target))
-                } finally {
-                    staging.deleteRecursively()
-                }
-            }
+        } finally {
+            // Earlier novels may already have committed when a later copy is cancelled.
+            chapterIndex.clear()
+            chapterKeysByDirectory.clear()
+            chapterIndexLoaded = false
+            inventorySnapshot = null
+            manifestCache.clear()
+            historyProgressCache.clear()
+            mutableChanges.value += 1
         }
-        chapterIndex.clear()
-        chapterKeysByDirectory.clear()
-        chapterIndexLoaded = false
-        inventorySnapshot = null
-        manifestCache.clear()
-        mutableChanges.value += 1
     }
 
     fun manifest(novelUrl: String): DownloadedNovelManifest? = synchronized(ioLock) {
@@ -364,6 +389,7 @@ object NovelDownloadStore {
         val directory = directoryFor(novelUrl, create = false) ?: return@synchronized true
         deletionGenerations[directory.absolutePath] = (deletionGenerations[directory.absolutePath] ?: 0L) + 1L
         manifestCache.remove(directory.absolutePath)
+        historyProgressCache.remove(directory.absolutePath)
         imageIndex.remove(directory)
         removeChapterIndex(directory)
         inventorySnapshot = null
@@ -381,6 +407,7 @@ object NovelDownloadStore {
                 val directory = directoryFor(url, create = false) ?: return@count false
                 deletionGenerations[directory.absolutePath] = (deletionGenerations[directory.absolutePath] ?: 0L) + 1L
                 manifestCache.remove(directory.absolutePath)
+                historyProgressCache.remove(directory.absolutePath)
                 imageIndex.remove(directory)
                 removeChapterIndex(directory)
                 directory.deleteRecursively()
@@ -1098,16 +1125,12 @@ object NovelDownloadStore {
     }
 
     /** Recompute displayed history progress after a catalog gains chapters, without moving its anchor. */
-    fun refreshProgress(activity: com.breakyuna.esjzone.database.entity.LocalReadingActivity): com.breakyuna.esjzone.database.entity.LocalReadingActivity {
-        val manifest = manifest(activity.novelUrl) ?: return activity
-        if (!manifest.catalogComplete) return activity
-        val order = manifest.chapters.filterNot { it.localOnly }
-        val key = chapterKey(activity.chapterUrl)
-        val index = order.indexOfFirst { chapterKey(it.url) == key }
-        if (index < 0) return activity
-        return activity.copy(chapterIndex = index, totalChapters = order.size,
-            bookProgress = manifest.textBookProgress(order.map { it.url }, key, activity.chapterProgress)
-                ?: com.breakyuna.esjzone.domain.reader.readerBookProgress(index, order.size, activity.chapterProgress))
+    fun refreshProgress(activity: com.breakyuna.esjzone.database.entity.LocalReadingActivity): com.breakyuna.esjzone.database.entity.LocalReadingActivity = synchronized(ioLock) {
+        val directory = directoryFor(activity.novelUrl, create = false) ?: return@synchronized activity
+        val manifest = readManifest(directory) ?: return@synchronized activity
+        if (!manifest.catalogComplete) return@synchronized activity
+        historyProgressCache.getOrPut(directory.absolutePath) { DownloadedHistoryProgress(manifest) }
+            .refresh(activity)
     }
 
     fun chapterContent(
@@ -1360,6 +1383,7 @@ object NovelDownloadStore {
         val previousInventory = inventorySnapshot
         writeJson(File(directory, MANIFEST_FILE), manifest, writeGuard)
         manifestCache[directory.absolutePath] = manifest
+        historyProgressCache.remove(directory.absolutePath)
         mutableChanges.value += 1
         if (chapterIndexLoaded || directory.absolutePath in chapterKeysByDirectory) {
             indexChapterManifest(directory, manifest)

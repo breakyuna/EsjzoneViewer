@@ -13,6 +13,7 @@ import androidx.datastore.preferences.preferencesDataStoreFile
 import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import com.breakyuna.esjzone.AppLanguage
 import com.breakyuna.esjzone.AppThemeMode
+import com.breakyuna.esjzone.BuildConfig
 import com.breakyuna.esjzone.domain.repository.SettingsRepository
 import com.breakyuna.esjzone.database.GeneralDatabase
 import kotlinx.coroutines.CoroutineScope
@@ -92,14 +93,18 @@ class SettingsDataStore(
     override val startTab: StateFlow<String> = values.map { it.startTab }
         .stateIn(scope, SharingStarted.Eagerly, defaults.startTab)
 
-    suspend fun readCacheLimitMiB(): Int = dataStore.data
-        .catch { error -> if (error is IOException) emit(emptyPreferences()) else throw error }
-        .first().let { it[CACHE_LIMIT_MIB] ?: it[PAGE_CACHE_LIMIT_MIB] }
-        ?.takeIf { it in SettingsDefaults.MIN_PAGE_CACHE_MIB..SettingsDefaults.MAX_PAGE_CACHE_MIB }
-        ?: SettingsDefaults.DEFAULT_PAGE_CACHE_MIB
+    suspend fun readCacheLimitMiB(): Int {
+        if (!BuildConfig.DEBUG) return SettingsDefaults.DEFAULT_PAGE_CACHE_MIB
+        return dataStore.data
+            .catch { error -> if (error is IOException) emit(emptyPreferences()) else throw error }
+            .first().let { it[CACHE_LIMIT_MIB] ?: it[PAGE_CACHE_LIMIT_MIB] }
+            ?.takeIf { it in SettingsDefaults.MIN_PAGE_CACHE_MIB..SettingsDefaults.MAX_PAGE_CACHE_MIB }
+            ?: SettingsDefaults.DEFAULT_PAGE_CACHE_MIB
+    }
 
     suspend fun setCacheLimitMiB(value: Int) {
         require(value in SettingsDefaults.MIN_PAGE_CACHE_MIB..SettingsDefaults.MAX_PAGE_CACHE_MIB)
+        if (!BuildConfig.DEBUG) return
         dataStore.edit { it[CACHE_LIMIT_MIB] = value }
     }
 
