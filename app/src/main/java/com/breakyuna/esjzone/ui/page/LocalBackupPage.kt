@@ -214,7 +214,7 @@ object LocalBackupPage : AppDestination {
                 .padding(start = AppSpacing.lg, end = AppSpacing.lg, top = AppSpacing.sm, bottom = AppSpacing.xl),
                 verticalArrangement = Arrangement.spacedBy(AppSpacing.lg)) {
                 if (backupFailed) Text(stringResource(R.string.backup_failed), color = MaterialTheme.colorScheme.error)
-                SettingsSection {
+                SettingsSection(title = stringResource(R.string.auto_backup_section)) {
                     BackupToggleRow(stringResource(R.string.auto_backup), autoBackupEnabled, !state.busy) {
                         model.setAutoBackup(it, scope)
                     }
@@ -225,10 +225,15 @@ object LocalBackupPage : AppDestination {
                         enabled = !state.busy,
                         onSelect = { model.setIntervalHours(AutoBackup.INTERVAL_HOURS[it]) }
                     )
-                    BackupToggleRow(stringResource(R.string.backup_include_downloads), autoBackupDownloads, !state.busy,
-                        model::setAutoBackupDownloads)
+                    BackupToggleRow(
+                        title = stringResource(R.string.backup_include_downloads),
+                        checked = autoBackupDownloads,
+                        enabled = !state.busy,
+                        subtitle = stringResource(R.string.backup_include_downloads_warning),
+                        onChange = model::setAutoBackupDownloads
+                    )
                 }
-                SettingsSection(title = stringResource(R.string.backup_contents)) {
+                SettingsSection(title = stringResource(R.string.manual_backup_section)) {
                     BackupCategory.entries.chunked(2).forEach { pair ->
                         Row(Modifier.fillMaxWidth()) {
                             pair.forEach { category ->
@@ -350,12 +355,23 @@ private fun backupCategoryLabel(category: BackupCategory): String = stringResour
 })
 
 @Composable
-private fun BackupToggleRow(title: String, checked: Boolean, enabled: Boolean, onChange: (Boolean) -> Unit) {
+private fun BackupToggleRow(
+    title: String,
+    checked: Boolean,
+    enabled: Boolean,
+    subtitle: String? = null,
+    onChange: (Boolean) -> Unit
+) {
     Row(Modifier.fillMaxWidth().heightIn(min = 56.dp)
         .toggleable(value = checked, enabled = enabled, role = Role.Switch, onValueChange = onChange)
         .padding(horizontal = AppSpacing.lg, vertical = AppSpacing.xs),
         verticalAlignment = Alignment.CenterVertically) {
-        Text(title, style = AppTypography.bodyLarge, modifier = Modifier.weight(1f))
+        Column(Modifier.weight(1f)) {
+            Text(title, style = AppTypography.bodyLarge)
+            subtitle?.let {
+                Text(it, style = AppTypography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
         Switch(checked = checked, enabled = enabled, onCheckedChange = null)
     }
 }

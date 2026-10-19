@@ -885,22 +885,25 @@ internal fun SettingsToggleRow(
         .padding(horizontal = AppSpacing.lg, vertical = AppSpacing.sm),
         horizontalArrangement = Arrangement.spacedBy(AppSpacing.md), verticalAlignment = Alignment.CenterVertically) {
         if (icon != null) SettingIcon(icon)
-        Text(title, modifier = Modifier.weight(1f), style = AppTypography.bodyLarge)
-        if (helpText != null) {
-            val tooltipState = rememberTooltipState(isPersistent = true)
-            val scope = rememberCoroutineScope()
-            TooltipBox(
-                positionProvider = TooltipDefaults.rememberPlainTooltipPositionProvider(),
-                tooltip = { PlainTooltip { Text(helpText) } },
-                state = tooltipState
-            ) {
-                IconButton(onClick = { scope.launch { tooltipState.show() } }) {
-                    Icon(
-                        Icons.Outlined.HelpOutline,
-                        contentDescription = stringResource(R.string.settings_hide_home_recommendations_help),
-                        modifier = Modifier.size(20.dp),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+        Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
+            Text(title, modifier = Modifier.weight(1f, fill = false), style = AppTypography.bodyLarge)
+            if (helpText != null) {
+                val tooltipState = rememberTooltipState(isPersistent = true)
+                val scope = rememberCoroutineScope()
+                TooltipBox(
+                    positionProvider = TooltipDefaults.rememberPlainTooltipPositionProvider(),
+                    tooltip = { PlainTooltip { Text(helpText) } },
+                    state = tooltipState
+                ) {
+                    IconButton(modifier = Modifier.size(AppSpacing.xl),
+                        onClick = { scope.launch { tooltipState.show() } }) {
+                        Icon(
+                            Icons.Outlined.HelpOutline,
+                            contentDescription = stringResource(R.string.settings_hide_home_recommendations_help),
+                            modifier = Modifier.size(20.dp),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                 }
             }
         }

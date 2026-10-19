@@ -887,8 +887,10 @@
     <string name="auto_backup_interval">Backup interval</string>
     <string name="backup_interval_hours">%1$d hours</string>
     <string name="backup_include_downloads">Include downloads</string>
-    <string name="backup_contents">Backup contents</string>
-    <string name="backup_archives">Saved backups</string>
+    <string name="backup_include_downloads_warning">Including downloads may make the backup file too large</string>
+    <string name="auto_backup_section">Automatic backup:</string>
+    <string name="manual_backup_section">Manual backup:</string>
+    <string name="backup_archives">Saved automatic backups:</string>
     <string name="backup_archive_actions">Backup actions</string>
     <string name="backup_import_done">Backup imported successfully</string>
     <string name="backup_overwrite_confirm">Importing will replace the selected data below. Categories absent from the backup will be kept. Continue?</string>
