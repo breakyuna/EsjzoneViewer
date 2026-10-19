@@ -50,6 +50,8 @@ import com.breakyuna.esjzone.ui.page.ChapterCommentsPage
 import com.breakyuna.esjzone.ui.page.ChapterPage
 import com.breakyuna.esjzone.ui.page.DownloadPage
 import com.breakyuna.esjzone.ui.page.FavoritePage
+import com.breakyuna.esjzone.ui.page.StorageLocationModel
+import com.breakyuna.esjzone.ui.page.StorageSetupDialog
 import com.breakyuna.esjzone.ui.page.ForumBoardPage
 import com.breakyuna.esjzone.ui.page.ForumCategoryPage
 import com.breakyuna.esjzone.ui.page.ForumPage
@@ -551,7 +553,10 @@ internal fun canShowAppUpdates(destination: NavKey?, authorization: Authorizatio
     authorization?.hasCredentials() == true && destination != null &&
         destination != AppNavKey.Loading && destination != AppNavKey.Login
 
-/** Root Navigation 3 host. Loading is the session gate; Main owns tab stacks. */
+internal fun needsStorageSetup(destination: NavKey?, authorization: Authorization?, location: String): Boolean =
+    canShowAppUpdates(destination, authorization) && location.isBlank()
+
+/** Root Navigation 3 host. Session and storage gates also cover restored entries. */
 @Composable
 fun AppNavigation() {
     val backStack: MutableList<NavKey> = rememberNavBackStack(AppNavKey.Loading)
@@ -576,13 +581,20 @@ fun AppNavigation() {
         )
     }
     var authorization by authorizationState
+    val storageLocation by PresentationAccess.storage.location.collectAsState()
+    val storageSetupModel = rememberAppViewModel { StorageLocationModel() }
+    val storageSetupState by storageSetupModel.state.collectAsState()
+    // Guard restored readers/details too, after the login/loading entry has completed.
+    val showStorageSetup = needsStorageSetup(backStack.lastOrNull(), authorization, storageLocation) ||
+        storageSetupState.busy ||
+        storageSetupState.result == com.breakyuna.esjzone.R.string.storage_location_cleanup_failed
     val currentAuthorizationState = rememberUpdatedState(authorizationState)
     val navigator = remember(backStack, registry) {
         AppNavigator(backStack, registry, setAuthorization = { currentAuthorizationState.value.value = it })
     }
 
     val appContext = LocalContext.current.applicationContext
-    val showAppUpdates = canShowAppUpdates(backStack.lastOrNull(), authorization)
+    val showAppUpdates = canShowAppUpdates(backStack.lastOrNull(), authorization) && !showStorageSetup
     LaunchedEffect(showAppUpdates) {
         if (showAppUpdates) ReleaseUpdateChecker.checkOnce(appContext)
     }
@@ -615,7 +627,9 @@ fun AppNavigation() {
             modifier = Modifier.fillMaxSize(),
             color = MaterialTheme.colorScheme.background
         ) {
-            NavDisplay(
+            if (showStorageSetup) {
+                StorageSetupDialog(storageSetupModel, storageSetupState)
+            } else NavDisplay(
                 backStack = backStack,
                 onBack = { navigator.pop() },
                 entryDecorators = listOf(

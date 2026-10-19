@@ -62,12 +62,14 @@ class StorageMigrationTest {
             } catch (_: CancellationException) { }
             assertNotNull(NovelDownloadStore.readChapter(chapter.url))
             val book = File(target, source.listFiles()!!.single().name).apply { mkdirs() }
-            val manifest = File(book, "manifest.json").apply { writeText("existing content") }
+            val existing = com.google.gson.Gson().toJson(requireNotNull(NovelDownloadStore.manifest(novel))
+                .copy(name = "Conflicting copy"))
+            val manifest = File(book, "manifest.json").apply { writeText(existing) }
             try {
                 NovelDownloadStore.migrateStorage(StorageFile(target)) { }
                 fail("Expected destination conflict")
             } catch (_: IllegalArgumentException) { }
-            assertEquals("existing content", manifest.readText())
+            assertEquals(existing, manifest.readText())
             assertNotNull(NovelDownloadStore.readChapter(chapter.url))
             try {
                 NovelDownloadStore.migrateStorage(StorageFile(StorageFile(source.listFiles()!!.single()), "nested")) { }

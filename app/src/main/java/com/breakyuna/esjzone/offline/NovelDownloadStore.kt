@@ -148,6 +148,10 @@ object NovelDownloadStore {
     private val imageIndex = DownloadedImageIndex()
     /** Every successful commit publishes the latest manifest under ioLock. Keys are directory paths. */
     private val manifestCache = HashMap<String, DownloadedNovelManifest?>()
+    /** Folder names are presentation; the manifest URL remains the book identity. */
+    private val novelDirectories = LinkedHashMap<String, StorageFile>()
+    private var novelDirectoryIndexLoaded = false
+    private var renameLegacyDirectories = false
     private val historyProgressCache = HashMap<String, DownloadedHistoryProgress>()
     private val deletionGenerations = HashMap<String, Long>()
     /** Built once per store initialization, then updated only for the changed novel. */
@@ -202,7 +206,15 @@ object NovelDownloadStore {
             throw IOException("Unable to create the novel download directory")
         }
         // Refreshing handles/indexes for the same location must preserve active downloads.
-        if (rootDirectory != directory) storageGeneration += 1
+        if (rootDirectory != directory) {
+            storageGeneration += 1
+            renameLegacyDirectories = true
+            novelDirectories.clear()
+        } else {
+            // Preserve folders reserved by a save that has not published its first manifest yet.
+            novelDirectories.replaceAll { _, existing -> StorageFile(directory, existing.name) }
+        }
+        novelDirectoryIndexLoaded = false
         imageIndex.clear()
         chapterIndex.clear()
         chapterKeysByDirectory.clear()
@@ -232,6 +244,7 @@ object NovelDownloadStore {
         require(source == null || !destination.isDescendantOf(source)) { "The destination is inside the source download directory" }
         val migrated = mutableListOf<StorageFile>()
         check(destination.mkdirs())
+        val destinationDirectories = scanNovelDirectories(destination)
         source?.listFiles().orEmpty().filter(StorageFile::isDirectory).forEach { directory ->
             checkActive()
             // Recover the last published files before excluding unfinished .tmp writes.
@@ -243,7 +256,8 @@ object NovelDownloadStore {
                 }
             val manifest = readManifest(directory) ?: return@forEach
             rememberPassword(manifest)
-            val target = StorageFile(destination, digest(canonicalKey(manifest.url)))
+            val key = canonicalKey(manifest.url)
+            val target = destinationDirectories[key] ?: availableNovelDirectory(destination, manifest.name, key)
             val staging = StorageFile.createTempFile("migration-", ".tmp", destination)
             check(staging.delete() && staging.mkdirs())
             try {
@@ -274,6 +288,7 @@ object NovelDownloadStore {
                     .onFailure { AppLogger.w("NovelDownloadStore", "Unable to remove migration staging directory", it) }
             }
             migrated += directory
+            destinationDirectories[key] = target
         }
         checkActive()
         initializeStorageDirectory(destination)
@@ -293,7 +308,10 @@ object NovelDownloadStore {
     fun exportBackup(destination: File, checkActive: () -> Unit = {}, onNovelSnapshot: (File) -> Unit = {}) {
         checkActive()
         check(destination.isDirectory || destination.mkdirs())
-        val sources = synchronized(ioLock) { rootDirectory?.listFiles().orEmpty().filter(StorageFile::isDirectory) }
+        val sources = synchronized(ioLock) {
+            ensureNovelDirectoryIndex()
+            novelDirectories.values.toList()
+        }
         sources.forEach { source ->
             checkActive()
             val target = File(destination, source.name)
@@ -328,6 +346,8 @@ object NovelDownloadStore {
     private fun importStorage(source: StorageFile, checkActive: () -> Unit = {}) = synchronized(ioLock) {
         checkActive()
         val root = checkNotNull(rootDirectory)
+        prepareDownloadRoot(root)
+        ensureNovelDirectoryIndex()
         imageIndex.clear()
         try {
             source.listFiles().orEmpty().filter(StorageFile::isDirectory).forEach { directory ->
@@ -344,7 +364,8 @@ object NovelDownloadStore {
                         if (chapter.schemaVersion == 2) requireNotNull(chapter.body).validate()
                     }
                 }
-                val target = StorageFile(root, digest(canonicalKey(manifest.url)))
+                val key = canonicalKey(manifest.url)
+                val target = novelDirectories[key] ?: availableNovelDirectory(root, manifest.name, key)
                 if (!target.exists()) {
                     val staging = StorageFile.createTempFile("restore-", ".tmp", root)
                     check(staging.delete() && staging.mkdirs())
@@ -360,6 +381,7 @@ object NovelDownloadStore {
                         StorageFile(staging, MANIFEST_FILE).writeText(gson.toJson(manifest.copy(version = 2, commonPassword = null)))
                         checkActive()
                         check(staging.renameTo(target))
+                        novelDirectories[key] = target
                     } finally {
                         runCatching { check(staging.deleteRecursively()) }
                             .onFailure { AppLogger.w("NovelDownloadStore", "Unable to remove restore staging directory", it) }
@@ -399,7 +421,10 @@ object NovelDownloadStore {
 
     /** Shelf membership needs one readable chapter, not a recursive storage-size scan. */
     fun downloadedNovelUrls(): Set<String> {
-        val directories = synchronized(ioLock) { rootDirectory?.listFiles().orEmpty() }
+        val directories = synchronized(ioLock) {
+            ensureNovelDirectoryIndex()
+            novelDirectories.values.toList()
+        }
         return directories.mapNotNullTo(LinkedHashSet()) { directory ->
             synchronized(ioLock) {
                 val stored = readManifest(directory.takeIf(StorageFile::isDirectory))
@@ -420,8 +445,11 @@ object NovelDownloadStore {
         val revision: Long
         val cached: List<DownloadedNovelSummary>?
         val dirty: Set<String>
+        val directories: Map<String, StorageFile>
         synchronized(ioLock) {
             root = rootDirectory ?: return emptyList()
+            ensureNovelDirectoryIndex()
+            directories = novelDirectories.toMap()
             revision = mutableChanges.value
             cached = inventorySnapshot
             dirty = dirtyInventorySizes.toSet()
@@ -431,13 +459,13 @@ object NovelDownloadStore {
             cached.map { summary ->
                 val key = canonicalKey(summary.novelUrl)
                 if (key !in dirty) summary else {
-                    val directory = StorageFile(root, digest(key))
-                    summary.copy(storageBytes = directory.walkTopDown()
-                        .filter(StorageFile::isFile).sumOf(StorageFile::length))
+                    val directory = directories[key]
+                    summary.copy(storageBytes = directory?.walkTopDown()
+                        ?.filter(StorageFile::isFile)?.sumOf(StorageFile::length) ?: 0L)
                 }
             }
         } else {
-            root.listFiles().orEmpty().asSequence().filter(StorageFile::isDirectory).mapNotNull { directory ->
+            directories.values.asSequence().mapNotNull { directory ->
                 val summary = synchronized(ioLock) {
                     val stored = readManifest(directory) ?: return@synchronized null
                     val count = stored.chapters.count { record ->
@@ -480,7 +508,9 @@ object NovelDownloadStore {
         removeChapterIndex(directory)
         inventorySnapshot = null
         mutableChanges.value += 1
-        directory.deleteRecursively()
+        directory.deleteRecursively().also { deleted ->
+            if (deleted) novelDirectories.remove(canonicalKey(novelUrl))
+        }
     }
 
     /** Deletes several novel download directories and returns the number removed. */
@@ -496,7 +526,9 @@ object NovelDownloadStore {
                 historyProgressCache.remove(directory.absolutePath)
                 imageIndex.remove(directory)
                 removeChapterIndex(directory)
-                directory.deleteRecursively()
+                directory.deleteRecursively().also { deleted ->
+                    if (deleted) novelDirectories.remove(canonicalKey(url))
+                }
             }
     }
 
@@ -518,7 +550,7 @@ object NovelDownloadStore {
         novel: DetailedNovel,
         commonPassword: String?
     ): DownloadedNovelManifest? {
-        val directory = directoryFor(novel.url, create = true) ?: return null
+        val directory = directoryFor(novel.url, create = true, novelName = novel.name) ?: return null
         val writeGuard = newWriteGuard(directory)
         val trimmed = commonPassword?.trim()?.ifBlank { null }
         return synchronized(ioLock) {
@@ -648,7 +680,7 @@ object NovelDownloadStore {
     ): DownloadedNovelManifest? {
         val normalizedNovelUrl = novelUrl.trim()
         if (normalizedNovelUrl.isBlank()) return null
-        val directory = directoryFor(normalizedNovelUrl, create = true) ?: return null
+        val directory = directoryFor(normalizedNovelUrl, create = true, novelName = novelName) ?: return null
         val writeGuard = newWriteGuard(directory)
         requireFreeSpace(directory)
 
@@ -870,7 +902,7 @@ object NovelDownloadStore {
         require(orderedChapters.isNotEmpty()) { "This novel has no downloadable chapters" }
         val selectedKeys = selectionKeys(orderedChapters.map { it.url }, selectedChapterUrls)
 
-        val directory = directoryFor(novel.url, create = true)
+        val directory = directoryFor(novel.url, create = true, novelName = novel.name)
             ?: error("Novel download storage is unavailable")
         requireFreeSpace(directory)
         val writeGuard = newWriteGuard(directory)
@@ -1323,6 +1355,7 @@ object NovelDownloadStore {
     )
 
     private fun findChapter(chapterUrl: String, novelUrl: String?): ChapterMatch? {
+        ensureNovelDirectoryIndex()
         val target = chapterKey(chapterUrl)
         chapterIndex[target]?.let { return it }
         if (chapterIndexLoaded) return null
@@ -1338,13 +1371,10 @@ object NovelDownloadStore {
             }
             return chapterIndex[target]
         }
-        rootDirectory?.listFiles()
-            ?.asSequence()
-            ?.filter(StorageFile::isDirectory)
-            ?.forEach { directory ->
-                val manifest = readManifest(directory) ?: return@forEach
-                indexChapterManifest(directory, manifest, recoverUnpublishedFiles = true)
-            }
+        novelDirectories.values.forEach { directory ->
+            val manifest = readManifest(directory) ?: return@forEach
+            indexChapterManifest(directory, manifest, recoverUnpublishedFiles = true)
+        }
         chapterIndexLoaded = true
         return chapterIndex[target]
     }
@@ -1419,11 +1449,98 @@ object NovelDownloadStore {
         }
     }
 
-    private fun directoryFor(novelUrl: String, create: Boolean): StorageFile? {
-        val root = rootDirectory ?: return null
-        val directory = StorageFile(root, digest(canonicalKey(novelUrl)))
-        if (directory.isDirectory) return directory
-        return if (create && (directory.mkdirs() || directory.isDirectory)) directory else null
+    private fun directoryFor(novelUrl: String, create: Boolean, novelName: String = ""): StorageFile? = synchronized(ioLock) {
+        val root = rootDirectory ?: return@synchronized null
+        ensureNovelDirectoryIndex()
+        val key = canonicalKey(novelUrl)
+        novelDirectories[key]?.let { directory ->
+            if (directory.isDirectory) return@synchronized directory
+            novelDirectories.remove(key)
+        }
+        if (!create) return@synchronized null
+        prepareDownloadRoot(root)
+        val directory = availableNovelDirectory(root, novelName, key)
+        if (!directory.mkdirs()) return@synchronized null
+        novelDirectories[key] = directory
+        directory
+    }
+
+    private fun prepareDownloadRoot(root: StorageFile) {
+        check(root.mkdirs())
+        if (root.isDocument) {
+            val marker = StorageFile(root, ".nomedia")
+            if (!marker.exists()) marker.outputStream().close()
+        }
+    }
+
+    private fun scanNovelDirectories(root: StorageFile): LinkedHashMap<String, StorageFile> {
+        val directories = LinkedHashMap<String, StorageFile>()
+        root.listFiles().orEmpty().filter { it.isDirectory && !isStagingDirectory(it.name) }
+            .sortedBy(StorageFile::name).forEach { directory ->
+                val manifest = readManifest(directory) ?: return@forEach
+                if (manifest.url.isNotBlank()) directories.putIfAbsent(canonicalKey(manifest.url), directory)
+            }
+        return directories
+    }
+
+    private fun isStagingDirectory(name: String): Boolean =
+        Regex("(?:migration|restore)-[a-zA-Z0-9-]+\\.tmp").matches(name)
+
+    /** Lazy so a disconnected public volume never blocks startup and access to Settings. */
+    private fun ensureNovelDirectoryIndex() {
+        if (novelDirectoryIndexLoaded) return
+        val root = rootDirectory ?: return
+        val directories = scanNovelDirectories(root)
+        novelDirectories.forEach { (key, directory) ->
+            if (key !in directories && directory.isDirectory) directories[key] = directory
+        }
+        if (renameLegacyDirectories) directories.entries.forEach { entry ->
+            val directory = entry.value
+            if (directory.name != digest(entry.key)) return@forEach
+            val manifest = readManifest(directory) ?: return@forEach
+            val named = availableNovelDirectory(root, manifest.name, entry.key)
+            // A provider may deny renaming. Keep the original readable and retry next process.
+            val renamed = runCatching { directory.renameTo(named) }.getOrDefault(false)
+            if (renamed) {
+                manifestCache.remove(directory.absolutePath)
+                entry.setValue(named)
+            }
+        }
+        novelDirectories.clear()
+        novelDirectories.putAll(directories)
+        novelDirectoryIndexLoaded = true
+        renameLegacyDirectories = false
+    }
+
+    private fun availableNovelDirectory(root: StorageFile, name: String, key: String): StorageFile {
+        val base = novelDirectoryName(name)
+        var candidate = StorageFile(root, base)
+        val suffix = digest(key).take(8)
+        var number = 1
+        while (candidate.exists()) {
+            candidate = StorageFile(root, "$base ($suffix${if (number == 1) "" else "-$number"})")
+            number += 1
+        }
+        return candidate
+    }
+
+    internal fun novelDirectoryName(name: String): String {
+        val cleaned = name.map { character ->
+            if (character < ' ' || character == '\u007f' || character in "<>:\"/\\|?*") '_' else character
+        }.joinToString("").trim().trim('.').ifBlank { "Untitled" }
+            .let { if (isStagingDirectory(it)) "${it}_" else it }
+        // Leave room for a collision suffix within the usual filesystem component limit.
+        var bytes = 0
+        val shortened = buildString {
+            for (codePoint in cleaned.codePoints().toArray()) {
+                val character = String(Character.toChars(codePoint))
+                val size = character.toByteArray(StandardCharsets.UTF_8).size
+                if (bytes + size > 180) break
+                append(character)
+                bytes += size
+            }
+        }
+        return shortened.trimEnd(' ', '.').ifBlank { "Untitled" }
     }
 
     private fun readManifest(directory: StorageFile?): DownloadedNovelManifest? {

@@ -422,6 +422,8 @@
     <string name="settings_volume_key_paging">Volume key paging</string>
     <string name="settings_volume_key_paging_description">Use the volume keys to move one page up or down while reading</string>
     <string name="settings_hide_home_recommendations">Hide popular recommendations on Home</string>
+    <string name="settings_hide_home_recommendations_reason">Popular recommendations are hidden because they have not been updated for a long time</string>
+    <string name="settings_hide_home_recommendations_help">Why popular recommendations are hidden</string>
     <string name="settings_storage_section">Local storage &amp; cache</string>
     <string name="settings_page_cache">Page parsing cache</string>
     <string name="settings_image_cache">Covers and image cache</string>
@@ -852,6 +854,8 @@
     <string name="storage_expand_details">Expand details</string>
     <string name="storage_collapse_details">Collapse details</string>
     <string name="storage_location">Storage location</string>
+    <string name="storage_setup_title">Choose storage folder</string>
+    <string name="storage_setup_message">Choose a dedicated folder for downloads and automatic backups. Existing downloads and backups will move automatically; original files are removed only after migration succeeds.</string>
     <string name="storage_location_private">App-private storage</string>
     <string name="storage_location_choose">Choose folder</string>
     <string name="storage_location_migrate">Migrate existing downloads and backups</string>
@@ -863,4 +867,18 @@
     <string name="storage_reindex">Reindex downloads</string>
     <string name="storage_reindex_done">Downloads reindexed</string>
     <string name="storage_access_failed">Unable to access storage. Choose the folder again in Settings → Storage location.</string>
+    <string name="settings_display_group">Display</string>
+    <string name="settings_reading_group">Reading</string>
+    <string name="settings_data_group">Data</string>
+    <string name="settings_system_group">System</string>
+    <string name="settings_theme">Theme</string>
+    <string name="settings_theme_light">Light</string>
+    <string name="settings_language_label">Language</string>
+    <string name="settings_navigation_label">Navigation</string>
+    <string name="settings_script_toggle">Chinese script conversion</string>
+    <string name="settings_site_switch">Site</string>
+    <string name="settings_backup">Backup settings</string>
+    <string name="settings_storage_analysis">Storage analysis</string>
+    <string name="settings_check_updates">Check for updates</string>
+    <string name="project_repository">Project repository</string>
 </resources>

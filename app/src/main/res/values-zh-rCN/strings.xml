@@ -422,6 +422,8 @@
     <string name="settings_volume_key_paging">音量键翻页</string>
     <string name="settings_volume_key_paging_description">阅读时按音量键向上或向下翻一页</string>
     <string name="settings_hide_home_recommendations">隐藏首页热门推荐</string>
+    <string name="settings_hide_home_recommendations_reason">热门推荐长期未更新故隐藏</string>
+    <string name="settings_hide_home_recommendations_help">查看隐藏热门推荐的原因</string>
     <string name="settings_storage_section">本地存储与缓存管理</string>
     <string name="settings_page_cache">页面解析缓存</string>
     <string name="settings_image_cache">封面与图片缓存</string>
@@ -853,6 +855,8 @@
     <string name="storage_expand_details">展开明细</string>
     <string name="storage_collapse_details">收起明细</string>
     <string name="storage_location">存储位置</string>
+    <string name="storage_setup_title">选择存储目录</string>
+    <string name="storage_setup_message">请选择用于保存下载和自动备份的专用文件夹。现有下载和备份会自动迁移，迁移成功后删除原文件。</string>
     <string name="storage_location_private">应用私有目录</string>
     <string name="storage_location_choose">选择文件夹</string>
     <string name="storage_location_migrate">迁移现有下载和备份</string>
@@ -864,4 +868,18 @@
     <string name="storage_reindex">重新扫描下载</string>
     <string name="storage_reindex_done">下载已重新扫描</string>
     <string name="storage_access_failed">无法访问存储目录，请在设置 → 存储位置重新选择文件夹。</string>
+    <string name="settings_display_group">显示</string>
+    <string name="settings_reading_group">阅读</string>
+    <string name="settings_data_group">数据</string>
+    <string name="settings_system_group">系统</string>
+    <string name="settings_theme">主题</string>
+    <string name="settings_theme_light">浅色</string>
+    <string name="settings_language_label">语言</string>
+    <string name="settings_navigation_label">导航</string>
+    <string name="settings_script_toggle">繁简转换</string>
+    <string name="settings_site_switch">站点切换</string>
+    <string name="settings_backup">备份设置</string>
+    <string name="settings_storage_analysis">存储分析</string>
+    <string name="settings_check_updates">检查更新</string>
+    <string name="project_repository">项目仓库</string>
 </resources>

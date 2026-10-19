@@ -176,7 +176,7 @@ object LocalBackupPage : AppDestination {
         val openBackup = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
             if (uri != null) model.run(context, uri, pendingScope, pendingNames.map { BackupCategory.valueOf(it) }.toSet(), true)
         }
-        Scaffold(topBar = { TopAppBar(title = { Text(stringResource(R.string.local_backup), style = AppTypography.titleMedium) },
+        Scaffold(topBar = { TopAppBar(title = { Text(stringResource(R.string.settings_backup), style = AppTypography.titleMedium) },
             colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background), navigationIcon = {
             IconButton(onClick = { navigator?.pop() }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.reading_stats_back)) }
         }) }) { padding ->

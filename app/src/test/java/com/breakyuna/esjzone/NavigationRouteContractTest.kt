@@ -7,6 +7,7 @@ import com.breakyuna.esjzone.ui.navigation.ContainerTransformTarget
 import com.breakyuna.esjzone.ui.navigation.usesContainerTransform
 import com.breakyuna.esjzone.ui.navigation.containerTransformMetadata
 import com.breakyuna.esjzone.ui.navigation.canShowAppUpdates
+import com.breakyuna.esjzone.ui.navigation.needsStorageSetup
 import com.breakyuna.esjzone.network.Authorization
 import androidx.navigation3.runtime.NavEntry
 import androidx.navigation3.runtime.NavKey
@@ -21,6 +22,25 @@ import org.junit.Test
 
 /** Pure JVM coverage for the value objects stored by Navigation 3. */
 class NavigationRouteContractTest {
+    @Test
+    fun storageSetupWaitsForLoginAndAlsoGuardsRestoredReadersAndDetails() {
+        val session = Authorization("fixture-key", "fixture-token", "www.esjzone.cc")
+        for (destination in listOf(null, AppNavKey.Loading, AppNavKey.Login)) {
+            assertFalse(needsStorageSetup(destination, session, ""))
+        }
+        val destinations = listOf(
+            AppNavKey.Main,
+            AppNavKey.Reader(ReaderRoute("123", "/forum/123/456.html")),
+            AppNavKey.Legacy(LegacyRoute.Novel("/detail/123.html"))
+        )
+        for (destination in destinations) {
+            assertTrue(needsStorageSetup(destination, session, ""))
+            assertFalse(needsStorageSetup(destination, session, "content://fixture/tree/books"))
+            assertFalse(needsStorageSetup(destination, null, ""))
+            assertFalse(needsStorageSetup(destination, Authorization(), ""))
+        }
+    }
+
     @Test
     fun updatesWaitUntilTheLoginOrLoadingPageHasClosed() {
         val session = Authorization("fixture-key", "fixture-token", "www.esjzone.cc")

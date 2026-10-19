@@ -31,23 +31,23 @@ class ReleaseCachePolicyTest {
     }
 
     @Test
-    fun quotaStaysAt100MiBAndStillEvictsWhileRecordingIsDisabled() {
+    fun quotaStaysAt128MiBAndStillEvictsWhileRecordingIsDisabled() {
         val directory = Files.createTempDirectory("release-cache-quota-").toFile()
         val images = CacheImageDiskCache(DiskCache.Builder()
             .directory(File(directory, "images").toOkioPath()).maxSizeBytes(Long.MAX_VALUE).build())
         try {
             PageCache.initializeDirectory(File(directory, "pages"))
             CacheStorage.initialize(images, 256)
-            assertEquals(100, CacheStorage.limitMiB.value)
-            assertEquals(100L * 1024L * 1024L, CacheStorage.stats().maxSizeBytes)
+            assertEquals(128, CacheStorage.limitMiB.value)
+            assertEquals(128L * 1024L * 1024L, CacheStorage.stats().maxSizeBytes)
             assertTrue(PageCache.write("fixture", "cached content"))
             val page = File(directory, "pages").listFiles()!!.single()
-            RandomAccessFile(page, "rw").use { it.setLength(100L * 1024L * 1024L + 1L) }
+            RandomAccessFile(page, "rw").use { it.setLength(128L * 1024L * 1024L + 1L) }
             PageCache.initializeDirectory(File(directory, "pages"))
 
             CacheStorage.setLimitMiB(512)
 
-            assertEquals(100, CacheStorage.limitMiB.value)
+            assertEquals(128, CacheStorage.limitMiB.value)
             assertFalse(page.exists())
             assertEquals(0L, CacheStorage.stats().sizeBytes)
             assertFalse(CacheDiagnostics.state.value.recording)

@@ -60,7 +60,7 @@ class SettingsDataStoreMigrationInstrumentedTest {
         val secondScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
         try {
             val first = SettingsDataStore(context, firstScope, name)
-            assertEquals(100, first.readCacheLimitMiB())
+            assertEquals(128, first.readCacheLimitMiB())
             first.setCacheLimitMiB(64)
             firstScope.coroutineContext[Job]!!.cancelAndJoin()
             val restored = SettingsDataStore(context, secondScope, name)

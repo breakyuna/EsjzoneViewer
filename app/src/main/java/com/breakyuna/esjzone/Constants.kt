@@ -1,6 +1,7 @@
 package com.breakyuna.esjzone
 
 object Constants {
+    const val PROJECT_REPOSITORY_URL = "https://github.com/breakyuna/EsjzoneViewer"
     const val ORIGINAL_AUTHOR = "DeeChael"
 
     val MAINTAINERS = listOf(

@@ -159,6 +159,54 @@ class SharedDownloadStorageInstrumentedTest {
         }
     }
 
+    @Test fun publicLegacyNamesRemainReadableWhenRenameIsDeniedAndDeletedRootsRegainMediaMarker() {
+        val privateRoot = File(context.cacheDir, "storage-${UUID.randomUUID()}").apply { mkdirs() }
+        val shared = StorageFile(StorageFile.fromTree(context, treeUri), "case-${UUID.randomUUID()}")
+            .apply { check(mkdirs()) }
+        val downloads = StorageFile(shared, "downloads")
+        val novelId = (UUID.randomUUID().mostSignificantBits and Long.MAX_VALUE).toString()
+        val novelUrl = "https://www.esjzone.cc/detail/$novelId.html"
+        val chapter = Chapter("Chapter", "https://www.esjzone.cc/forum/$novelId/1.html", false)
+        fun freshDownloads() = StorageFile(StorageFile.fromTree(context, treeUri), "${shared.name}/downloads")
+        fun save() = requireNotNull(NovelDownloadStore.saveChapter("可读书名", novelUrl, "", listOf(chapter), chapter,
+            DetailedChapter("Chapter", listOf(TextComponent("保存的正文")), null, null),
+            Authorization("", "", "www.esjzone.cc")))
+        try {
+            NovelDownloadStore.initialize(context)
+            NovelDownloadStore.initializeDirectory(privateRoot)
+            save()
+            NovelDownloadStore.migrateStorage(downloads) { }
+            val named = downloads.listFiles()!!.single { it.isDirectory }
+            assertEquals("可读书名", named.name)
+            val hash = java.security.MessageDigest.getInstance("SHA-256").digest("/detail/$novelId.html".toByteArray())
+                .joinToString("") { "%02x".format(it.toInt() and 0xff) }
+            val legacy = StorageFile(downloads, hash)
+            check(named.renameTo(legacy))
+            NovelDownloadStore.restoreStorage(StorageFile(privateRoot))
+            NovelDownloadStore.restoreStorage(freshDownloads())
+            configure(shared, "security", "rename")
+            try {
+                assertNotNull(NovelDownloadStore.readChapter(chapter.url))
+                assertTrue(legacy.isDirectory)
+            } finally { configure(shared) }
+            NovelDownloadStore.restoreStorage(StorageFile(privateRoot))
+            val reopened = freshDownloads()
+            NovelDownloadStore.restoreStorage(reopened)
+            assertNotNull(NovelDownloadStore.readChapter(chapter.url))
+            assertTrue(StorageFile(reopened, "可读书名").isDirectory)
+            assertFalse(StorageFile(reopened, hash).exists())
+            check(reopened.deleteRecursively())
+            save()
+            assertTrue(StorageFile(reopened, ".nomedia").isFile)
+            assertNotNull(NovelDownloadStore.readChapter(chapter.url))
+        } finally {
+            configure(shared)
+            kotlinx.coroutines.runBlocking { EsjzoneApplication.instance.container.initializeDownloads() }
+            shared.deleteRecursively()
+            privateRoot.deleteRecursively()
+        }
+    }
+
     @Test fun replacingDocumentKeepsPublishedContentAndReadableDocumentUri() {
         val directory = StorageFile(StorageFile.fromTree(context, treeUri), "case-${UUID.randomUUID()}")
             .apply { check(mkdirs()) }

@@ -7,10 +7,11 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.togetherWith
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -21,7 +22,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.semantics.heading
@@ -42,9 +42,20 @@ import androidx.compose.material.icons.filled.Reorder
 import androidx.compose.material.icons.filled.RestartAlt
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.outlined.HelpOutline
 import androidx.compose.material.icons.filled.AutoStories
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Storage
+import androidx.compose.material.icons.filled.Palette
+import androidx.compose.material.icons.filled.Language
+import androidx.compose.material.icons.filled.Translate
+import androidx.compose.material.icons.filled.Public
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.VisibilityOff
+import androidx.compose.material.icons.filled.Backup
+import androidx.compose.material.icons.filled.SystemUpdate
+import androidx.compose.material.icons.filled.Update
+import androidx.compose.material.icons.filled.Description
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -54,9 +65,14 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.PlainTooltip
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
+import androidx.compose.material3.TooltipBox
+import androidx.compose.material3.TooltipDefaults
+import androidx.compose.material3.rememberTooltipState
 import com.breakyuna.esjzone.ui.designsystem.GlobalText as Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -80,11 +96,15 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.style.TextAlign
 import com.breakyuna.esjzone.ui.designsystem.globalStringResource as stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
+import com.breakyuna.esjzone.AppThemeMode
 import com.breakyuna.esjzone.AppLanguage
 import com.breakyuna.esjzone.ui.reader.ReaderScript
 import com.breakyuna.esjzone.BuildConfig
@@ -126,6 +146,7 @@ object SettingsPage : AppDestination {
         val navigator = LocalBaseNavigator.current
         val authorization = LocalAuthorization.current
         val context = LocalContext.current
+        val uriHandler = LocalUriHandler.current
         val scope = rememberCoroutineScope()
         val model = rememberAppViewModel { SettingsPageModel() }
         val state by model.state.collectAsStateWithLifecycle()
@@ -134,6 +155,7 @@ object SettingsPage : AppDestination {
         val hideHomeRecommendations by PresentationAccess.settings.hideHomeRecommendations
         val domain by PresentationAccess.settings.domain
         val language by PresentationAccess.settings.language
+        val themeMode by PresentationAccess.settings.themeMode
         val autoSave by PresentationAccess.settings.readerAutoSave
         val downloadConcurrency by PresentationAccess.settings.downloadConcurrency
         val navigationOrder by PresentationAccess.settings.navigationOrder
@@ -148,7 +170,8 @@ object SettingsPage : AppDestination {
         val pageTitle = stringResource(when (section) {
             "NAVIGATION" -> R.string.settings_navigation_section
             "READING" -> R.string.settings_reading_section
-            "STORAGE" -> R.string.settings_storage_section
+            "STORAGE" -> R.string.settings_storage_analysis
+            "DOWNLOAD" -> R.string.download_settings
             "ABOUT" -> R.string.about
             else -> R.string.settings_screen_title
         })
@@ -163,7 +186,7 @@ object SettingsPage : AppDestination {
             ReleaseUpdateChecker.initialize(context)
         }
         LifecycleResumeEffect(section) {
-            if (section == "STORAGE") model.refreshCacheStats()
+            if (section == "STORAGE" || section == "DOWNLOAD") model.refreshCacheStats()
             onPauseOrDispose { }
         }
         LaunchedEffect(state.logoutCompleted) { if (state.logoutCompleted) rootNavigator?.replaceAll(LoginScreen) }
@@ -203,9 +226,20 @@ object SettingsPage : AppDestination {
                 verticalArrangement = Arrangement.spacedBy(AppSpacing.lg)
             ) {
                 if (displayedSection == "MAIN") {
-                    SettingsSection(title = stringResource(R.string.settings_general_section)) {
-                        InlineSettingRow(
-                            title = stringResource(R.string.settings_language_section),
+                    SettingsSection(title = stringResource(R.string.settings_display_group)) {
+                        ChoiceSettingRow(
+                            icon = Icons.Filled.Palette,
+                            title = stringResource(R.string.settings_theme),
+                            options = listOf(
+                                stringResource(R.string.settings_language_system_short),
+                                stringResource(R.string.settings_theme_light),
+                                stringResource(R.string.reader_background_dark)
+                            ),
+                            selectedIndex = themeMode.ordinal
+                        ) { PresentationAccess.settings.setThemeMode(AppThemeMode.entries[it]) }
+                        ChoiceSettingRow(
+                            icon = Icons.Filled.Language,
+                            title = stringResource(R.string.settings_language_label),
                             options = listOf(
                                 stringResource(R.string.settings_language_system_short),
                                 stringResource(R.string.settings_language_chinese_short),
@@ -218,47 +252,50 @@ object SettingsPage : AppDestination {
                             LocaleHelper.syncSystemLocale(context, candidate)
                             model.persist("language", candidate.code)
                         }
-                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = .45f))
-                        InlineSettingRow(
-                            title = stringResource(R.string.settings_script_section),
-                            options = listOf(
-                                stringResource(R.string.reader_script_original),
-                                stringResource(R.string.reader_script_simplified),
-                                stringResource(R.string.reader_script_traditional)
-                            ),
-                            selectedIndex = readerSettings.script.ordinal
-                        ) { index ->
+                        LinkRow(Icons.Filled.Reorder, stringResource(R.string.settings_navigation_label)) { section = "NAVIGATION" }
+                        SettingsToggleRow(
+                            title = stringResource(R.string.settings_script_toggle),
+                            checked = readerSettings.script != ReaderScript.ORIGINAL,
+                            icon = Icons.Filled.Translate
+                        ) { enabled ->
                             PresentationAccess.readerSettings.saveInBackground(
-                                readerSettings.copy(script = ReaderScript.entries[index])
+                                readerSettings.copy(script = if (enabled) ReaderScript.SIMPLIFIED else ReaderScript.ORIGINAL)
                             )
                         }
+                        if (readerSettings.script != ReaderScript.ORIGINAL) {
+                            InlineSettingRow(
+                                options = listOf(
+                                    stringResource(R.string.reader_script_simplified),
+                                    stringResource(R.string.reader_script_traditional)
+                                ),
+                                selectedIndex = if (readerSettings.script == ReaderScript.SIMPLIFIED) 0 else 1
+                            ) { index ->
+                                PresentationAccess.readerSettings.saveInBackground(
+                                    readerSettings.copy(script = if (index == 0) ReaderScript.SIMPLIFIED else ReaderScript.TRADITIONAL)
+                                )
+                            }
+                        }
                     }
-                    SettingsSection {
-                        LinkRow(Icons.Filled.FolderOpen, stringResource(R.string.storage_location)) {
-                            navigator?.pushIfNotCurrent(StorageLocationPage)
-                        }
-                        ToggleRow(stringResource(R.string.auto_backup), autoBackup) {
-                            model.setAutoBackup(it, BookshelfRepository.scopeFor(authorization))
-                        }
-                        LinkRow(Icons.Filled.Download, stringResource(R.string.local_backup)) {
-                            navigator?.pushIfNotCurrent(LocalBackupPage)
-                        }
-                        if (state.autoBackupFailed) Text(stringResource(R.string.backup_failed),
-                            color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(AppSpacing.md))
-                    }
-                    SettingsSection(title = stringResource(R.string.settings_content_section)) {
-                        ToggleRow(stringResource(R.string.settings_showadultcontent), adult) { PresentationAccess.settings.setAdult(it); model.persist("show_adult", it.toString()) }
-                        ToggleRow(
-                            stringResource(R.string.settings_hide_home_recommendations),
-                            hideHomeRecommendations
+                    SettingsSection(title = stringResource(R.string.settings_reading_group)) {
+                        SettingsToggleRow(
+                            title = stringResource(R.string.settings_showadultcontent),
+                            checked = adult,
+                            icon = Icons.Filled.Visibility
+                        ) { PresentationAccess.settings.setAdult(it); model.persist("show_adult", it.toString()) }
+                        SettingsToggleRow(
+                            title = stringResource(R.string.settings_hide_home_recommendations),
+                            checked = hideHomeRecommendations,
+                            helpText = stringResource(R.string.settings_hide_home_recommendations_reason),
+                            icon = Icons.Filled.VisibilityOff
                         ) { PresentationAccess.settings.setHideHomeRecommendations(it) }
-                    }
-                    SettingsSection(title = stringResource(R.string.settings_network_section)) {
-                        SiteSettingRow(
-                            domains = PresentationAccess.settings.DOMAINS,
-                            selectedDomain = domain,
+                        ChoiceSettingRow(
+                            icon = Icons.Filled.Public,
+                            title = stringResource(R.string.settings_site_switch),
+                            options = PresentationAccess.settings.DOMAINS,
+                            selectedIndex = PresentationAccess.settings.DOMAINS.indexOf(domain),
                             enabled = !switchingDomain
-                        ) { candidate ->
+                        ) { index ->
+                            val candidate = PresentationAccess.settings.DOMAINS[index]
                             if (candidate != domain && !switchingDomain) {
                                 switchingDomain = true
                                 scope.launch {
@@ -285,17 +322,27 @@ object SettingsPage : AppDestination {
                                 }
                             }
                         }
-                    }
-                    SettingsSection(title = stringResource(R.string.settings_preferences_section)) {
-                        LinkRow(Icons.Filled.Reorder, stringResource(R.string.settings_navigation_section)) { section = "NAVIGATION" }
                         LinkRow(Icons.Filled.MenuBook, stringResource(R.string.settings_reading_section)) { section = "READING" }
-                        LinkRow(Icons.Filled.Storage, stringResource(R.string.settings_storage_section)) { section = "STORAGE" }
                     }
-                    SettingsSection(title = stringResource(R.string.settings_diagnostics_section)) {
-                        LinkRow(Icons.Filled.BugReport, stringResource(R.string.system_logs)) { navigator?.pushIfNotCurrent(LogsPage) }
-                        if (BuildConfig.DEBUG) {
-                            LinkRow(Icons.Filled.Storage, stringResource(R.string.cache_records)) { navigator?.pushIfNotCurrent(CacheRecordsPage) }
+                    SettingsSection(title = stringResource(R.string.settings_data_group)) {
+                        LinkRow(Icons.Filled.FolderOpen, stringResource(R.string.storage_location)) {
+                            navigator?.pushIfNotCurrent(StorageLocationPage)
                         }
+                        SettingsToggleRow(
+                            title = stringResource(R.string.auto_backup),
+                            checked = autoBackup,
+                            icon = Icons.Filled.Backup
+                        ) { model.setAutoBackup(it, BookshelfRepository.scopeFor(authorization)) }
+                        if (state.autoBackupFailed) Text(stringResource(R.string.backup_failed),
+                            color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(AppSpacing.md))
+                        LinkRow(Icons.Filled.Download, stringResource(R.string.download_settings)) { section = "DOWNLOAD" }
+                        LinkRow(Icons.Filled.Backup, stringResource(R.string.settings_backup)) {
+                            navigator?.pushIfNotCurrent(LocalBackupPage)
+                        }
+                        LinkRow(Icons.Filled.Storage, stringResource(R.string.settings_storage_analysis)) { section = "STORAGE" }
+                    }
+                    SettingsSection(title = stringResource(R.string.settings_system_group)) {
+                        LinkRow(Icons.Filled.BugReport, stringResource(R.string.system_logs)) { navigator?.pushIfNotCurrent(LogsPage) }
                         LinkRow(Icons.Filled.Info, stringResource(R.string.about)) { section = "ABOUT" }
                     }
                     Surface(
@@ -447,14 +494,8 @@ object SettingsPage : AppDestination {
                     if (displayedSection == "READING") {
                         ReaderMoreSettingsContent(readerSettings, PresentationAccess.readerSettings::saveDebounced)
                     }
-                    if (displayedSection == "STORAGE") {
+                    if (displayedSection == "DOWNLOAD") {
                         SettingsSection {
-                            CacheStorageChart(state.storageUsage, state.storageStatsError)
-                            if (state.storageStatsError) {
-                                TextButton(onClick = model::refreshCacheStats) { Text(stringResource(R.string.retry)) }
-                            }
-                        }
-                        SettingsSection(title = stringResource(R.string.settings_download_section)) {
                             val downloads = state.downloadStats
                             LinkRow(
                                 Icons.Filled.Download,
@@ -471,7 +512,7 @@ object SettingsPage : AppDestination {
                                 TextButton(onClick = model::refreshCacheStats) { Text(stringResource(R.string.retry)) }
                             }
                             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = .45f))
-                            ToggleRow(
+                            SettingsToggleRow(
                                 stringResource(R.string.download_auto_save),
                                 autoSave
                             ) { enabled ->
@@ -529,14 +570,15 @@ object SettingsPage : AppDestination {
                             }
                         }
 
+                    }
+                    if (displayedSection == "STORAGE") {
                         SettingsSection {
-                            LinkRow(Icons.Filled.FolderOpen, stringResource(R.string.storage_location)) {
-                                navigator?.pushIfNotCurrent(StorageLocationPage)
-                            }
-                            LinkRow(Icons.Filled.Download, stringResource(R.string.local_backup)) {
-                                navigator?.pushIfNotCurrent(LocalBackupPage)
+                            CacheStorageChart(state.storageUsage, state.storageStatsError)
+                            if (state.storageStatsError) {
+                                TextButton(onClick = model::refreshCacheStats) { Text(stringResource(R.string.retry)) }
                             }
                         }
+
                         SettingsSection {
                             val cache = state.cacheStats
                             CacheRow(stringResource(R.string.settings_page_cache), when { state.cacheStatsError -> stringResource(R.string.local_cache_stats_failed); cache == null -> stringResource(R.string.local_cache_loading); else -> stringResource(R.string.local_cache_pages, formatBytes(cache.pageBytes), cache.pageEntries) }, state.cacheOperation != null, stringResource(R.string.local_cache_clear_pages)) { model.clearPageCache() }
@@ -549,47 +591,64 @@ object SettingsPage : AppDestination {
                         }
 
                     }
+                    if (displayedSection == "STORAGE" && BuildConfig.DEBUG) {
+                        SettingsSection {
+                            LinkRow(Icons.Filled.Storage, stringResource(R.string.cache_records)) {
+                                navigator?.pushIfNotCurrent(CacheRecordsPage)
+                            }
+                        }
+                    }
                     if (displayedSection == "ABOUT") {
-                        Column(Modifier.fillMaxWidth().padding(AppSpacing.md),
-                            verticalArrangement = Arrangement.spacedBy(AppSpacing.sm)) {
-                            Text(stringResource(R.string.app_name), style = AppTypography.titleLarge)
-                            Text(stringResource(R.string.about_disclaimer), style = AppTypography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Column(
+                            modifier = Modifier.fillMaxWidth().padding(vertical = AppSpacing.xxl),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(AppSpacing.md)
+                        ) {
+                            Image(
+                                painter = painterResource(R.drawable.esjzone_icon_round),
+                                contentDescription = null,
+                                modifier = Modifier.size(104.dp)
+                            )
+                            Text(stringResource(R.string.app_name), style = AppTypography.displayLarge)
+                            Surface(
+                                shape = AppShapes.pill,
+                                color = MaterialTheme.colorScheme.surfaceContainerHigh
+                            ) {
+                                Text(
+                                    BuildConfig.VERSION_NAME,
+                                    style = AppTypography.labelLarge,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.padding(horizontal = AppSpacing.lg, vertical = AppSpacing.sm)
+                                )
+                            }
                         }
                         SettingsSection {
-                            Row(
-                                modifier = Modifier.fillMaxWidth()
-                                    .clickable { ReleaseUpdateChecker.checkNow(context) }
-                                    .padding(AppSpacing.md),
-                                horizontalArrangement = Arrangement.spacedBy(AppSpacing.md),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(AppSpacing.xs)) {
-                                    Text(stringResource(R.string.build_version), style = AppTypography.bodyMedium)
-                                    Text(
-                                        text = when (val s = checkState) {
-                                            ReleaseCheckState.Checking -> stringResource(R.string.update_checking)
-                                            ReleaseCheckState.UpToDate -> stringResource(R.string.update_up_to_date)
-                                            ReleaseCheckState.Error -> stringResource(R.string.update_check_error)
-                                            is ReleaseCheckState.Available -> stringResource(R.string.update_available_status, s.version)
-                                            ReleaseCheckState.Idle -> stringResource(R.string.update_check_tap_version)
-                                        },
-                                        style = AppTypography.bodySmall,
-                                        color = if (checkState is ReleaseCheckState.Error) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                }
-                                Text(BuildConfig.VERSION_NAME, style = AppTypography.labelMedium,
-                                    modifier = Modifier.background(MaterialTheme.colorScheme.surfaceContainerLow, AppShapes.compact)
-                                        .padding(horizontal = AppSpacing.md, vertical = AppSpacing.sm),
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            }
-                            ToggleRow(
+                            LinkRow(
+                                icon = Icons.Filled.SystemUpdate,
+                                title = stringResource(R.string.settings_check_updates),
+                                subtitle = when (val update = checkState) {
+                                    ReleaseCheckState.Checking -> stringResource(R.string.update_checking)
+                                    ReleaseCheckState.UpToDate -> stringResource(R.string.update_up_to_date)
+                                    ReleaseCheckState.Error -> stringResource(R.string.update_check_error)
+                                    is ReleaseCheckState.Available -> stringResource(R.string.update_available_status, update.version)
+                                    ReleaseCheckState.Idle -> null
+                                },
+                                enabled = checkState != ReleaseCheckState.Checking
+                            ) { ReleaseUpdateChecker.checkNow(context) }
+                            SettingsToggleRow(
                                 title = stringResource(R.string.update_auto_check),
                                 checked = autoCheck,
+                                icon = Icons.Filled.Update,
                                 onCheckedChange = { ReleaseUpdateChecker.setAutoCheck(context, it) }
                             )
                             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = .45f))
-                            LinkRow(Icons.Filled.Info, stringResource(R.string.open_source_licenses)) {
+                            LinkRow(Icons.Filled.Public, stringResource(R.string.project_repository)) {
+                                runCatching { uriHandler.openUri(Constants.PROJECT_REPOSITORY_URL) }
+                                    .onFailure { error ->
+                                        AppLogger.w("SettingsPage", "Unable to open project repository", error)
+                                    }
+                            }
+                            LinkRow(Icons.Filled.Description, stringResource(R.string.open_source_licenses)) {
                                 navigator?.pushIfNotCurrent(OpenSourceLicensesPage)
                             }
                         }
@@ -606,6 +665,13 @@ object SettingsPage : AppDestination {
                                 Text(Constants.MAINTAINERS.joinToString(", "), style = AppTypography.bodyMedium)
                             }
                         }
+                        Text(
+                            stringResource(R.string.about_disclaimer),
+                            style = AppTypography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.fillMaxWidth().padding(horizontal = AppSpacing.lg)
+                        )
                     }
 
             }
@@ -687,7 +753,6 @@ internal fun SettingsSection(
 
 @Composable
 private fun InlineSettingRow(
-    title: String,
     options: List<String>,
     selectedIndex: Int,
     onSelect: (Int) -> Unit
@@ -696,7 +761,6 @@ private fun InlineSettingRow(
         modifier = Modifier.fillMaxWidth().padding(AppSpacing.md),
         verticalArrangement = Arrangement.spacedBy(AppSpacing.sm)
     ) {
-        Text(title, style = AppTypography.bodyMedium)
         Surface(
             shape = AppShapes.compact,
             color = MaterialTheme.colorScheme.surfaceContainerLow
@@ -727,43 +791,73 @@ private fun InlineSettingRow(
 }
 
 @Composable
-private fun SiteSettingRow(
-    domains: List<String>,
-    selectedDomain: String,
-    enabled: Boolean,
-    onSelect: (String) -> Unit
+private fun ChoiceSettingRow(
+    icon: ImageVector,
+    title: String,
+    options: List<String>,
+    selectedIndex: Int,
+    enabled: Boolean = true,
+    onSelect: (Int) -> Unit
 ) {
-    Column(Modifier.fillMaxWidth().selectableGroup().padding(AppSpacing.xs),
-        verticalArrangement = Arrangement.spacedBy(AppSpacing.xs)) {
-        domains.forEach { candidate ->
-            val selected = candidate == selectedDomain
-            Row(
-                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
-                    .clip(AppShapes.compact)
-                    .background(if (selected) MaterialTheme.colorScheme.surfaceContainer else Color.Transparent)
-                    .selectable(
-                        selected = selected,
-                        enabled = enabled,
-                        role = Role.RadioButton,
-                        onClick = { onSelect(candidate) }
-                    ).padding(horizontal = AppSpacing.md, vertical = AppSpacing.sm),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(AppSpacing.md)
-            ) {
-                Text(candidate, modifier = Modifier.weight(1f), style = AppTypography.bodyMedium,
-                    color = if (selected) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant)
-                if (selected) Icon(Icons.Filled.Check, contentDescription = null, modifier = Modifier.size(18.dp))
+    var expanded by remember { mutableStateOf(false) }
+    Box {
+        LinkRow(
+            icon = icon,
+            title = title,
+            value = options.getOrNull(selectedIndex),
+            enabled = enabled
+        ) { expanded = true }
+        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            options.forEachIndexed { index, option ->
+                DropdownMenuItem(
+                    text = { Text(option) },
+                    onClick = {
+                        expanded = false
+                        if (index != selectedIndex) onSelect(index)
+                    },
+                    trailingIcon = if (index == selectedIndex) {
+                        { Icon(Icons.Filled.Check, contentDescription = null) }
+                    } else null
+                )
             }
         }
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun ToggleRow(title: String, checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
-    Row(Modifier.fillMaxWidth().heightIn(min = 56.dp).padding(horizontal = AppSpacing.md, vertical = AppSpacing.xs),
+internal fun SettingsToggleRow(
+    title: String,
+    checked: Boolean,
+    helpText: String? = null,
+    icon: ImageVector? = null,
+    onCheckedChange: (Boolean) -> Unit
+) {
+    Row(Modifier.fillMaxWidth().heightIn(min = 56.dp)
+        .toggleable(value = checked, role = Role.Switch, onValueChange = onCheckedChange)
+        .padding(horizontal = AppSpacing.md, vertical = AppSpacing.xs),
         horizontalArrangement = Arrangement.spacedBy(AppSpacing.md), verticalAlignment = Alignment.CenterVertically) {
+        if (icon != null) SettingIcon(icon)
         Text(title, modifier = Modifier.weight(1f), style = AppTypography.bodyMedium)
-        Switch(checked, onCheckedChange)
+        if (helpText != null) {
+            val tooltipState = rememberTooltipState(isPersistent = true)
+            val scope = rememberCoroutineScope()
+            TooltipBox(
+                positionProvider = TooltipDefaults.rememberPlainTooltipPositionProvider(),
+                tooltip = { PlainTooltip { Text(helpText) } },
+                state = tooltipState
+            ) {
+                IconButton(onClick = { scope.launch { tooltipState.show() } }) {
+                    Icon(
+                        Icons.Outlined.HelpOutline,
+                        contentDescription = stringResource(R.string.settings_hide_home_recommendations_help),
+                        modifier = Modifier.size(20.dp),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+        }
+        Switch(checked = checked, onCheckedChange = null)
     }
 }
 
@@ -794,6 +888,7 @@ private fun LinkRow(
     icon: ImageVector,
     title: String,
     subtitle: String? = null,
+    value: String? = null,
     enabled: Boolean = true,
     centered: Boolean = false,
     onClick: () -> Unit
@@ -807,7 +902,7 @@ private fun LinkRow(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = if (centered) Arrangement.Center else Arrangement.Start
         ) {
-            Icon(icon, null, tint = MaterialTheme.colorScheme.onSurface, modifier = Modifier.size(20.dp))
+            SettingIcon(icon)
             if (centered) {
                 Text(
                     title,
@@ -822,8 +917,31 @@ private fun LinkRow(
                         Text(it, style = AppTypography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
                     }
                 }
+                value?.let {
+                    Text(
+                        it,
+                        style = AppTypography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.weight(.8f).padding(end = AppSpacing.xs),
+                        textAlign = TextAlign.End,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
                 if (enabled) Icon(Icons.Filled.ChevronRight, null, modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
+    }
+}
+
+@Composable
+private fun SettingIcon(icon: ImageVector) {
+    Box(
+        modifier = Modifier.size(32.dp)
+            .background(MaterialTheme.colorScheme.surfaceContainerHigh, AppShapes.compact),
+        contentAlignment = Alignment.Center
+    ) {
+        Icon(icon, contentDescription = null, modifier = Modifier.size(18.dp),
+            tint = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }

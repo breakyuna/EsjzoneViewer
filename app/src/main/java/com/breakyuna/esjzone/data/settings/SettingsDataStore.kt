@@ -31,7 +31,7 @@ import com.breakyuna.esjzone.util.AppLogger
 
 /** Stable application setting keys and values shared by the DataStore boundary and UI adapter. */
 object SettingsDefaults {
-    const val DEFAULT_PAGE_CACHE_MIB = 100
+    const val DEFAULT_PAGE_CACHE_MIB = 128
     const val MIN_PAGE_CACHE_MIB = 1
     const val MAX_PAGE_CACHE_MIB = 2048
     const val READER_AUTO_SAVE_KEY = "reader_auto_save"

@@ -14,6 +14,7 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import com.breakyuna.esjzone.R
@@ -40,6 +41,7 @@ class StorageLocationModel : AppStateViewModel<StorageLocationModel.Status>(Stat
         PresentationAccess.storage.reindex()
         R.string.storage_reindex_done
     }
+    fun dismissResult() { mutableState.value = state.value.copy(result = null) }
     private fun perform(action: suspend () -> Int) {
         if (state.value.busy) return
         mutableState.value = Status(busy = true)
@@ -50,6 +52,36 @@ class StorageLocationModel : AppStateViewModel<StorageLocationModel.Status>(Stat
             } catch (_: Exception) { mutableState.value = Status(result = R.string.storage_location_failed) }
         }
     }
+}
+
+/** Required after login until a public tree is durably selected and migration finishes. */
+@Composable
+fun StorageSetupDialog(model: StorageLocationModel, state: StorageLocationModel.Status) {
+    val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
+        if (uri != null) model.select(uri, migrate = true)
+    }
+    val completedWithLeftovers = state.result == R.string.storage_location_cleanup_failed
+    AlertDialog(
+        onDismissRequest = {},
+        properties = DialogProperties(dismissOnBackPress = false, dismissOnClickOutside = false),
+        title = { Text(stringResource(R.string.storage_setup_title)) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(AppSpacing.md)) {
+                Text(stringResource(R.string.storage_setup_message))
+                if (state.busy) {
+                    LinearProgressIndicator(Modifier.fillMaxWidth())
+                    Text(stringResource(R.string.storage_location_working))
+                } else state.result?.let { Text(stringResource(it)) }
+            }
+        },
+        confirmButton = {
+            TextButton(enabled = !state.busy, onClick = {
+                if (completedWithLeftovers) model.dismissResult() else picker.launch(null)
+            }) {
+                Text(stringResource(if (completedWithLeftovers) android.R.string.ok else R.string.storage_location_choose))
+            }
+        }
+    )
 }
 
 object StorageLocationPage : AppDestination {

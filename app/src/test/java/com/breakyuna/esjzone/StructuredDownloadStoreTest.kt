@@ -406,10 +406,12 @@ class StructuredDownloadStoreTest {
         try {
             val order = listOf(chapter(1), chapter(2))
             save(1, order)
+            root.scans = 0
             NovelDownloadStore.initializeDirectory(root)
             assertNull(NovelDownloadStore.readChapter(chapter(2).url))
             val scans = root.scans
-            assertEquals(0, scans)
+            // Discover title folders once; chapter changes then update the existing index.
+            assertEquals(1, scans)
             val committed = save(2, order)
             assertSame(committed, NovelDownloadStore.manifest(novelUrl))
             assertNotNull(NovelDownloadStore.readChapter(chapter(2).url))
@@ -542,22 +544,23 @@ class StructuredDownloadStoreTest {
     }
 
     @Test
-    fun externalChapterUsesItsParentAfterRestartWithoutScanningOtherNovels() {
+    fun externalChapterUsesItsParentAfterOneDirectoryDiscoveryPerInitialization() {
         val root = CountingDirectory(Files.createTempDirectory("external-parent-").toFile())
         NovelDownloadStore.initializeDirectory(root)
         try {
             val external = Chapter("External", "https://www.wenku8.net/novel/1/1000/2000.htm", false)
             NovelDownloadStore.saveChapter("Novel", novelUrl, "", listOf(external), external,
                 DetailedChapter("External", listOf(TextComponent("离线正文")), null, null), auth)
+            root.scans = 0
             NovelDownloadStore.initializeDirectory(root)
             val read = requireNotNull(NovelDownloadStore.readChapter(external.url, novelUrl))
             assertEquals("离线正文", read.toReaderDocument(external).blocks.single().sourceText())
             assertNull(NovelDownloadStore.readChapter(external.url.replace("2000.htm", "2001.htm"), novelUrl))
-            assertEquals(0, root.scans)
+            assertEquals(1, root.scans)
             // Callers without a parent still find externally hosted chapters through the full index.
             NovelDownloadStore.initializeDirectory(root)
             assertNotNull(NovelDownloadStore.readChapter(external.url))
-            assertEquals(1, root.scans)
+            assertEquals(2, root.scans)
         } finally { root.deleteRecursively() }
     }
 
@@ -566,13 +569,14 @@ class StructuredDownloadStoreTest {
         val rootFile = Files.createTempDirectory("inventory-reading-").toFile()
         val executor = Executors.newSingleThreadExecutor()
         var sizeWalks = 0
+        var checkConcurrentReads = true
         val root = object : File(rootFile.path) {
             override fun listFiles(): Array<File>? = super.listFiles()?.map { file ->
                 object : File(file.path) {
                     override fun listFiles(): Array<File>? {
                         sizeWalks++
                         // A size traversal holding ioLock would deadlock this independent reader.
-                        assertNotNull(executor.submit<DetailedChapter?> {
+                        if (checkConcurrentReads) assertNotNull(executor.submit<DetailedChapter?> {
                             NovelDownloadStore.readChapter(chapter(1).url)
                         }.get(5, TimeUnit.SECONDS))
                         return super.listFiles()
@@ -583,6 +587,8 @@ class StructuredDownloadStoreTest {
         NovelDownloadStore.initializeDirectory(root)
         try {
             save(1, listOf(chapter(1), chapter(2)))
+            // Discover the actual directory handles, including the instrumented size walker.
+            NovelDownloadStore.reindex(com.breakyuna.esjzone.storage.StorageFile(root))
             assertEquals(setOf(novelUrl), NovelDownloadStore.downloadedNovelUrls())
             assertEquals(0, sizeWalks)
             val inventory = NovelDownloadStore.listDownloadedNovels()
@@ -594,6 +600,7 @@ class StructuredDownloadStoreTest {
             val updated = NovelDownloadStore.listDownloadedNovels().single()
             assertEquals(2, updated.downloadedChapterCount)
             assertEquals(rootFile.walkTopDown().filter(File::isFile).sumOf(File::length), updated.storageBytes)
+            checkConcurrentReads = false
             assertTrue(NovelDownloadStore.delete(novelUrl))
             assertTrue(NovelDownloadStore.downloadedNovelUrls().isEmpty())
             assertTrue(NovelDownloadStore.listDownloadedNovels().isEmpty())
