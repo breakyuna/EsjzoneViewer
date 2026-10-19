@@ -854,8 +854,8 @@
     <string name="storage_expand_details">Expand details</string>
     <string name="storage_collapse_details">Collapse details</string>
     <string name="storage_location">Storage location</string>
-    <string name="storage_setup_title">Choose storage folder</string>
-    <string name="storage_setup_message">Choose a dedicated folder for downloads and automatic backups. Existing downloads and backups will move automatically; original files are removed only after migration succeeds.</string>
+    <string name="storage_setup_title">Welcome!</string>
+    <string name="storage_setup_message">Choose a dedicated shared folder for downloaded chapters and automatic backups.</string>
     <string name="storage_location_private">App-private storage</string>
     <string name="storage_location_choose">Choose folder</string>
     <string name="storage_location_migrate">Migrate existing downloads and backups</string>
@@ -881,4 +881,11 @@
     <string name="settings_storage_analysis">Storage analysis</string>
     <string name="settings_check_updates">Check for updates</string>
     <string name="project_repository">Project repository</string>
+    <string name="storage_setup_intro">Set up storage first. You can change it later in Settings.</string>
+    <string name="storage_setup_upgrade_title">Set up shared storage</string>
+    <string name="storage_setup_upgrade_intro">Choose a new location for your existing downloads and automatic backups.</string>
+    <string name="storage_setup_upgrade_message">Choose a dedicated shared folder. Downloads and automatic backups in private storage will move automatically. Originals are removed only after migration succeeds.</string>
+    <string name="storage_setup_selected">Selected folder: %1$s</string>
+    <string name="storage_setup_unselected">No storage location selected</string>
+    <string name="storage_setup_next">Next</string>
 </resources>

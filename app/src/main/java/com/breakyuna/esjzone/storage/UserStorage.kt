@@ -5,6 +5,7 @@ import android.content.Intent
 import android.net.Uri
 import androidx.datastore.core.handlers.ReplaceFileCorruptionHandler
 import androidx.datastore.preferences.core.PreferenceDataStoreFactory
+import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.core.stringPreferencesKey
@@ -34,6 +35,9 @@ class UserStorage(context: Context) {
     )
     private val locationKey = stringPreferencesKey("directory_uri")
     private val labelKey = stringPreferencesKey("directory_label")
+    private val setupUpgradeKey = booleanPreferencesKey("setup_from_private_storage")
+    private val mutableSetupUpgrade = MutableStateFlow<Boolean?>(null)
+    val setupUpgrade = mutableSetupUpgrade.asStateFlow()
     private val mutableLocation = MutableStateFlow("")
     val location = mutableLocation.asStateFlow()
     private val mutableLabel = MutableStateFlow("")
@@ -49,7 +53,19 @@ class UserStorage(context: Context) {
             root = saved.takeIf(String::isNotBlank)?.let { StorageFile.fromTree(context, Uri.parse(it)) }
             mutableLocation.value = saved
             mutableLabel.value = preferences[labelKey].orEmpty()
+            mutableSetupUpgrade.value = preferences[setupUpgradeKey]
             initialized = true
+        }
+    }
+
+    /** Keep the original onboarding copy even if the app restarts after the first login. */
+    suspend fun prepareSetup(restoredSession: Boolean) {
+        initialize()
+        operationMutex.withLock {
+            if (mutableLocation.value.isBlank() && mutableSetupUpgrade.value == null) {
+                store.edit { it[setupUpgradeKey] = restoredSession }
+                mutableSetupUpgrade.value = restoredSession
+            }
         }
     }
 

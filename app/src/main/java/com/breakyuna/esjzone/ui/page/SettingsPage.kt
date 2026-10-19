@@ -32,10 +32,8 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material.icons.filled.BugReport
-import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Download
-import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.MenuBook
 import androidx.compose.material.icons.filled.Reorder
@@ -60,8 +58,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -325,9 +322,7 @@ object SettingsPage : AppDestination {
                         LinkRow(Icons.Filled.MenuBook, stringResource(R.string.settings_reading_section)) { section = "READING" }
                     }
                     SettingsSection(title = stringResource(R.string.settings_data_group)) {
-                        LinkRow(Icons.Filled.FolderOpen, stringResource(R.string.storage_location)) {
-                            navigator?.pushIfNotCurrent(StorageLocationPage)
-                        }
+                        StorageLocationSettingRow()
                         SettingsToggleRow(
                             title = stringResource(R.string.auto_backup),
                             checked = autoBackup,
@@ -361,7 +356,7 @@ object SettingsPage : AppDestination {
                     SettingsSection {
                         Text(
                             stringResource(R.string.settings_navigation_description),
-                            style = AppTypography.bodySmall,
+                            style = AppTypography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.padding(AppSpacing.md)
                         )
@@ -447,13 +442,13 @@ object SettingsPage : AppDestination {
                                             Icon(
                                                 navigationItemIcon(item),
                                                 contentDescription = null,
-                                                modifier = Modifier.size(22.dp),
+                                                modifier = Modifier.size(24.dp),
                                                 tint = if (selected) MaterialTheme.colorScheme.onPrimaryContainer
                                                 else MaterialTheme.colorScheme.onSurfaceVariant
                                             )
                                             Text(
                                                 navigationItemLabel(item),
-                                                style = MaterialTheme.typography.labelSmall,
+                                                style = AppTypography.labelLarge,
                                                 maxLines = 1,
                                                 overflow = TextOverflow.Ellipsis,
                                                 color = if (selected) MaterialTheme.colorScheme.onPrimaryContainer
@@ -523,14 +518,14 @@ object SettingsPage : AppDestination {
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .heightIn(min = 56.dp)
-                                    .padding(horizontal = AppSpacing.md, vertical = AppSpacing.xs),
+                                    .heightIn(min = 64.dp)
+                                    .padding(horizontal = AppSpacing.lg, vertical = AppSpacing.sm),
                                 verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.SpaceBetween
                             ) {
                                 Text(
                                     stringResource(R.string.settings_download_concurrency_label),
-                                    style = AppTypography.bodyMedium,
+                                    style = AppTypography.bodyLarge,
                                     modifier = Modifier.weight(1f).padding(end = AppSpacing.md)
                                 )
                                 Box {
@@ -541,30 +536,26 @@ object SettingsPage : AppDestination {
                                     ) {
                                         Text(
                                             downloadConcurrency.toString(),
-                                            style = AppTypography.labelLarge,
-                                            modifier = Modifier.heightIn(min = 48.dp).padding(
+                                            style = AppTypography.bodyLarge,
+                                            modifier = Modifier.heightIn(min = 56.dp).padding(
                                                 horizontal = AppSpacing.lg,
                                                 vertical = AppSpacing.md
                                             )
                                         )
                                     }
-                                    DropdownMenu(
-                                        expanded = showConcurrencyMenu,
-                                        onDismissRequest = { showConcurrencyMenu = false }
-                                    ) {
-                                        listOf(1, 3, 5, 8).forEach { candidate ->
-                                            DropdownMenuItem(
-                                                text = { Text(candidate.toString()) },
-                                                onClick = {
-                                                    PresentationAccess.settings.setDownloadConcurrency(candidate)
-                                                    model.persist(PresentationAccess.settings.DOWNLOAD_CONCURRENCY_KEY, candidate.toString())
-                                                    showConcurrencyMenu = false
-                                                },
-                                                trailingIcon = if (candidate == downloadConcurrency) {
-                                                    { Icon(Icons.Filled.Check, contentDescription = null) }
-                                                } else null
-                                            )
-                                        }
+                                    if (showConcurrencyMenu) {
+                                        val candidates = listOf(1, 3, 5, 8)
+                                        SettingsChoiceDialog(
+                                            title = stringResource(R.string.settings_download_concurrency_label),
+                                            options = candidates.map { it.toString() },
+                                            selectedIndex = candidates.indexOf(downloadConcurrency),
+                                            onDismiss = { showConcurrencyMenu = false },
+                                            onSelect = { index ->
+                                                val candidate = candidates[index]
+                                                PresentationAccess.settings.setDownloadConcurrency(candidate)
+                                                model.persist(PresentationAccess.settings.DOWNLOAD_CONCURRENCY_KEY, candidate.toString())
+                                            }
+                                        )
                                     }
                                 }
                             }
@@ -584,7 +575,7 @@ object SettingsPage : AppDestination {
                             CacheRow(stringResource(R.string.settings_page_cache), when { state.cacheStatsError -> stringResource(R.string.local_cache_stats_failed); cache == null -> stringResource(R.string.local_cache_loading); else -> stringResource(R.string.local_cache_pages, formatBytes(cache.pageBytes), cache.pageEntries) }, state.cacheOperation != null, stringResource(R.string.local_cache_clear_pages)) { model.clearPageCache() }
                             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = .45f))
                             CacheRow(stringResource(R.string.settings_image_cache), when { state.cacheStatsError -> stringResource(R.string.local_cache_stats_failed); cache == null -> stringResource(R.string.local_cache_loading); else -> formatBytes(cache.imageBytes) }, state.cacheOperation != null, stringResource(R.string.local_cache_clear_images)) { model.clearImageCache() }
-                            Text(stringResource(R.string.settings_cache_note), style = AppTypography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(AppSpacing.md))
+                            Text(stringResource(R.string.settings_cache_note), style = AppTypography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(AppSpacing.md))
                             if (state.cacheOperation != null) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
                             if (state.cacheStatsError) TextButton(onClick = model::refreshCacheStats) { Text(stringResource(R.string.retry)) }
                             if (state.cacheClearError) Text(stringResource(R.string.local_cache_clear_failed), color = MaterialTheme.colorScheme.error)
@@ -616,7 +607,7 @@ object SettingsPage : AppDestination {
                             ) {
                                 Text(
                                     BuildConfig.VERSION_NAME,
-                                    style = AppTypography.labelLarge,
+                                    style = AppTypography.bodyLarge,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     modifier = Modifier.padding(horizontal = AppSpacing.lg, vertical = AppSpacing.sm)
                                 )
@@ -654,20 +645,20 @@ object SettingsPage : AppDestination {
                         }
                         SettingsSection {
                             Column(Modifier.padding(AppSpacing.md), verticalArrangement = Arrangement.spacedBy(AppSpacing.xs)) {
-                                Text(stringResource(R.string.original_author), style = AppTypography.labelMedium,
+                                Text(stringResource(R.string.original_author), style = AppTypography.labelLarge,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                Text(Constants.ORIGINAL_AUTHOR, style = AppTypography.bodyMedium)
+                                Text(Constants.ORIGINAL_AUTHOR, style = AppTypography.bodyLarge)
                             }
                             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = .45f))
                             Column(Modifier.padding(AppSpacing.md), verticalArrangement = Arrangement.spacedBy(AppSpacing.xs)) {
-                                Text(stringResource(R.string.maintainers), style = AppTypography.labelMedium,
+                                Text(stringResource(R.string.maintainers), style = AppTypography.labelLarge,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                Text(Constants.MAINTAINERS.joinToString(", "), style = AppTypography.bodyMedium)
+                                Text(Constants.MAINTAINERS.joinToString(", "), style = AppTypography.bodyLarge)
                             }
                         }
                         Text(
                             stringResource(R.string.about_disclaimer),
-                            style = AppTypography.bodySmall,
+                            style = AppTypography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             textAlign = TextAlign.Center,
                             modifier = Modifier.fillMaxWidth().padding(horizontal = AppSpacing.lg)
@@ -705,7 +696,7 @@ object SettingsPage : AppDestination {
             onDismissRequest = { if (!state.logoutInProgress) showLogout = false },
             title = { Text(stringResource(R.string.logout_confirm_message)) },
             text = { Text(stringResource(R.string.logout_consequence)) },
-            confirmButton = { TextButton(onClick = { model.logout(authorization); showLogout = false }, enabled = !state.logoutInProgress) { if (state.logoutInProgress) CircularProgressIndicator(Modifier.size(18.dp)) else Text(stringResource(R.string.logout_confirm)) } },
+            confirmButton = { TextButton(onClick = { model.logout(authorization); showLogout = false }, enabled = !state.logoutInProgress) { if (state.logoutInProgress) CircularProgressIndicator(Modifier.size(20.dp)) else Text(stringResource(R.string.logout_confirm)) } },
             dismissButton = { TextButton(onClick = { showLogout = false }, enabled = !state.logoutInProgress) { Text(stringResource(R.string.logout_cancel)) } }
         )
     }
@@ -735,7 +726,7 @@ internal fun SettingsSection(
 ) {
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(AppSpacing.sm)) {
         if (title != null) {
-            Text(title, style = AppTypography.labelMedium,
+            Text(title, style = AppTypography.labelLarge,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(start = AppSpacing.md).semantics { heading() })
         }
@@ -770,7 +761,7 @@ private fun InlineSettingRow(
                 verticalAlignment = Alignment.CenterVertically) {
                 options.forEachIndexed { index, option ->
                     Box(
-                        modifier = Modifier.weight(1f).heightIn(min = 48.dp)
+                        modifier = Modifier.weight(1f).heightIn(min = 56.dp)
                             .clip(AppShapes.compact)
                             .background(if (index == selectedIndex) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent)
                             .selectable(
@@ -780,7 +771,7 @@ private fun InlineSettingRow(
                             ).padding(horizontal = AppSpacing.xs, vertical = AppSpacing.sm),
                         contentAlignment = Alignment.Center
                     ) {
-                        Text(option, style = AppTypography.labelMedium, textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                        Text(option, style = AppTypography.labelLarge, textAlign = androidx.compose.ui.text.style.TextAlign.Center,
                             color = if (index == selectedIndex) MaterialTheme.colorScheme.onSecondaryContainer
                                 else MaterialTheme.colorScheme.onSurfaceVariant)
                     }
@@ -800,28 +791,75 @@ private fun ChoiceSettingRow(
     onSelect: (Int) -> Unit
 ) {
     var expanded by remember { mutableStateOf(false) }
-    Box {
-        LinkRow(
-            icon = icon,
+    LinkRow(
+        icon = icon,
+        title = title,
+        value = options.getOrNull(selectedIndex),
+        enabled = enabled
+    ) { expanded = true }
+    if (expanded) {
+        SettingsChoiceDialog(
             title = title,
-            value = options.getOrNull(selectedIndex),
-            enabled = enabled
-        ) { expanded = true }
-        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-            options.forEachIndexed { index, option ->
-                DropdownMenuItem(
-                    text = { Text(option) },
-                    onClick = {
-                        expanded = false
-                        if (index != selectedIndex) onSelect(index)
-                    },
-                    trailingIcon = if (index == selectedIndex) {
-                        { Icon(Icons.Filled.Check, contentDescription = null) }
-                    } else null
-                )
-            }
-        }
+            options = options,
+            selectedIndex = selectedIndex,
+            onDismiss = { expanded = false },
+            onSelect = onSelect
+        )
     }
+}
+
+@Composable
+private fun SettingsChoiceDialog(
+    title: String,
+    options: List<String>,
+    selectedIndex: Int,
+    onDismiss: () -> Unit,
+    onSelect: (Int) -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(title) },
+        text = {
+            Column(
+                modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).selectableGroup(),
+                verticalArrangement = Arrangement.spacedBy(AppSpacing.xs)
+            ) {
+                options.forEachIndexed { index, option ->
+                    val selected = index == selectedIndex
+                    Row(
+                        modifier = Modifier.fillMaxWidth()
+                            .clip(AppShapes.compact)
+                            .background(if (selected) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent)
+                            .selectable(
+                                selected = selected,
+                                role = Role.RadioButton,
+                                onClick = {
+                                    onDismiss()
+                                    if (!selected) onSelect(index)
+                                }
+                            )
+                            .heightIn(min = 64.dp)
+                            .padding(horizontal = AppSpacing.lg, vertical = AppSpacing.sm),
+                        horizontalArrangement = Arrangement.spacedBy(AppSpacing.md),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            option,
+                            modifier = Modifier.weight(1f),
+                            style = AppTypography.bodyLarge,
+                            color = if (selected) MaterialTheme.colorScheme.onSecondaryContainer
+                                else MaterialTheme.colorScheme.onSurface
+                        )
+                        RadioButton(selected = selected, onClick = null)
+                    }
+                }
+            }
+        },
+        confirmButton = {},
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) }
+        }
+    )
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -833,12 +871,12 @@ internal fun SettingsToggleRow(
     icon: ImageVector? = null,
     onCheckedChange: (Boolean) -> Unit
 ) {
-    Row(Modifier.fillMaxWidth().heightIn(min = 56.dp)
+    Row(Modifier.fillMaxWidth().heightIn(min = 64.dp)
         .toggleable(value = checked, role = Role.Switch, onValueChange = onCheckedChange)
-        .padding(horizontal = AppSpacing.md, vertical = AppSpacing.xs),
+        .padding(horizontal = AppSpacing.lg, vertical = AppSpacing.sm),
         horizontalArrangement = Arrangement.spacedBy(AppSpacing.md), verticalAlignment = Alignment.CenterVertically) {
         if (icon != null) SettingIcon(icon)
-        Text(title, modifier = Modifier.weight(1f), style = AppTypography.bodyMedium)
+        Text(title, modifier = Modifier.weight(1f), style = AppTypography.bodyLarge)
         if (helpText != null) {
             val tooltipState = rememberTooltipState(isPersistent = true)
             val scope = rememberCoroutineScope()
@@ -863,10 +901,10 @@ internal fun SettingsToggleRow(
 
 @Composable
 private fun CacheRow(title: String, value: String, busy: Boolean, action: String, onClick: () -> Unit) {
-    Row(Modifier.fillMaxWidth().heightIn(min = 64.dp).padding(AppSpacing.md), horizontalArrangement = Arrangement.spacedBy(AppSpacing.md), verticalAlignment = Alignment.CenterVertically) {
+    Row(Modifier.fillMaxWidth().heightIn(min = 72.dp).padding(AppSpacing.lg), horizontalArrangement = Arrangement.spacedBy(AppSpacing.md), verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(AppSpacing.xs)) {
-            Text(title, style = AppTypography.bodyMedium)
-            Text(value, style = AppTypography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(title, style = AppTypography.bodyLarge)
+            Text(value, style = AppTypography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         Button(
             onClick = onClick,
@@ -878,13 +916,13 @@ private fun CacheRow(title: String, value: String, busy: Boolean, action: String
                 contentColor = MaterialTheme.colorScheme.onPrimaryContainer
             )
         ) {
-            Text(action, style = AppTypography.labelMedium)
+            Text(action, style = AppTypography.labelLarge)
         }
     }
 }
 
 @Composable
-private fun LinkRow(
+internal fun LinkRow(
     icon: ImageVector,
     title: String,
     subtitle: String? = null,
@@ -897,8 +935,8 @@ private fun LinkRow(
         Row(
             Modifier
                 .fillMaxWidth()
-                .heightIn(min = 56.dp)
-                .padding(horizontal = AppSpacing.md, vertical = AppSpacing.sm),
+                .heightIn(min = 64.dp)
+                .padding(horizontal = AppSpacing.lg, vertical = AppSpacing.sm),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = if (centered) Arrangement.Center else Arrangement.Start
         ) {
@@ -906,21 +944,21 @@ private fun LinkRow(
             if (centered) {
                 Text(
                     title,
-                    style = AppTypography.labelLarge,
+                    style = AppTypography.bodyLarge,
                     color = MaterialTheme.colorScheme.onSurface,
                     modifier = Modifier.padding(start = AppSpacing.sm)
                 )
             } else {
                 Column(Modifier.weight(1f).padding(horizontal = AppSpacing.md)) {
-                    Text(title, style = AppTypography.bodyMedium, color = MaterialTheme.colorScheme.onSurface)
+                    Text(title, style = AppTypography.bodyLarge, color = MaterialTheme.colorScheme.onSurface)
                     subtitle?.let {
-                        Text(it, style = AppTypography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                        Text(it, style = AppTypography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
                     }
                 }
                 value?.let {
                     Text(
                         it,
-                        style = AppTypography.labelMedium,
+                        style = AppTypography.labelLarge,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.weight(.8f).padding(end = AppSpacing.xs),
                         textAlign = TextAlign.End,
@@ -928,7 +966,7 @@ private fun LinkRow(
                         overflow = TextOverflow.Ellipsis
                     )
                 }
-                if (enabled) Icon(Icons.Filled.ChevronRight, null, modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                if (enabled) Icon(Icons.Filled.ChevronRight, null, modifier = Modifier.size(20.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
     }
@@ -937,11 +975,11 @@ private fun LinkRow(
 @Composable
 private fun SettingIcon(icon: ImageVector) {
     Box(
-        modifier = Modifier.size(32.dp)
+        modifier = Modifier.size(36.dp)
             .background(MaterialTheme.colorScheme.surfaceContainerHigh, AppShapes.compact),
         contentAlignment = Alignment.Center
     ) {
-        Icon(icon, contentDescription = null, modifier = Modifier.size(18.dp),
+        Icon(icon, contentDescription = null, modifier = Modifier.size(20.dp),
             tint = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }

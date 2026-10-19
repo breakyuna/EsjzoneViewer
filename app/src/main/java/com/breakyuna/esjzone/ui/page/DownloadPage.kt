@@ -21,6 +21,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.Done
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.SelectAll
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.AlertDialog
@@ -35,6 +36,12 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.PlainTooltip
+import androidx.compose.material3.TooltipBox
+import androidx.compose.material3.TooltipDefaults
+import androidx.compose.material3.rememberTooltipState
 import androidx.compose.material3.Switch
 import com.breakyuna.esjzone.ui.designsystem.GlobalText as Text
 import androidx.compose.material3.TextButton
@@ -98,6 +105,17 @@ object DownloadPage : AppDestination {
         val navigator = LocalBaseNavigator.current
         val model = rememberAppViewModel { DownloadPageModel() }
         val state by model.state.collectAsState()
+        val scanModel = rememberAppViewModel { StorageLocationModel() }
+        val scanState by scanModel.state.collectAsState()
+        val snackbarHost = remember { SnackbarHostState() }
+        val scanResult = scanState.result?.let { stringResource(it) }
+        LaunchedEffect(scanState.result) {
+            if (scanState.result == R.string.storage_reindex_done) model.refresh()
+            if (scanResult != null) {
+                snackbarHost.showSnackbar(scanResult)
+                scanModel.dismissResult()
+            }
+        }
         val autoSave by PresentationAccess.settings.readerAutoSave
         var editing by rememberSaveable { mutableStateOf(false) }
         var selected by remember { mutableStateOf<Set<String>>(emptySet()) }
@@ -119,6 +137,7 @@ object DownloadPage : AppDestination {
         }
 
         Scaffold(
+            snackbarHost = { SnackbarHost(snackbarHost) },
             topBar = {
                 TopAppBar(
                     title = { AppAnimatedTitle(if (editing) "${stringResource(R.string.download_edit)} (${selected.size})" else stringResource(R.string.downloads), style = AppTypography.titleLarge) },
@@ -141,7 +160,20 @@ object DownloadPage : AppDestination {
                                         Icon(Icons.Filled.Done, stringResource(R.string.download_edit_done))
                                     }
                                 } else {
-                                    IconButton(onClick = { editing = true }, enabled = entries.isNotEmpty()) { Icon(Icons.Filled.Edit, stringResource(R.string.download_edit)) }
+                                    TooltipBox(
+                                        positionProvider = TooltipDefaults.rememberPlainTooltipPositionProvider(),
+                                        tooltip = { PlainTooltip { Text(stringResource(R.string.storage_reindex)) } },
+                                        state = rememberTooltipState()
+                                    ) {
+                                        IconButton(onClick = scanModel::reindex, enabled = !scanState.busy && !deleting) {
+                                            if (scanState.busy) {
+                                                CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.dp)
+                                            } else {
+                                                Icon(Icons.Filled.FolderOpen, stringResource(R.string.storage_reindex))
+                                            }
+                                        }
+                                    }
+                                    IconButton(onClick = { editing = true }, enabled = entries.isNotEmpty() && !scanState.busy) { Icon(Icons.Filled.Edit, stringResource(R.string.download_edit)) }
                                     Box {
                                         IconButton(onClick = { showSettings = true }) { Icon(Icons.Filled.Settings, stringResource(R.string.download_settings)) }
                                         DropdownMenu(expanded = showSettings, onDismissRequest = { showSettings = false }) {

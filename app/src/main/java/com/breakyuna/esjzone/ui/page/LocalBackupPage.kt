@@ -185,7 +185,7 @@ object LocalBackupPage : AppDestination {
                 verticalArrangement = Arrangement.spacedBy(AppSpacing.lg)) {
                 Text(stringResource(R.string.backup_description), style = AppTypography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(horizontal = AppSpacing.xs))
-                TextButton(enabled = !state.busy, onClick = { navigator?.pushIfNotCurrent(StorageLocationPage) }) {
+                TextButton(enabled = !state.busy, onClick = { navigator?.pushIfNotCurrent(SettingsPage) }) {
                     Text(stringResource(R.string.storage_location))
                 }
                 if (backupFailed) Text(stringResource(R.string.backup_failed), color = MaterialTheme.colorScheme.error)

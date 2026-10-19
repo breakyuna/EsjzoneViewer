@@ -8,25 +8,21 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import com.breakyuna.esjzone.R
 import com.breakyuna.esjzone.app.PresentationAccess
 import com.breakyuna.esjzone.storage.StorageAccessException
 import com.breakyuna.esjzone.ui.designsystem.AppSpacing
-import com.breakyuna.esjzone.ui.designsystem.accountContentWidth
 import com.breakyuna.esjzone.ui.designsystem.GlobalText as Text
 import com.breakyuna.esjzone.ui.designsystem.globalStringResource as stringResource
-import com.breakyuna.esjzone.ui.navigation.AppDestination
 import com.breakyuna.esjzone.ui.navigation.AppStateViewModel
-import com.breakyuna.esjzone.ui.navigation.LocalBaseNavigator
 import com.breakyuna.esjzone.ui.navigation.rememberAppViewModel
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
@@ -54,95 +50,69 @@ class StorageLocationModel : AppStateViewModel<StorageLocationModel.Status>(Stat
     }
 }
 
-/** Required after login until a public tree is durably selected and migration finishes. */
+/** Inline directory selection shared by the settings entry. */
 @Composable
-fun StorageSetupDialog(model: StorageLocationModel, state: StorageLocationModel.Status) {
+internal fun StorageLocationSettingRow() {
+    val model = rememberAppViewModel { StorageLocationModel() }
+    val state by model.state.collectAsStateWithLifecycle()
+    val location by PresentationAccess.storage.location.collectAsStateWithLifecycle()
+    val folderName by PresentationAccess.storage.label.collectAsStateWithLifecycle()
+    var pending by rememberSaveable { mutableStateOf<String?>(null) }
+    var migrate by rememberSaveable { mutableStateOf(true) }
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
-        if (uri != null) model.select(uri, migrate = true)
+        if (uri != null) { pending = uri.toString(); migrate = true }
     }
-    val completedWithLeftovers = state.result == R.string.storage_location_cleanup_failed
-    AlertDialog(
-        onDismissRequest = {},
-        properties = DialogProperties(dismissOnBackPress = false, dismissOnClickOutside = false),
-        title = { Text(stringResource(R.string.storage_setup_title)) },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(AppSpacing.md)) {
-                Text(stringResource(R.string.storage_setup_message))
-                if (state.busy) {
-                    LinearProgressIndicator(Modifier.fillMaxWidth())
-                    Text(stringResource(R.string.storage_location_working))
-                } else state.result?.let { Text(stringResource(it)) }
+    val path = remember(location, folderName) {
+        if (location.isBlank()) null else runCatching {
+            val uri = Uri.parse(location)
+            val id = android.provider.DocumentsContract.getTreeDocumentId(uri)
+            if (uri.authority == "com.android.externalstorage.documents" && id.startsWith("primary:")) {
+                android.os.Environment.getExternalStorageDirectory().absolutePath + "/" + id.removePrefix("primary:")
+            } else {
+                id.replace(":", ":/")
             }
-        },
-        confirmButton = {
-            TextButton(enabled = !state.busy, onClick = {
-                if (completedWithLeftovers) model.dismissResult() else picker.launch(null)
-            }) {
-                Text(stringResource(if (completedWithLeftovers) android.R.string.ok else R.string.storage_location_choose))
+        }.getOrElse { folderName.ifBlank { Uri.decode(location) } }
+    }
+    BackHandler(enabled = state.busy) { }
+    LinkRow(
+        icon = Icons.Filled.FolderOpen,
+        title = stringResource(R.string.storage_location),
+        value = path ?: stringResource(R.string.storage_location_private),
+        enabled = !state.busy
+    ) { picker.launch(location.takeIf(String::isNotBlank)?.let(Uri::parse)) }
+    if (state.busy || state.result != null) {
+        AlertDialog(
+            onDismissRequest = { if (!state.busy) model.dismissResult() },
+            title = { Text(stringResource(R.string.storage_location)) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(AppSpacing.md)) {
+                    if (state.busy) LinearProgressIndicator(Modifier.fillMaxWidth())
+                    Text(stringResource(if (state.busy) R.string.storage_location_working else state.result!!))
+                }
+            },
+            confirmButton = {
+                if (!state.busy) TextButton(onClick = model::dismissResult) { Text(stringResource(android.R.string.ok)) }
             }
-        }
-    )
-}
-
-object StorageLocationPage : AppDestination {
-    override val key = "StorageLocationPage"
-    private fun readResolve(): Any = StorageLocationPage
-    @Composable
-    override fun Content() {
-        val navigator = LocalBaseNavigator.current
-        val model = rememberAppViewModel { StorageLocationModel() }
-        val state by model.state.collectAsStateWithLifecycle()
-        val location by PresentationAccess.storage.location.collectAsStateWithLifecycle()
-        val folderName by PresentationAccess.storage.label.collectAsStateWithLifecycle()
-        var pending by rememberSaveable { mutableStateOf<String?>(null) }
-        var migrate by rememberSaveable { mutableStateOf(true) }
-        val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
-            if (uri != null) { pending = uri.toString(); migrate = true }
-        }
-        BackHandler(enabled = state.busy) { }
-        Scaffold(topBar = {
-            TopAppBar(title = { Text(stringResource(R.string.storage_location)) }, navigationIcon = {
-                IconButton(enabled = !state.busy, onClick = { navigator?.pop() }) {
-                    Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.reading_stats_back))
-                }
-            })
-        }) { padding ->
-            Column(Modifier.fillMaxSize().padding(padding).accountContentWidth().padding(AppSpacing.lg),
-                verticalArrangement = Arrangement.spacedBy(AppSpacing.md)) {
-                Text(if (location.isBlank()) stringResource(R.string.storage_location_private)
-                    else folderName)
-                Button(enabled = !state.busy, onClick = {
-                    picker.launch(location.takeIf(String::isNotBlank)?.let(Uri::parse))
-                }) { Text(stringResource(R.string.storage_location_choose)) }
-                OutlinedButton(enabled = !state.busy, onClick = model::reindex) {
-                    Text(stringResource(R.string.storage_reindex))
-                }
-                if (state.busy) {
-                    LinearProgressIndicator(Modifier.fillMaxWidth())
-                    Text(stringResource(R.string.storage_location_working))
-                }
-                state.result?.let { Text(stringResource(it)) }
-            }
-        }
-        pending?.let { selected ->
-            AlertDialog(onDismissRequest = { pending = null },
-                title = { Text(stringResource(R.string.storage_location)) },
-                text = {
-                    Column {
-                        Text(stringResource(R.string.storage_location_confirm))
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Checkbox(checked = migrate, onCheckedChange = { migrate = it })
-                            Text(stringResource(R.string.storage_location_migrate))
-                        }
+        )
+    }
+    pending?.let { selected ->
+        AlertDialog(onDismissRequest = { pending = null },
+            title = { Text(stringResource(R.string.storage_location)) },
+            text = {
+                Column {
+                    Text(stringResource(R.string.storage_location_confirm))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Checkbox(checked = migrate, onCheckedChange = { migrate = it })
+                        Text(stringResource(R.string.storage_location_migrate))
                     }
-                },
-                confirmButton = { TextButton(onClick = {
-                    pending = null
-                    model.select(Uri.parse(selected), migrate)
-                }) { Text(stringResource(android.R.string.ok)) } },
-                dismissButton = { TextButton(onClick = { pending = null }) {
-                    Text(stringResource(android.R.string.cancel))
-                } })
-        }
+                }
+            },
+            confirmButton = { TextButton(onClick = {
+                pending = null
+                model.select(Uri.parse(selected), migrate)
+            }) { Text(stringResource(android.R.string.ok)) } },
+            dismissButton = { TextButton(onClick = { pending = null }) {
+                Text(stringResource(android.R.string.cancel))
+            } })
     }
 }

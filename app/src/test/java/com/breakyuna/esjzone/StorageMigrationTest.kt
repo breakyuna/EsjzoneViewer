@@ -13,9 +13,9 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class StorageMigrationTest {
-    @Test fun storageSettingsRouteRestoresAfterProcessRecreation() {
+    @Test fun formerStorageRouteRestoresToInlineSettingsAfterProcessRecreation() {
         val navigator = com.breakyuna.esjzone.ui.navigation.AppNavigator(mutableListOf(), mutableMapOf())
-        assertEquals(com.breakyuna.esjzone.ui.page.StorageLocationPage,
+        assertEquals(com.breakyuna.esjzone.ui.page.SettingsPage,
             navigator.destination(com.breakyuna.esjzone.ui.navigation.LegacyRoute.Static("StorageLocationPage")))
     }
     private val novel = "https://www.esjzone.cc/detail/81234.html"

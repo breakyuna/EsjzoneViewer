@@ -18,6 +18,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import android.net.Uri
@@ -51,7 +52,7 @@ import com.breakyuna.esjzone.ui.page.ChapterPage
 import com.breakyuna.esjzone.ui.page.DownloadPage
 import com.breakyuna.esjzone.ui.page.FavoritePage
 import com.breakyuna.esjzone.ui.page.StorageLocationModel
-import com.breakyuna.esjzone.ui.page.StorageSetupDialog
+import com.breakyuna.esjzone.ui.screen.StorageSetupScreen
 import com.breakyuna.esjzone.ui.page.ForumBoardPage
 import com.breakyuna.esjzone.ui.page.ForumCategoryPage
 import com.breakyuna.esjzone.ui.page.ForumPage
@@ -479,8 +480,8 @@ private fun LegacyRoute.restore(): AppDestination? = when (this) {
         token == CacheRecordsPage.key || token.endsWith(".CacheRecordsPage") ->
             if (BuildConfig.DEBUG) CacheRecordsPage else SettingsPage
         token == com.breakyuna.esjzone.ui.page.LocalBackupPage.key -> com.breakyuna.esjzone.ui.page.LocalBackupPage
-        token == com.breakyuna.esjzone.ui.page.StorageLocationPage.key -> com.breakyuna.esjzone.ui.page.StorageLocationPage
         token == com.breakyuna.esjzone.ui.page.OpenSourceLicensesPage.key -> com.breakyuna.esjzone.ui.page.OpenSourceLicensesPage
+        token == "StorageLocationPage" -> SettingsPage
         token == SettingsPage.key || token.endsWith(".SettingsPage") -> SettingsPage
         token == ReadingStatisticsPage.key || token.endsWith(".ReadingStatisticsPage") -> ReadingStatisticsPage
         token == ForumPage.key || token.endsWith(".ForumPage") -> ForumPage
@@ -584,10 +585,20 @@ fun AppNavigation() {
     val storageLocation by PresentationAccess.storage.location.collectAsState()
     val storageSetupModel = rememberAppViewModel { StorageLocationModel() }
     val storageSetupState by storageSetupModel.state.collectAsState()
+    val storageSetupUpgrade by PresentationAccess.storage.setupUpgrade.collectAsState()
+    var storageSetupPending by rememberSaveable { mutableStateOf(false) }
     // Guard restored readers/details too, after the login/loading entry has completed.
-    val showStorageSetup = needsStorageSetup(backStack.lastOrNull(), authorization, storageLocation) ||
+    val requiresStorageSetup = needsStorageSetup(backStack.lastOrNull(), authorization, storageLocation)
+    val showStorageSetup = requiresStorageSetup || storageSetupPending ||
         storageSetupState.busy ||
         storageSetupState.result == com.breakyuna.esjzone.R.string.storage_location_cleanup_failed
+    LaunchedEffect(requiresStorageSetup) {
+        if (requiresStorageSetup) {
+            storageSetupPending = true
+            // Restored reader/detail entries can bypass LoadingScreen.
+            PresentationAccess.storage.prepareSetup(restoredSession = true)
+        }
+    }
     val currentAuthorizationState = rememberUpdatedState(authorizationState)
     val navigator = remember(backStack, registry) {
         AppNavigator(backStack, registry, setAuthorization = { currentAuthorizationState.value.value = it })
@@ -628,7 +639,10 @@ fun AppNavigation() {
             color = MaterialTheme.colorScheme.background
         ) {
             if (showStorageSetup) {
-                StorageSetupDialog(storageSetupModel, storageSetupState)
+                StorageSetupScreen(storageSetupModel, storageSetupState, storageSetupUpgrade) {
+                    storageSetupModel.dismissResult()
+                    storageSetupPending = false
+                }
             } else NavDisplay(
                 backStack = backStack,
                 onBack = { navigator.pop() },

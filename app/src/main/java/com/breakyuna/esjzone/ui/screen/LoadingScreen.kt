@@ -95,6 +95,7 @@ class LoadingScreen : AppDestination {
                 }
             }
 
+            PresentationAccess.storage.prepareSetup(restoredSession = authorization != null)
             if (authorization != null) {
                 // Start the shelf retry/import in the process-scoped worker.
                 // MainScreen and the shelf itself remain local-first and do

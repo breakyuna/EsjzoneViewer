@@ -331,7 +331,7 @@ object FavoritePage : AppDestination {
                     withDismissAction = true,
                     duration = SnackbarDuration.Long
                 ) == SnackbarResult.ActionPerformed) {
-                navigator?.pushIfNotCurrent(StorageLocationPage)
+                navigator?.pushIfNotCurrent(SettingsPage)
             }
         }
         LaunchedEffect(loginSessionRevision) {
