@@ -138,7 +138,7 @@ class LocalBackupInstrumentedTest {
             assertEquals(300L, target.readingStatDao().getAll().single().durationMs)
             target.readingStatDao().add(ReadingStat("2026-09-29", "1", "Novel", 100))
             LocalBackup.restore(context, Uri.fromFile(file), target, "target", selected)
-            assertEquals(400L, target.readingStatDao().getAll().single().durationMs)
+            assertEquals(300L, target.readingStatDao().getAll().single().durationMs)
             val restored = target.bookshelfGroupDao()
             assertEquals("Reading", restored.members("target").single().groupName)
             restored.rename("target", "Reading", "Finished")
@@ -146,6 +146,48 @@ class LocalBackupInstrumentedTest {
             restored.remove("target", "Finished")
             assertTrue(restored.members("target").isEmpty())
             assertTrue(target.bookshelfDao().getAll("target").isEmpty())
+        } finally { source.close(); target.close(); file.delete() }
+    }
+
+    @Test fun restoreReplacesSelectedPresentCategoriesAndKeepsUnselectedOrAbsentData() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val source = Room.inMemoryDatabaseBuilder(context, GeneralDatabase::class.java).build()
+        val target = Room.inMemoryDatabaseBuilder(context, GeneralDatabase::class.java).build()
+        val file = File.createTempFile("replacement-backup-", ".zip", context.cacheDir)
+        try {
+            val saved = Bookmark("/forum/1/1.html", "1", "Saved", "Chapter", 1)
+            val extra = Bookmark("/forum/2/1.html", "2", "Extra", "Chapter", 10)
+            source.bookmarkDao().insert(saved)
+            source.bookshelfGroupDao().add(BookshelfGroup("source", "Saved group"))
+            source.bookshelfGroupDao().assign(BookshelfGroupMember("source", "1", "Saved group"))
+            val included = setOf(BackupCategory.BOOKMARKS, BackupCategory.GROUPS)
+            LocalBackup.export(context, Uri.fromFile(file), source, "source", included)
+            target.bookmarkDao().insert(saved.copy(createdAt = 100))
+            target.bookmarkDao().insert(extra)
+            val stat = ReadingStat("2026-10-19", "1", "Keep", 500)
+            target.readingStatDao().add(stat)
+            val underlineKey = ReaderUnderlines.KEY_PREFIX + "/forum/1/1.html"
+            val marks = ReaderUnderlines.encode(listOf(ReaderUnderline(0, "a".repeat(64), 1, 8)))
+            target.cacheDao().putAtomic(underlineKey, marks)
+            target.cacheDao().putAtomic("unrelated", "keep")
+            target.bookshelfGroupDao().add(BookshelfGroup("target", "Old group"))
+            target.bookshelfGroupDao().assign(BookshelfGroupMember("target", "2", "Old group"))
+            target.bookshelfGroupDao().add(BookshelfGroup("other-account", "Keep group"))
+
+            LocalBackup.restore(context, Uri.fromFile(file), target, "target", included + BackupCategory.READING)
+            assertEquals(listOf(saved), target.bookmarkDao().getAll())
+            assertEquals(listOf(stat), target.readingStatDao().getAll()) // selected but absent
+            assertEquals(marks, target.cacheDao().findByKey(underlineKey)?.value) // unselected
+            assertEquals("keep", target.cacheDao().findByKey("unrelated")?.value)
+            assertEquals(listOf("Saved group"), target.bookshelfGroupDao().groups("target").map { it.name })
+            assertEquals(listOf("1"), target.bookshelfGroupDao().members("target").map { it.bookKey })
+            assertEquals(1, target.bookshelfGroupDao().groups("other-account").size)
+
+            source.bookmarkDao().deleteAll(listOf(saved))
+            LocalBackup.export(context, Uri.fromFile(file), source, "source", setOf(BackupCategory.BOOKMARKS))
+            LocalBackup.restore(context, Uri.fromFile(file), target, "target", setOf(BackupCategory.BOOKMARKS))
+            assertTrue(target.bookmarkDao().getAll().isEmpty())
+            assertEquals(listOf(stat), target.readingStatDao().getAll())
         } finally { source.close(); target.close(); file.delete() }
     }
 }

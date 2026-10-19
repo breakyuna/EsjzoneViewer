@@ -24,6 +24,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.foundation.background
@@ -34,6 +35,9 @@ import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.FolderOpen
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.MenuBook
 import androidx.compose.material.icons.filled.Reorder
@@ -58,7 +62,10 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.RadioButton
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -147,6 +154,19 @@ object SettingsPage : AppDestination {
         val scope = rememberCoroutineScope()
         val model = rememberAppViewModel { SettingsPageModel() }
         val state by model.state.collectAsStateWithLifecycle()
+        val scanModel: StorageLocationModel = androidx.lifecycle.viewmodel.compose.viewModel(key = "download-scan") {
+            StorageLocationModel()
+        }
+        val scanState by scanModel.state.collectAsStateWithLifecycle()
+        val snackbarHost = remember { SnackbarHostState() }
+        val scanResult = scanState.result?.let { stringResource(it) }
+        LaunchedEffect(scanState.result) {
+            if (scanState.result == R.string.storage_reindex_done) model.refreshCacheStats()
+            if (scanResult != null) {
+                snackbarHost.showSnackbar(scanResult)
+                scanModel.dismissResult()
+            }
+        }
         val autoBackup by PresentationAccess.autoBackup.enabled.collectAsStateWithLifecycle()
         val adult by PresentationAccess.settings.adult
         val hideHomeRecommendations by PresentationAccess.settings.hideHomeRecommendations
@@ -189,6 +209,7 @@ object SettingsPage : AppDestination {
         LaunchedEffect(state.logoutCompleted) { if (state.logoutCompleted) rootNavigator?.replaceAll(LoginScreen) }
 
         Scaffold(
+            snackbarHost = { SnackbarHost(snackbarHost) },
             topBar = {
                 TopAppBar(
                     title = { Text(pageTitle, style = AppTypography.titleMedium) },
@@ -330,10 +351,10 @@ object SettingsPage : AppDestination {
                         ) { model.setAutoBackup(it, BookshelfRepository.scopeFor(authorization)) }
                         if (state.autoBackupFailed) Text(stringResource(R.string.backup_failed),
                             color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(AppSpacing.md))
-                        LinkRow(Icons.Filled.Download, stringResource(R.string.download_settings)) { section = "DOWNLOAD" }
                         LinkRow(Icons.Filled.Backup, stringResource(R.string.settings_backup)) {
                             navigator?.pushIfNotCurrent(LocalBackupPage)
                         }
+                        LinkRow(Icons.Filled.Download, stringResource(R.string.download_settings)) { section = "DOWNLOAD" }
                         LinkRow(Icons.Filled.Storage, stringResource(R.string.settings_storage_analysis)) { section = "STORAGE" }
                     }
                     SettingsSection(title = stringResource(R.string.settings_system_group)) {
@@ -506,6 +527,12 @@ object SettingsPage : AppDestination {
                             if (state.downloadStatsError) {
                                 TextButton(onClick = model::refreshCacheStats) { Text(stringResource(R.string.retry)) }
                             }
+                            LinkRow(
+                                Icons.Filled.FolderOpen,
+                                stringResource(if (scanState.busy) R.string.storage_location_working else R.string.storage_reindex),
+                                enabled = !scanState.busy,
+                                onClick = scanModel::reindex
+                            )
                             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = .45f))
                             SettingsToggleRow(
                                 stringResource(R.string.download_auto_save),
@@ -545,8 +572,8 @@ object SettingsPage : AppDestination {
                                     }
                                     if (showConcurrencyMenu) {
                                         val candidates = listOf(1, 3, 5, 8)
-                                        SettingsChoiceDialog(
-                                            title = stringResource(R.string.settings_download_concurrency_label),
+                                        SettingsChoiceMenu(
+                                            expanded = showConcurrencyMenu,
                                             options = candidates.map { it.toString() },
                                             selectedIndex = candidates.indexOf(downloadConcurrency),
                                             onDismiss = { showConcurrencyMenu = false },
@@ -782,8 +809,8 @@ private fun InlineSettingRow(
 }
 
 @Composable
-private fun ChoiceSettingRow(
-    icon: ImageVector,
+internal fun ChoiceSettingRow(
+    icon: ImageVector? = null,
     title: String,
     options: List<String>,
     selectedIndex: Int,
@@ -791,75 +818,57 @@ private fun ChoiceSettingRow(
     onSelect: (Int) -> Unit
 ) {
     var expanded by remember { mutableStateOf(false) }
-    LinkRow(
-        icon = icon,
-        title = title,
-        value = options.getOrNull(selectedIndex),
-        enabled = enabled
-    ) { expanded = true }
-    if (expanded) {
-        SettingsChoiceDialog(
-            title = title,
-            options = options,
-            selectedIndex = selectedIndex,
-            onDismiss = { expanded = false },
-            onSelect = onSelect
-        )
+    Surface(onClick = { expanded = true }, enabled = enabled, color = Color.Transparent) {
+        Row(
+            Modifier.fillMaxWidth().heightIn(min = 64.dp)
+                .padding(horizontal = AppSpacing.lg, vertical = AppSpacing.sm),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(AppSpacing.md)
+        ) {
+            if (icon != null) SettingIcon(icon)
+            Text(title, style = AppTypography.bodyLarge, modifier = Modifier.weight(1f))
+            Box {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(options.getOrNull(selectedIndex).orEmpty(), style = AppTypography.labelLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Icon(Icons.Filled.ExpandMore, null, modifier = Modifier.size(20.dp),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                SettingsChoiceMenu(
+                    expanded = expanded && enabled,
+                    options = options,
+                    selectedIndex = selectedIndex,
+                    onDismiss = { expanded = false },
+                    onSelect = onSelect
+                )
+            }
+        }
     }
 }
 
 @Composable
-private fun SettingsChoiceDialog(
-    title: String,
+private fun SettingsChoiceMenu(
+    expanded: Boolean,
     options: List<String>,
     selectedIndex: Int,
     onDismiss: () -> Unit,
     onSelect: (Int) -> Unit
 ) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(title) },
-        text = {
-            Column(
-                modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).selectableGroup(),
-                verticalArrangement = Arrangement.spacedBy(AppSpacing.xs)
-            ) {
-                options.forEachIndexed { index, option ->
-                    val selected = index == selectedIndex
-                    Row(
-                        modifier = Modifier.fillMaxWidth()
-                            .clip(AppShapes.compact)
-                            .background(if (selected) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent)
-                            .selectable(
-                                selected = selected,
-                                role = Role.RadioButton,
-                                onClick = {
-                                    onDismiss()
-                                    if (!selected) onSelect(index)
-                                }
-                            )
-                            .heightIn(min = 64.dp)
-                            .padding(horizontal = AppSpacing.lg, vertical = AppSpacing.sm),
-                        horizontalArrangement = Arrangement.spacedBy(AppSpacing.md),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            option,
-                            modifier = Modifier.weight(1f),
-                            style = AppTypography.bodyLarge,
-                            color = if (selected) MaterialTheme.colorScheme.onSecondaryContainer
-                                else MaterialTheme.colorScheme.onSurface
-                        )
-                        RadioButton(selected = selected, onClick = null)
-                    }
+    DropdownMenu(expanded = expanded, onDismissRequest = onDismiss) {
+        options.forEachIndexed { index, option ->
+            val selected = index == selectedIndex
+            DropdownMenuItem(
+                text = { Text(option, color = if (selected) MaterialTheme.colorScheme.primary
+                    else MaterialTheme.colorScheme.onSurface) },
+                trailingIcon = { if (selected) Icon(Icons.Filled.Check, null) },
+                modifier = Modifier.semantics { this.selected = selected },
+                onClick = {
+                    onDismiss()
+                    if (!selected) onSelect(index)
                 }
-            }
-        },
-        confirmButton = {},
-        dismissButton = {
-            TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) }
+            )
         }
-    )
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)

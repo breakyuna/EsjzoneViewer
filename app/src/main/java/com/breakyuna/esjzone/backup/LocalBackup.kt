@@ -163,8 +163,30 @@ object LocalBackup {
                 (it.bookProgress == null || it.bookProgress.isFinite() && it.bookProgress in 0f..1f) })
             require(reading.all { it.bookKey.isNotBlank() && it.durationMs >= 0 && runCatching { java.time.LocalDate.parse(it.date) }.isSuccess })
             require(groups == null || (groups.names.all { it.isNotBlank() } && groups.members.values.all { it in groups.names }))
+            // Validate all incoming downloads before replacing any existing download directory.
+            if (BackupCategory.DOWNLOADS in selected && json["downloads"]?.asBoolean == true)
+                NovelDownloadStore.importBackup(File(staging, "downloads"), replaceExisting = true, checkActive = checkActive)
             database.withTransaction {
                 checkActive()
+                // Only replace categories that were selected AND actually included in this archive.
+                val cache = database.cacheDao()
+                if (BackupCategory.UNDERLINES in selected && json.has("underlines"))
+                    cache.getReaderUnderlines().forEach { cache.deleteByKey(it.key) }
+                if (BackupCategory.BOOKMARKS in selected && json.has("bookmarks"))
+                    database.bookmarkDao().deleteAll(database.bookmarkDao().getAll())
+                if (BackupCategory.HISTORY in selected && json.has("history"))
+                    database.localReadingActivityDao().deleteAll()
+                if (BackupCategory.READING in selected && json.has("reading")) {
+                    database.readingStatDao().deleteAll()
+                    cache.getReadingTags().forEach { cache.deleteByKey(it.key) }
+                }
+                if (BackupCategory.SEARCH in selected && json.has("search"))
+                    database.searchHistoryDao().delete(*database.searchHistoryDao().getAll().toTypedArray())
+                if (groups != null) {
+                    val dao = database.bookshelfGroupDao()
+                    dao.ungroup(scope, dao.members(scope).map { it.bookKey })
+                    dao.groups(scope).forEach { dao.deleteGroup(scope, it.name) }
+                }
                 underlines.forEach { (key, incoming) ->
                     val dao = database.cacheDao()
                     val existing = ReaderUnderlines.decode(dao.findByKey(key)?.value)
@@ -198,8 +220,6 @@ object LocalBackup {
                 }
             }
             checkActive()
-            if (BackupCategory.DOWNLOADS in selected && json["downloads"]?.asBoolean == true)
-                NovelDownloadStore.importBackup(File(staging, "downloads"), checkActive)
         } finally { staging.deleteRecursively() }
     }
 

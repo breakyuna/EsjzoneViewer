@@ -30,6 +30,7 @@ class AutoBackup(context: Context) {
     private val enabledKey = booleanPreferencesKey("enabled")
     private val scopeKey = stringPreferencesKey("bookshelf_scope")
     private val includeDownloadsKey = booleanPreferencesKey("include_downloads")
+    private val intervalKey = intPreferencesKey("interval_hours")
     private val completedKey = longPreferencesKey("completed_at")
     private val failedKey = booleanPreferencesKey("failed")
     val failed = store.data.map { it[failedKey] == true }
@@ -40,13 +41,16 @@ class AutoBackup(context: Context) {
         .stateIn(scope, SharingStarted.Eagerly, false)
     val completedAt = store.data.map { it[completedKey] ?: 0L }
         .stateIn(scope, SharingStarted.Eagerly, 0L)
+    val intervalHours = store.data.map { normalizedInterval(it[intervalKey]) }
+        .stateIn(scope, SharingStarted.Eagerly, DEFAULT_INTERVAL_HOURS)
 
     fun startScheduling() {
         scope.launch {
-            store.data.map { it[enabledKey] == true }.distinctUntilChanged().collect { active ->
+            store.data.map { (it[enabledKey] == true) to normalizedInterval(it[intervalKey]) }
+                .distinctUntilChanged().collect { (active, hours) ->
                 val manager = WorkManager.getInstance(context)
-                if (active) manager.enqueueUniquePeriodicWork(WORK_NAME, ExistingPeriodicWorkPolicy.KEEP,
-                    PeriodicWorkRequestBuilder<AutoBackupWorker>(24, TimeUnit.HOURS)
+                if (active) manager.enqueueUniquePeriodicWork(WORK_NAME, ExistingPeriodicWorkPolicy.UPDATE,
+                    PeriodicWorkRequestBuilder<AutoBackupWorker>(hours.toLong(), TimeUnit.HOURS)
                         .setConstraints(Constraints.Builder().setRequiresBatteryNotLow(true)
                             .setRequiresStorageNotLow(true).build()).build())
                 else manager.cancelUniqueWork(WORK_NAME)
@@ -66,6 +70,11 @@ class AutoBackup(context: Context) {
         store.edit { it[includeDownloadsKey] = value }
     }
 
+    suspend fun setIntervalHours(value: Int) {
+        require(value in INTERVAL_HOURS)
+        store.edit { it[intervalKey] = value }
+    }
+
     suspend fun backupCategories(): Set<BackupCategory> = store.data.first().let { preferences ->
         BackupCategory.entries.filter {
             it != BackupCategory.DOWNLOADS || preferences[includeDownloadsKey] == true
@@ -77,7 +86,7 @@ class AutoBackup(context: Context) {
     fun archiveDirectory(): StorageFile = EsjzoneApplication.instance.container.storage.backups()
     fun archives(): List<StorageFile> = archiveDirectory().listFiles().orEmpty()
         .filter { it.isFile && UserStorage.isAutoBackupName(it.name) }
-        .sortedByDescending { it.name }
+        .sortedByDescending { BackupFileNames.automaticTime(it.name) }
 
     fun deleteArchive(file: StorageFile): Boolean {
         require(file.parentFile == archiveDirectory() && UserStorage.isAutoBackupName(file.name))
@@ -85,10 +94,13 @@ class AutoBackup(context: Context) {
     }
 
     companion object {
+        const val DEFAULT_INTERVAL_HOURS = 12
+        val INTERVAL_HOURS = listOf(6, 12, 24, 48)
+        internal fun normalizedInterval(value: Int?): Int = value?.takeIf { it in INTERVAL_HOURS } ?: DEFAULT_INTERVAL_HOURS
         private const val WORK_NAME = "local-auto-backup"
         internal fun obsoleteArchives(files: List<StorageFile>): List<StorageFile> = files
             .filter { UserStorage.isAutoBackupName(it.name) }
-            .sortedByDescending { it.name }.drop(3)
+            .sortedByDescending { BackupFileNames.automaticTime(it.name) }.drop(3)
 
         internal fun pruneArchives(files: List<StorageFile>): Boolean {
             var removedAll = true
@@ -126,7 +138,7 @@ class AutoBackupWorker(context: Context, parameters: WorkerParameters) : Corouti
                 val directory = backup.archiveDirectory()
                 check(directory.mkdirs())
                 val time = System.currentTimeMillis()
-                val destination = StorageFile(directory, "esjzone-auto-$time.zip")
+                val destination = StorageFile(directory, BackupFileNames.automatic(time))
                 val temporary = StorageFile.createTempFile("pending-", ".zip.part", directory)
                 publishing = temporary
                 val transferContext = currentCoroutineContext()

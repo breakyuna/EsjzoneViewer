@@ -146,6 +146,35 @@ class DownloadDirectoryNamingTest {
         } finally { target.deleteRecursively() }
     }
 
+    @Test fun explicitBackupReplacementRemovesExtraNovelsAndValidatesBeforeDeleting() = withStorage { root ->
+        val backup = Files.createTempDirectory("replacement-backup-").toFile()
+        try {
+            save("原作品", 81001, "备份中的正文")
+            NovelDownloadStore.exportBackup(backup)
+            save("原作品", 81001, "当前的正文")
+            save("额外作品", 81002)
+            NovelDownloadStore.importBackup(backup, replaceExisting = true)
+            assertEquals("备份中的正文", NovelDownloadStore.readChapter(chapter(81001).url)!!
+                .content.filterIsInstance<TextComponent>().single().text)
+            assertNull(NovelDownloadStore.manifest(novel(81002)))
+            assertEquals(1, NovelDownloadStore.listDownloadedNovels().size)
+
+            save("保留作品", 81002)
+            File(backup.listFiles()!!.single(), "manifest.json").writeText("invalid")
+            assertThrows(IllegalArgumentException::class.java) {
+                NovelDownloadStore.importBackup(backup, replaceExisting = true)
+            }
+            assertNotNull(NovelDownloadStore.readChapter(chapter(81001).url))
+            assertNotNull(NovelDownloadStore.readChapter(chapter(81002).url))
+
+            backup.deleteRecursively()
+            check(backup.mkdirs())
+            NovelDownloadStore.importBackup(backup, replaceExisting = true)
+            assertTrue(NovelDownloadStore.listDownloadedNovels().isEmpty())
+            assertTrue(root.listFiles().orEmpty().none { it.isDirectory })
+        } finally { backup.deleteRecursively() }
+    }
+
     @Test fun longAndUnsafeTitlesRemainSingleSafeUtf8Components() {
         for (title in listOf(" ../危险\\目录:*?\"<>|\n", ".", "..", "   ", "长书名😀".repeat(100))) {
             val name = NovelDownloadStore.novelDirectoryName(title)

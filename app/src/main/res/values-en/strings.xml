@@ -749,15 +749,13 @@
     <string name="reader_keep_screen_on">Keep screen on</string>
     <string name="reader_reset_confirmation">Restore all reader settings to their defaults?</string>
     <string name="local_backup">Backup and restore</string>
-    <string name="backup_description">Choose the data to export or import. Downloads include saved chapters and images. Groups apply to the current bookshelf account. Website favorites, online history and login information are excluded.</string>
     <string name="backup_reading">Reading statistics</string>
     <string name="backup_history">Local reading history</string>
     <string name="backup_search">Search history</string>
-    <string name="backup_export">Export ZIP backup</string>
-    <string name="backup_import">Import ZIP backup</string>
-    <string name="backup_merge_hint">Only selected categories present in the backup will be merged. Newer reading positions are kept. Reading time uses the larger value for each book and day, without adding it twice. Existing downloaded novels and group assignments are kept. Group assignments are restored to the current account without adding website favorites.</string>
-    <string name="backup_done">Completed</string>
-    <string name="backup_failed">Could not complete the backup operation. Check the file and free storage. Some categories may already have been imported; retrying will not duplicate reading time.</string>
+    <string name="backup_export">Export backup</string>
+    <string name="backup_import">Import backup</string>
+    <string name="backup_done">Backup exported successfully</string>
+    <string name="backup_failed">Could not complete the operation. Check the backup and free storage; some data may already have been imported.</string>
     <string name="backup_working">Processing local data… Keep the app open.</string>
     <string name="shelf_groups">Bookshelf groups</string>
     <string name="group_all">All</string>
@@ -811,8 +809,6 @@
     <string name="reader_bookmark_removed">Bookmark removed</string>
     <string name="reader_bookmark_failed">Could not update bookmark. Try again.</string>
     <string name="auto_backup">Automatic backup</string>
-    <string name="auto_backup_policy">Back up approximately daily and keep the latest 3 copies. Downloads are optional; login credentials are excluded. App-private backups are deleted when the app is uninstalled.</string>
-    <string name="backup_downloads_size_warning">Including downloaded content may significantly increase the backup file size</string>
     <string name="auto_backup_empty">No automatic backups yet</string>
     <string name="backup_delete">Delete backup</string>
     <string name="backup_delete_confirm">Delete this automatic backup? This cannot be undone. Current local data and downloaded content will not be affected.</string>
@@ -888,4 +884,12 @@
     <string name="storage_setup_selected">Selected folder: %1$s</string>
     <string name="storage_setup_unselected">No storage location selected</string>
     <string name="storage_setup_next">Next</string>
+    <string name="auto_backup_interval">Backup interval</string>
+    <string name="backup_interval_hours">%1$d hours</string>
+    <string name="backup_include_downloads">Include downloads</string>
+    <string name="backup_contents">Backup contents</string>
+    <string name="backup_archives">Saved backups</string>
+    <string name="backup_archive_actions">Backup actions</string>
+    <string name="backup_import_done">Backup imported successfully</string>
+    <string name="backup_overwrite_confirm">Importing will replace the selected data below. Categories absent from the backup will be kept. Continue?</string>
 </resources>

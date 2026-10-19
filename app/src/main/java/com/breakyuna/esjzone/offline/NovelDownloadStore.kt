@@ -340,17 +340,18 @@ object NovelDownloadStore {
         }
     }
 
-    /** Keep existing novels intact, including any active download writes. */
-    fun importBackup(source: File, checkActive: () -> Unit = {}) = importStorage(StorageFile(source), checkActive)
+    /** Merge snapshots by default; an explicit restore can replace the complete download category. */
+    fun importBackup(source: File, replaceExisting: Boolean = false, checkActive: () -> Unit = {}) =
+        importStorage(StorageFile(source), replaceExisting, checkActive)
 
-    private fun importStorage(source: StorageFile, checkActive: () -> Unit = {}) = synchronized(ioLock) {
+    private fun importStorage(source: StorageFile, replaceExisting: Boolean, checkActive: () -> Unit) = synchronized(ioLock) {
         checkActive()
         val root = checkNotNull(rootDirectory)
         prepareDownloadRoot(root)
         ensureNovelDirectoryIndex()
         imageIndex.clear()
         try {
-            source.listFiles().orEmpty().filter(StorageFile::isDirectory).forEach { directory ->
+            val incoming = source.listFiles().orEmpty().filter(StorageFile::isDirectory).map { directory ->
                 checkActive()
                 val manifest = requireNotNull(readManifest(directory))
                 require(manifest.version in 1..2 && manifest.url.isNotBlank())
@@ -364,6 +365,18 @@ object NovelDownloadStore {
                         if (chapter.schemaVersion == 2) requireNotNull(chapter.body).validate()
                     }
                 }
+                directory to manifest
+            }
+            if (replaceExisting) {
+                checkActive()
+                storageGeneration += 1L
+                novelDirectories.values.toList().forEach { directory ->
+                    val existing = requireNotNull(readManifest(directory))
+                    check(delete(existing.url))
+                }
+            }
+            incoming.forEach { (directory, manifest) ->
+                checkActive()
                 val key = canonicalKey(manifest.url)
                 val target = novelDirectories[key] ?: availableNovelDirectory(root, manifest.name, key)
                 if (!target.exists()) {

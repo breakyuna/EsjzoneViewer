@@ -5,24 +5,29 @@ import android.content.Context
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.outlined.Delete
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.breakyuna.esjzone.R
 import com.breakyuna.esjzone.app.PresentationAccess
+import com.breakyuna.esjzone.backup.AutoBackup
+import com.breakyuna.esjzone.backup.BackupFileNames
 import com.breakyuna.esjzone.backup.BackupCategory
 import com.breakyuna.esjzone.backup.LocalBackup
 import com.breakyuna.esjzone.storage.StorageFile
@@ -51,6 +56,18 @@ class LocalBackupModel : AppStateViewModel<LocalBackupModel.Status>(Status()) {
                 PresentationAccess.storage.operationMutex.withLock {
                     mutableState.value = state.value.copy(archives = PresentationAccess.autoBackup.archives())
                 }
+            } catch (error: CancellationException) { throw error
+            } catch (_: Exception) {
+                mutableState.value = state.value.copy(result = R.string.backup_failed)
+            }
+        }
+    }
+    fun dismissResult() { mutableState.value = state.value.copy(result = null) }
+    fun setIntervalHours(value: Int) {
+        viewModelScope.launch {
+            try {
+                PresentationAccess.autoBackup.setIntervalHours(value)
+                mutableState.value = state.value.copy(result = null)
             } catch (error: CancellationException) { throw error
             } catch (_: Exception) {
                 mutableState.value = state.value.copy(result = R.string.backup_failed)
@@ -130,7 +147,8 @@ class LocalBackupModel : AppStateViewModel<LocalBackupModel.Status>(Status()) {
                     if (restore) LocalBackup.restore(context, document, PresentationAccess.database, scope, categories)
                     else LocalBackup.export(context, document, PresentationAccess.database, scope, categories)
                 }
-                mutableState.value = state.value.copy(busy = false, result = R.string.backup_done)
+                mutableState.value = state.value.copy(busy = false,
+                    result = if (restore) R.string.backup_import_done else R.string.backup_done)
             } catch (error: CancellationException) { throw error
             } catch (_: Exception) {
                 mutableState.value = state.value.copy(busy = false, result = R.string.backup_failed)
@@ -152,9 +170,19 @@ object LocalBackupPage : AppDestination {
         val state by model.state.collectAsStateWithLifecycle()
         val completedAt by PresentationAccess.autoBackup.completedAt.collectAsStateWithLifecycle()
         val autoBackupEnabled by PresentationAccess.autoBackup.enabled.collectAsStateWithLifecycle()
+        val intervalHours by PresentationAccess.autoBackup.intervalHours.collectAsStateWithLifecycle()
         val backupFailed by PresentationAccess.autoBackup.failed.collectAsStateWithLifecycle()
         val storageLocation by PresentationAccess.storage.location.collectAsStateWithLifecycle()
         val autoBackupDownloads by PresentationAccess.autoBackup.includeDownloads.collectAsStateWithLifecycle()
+        val snackbarHost = remember { SnackbarHostState() }
+        val resultMessage = state.result?.let { stringResource(it) }
+        LaunchedEffect(state.result) {
+            if (resultMessage != null) {
+                snackbarHost.showSnackbar(resultMessage)
+                model.dismissResult()
+            }
+        }
+        BackHandler(enabled = state.busy) { }
         LaunchedEffect(completedAt, storageLocation) { model.refreshArchives() }
         var pendingArchive by rememberSaveable { mutableStateOf<String?>(null) }
         var restoreArchive by rememberSaveable { mutableStateOf<String?>(null) }
@@ -170,104 +198,103 @@ object LocalBackupPage : AppDestination {
         var pendingNames by rememberSaveable { mutableStateOf(emptyList<String>()) }
         var pendingScope by rememberSaveable { mutableStateOf("") }
         var confirmImport by rememberSaveable { mutableStateOf(false) }
+        val selectedLabels = BackupCategory.entries.filter { it.name in selectedNames }
+            .map { backupCategoryLabel(it) }.joinToString("、")
         val create = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { uri ->
             if (uri != null) model.run(context, uri, pendingScope, pendingNames.map { BackupCategory.valueOf(it) }.toSet(), false)
         }
         val openBackup = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
             if (uri != null) model.run(context, uri, pendingScope, pendingNames.map { BackupCategory.valueOf(it) }.toSet(), true)
         }
-        Scaffold(topBar = { TopAppBar(title = { Text(stringResource(R.string.settings_backup), style = AppTypography.titleMedium) },
+        Scaffold(snackbarHost = { SnackbarHost(snackbarHost) }, topBar = { TopAppBar(title = { Text(stringResource(R.string.settings_backup), style = AppTypography.titleMedium) },
             colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background), navigationIcon = {
-            IconButton(onClick = { navigator?.pop() }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.reading_stats_back)) }
+            IconButton(enabled = !state.busy, onClick = { navigator?.pop() }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.reading_stats_back)) }
         }) }) { padding ->
             Column(Modifier.fillMaxSize().padding(padding).accountContentWidth().verticalScroll(rememberScrollState())
                 .padding(start = AppSpacing.lg, end = AppSpacing.lg, top = AppSpacing.sm, bottom = AppSpacing.xl),
                 verticalArrangement = Arrangement.spacedBy(AppSpacing.lg)) {
-                Text(stringResource(R.string.backup_description), style = AppTypography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(horizontal = AppSpacing.xs))
-                TextButton(enabled = !state.busy, onClick = { navigator?.pushIfNotCurrent(SettingsPage) }) {
-                    Text(stringResource(R.string.storage_location))
-                }
                 if (backupFailed) Text(stringResource(R.string.backup_failed), color = MaterialTheme.colorScheme.error)
                 SettingsSection {
-                    Row(Modifier.fillMaxWidth().heightIn(min = 56.dp)
-                        .padding(horizontal = AppSpacing.md, vertical = AppSpacing.xs),
-                        verticalAlignment = Alignment.CenterVertically) {
-                        Text(stringResource(R.string.auto_backup), style = AppTypography.bodyMedium,
-                            modifier = Modifier.weight(1f))
-                        Switch(checked = autoBackupEnabled, enabled = !state.busy,
-                            onCheckedChange = { model.setAutoBackup(it, scope) })
+                    BackupToggleRow(stringResource(R.string.auto_backup), autoBackupEnabled, !state.busy) {
+                        model.setAutoBackup(it, scope)
                     }
-                    Text(stringResource(R.string.auto_backup_policy), style = AppTypography.bodySmall,
-                        modifier = Modifier.padding(AppSpacing.md), color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Row(Modifier.fillMaxWidth().heightIn(min = 56.dp).padding(horizontal = AppSpacing.xs),
-                        verticalAlignment = Alignment.CenterVertically) {
-                        Checkbox(checked = autoBackupDownloads, enabled = !state.busy,
-                            onCheckedChange = model::setAutoBackupDownloads)
-                        Text(stringResource(R.string.downloads), style = AppTypography.bodyMedium,
-                            modifier = Modifier.padding(end = AppSpacing.md))
-                        Text(stringResource(R.string.backup_downloads_size_warning), style = AppTypography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.End,
-                            modifier = Modifier.weight(1f).padding(end = AppSpacing.md, top = AppSpacing.sm, bottom = AppSpacing.sm))
+                    ChoiceSettingRow(
+                        title = stringResource(R.string.auto_backup_interval),
+                        options = AutoBackup.INTERVAL_HOURS.map { stringResource(R.string.backup_interval_hours, it) },
+                        selectedIndex = AutoBackup.INTERVAL_HOURS.indexOf(intervalHours),
+                        enabled = !state.busy,
+                        onSelect = { model.setIntervalHours(AutoBackup.INTERVAL_HOURS[it]) }
+                    )
+                    BackupToggleRow(stringResource(R.string.backup_include_downloads), autoBackupDownloads, !state.busy,
+                        model::setAutoBackupDownloads)
+                }
+                SettingsSection(title = stringResource(R.string.backup_contents)) {
+                    BackupCategory.entries.chunked(2).forEach { pair ->
+                        Row(Modifier.fillMaxWidth()) {
+                            pair.forEach { category ->
+                                val checked = category.name in selectedNames
+                                Row(
+                                    Modifier.weight(1f).heightIn(min = 48.dp)
+                                        .toggleable(value = checked, enabled = !state.busy, role = Role.Checkbox) {
+                                            selectedNames = if (it) selectedNames + category.name else selectedNames - category.name
+                                        }.padding(horizontal = AppSpacing.sm),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Checkbox(checked = checked, enabled = !state.busy, onCheckedChange = null)
+                                    Text(backupCategoryLabel(category), style = AppTypography.bodyMedium,
+                                        modifier = Modifier.padding(start = AppSpacing.sm))
+                                }
+                            }
+                            if (pair.size == 1) Spacer(Modifier.weight(1f))
+                        }
                     }
+                    Row(Modifier.fillMaxWidth().padding(AppSpacing.sm),
+                        horizontalArrangement = Arrangement.spacedBy(AppSpacing.sm)) {
+                        OutlinedButton(modifier = Modifier.weight(1f).heightIn(min = 48.dp), shape = AppShapes.compact,
+                            enabled = !state.busy && selectedNames.isNotEmpty(), onClick = { confirmImport = true }) {
+                            Text(stringResource(R.string.backup_import))
+                        }
+                        Button(modifier = Modifier.weight(1f).heightIn(min = 48.dp), shape = AppShapes.compact,
+                            enabled = !state.busy && selectedNames.isNotEmpty(), onClick = {
+                                pendingNames = selectedNames; pendingScope = scope
+                                create.launch(BackupFileNames.manual())
+                            }) { Text(stringResource(R.string.backup_export)) }
+                    }
+                }
+                SettingsSection(title = stringResource(R.string.backup_archives)) {
                     if (state.archives.isEmpty()) Text(stringResource(R.string.auto_backup_empty),
-                        modifier = Modifier.padding(AppSpacing.md), style = AppTypography.bodyMedium)
+                        modifier = Modifier.padding(AppSpacing.md), style = AppTypography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
                     state.archives.forEach { file ->
-                        Column(Modifier.fillMaxWidth().padding(horizontal = AppSpacing.md)) {
-                            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                                Text(java.text.DateFormat.getDateTimeInstance(java.text.DateFormat.SHORT,
+                        key(file.absolutePath) {
+                            var menu by remember { mutableStateOf(false) }
+                            Row(Modifier.fillMaxWidth().heightIn(min = 56.dp).padding(start = AppSpacing.md),
+                                verticalAlignment = Alignment.CenterVertically) {
+                                Text(java.text.DateFormat.getDateTimeInstance(java.text.DateFormat.MEDIUM,
                                     java.text.DateFormat.SHORT).format(java.util.Date(
-                                    file.name.removePrefix("esjzone-auto-").removeSuffix(".zip").toLongOrNull() ?: 0L)),
+                                    BackupFileNames.automaticTime(file.name) ?: 0L)),
                                     style = AppTypography.bodyMedium, modifier = Modifier.weight(1f))
-                                IconButton(enabled = !state.busy, onClick = { deleteArchive = file.absolutePath }) {
-                                    Icon(Icons.Outlined.Delete, stringResource(R.string.backup_delete),
-                                        tint = MaterialTheme.colorScheme.error)
+                                Box {
+                                    IconButton(enabled = !state.busy, onClick = { menu = true }) {
+                                        Icon(Icons.Filled.MoreVert, stringResource(R.string.backup_archive_actions))
+                                    }
+                                    DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+                                        DropdownMenuItem(text = { Text(stringResource(R.string.backup_import)) },
+                                            enabled = selectedNames.isNotEmpty(), onClick = {
+                                                menu = false; restoreArchive = file.absolutePath
+                                            })
+                                        DropdownMenuItem(text = { Text(stringResource(R.string.backup_export)) }, onClick = {
+                                            menu = false; pendingArchive = file.absolutePath
+                                            exportArchive.launch(BackupFileNames.automatic(requireNotNull(BackupFileNames.automaticTime(file.name))))
+                                        })
+                                        DropdownMenuItem(text = { Text(stringResource(R.string.backup_delete),
+                                            color = MaterialTheme.colorScheme.error) },
+                                            leadingIcon = { Icon(Icons.Outlined.Delete, null, tint = MaterialTheme.colorScheme.error) },
+                                            onClick = { menu = false; deleteArchive = file.absolutePath })
+                                    }
                                 }
                             }
-                            Row(horizontalArrangement = Arrangement.spacedBy(AppSpacing.sm)) {
-                                TextButton(enabled = !state.busy, onClick = { restoreArchive = file.absolutePath }) {
-                                    Text(stringResource(R.string.backup_import))
-                                }
-                                TextButton(enabled = !state.busy, onClick = {
-                                    pendingArchive = file.absolutePath; exportArchive.launch(file.name)
-                                }) { Text(stringResource(R.string.backup_export)) }
-                            }
                         }
-                    }
-                }
-                SettingsSection {
-                    BackupCategory.entries.forEach { category ->
-                        Row(Modifier.fillMaxWidth().heightIn(min = 56.dp).padding(horizontal = AppSpacing.xs),
-                            verticalAlignment = Alignment.CenterVertically) {
-                            Checkbox(checked = category.name in selectedNames, enabled = !state.busy, onCheckedChange = { checked ->
-                                selectedNames = if (checked) selectedNames + category.name else selectedNames - category.name
-                            })
-                            Text(stringResource(when (category) {
-                                BackupCategory.UNDERLINES -> R.string.reader_underlines
-                                BackupCategory.BOOKMARKS -> R.string.bookmarks
-                                BackupCategory.DOWNLOADS -> R.string.downloads
-                                BackupCategory.READING -> R.string.backup_reading
-                                BackupCategory.HISTORY -> R.string.backup_history
-                                BackupCategory.SEARCH -> R.string.backup_search
-                                BackupCategory.GROUPS -> R.string.shelf_groups
-                            }), style = AppTypography.bodyMedium, modifier = Modifier.padding(end = AppSpacing.md))
-                            if (category == BackupCategory.DOWNLOADS) {
-                                Text(stringResource(R.string.backup_downloads_size_warning), style = AppTypography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.End,
-                                    modifier = Modifier.weight(1f).padding(end = AppSpacing.md, top = AppSpacing.sm, bottom = AppSpacing.sm))
-                            }
-                        }
-                    }
-                }
-                Column(verticalArrangement = Arrangement.spacedBy(AppSpacing.sm)) {
-                    Button(modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp), shape = AppShapes.compact,
-                        enabled = !state.busy && selectedNames.isNotEmpty(), onClick = {
-                        pendingNames = selectedNames; pendingScope = scope
-                        create.launch("esjzone-backup-${java.time.LocalDate.now()}.zip")
-                    }) { Text(stringResource(R.string.backup_export)) }
-                    OutlinedButton(modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp), shape = AppShapes.compact,
-                        enabled = !state.busy && selectedNames.isNotEmpty(), onClick = { confirmImport = true }) {
-                        Text(stringResource(R.string.backup_import))
                     }
                 }
                 if (state.busy) {
@@ -275,12 +302,7 @@ object LocalBackupPage : AppDestination {
                     Text(stringResource(R.string.backup_working), style = AppTypography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
-                state.result?.let {
-                    Surface(shape = AppShapes.standard, color = MaterialTheme.colorScheme.surface) {
-                        Text(stringResource(it), style = AppTypography.bodyMedium,
-                            modifier = Modifier.fillMaxWidth().padding(AppSpacing.lg))
-                    }
-                }
+
             }
         }
         if (deleteArchive != null) AlertDialog(onDismissRequest = { deleteArchive = null },
@@ -294,7 +316,8 @@ object LocalBackupPage : AppDestination {
             dismissButton = { TextButton(onClick = { deleteArchive = null }) { Text(stringResource(android.R.string.cancel)) } })
         if (restoreArchive != null) AlertDialog(onDismissRequest = { restoreArchive = null },
             title = { Text(stringResource(R.string.backup_import)) },
-            text = { Text(stringResource(R.string.backup_merge_hint)) },
+            text = { Text(stringResource(R.string.backup_overwrite_confirm) + "\n\n" +
+                selectedLabels) },
             confirmButton = { TextButton(onClick = {
                 val path = restoreArchive
                 restoreArchive = null
@@ -305,11 +328,34 @@ object LocalBackupPage : AppDestination {
             dismissButton = { TextButton(onClick = { restoreArchive = null }) { Text(stringResource(android.R.string.cancel)) } })
         if (confirmImport) AlertDialog(onDismissRequest = { confirmImport = false },
             title = { Text(stringResource(R.string.backup_import)) },
-            text = { Text(stringResource(R.string.backup_merge_hint)) },
+            text = { Text(stringResource(R.string.backup_overwrite_confirm) + "\n\n" +
+                selectedLabels) },
             confirmButton = { TextButton(onClick = {
                 confirmImport = false; pendingNames = selectedNames; pendingScope = scope
                 openBackup.launch(arrayOf("application/zip", "application/octet-stream"))
             }) { Text(stringResource(android.R.string.ok)) } },
             dismissButton = { TextButton(onClick = { confirmImport = false }) { Text(stringResource(android.R.string.cancel)) } })
+    }
+}
+
+@Composable
+private fun backupCategoryLabel(category: BackupCategory): String = stringResource(when (category) {
+    BackupCategory.UNDERLINES -> R.string.reader_underlines
+    BackupCategory.BOOKMARKS -> R.string.bookmarks
+    BackupCategory.DOWNLOADS -> R.string.downloads
+    BackupCategory.READING -> R.string.backup_reading
+    BackupCategory.HISTORY -> R.string.backup_history
+    BackupCategory.SEARCH -> R.string.backup_search
+    BackupCategory.GROUPS -> R.string.shelf_groups
+})
+
+@Composable
+private fun BackupToggleRow(title: String, checked: Boolean, enabled: Boolean, onChange: (Boolean) -> Unit) {
+    Row(Modifier.fillMaxWidth().heightIn(min = 56.dp)
+        .toggleable(value = checked, enabled = enabled, role = Role.Switch, onValueChange = onChange)
+        .padding(horizontal = AppSpacing.lg, vertical = AppSpacing.xs),
+        verticalAlignment = Alignment.CenterVertically) {
+        Text(title, style = AppTypography.bodyLarge, modifier = Modifier.weight(1f))
+        Switch(checked = checked, enabled = enabled, onCheckedChange = null)
     }
 }

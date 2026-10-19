@@ -77,7 +77,7 @@ internal fun StorageLocationSettingRow() {
     LinkRow(
         icon = Icons.Filled.FolderOpen,
         title = stringResource(R.string.storage_location),
-        value = path ?: stringResource(R.string.storage_location_private),
+        subtitle = path ?: stringResource(R.string.storage_location_private),
         enabled = !state.busy
     ) { picker.launch(location.takeIf(String::isNotBlank)?.let(Uri::parse)) }
     if (state.busy || state.result != null) {

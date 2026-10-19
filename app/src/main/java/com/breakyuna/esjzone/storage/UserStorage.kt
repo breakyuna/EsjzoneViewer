@@ -136,6 +136,7 @@ class UserStorage(context: Context) {
     }
 
     companion object {
-        internal fun isAutoBackupName(name: String): Boolean = Regex("esjzone-auto-[0-9]+\\.zip").matches(name)
+        internal fun isAutoBackupName(name: String): Boolean =
+            com.breakyuna.esjzone.backup.BackupFileNames.automaticTime(name) != null
     }
 }
