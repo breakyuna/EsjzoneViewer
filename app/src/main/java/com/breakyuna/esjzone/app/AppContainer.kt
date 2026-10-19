@@ -164,8 +164,7 @@ class AppContainer(context: Context) {
 
     suspend fun initializeDownloads() = withContext(Dispatchers.IO) {
         storage.initialize()
-        storage.operationMutex.withLock {
-            NovelDownloadStore.initialize(appContext, storage.downloads())
-        }
+        // A background transfer must not block startup or reset its in-memory root switch.
+        NovelDownloadStore.initialize(appContext, storage.downloads(), onlyIfUninitialized = true)
     }
 }

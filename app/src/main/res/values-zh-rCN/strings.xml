@@ -192,6 +192,7 @@
     <string name="novel_download_set_common_password">设置通用密码</string>
     <string name="novel_download_clear_common_password">清除密码</string>
     <string name="novel_download_common_password_cleared">已清除本书通用密码</string>
+    <string name="novel_download_common_password_clear_failed">清除通用密码失败，请重试</string>
     <string name="novel_download_batch_unlock_action">使用通用密码解锁全部 (%1$d)</string>
     <string name="novel_download_unlock_waiting_count">等待解锁 (%1$d/%2$d)</string>
     <string name="novel_download_unlock_notification_title">正在解锁：%1$s</string>
@@ -895,4 +896,13 @@
     <string name="backup_archive_actions">备份操作</string>
     <string name="backup_import_done">备份导入成功</string>
     <string name="backup_overwrite_confirm">导入将覆盖当前以下勾选内容。备份中未包含的类别保持不变，是否继续？</string>
+    <string name="storage_transfer_title">后台迁移</string>
+    <string name="storage_transfer_started">已开始后台迁移，可以继续使用应用。</string>
+    <string name="storage_transfer_queued">等待后台迁移，下载写入暂时暂停</string>
+    <string name="storage_download_writes_paused">存储迁移尚未完成，下载写入已暂停，请稍后重试。</string>
+    <string name="storage_transfer_copying">正在复制：%1$s（%2$d / %3$d 文件）</string>
+    <string name="storage_transfer_verifying">正在校验：%1$s（%2$d / %3$d 文件）</string>
+    <string name="storage_transfer_cleaning">正在清理原文件（%1$d / %2$d）</string>
+    <string name="storage_transfer_waiting_reader">迁移已完成，退出阅读页后清理原文件</string>
+    <string name="storage_transfer_failed">迁移未完成，原文件保留，下载写入已暂停。请重试或重新选择目录。</string>
 </resources>

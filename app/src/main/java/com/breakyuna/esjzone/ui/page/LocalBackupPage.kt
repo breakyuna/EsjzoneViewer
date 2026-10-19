@@ -172,7 +172,7 @@ object LocalBackupPage : AppDestination {
         val autoBackupEnabled by PresentationAccess.autoBackup.enabled.collectAsStateWithLifecycle()
         val intervalHours by PresentationAccess.autoBackup.intervalHours.collectAsStateWithLifecycle()
         val backupFailed by PresentationAccess.autoBackup.failed.collectAsStateWithLifecycle()
-        val storageLocation by PresentationAccess.storage.location.collectAsStateWithLifecycle()
+        val activeStorageLocation by PresentationAccess.storage.activeLocation.collectAsStateWithLifecycle()
         val autoBackupDownloads by PresentationAccess.autoBackup.includeDownloads.collectAsStateWithLifecycle()
         val snackbarHost = remember { SnackbarHostState() }
         val resultMessage = state.result?.let { stringResource(it) }
@@ -183,7 +183,7 @@ object LocalBackupPage : AppDestination {
             }
         }
         BackHandler(enabled = state.busy) { }
-        LaunchedEffect(completedAt, storageLocation) { model.refreshArchives() }
+        LaunchedEffect(completedAt, activeStorageLocation) { model.refreshArchives() }
         var pendingArchive by rememberSaveable { mutableStateOf<String?>(null) }
         var restoreArchive by rememberSaveable { mutableStateOf<String?>(null) }
         var deleteArchive by rememberSaveable { mutableStateOf<String?>(null) }

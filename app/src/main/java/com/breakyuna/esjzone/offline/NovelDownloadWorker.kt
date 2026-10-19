@@ -42,6 +42,7 @@ import java.util.zip.GZIPInputStream
 import java.util.zip.GZIPOutputStream
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
@@ -281,6 +282,7 @@ class NovelDownloadWorker(
             else EsjzoneUrls.baseForDomain(domain)
             com.breakyuna.esjzone.EsjzoneApplication.instance.container.initializeCaches()
             com.breakyuna.esjzone.EsjzoneApplication.instance.container.initializeDownloads()
+            NovelDownloadStore.migrating.first { !it }
 
             val resolvedUrl = EsjzoneUrls.resolve(rawUrl, taskBaseUrl)
             val parsedUrl = Uri.parse(resolvedUrl)
@@ -330,6 +332,9 @@ class NovelDownloadWorker(
             Result.success()
         } catch (error: CancellationException) {
             throw error
+        } catch (_: com.breakyuna.esjzone.storage.StorageMigrationBusyException) {
+            // A transfer may start after the initial wait; retry from the committed manifest.
+            Result.retry()
         } catch (error: Exception) {
             AppLogger.e("NovelDownloadWorker", "Background novel download failed", error)
             if (generateSequence<Throwable>(error) { it.cause }.any {

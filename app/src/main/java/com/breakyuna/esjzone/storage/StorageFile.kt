@@ -64,6 +64,43 @@ class StorageFile private constructor(
         return tree!!.children(relative).map { StorageFile(this, it) }.toTypedArray()
     }
 
+    data class Entry(val file: StorageFile, val directory: Boolean, val size: Long)
+
+    /** A migration-scoped snapshot: one provider query per directory, with sizes and types. */
+    fun entries(): List<Entry> {
+        if (local != null) {
+            val children = local.listFiles() ?: throw IOException("Unable to list storage directory")
+            return children.map { Entry(StorageFile(it), it.isDirectory, it.length()) }
+        }
+        return tree!!.entries(relative).map { (name, metadata) ->
+            Entry(StorageFile(this, name), metadata.type == DIRECTORY, metadata.size)
+        }
+    }
+
+    fun snapshotFiles(checkActive: () -> Unit): List<Entry> = buildList {
+        fun visit(directory: StorageFile) {
+            checkActive()
+            directory.entries().forEach { entry ->
+                checkActive()
+                if (entry.directory) visit(entry.file) else add(entry)
+            }
+        }
+        visit(this@StorageFile)
+    }
+
+    /** Only for an unpublished, exclusively owned staging directory with an existing parent. */
+    fun createNewOutputStream(): OutputStream {
+        if (local != null) {
+            check(local.createNewFile())
+            return local.outputStream()
+        }
+        tree!!.create(relative, "application/octet-stream")
+        return documentAccess {
+            tree.context.contentResolver.openOutputStream(uri, "wt")
+                ?: throw IOException("Unable to write storage document")
+        }
+    }
+
     fun inputStream(): InputStream = local?.inputStream()
         ?: documentAccess {
             tree!!.context.contentResolver.openInputStream(uri)
@@ -113,12 +150,13 @@ class StorageFile private constructor(
         require(tree === destination.tree && parentFile == destination.parentFile)
         val currentTree = checkNotNull(tree)
         if (destination.exists()) return false
+        val directory = isDirectory
         val renamed = documentAccess {
             DocumentsContract.renameDocument(currentTree.context.contentResolver, uri, destination.name)
         }
             ?: return false
-        currentTree.invalidate(relative)
-        currentTree.invalidate(destination.relative)
+        currentTree.invalidate(relative, directory)
+        currentTree.invalidate(destination.relative, directory)
         currentTree.documents[destination.relative] = renamed
         return true
     }
@@ -181,18 +219,23 @@ class StorageFile private constructor(
         inputStream().use { input -> destination.outputStream().use { input.copyTo(it) } }
     }
     /** Existing files are never overwritten during migration. A retry accepts identical copies. */
-    fun copyFrom(source: StorageFile, checkActive: () -> Unit = {}) {
+    fun copyFrom(
+        source: StorageFile,
+        checkActive: () -> Unit = {},
+        beforeTemporaryCreate: (StorageFile) -> Unit = {}
+    ) {
         checkActive()
         if (source.isDirectory) {
             check(mkdirs())
-            for (child in source.listFiles().orEmpty()) StorageFile(this, child.name).copyFrom(child, checkActive)
+            for (child in source.listFiles().orEmpty()) StorageFile(this, child.name).copyFrom(child, checkActive, beforeTemporaryCreate)
         } else {
             if (exists()) {
                 require(sameContent(source, checkActive)) { "The destination contains different files" }
                 return
             }
             check(parentFile?.mkdirs() == true)
-            val pending = createTempFile("migration-", ".tmp", checkNotNull(parentFile))
+            val pending = StorageFile(checkNotNull(parentFile), "migration-${UUID.randomUUID()}.tmp")
+            beforeTemporaryCreate(pending)
             try {
                 source.inputStream().use { input -> pending.outputStream().use { output ->
                     input.copyWithCancellation(output, checkActive)
@@ -202,8 +245,8 @@ class StorageFile private constructor(
             } finally { pending.delete() }
         }
     }
-    fun sameContent(other: StorageFile, checkActive: () -> Unit = {}): Boolean {
-        if (length() != other.length()) return false
+    fun sameContent(other: StorageFile, checkActive: () -> Unit = {}, sizesChecked: Boolean = false): Boolean {
+        if (!sizesChecked && length() != other.length()) return false
         return inputStream().buffered().use { first -> other.inputStream().buffered().use secondUse@ { second ->
             val a = ByteArray(64 * 1024)
             val b = ByteArray(a.size)
@@ -289,11 +332,13 @@ class StorageFile private constructor(
                 result
             }
         }
-        fun children(path: String): List<String> = documentAccess {
+        fun children(path: String): List<String> = entries(path).map { it.first }
+        fun entries(path: String): List<Pair<String, Metadata>> = documentAccess {
             val parent = resolve(path) ?: return@documentAccess emptyList()
             val uri = DocumentsContract.buildChildDocumentsUriUsingTree(root, DocumentsContract.getDocumentId(parent))
             val cursor = context.contentResolver.query(uri, arrayOf(DocumentsContract.Document.COLUMN_DOCUMENT_ID,
-                DocumentsContract.Document.COLUMN_DISPLAY_NAME), null, null, null)
+                DocumentsContract.Document.COLUMN_DISPLAY_NAME, DocumentsContract.Document.COLUMN_MIME_TYPE,
+                DocumentsContract.Document.COLUMN_SIZE), null, null, null)
                 ?: throw IOException("Unable to list storage directory")
             val names = cursor.use {
                 buildList {
@@ -303,13 +348,13 @@ class StorageFile private constructor(
                         if (name.isNullOrBlank() || name == "." || name == ".." || '/' in name || '\\' in name) continue
                         val childPath = listOf(path, name).filter(String::isNotEmpty).joinToString("/")
                         documents[childPath] = DocumentsContract.buildDocumentUriUsingTree(root, it.getString(0))
-                        add(name)
+                        add(name to Metadata(it.getString(2), it.getLong(3), name))
                     }
                 }
             }
-            val children = names.map { listOf(path, it).filter(String::isNotEmpty).joinToString("/") }.toSet()
+            val children = names.map { listOf(path, it.first).filter(String::isNotEmpty).joinToString("/") }.toSet()
             documents.keys.filter { it.isNotEmpty() && it.substringBeforeLast('/', "") == path && it !in children }
-                .forEach(::invalidate)
+                .forEach { invalidate(it) }
             listedDirectories += path
             names
         }
@@ -319,7 +364,11 @@ class StorageFile private constructor(
             documents[path] = DocumentsContract.createDocument(context.contentResolver, parent, type, path.substringAfterLast('/'))
                 ?: throw IOException("Unable to create storage document")
         }
-        fun invalidate(path: String) {
+        fun invalidate(path: String, subtree: Boolean = true) {
+            if (!subtree) {
+                documents.remove(path)
+                return
+            }
             documents.keys.removeAll { it == path || it.startsWith("$path/") }
             listedDirectories.removeAll { it == path || it.startsWith("$path/") }
         }

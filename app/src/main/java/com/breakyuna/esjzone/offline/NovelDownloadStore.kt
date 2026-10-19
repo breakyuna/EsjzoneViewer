@@ -30,6 +30,9 @@ import com.breakyuna.esjzone.util.copyWithCancellation
 import com.breakyuna.esjzone.util.AppLogger
 import com.google.gson.Gson
 import com.breakyuna.esjzone.storage.StorageFile
+import com.breakyuna.esjzone.storage.StorageTransferProgress
+import com.breakyuna.esjzone.storage.StorageTransferPhase
+import com.breakyuna.esjzone.storage.StorageMigrationBusyException
 import java.io.File
 import java.io.IOException
 import java.nio.charset.StandardCharsets
@@ -162,18 +165,22 @@ object NovelDownloadStore {
     /** Rebuilt after a manifest write or deletion; bookshelf refreshes read this snapshot. */
     private var inventorySnapshot: List<DownloadedNovelSummary>? = null
 
+    private val mutableMigrating = kotlinx.coroutines.flow.MutableStateFlow(false)
+    val migrating: kotlinx.coroutines.flow.StateFlow<Boolean> = mutableMigrating
+    private var migrationCopyRunning = false
     private var storageGeneration = 0L
     private var privatePasswords: android.content.SharedPreferences? = null
     private data class DownloadWriteGuard(val directoryPath: String, val generation: Long, val storage: Long)
 
     private fun newWriteGuard(directory: StorageFile): DownloadWriteGuard = synchronized(ioLock) {
+        if (directory.parentFile != rootDirectory) throw StorageMigrationBusyException()
         DownloadWriteGuard(directory.absolutePath, deletionGenerations[directory.absolutePath] ?: 0L, storageGeneration)
     }
 
-    private fun ensureWriteAllowed(guard: DownloadWriteGuard?) {
-        if (guard == null) return
-        val current = synchronized(ioLock) { deletionGenerations[guard.directoryPath] ?: 0L }
-        if (current != guard.generation || guard.storage != storageGeneration) {
+    private fun ensureWriteAllowed(guard: DownloadWriteGuard?) = synchronized(ioLock) {
+        if (mutableMigrating.value) throw StorageMigrationBusyException()
+        if (guard != null && guard.storage != storageGeneration) throw StorageMigrationBusyException()
+        if (guard != null && (deletionGenerations[guard.directoryPath] ?: 0L) != guard.generation) {
             throw CancellationException("Download storage changed or the novel was removed")
         }
     }
@@ -191,11 +198,11 @@ object NovelDownloadStore {
     private fun missingImageLabel(): String = appContext?.getString(R.string.download_image_unavailable)
         ?: "[Image unavailable]"
 
-    fun initialize(context: Context, selectedDirectory: StorageFile? = null) = synchronized(ioLock) {
+    fun initialize(context: Context, selectedDirectory: StorageFile? = null, onlyIfUninitialized: Boolean = false) = synchronized(ioLock) {
         appContext = context.applicationContext
         privatePasswords = context.applicationContext.getSharedPreferences("download_secrets", Context.MODE_PRIVATE)
         val directory = selectedDirectory ?: StorageFile(File(context.applicationContext.filesDir, "downloaded_novels"))
-        if (rootDirectory?.absolutePath != directory.absolutePath) initializeStorageDirectory(directory)
+        if ((!onlyIfUninitialized || rootDirectory == null) && rootDirectory?.absolutePath != directory.absolutePath) initializeStorageDirectory(directory)
     }
 
     internal fun initializeDirectory(directory: File) = initializeStorageDirectory(StorageFile(directory))
@@ -233,67 +240,168 @@ object NovelDownloadStore {
     }
 
     /** Copy complete book directories before switching; original files survive any copy failure. */
-    internal data class StorageMigration(val source: StorageFile?, val books: List<StorageFile>)
+    internal data class StorageMigration(
+        val source: StorageFile?, val books: List<StorageFile>, val targets: Map<String, String> = emptyMap()
+    )
 
-    internal fun migrateStorage(destination: StorageFile, checkActive: () -> Unit): StorageMigration = synchronized(ioLock) {
-        val source = rootDirectory
-        if (source == destination) {
-            initializeStorageDirectory(destination)
-            return@synchronized StorageMigration(source, emptyList())
+    internal fun migrateStorage(
+        destination: StorageFile,
+        onProgress: (StorageTransferProgress) -> Unit = {},
+        stagingJournal: (String) -> Unit = {},
+        holdWritesUntilCommit: Boolean = false,
+        checkActive: () -> Unit
+    ): StorageMigration {
+        val source = synchronized(ioLock) {
+            check(!migrationCopyRunning)
+            // Resolve legacy names before readers can build an index during the copy.
+            ensureNovelDirectoryIndex()
+            mutableMigrating.value = true
+            migrationCopyRunning = true
+            rootDirectory
         }
-        require(source == null || !destination.isDescendantOf(source)) { "The destination is inside the source download directory" }
-        val migrated = mutableListOf<StorageFile>()
-        check(destination.mkdirs())
-        val destinationDirectories = scanNovelDirectories(destination)
-        source?.listFiles().orEmpty().filter(StorageFile::isDirectory).forEach { directory ->
-            checkActive()
-            // Recover the last published files before excluding unfinished .tmp writes.
-            directory.walkTopDown().filter { it.isFile && it.name.endsWith(".previous.tmp") }
-                .toList().forEach { previous ->
-                    checkActive()
-                    StorageFile(checkNotNull(previous.parentFile), previous.name.removeSuffix(".previous.tmp"))
-                        .recoverReplacement()
+        try {
+            if (source == destination) {
+                synchronized(ioLock) { initializeStorageDirectory(destination) }
+                return StorageMigration(source, emptyList())
+            }
+            require(source == null || !destination.isDescendantOf(source)) {
+                "The destination is inside the source download directory"
+            }
+            val migrated = mutableListOf<StorageFile>()
+            val targets = linkedMapOf<String, String>()
+            check(destination.mkdirs())
+            val destinationDirectories = synchronized(ioLock) { scanNovelDirectories(destination) }
+            val sources = source?.listFiles().orEmpty().filter { it.isDirectory && !isStagingDirectory(it.name) }
+            sources.forEach { directory ->
+                checkActive()
+                var files = directory.snapshotFiles(checkActive)
+                val replacements = files.filter { it.file.name.endsWith(".previous.tmp") }
+                if (replacements.isNotEmpty()) {
+                    synchronized(ioLock) {
+                        replacements.forEach { previous ->
+                            checkActive()
+                            StorageFile(checkNotNull(previous.file.parentFile),
+                                previous.file.name.removeSuffix(".previous.tmp")).recoverReplacement()
+                        }
+                    }
+                    files = directory.snapshotFiles(checkActive)
                 }
-            val manifest = readManifest(directory) ?: return@forEach
-            rememberPassword(manifest)
-            val key = canonicalKey(manifest.url)
-            val target = destinationDirectories[key] ?: availableNovelDirectory(destination, manifest.name, key)
-            val staging = StorageFile.createTempFile("migration-", ".tmp", destination)
-            check(staging.delete() && staging.mkdirs())
-            try {
-                directory.walkTopDown().filter { it.isFile && it.name != MANIFEST_FILE && !it.name.endsWith(".tmp") }
-                    .forEach { file -> StorageFile(staging, file.relativePathFrom(directory)).copyFrom(file, checkActive) }
+                val manifest = synchronized(ioLock) {
+                    readManifest(directory)?.also(::rememberPassword)
+                } ?: return@forEach
+                val copyFiles = files.filter { it.file.name != MANIFEST_FILE && !it.file.name.endsWith(".tmp") }
+                val expected = copyFiles.associateBy { it.file.relativePathFrom(directory) }
                 manifest.chapters.filter { it.bodyAvailable || it.downloaded }.forEach { record ->
-                    checkActive()
-                    val chapter = resolveLocalFile(staging, record.fileName)
-                    if (chapter == null || !chapter.isFile || chapter.length() == 0L) {
+                    if ((expected[record.fileName]?.size ?: 0L) == 0L) {
                         throw IOException("A saved chapter is missing from the migrated novel")
                     }
                 }
-                StorageFile(staging, MANIFEST_FILE).writeText(gson.toJson(manifest.copy(commonPassword = null)))
+                val key = canonicalKey(manifest.url)
+                val target = destinationDirectories[key] ?: availableNovelDirectory(destination, manifest.name, key)
+                val sanitizedManifest = gson.toJson(manifest.copy(commonPassword = null))
                 if (target.exists()) {
-                    // Preserve a previously restored library; never silently replace conflicting content.
-                    staging.walkTopDown().filter(StorageFile::isFile).forEach { file ->
-                        val existing = StorageFile(target, file.relativePathFrom(staging))
-                        require(existing.isFile && existing.sameContent(file, checkActive)) {
+                    // A completed book from an interrupted run is validated before allocating a second copy.
+                    val existingManifest = synchronized(ioLock) { readManifest(target) }
+                    require(existingManifest != null &&
+                        gson.toJson(existingManifest.copy(commonPassword = null)) == sanitizedManifest) {
+                        "The destination contains a different copy of this novel"
+                    }
+                    val existing = target.snapshotFiles(checkActive).associateBy { it.file.relativePathFrom(target) }
+                    copyFiles.forEachIndexed { index, entry ->
+                        checkActive()
+                        onProgress(StorageTransferProgress(StorageTransferPhase.VERIFYING, manifest.name, index, copyFiles.size))
+                        val other = existing[entry.file.relativePathFrom(directory)]
+                        require(other != null && other.size == entry.size &&
+                            other.file.sameContent(entry.file, checkActive, sizesChecked = true)) {
                             "The destination contains a different copy of this novel"
                         }
                     }
                 } else {
-                    checkActive()
-                    check(staging.renameTo(target))
+                    val staging = StorageFile(destination, "migration-${java.util.UUID.randomUUID()}.tmp")
+                    stagingJournal(staging.name)
+                    check(staging.mkdirs())
+                    try {
+                        val parents = hashSetOf(staging.absolutePath)
+                        copyFiles.forEachIndexed { index, entry ->
+                            checkActive()
+                            onProgress(StorageTransferProgress(StorageTransferPhase.COPYING, manifest.name, index, copyFiles.size))
+                            val output = StorageFile(staging, entry.file.relativePathFrom(directory))
+                            val parent = checkNotNull(output.parentFile)
+                            if (parents.add(parent.absolutePath)) check(parent.mkdirs())
+                            entry.file.inputStream().use { input -> output.createNewOutputStream().use { stream ->
+                                input.copyWithCancellation(stream, checkActive)
+                            } }
+                        }
+                        onProgress(StorageTransferProgress(StorageTransferPhase.VERIFYING, manifest.name, copyFiles.size, copyFiles.size))
+                        val copied = staging.snapshotFiles(checkActive).associateBy { it.file.relativePathFrom(staging) }
+                        check(copied.size == expected.size && expected.all { (path, entry) -> copied[path]?.size == entry.size })
+                        // Publish metadata last; no unfinished book is visible to normal scans.
+                        checkActive()
+                        StorageFile(staging, MANIFEST_FILE).createNewOutputStream().bufferedWriter().use {
+                            it.write(sanitizedManifest)
+                        }
+                        checkActive()
+                        check(staging.renameTo(target))
+                    } finally {
+                        runCatching { check(staging.deleteRecursively()) }
+                            .onFailure { AppLogger.w("NovelDownloadStore", "Unable to remove migration staging directory", it) }
+                    }
                 }
-            } finally {
-                runCatching { check(staging.deleteRecursively()) }
-                    .onFailure { AppLogger.w("NovelDownloadStore", "Unable to remove migration staging directory", it) }
+                migrated += directory
+                targets[directory.name] = target.name
+                destinationDirectories[key] = target
+                onProgress(StorageTransferProgress(StorageTransferPhase.VERIFYING, manifest.name, copyFiles.size, copyFiles.size))
             }
-            migrated += directory
-            destinationDirectories[key] = target
+            checkActive()
+            synchronized(ioLock) { initializeStorageDirectory(destination) }
+            return StorageMigration(source, migrated, targets)
+        } finally {
+            synchronized(ioLock) {
+                migrationCopyRunning = false
+                if (!holdWritesUntilCommit) mutableMigrating.value = false
+            }
         }
-        checkActive()
-        initializeStorageDirectory(destination)
-        StorageMigration(source, migrated)
     }
+
+    /** Revalidate a journaled destination before resuming deletion of possibly partial originals. */
+    internal fun verifyMigratedBook(source: StorageFile, target: StorageFile, checkActive: () -> Unit) {
+        checkActive()
+        check(target.isDirectory)
+        // Read fresh documents: a restarted cleanup must not trust a pre-interruption metadata cache.
+        val manifest = synchronized(ioLock) {
+            readJson(StorageFile(target, MANIFEST_FILE), DownloadedNovelManifest::class.java)
+        }
+            ?: throw IOException("The migrated novel manifest is unavailable")
+        val targetFiles = target.snapshotFiles(checkActive).associateBy { it.file.relativePathFrom(target) }
+        manifest.chapters.filter { it.downloaded || it.bodyAvailable }.forEach { record ->
+            check((targetFiles[record.fileName]?.size ?: 0L) > 0L)
+        }
+        if (!source.exists()) return
+        source.snapshotFiles(checkActive).filter { !it.file.name.endsWith(".tmp") }.forEach { entry ->
+            checkActive()
+            if (entry.file.name == MANIFEST_FILE) {
+                val original = readJson(entry.file, DownloadedNovelManifest::class.java)
+                    ?: throw IOException("The original novel manifest is unavailable")
+                check(canonicalKey(original.url) == canonicalKey(manifest.url))
+                val currentRecords = manifest.chapters.associateBy { chapterKey(it.url) }
+                original.chapters.filter { it.downloaded || it.bodyAvailable }.forEach { record ->
+                    val current = currentRecords[chapterKey(record.url)]
+                    check(current != null && current.fileName == record.fileName && (current.downloaded || current.bodyAvailable))
+                }
+            } else {
+                val copied = targetFiles[entry.file.relativePathFrom(source)]
+                check(copied != null && copied.size == entry.size &&
+                    copied.file.sameContent(entry.file, checkActive, sizesChecked = true))
+            }
+        }
+    }
+
+    internal fun setStorageMigrationPending(pending: Boolean) = synchronized(ioLock) {
+        check(!migrationCopyRunning)
+        mutableMigrating.value = pending
+    }
+
+    internal fun finishStorageMigration() = setStorageMigrationPending(false)
 
     internal fun restoreStorage(directory: StorageFile) = initializeStorageDirectory(directory)
 
@@ -345,6 +453,7 @@ object NovelDownloadStore {
         importStorage(StorageFile(source), replaceExisting, checkActive)
 
     private fun importStorage(source: StorageFile, replaceExisting: Boolean, checkActive: () -> Unit) = synchronized(ioLock) {
+        ensureWriteAllowed(null)
         checkActive()
         val root = checkNotNull(rootDirectory)
         prepareDownloadRoot(root)
@@ -512,6 +621,7 @@ object NovelDownloadStore {
      * Always cancels queued work; an absent directory is already cleared.
      */
     fun delete(novelUrl: String): Boolean = synchronized(ioLock) {
+        if (mutableMigrating.value) return@synchronized false
         cancelActiveWork(novelUrl)
         val directory = directoryFor(novelUrl, create = false) ?: return@synchronized true
         deletionGenerations[directory.absolutePath] = (deletionGenerations[directory.absolutePath] ?: 0L) + 1L
@@ -528,6 +638,7 @@ object NovelDownloadStore {
 
     /** Deletes several novel download directories and returns the number removed. */
     fun deleteAll(novelUrls: Iterable<String>): Int = synchronized(ioLock) {
+        if (mutableMigrating.value) return@synchronized 0
         inventorySnapshot = null
         mutableChanges.value += 1
         novelUrls.distinct()
@@ -1464,6 +1575,7 @@ object NovelDownloadStore {
 
     private fun directoryFor(novelUrl: String, create: Boolean, novelName: String = ""): StorageFile? = synchronized(ioLock) {
         val root = rootDirectory ?: return@synchronized null
+        if (create && mutableMigrating.value) return@synchronized null
         ensureNovelDirectoryIndex()
         val key = canonicalKey(novelUrl)
         novelDirectories[key]?.let { directory ->
@@ -1507,7 +1619,7 @@ object NovelDownloadStore {
         novelDirectories.forEach { (key, directory) ->
             if (key !in directories && directory.isDirectory) directories[key] = directory
         }
-        if (renameLegacyDirectories) directories.entries.forEach { entry ->
+        if (renameLegacyDirectories && !mutableMigrating.value) directories.entries.forEach { entry ->
             val directory = entry.value
             if (directory.name != digest(entry.key)) return@forEach
             val manifest = readManifest(directory) ?: return@forEach

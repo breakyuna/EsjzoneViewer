@@ -15,8 +15,16 @@ class StorageSetupPolicyTest {
     }
 
     @Test
-    fun persistedLocationCannotContinueWhileMigrationIsStillFinishing() {
+    fun selectionValidationMustFinishBeforeContinuing() {
         assertFalse(canContinueStorageSetup(location, StorageLocationModel.Status(busy = true)))
+    }
+
+    @Test
+    fun durableBackgroundTransferAllowsEnteringTheApp() {
+        assertTrue(canContinueStorageSetup(location,
+            StorageLocationModel.Status(result = R.string.storage_transfer_started)))
+        assertFalse(canContinueStorageSetup("",
+            StorageLocationModel.Status(result = R.string.storage_transfer_started)))
     }
 
     @Test

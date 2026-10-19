@@ -107,6 +107,8 @@ object DownloadPage : AppDestination {
         val state by model.state.collectAsState()
         val scanModel = rememberAppViewModel { StorageLocationModel() }
         val scanState by scanModel.state.collectAsState()
+        val transfer by PresentationAccess.storage.transfer.collectAsState()
+        val migrationLocked by PresentationAccess.downloads.migrating.collectAsState()
         val snackbarHost = remember { SnackbarHostState() }
         val scanResult = scanState.result?.let { stringResource(it) }
         LaunchedEffect(scanState.result) {
@@ -150,10 +152,10 @@ object DownloadPage : AppDestination {
                         ) { displayedEditing ->
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 if (displayedEditing) {
-                                    IconButton(onClick = { selected = if (selected.size == entries.size) emptySet() else entries.mapTo(LinkedHashSet()) { it.novelUrl } }, enabled = entries.isNotEmpty() && !deleting) {
+                                    IconButton(onClick = { selected = if (selected.size == entries.size) emptySet() else entries.mapTo(LinkedHashSet()) { it.novelUrl } }, enabled = entries.isNotEmpty() && !deleting && !migrationLocked) {
                                         Icon(Icons.Filled.SelectAll, stringResource(R.string.download_select_all))
                                     }
-                                    IconButton(onClick = { requestDelete(selected) }, enabled = selected.isNotEmpty() && !deleting) {
+                                    IconButton(onClick = { requestDelete(selected) }, enabled = selected.isNotEmpty() && !deleting && !migrationLocked) {
                                         Icon(Icons.Filled.DeleteOutline, stringResource(R.string.download_delete_selected), tint = MaterialTheme.colorScheme.error)
                                     }
                                     IconButton(onClick = { editing = false; selected = emptySet() }, enabled = !deleting) {
@@ -165,7 +167,7 @@ object DownloadPage : AppDestination {
                                         tooltip = { PlainTooltip { Text(stringResource(R.string.storage_reindex)) } },
                                         state = rememberTooltipState()
                                     ) {
-                                        IconButton(onClick = scanModel::reindex, enabled = !scanState.busy && !deleting) {
+                                        IconButton(onClick = scanModel::reindex, enabled = !scanState.busy && !deleting && !transfer.running) {
                                             if (scanState.busy) {
                                                 CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.dp)
                                             } else {
@@ -173,7 +175,7 @@ object DownloadPage : AppDestination {
                                             }
                                         }
                                     }
-                                    IconButton(onClick = { editing = true }, enabled = entries.isNotEmpty() && !scanState.busy) { Icon(Icons.Filled.Edit, stringResource(R.string.download_edit)) }
+                                    IconButton(onClick = { editing = true }, enabled = entries.isNotEmpty() && !scanState.busy && !migrationLocked) { Icon(Icons.Filled.Edit, stringResource(R.string.download_edit)) }
                                     Box {
                                         IconButton(onClick = { showSettings = true }) { Icon(Icons.Filled.Settings, stringResource(R.string.download_settings)) }
                                         DropdownMenu(expanded = showSettings, onDismissRequest = { showSettings = false }) {
@@ -194,31 +196,34 @@ object DownloadPage : AppDestination {
                 )
             }
         ) { padding ->
-            when (val current = state) {
-                DownloadPageModel.State.Loading -> LoadingSkeleton(Modifier.fillMaxWidth().padding(padding), stringResource(R.string.downloads))
-                is DownloadPageModel.State.Error -> ErrorState(
-                    title = stringResource(R.string.load_client_error),
-                    message = current.message.ifBlank { stringResource(R.string.load_client_error) },
-                    retryLabel = stringResource(R.string.retry),
-                    onRetry = model::refresh,
-                    modifier = Modifier.fillMaxSize().accountContentWidth().padding(padding)
-                )
-                is DownloadPageModel.State.Content -> if (current.novels.isEmpty()) {
-                    EmptyState(
-                        title = stringResource(R.string.download_empty),
-                        message = stringResource(R.string.download_empty_hint),
-                        modifier = Modifier.fillMaxSize().accountContentWidth().padding(padding)
+            Column(Modifier.fillMaxSize().padding(padding)) {
+                StorageTransferStatus(transfer, onRetry = scanModel::retryTransfer)
+                when (val current = state) {
+                    DownloadPageModel.State.Loading -> LoadingSkeleton(Modifier.fillMaxWidth(), stringResource(R.string.downloads))
+                    is DownloadPageModel.State.Error -> ErrorState(
+                        title = stringResource(R.string.load_client_error),
+                        message = current.message.ifBlank { stringResource(R.string.load_client_error) },
+                        retryLabel = stringResource(R.string.retry),
+                        onRetry = model::refresh,
+                        modifier = Modifier.fillMaxSize().accountContentWidth()
                     )
-                } else {
-                    DownloadList(
-                        novels = current.novels,
-                        selected = selected,
-                        editing = editing,
-                        deleting = deleting,
-                        onToggle = { url -> selected = if (url in selected) selected - url else selected + url },
-                        onDelete = { requestDelete(listOf(it)) },
-                        modifier = Modifier.fillMaxSize().accountContentWidth().padding(padding)
-                    )
+                    is DownloadPageModel.State.Content -> if (current.novels.isEmpty()) {
+                        EmptyState(
+                            title = stringResource(R.string.download_empty),
+                            message = stringResource(R.string.download_empty_hint),
+                            modifier = Modifier.fillMaxSize().accountContentWidth()
+                        )
+                    } else {
+                        DownloadList(
+                            novels = current.novels,
+                            selected = selected,
+                            editing = editing,
+                            deleting = deleting || migrationLocked,
+                            onToggle = { url -> selected = if (url in selected) selected - url else selected + url },
+                            onDelete = { requestDelete(listOf(it)) },
+                            modifier = Modifier.fillMaxSize().accountContentWidth()
+                        )
+                    }
                 }
             }
         }
@@ -229,7 +234,7 @@ object DownloadPage : AppDestination {
                 title = { Text(stringResource(R.string.download_delete_title, pendingDelete.size)) },
                 text = { Text(stringResource(R.string.download_delete_confirm)) },
                 confirmButton = {
-                    TextButton(onClick = { model.delete(pendingDelete); showDelete = false; pendingDelete = emptyList() }, enabled = !deleting) {
+                    TextButton(onClick = { model.delete(pendingDelete); showDelete = false; pendingDelete = emptyList() }, enabled = !deleting && !migrationLocked) {
                         Text(stringResource(R.string.download_delete_confirm_action), color = MaterialTheme.colorScheme.error)
                     }
                 },

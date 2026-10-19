@@ -192,6 +192,7 @@
     <string name="novel_download_set_common_password">Set common password</string>
     <string name="novel_download_clear_common_password">Clear password</string>
     <string name="novel_download_common_password_cleared">Common password cleared for this book</string>
+    <string name="novel_download_common_password_clear_failed">Could not clear the common password. Please retry.</string>
     <string name="novel_download_batch_unlock_action">Unlock all with common password (%1$d)</string>
     <string name="novel_download_unlock_waiting_count">Waiting to unlock (%1$d/%2$d)</string>
     <string name="novel_download_unlock_notification_title">Unlocking: %1$s</string>
@@ -894,4 +895,13 @@
     <string name="backup_archive_actions">Backup actions</string>
     <string name="backup_import_done">Backup imported successfully</string>
     <string name="backup_overwrite_confirm">Importing will replace the selected data below. Categories absent from the backup will be kept. Continue?</string>
+    <string name="storage_transfer_title">Background migration</string>
+    <string name="storage_transfer_started">Migration started in the background. You can continue using the app.</string>
+    <string name="storage_transfer_queued">Waiting to migrate. Download writes are paused.</string>
+    <string name="storage_download_writes_paused">Storage migration is incomplete. Download writes are paused. Please try again later.</string>
+    <string name="storage_transfer_copying">Copying: %1$s (%2$d / %3$d files)</string>
+    <string name="storage_transfer_verifying">Verifying: %1$s (%2$d / %3$d files)</string>
+    <string name="storage_transfer_cleaning">Removing originals (%1$d / %2$d)</string>
+    <string name="storage_transfer_waiting_reader">Migration complete. Originals will be removed after you leave the reader.</string>
+    <string name="storage_transfer_failed">Migration is incomplete. Originals are preserved and download writes are paused. Retry or choose another folder.</string>
 </resources>

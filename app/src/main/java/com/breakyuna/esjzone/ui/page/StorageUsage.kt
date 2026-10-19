@@ -24,7 +24,7 @@ internal fun readStorageUsage(context: Context): List<StorageUsage> {
     val privateUsage = classifyStorageUsage(context.dataDir, context.filesDir, context.cacheDir,
         totals.sumOf { it.appBytes }, apkBytes, dataBytes)
     val storage = com.breakyuna.esjzone.EsjzoneApplication.instance.container.storage
-    if (storage.location.value.isBlank()) return privateUsage
+    if (storage.activeLocation.value.isBlank()) return privateUsage
     // Shared files are outside the UID totals; add them after calculating private "other data".
     fun sharedParts(directory: com.breakyuna.esjzone.storage.StorageFile, labels: List<Int>,
                     labelFor: (com.breakyuna.esjzone.storage.StorageFile) -> Int): List<StorageUsagePart> {

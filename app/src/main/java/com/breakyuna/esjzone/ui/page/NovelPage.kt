@@ -140,6 +140,7 @@ import com.breakyuna.esjzone.offline.DownloadedChapterRecord
 import com.breakyuna.esjzone.offline.DownloadedNovelManifest
 import com.breakyuna.esjzone.offline.NovelDownloadManager
 import com.breakyuna.esjzone.offline.NovelExporter
+import com.breakyuna.esjzone.storage.StorageMigrationBusyException
 import com.breakyuna.esjzone.ui.component.Description
 import com.breakyuna.esjzone.ui.designsystem.AppShapes
 import com.breakyuna.esjzone.ui.designsystem.AppLottieAsset
@@ -1310,6 +1311,7 @@ private fun NovelDownloadActions(
     val context = LocalContext.current
     val appContext = context.applicationContext
     val defaultUnlockFailedText = stringResource(R.string.novel_download_unlock_failed, "")
+    val writesPausedText = stringResource(R.string.storage_download_writes_paused)
     var showSheet by rememberSaveable(novel.url) { mutableStateOf(false) }
     var unlockingRecord by remember(novel.url) { mutableStateOf<DownloadedChapterRecord?>(null) }
     var showCommonPasswordDialog by rememberSaveable(novel.url) { mutableStateOf(false) }
@@ -1607,10 +1609,20 @@ private fun NovelDownloadActions(
     fun clearCommonPassword() {
         if (downloading || batchUnlocking) return
         downloadScope.launch(Dispatchers.IO) {
-            val updated = PresentationAccess.downloads.updateCommonPassword(novel, null)
-            withContext(Dispatchers.Main) {
-                onDownloadedChange(updated)
-                Toast.makeText(context, R.string.novel_download_common_password_cleared, Toast.LENGTH_SHORT).show()
+            try {
+                val updated = checkNotNull(PresentationAccess.downloads.updateCommonPassword(novel, null))
+                withContext(Dispatchers.Main) {
+                    onDownloadedChange(updated)
+                    Toast.makeText(context, R.string.novel_download_common_password_cleared, Toast.LENGTH_SHORT).show()
+                }
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                val message = if (error is StorageMigrationBusyException || PresentationAccess.downloads.migrating.value)
+                    R.string.storage_download_writes_paused else R.string.novel_download_common_password_clear_failed
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+                }
             }
         }
     }
@@ -1792,6 +1804,7 @@ private fun NovelDownloadActions(
                         val shouldSaveCommon = saveAsCommon
                         downloadScope.launch(Dispatchers.IO) {
                             try {
+                                if (PresentationAccess.downloads.migrating.value) throw StorageMigrationBusyException()
                                 val detail = PresentationAccess.client.unlockPasswordProtectedChapter(
                                     authorization,
                                     Chapter(record.name, record.url, false),
@@ -1803,7 +1816,7 @@ private fun NovelDownloadActions(
                                         )
                                     )
                                 )
-                                PresentationAccess.downloads.saveChapter(
+                                val saved = PresentationAccess.downloads.saveChapter(
                                     novelName = novel.name,
                                     novelUrl = novel.url,
                                     coverUrl = novel.coverUrl,
@@ -1811,20 +1824,23 @@ private fun NovelDownloadActions(
                                     chapter = Chapter(record.name, record.url, false),
                                     detail = detail,
                                     authorization = authorization
-                                )
-                                if (shouldSaveCommon) {
+                                ) ?: error(if (PresentationAccess.downloads.migrating.value) writesPausedText else defaultUnlockFailedText)
+                                val updated = if (shouldSaveCommon) {
                                     PresentationAccess.downloads.updateCommonPassword(novel, submittedPassword)
-                                }
-                                val updated = PresentationAccess.downloads.manifest(novel.url)
+                                        ?: error(if (PresentationAccess.downloads.migrating.value) writesPausedText else defaultUnlockFailedText)
+                                } else saved
                                 withContext(Dispatchers.Main) {
                                     onDownloadedChange(updated)
                                     unlockingRecord = null
                                     Toast.makeText(context, R.string.novel_download_unlock_success, Toast.LENGTH_SHORT).show()
                                 }
+                            } catch (error: CancellationException) {
+                                throw error
                             } catch (e: Exception) {
                                 withContext(Dispatchers.Main) {
                                     unlocking = false
-                                    unlockError = e.message ?: defaultUnlockFailedText
+                                    unlockError = if (e is StorageMigrationBusyException) writesPausedText
+                                        else e.message ?: defaultUnlockFailedText
                                 }
                             }
                         }

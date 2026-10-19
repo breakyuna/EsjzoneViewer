@@ -24,10 +24,11 @@ import com.breakyuna.esjzone.ui.designsystem.accountContentWidth
 import com.breakyuna.esjzone.ui.designsystem.GlobalText as Text
 import com.breakyuna.esjzone.ui.designsystem.globalStringResource as stringResource
 import com.breakyuna.esjzone.ui.page.StorageLocationModel
+import com.breakyuna.esjzone.ui.page.StorageTransferStatus
 
 internal fun canContinueStorageSetup(location: String, state: StorageLocationModel.Status): Boolean =
     location.isNotBlank() && !state.busy &&
-        (state.result == null || state.result == R.string.storage_location_done ||
+        (state.result == null || state.result == R.string.storage_transfer_started || state.result == R.string.storage_location_done ||
             state.result == R.string.storage_location_cleanup_failed)
 
 /** The root gate keeps underlying destinations inactive until the user continues. */
@@ -38,6 +39,7 @@ fun StorageSetupScreen(
     isUpgrade: Boolean?,
     onContinue: () -> Unit
 ) {
+    val transfer by PresentationAccess.storage.transfer.collectAsStateWithLifecycle()
     val location by PresentationAccess.storage.location.collectAsStateWithLifecycle()
     val folderName by PresentationAccess.storage.label.collectAsStateWithLifecycle()
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
@@ -84,14 +86,15 @@ fun StorageSetupScreen(
                         else folderName.ifBlank { location }
                     ))
                     Button(
-                        enabled = !state.busy,
+                        enabled = !state.busy && !transfer.running,
                         onClick = { picker.launch(null) },
                         modifier = Modifier.fillMaxWidth().heightIn(min = AppTouchTarget.minimum)
                     ) { Text(stringResource(R.string.storage_location_choose)) }
+                    StorageTransferStatus(transfer, onRetry = model::retryTransfer)
                     if (state.busy) {
                         LinearProgressIndicator(Modifier.fillMaxWidth())
                         Text(stringResource(R.string.storage_location_working))
-                    } else state.result?.let {
+                    } else state.result?.takeUnless { it == R.string.storage_transfer_started }?.let {
                         Text(
                             stringResource(it),
                             color = if (it == R.string.storage_access_failed || it == R.string.storage_location_failed)

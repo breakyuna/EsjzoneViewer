@@ -89,6 +89,7 @@ class AutoBackup(context: Context) {
         .sortedByDescending { BackupFileNames.automaticTime(it.name) }
 
     fun deleteArchive(file: StorageFile): Boolean {
+        if (NovelDownloadStore.migrating.value) return false
         require(file.parentFile == archiveDirectory() && UserStorage.isAutoBackupName(file.name))
         return !file.exists() || file.delete()
     }
@@ -102,7 +103,9 @@ class AutoBackup(context: Context) {
             .filter { UserStorage.isAutoBackupName(it.name) }
             .sortedByDescending { BackupFileNames.automaticTime(it.name) }.drop(3)
 
-        internal fun pruneArchives(files: List<StorageFile>): Boolean {
+        internal fun pruneArchives(files: List<StorageFile>, migrationPending: Boolean = false): Boolean {
+            // A cleanup journal may still need these archives to validate the old copies.
+            if (migrationPending) return true
             var removedAll = true
             obsoleteArchives(files).forEach { file ->
                 try {
@@ -151,7 +154,7 @@ class AutoBackupWorker(context: Context, parameters: WorkerParameters) : Corouti
                 backup.completed(time)
                 // Cleanup cannot turn a successfully published backup into a failed job.
                 try {
-                    if (!AutoBackup.pruneArchives(backup.archives())) {
+                    if (!AutoBackup.pruneArchives(backup.archives(), migrationPending = NovelDownloadStore.migrating.value)) {
                         AppLogger.w("AutoBackup", "New backup saved; some old archives could not be removed")
                     }
                 } catch (error: CancellationException) {

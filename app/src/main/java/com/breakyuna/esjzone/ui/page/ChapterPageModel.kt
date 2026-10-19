@@ -57,7 +57,11 @@ class ChapterPageModel(
     private val downloadNovelUrl = novelUrl.takeIf(String::isNotBlank)
         ?: novelId.takeIf(String::isNotBlank)?.let { "/detail/$it.html" }
 
+    // Navigation can retain this model while another page covers the reader.
+    private val storageReaderLease = PresentationAccess.storage.also { it.retainReader() }
+
     override fun onCleared() {
+        storageReaderLease.releaseReader()
         com.breakyuna.esjzone.network.EsjzoneClient.closeWenkuBrowserSession()
         super.onCleared()
     }

@@ -590,8 +590,7 @@ fun AppNavigation() {
     // Guard restored readers/details too, after the login/loading entry has completed.
     val requiresStorageSetup = needsStorageSetup(backStack.lastOrNull(), authorization, storageLocation)
     val showStorageSetup = requiresStorageSetup || storageSetupPending ||
-        storageSetupState.busy ||
-        storageSetupState.result == com.breakyuna.esjzone.R.string.storage_location_cleanup_failed
+        storageSetupState.busy
     LaunchedEffect(requiresStorageSetup) {
         if (requiresStorageSetup) {
             storageSetupPending = true

@@ -54,4 +54,19 @@ class AutoBackupTest {
             assertEquals("manual", other.readText())
         } finally { directory.deleteRecursively() }
     }
+
+    @Test fun rotationPreservesMigratedArchivesUntilOldFileCleanupCompletes() {
+        val directory = Files.createTempDirectory("backup-migration-").toFile()
+        try {
+            val archives = (1..5).map {
+                File(directory, "esjzone-auto-170000000000$it.zip").apply { writeText("archive") }
+            }
+            val files = archives.map(::StorageFile)
+            assertTrue(AutoBackup.pruneArchives(files, migrationPending = true))
+            assertTrue(archives.all(File::isFile))
+            assertTrue(AutoBackup.pruneArchives(files, migrationPending = false))
+            assertTrue(archives.take(2).none(File::exists))
+            assertTrue(archives.takeLast(3).all(File::isFile))
+        } finally { directory.deleteRecursively() }
+    }
 }

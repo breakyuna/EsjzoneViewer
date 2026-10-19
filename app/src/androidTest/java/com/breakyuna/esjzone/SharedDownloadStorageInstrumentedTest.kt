@@ -153,6 +153,7 @@ class SharedDownloadStorageInstrumentedTest {
         } finally {
             context.getSharedPreferences("download_secrets", Context.MODE_PRIVATE).edit().remove(secretKey).commit()
             kotlinx.coroutines.runBlocking { EsjzoneApplication.instance.container.initializeDownloads() }
+            NovelDownloadStore.restoreStorage(EsjzoneApplication.instance.container.storage.downloads())
             shared.deleteRecursively()
             privateRoot.deleteRecursively()
             backup.deleteRecursively()
@@ -202,6 +203,7 @@ class SharedDownloadStorageInstrumentedTest {
         } finally {
             configure(shared)
             kotlinx.coroutines.runBlocking { EsjzoneApplication.instance.container.initializeDownloads() }
+            NovelDownloadStore.restoreStorage(EsjzoneApplication.instance.container.storage.downloads())
             shared.deleteRecursively()
             privateRoot.deleteRecursively()
         }
@@ -270,9 +272,42 @@ class SharedDownloadStorageInstrumentedTest {
         } finally {
             configure(shared)
             kotlinx.coroutines.runBlocking { EsjzoneApplication.instance.container.initializeDownloads() }
+            NovelDownloadStore.restoreStorage(EsjzoneApplication.instance.container.storage.downloads())
             shared.deleteRecursively()
             privateRoot.deleteRecursively()
             restored.deleteRecursively()
         }
     }
+
+    @Test fun migrationPublishesWholeBooksWithoutPerFileRenames() {
+        val privateRoot = File(context.cacheDir, "storage-${UUID.randomUUID()}").apply { mkdirs() }
+        val shared = StorageFile(StorageFile.fromTree(context, treeUri), "case-${UUID.randomUUID()}")
+            .apply { check(mkdirs()) }
+        val novelId = (UUID.randomUUID().mostSignificantBits and Long.MAX_VALUE).toString()
+        val novelUrl = "https://www.esjzone.cc/detail/$novelId.html"
+        val chapter = Chapter("Chapter", "https://www.esjzone.cc/forum/$novelId/1.html", false)
+        try {
+            NovelDownloadStore.initialize(context)
+            NovelDownloadStore.initializeDirectory(privateRoot)
+            requireNotNull(NovelDownloadStore.saveChapter("Novel", novelUrl, "", listOf(chapter), chapter,
+                DetailedChapter("Chapter", listOf(TextComponent("Saved text")), null, null),
+                Authorization("", "", "www.esjzone.cc")))
+            val book = privateRoot.listFiles()!!.single()
+            File(book, "images").mkdirs()
+            repeat(20) { File(book, "images/fixture-$it.bin").writeBytes(ByteArray(64) { it.toByte() }) }
+            configure(shared, "reject-file-rename", "rename")
+            val migration = NovelDownloadStore.migrateStorage(StorageFile(shared, "downloads")) { }
+            assertEquals(1, migration.books.size)
+            assertNotNull(NovelDownloadStore.readChapter(chapter.url))
+            assertEquals(20, StorageFile(StorageFile(shared, "downloads"),
+                migration.targets.getValue(book.name) + "/images").entries().size)
+        } finally {
+            configure(shared)
+            // Restore the application store explicitly after this isolated fixture.
+            NovelDownloadStore.restoreStorage(EsjzoneApplication.instance.container.storage.downloads())
+            shared.deleteRecursively()
+            privateRoot.deleteRecursively()
+        }
+    }
+
 }
