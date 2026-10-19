@@ -62,7 +62,7 @@ object AppLogger {
             crashFile = File(directory, "last_crash.log")
             initialized = true
             i("AppLogger", "Logger initialized. App Version: ${BuildConfig.VERSION_NAME} (${BuildConfig.APP_VERSION})")
-        } catch (e: Exception) { Log.e("AppLogger", "Failed to init logger files: ${safeThrowable(e)}") }
+        } catch (e: Exception) { runCatching { Log.e("AppLogger", "Failed to init logger files: ${safeThrowable(e)}") } }
     }
 
     fun d(tag: String, message: String) = log(LogLevel.DEBUG, tag, message, null)
@@ -73,11 +73,13 @@ object AppLogger {
     private fun log(level: LogLevel, tag: String, message: String, throwable: Throwable?) {
         val entry = LogEntry(level = level, tag = tag, message = sanitize(message), stackTrace = throwable?.let(::stackTrace))
         val output = entry.toFormattedString()
-        when (level) {
-            LogLevel.DEBUG -> Log.d(tag, output)
-            LogLevel.INFO -> Log.i(tag, output)
-            LogLevel.WARN -> Log.w(tag, output)
-            LogLevel.ERROR, LogLevel.CRASH -> Log.e(tag, output)
+        runCatching {
+            when (level) {
+                LogLevel.DEBUG -> Log.d(tag, output)
+                LogLevel.INFO -> Log.i(tag, output)
+                LogLevel.WARN -> Log.w(tag, output)
+                LogLevel.ERROR, LogLevel.CRASH -> Log.e(tag, output)
+            }
         }
         synchronized(stateLock) {
             addLogEntryLocked(entry)
@@ -94,7 +96,7 @@ object AppLogger {
             stackTrace = stackTrace(throwable),
             threadName = thread.name
         )
-        Log.e("CRASH", entry.toFormattedString())
+        runCatching { Log.e("CRASH", entry.toFormattedString()) }
         val recent: List<LogEntry>
         synchronized(stateLock) {
             addLogEntryLocked(entry)
@@ -154,7 +156,7 @@ object AppLogger {
             val safeText = boundedUtf8LogRecord(text, MAX_LOG_FILE_SIZE.toInt() - 1)
             rotateIfNeeded(file, safeText.toByteArray(StandardCharsets.UTF_8).size.toLong() + 1)
             file.appendText(safeText + "\n")
-        } catch (e: Exception) { Log.e("AppLogger", "Failed to write log: ${sanitize(e.message.orEmpty())}") }
+        } catch (e: Exception) { runCatching { Log.e("AppLogger", "Failed to write log: ${sanitize(e.message.orEmpty())}") } }
     }
     private fun clearFiles() = synchronized(fileLock) {
         try {
@@ -162,7 +164,7 @@ object AppLogger {
             logFile?.parentFile?.resolve("app_logs_old.log")?.delete()
             crashFile?.delete()
         }
-        catch (e: Exception) { Log.e("AppLogger", "Failed to clear logs: ${sanitize(e.message.orEmpty())}") }
+        catch (e: Exception) { runCatching { Log.e("AppLogger", "Failed to clear logs: ${sanitize(e.message.orEmpty())}") } }
     }
     private fun rotateIfNeeded(file: File, incomingBytes: Long) {
         if (file.length() + incomingBytes <= MAX_LOG_FILE_SIZE) return
@@ -193,7 +195,7 @@ object AppLogger {
         crashFile?.writeText(safeReport)
         logFile?.let { rotateIfNeeded(it, safeReport.toByteArray(StandardCharsets.UTF_8).size.toLong() + 1); it.appendText(safeReport + "\n") }
         _crashReportFlow.value = safeReport
-    } catch (e: Exception) { Log.e("AppLogger", "Failed to write crash report: ${sanitize(e.message.orEmpty())}") }
+    } catch (e: Exception) { runCatching { Log.e("AppLogger", "Failed to write crash report: ${sanitize(e.message.orEmpty())}") } }
 
     private fun currentDomain(): String = runCatching {
         EsjzoneApplication.instance.container.settings.domain.value
