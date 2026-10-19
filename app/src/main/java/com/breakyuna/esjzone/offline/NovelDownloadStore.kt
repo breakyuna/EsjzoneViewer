@@ -412,7 +412,7 @@ object NovelDownloadStore {
         check(preferences.edit().putString(key, manifest.commonPassword).commit())
     }
 
-    /** Publish each independent snapshot outside ioLock so callers can ZIP and discard it immediately. */
+    /** Copy committed files one at a time; readers can use the store between files and during ZIP. */
     fun exportBackup(destination: File, checkActive: () -> Unit = {}, onNovelSnapshot: (File) -> Unit = {}) {
         checkActive()
         check(destination.isDirectory || destination.mkdirs())
@@ -420,31 +420,46 @@ object NovelDownloadStore {
             ensureNovelDirectoryIndex()
             novelDirectories.values.toList()
         }
-        sources.forEach { source ->
+        for (source in sources) {
             checkActive()
             val target = File(destination, source.name)
-            // Release the store between novels; ZIP compression runs entirely outside this lock.
-            val prepared = synchronized(ioLock) {
-                if (!source.isDirectory) return@synchronized false
-                val manifest = readManifest(source) ?: return@synchronized false
-                check(target.isDirectory || target.mkdirs())
-                source.walkTopDown().filter { it.isFile && it.name != MANIFEST_FILE && !it.name.endsWith(".tmp") }
-                    .forEach { file ->
-                        val output = File(target, file.relativePathFrom(source))
-                        output.parentFile?.mkdirs()
-                        checkActive()
-                        file.inputStream().use { input ->
-                            output.outputStream().use { input.copyWithCancellation(it, checkActive) }
-                        }
-                    }
-                // The manifest is an independent, sanitized snapshot, never a link to local passwords.
-                checkActive()
-                File(target, MANIFEST_FILE).bufferedWriter(StandardCharsets.UTF_8).use {
-                    gson.toJson(manifest.copy(version = 2, commonPassword = null), it)
+            val (manifest, guard, files) = synchronized(ioLock) {
+                if (!source.isDirectory) return@synchronized null
+                val manifest = readManifest(source) ?: return@synchronized null
+                // Freeze the manifest and listing together; entries() queries each directory once.
+                val files = source.snapshotFiles(checkActive).filter {
+                    it.file.name != MANIFEST_FILE && !it.file.name.endsWith(".tmp")
                 }
-                true
+                Triple(manifest, newWriteGuard(source), files)
+            } ?: continue
+            fun checkSnapshot() {
+                check(guard.storage == storageGeneration &&
+                    guard.generation == (deletionGenerations[guard.directoryPath] ?: 0L)) {
+                    "Download storage changed during backup"
+                }
             }
-            if (prepared) onNovelSnapshot(target)
+            check(target.isDirectory || target.mkdirs())
+            for (entry in files) {
+                val file = entry.file
+                val output = File(target, file.relativePathFrom(source))
+                val parent = checkNotNull(output.parentFile)
+                check(parent.isDirectory || parent.mkdirs())
+                checkActive()
+                synchronized(ioLock) {
+                    checkSnapshot()
+                    // Keep a replacement/deletion from interrupting this file's copy.
+                    file.inputStream().use { input ->
+                        output.outputStream().use { input.copyWithCancellation(it, checkActive) }
+                    }
+                }
+            }
+            synchronized(ioLock) { checkSnapshot() }
+            checkActive()
+            // Use the starting manifest: newly downloaded chapters belong to the next backup.
+            File(target, MANIFEST_FILE).bufferedWriter(StandardCharsets.UTF_8).use {
+                gson.toJson(manifest.copy(version = 2, commonPassword = null), it)
+            }
+            onNovelSnapshot(target)
         }
     }
 

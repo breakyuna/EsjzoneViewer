@@ -13,6 +13,7 @@ import com.breakyuna.esjzone.novellibrary.component.ChapterItem
 import com.breakyuna.esjzone.novellibrary.component.TextComponent
 import com.breakyuna.esjzone.novellibrary.novel.*
 import com.breakyuna.esjzone.offline.*
+import com.breakyuna.esjzone.storage.StorageMigrationBusyException
 import com.breakyuna.esjzone.ui.reader.toReaderDocument
 import com.google.gson.Gson
 import java.io.File
@@ -98,7 +99,7 @@ class StructuredDownloadStoreTest {
     }
 
     @Test
-    fun changingStorageDuringDownloadStillRejectsWritesToThePreviousLocation() = withStorage { root ->
+    fun changingStorageDuringDownloadRejectsOldWritesAndAllowsRetryAtTheNewLocation() = withStorage { root ->
         val cache = Files.createTempDirectory("switch-cache-").toFile()
         val target = Files.createTempDirectory("switch-target-").toFile()
         PageCache.initializeDirectory(cache)
@@ -106,7 +107,8 @@ class StructuredDownloadStoreTest {
             val key = EsjzoneClient.novelDetailCacheKey(auth, chapter(1).url)
             PageCache.write(key, "fixture")
             requireNotNull(StructuredChapterCache.write(key, "fixture", detail(1)))
-            assertThrows(kotlinx.coroutines.CancellationException::class.java) {
+            // Storage switches are retryable; WorkManager must resume at the current location.
+            assertThrows(StorageMigrationBusyException::class.java) {
                 runBlocking {
                     NovelDownloadStore.download(auth, novel(listOf(chapter(1)))) {
                         NovelDownloadStore.restoreStorage(com.breakyuna.esjzone.storage.StorageFile(target))
@@ -115,7 +117,62 @@ class StructuredDownloadStoreTest {
             }
             assertNull(NovelDownloadStore.manifest(novelUrl))
             assertFalse(root.walkTopDown().any { it.name.startsWith("chapter-") })
+            assertTrue(runBlocking { NovelDownloadStore.download(auth, novel(listOf(chapter(1)))) }.complete)
+            assertNotNull(NovelDownloadStore.readChapter(chapter(1).url))
+            assertTrue(target.walkTopDown().any { it.name.startsWith("chapter-") })
+            assertFalse(root.walkTopDown().any { it.name.startsWith("chapter-") })
         } finally { cache.deleteRecursively(); target.deleteRecursively() }
+    }
+
+    @Test
+    fun backupReleasesTheReaderLockBeforeCopyingSnapshotFiles() = withStorage {
+        save(1, listOf(chapter(1)))
+        val snapshots = Files.createTempDirectory("readable-backup-").toFile()
+        val executor = Executors.newSingleThreadExecutor()
+        var checked = false
+        try {
+            NovelDownloadStore.exportBackup(snapshots, checkActive = {
+                if (!checked && snapshots.listFiles().orEmpty().any(File::isDirectory)) {
+                    checked = true
+                    assertNotNull(executor.submit<DetailedChapter?> {
+                        NovelDownloadStore.readChapter(chapter(1).url)
+                    }.get(5, TimeUnit.SECONDS))
+                }
+            })
+            assertTrue(checked)
+            assertTrue(snapshots.walkTopDown().any { it.name == "manifest.json" })
+        } finally { executor.shutdownNow(); snapshots.deleteRecursively() }
+    }
+
+    @Test
+    fun storageSwitchOrDeletionCannotPublishAnIncompleteBackupSnapshot() = withStorage { root ->
+        val other = Files.createTempDirectory("backup-other-").toFile()
+        val snapshots = Files.createTempDirectory("invalidated-backup-").toFile()
+        try {
+            for (switchStorage in listOf(true, false)) {
+                NovelDownloadStore.initializeDirectory(root)
+                save(1, listOf(chapter(1)))
+                var changed = false
+                var published = false
+                assertThrows(IllegalStateException::class.java) {
+                    NovelDownloadStore.exportBackup(snapshots, checkActive = {
+                        if (!changed && snapshots.listFiles().orEmpty().any(File::isDirectory)) {
+                            changed = true
+                            if (switchStorage) NovelDownloadStore.initializeDirectory(other)
+                            else assertTrue(NovelDownloadStore.delete(novelUrl))
+                        }
+                    }, onNovelSnapshot = { published = true })
+                }
+                assertTrue(changed)
+                assertFalse(published)
+                assertFalse(snapshots.walkTopDown().any { it.name == "manifest.json" })
+                snapshots.deleteRecursively()
+            }
+        } finally {
+            NovelDownloadStore.initializeDirectory(root)
+            other.deleteRecursively()
+            snapshots.deleteRecursively()
+        }
     }
 
     @Test

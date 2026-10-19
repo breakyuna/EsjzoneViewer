@@ -144,7 +144,11 @@ class SharedDownloadStorageInstrumentedTest {
                 }
                 assertTrue(found)
             }
-            NovelDownloadStore.exportBackup(backup)
+            configure(shared, "reject-file-metadata", "metadata")
+            try {
+                // Directory listings already include each file's type; backup must reuse them.
+                NovelDownloadStore.exportBackup(backup)
+            } finally { configure(shared) }
             context.getSharedPreferences("download_secrets", Context.MODE_PRIVATE).edit().remove(secretKey).commit()
             NovelDownloadStore.restoreStorage(StorageFile(shared, "restored").apply { check(mkdirs()) })
             NovelDownloadStore.importBackup(backup)

@@ -66,7 +66,7 @@ class StorageFile private constructor(
 
     data class Entry(val file: StorageFile, val directory: Boolean, val size: Long)
 
-    /** A migration-scoped snapshot: one provider query per directory, with sizes and types. */
+    /** Operation-scoped metadata: one provider query per directory, with sizes and types. */
     fun entries(): List<Entry> {
         if (local != null) {
             val children = local.listFiles() ?: throw IOException("Unable to list storage directory")

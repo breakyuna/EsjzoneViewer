@@ -11,6 +11,7 @@ import com.google.gson.Gson
 import com.google.gson.JsonObject
 import com.google.gson.JsonParser
 import java.io.File
+import java.util.zip.Deflater
 import java.util.zip.ZipEntry
 import java.util.zip.ZipInputStream
 import java.util.zip.ZipOutputStream
@@ -61,12 +62,10 @@ object LocalBackup {
                 json.addProperty("downloads", true)
             }
             File(staging, "backup.json").writeText(gson.toJson(json))
-            ZipOutputStream(checkNotNull(context.contentResolver.openOutputStream(uri, "wt"))).use { zip ->
+            ZipOutputStream(checkNotNull(context.contentResolver.openOutputStream(uri, "wt"))
+                .buffered(64 * 1024)).use { zip ->
                 fun appendFile(file: File) {
-                    checkActive()
-                    zip.putNextEntry(ZipEntry(file.relativeTo(staging).invariantSeparatorsPath))
-                    file.inputStream().use { it.copyWithCancellation(zip, checkActive) }
-                    zip.closeEntry()
+                    appendZipFile(zip, file, file.relativeTo(staging).invariantSeparatorsPath, checkActive)
                 }
                 appendFile(File(staging, "backup.json"))
                 if (BackupCategory.DOWNLOADS in selected) {
@@ -78,6 +77,20 @@ object LocalBackup {
                 }
             }
         } finally { staging.deleteRecursively() }
+    }
+
+    internal fun appendZipFile(zip: ZipOutputStream, file: File, name: String, checkActive: () -> Unit = {}) {
+        checkActive()
+        file.inputStream().buffered(64 * 1024).use { input ->
+            input.mark(2)
+            val gzip = input.read() == 0x1f && input.read() == 0x8b
+            input.reset()
+            // Level zero avoids recompressing gzip/images and needs no extra CRC pre-read.
+            zip.setLevel(if (gzip || "/images/" in name) Deflater.NO_COMPRESSION else Deflater.DEFAULT_COMPRESSION)
+            zip.putNextEntry(ZipEntry(name))
+            input.copyWithCancellation(zip, checkActive)
+            zip.closeEntry()
+        }
     }
 
     suspend fun restore(context: Context, uri: Uri, database: GeneralDatabase, scope: String,

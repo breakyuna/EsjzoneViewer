@@ -47,6 +47,9 @@ class StorageTestDocumentsProvider : DocumentsProvider() {
         when (fixture.first) {
             "security" -> throw SecurityException("Fixture permission revoked")
             "argument" -> throw IllegalArgumentException("Fixture document unavailable")
+            "reject-file-metadata" -> if (operation == "metadata" && file(documentId).isFile) {
+                throw SecurityException("Fixture rejects per-file metadata queries")
+            }
             "reject-file-rename" -> if (operation == "rename" && file(documentId).isFile) {
                 throw SecurityException("Fixture rejects per-file renames")
             }

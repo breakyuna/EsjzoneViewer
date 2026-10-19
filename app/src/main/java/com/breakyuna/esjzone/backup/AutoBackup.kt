@@ -1,17 +1,14 @@
 package com.breakyuna.esjzone.backup
 
 import android.content.Context
-import android.net.Uri
 import androidx.datastore.core.handlers.ReplaceFileCorruptionHandler
 import androidx.datastore.preferences.core.*
 import androidx.datastore.preferences.preferencesDataStoreFile
 import androidx.work.*
 import com.breakyuna.esjzone.EsjzoneApplication
 import com.breakyuna.esjzone.offline.NovelDownloadStore
-import java.io.File
 import com.breakyuna.esjzone.storage.StorageFile
 import com.breakyuna.esjzone.storage.UserStorage
-import com.breakyuna.esjzone.util.copyWithCancellation
 import com.breakyuna.esjzone.util.AppLogger
 import kotlinx.coroutines.sync.withLock
 import java.util.concurrent.TimeUnit
@@ -127,28 +124,22 @@ class AutoBackupWorker(context: Context, parameters: WorkerParameters) : Corouti
         container.initializeDownloads()
         container.storage.operationMutex.withLock {
             val backup = container.autoBackup
-            val pending = File.createTempFile("auto-backup-", ".zip.part", applicationContext.cacheDir)
             var publishing: StorageFile? = null
             try {
                 val bookshelfScope = backup.backupScope() ?: return@withLock Result.success()
                 val categories = backup.backupCategories()
-                LocalBackup.export(applicationContext, Uri.fromFile(pending), container.database,
+                val directory = backup.archiveDirectory()
+                check(directory.mkdirs())
+                val temporary = StorageFile.createTempFile("pending-", ".zip.part", directory)
+                publishing = temporary
+                LocalBackup.export(applicationContext, temporary.uri, container.database,
                     bookshelfScope, categories)
                 ensureActive()
                 if (backup.backupScope() != bookshelfScope || backup.backupCategories() != categories) {
                     return@withLock Result.success()
                 }
-                val directory = backup.archiveDirectory()
-                check(directory.mkdirs())
                 val time = System.currentTimeMillis()
                 val destination = StorageFile(directory, BackupFileNames.automatic(time))
-                val temporary = StorageFile.createTempFile("pending-", ".zip.part", directory)
-                publishing = temporary
-                val transferContext = currentCoroutineContext()
-                pending.inputStream().use { input -> temporary.outputStream().use { output ->
-                    input.copyWithCancellation(output) { transferContext.ensureActive() }
-                } }
-                check(temporary.length() == pending.length())
                 ensureActive()
                 check(temporary.renameTo(destination))
                 backup.completed(time)
@@ -168,7 +159,6 @@ class AutoBackupWorker(context: Context, parameters: WorkerParameters) : Corouti
                 backup.recordFailure()
                 if (runAttemptCount < 3) Result.retry() else Result.failure()
             } finally {
-                pending.delete()
                 publishing?.let { runCatching { it.delete() } }
             }
         }
