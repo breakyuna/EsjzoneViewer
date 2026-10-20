@@ -859,7 +859,7 @@
     <string name="storage_location_confirm">Downloads and automatic backups will use this folder. Migration removes the original files only after copying succeeds; conflicting files are not overwritten. Without migration, existing files stay in their original location.</string>
     <string name="storage_location_working">Updating storage…</string>
     <string name="storage_location_done">Storage location updated</string>
-    <string name="storage_location_cleanup_failed">Storage location updated. Some original files could not be removed.</string>
+    <string name="storage_location_cleanup_failed">Storage location updated, but cleanup of the original files is incomplete. Download writes remain paused. Retry to finish cleanup.</string>
     <string name="storage_location_failed">Unable to access the folder or migrate files. Check the folder authorization and whether it contains conflicting files.</string>
     <string name="storage_reindex">Reindex downloads</string>
     <string name="storage_reindex_done">Downloads reindexed</string>
@@ -902,6 +902,6 @@
     <string name="storage_transfer_copying">Copying: %1$s (%2$d / %3$d files)</string>
     <string name="storage_transfer_verifying">Verifying: %1$s (%2$d / %3$d files)</string>
     <string name="storage_transfer_cleaning">Removing originals (%1$d / %2$d)</string>
-    <string name="storage_transfer_waiting_reader">Migration complete. Originals will be removed after you leave the reader.</string>
+    <string name="storage_transfer_waiting_reader">Original files are awaiting cleanup. Download writes remain paused. Leave the reader to continue cleanup; downloads resume once cleanup finishes.</string>
     <string name="storage_transfer_failed">Migration is incomplete. Originals are preserved and download writes are paused. Retry or choose another folder.</string>
 </resources>

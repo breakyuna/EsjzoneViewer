@@ -24,8 +24,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.selection.selectable
-import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -89,7 +87,6 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.selected
-import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewModelScope
 import com.breakyuna.esjzone.R
@@ -263,7 +260,7 @@ object ReadingStatisticsPage : AppDestination {
                         }
                         item {
                             StatisticsPanel(stringResource(R.string.reading_stats_ranking)) {
-                                StatisticsPeriodSelector(rankingDays) { rankingDays = it }
+                                StatPeriodFilter(listOf(7, 30, null), rankingDays) { rankingDays = it }
                                 val topBooks = current.rankings[rankingDays].orEmpty()
                                 if (topBooks.isEmpty()) {
                                     StatisticsEmptyState(stringResource(R.string.reading_stats_no_books))
@@ -276,7 +273,7 @@ object ReadingStatisticsPage : AppDestination {
                         }
                         item {
                             StatisticsPanel(stringResource(R.string.reading_stats_tags)) {
-                                StatisticsPeriodSelector(tagDays) { tagDays = it }
+                                StatPeriodFilter(listOf(7, 30, null), tagDays) { tagDays = it }
                                 val tags = current.tagRankings[tagDays].orEmpty()
                                 if (tags.isEmpty()) {
                                     StatisticsEmptyState(stringResource(R.string.reading_stats_no_tags))
@@ -363,33 +360,6 @@ private fun StatisticsPanel(
     ) {
         Text(title, style = AppTypography.labelLarge, modifier = Modifier.semantics { heading() })
         content()
-    }
-}
-
-@Composable
-private fun StatisticsPeriodSelector(selected: Int?, onSelect: (Int?) -> Unit) {
-    Row(
-        Modifier.fillMaxWidth().selectableGroup().clip(AppShapes.pill)
-            .background(MaterialTheme.colorScheme.surfaceContainerLow).padding(AppSpacing.xs),
-        horizontalArrangement = Arrangement.spacedBy(AppSpacing.xs)
-    ) {
-        listOf(7, 30, null).forEach { days ->
-            val active = selected == days
-            Box(
-                Modifier.weight(1f).clip(AppShapes.pill)
-                    .background(if (active) MaterialTheme.colorScheme.primary else Color.Transparent)
-                    .selectable(selected = active, role = Role.RadioButton, onClick = { onSelect(days) })
-                    .heightIn(min = 48.dp).padding(horizontal = AppSpacing.sm, vertical = AppSpacing.sm),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(stringResource(when (days) {
-                    7 -> R.string.reading_stats_7_days
-                    30 -> R.string.reading_stats_30_days
-                    else -> R.string.reading_stats_all
-                }), style = AppTypography.labelMedium, textAlign = TextAlign.Center,
-                    color = if (active) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-        }
     }
 }
 

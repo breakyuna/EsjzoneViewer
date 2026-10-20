@@ -860,7 +860,7 @@
     <string name="storage_location_confirm">下载和自动备份将使用此文件夹。迁移成功后删除原文件，遇到冲突文件时不覆盖。不迁移时，原文件保留在原位置。</string>
     <string name="storage_location_working">正在更新存储…</string>
     <string name="storage_location_done">存储位置已更新</string>
-    <string name="storage_location_cleanup_failed">存储位置已更新，部分原文件未能删除。</string>
+    <string name="storage_location_cleanup_failed">存储位置已更新，但原文件清理未完成，下载写入仍暂停。请重试完成清理。</string>
     <string name="storage_location_failed">无法访问文件夹或迁移文件，请检查目录授权及是否存在冲突文件。</string>
     <string name="storage_reindex">重新扫描下载</string>
     <string name="storage_reindex_done">下载已重新扫描</string>
@@ -903,6 +903,6 @@
     <string name="storage_transfer_copying">正在复制：%1$s（%2$d / %3$d 文件）</string>
     <string name="storage_transfer_verifying">正在校验：%1$s（%2$d / %3$d 文件）</string>
     <string name="storage_transfer_cleaning">正在清理原文件（%1$d / %2$d）</string>
-    <string name="storage_transfer_waiting_reader">迁移已完成，退出阅读页后清理原文件</string>
+    <string name="storage_transfer_waiting_reader">原文件待清理，下载写入仍暂停。请退出阅读页继续清理，完成后恢复下载。</string>
     <string name="storage_transfer_failed">迁移未完成，原文件保留，下载写入已暂停。请重试或重新选择目录。</string>
 </resources>
