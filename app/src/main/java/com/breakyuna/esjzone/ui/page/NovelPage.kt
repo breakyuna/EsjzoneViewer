@@ -85,12 +85,15 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberModalBottomSheetState
 import com.breakyuna.esjzone.network.features.unlockPasswordProtectedChapter
 import com.breakyuna.esjzone.ui.navigation.rememberSharedCoverOrigin
+import com.breakyuna.esjzone.ui.navigation.SharedCoverOrigin
 import com.breakyuna.esjzone.ui.navigation.novelCoverDestination
 import com.breakyuna.esjzone.ui.navigation.LocalContainerTransformScope
 import com.breakyuna.esjzone.ui.navigation.LocalHomeCarouselTransformTarget
 import com.breakyuna.esjzone.ui.navigation.HomeCarouselElement
 import com.breakyuna.esjzone.ui.navigation.homeCarouselSharedElement
 import com.breakyuna.esjzone.novellibrary.novel.CoveredNovel
+import com.breakyuna.esjzone.novellibrary.novel.CoverSource
+import com.breakyuna.esjzone.novellibrary.novel.CoverState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.ui.graphics.graphicsLayer
@@ -189,6 +192,7 @@ class NovelPage(
 
     @Composable
     override fun Content() {
+        val sourceCover = rememberSharedCoverOrigin(novel.url, releaseOnDispose = true)
         val navigator = LocalBaseNavigator.current
         val authorization = LocalAuthorization.current
         val context = LocalContext.current
@@ -463,7 +467,7 @@ class NovelPage(
                 } else {
                     // Keep the list and hero mounted when loading becomes readable content.
                     NovelDetailLayout(
-                        hero = { RebuiltNovelHero(novel, detailed) },
+                        hero = { RebuiltNovelHero(novel, detailed, sourceCover) },
                         modifier = Modifier.weight(1f),
                         snackbarHost = {
                             SnackbarHost(
@@ -993,24 +997,28 @@ private fun novelDetailItems(
 /** Feature-owned detail building blocks. They intentionally consume only the
  * rebuilt token/component layer; networking and domain models stay untouched. */
 @Composable
-private fun RebuiltNovelHero(preview: Novel, detailed: DetailedNovel?) {
+private fun RebuiltNovelHero(preview: Novel, detailed: DetailedNovel?, sourceCover: SharedCoverOrigin?) {
     val carouselTarget = LocalHomeCarouselTransformTarget.current
-    val sourceCover = rememberSharedCoverOrigin(preview.url)
     val previewCover = preview as? CoveredNovel
     val transitionActive = LocalContainerTransformScope.current?.isTransitionActive == true
-    val previewCoverUrl = sourceCover?.coverUrl ?: previewCover?.coverUrl
+    val previewCoverUrl = EsjzoneUrls.coverOrEmpty(sourceCover?.coverUrl)
+        .ifBlank { EsjzoneUrls.coverOrEmpty(previewCover?.coverUrl) }
     var entryCoverReleased by rememberSaveable(preview.url) { mutableStateOf(false) }
     LaunchedEffect(detailed != null, transitionActive) {
         if (detailed != null && !transitionActive) entryCoverReleased = true
     }
     val usePreviewCover = detailed == null ||
-        (!entryCoverReleased && transitionActive && !previewCoverUrl.isNullOrBlank())
+        (!entryCoverReleased && transitionActive && previewCoverUrl.isNotBlank())
     val coverUrl = if (usePreviewCover) {
         previewCoverUrl
     } else {
-        detailed?.coverUrl
-    }?.let(EsjzoneUrls::coverOrEmpty).orEmpty()
-    val coverState = if (usePreviewCover) sourceCover?.state ?: previewCover?.coverState else detailed?.coverState
+        EsjzoneUrls.coverOrEmpty(detailed?.coverUrl).ifBlank { previewCoverUrl }
+    }
+    val coverState = CoverSource.fromUrl(
+        coverUrl,
+        if (usePreviewCover) sourceCover?.state ?: previewCover?.coverState ?: CoverState.Unknown
+        else detailed?.coverState ?: CoverState.Unknown
+    ).state
     // Loading a newer detail response must not replace shared text mid-transition.
     val useEntryMetadata = carouselTarget != null && !entryCoverReleased
     val novel = if (useEntryMetadata) previewCover else detailed ?: previewCover
@@ -1048,7 +1056,9 @@ private fun RebuiltNovelHero(preview: Novel, detailed: DetailedNovel?) {
             cover = NovelCoverModel(
                 model = coverUrl,
                 contentDescription = title,
-                state = coverState
+                state = coverState,
+                cachedModel = previewCoverUrl.takeIf(String::isNotBlank),
+                initialImage = sourceCover?.image
             ),
             metadata = NovelMetadataModel(
                 author = novel?.author?.trim()?.takeIf(String::isNotBlank),

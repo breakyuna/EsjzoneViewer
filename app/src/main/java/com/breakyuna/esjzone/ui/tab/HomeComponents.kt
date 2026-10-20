@@ -206,6 +206,7 @@ internal fun HomeGridNovelTile(
     ) {
         AppNovelCover(
             coverUrl = novel.coverUrl,
+            onImageLoaded = coverSource.onImageLoaded,
             coverState = novel.coverState,
             title = novel.name,
             isAdult = novel.isAdult,

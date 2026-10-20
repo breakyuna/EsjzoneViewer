@@ -57,6 +57,7 @@ import com.breakyuna.esjzone.ui.navigation.HomeCarouselElement
 import com.breakyuna.esjzone.ui.navigation.homeCarouselSharedElement
 import com.breakyuna.esjzone.ui.navigation.containerTransformContent
 import com.breakyuna.esjzone.ui.navigation.containerTransformSource
+import com.breakyuna.esjzone.ui.navigation.rememberNovelCoverSource
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
@@ -178,8 +179,11 @@ private fun WeeklyPopularCard(
     modifier: Modifier = Modifier,
     onClick: () -> Unit
 ) {
+    val coverSource = rememberNovelCoverSource(
+        novel.url, novel.coverUrl, novel.coverState, enableSharedElement = false
+    )
     Card(
-        onClick = onClick,
+        onClick = { coverSource.open(onClick) },
         modifier = modifier.fillMaxWidth().height(HOME_WEEKLY_POPULAR_CARD_HEIGHT),
         shape = RoundedCornerShape(26.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
@@ -210,6 +214,7 @@ private fun WeeklyPopularCard(
             ) {
                 AppNovelCover(
                     coverUrl = novel.coverUrl,
+                    onImageLoaded = coverSource.onImageLoaded,
                     coverState = novel.coverState,
                     title = novel.name,
                     modifier = Modifier

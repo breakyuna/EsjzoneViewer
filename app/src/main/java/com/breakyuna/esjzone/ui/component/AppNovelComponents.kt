@@ -51,6 +51,7 @@ import com.breakyuna.esjzone.novellibrary.novel.CoverSource
 import com.breakyuna.esjzone.novellibrary.novel.CoverState
 import com.breakyuna.esjzone.ui.designsystem.AppContentType
 import com.breakyuna.esjzone.ui.designsystem.AppCoverImage
+import com.breakyuna.esjzone.ui.designsystem.AppLoadedImage
 import com.breakyuna.esjzone.ui.designsystem.AppLayout
 import com.breakyuna.esjzone.ui.designsystem.AppShapes
 import com.breakyuna.esjzone.ui.designsystem.AppSpacing
@@ -98,7 +99,8 @@ fun AppNovelCover(
     title: String,
     modifier: Modifier,
     isAdult: Boolean = false,
-    coverState: CoverState? = null
+    coverState: CoverState? = null,
+    onImageLoaded: ((AppLoadedImage) -> Unit)? = null
 ) {
     Box(
         modifier = modifier
@@ -108,6 +110,7 @@ fun AppNovelCover(
         val cover = CoverSource.fromUrl(coverUrl, coverState ?: CoverState.Missing)
         AppCoverImage(
             model = cover.url,
+            onImageLoaded = onImageLoaded,
             sourceState = coverState ?: cover.state,
             contentDescription = title,
             modifier = Modifier.fillMaxSize(),
@@ -178,6 +181,7 @@ fun AppHomeNovelTile(
     ) {
         AppNovelCover(
             coverUrl = novel.coverUrl,
+            onImageLoaded = coverSource.onImageLoaded,
             coverState = novel.coverState,
             title = novel.name,
             modifier = Modifier.then(coverSource.modifier)
@@ -217,6 +221,7 @@ fun AppFeaturedNovelCard(
         ) {
             AppNovelCover(
                 coverUrl = novel.coverUrl,
+                onImageLoaded = coverSource.onImageLoaded,
                 coverState = novel.coverState,
                 title = novel.name,
                 modifier = Modifier.then(coverSource.modifier).size(AppLayout.featureCoverWidth, AppLayout.featureCoverHeight),
@@ -288,6 +293,7 @@ fun AppNovelListItem(
         ) {
             AppNovelCover(
                 coverUrl = novel.coverUrl,
+                onImageLoaded = coverSource.onImageLoaded,
                 coverState = novel.coverState,
                 title = novel.name,
                 modifier = Modifier.then(coverSource.modifier).size(coverWidth, coverHeight),
@@ -358,6 +364,7 @@ fun AppNovelPreviewCard(
         ) {
             AppNovelCover(
                 coverUrl = novel.coverUrl,
+                onImageLoaded = coverSource.onImageLoaded,
                 coverState = novel.coverState,
                 title = novel.name,
                 modifier = Modifier.then(coverSource.modifier).size(coverWidth, coverHeight),

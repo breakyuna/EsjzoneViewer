@@ -1012,6 +1012,7 @@ private fun ShelfCard(
         ) {
             AppNovelCover(
                 coverUrl = cover.url,
+                onImageLoaded = coverSource.onImageLoaded,
                 coverState = cover.state,
                 title = entry.title,
                 modifier = Modifier.then(coverModifier).then(coverSource.modifier).fillMaxSize().clip(shape)
@@ -1104,6 +1105,7 @@ private fun ShelfListItem(
         ) {
             AppNovelCover(
                 coverUrl = cover.url,
+                onImageLoaded = coverSource.onImageLoaded,
                 title = entry.title,
                 modifier = Modifier.then(coverModifier).then(coverSource.modifier).fillMaxSize().clip(AppShapes.compact),
                 coverState = cover.state

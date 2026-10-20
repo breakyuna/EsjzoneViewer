@@ -1,6 +1,7 @@
 package com.breakyuna.esjzone.ui.designsystem
 
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.BrokenImage
@@ -8,6 +9,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.remember
@@ -30,10 +32,14 @@ import com.breakyuna.esjzone.novellibrary.novel.CoverSource
 import com.breakyuna.esjzone.novellibrary.novel.CoverState
 import com.breakyuna.esjzone.novellibrary.novel.coverFailure
 import coil3.compose.AsyncImage
+import coil3.compose.asPainter
 import coil3.compose.SubcomposeAsyncImage
 import coil3.ImageLoader
+import coil3.Image as CoilImage
 import coil3.request.CachePolicy
 import coil3.request.ImageRequest
+import coil3.request.SuccessResult
+import coil3.request.ErrorResult
 import coil3.network.HttpException
 import me.saket.telephoto.zoomable.DoubleClickToZoomListener
 import me.saket.telephoto.zoomable.EnabledZoomGestures
@@ -42,6 +48,9 @@ import me.saket.telephoto.zoomable.rememberZoomableImageState
 import me.saket.telephoto.zoomable.rememberZoomableState
 import me.saket.telephoto.zoomable.coil3.ZoomableAsyncImage
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
+
+/** An already decoded image that can be handed to another page without a new request. */
+class AppLoadedImage internal constructor(internal val image: CoilImage)
 
 /**
  * Image loading seam; feature code must not depend on a concrete image-loader API.
@@ -63,7 +72,8 @@ fun AppImage(
     onLoading: (() -> Unit)? = null,
     onSuccess: (() -> Unit)? = null,
     onError: ((Throwable) -> Unit)? = null,
-    errorResource: Int? = null
+    errorResource: Int? = null,
+    onImageLoaded: ((AppLoadedImage) -> Unit)? = null
 ) {
     val imageRequest = sharedMirrorImageRequest(model)
     var errorState by remember(imageRequest) { mutableStateOf<CoverState>(CoverState.Missing) }
@@ -83,7 +93,7 @@ fun AppImage(
             loading = { loading?.invoke() ?: AppImageLoading() },
             error = { error?.invoke() ?: AppImageError() },
             onLoading = { errorState = CoverState.Missing; onLoading?.invoke() },
-            onSuccess = { onSuccess?.invoke() },
+            onSuccess = { onImageLoaded?.invoke(AppLoadedImage(it.result.image)); onSuccess?.invoke() },
             onError = { handleError(it.result.throwable) }
         )
     } else {
@@ -96,7 +106,7 @@ fun AppImage(
             contentScale = contentScale,
             alignment = alignment,
             onLoading = { errorState = CoverState.Missing; onLoading?.invoke() },
-            onSuccess = { onSuccess?.invoke() },
+            onSuccess = { onImageLoaded?.invoke(AppLoadedImage(it.result.image)); onSuccess?.invoke() },
             onError = { handleError(it.result.throwable) }
         )
     }
@@ -111,7 +121,10 @@ fun AppCoverImage(
     contentScale: ContentScale = ContentScale.Crop,
     loading: (@Composable () -> Unit)? = null,
     error: (@Composable () -> Unit)? = null,
-    sourceState: CoverState? = null
+    sourceState: CoverState? = null,
+    cachedModel: Any? = null,
+    initialImage: AppLoadedImage? = null,
+    onImageLoaded: ((AppLoadedImage) -> Unit)? = null
 ) {
     val policy by CoverLoadingPolicy.state.collectAsState()
     val page = LocalCoverPage.current
@@ -123,6 +136,17 @@ fun AppCoverImage(
     }
     val hasImage = source == CoverState.Loading || source == CoverState.Loaded
     val request = sharedMirrorImageRequest(if (hasImage) model else coverFallbackResource(source), allowed)
+    if (cachedModel != null || initialImage != null) {
+        CachedCoverImage(
+            request = request,
+            cachedRequest = sharedMirrorImageRequest(cachedModel ?: model, allowNetwork = false),
+            initialImage = initialImage,
+            contentDescription = contentDescription,
+            modifier = modifier,
+            contentScale = contentScale
+        )
+        return
+    }
     var imageState by remember(request, source) { mutableStateOf(source) }
     val state = if (hasImage) imageState else source
     AppImage(
@@ -139,8 +163,58 @@ fun AppCoverImage(
                 if (allowed) failure.imageFailure() else CoverFailure.UNAVAILABLE
             )
         },
-        errorResource = coverFallbackResource(state)
+        errorResource = coverFallbackResource(state),
+        onImageLoaded = { if (hasImage) onImageLoaded?.invoke(it) }
     )
+}
+
+/** Keep the entry cover visible until a replacement has actually decoded. */
+@Composable
+internal fun CachedCoverImage(
+    request: ImageRequest,
+    cachedRequest: ImageRequest,
+    initialImage: AppLoadedImage? = null,
+    contentDescription: String?,
+    modifier: Modifier,
+    contentScale: ContentScale,
+    imageLoader: ImageLoader = PresentationAccess.imageLoader
+) {
+    val context = LocalContext.current
+    // Match the durable shelf thumbnail bound rather than decode a full-size hero.
+    val sizedRequest = remember(request) { request.newBuilder().size(720).build() }
+    val sizedCachedRequest = remember(cachedRequest) { cachedRequest.newBuilder().size(720).build() }
+    var image by remember(cachedRequest.data) { mutableStateOf(initialImage?.image) }
+    var failure by remember(request) { mutableStateOf<CoverState>(CoverState.Loading) }
+    LaunchedEffect(sizedRequest, sizedCachedRequest) {
+        loadCachedCover(sizedRequest, sizedCachedRequest, imageLoader, restoreCached = image == null,
+            onImage = { image = it },
+            onError = { failure = CoverState.Failed(it.imageFailure()) })
+    }
+    Image(
+        painter = image?.asPainter(context) ?: painterResource(coverFallbackResource(failure)),
+        contentDescription = contentDescription,
+        modifier = modifier,
+        contentScale = contentScale
+    )
+}
+
+internal suspend fun loadCachedCover(
+    request: ImageRequest,
+    cachedRequest: ImageRequest,
+    imageLoader: ImageLoader,
+    restoreCached: Boolean,
+    onImage: (CoilImage) -> Unit,
+    onError: (Throwable) -> Unit
+) {
+    if (restoreCached) {
+        val cached = imageLoader.execute(cachedRequest.newBuilder()
+            .networkCachePolicy(CachePolicy.DISABLED).build()) as? SuccessResult
+        if (cached != null) onImage(cached.image)
+    }
+    when (val fresh = imageLoader.execute(request)) {
+        is SuccessResult -> onImage(fresh.image)
+        is ErrorResult -> onError(fresh.throwable)
+    }
 }
 
 /** Only confirmed network failures use the network-error artwork. */
