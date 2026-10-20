@@ -586,6 +586,7 @@
     <string name="reader_password_title">此章节需要密码</string>
     <string name="reader_password_message">请输入作者设置的章节密码。密码只会用于本次验证，不会保存。</string>
     <string name="reader_password_label">章节密码</string>
+    <string name="reader_password_failed">验证失败，请重试</string>
     <string name="reader_password_submit">验证</string>
     <string name="bookmarks">本地书签</string>
     <string name="bookmarks_description">将章节保存在本机，方便快速访问</string>

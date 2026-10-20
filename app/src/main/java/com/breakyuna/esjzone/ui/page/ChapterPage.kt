@@ -17,6 +17,8 @@ import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -63,7 +65,6 @@ import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import com.breakyuna.esjzone.ui.designsystem.GlobalText as Text
 import androidx.compose.material3.TextButton
@@ -413,48 +414,6 @@ class ChapterPage(
                 onDismiss = { wenkuVerificationChapter = null }
             )
         }
-        var chapterPassword by remember { mutableStateOf("") }
-        val passwordRequired = state as? ChapterPageModel.State.PasswordRequired
-
-        if (passwordRequired != null) {
-            AlertDialog(
-                onDismissRequest = {
-                    chapterPassword = ""
-                    navigator?.pop()
-                },
-                title = { Text(stringResource(R.string.reader_password_title)) },
-                text = {
-                    Column(verticalArrangement = Arrangement.spacedBy(AppSpacing.sm)) {
-                        Text(stringResource(R.string.reader_password_message))
-                        OutlinedTextField(
-                            value = chapterPassword,
-                            onValueChange = { chapterPassword = it },
-                            label = { Text(stringResource(R.string.reader_password_label)) },
-                            singleLine = true
-                        )
-                        passwordRequired.message?.takeIf { it.isNotBlank() }?.let { message ->
-                            Text(message, color = MaterialTheme.colorScheme.error)
-                        }
-                    }
-                },
-                confirmButton = {
-                    TextButton(
-                        enabled = chapterPassword.isNotBlank(),
-                        onClick = {
-                            val submittedPassword = chapterPassword
-                            chapterPassword = ""
-                            chapterPageModel.submitChapterPassword(submittedPassword)
-                        }
-                    ) { Text(stringResource(R.string.reader_password_submit)) }
-                },
-                dismissButton = {
-                    TextButton(onClick = {
-                        chapterPassword = ""
-                        navigator?.pop()
-                    }) { Text(stringResource(R.string.cancel)) }
-                }
-            )
-        }
 
         var showToolbar by rememberSaveable {
             mutableStateOf(false)
@@ -657,7 +616,10 @@ class ChapterPage(
             (convertedText?.script == readerSettings.script && convertedText?.chapters == result?.chapters)
         val paginationReady = !pagedMode || (scriptReady && paginationSnapshot?.key == paginationKey)
         val pagedDisplayItems = remember(paginationSnapshot, result?.chapters) {
-            paginationSnapshot?.items.orEmpty().filter { it.entry in result?.chapters.orEmpty() }
+            // Keep a password page's stable key until its replacement body is paginated.
+            // Removing it early would move Pager to an adjacent chapter during verification.
+            val loadedKeys = result?.chapters.orEmpty().map { chapterIdentity(it.chapter) }.toSet()
+            paginationSnapshot?.items.orEmpty().filter { it.chapterKey in loadedKeys }
         }
         val displayItems = if (pagedMode) pagedDisplayItems else {
             remember(result?.chapters) {
@@ -881,7 +843,9 @@ class ChapterPage(
         val preciseChapterProgress = measuredAnchor?.let { anchor ->
             activeChapter?.document?.let { readerChapterProgress(it, if (isAtEndOfChapter.value) anchor.copy(kind = "end") else anchor) }
         }
-        val measuredChapterProgress = if (isAtEndOfChapter.value) {
+        val measuredChapterProgress = if (activeChapter?.requiresPassword == true) {
+            0f
+        } else if (isAtEndOfChapter.value) {
             1.0f
         } else if (preciseChapterProgress != null) {
             preciseChapterProgress
@@ -940,19 +904,17 @@ class ChapterPage(
                 PresentationAccess.downloads.manifest(url)?.textProgressIndex(bookChapterOrder.map { it.url })
             }
         }
-        val measuredBookLocation = activeChapter?.chapter
-            ?.takeIf { measuredChapterProgress != null && measuredAnchor != null && paginationReady && scriptReady &&
+        val measuredBookLocation = activeChapter
+            ?.takeIf { paginationReady && scriptReady &&
                 !resumePending && pendingSeekLocation == null && !isProgrammaticScroll }
-            ?.let {
-                readerBookLocationFor(
-                    activeChapter = it,
-                    chapterProgress = measuredChapterProgress ?: 0f,
-                    chapterOrder = bookChapterOrder,
-                    chapterIndices = bookChapterIndices
-                )?.copy(contentPosition = measuredContentPosition,
-                    anchor = measuredAnchor?.let { anchor -> if (isAtEndOfChapter.value) anchor.copy(kind = "end") else anchor },
-                    textBookProgress = progressTextIndex?.progress(chapterIdentity(it), measuredChapterProgress ?: 0f))
-            }
+            ?.measuredBookLocation(
+                chapterProgress = measuredChapterProgress,
+                anchor = measuredAnchor?.let { anchor -> if (isAtEndOfChapter.value) anchor.copy(kind = "end") else anchor },
+                chapterOrder = bookChapterOrder,
+                chapterIndices = bookChapterIndices,
+                textIndex = progressTextIndex,
+                contentPosition = measuredContentPosition
+            )
         var retainedBookLocation by remember(requestedChapter.value.url) {
             mutableStateOf<ReaderBookLocation?>(null)
         }
@@ -970,7 +932,8 @@ class ChapterPage(
                 val measurer = TextMeasurer(fontResolver, density, layoutDirection, cacheSize = 0)
                 val pages = entries.associateWith { entry ->
                     ensureActive()
-                    cached[entry] ?: paginateReaderChapter(
+                    if (entry.requiresPassword) listOf(ReaderPage(emptyList(), -1f, isOversized = true))
+                    else cached[entry] ?: paginateReaderChapter(
                         entry.chapter.name, entry.document.blocks, paginationSettings,
                         readerTextStyle, headingStyle, measurer, density,
                         pageContentWidthPx, pageContentHeightPx, readerTextTransform
@@ -997,6 +960,20 @@ class ChapterPage(
         val currentReadingChapter = currentBookLocation?.chapter
             ?: activeChapter?.chapter
             ?: requestedChapter.value
+        var previousPasswordChapterKeys by remember { mutableStateOf(emptySet<String>()) }
+        LaunchedEffect(result?.chapters) {
+            val lockedKeys = result?.chapters.orEmpty().filter { it.requiresPassword }
+                .map { chapterIdentity(it.chapter) }.toSet()
+            val unlockedKeys = previousPasswordChapterKeys - lockedKeys
+            previousPasswordChapterKeys = lockedKeys
+            val entry = activeChapter ?: return@LaunchedEffect
+            if (chapterIdentity(entry.chapter) in unlockedKeys && !entry.requiresPassword &&
+                !resumePending && pendingSeekLocation == null) {
+                pendingSeekLocation = readerBookLocationFor(entry.chapter, 0f, bookChapterOrder,
+                    bookChapterIndices, progressTextIndex)
+                    ?: ReaderBookLocation(entry.chapter, -1, 0f, bookChapterOrder.size)
+            }
+        }
         val visibleReaderChapterKeys by remember(result, scrollState, pagedMode, horizontalPagerState, pagerVisibleItem) {
             derivedStateOf {
                 val loadedKeys = result?.chapters
@@ -1339,6 +1316,7 @@ class ChapterPage(
             }
         }
 
+        var deferredResumeChapterKey by remember(requestedChapter.value.url) { mutableStateOf<String?>(null) }
         LaunchedEffect(resolvedResumeProgress, restoreLookupPending, result?.chapters) {
             if (!resumePending || pendingSeekLocation != null) return@LaunchedEffect
             if (restoreLookupPending) return@LaunchedEffect
@@ -1348,14 +1326,27 @@ class ChapterPage(
             }
             val current = result?.chapters?.firstOrNull {
                 sameReaderChapter(it.chapter, requestedChapter.value)
-            }?.chapter ?: return@LaunchedEffect
-            pendingSeekLocation = ReaderBookLocation(
-                chapter = current,
-                chapterIndex = 0,
-                chapterProgress = restored.coerceIn(0f, 1f),
-                totalChapters = 1,
-                anchor = resolvedResumeAnchor
-            )
+            } ?: return@LaunchedEffect
+            // A password gate must not consume the saved anchor or enable history writes.
+            pendingSeekLocation = current.resumeLocation(restored, resolvedResumeAnchor)
+            deferredResumeChapterKey = if (current.requiresPassword) chapterIdentity(current.chapter) else null
+        }
+
+        LaunchedEffect(deferredResumeChapterKey, resumePending, pagedMode, visibleActiveChapterKey) {
+            val key = deferredResumeChapterKey ?: return@LaunchedEffect
+            if (!resumePending) return@LaunchedEffect
+            snapshotFlow {
+                val scrolling = if (pagedMode) horizontalPagerState.isScrollInProgress
+                    else scrollState.isScrollInProgress
+                shouldCancelDeferredResume(
+                    key,
+                    visibleActiveChapterKey,
+                    !isProgrammaticScroll && pendingSeekLocation == null && scrolling
+                )
+            }.first { it }
+            // The reader has chosen another chapter; allow its progress and paging controls.
+            resumePending = false
+            deferredResumeChapterKey = null
         }
 
         LaunchedEffect(pendingUnderline, result?.chapters, scriptReady, readerSettings.script,
@@ -1504,11 +1495,12 @@ class ChapterPage(
         val commentChapter = currentReadingChapter
         val commentsAvailable = state is ChapterPageModel.State.Result &&
             commentChapter.source == com.breakyuna.esjzone.novellibrary.novel.ChapterSource.ESJ_ZONE
-        fun openReaderComments() {
-            if (!commentsAvailable) return
+        fun openReaderComments(target: Chapter = commentChapter) {
+            if (state !is ChapterPageModel.State.Result ||
+                target.source != com.breakyuna.esjzone.novellibrary.novel.ChapterSource.ESJ_ZONE) return
             dismissProgressPreview()
             if (!pagedMode) {
-                sideCommentChapter = commentChapter
+                sideCommentChapter = target
                 sidePanels.open(ReaderSidePanel.COMMENTS)
                 return
             }
@@ -1528,8 +1520,8 @@ class ChapterPage(
             } ?: 0
             val pushed = navigator?.pushIfNotCurrent(
                 ChapterCommentsPage(
-                    chapterName = commentChapter.name,
-                    chapterUrl = commentChapter.url
+                    chapterName = target.name,
+                    chapterUrl = target.url
                 )
             )
             if (pushed == true) readerResumed = false
@@ -1543,7 +1535,7 @@ class ChapterPage(
             ?: novelId.ifBlank { commentChapter.novelId() }.takeIf { it.isNotBlank() }
                 ?.let { id -> EsjzoneUrls.resolve("/detail/$id.html") }.orEmpty()
         val reducedMotion = com.breakyuna.esjzone.ui.designsystem.rememberReaderReducedMotion()
-        val readerDialogVisible = showBrightness || passwordRequired != null || wenkuVerificationChapter != null ||
+        val readerDialogVisible = showBrightness || wenkuVerificationChapter != null ||
             (pendingWenkuVerification != null && pendingWenkuVerification.url != dismissedWenkuPrompt)
         val readerInteractionEnabled = readerResumed && paginationReady && (!pagedMode || pagerLayoutReady) &&
             state is ChapterPageModel.State.Result &&
@@ -1948,11 +1940,6 @@ class ChapterPage(
                             }
                         }
 
-                        is ChapterPageModel.State.PasswordRequired -> item(key = "reader-password-required") {
-                            // The modal above owns the interaction; keep the reader shell stable behind it.
-                            Spacer(Modifier.height(1.dp))
-                        }
-
                         is ChapterPageModel.State.Result -> {
                             val readerResult = state as ChapterPageModel.State.Result
                             if (readerResult.verificationChapter != null && readerResult.verificationOffset < 0) {
@@ -1981,6 +1968,15 @@ class ChapterPage(
                                         }
                                         ReaderChapterHeading(item.entry.chapter.name, readerSettings,
                                             readerContentColor, readerTextTransform)
+                                        if (item.entry.requiresPassword) {
+                                            ReaderChapterPasswordContent(
+                                                chapter = item.entry.chapter,
+                                                state = readerResult.passwordStates[item.chapterKey] ?: ReaderChapterPasswordState(),
+                                                contentColor = readerContentColor,
+                                                onSubmit = { chapterPageModel.submitChapterPassword(item.entry.chapter, it) },
+                                                onComments = { openReaderComments(item.entry.chapter) }
+                                            )
+                                        }
                                     }
                                 } else {
                                     ReaderBlocks(item.blocks, readerSettings, textMeasurer, density,
@@ -2098,7 +2094,21 @@ class ChapterPage(
                                             bottom = pageBottomPadding
                                         )
                                 ) {
-                                    ReaderPageContent(
+                                    val item = currentPagedDisplayItems[pageIndex]
+                                    if (item.entry.requiresPassword) {
+                                        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()),
+                                            verticalArrangement = Arrangement.spacedBy(AppSpacing.sm)) {
+                                            ReaderChapterHeading(item.entry.chapter.name, readerSettings,
+                                                readerContentColor, readerTextTransform)
+                                            ReaderChapterPasswordContent(
+                                                chapter = item.entry.chapter,
+                                                state = result?.passwordStates?.get(item.chapterKey) ?: ReaderChapterPasswordState(),
+                                                contentColor = readerContentColor,
+                                                onSubmit = { chapterPageModel.submitChapterPassword(item.entry.chapter, it) },
+                                                onComments = { openReaderComments(item.entry.chapter) }
+                                            )
+                                        }
+                                    } else ReaderPageContent(
                                         page, readerSettings, readerTextStyle,
                                         readerContentColor, readerTextTransform,
                                         with(density) { pageContentHeightPx.toDp() },

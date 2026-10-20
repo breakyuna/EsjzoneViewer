@@ -8,6 +8,7 @@ import androidx.compose.runtime.mutableStateOf
 import com.breakyuna.esjzone.ui.navigation.AppStateViewModel
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
@@ -34,15 +35,6 @@ import com.breakyuna.esjzone.novellibrary.novel.FavoriteNovel
 import com.breakyuna.esjzone.offline.NovelDownloadStore
 import com.breakyuna.esjzone.ui.reader.toReaderDocument
 import com.breakyuna.esjzone.util.AppLogger
-
-data class ReaderChapter(
-    val chapter: Chapter,
-    /** Reader presentation consumes the stable domain AST, not HTML components. */
-    val document: com.breakyuna.esjzone.domain.reader.ReaderChapterDocument,
-    val fallbackPrevious: Chapter? = null,
-    val fallbackNext: Chapter? = null,
-    val isOffline: Boolean = false
-)
 
 class ChapterPageModel(
     private val authorization: Authorization,
@@ -79,7 +71,6 @@ class ChapterPageModel(
         data object Loading : State()
         data object SecurityCheck : State()
         data object Empty : State()
-        data class PasswordRequired(val chapter: Chapter, val message: String? = null) : State()
         data object UnsupportedExternalLink : State()
         data object VerificationRequired : State()
         data object WebViewUnavailable : State()
@@ -93,6 +84,7 @@ class ChapterPageModel(
             val isLoadingNext: Boolean,
             val isLoadingPrevious: Boolean = false,
             val chapterOrder: List<Chapter> = emptyList(),
+            val passwordStates: Map<String, ReaderChapterPasswordState> = emptyMap(),
             val isOffline: Boolean = false,
             val verificationChapter: Chapter? = null,
             val verificationWebViewUnavailable: Boolean = false,
@@ -106,6 +98,8 @@ class ChapterPageModel(
     private val prefetchedDetails = mutableMapOf<String, DetailedChapter>()
     private val offlineChapterKeys = mutableSetOf<String>()
     private val prefetchJobs = mutableMapOf<String, Job>()
+    private val passwordJobs = mutableMapOf<String, Job>()
+    private val passwordStates = mutableMapOf<String, ReaderChapterPasswordState>()
     private var catalog = ReaderChapterCatalog(chapterOrder)
     private val orderedChapters: List<Chapter> get() = catalog.chapters
     private var orderResolved = orderedChapters.isNotEmpty()
@@ -166,6 +160,7 @@ class ChapterPageModel(
                 prependJob?.let(::add)
                 orderJob?.let(::add)
                 addAll(prefetchJobs.values)
+                addAll(passwordJobs.values)
             }.distinct()
             initialJob = null
             appendJob = null
@@ -173,6 +168,8 @@ class ChapterPageModel(
             orderJob = null
             orderRequestId += 1
             loadedChapters.clear()
+            passwordJobs.clear()
+            passwordStates.clear()
             prefetchedDetails.clear()
             loadingNext = false
             loadingPrevious = false
@@ -220,15 +217,10 @@ class ChapterPageModel(
                     }
                 }
             }
-            val detail = try {
-                loadDetail(chapter, showSecurityCheck = true)
+            val entry = try {
+                loadReaderChapter(chapter, showSecurityCheck = true)
             } catch (error: CancellationException) {
                 throw error
-            } catch (error: ChapterPasswordRequiredException) {
-                if (isCurrentSession(currentSession)) {
-                    mutableState.value = State.PasswordRequired(chapter)
-                }
-                return@launch
             } catch (error: CloudflareChallengeRequiredException) {
                 if (isCurrentSession(currentSession)) mutableState.value = State.VerificationRequired
                 return@launch
@@ -253,84 +245,81 @@ class ChapterPageModel(
                 return@launch
             }
             if (!isCurrentSession(currentSession)) return@launch
-            if (detail == null) {
+            if (entry == null) {
                 mutableState.value = State.Error(LoadFailureKind.CLIENT)
                 return@launch
             }
-            if (detail.content.isEmpty()) {
+            if (!entry.requiresPassword && entry.document.blocks.isEmpty()) {
                 mutableState.value = State.Empty
                 return@launch
             }
 
-            val document = detail.toReaderDocument(chapter)
             synchronized(lock) {
-                if (isCurrentSessionLocked(currentSession)) {
-                    val loadedOffline = offlineChapterKeys.remove(chapterKey(chapter))
-                    loadedChapters += ReaderChapter(
-                        chapter = chapter,
-                        document = document,
-                        fallbackPrevious = detail.previous,
-                        fallbackNext = detail.next,
-                        isOffline = loadedOffline
-                    )
-                }
+                if (isCurrentSessionLocked(currentSession)) loadedChapters += entry
             }
             publish(currentSession)
 
             val hasCanonicalOrder = synchronized(lock) { orderResolved }
             if (hasCanonicalOrder || novelId.isBlank()) {
-                prefetchNext(chapter, detail.next)
+                prefetchNext(chapter, entry.fallbackNext)
             } else {
-                requestChapterOrder(currentSession, chapter, detail.next)
+                requestChapterOrder(currentSession, chapter, entry.fallbackNext)
             }
         }
     }
 
-    /** Submits a password once; it is not kept in state, storage, logs, or navigation. */
-    fun submitChapterPassword(password: String) {
-        val protected = mutableState.value as? State.PasswordRequired ?: return
-        if (password.isBlank()) {
-            mutableState.value = protected
-            return
+    /** Submit for one inline gate without replacing the rest of the reading window. */
+    fun submitChapterPassword(target: Chapter, password: String) {
+        if (password.isBlank()) return
+        val key = chapterKey(target)
+        val currentSession = synchronized(lock) {
+            if (loadedChapters.none { sameChapter(it.chapter, target) && it.requiresPassword } ||
+                passwordStates[key]?.submitting == true) return
+            passwordStates[key] = ReaderChapterPasswordState(submitting = true)
+            sessionId
         }
-        val target = protected.chapter
-        val currentSession = synchronized(lock) { sessionId }
-        mutableState.value = State.Loading
-        initialJob = viewModelScope.launch(Dispatchers.IO) {
-            val detail = try {
-                cancellablePageRequest {
+        publish(currentSession)
+        val job = viewModelScope.launch(Dispatchers.IO, start = CoroutineStart.LAZY) {
+            var failureState: ReaderChapterPasswordState? = null
+            try {
+                val detail = cancellablePageRequest {
                     PresentationAccess.client.unlockPasswordProtectedChapter(authorization, target, password)
+                }
+                if (detail.content.isEmpty()) throw java.io.IOException("Unlocked chapter content is empty")
+                val replaced = synchronized(lock) {
+                    if (!isCurrentSessionLocked(currentSession)) return@synchronized false
+                    loadedChapters.replacePasswordChapter(target, detail)
+                }
+                if (replaced) {
+                    queueChapterPersistence(target, detail)
+                    publish(currentSession)
+                    prefetchNext(target, detail.next)
                 }
             } catch (error: CancellationException) {
                 throw error
-            } catch (error: ChapterPasswordRejectedException) {
-                if (isCurrentSession(currentSession)) {
-                    mutableState.value = State.PasswordRequired(target, error.message)
-                }
-                return@launch
             } catch (error: Exception) {
-                if (isCurrentSession(currentSession)) {
-                    mutableState.value = State.Error(error.loadFailureKind())
+                failureState = if (error is ChapterPasswordRejectedException) {
+                    ReaderChapterPasswordState(message = error.message)
+                } else ReaderChapterPasswordState(failure = error.loadFailureKind())
+                if (error !is ChapterPasswordRejectedException) {
+                    AppLogger.e("ChapterPageModel", "Failed to unlock password-protected chapter", error)
                 }
-                AppLogger.e("ChapterPageModel", "Failed to unlock password-protected chapter", error)
-                return@launch
-            }
-            if (!isCurrentSession(currentSession)) return@launch
-            val document = detail.toReaderDocument(target)
-            synchronized(lock) {
-                if (isCurrentSessionLocked(currentSession)) {
-                    loadedChapters += ReaderChapter(
-                        chapter = target,
-                        document = document,
-                        fallbackPrevious = detail.previous,
-                        fallbackNext = detail.next
-                    )
+            } finally {
+                synchronized(lock) {
+                    if (isCurrentSessionLocked(currentSession)) {
+                        passwordJobs.remove(key)
+                        passwordStates.finishPasswordSubmission(key,
+                            loadedChapters.any { sameChapter(it.chapter, target) && it.requiresPassword },
+                            failureState)
+                        publish(currentSession)
+                    }
                 }
             }
-            queueChapterPersistence(target, detail)
-            publish(currentSession)
-            prefetchNext(target, detail.next)
         }
+        synchronized(lock) {
+            if (isCurrentSessionLocked(currentSession)) passwordJobs[key] = job else job.cancel()
+        }
+        job.start()
     }
 
     /** Loads the next canonical TOC chapter when the reader reaches the end buffer. */
@@ -366,21 +355,13 @@ class ChapterPageModel(
 
         appendJob = viewModelScope.launch(Dispatchers.IO) {
             try {
-                val detail = loadDetail(chapterToLoad)
-                if (detail != null && isCurrentSession(session)) {
-                    val document = detail.toReaderDocument(chapterToLoad)
+                val entry = loadReaderChapter(chapterToLoad)
+                if (entry != null && isCurrentSession(session)) {
                     synchronized(lock) {
                         if (isCurrentSessionLocked(session) &&
                             loadedChapters.none { sameChapter(it.chapter, chapterToLoad) }
                         ) {
-                            val loadedOffline = offlineChapterKeys.remove(chapterKey(chapterToLoad))
-                            loadedChapters += ReaderChapter(
-                                chapter = chapterToLoad,
-                                document = document,
-                                fallbackPrevious = detail.previous,
-                                fallbackNext = detail.next,
-                                isOffline = loadedOffline
-                            )
+                            loadedChapters += entry
                             failedAppendChapterKey = null
                             failedAppendAtMillis = 0L
                             clearVerificationLocked()
@@ -388,7 +369,7 @@ class ChapterPageModel(
                         }
                     }
                     publish(session)
-                    prefetchNext(chapterToLoad, detail.next)
+                    prefetchNext(chapterToLoad, entry.fallbackNext)
                 }
             } catch (e: CancellationException) {
                 throw e
@@ -454,24 +435,13 @@ class ChapterPageModel(
 
         prependJob = viewModelScope.launch(Dispatchers.IO) {
             try {
-                val detail = loadDetail(chapterToLoad)
-                if (detail != null && isCurrentSession(session)) {
-                    val document = detail.toReaderDocument(chapterToLoad)
+                val entry = loadReaderChapter(chapterToLoad)
+                if (entry != null && isCurrentSession(session)) {
                     synchronized(lock) {
                         if (isCurrentSessionLocked(session) &&
                             loadedChapters.none { sameChapter(it.chapter, chapterToLoad) }
                         ) {
-                            val loadedOffline = offlineChapterKeys.remove(chapterKey(chapterToLoad))
-                            loadedChapters.add(
-                                0,
-                                ReaderChapter(
-                                    chapter = chapterToLoad,
-                                    document = document,
-                                    fallbackPrevious = detail.previous,
-                                    fallbackNext = detail.next,
-                                    isOffline = loadedOffline
-                                )
-                            )
+                            loadedChapters.add(0, entry)
                             failedPrependChapterKey = null
                             failedPrependAtMillis = 0L
                             clearVerificationLocked()
@@ -479,7 +449,7 @@ class ChapterPageModel(
                         }
                     }
                     publish(session)
-                    prefetchPrevious(chapterToLoad, detail.previous)
+                    prefetchPrevious(chapterToLoad, entry.fallbackPrevious)
                 }
             } catch (e: CancellationException) {
                 throw e
@@ -552,6 +522,16 @@ class ChapterPageModel(
         }
     }
 
+    private suspend fun loadReaderChapter(chapter: Chapter, showSecurityCheck: Boolean = false): ReaderChapter? {
+        val detail = try {
+            loadDetail(chapter, showSecurityCheck)
+        } catch (_: ChapterPasswordRequiredException) {
+            return ReaderChapter.passwordRequired(chapter)
+        } ?: return null
+        val offline = synchronized(lock) { offlineChapterKeys.remove(chapterKey(chapter)) }
+        return ReaderChapter(chapter, detail.toReaderDocument(chapter), detail.previous, detail.next, offline)
+    }
+
     private suspend fun loadDetail(chapter: Chapter, showSecurityCheck: Boolean = false): DetailedChapter? {
         val key = chapterKey(chapter)
         val prefetched = synchronized(lock) { prefetchedDetails.remove(key) }
@@ -588,6 +568,8 @@ class ChapterPageModel(
                     } else null, novelUrl = downloadNovelUrl)
             }
         } catch (e: CancellationException) {
+            throw e
+        } catch (e: ChapterPasswordRequiredException) {
             throw e
         } catch (e: Exception) {
             if (e.loadFailureKind() == LoadFailureKind.NETWORK) {
@@ -741,6 +723,7 @@ class ChapterPageModel(
                 isLoadingNext = loadingNext,
                 isLoadingPrevious = loadingPrevious,
                 chapterOrder = orderedChapters,
+                passwordStates = passwordStates.filterKeys { key -> snapshot.any { chapterKey(it.chapter) == key } },
                 isOffline = snapshot.any(ReaderChapter::isOffline),
                 verificationChapter = verificationChapter,
                 verificationWebViewUnavailable = verificationWebViewUnavailable,
