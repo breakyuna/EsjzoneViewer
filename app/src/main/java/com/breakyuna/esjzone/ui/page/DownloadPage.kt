@@ -92,6 +92,8 @@ import com.breakyuna.esjzone.ui.product.LoadingSkeleton
 import com.breakyuna.esjzone.util.AppLogger
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 
 /** Local download inventory. Deleting it never touches bookshelf/history/bookmarks. */
@@ -108,6 +110,7 @@ object DownloadPage : AppDestination {
         val scanModel = rememberAppViewModel { StorageLocationModel() }
         val scanState by scanModel.state.collectAsState()
         val transfer by PresentationAccess.storage.transfer.collectAsState()
+        val activeLocation by PresentationAccess.storage.activeLocation.collectAsState()
         val migrationLocked by PresentationAccess.downloads.migrating.collectAsState()
         val snackbarHost = remember { SnackbarHostState() }
         val scanResult = scanState.result?.let { stringResource(it) }
@@ -125,7 +128,7 @@ object DownloadPage : AppDestination {
         var showDelete by remember { mutableStateOf(false) }
         var showSettings by remember { mutableStateOf(false) }
 
-        LaunchedEffect(Unit) { model.refresh() }
+        LaunchedEffect(activeLocation) { model.refresh() }
         val entries = (state as? DownloadPageModel.State.Content)?.novels.orEmpty()
         val deleting = (state as? DownloadPageModel.State.Content)?.deleting == true
         LaunchedEffect(entries) { selected = selected.intersect(entries.mapTo(LinkedHashSet()) { it.novelUrl }) }
@@ -262,7 +265,7 @@ private fun DownloadList(
     ) {
         item(key = "download_summary", contentType = "download_summary") {
             Text(
-                stringResource(R.string.download_total_summary, novels.size, formatBytes(totalBytes)),
+                stringResource(R.string.download_total_summary, novels.size, if (novels.any { it.storageBytes < 0 }) stringResource(R.string.storage_size_calculating) else formatBytes(totalBytes)),
                 style = AppTypography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -310,7 +313,7 @@ private fun DownloadCard(
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(AppSpacing.xs)) {
             Text(summary.novelName.ifBlank { stringResource(R.string.download_unknown_novel) }, style = AppTypography.labelLarge, maxLines = 2, overflow = TextOverflow.Ellipsis)
             Text(stringResource(R.string.download_chapters_count, summary.downloadedChapterCount), style = AppTypography.bodyMedium, color = MaterialTheme.colorScheme.primary)
-            Text(formatBytes(summary.storageBytes), style = AppTypography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(if (summary.storageBytes < 0) stringResource(R.string.storage_size_calculating) else formatBytes(summary.storageBytes), style = AppTypography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         IconButton(onClick = onDelete, enabled = !deleting) { Icon(Icons.Filled.DeleteOutline, stringResource(R.string.download_delete), tint = MaterialTheme.colorScheme.error) }
     }
@@ -323,11 +326,19 @@ private class DownloadPageModel : AppStateViewModel<DownloadPageModel.State>(Sta
         data class Error(val message: String) : State()
     }
 
+    private var refreshJob: Job? = null
+
     fun refresh() {
+        refreshJob?.cancel()
         mutableState.value = State.Loading
-        viewModelScope.launch(Dispatchers.IO) {
+        refreshJob = viewModelScope.launch(Dispatchers.IO) {
             try {
-                mutableState.value = State.Content(PresentationAccess.downloads.listDownloadedNovels())
+                val novels = PresentationAccess.downloads.listDownloadedNovels(onMetadata = {
+                    ensureActive()
+                    mutableState.value = State.Content(it)
+                })
+                ensureActive()
+                mutableState.value = State.Content(novels)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -342,6 +353,7 @@ private class DownloadPageModel : AppStateViewModel<DownloadPageModel.State>(Sta
         if (targets.isEmpty()) return
         val current = mutableState.value as? State.Content ?: return
         if (current.deleting) return
+        refreshJob?.cancel()
         mutableState.value = current.copy(deleting = true)
         viewModelScope.launch(Dispatchers.IO) {
             try { PresentationAccess.downloads.deleteAll(targets) } catch (e: CancellationException) { throw e } catch (e: Exception) { AppLogger.e("DownloadPageModel", "Failed to delete downloaded novels", e) }

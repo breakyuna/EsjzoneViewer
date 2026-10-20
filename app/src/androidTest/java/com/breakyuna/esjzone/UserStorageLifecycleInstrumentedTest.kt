@@ -76,6 +76,65 @@ class UserStorageLifecycleInstrumentedTest {
         }
     }
 
+    @Test fun sharedDownloadsAndBackupsReturnToOriginalPrivatePathsWithoutLosingSetupChoice() = runBlocking {
+        context.contentResolver.call(treeUri, "grant-fixture-tree", null, null)
+        val directory = File(context.cacheDir, "return-private-${UUID.randomUUID()}").apply { mkdirs() }
+        val isolated = isolatedContext(directory)
+        val id = UUID.randomUUID().mostSignificantBits and Long.MAX_VALUE
+        val novel = "https://www.esjzone.cc/detail/$id.html"
+        val chapter = Chapter("Chapter", "https://www.esjzone.cc/forum/$id/1.html", false)
+        val tree = StorageFile(StorageFile.fromTree(context, treeUri), "case-${UUID.randomUUID()}")
+            .apply { check(mkdirs()) }
+        val selectedUri = DocumentsContract.buildTreeDocumentUri(treeUri.authority,
+            DocumentsContract.getDocumentId(tree.uri))
+        val sharedDownloads = StorageFile(tree, "downloads")
+        val archiveName = "esjzone-auto-$id.zip"
+        val sharedArchive = StorageFile(StorageFile(tree, "autobackup"), archiveName)
+        var sharedBook: StorageFile? = null
+        try {
+            NovelDownloadStore.initialize(context)
+            val privateDownloads = File(directory, "downloaded_novels")
+            NovelDownloadStore.initializeDirectory(privateDownloads)
+            requireNotNull(NovelDownloadStore.saveChapter("Round trip $id", novel, "", listOf(chapter), chapter,
+                DetailedChapter("Chapter", listOf(TextComponent("Preserved text")), null, null),
+                Authorization("", "", "www.esjzone.cc")))
+            val migration = NovelDownloadStore.migrateStorage(sharedDownloads) { }
+            sharedBook = StorageFile(sharedDownloads, migration.targets.values.single())
+            privateDownloads.deleteRecursively()
+            sharedArchive.parentFile!!.mkdirs()
+            sharedArchive.writeText("fixture archive")
+            seed(isolated) {
+                it[stringPreferencesKey("directory_uri")] = selectedUri.toString()
+                it[stringPreferencesKey("migration_target_uri")] = UserStorage.PRIVATE_LOCATION
+                it[booleanPreferencesKey("migration_failed")] = true
+            }
+            val storage = UserStorage(isolated)
+            storage.initialize()
+            assertEquals(UserStorage.PRIVATE_LOCATION, storage.location.value)
+            assertEquals(selectedUri.toString(), storage.activeLocation.value)
+            assertTrue(storage.transferFiles { })
+            assertEquals(UserStorage.PRIVATE_LOCATION, storage.activeLocation.value)
+            assertEquals(privateDownloads.absolutePath, storage.downloads().absolutePath)
+            assertEquals("Preserved text", NovelDownloadStore.readChapter(chapter.url)!!.content.filterIsInstance<TextComponent>().single().text)
+            assertEquals("fixture archive", File(directory, "auto_backups/$archiveName").readText())
+            assertFalse(requireNotNull(sharedBook).exists())
+            assertFalse(sharedArchive.exists())
+            storage.reindex()
+            assertEquals(1, NovelDownloadStore.listDownloadedNovels().size)
+            storage.prepareSetup(restoredSession = true)
+            assertEquals(UserStorage.PRIVATE_LOCATION, storage.location.value)
+        } finally {
+            NovelDownloadStore.finishStorageMigration()
+            sharedBook?.deleteRecursively()
+            sharedArchive.delete()
+            tree.deleteRecursively()
+            directory.deleteRecursively()
+            val container = EsjzoneApplication.instance.container
+            container.initializeDownloads()
+            NovelDownloadStore.restoreStorage(container.storage.downloads())
+        }
+    }
+
     @Test fun committedAndRestoredCleanupProtectTargetsUntilTheJournalClears() = runBlocking {
         for (restored in listOf(false, true)) verifyCleanupProtection(restored)
     }

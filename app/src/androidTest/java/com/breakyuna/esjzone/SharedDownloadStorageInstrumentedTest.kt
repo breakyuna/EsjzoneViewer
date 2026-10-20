@@ -67,6 +67,21 @@ class SharedDownloadStorageInstrumentedTest {
         } finally { configure(directory); directory.deleteRecursively() }
     }
 
+    @Test fun recursiveSizesUseDirectoryMetadataWithoutPerFileQueries() {
+        val directory = StorageFile(StorageFile.fromTree(context, treeUri), "case-${UUID.randomUUID()}")
+            .apply { check(mkdirs()) }
+        try {
+            StorageFile(directory, "chapter.json").writeText("chapter")
+            val images = StorageFile(directory, "images").apply { check(mkdirs()) }
+            StorageFile(images, "picture.bin").outputStream().use { it.write(ByteArray(4096)) }
+            configure(directory, "reject-file-metadata", "metadata")
+            val fresh = StorageFile(StorageFile.fromTree(context, treeUri), directory.name)
+            val files = fresh.fileEntries().toList()
+            assertEquals(2, files.size)
+            assertEquals(4103L, files.sumOf { it.size })
+        } finally { configure(directory); directory.deleteRecursively() }
+    }
+
     @Test fun unrepresentableProviderNamesDoNotHideValidDownloads() {
         val directory = StorageFile(StorageFile.fromTree(context, treeUri), "case-${UUID.randomUUID()}")
             .apply { check(mkdirs()) }

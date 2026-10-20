@@ -77,6 +77,13 @@ class StorageFile private constructor(
         }
     }
 
+    /** Reuse each directory query's metadata instead of querying every child again. */
+    fun fileEntries(): Sequence<Entry> = sequence {
+        for (entry in entries()) {
+            if (entry.directory) yieldAll(entry.file.fileEntries()) else yield(entry)
+        }
+    }
+
     fun snapshotFiles(checkActive: () -> Unit): List<Entry> = buildList {
         fun visit(directory: StorageFile) {
             checkActive()

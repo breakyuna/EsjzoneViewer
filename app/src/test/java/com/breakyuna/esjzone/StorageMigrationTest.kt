@@ -52,6 +52,26 @@ class StorageMigrationTest {
         } finally { source.deleteRecursively(); target.deleteRecursively() }
     }
 
+    @Test fun inventoryPublishesBooksBeforeSizesAndMetadataOnlyDoesNotPublishUnknownSizesToCache() {
+        val root = Files.createTempDirectory("inventory-metadata-").toFile()
+        try {
+            save(root)
+            val book = root.listFiles()!!.single()
+            File(book, "images").mkdirs()
+            File(book, "images/fixture.jpg").writeBytes(ByteArray(4096))
+            val metadata = NovelDownloadStore.listDownloadedNovels(calculateSizes = false)
+            assertEquals(1, metadata.single().downloadedChapterCount)
+            assertEquals(-1L, metadata.single().storageBytes)
+            var preliminary: Long? = null
+            val complete = NovelDownloadStore.listDownloadedNovels(onMetadata = {
+                preliminary = it.single().storageBytes
+            })
+            assertEquals(-1L, requireNotNull(preliminary))
+            assertEquals(book.walkTopDown().filter { it.isFile }.sumOf { it.length() }, complete.single().storageBytes)
+            assertEquals(complete, NovelDownloadStore.listDownloadedNovels())
+        } finally { root.deleteRecursively() }
+    }
+
     @Test fun cancellationAndConflictingDestinationKeepOriginalReadable() {
         val source = Files.createTempDirectory("storage-source-").toFile()
         val target = Files.createTempDirectory("storage-target-").toFile()

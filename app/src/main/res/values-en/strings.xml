@@ -905,4 +905,7 @@
     <string name="storage_transfer_cleaning">Removing originals (%1$d / %2$d)</string>
     <string name="storage_transfer_waiting_reader">Original files are awaiting cleanup. Download writes remain paused. Leave the reader to continue cleanup; downloads resume once cleanup finishes.</string>
     <string name="storage_transfer_failed">Migration is incomplete. Originals are preserved and download writes are paused. Retry or choose another folder.</string>
+    <string name="storage_size_calculating">Calculating size…</string>
+    <string name="storage_move_private">Move to app private storage</string>
+    <string name="storage_move_private_confirm">Move downloads and automatic backups to app private storage, then remove the corresponding originals from the shared folder. Uninstalling the app deletes files in private storage.</string>
 </resources>

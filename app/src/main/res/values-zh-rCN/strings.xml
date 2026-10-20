@@ -906,4 +906,7 @@
     <string name="storage_transfer_cleaning">正在清理原文件（%1$d / %2$d）</string>
     <string name="storage_transfer_waiting_reader">原文件待清理，下载写入仍暂停。请退出阅读页继续清理，完成后恢复下载。</string>
     <string name="storage_transfer_failed">迁移未完成，原文件保留，下载写入已暂停。请重试或重新选择目录。</string>
+    <string name="storage_size_calculating">正在统计大小…</string>
+    <string name="storage_move_private">迁回应用私有目录</string>
+    <string name="storage_move_private_confirm">将下载和自动备份迁回应用私有目录，成功后删除公共目录中的对应原文件。卸载应用会删除私有目录中的文件。</string>
 </resources>

@@ -72,7 +72,7 @@ class UserStorage(context: Context) {
             if (initialized) return@withLock
             val preferences = store.data.first()
             val saved = preferences[locationKey].orEmpty()
-            root = saved.takeIf(String::isNotBlank)?.let { StorageFile.fromTree(context, Uri.parse(it)) }
+            root = sharedRoot(saved)
             mutableActiveLocation.value = saved
             val pending = preferences[pendingKey]
             mutableLocation.value = pending ?: saved
@@ -100,6 +100,33 @@ class UserStorage(context: Context) {
             if (mutableLocation.value.isBlank() && mutableSetupUpgrade.value == null) {
                 store.edit { it[setupUpgradeKey] = restoredSession }
                 mutableSetupUpgrade.value = restoredSession
+            }
+        }
+    }
+
+    private fun sharedRoot(location: String): StorageFile? = location
+        .takeIf { it.isNotBlank() && it != PRIVATE_LOCATION }
+        ?.let { StorageFile.fromTree(context, Uri.parse(it)) }
+
+    /** Queue the same durable transfer, targeting the original private directories. */
+    suspend fun moveToPrivate() = withContext(Dispatchers.IO) {
+        initialize()
+        operationMutex.withLock {
+            check(!mutableTransfer.value.running)
+            val preferences = store.data.first()
+            check(preferences[cleanupSourceKey] == null && preferences[pendingKey] == null)
+            check(root != null)
+            withContext(NonCancellable) {
+                store.edit {
+                    it[pendingKey] = PRIVATE_LOCATION
+                    it[pendingLabelKey] = ""
+                    it[failedKey] = false
+                }
+                NovelDownloadStore.setStorageMigrationPending(true)
+                mutableLocation.value = PRIVATE_LOCATION
+                mutableLabel.value = ""
+                mutableTransfer.value = StorageTransferProgress(StorageTransferPhase.QUEUED)
+                StorageMigrationWorker.enqueue(context, replace = true)
             }
         }
     }
@@ -199,9 +226,11 @@ class UserStorage(context: Context) {
             var preferences = store.data.first()
             val pending = preferences[pendingKey]
             if (pending != null) {
-                val target = StorageFile.fromTree(context, Uri.parse(pending))
-                val nextDownloads = StorageFile(target, "downloads")
-                val nextBackups = StorageFile(target, "autobackup")
+                val target = sharedRoot(pending)
+                val nextDownloads = target?.let { StorageFile(it, "downloads") }
+                    ?: StorageFile(File(context.filesDir, "downloaded_novels"))
+                val nextBackups = target?.let { StorageFile(it, "autobackup") }
+                    ?: StorageFile(File(context.filesDir, "auto_backups"))
                 val previousDownloads = downloads()
                 val previousBackups = backups()
                 if (previousDownloads.isDocument) check(previousDownloads.parentFile?.isDirectory == true)
@@ -269,7 +298,7 @@ class UserStorage(context: Context) {
                     report(StorageTransferProgress(StorageTransferPhase.WAITING_FOR_READER))
                     return@withLock false
                 }
-                val oldRoot = cleanupSource.takeIf(String::isNotEmpty)?.let { StorageFile.fromTree(context, Uri.parse(it)) }
+                val oldRoot = sharedRoot(cleanupSource)
                 val oldDownloads = oldRoot?.let { StorageFile(it, "downloads") }
                     ?: StorageFile(File(context.filesDir, "downloaded_novels"))
                 val oldBackups = oldRoot?.let { StorageFile(it, "autobackup") }
@@ -322,14 +351,14 @@ class UserStorage(context: Context) {
         initialize()
         check(!mutableTransfer.value.running)
         operationMutex.withLock {
-            root = store.data.first()[locationKey]?.takeIf(String::isNotBlank)
-                ?.let { StorageFile.fromTree(context, Uri.parse(it)) }
+            root = sharedRoot(store.data.first()[locationKey].orEmpty())
             NovelDownloadStore.reindex(downloads())
             NovelDownloadStore.listDownloadedNovels()
         }
     }
 
     companion object {
+        const val PRIVATE_LOCATION = "private"
         internal fun isAutoBackupName(name: String): Boolean =
             com.breakyuna.esjzone.backup.BackupFileNames.automaticTime(name) != null
     }

@@ -82,13 +82,11 @@ class SettingsPageModel : AppStateViewModel<SettingsPageModel.State>(State()) {
                 mutableState.update { it.copy(
                     cacheStatsError = false, downloadStatsError = false, storageStatsError = false
                 ) }
+                var novelCount: Int? = null
                 ensureActive()
                 try {
-                    val novels = PresentationAccess.downloads.listDownloadedNovels()
-                    mutableState.update { it.copy(
-                        downloadStats = LocalDownloadStats(novels.size, novels.sumOf { it.storageBytes }),
-                        downloadStatsError = false
-                    ) }
+                    val novels = PresentationAccess.downloads.listDownloadedNovels(calculateSizes = false)
+                    novelCount = novels.size
                 } catch (e: CancellationException) {
                     throw e
                 } catch (e: Exception) {
@@ -122,13 +120,16 @@ class SettingsPageModel : AppStateViewModel<SettingsPageModel.State>(State()) {
                     val usage = readStorageUsage(com.breakyuna.esjzone.EsjzoneApplication.instance)
                     mutableState.update { it.copy(
                         storageUsage = usage,
+                        downloadStats = novelCount?.let { count -> LocalDownloadStats(count,
+                            usage.first { entry -> entry.category == StorageCategory.DOWNLOADS }.bytes)
+                        } ?: it.downloadStats,
                         storageStatsError = false
                     ) }
                 } catch (e: CancellationException) {
                     throw e
                 } catch (e: Exception) {
                     AppLogger.e("SettingsPageModel", "Failed to calculate storage usage", e)
-                    mutableState.update { it.copy(storageStatsError = true) }
+                    mutableState.update { it.copy(storageStatsError = true, downloadStatsError = true) }
                 }
             }
         }

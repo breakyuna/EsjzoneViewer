@@ -298,12 +298,12 @@ object NovelDownloadStore {
                 }
                 val key = canonicalKey(manifest.url)
                 val target = destinationDirectories[key] ?: availableNovelDirectory(destination, manifest.name, key)
-                val sanitizedManifest = gson.toJson(manifest.copy(commonPassword = null))
+                val sanitizedManifest = gson.toJson(if (destination.isDocument) manifest.copy(commonPassword = null) else manifest)
                 if (target.exists()) {
                     // A completed book from an interrupted run is validated before allocating a second copy.
                     val existingManifest = synchronized(ioLock) { readManifest(target) }
                     require(existingManifest != null &&
-                        gson.toJson(existingManifest.copy(commonPassword = null)) == sanitizedManifest) {
+                        gson.toJson(if (destination.isDocument) existingManifest.copy(commonPassword = null) else existingManifest) == sanitizedManifest) {
                         "The destination contains a different copy of this novel"
                     }
                     val existing = target.snapshotFiles(checkActive).associateBy { it.file.relativePathFrom(target) }
@@ -577,7 +577,10 @@ object NovelDownloadStore {
     }
 
     /** Lists partial and complete downloads; recursive size scans never hold the reader's lock. */
-    fun listDownloadedNovels(): List<DownloadedNovelSummary> {
+    fun listDownloadedNovels(
+        calculateSizes: Boolean = true,
+        onMetadata: (List<DownloadedNovelSummary>) -> Unit = {}
+    ): List<DownloadedNovelSummary> {
         val root: StorageFile
         val revision: Long
         val cached: List<DownloadedNovelSummary>?
@@ -591,28 +594,39 @@ object NovelDownloadStore {
             cached = inventorySnapshot
             dirty = dirtyInventorySizes.toSet()
         }
-        if (cached != null && dirty.isEmpty()) return cached
+        if (cached != null && (dirty.isEmpty() || !calculateSizes)) return cached
         val snapshot = if (cached != null) {
+            onMetadata(cached.map { summary ->
+                if (canonicalKey(summary.novelUrl) in dirty) summary.copy(storageBytes = -1L) else summary
+            })
             cached.map { summary ->
                 val key = canonicalKey(summary.novelUrl)
                 if (key !in dirty) summary else {
                     val directory = directories[key]
-                    summary.copy(storageBytes = directory?.walkTopDown()
-                        ?.filter(StorageFile::isFile)?.sumOf(StorageFile::length) ?: 0L)
+                    summary.copy(storageBytes = directory?.fileEntries()?.sumOf { it.size } ?: 0L)
                 }
             }
         } else {
-            directories.values.asSequence().mapNotNull { directory ->
-                val summary = synchronized(ioLock) {
-                    val stored = readManifest(directory) ?: return@synchronized null
-                    val count = stored.chapters.count { record ->
-                        (record.bodyAvailable || record.downloaded) &&
-                            resolveLocalFile(directory, record.fileName)?.isFile == true
-                    }
-                    if (count == 0) null else DownloadedNovelSummary(stored, count, 0L)
-                } ?: return@mapNotNull null
-                summary.copy(storageBytes = directory.walkTopDown().filter(StorageFile::isFile).sumOf(StorageFile::length))
-            }.sortedByDescending { it.manifest.downloadedAt }.toList()
+            val rootEntries = mutableMapOf<StorageFile, List<StorageFile.Entry>>()
+            val metadata = directories.values.mapNotNull { directory ->
+                val stored = synchronized(ioLock) { readManifest(directory) } ?: return@mapNotNull null
+                val entries = directory.entries()
+                rootEntries[directory] = entries
+                val files = entries.filter { !it.directory }.mapTo(HashSet()) { it.file.name }
+                val count = stored.chapters.count { record ->
+                    (record.bodyAvailable || record.downloaded) && record.fileName in files
+                }
+                if (count == 0) null else DownloadedNovelSummary(stored, count, -1L)
+            }.sortedByDescending { it.manifest.downloadedAt }
+            if (!calculateSizes) return metadata
+            onMetadata(metadata)
+            metadata.map { summary ->
+                val directory = directories.getValue(canonicalKey(summary.novelUrl))
+                val bytes = rootEntries.getValue(directory).sumOf { entry ->
+                    if (entry.directory) entry.file.fileEntries().sumOf { it.size } else entry.size
+                }
+                summary.copy(storageBytes = bytes)
+            }
         }
         synchronized(ioLock) {
             // A download or deletion during the scan must not publish an obsolete inventory cache.
@@ -627,7 +641,7 @@ object NovelDownloadStore {
     /** Returns the on-disk size of one downloaded novel, including its manifest. */
     fun storageBytes(novelUrl: String): Long = synchronized(ioLock) {
         val directory = directoryFor(novelUrl, create = false) ?: return@synchronized 0L
-        directory.walkTopDown().filter(StorageFile::isFile).sumOf(StorageFile::length)
+        directory.fileEntries().sumOf { it.size }
     }
 
     /**

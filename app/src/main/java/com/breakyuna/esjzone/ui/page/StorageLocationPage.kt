@@ -38,6 +38,10 @@ class StorageLocationModel : AppStateViewModel<StorageLocationModel.Status>(Stat
         if (PresentationAccess.storage.transfer.value.running) R.string.storage_transfer_started
         else R.string.storage_location_done
     }
+    fun moveToPrivate() = perform {
+        PresentationAccess.storage.moveToPrivate()
+        R.string.storage_transfer_started
+    }
     fun retryTransfer() = perform {
         PresentationAccess.storage.retryTransfer()
         R.string.storage_transfer_started
@@ -67,13 +71,15 @@ internal fun StorageLocationSettingRow() {
     val transfer by PresentationAccess.storage.transfer.collectAsStateWithLifecycle()
     val location by PresentationAccess.storage.location.collectAsStateWithLifecycle()
     val folderName by PresentationAccess.storage.label.collectAsStateWithLifecycle()
+    var chooseLocation by rememberSaveable { mutableStateOf(false) }
+    var confirmPrivate by rememberSaveable { mutableStateOf(false) }
     var pending by rememberSaveable { mutableStateOf<String?>(null) }
     var migrate by rememberSaveable { mutableStateOf(true) }
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
         if (uri != null) { pending = uri.toString(); migrate = true }
     }
     val path = remember(location, folderName) {
-        if (location.isBlank()) null else runCatching {
+        if (location.isBlank() || location == com.breakyuna.esjzone.storage.UserStorage.PRIVATE_LOCATION) null else runCatching {
             val uri = Uri.parse(location)
             val id = android.provider.DocumentsContract.getTreeDocumentId(uri)
             if (uri.authority == "com.android.externalstorage.documents" && id.startsWith("primary:")) {
@@ -89,7 +95,43 @@ internal fun StorageLocationSettingRow() {
         title = stringResource(R.string.storage_location),
         subtitle = path ?: stringResource(R.string.storage_location_private),
         enabled = !state.busy && !transfer.running
-    ) { picker.launch(location.takeIf(String::isNotBlank)?.let(Uri::parse)) }
+    ) { chooseLocation = true }
+    if (chooseLocation) {
+        AlertDialog(
+            onDismissRequest = { chooseLocation = false },
+            title = { Text(stringResource(R.string.storage_location)) },
+            text = {
+                Column {
+                    TextButton(onClick = {
+                        chooseLocation = false
+                        picker.launch(location.takeIf { it.isNotBlank() &&
+                            it != com.breakyuna.esjzone.storage.UserStorage.PRIVATE_LOCATION }?.let(Uri::parse))
+                    }) { Text(stringResource(R.string.storage_location_choose)) }
+                    if (path != null) TextButton(onClick = {
+                        chooseLocation = false
+                        confirmPrivate = true
+                    }) { Text(stringResource(R.string.storage_move_private)) }
+                }
+            },
+            confirmButton = { TextButton(onClick = { chooseLocation = false }) {
+                Text(stringResource(android.R.string.cancel))
+            } }
+        )
+    }
+    if (confirmPrivate) {
+        AlertDialog(
+            onDismissRequest = { confirmPrivate = false },
+            title = { Text(stringResource(R.string.storage_move_private)) },
+            text = { Text(stringResource(R.string.storage_move_private_confirm)) },
+            confirmButton = { TextButton(onClick = {
+                confirmPrivate = false
+                model.moveToPrivate()
+            }) { Text(stringResource(android.R.string.ok)) } },
+            dismissButton = { TextButton(onClick = { confirmPrivate = false }) {
+                Text(stringResource(android.R.string.cancel))
+            } }
+        )
+    }
     StorageTransferStatus(transfer, onRetry = model::retryTransfer)
     if (state.busy || state.result != null) {
         AlertDialog(
