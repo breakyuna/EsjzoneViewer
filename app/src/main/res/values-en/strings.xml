@@ -905,6 +905,15 @@
     <string name="storage_transfer_cleaning">Removing originals (%1$d / %2$d)</string>
     <string name="storage_transfer_waiting_reader">Original files are awaiting cleanup. Download writes remain paused. Leave the reader to continue cleanup; downloads resume once cleanup finishes.</string>
     <string name="storage_transfer_failed">Migration is incomplete. Originals are preserved and download writes are paused. Retry or choose another folder.</string>
+    <string name="storage_failure_manifest_conflict">A destination novel manifest is damaged or differs from the original, possibly from an earlier test or download. Choose an empty folder or back up and resolve the conflicting copy. Retrying will not overwrite it.</string>
+    <string name="storage_failure_file_conflict">A destination file is missing or differs from the original. Choose an empty folder or back up and resolve the conflicting copy. Retrying will not overwrite it.</string>
+    <string name="storage_failure_source_manifest">The original novel manifest is damaged or unsupported. Migration stopped. Repair or restore this novel first.</string>
+    <string name="storage_failure_source_missing">A saved chapter file is missing from the original folder. Restore this file before retrying.</string>
+    <string name="storage_failure_cleanup_conflict">The current copy is missing or has changed. Remaining originals are preserved. Restore the current copy and retry. The folder cannot be changed until cleanup finishes.</string>
+    <string name="storage_failure_verification">Copied files are missing, have different sizes, or include unexpected files. Check the destination folder and retry.</string>
+    <string name="storage_failure_access">Unable to access or write to storage. Check folder permission, storage connection, and available space.</string>
+    <string name="storage_failure_io">A file operation failed. Check available space and folder availability, then retry.</string>
+    <string name="storage_failure_unknown">Migration encountered an error. Check the migration failure entry in the app logs.</string>
     <string name="storage_size_calculating">Calculating size…</string>
     <string name="storage_move_private">Move to app private storage</string>
     <string name="storage_move_private_confirm">Move downloads and automatic backups to app private storage, then remove the corresponding originals from the shared folder. Uninstalling the app deletes files in private storage.</string>

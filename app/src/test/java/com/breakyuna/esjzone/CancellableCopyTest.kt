@@ -12,7 +12,7 @@ class CancellableCopyTest {
         val bytes = ByteArray(256 * 1024) { (it % 251).toByte() }
         val output = ByteArrayOutputStream()
         try {
-            ByteArrayInputStream(bytes).copyWithCancellation(output) {
+            ByteArrayInputStream(bytes).copyWithCancellation(output, ByteArray(64 * 1024)) {
                 if (output.size() >= 64 * 1024) throw CancellationException("Cancelled fixture transfer")
             }
             fail("Expected cancellation")
@@ -30,5 +30,19 @@ class CancellableCopyTest {
         ByteArrayInputStream(bytes).copyWithCancellation(output) { }
         assertArrayEquals(bytes, output.toByteArray())
         assertFalse(output.closed)
+    }
+
+    @Test fun sharedBufferCopiesDifferentFileSizesWithoutLeakingPreviousBytes() {
+        val buffer = ByteArray(64 * 1024)
+        for (size in listOf(130_001, 17, 0, 65_536, 65_537)) {
+            val bytes = ByteArray(size) { ((it + size) % 251).toByte() }
+            val input = object : ByteArrayInputStream(bytes) {
+                override fun read(target: ByteArray, offset: Int, length: Int): Int =
+                    super.read(target, offset, minOf(length, 997))
+            }
+            val output = ByteArrayOutputStream()
+            input.copyWithCancellation(output, buffer) { }
+            assertArrayEquals(bytes, output.toByteArray())
+        }
     }
 }

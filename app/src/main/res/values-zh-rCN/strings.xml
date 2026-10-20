@@ -906,6 +906,15 @@
     <string name="storage_transfer_cleaning">正在清理原文件（%1$d / %2$d）</string>
     <string name="storage_transfer_waiting_reader">原文件待清理，下载写入仍暂停。请退出阅读页继续清理，完成后恢复下载。</string>
     <string name="storage_transfer_failed">迁移未完成，原文件保留，下载写入已暂停。请重试或重新选择目录。</string>
+    <string name="storage_failure_manifest_conflict">目标小说清单损坏或与原清单不同（可能是旧测试副本或下载记录不同）。请选择空目录，或备份后处理冲突副本；重试不会覆盖。</string>
+    <string name="storage_failure_file_conflict">目标文件缺失或与原文件不同。请选择空目录，或备份后处理冲突副本；重试不会覆盖。</string>
+    <string name="storage_failure_source_manifest">原目录的小说清单损坏或版本不支持，已停止迁移，请先修复或恢复该小说。</string>
+    <string name="storage_failure_source_missing">原目录缺少已保存的章节文件，请先恢复该文件后重试。</string>
+    <string name="storage_failure_cleanup_conflict">当前目录的副本缺失或已改变，剩余原文件暂不删除。请恢复该副本后重试；清理完成前不能改换目录。</string>
+    <string name="storage_failure_verification">复制后的文件缺失、大小不符或出现额外文件。请检查目标目录后重试。</string>
+    <string name="storage_failure_access">无法访问或读写存储目录，请检查目录授权、存储连接和剩余空间。</string>
+    <string name="storage_failure_io">文件读写失败，请检查剩余空间及目录是否可用后重试。</string>
+    <string name="storage_failure_unknown">迁移发生异常，请查看应用日志中的迁移失败记录。</string>
     <string name="storage_size_calculating">正在统计大小…</string>
     <string name="storage_move_private">迁回应用私有目录</string>
     <string name="storage_move_private_confirm">将下载和自动备份迁回应用私有目录，成功后删除公共目录中的对应原文件。卸载应用会删除私有目录中的文件。</string>

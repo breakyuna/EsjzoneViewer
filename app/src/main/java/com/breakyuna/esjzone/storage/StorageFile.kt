@@ -78,9 +78,11 @@ class StorageFile private constructor(
     }
 
     /** Reuse each directory query's metadata instead of querying every child again. */
-    fun fileEntries(): Sequence<Entry> = sequence {
+    fun fileEntries(checkActive: () -> Unit = {}): Sequence<Entry> = sequence {
+        checkActive()
         for (entry in entries()) {
-            if (entry.directory) yieldAll(entry.file.fileEntries()) else yield(entry)
+            checkActive()
+            if (entry.directory) yieldAll(entry.file.fileEntries(checkActive)) else yield(entry)
         }
     }
 
@@ -164,7 +166,7 @@ class StorageFile private constructor(
             ?: return false
         currentTree.invalidate(relative, directory)
         currentTree.invalidate(destination.relative, directory)
-        currentTree.documents[destination.relative] = renamed
+        currentTree.remember(destination.relative, renamed)
         return true
     }
 
@@ -237,7 +239,10 @@ class StorageFile private constructor(
             for (child in source.listFiles().orEmpty()) StorageFile(this, child.name).copyFrom(child, checkActive, beforeTemporaryCreate)
         } else {
             if (exists()) {
-                require(sameContent(source, checkActive)) { "The destination contains different files" }
+                if (!sameContent(source, checkActive)) {
+                    throw StorageTransferException(StorageTransferFailure(StorageTransferFailureReason.TARGET_FILE_CONFLICT,
+                        "${parentFile?.name.orEmpty()}/$name"))
+                }
                 return
             }
             check(parentFile?.mkdirs() == true)
@@ -247,22 +252,34 @@ class StorageFile private constructor(
                 source.inputStream().use { input -> pending.outputStream().use { output ->
                     input.copyWithCancellation(output, checkActive)
                 } }
-                require(pending.length() == source.length())
+                if (pending.length() != source.length()) {
+                    throw StorageTransferException(StorageTransferFailure(StorageTransferFailureReason.VERIFICATION_FAILED,
+                        "${parentFile?.name.orEmpty()}/$name"))
+                }
                 check(pending.renameTo(this))
             } finally { pending.delete() }
         }
     }
-    fun sameContent(other: StorageFile, checkActive: () -> Unit = {}, sizesChecked: Boolean = false): Boolean {
+    /** Sequential callers may reuse separate buffers; contents outside the last read are ignored. */
+    fun sameContent(
+        other: StorageFile,
+        checkActive: () -> Unit = {},
+        sizesChecked: Boolean = false,
+        buffer: ByteArray = ByteArray(64 * 1024),
+        otherBuffer: ByteArray = ByteArray(buffer.size)
+    ): Boolean {
+        require(buffer.isNotEmpty() && buffer.size == otherBuffer.size && buffer !== otherBuffer)
         if (!sizesChecked && length() != other.length()) return false
-        return inputStream().buffered().use { first -> other.inputStream().buffered().use secondUse@ { second ->
-            val a = ByteArray(64 * 1024)
-            val b = ByteArray(a.size)
+        return inputStream().use { first -> other.inputStream().use secondUse@ { second ->
+            val a = buffer
+            val b = otherBuffer
             while (true) {
                 checkActive()
                 val count = first.read(a)
                 if (count < 0) return@secondUse second.read() < 0
                 var offset = 0
                 while (offset < count) {
+                    checkActive()
                     val read = second.read(b, offset, count - offset)
                     if (read < 0) return@secondUse false
                     offset += read
@@ -302,12 +319,22 @@ class StorageFile private constructor(
     }
 
     private class DocumentTree(val context: Context, val root: Uri) {
-        val documents = ConcurrentHashMap<String, Uri>()
+        private val documents = ConcurrentHashMap<String, Uri>()
         private val listedDirectories = ConcurrentHashMap.newKeySet<String>()
+        // Track direct children so refresh/rename/delete only visit the affected subtree.
+        private val cachedChildren = ConcurrentHashMap<String, MutableSet<String>>()
         val name: String get() = metadata("")?.displayName
             ?: DocumentsContract.getTreeDocumentId(root).substringAfterLast('/').substringAfter(':')
         init { documents[""] = DocumentsContract.buildDocumentUriUsingTree(root, DocumentsContract.getTreeDocumentId(root)) }
         data class Metadata(val type: String, val size: Long, val displayName: String)
+        fun remember(path: String, uri: Uri) {
+            documents[path] = uri
+            if (path.isNotEmpty()) {
+                cachedChildren.getOrPut(path.substringBeforeLast('/', "")) {
+                    ConcurrentHashMap.newKeySet<String>()
+                }.add(path)
+            }
+        }
         fun resolve(path: String): Uri? {
             documents[path]?.let { return it }
             if (path.isEmpty()) return null
@@ -354,13 +381,13 @@ class StorageFile private constructor(
                         // Display names are provider data, not trusted relative paths.
                         if (name.isNullOrBlank() || name == "." || name == ".." || '/' in name || '\\' in name) continue
                         val childPath = listOf(path, name).filter(String::isNotEmpty).joinToString("/")
-                        documents[childPath] = DocumentsContract.buildDocumentUriUsingTree(root, it.getString(0))
+                        remember(childPath, DocumentsContract.buildDocumentUriUsingTree(root, it.getString(0)))
                         add(name to Metadata(it.getString(2), it.getLong(3), name))
                     }
                 }
             }
             val children = names.map { listOf(path, it.first).filter(String::isNotEmpty).joinToString("/") }.toSet()
-            documents.keys.filter { it.isNotEmpty() && it.substringBeforeLast('/', "") == path && it !in children }
+            cachedChildren[path]?.toList().orEmpty().filter { it !in children }
                 .forEach { invalidate(it) }
             listedDirectories += path
             names
@@ -368,16 +395,19 @@ class StorageFile private constructor(
         fun create(path: String, type: String) = documentAccess {
             val parent = resolve(path.substringBeforeLast('/', ""))
                 ?: throw IOException("Storage directory is unavailable")
-            documents[path] = DocumentsContract.createDocument(context.contentResolver, parent, type, path.substringAfterLast('/'))
+            val created = DocumentsContract.createDocument(context.contentResolver, parent, type, path.substringAfterLast('/'))
                 ?: throw IOException("Unable to create storage document")
+            remember(path, created)
         }
         fun invalidate(path: String, subtree: Boolean = true) {
-            if (!subtree) {
-                documents.remove(path)
-                return
+            documents.remove(path)
+            if (subtree) {
+                cachedChildren.remove(path)?.forEach { invalidate(it) }
+                listedDirectories.remove(path)
             }
-            documents.keys.removeAll { it == path || it.startsWith("$path/") }
-            listedDirectories.removeAll { it == path || it.startsWith("$path/") }
+            if (path.isNotEmpty()) {
+                cachedChildren[path.substringBeforeLast('/', "")]?.remove(path)
+            }
         }
     }
 }

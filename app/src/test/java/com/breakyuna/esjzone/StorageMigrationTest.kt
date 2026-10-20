@@ -12,6 +12,8 @@ import com.breakyuna.esjzone.offline.NovelDownloadStore
 import com.breakyuna.esjzone.storage.StorageFile
 import com.breakyuna.esjzone.storage.StorageTransferPhase
 import com.breakyuna.esjzone.storage.StorageMigrationBusyException
+import com.breakyuna.esjzone.storage.StorageTransferException
+import com.breakyuna.esjzone.storage.StorageTransferFailureReason
 import java.io.File
 import java.nio.file.Files
 import kotlinx.coroutines.CancellationException
@@ -94,7 +96,10 @@ class StorageMigrationTest {
             try {
                 NovelDownloadStore.migrateStorage(StorageFile(target)) { }
                 fail("Expected destination conflict")
-            } catch (_: IllegalArgumentException) { }
+            } catch (error: StorageTransferException) {
+                assertEquals(StorageTransferFailureReason.TARGET_MANIFEST_CONFLICT, error.failure.reason)
+                assertEquals("downloads/${book.name}/manifest.json", error.failure.item)
+            }
             assertEquals(existing, manifest.readText())
             assertNotNull(NovelDownloadStore.readChapter(chapter.url))
             try {
@@ -114,12 +119,108 @@ class StorageMigrationTest {
             target.copyFrom(StorageFile(source))
             source.writeText("changed")
             try { target.copyFrom(StorageFile(source)); fail("Expected conflict")
-            } catch (_: IllegalArgumentException) { }
+            } catch (error: StorageTransferException) {
+                assertEquals(StorageTransferFailureReason.TARGET_FILE_CONFLICT, error.failure.reason)
+                assertTrue(error.failure.item.endsWith("target.zip"))
+            }
             assertEquals("archive", File(root, "target.zip").readText())
             for (path in listOf("../outside", "/absolute", "images/../../outside")) {
                 try { StorageFile(StorageFile(root), path); fail("Expected invalid relative path")
                 } catch (_: IllegalArgumentException) { }
             }
+        } finally { root.deleteRecursively() }
+    }
+
+    @Test fun previousTestCopyWithOnlyDifferentDownloadTimeReportsManifestConflict() {
+        val source = Files.createTempDirectory("storage-source-").toFile()
+        val target = Files.createTempDirectory("storage-target-").toFile()
+        try {
+            save(source)
+            val manifest = NovelDownloadStore.manifest(novel)!!
+            NovelDownloadStore.migrateStorage(StorageFile(target)) { }
+            val targetManifest = File(target.listFiles()!!.single(), "manifest.json")
+            val previousCopy = com.google.gson.Gson().toJson(manifest.copy(downloadedAt = manifest.downloadedAt + 1))
+            targetManifest.writeText(previousCopy)
+            NovelDownloadStore.restoreStorage(StorageFile(source))
+            val error = assertThrows(StorageTransferException::class.java) {
+                NovelDownloadStore.migrateStorage(StorageFile(target)) { }
+            }
+            assertEquals(StorageTransferFailureReason.TARGET_MANIFEST_CONFLICT, error.failure.reason)
+            assertEquals("downloads/${targetManifest.parentFile!!.name}/manifest.json", error.failure.item)
+            assertEquals(previousCopy, targetManifest.readText())
+            assertNotNull(NovelDownloadStore.readChapter(chapter.url))
+        } finally { source.deleteRecursively(); target.deleteRecursively() }
+    }
+
+    @Test fun sameTitleFromAnotherNovelUsesSeparateDirectoryWithoutOverwriting() {
+        val source = Files.createTempDirectory("storage-source-").toFile()
+        val target = Files.createTempDirectory("storage-target-").toFile()
+        try {
+            save(source)
+            val manifest = NovelDownloadStore.manifest(novel)!!
+            val existing = File(target, "Novel").apply { mkdirs() }
+            val otherManifest = com.google.gson.Gson().toJson(manifest.copy(url = "/detail/99999.html",
+                chapters = emptyList(), complete = false))
+            File(existing, "manifest.json").writeText(otherManifest)
+            val migration = NovelDownloadStore.migrateStorage(StorageFile(target)) { }
+            assertNotEquals(existing.name, migration.targets.values.single())
+            assertEquals(otherManifest, File(existing, "manifest.json").readText())
+            assertEquals(2, target.listFiles()!!.size)
+            assertNotNull(NovelDownloadStore.readChapter(chapter.url))
+        } finally { source.deleteRecursively(); target.deleteRecursively() }
+    }
+
+    @Test fun damagedSourceManifestStopsMigrationEvenWhenAValidManifestWasCached() {
+        val source = Files.createTempDirectory("storage-source-").toFile()
+        val target = Files.createTempDirectory("storage-target-").toFile()
+        try {
+            save(source)
+            val manifest = NovelDownloadStore.manifest(novel)!!
+            val book = source.listFiles()!!.single()
+            val originalChapter = File(book, manifest.chapters.single().fileName)
+            for (damaged in listOf("{", "null", com.google.gson.Gson().toJson(manifest.copy(version = 999)))) {
+                File(book, "manifest.json").writeText(damaged)
+                val error = assertThrows(StorageTransferException::class.java) {
+                    NovelDownloadStore.migrateStorage(StorageFile(target)) { }
+                }
+                assertEquals(StorageTransferFailureReason.SOURCE_MANIFEST_INVALID, error.failure.reason)
+                assertEquals("downloads/${book.name}/manifest.json", error.failure.item)
+                assertTrue(originalChapter.isFile)
+                assertTrue(target.listFiles()!!.isEmpty())
+                assertEquals(damaged, File(book, "manifest.json").readText())
+            }
+        } finally { source.deleteRecursively(); target.deleteRecursively() }
+    }
+
+    @Test fun reusedComparisonBuffersDetectTailDifferencesAndRespectCancellation() {
+        val root = Files.createTempDirectory("storage-compare-").toFile()
+        try {
+            val first = File(root, "first.bin")
+            val second = File(root, "second.bin")
+            val a = StorageFile(first)
+            val b = StorageFile(second)
+            val buffer = ByteArray(64 * 1024)
+            val otherBuffer = ByteArray(buffer.size)
+            for (size in listOf(2 * buffer.size + 17, 3, 0)) {
+                val content = ByteArray(size) { (it % 251).toByte() }
+                first.writeBytes(content)
+                second.writeBytes(content)
+                assertTrue(a.sameContent(b, buffer = buffer, otherBuffer = otherBuffer))
+                if (size > 0) {
+                    content[size - 1] = (content.last().toInt() xor 1).toByte()
+                    second.writeBytes(content)
+                    assertFalse(a.sameContent(b, buffer = buffer, otherBuffer = otherBuffer))
+                }
+            }
+            first.writeBytes(ByteArray(2 * buffer.size + 17))
+            second.writeBytes(first.readBytes())
+            var checks = 0
+            assertThrows(CancellationException::class.java) {
+                a.sameContent(b, checkActive = {
+                    if (++checks == 3) throw CancellationException("fixture")
+                }, buffer = buffer, otherBuffer = otherBuffer)
+            }
+            assertArrayEquals(first.readBytes(), second.readBytes())
         } finally { root.deleteRecursively() }
     }
 
@@ -198,6 +299,75 @@ class StorageMigrationTest {
         } finally { source.deleteRecursively(); target.deleteRecursively() }
     }
 
+    @Test fun stagedMigrationRejectsMissingShortenedAndUnexpectedFilesBeforePublication() {
+        for (damage in listOf("missing", "shortened", "extra")) {
+            val source = Files.createTempDirectory("storage-source-").toFile()
+            val target = Files.createTempDirectory("storage-target-").toFile()
+            try {
+                save(source)
+                val record = NovelDownloadStore.manifest(novel)!!.chapters.single()
+                var changed = false
+                val error = assertThrows(StorageTransferException::class.java) {
+                    NovelDownloadStore.migrateStorage(StorageFile(target), onProgress = { progress ->
+                        if (!changed && progress.phase == StorageTransferPhase.VERIFYING) {
+                            changed = true
+                            val staging = target.listFiles()!!.single()
+                            val saved = File(staging, record.fileName)
+                            when (damage) {
+                                "missing" -> {
+                                    // Same count and size, but the required path is absent.
+                                    File(staging, "unrelated.bin").writeBytes(saved.readBytes())
+                                    check(saved.delete())
+                                }
+                                "shortened" -> saved.writeBytes(byteArrayOf())
+                                "extra" -> File(staging, "unrelated.bin").writeText("extra")
+                            }
+                        }
+                    }) { }
+                }
+                assertEquals(StorageTransferFailureReason.VERIFICATION_FAILED, error.failure.reason)
+                assertTrue(error.failure.item.startsWith("downloads/Novel/"))
+                assertTrue(changed)
+                assertTrue(target.listFiles()!!.isEmpty())
+                assertNotNull(NovelDownloadStore.readChapter(chapter.url))
+            } finally { source.deleteRecursively(); target.deleteRecursively() }
+        }
+    }
+
+    @Test fun retryValidationRejectsMissingAndChangedFilesButRetainsExistingExtras() {
+        val source = Files.createTempDirectory("storage-source-").toFile()
+        val target = Files.createTempDirectory("storage-target-").toFile()
+        try {
+            save(source)
+            val record = NovelDownloadStore.manifest(novel)!!.chapters.single()
+            NovelDownloadStore.migrateStorage(StorageFile(target)) { }
+            val book = target.listFiles()!!.single()
+            val saved = File(book, record.fileName)
+            val content = saved.readBytes()
+            val extra = File(book, "unrelated.bin").apply { writeBytes(content) }
+            NovelDownloadStore.restoreStorage(StorageFile(source))
+            check(saved.delete())
+            val missing = assertThrows(StorageTransferException::class.java) {
+                NovelDownloadStore.migrateStorage(StorageFile(target)) { }
+            }
+            assertEquals(StorageTransferFailureReason.TARGET_FILE_CONFLICT, missing.failure.reason)
+            assertEquals("downloads/${book.name}/${record.fileName}", missing.failure.item)
+            val changed = content.copyOf()
+            changed[changed.lastIndex] = (changed.last().toInt() xor 1).toByte()
+            saved.writeBytes(changed)
+            val conflict = assertThrows(StorageTransferException::class.java) {
+                NovelDownloadStore.migrateStorage(StorageFile(target)) { }
+            }
+            assertEquals(StorageTransferFailureReason.TARGET_FILE_CONFLICT, conflict.failure.reason)
+            assertNotNull(NovelDownloadStore.readChapter(chapter.url))
+            saved.writeBytes(content)
+            NovelDownloadStore.migrateStorage(StorageFile(target),
+                stagingJournal = { fail("A valid existing book must not be copied again") }) { }
+            assertArrayEquals(content, extra.readBytes())
+            assertNotNull(NovelDownloadStore.readChapter(chapter.url))
+        } finally { source.deleteRecursively(); target.deleteRecursively() }
+    }
+
     @Test fun writesStayPausedUntilTheLocationCommitAndCanResumeAfterward() {
         val source = Files.createTempDirectory("storage-source-").toFile()
         val target = Files.createTempDirectory("storage-target-").toFile()
@@ -255,9 +425,10 @@ class StorageMigrationTest {
             val destinationChapter = File(target, copied.name + "/" + record.fileName)
             val bytes = destinationChapter.readBytes()
             check(destinationChapter.delete())
-            assertThrows(IllegalStateException::class.java) {
+            val error = assertThrows(StorageTransferException::class.java) {
                 NovelDownloadStore.verifyMigratedBook(original, copied) { }
             }
+            assertEquals(StorageTransferFailureReason.TARGET_FILE_CONFLICT, error.failure.reason)
             assertTrue(File(source, original.name + "/" + record.fileName).isFile)
             destinationChapter.writeBytes(bytes)
             // Model a process stopping after removing one source file but before updating the journal.

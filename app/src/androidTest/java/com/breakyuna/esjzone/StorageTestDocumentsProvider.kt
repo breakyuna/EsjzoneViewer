@@ -53,6 +53,10 @@ class StorageTestDocumentsProvider : DocumentsProvider() {
             "reject-file-rename" -> if (operation == "rename" && file(documentId).isFile) {
                 throw SecurityException("Fixture rejects per-file renames")
             }
+            "reject-book-metadata" -> if (operation == "metadata" &&
+                file(documentId).let { it.isDirectory && it.parentFile?.name == "downloads" }) {
+                throw SecurityException("Fixture rejects per-book metadata queries")
+            }
         }
     }
     private fun file(id: String): File {

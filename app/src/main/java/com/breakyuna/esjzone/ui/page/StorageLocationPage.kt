@@ -20,6 +20,7 @@ import com.breakyuna.esjzone.storage.StorageTransferPhase
 import com.breakyuna.esjzone.storage.message
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
+import com.breakyuna.esjzone.BuildConfig
 import com.breakyuna.esjzone.R
 import com.breakyuna.esjzone.app.PresentationAccess
 import com.breakyuna.esjzone.storage.StorageAccessException
@@ -95,8 +96,15 @@ internal fun StorageLocationSettingRow() {
         title = stringResource(R.string.storage_location),
         subtitle = path ?: stringResource(R.string.storage_location_private),
         enabled = !state.busy && !transfer.running
-    ) { chooseLocation = true }
-    if (chooseLocation) {
+    ) {
+        if (BuildConfig.DEBUG) {
+            chooseLocation = true
+        } else {
+            picker.launch(location.takeIf { it.isNotBlank() &&
+                it != com.breakyuna.esjzone.storage.UserStorage.PRIVATE_LOCATION }?.let(Uri::parse))
+        }
+    }
+    if (BuildConfig.DEBUG && chooseLocation) {
         AlertDialog(
             onDismissRequest = { chooseLocation = false },
             title = { Text(stringResource(R.string.storage_location)) },
@@ -107,7 +115,7 @@ internal fun StorageLocationSettingRow() {
                         picker.launch(location.takeIf { it.isNotBlank() &&
                             it != com.breakyuna.esjzone.storage.UserStorage.PRIVATE_LOCATION }?.let(Uri::parse))
                     }) { Text(stringResource(R.string.storage_location_choose)) }
-                    if (path != null) TextButton(onClick = {
+                    if (BuildConfig.DEBUG && path != null) TextButton(onClick = {
                         chooseLocation = false
                         confirmPrivate = true
                     }) { Text(stringResource(R.string.storage_move_private)) }
@@ -118,7 +126,7 @@ internal fun StorageLocationSettingRow() {
             } }
         )
     }
-    if (confirmPrivate) {
+    if (BuildConfig.DEBUG && confirmPrivate) {
         AlertDialog(
             onDismissRequest = { confirmPrivate = false },
             title = { Text(stringResource(R.string.storage_move_private)) },

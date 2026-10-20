@@ -47,8 +47,8 @@ class StorageMigrationWorker(context: Context, parameters: WorkerParameters) : C
         } catch (error: CancellationException) {
             // The journal and originals survive cancellation. WorkManager resumes stopped work later.
             throw error
-        } catch (_: Exception) {
-            container.storage.recordTransferFailure()
+        } catch (error: Exception) {
+            container.storage.recordTransferFailure(error)
             Result.failure()
         }
     }
@@ -89,6 +89,24 @@ class StorageMigrationWorker(context: Context, parameters: WorkerParameters) : C
 }
 
 internal fun StorageTransferProgress.message(context: Context): String {
+    if ((phase == StorageTransferPhase.FAILED || phase == StorageTransferPhase.CLEANUP_FAILED) && failure != null) {
+        val reason = if (phase == StorageTransferPhase.CLEANUP_FAILED &&
+            failure.reason in setOf(StorageTransferFailureReason.TARGET_MANIFEST_CONFLICT,
+                StorageTransferFailureReason.TARGET_FILE_CONFLICT)) R.string.storage_failure_cleanup_conflict else when (failure.reason) {
+            StorageTransferFailureReason.TARGET_MANIFEST_CONFLICT -> R.string.storage_failure_manifest_conflict
+            StorageTransferFailureReason.TARGET_FILE_CONFLICT -> R.string.storage_failure_file_conflict
+            StorageTransferFailureReason.SOURCE_MANIFEST_INVALID -> R.string.storage_failure_source_manifest
+            StorageTransferFailureReason.SOURCE_FILE_MISSING -> R.string.storage_failure_source_missing
+            StorageTransferFailureReason.VERIFICATION_FAILED -> R.string.storage_failure_verification
+            StorageTransferFailureReason.ACCESS -> R.string.storage_failure_access
+            StorageTransferFailureReason.IO -> R.string.storage_failure_io
+            StorageTransferFailureReason.UNKNOWN -> R.string.storage_failure_unknown
+        }
+        val status = context.getString(if (phase == StorageTransferPhase.CLEANUP_FAILED)
+            R.string.storage_location_cleanup_failed else R.string.storage_transfer_failed)
+        return listOf(status, context.getString(reason), failure.item.takeIf { it.isNotBlank() })
+            .filterNotNull().joinToString("\n")
+    }
     if (total <= 0 && phase in setOf(StorageTransferPhase.COPYING, StorageTransferPhase.VERIFYING)) {
         return context.getString(R.string.storage_transfer_queued)
     }

@@ -33,6 +33,9 @@ import com.breakyuna.esjzone.storage.StorageFile
 import com.breakyuna.esjzone.storage.StorageTransferProgress
 import com.breakyuna.esjzone.storage.StorageTransferPhase
 import com.breakyuna.esjzone.storage.StorageMigrationBusyException
+import com.breakyuna.esjzone.storage.StorageTransferException
+import com.breakyuna.esjzone.storage.StorageTransferFailure
+import com.breakyuna.esjzone.storage.StorageTransferFailureReason
 import java.io.File
 import java.io.IOException
 import java.nio.charset.StandardCharsets
@@ -254,7 +257,7 @@ object NovelDownloadStore {
         val source = synchronized(ioLock) {
             check(!migrationCopyRunning)
             // Resolve legacy names before readers can build an index during the copy.
-            ensureNovelDirectoryIndex()
+            ensureNovelDirectoryIndex(StorageTransferFailureReason.SOURCE_MANIFEST_INVALID)
             mutableMigrating.value = true
             migrationCopyRunning = true
             rootDirectory
@@ -270,10 +273,18 @@ object NovelDownloadStore {
             val migrated = mutableListOf<StorageFile>()
             val targets = linkedMapOf<String, String>()
             check(destination.mkdirs())
-            val destinationDirectories = synchronized(ioLock) { scanNovelDirectories(destination) }
-            val sources = source?.listFiles().orEmpty().filter { it.isDirectory && !isStagingDirectory(it.name) }
+            val destinationDirectories = synchronized(ioLock) {
+                scanNovelDirectories(destination, StorageTransferFailureReason.TARGET_MANIFEST_CONFLICT)
+            }
+            val sources = source?.takeIf { it.exists() }?.entries().orEmpty()
+                .filter { it.directory && !isStagingDirectory(it.file.name) }.map { it.file }
+            val copyBuffer = ByteArray(64 * 1024)
+            val comparisonBuffer by lazy { ByteArray(copyBuffer.size) }
             sources.forEach { directory ->
                 checkActive()
+                val manifest = synchronized(ioLock) {
+                    readManifest(directory, StorageTransferFailureReason.SOURCE_MANIFEST_INVALID)?.also(::rememberPassword)
+                } ?: return@forEach
                 var files = directory.snapshotFiles(checkActive)
                 val replacements = files.filter { it.file.name.endsWith(".previous.tmp") }
                 if (replacements.isNotEmpty()) {
@@ -286,14 +297,12 @@ object NovelDownloadStore {
                     }
                     files = directory.snapshotFiles(checkActive)
                 }
-                val manifest = synchronized(ioLock) {
-                    readManifest(directory)?.also(::rememberPassword)
-                } ?: return@forEach
                 val copyFiles = files.filter { it.file.name != MANIFEST_FILE && !it.file.name.endsWith(".tmp") }
-                val expected = copyFiles.associateBy { it.file.relativePathFrom(directory) }
+                val expected = copyFiles.associateByTo(HashMap()) { it.file.relativePathFrom(directory) }
                 manifest.chapters.filter { it.bodyAvailable || it.downloaded }.forEach { record ->
                     if ((expected[record.fileName]?.size ?: 0L) == 0L) {
-                        throw IOException("A saved chapter is missing from the migrated novel")
+                        throw StorageTransferException(StorageTransferFailure(StorageTransferFailureReason.SOURCE_FILE_MISSING,
+                            "downloads/${directory.name}/${record.fileName}"))
                     }
                 }
                 val key = canonicalKey(manifest.url)
@@ -301,20 +310,31 @@ object NovelDownloadStore {
                 val sanitizedManifest = gson.toJson(if (destination.isDocument) manifest.copy(commonPassword = null) else manifest)
                 if (target.exists()) {
                     // A completed book from an interrupted run is validated before allocating a second copy.
-                    val existingManifest = synchronized(ioLock) { readManifest(target) }
-                    require(existingManifest != null &&
-                        gson.toJson(if (destination.isDocument) existingManifest.copy(commonPassword = null) else existingManifest) == sanitizedManifest) {
-                        "The destination contains a different copy of this novel"
+                    val existingManifest = synchronized(ioLock) {
+                        readManifest(target, StorageTransferFailureReason.TARGET_MANIFEST_CONFLICT)
                     }
-                    val existing = target.snapshotFiles(checkActive).associateBy { it.file.relativePathFrom(target) }
-                    copyFiles.forEachIndexed { index, entry ->
+                    if (existingManifest == null ||
+                        gson.toJson(if (destination.isDocument) existingManifest.copy(commonPassword = null) else existingManifest) != sanitizedManifest) {
+                        throw StorageTransferException(StorageTransferFailure(StorageTransferFailureReason.TARGET_MANIFEST_CONFLICT,
+                            "downloads/${target.name}/$MANIFEST_FILE"))
+                    }
+                    var verified = 0
+                    for (other in target.fileEntries(checkActive)) {
                         checkActive()
-                        onProgress(StorageTransferProgress(StorageTransferPhase.VERIFYING, manifest.name, index, copyFiles.size))
-                        val other = existing[entry.file.relativePathFrom(directory)]
-                        require(other != null && other.size == entry.size &&
-                            other.file.sameContent(entry.file, checkActive, sizesChecked = true)) {
-                            "The destination contains a different copy of this novel"
+                        // Existing extra files are retained, but cannot stand in for a missing source file.
+                        val entry = expected.remove(other.file.relativePathFrom(target)) ?: continue
+                        onProgress(StorageTransferProgress(StorageTransferPhase.VERIFYING, manifest.name, verified, copyFiles.size))
+                        if (other.size != entry.size ||
+                            !other.file.sameContent(entry.file, checkActive, sizesChecked = true,
+                                buffer = copyBuffer, otherBuffer = comparisonBuffer)) {
+                            throw StorageTransferException(StorageTransferFailure(StorageTransferFailureReason.TARGET_FILE_CONFLICT,
+                                "downloads/${target.name}/${other.file.relativePathFrom(target)}"))
                         }
+                        verified += 1
+                    }
+                    if (expected.isNotEmpty()) {
+                        throw StorageTransferException(StorageTransferFailure(StorageTransferFailureReason.TARGET_FILE_CONFLICT,
+                            "downloads/${target.name}/${expected.keys.first()}"))
                     }
                 } else {
                     val staging = StorageFile(destination, "migration-${java.util.UUID.randomUUID()}.tmp")
@@ -329,12 +349,22 @@ object NovelDownloadStore {
                             val parent = checkNotNull(output.parentFile)
                             if (parents.add(parent.absolutePath)) check(parent.mkdirs())
                             entry.file.inputStream().use { input -> output.createNewOutputStream().use { stream ->
-                                input.copyWithCancellation(stream, checkActive)
+                                input.copyWithCancellation(stream, copyBuffer, checkActive)
                             } }
                         }
                         onProgress(StorageTransferProgress(StorageTransferPhase.VERIFYING, manifest.name, copyFiles.size, copyFiles.size))
-                        val copied = staging.snapshotFiles(checkActive).associateBy { it.file.relativePathFrom(staging) }
-                        check(copied.size == expected.size && expected.all { (path, entry) -> copied[path]?.size == entry.size })
+                        // Consume the source map while scanning, without a second whole-book list/map.
+                        staging.fileEntries(checkActive).forEach { copied ->
+                            val entry = expected.remove(copied.file.relativePathFrom(staging))
+                            if (entry == null || copied.size != entry.size) {
+                                throw StorageTransferException(StorageTransferFailure(StorageTransferFailureReason.VERIFICATION_FAILED,
+                                    "downloads/${target.name}/${copied.file.relativePathFrom(staging)}"))
+                            }
+                        }
+                        if (expected.isNotEmpty()) {
+                            throw StorageTransferException(StorageTransferFailure(StorageTransferFailureReason.VERIFICATION_FAILED,
+                                "downloads/${target.name}/${expected.keys.first()}"))
+                        }
                         // Publish metadata last; no unfinished book is visible to normal scans.
                         checkActive()
                         StorageFile(staging, MANIFEST_FILE).createNewOutputStream().bufferedWriter().use {
@@ -366,32 +396,52 @@ object NovelDownloadStore {
     /** Revalidate a journaled destination before resuming deletion of possibly partial originals. */
     internal fun verifyMigratedBook(source: StorageFile, target: StorageFile, checkActive: () -> Unit) {
         checkActive()
-        check(target.isDirectory)
+        if (!target.isDirectory) throw StorageTransferException(StorageTransferFailure(
+            StorageTransferFailureReason.TARGET_FILE_CONFLICT, "downloads/${target.name}"))
         // Read fresh documents: a restarted cleanup must not trust a pre-interruption metadata cache.
         val manifest = synchronized(ioLock) {
-            readJson(StorageFile(target, MANIFEST_FILE), DownloadedNovelManifest::class.java)
+            readManifest(target, StorageTransferFailureReason.TARGET_MANIFEST_CONFLICT)
         }
-            ?: throw IOException("The migrated novel manifest is unavailable")
-        val targetFiles = target.snapshotFiles(checkActive).associateBy { it.file.relativePathFrom(target) }
+            ?: throw StorageTransferException(StorageTransferFailure(StorageTransferFailureReason.TARGET_MANIFEST_CONFLICT,
+                "downloads/${target.name}/$MANIFEST_FILE"))
+        val targetFiles = target.fileEntries(checkActive).associateBy { it.file.relativePathFrom(target) }
         manifest.chapters.filter { it.downloaded || it.bodyAvailable }.forEach { record ->
-            check((targetFiles[record.fileName]?.size ?: 0L) > 0L)
+            if ((targetFiles[record.fileName]?.size ?: 0L) <= 0L) {
+                throw StorageTransferException(StorageTransferFailure(StorageTransferFailureReason.TARGET_FILE_CONFLICT,
+                    "downloads/${target.name}/${record.fileName}"))
+            }
         }
         if (!source.exists()) return
-        source.snapshotFiles(checkActive).filter { !it.file.name.endsWith(".tmp") }.forEach { entry ->
+        val comparisonBuffer = ByteArray(64 * 1024)
+        val otherComparisonBuffer = ByteArray(comparisonBuffer.size)
+        source.fileEntries(checkActive).filter { !it.file.name.endsWith(".tmp") }.forEach { entry ->
             checkActive()
             if (entry.file.name == MANIFEST_FILE) {
-                val original = readJson(entry.file, DownloadedNovelManifest::class.java)
-                    ?: throw IOException("The original novel manifest is unavailable")
-                check(canonicalKey(original.url) == canonicalKey(manifest.url))
+                val original = synchronized(ioLock) {
+                    readManifest(entry.file.parentFile, StorageTransferFailureReason.SOURCE_MANIFEST_INVALID)
+                }
+                    ?: throw StorageTransferException(StorageTransferFailure(StorageTransferFailureReason.SOURCE_MANIFEST_INVALID,
+                        "downloads/${source.name}/$MANIFEST_FILE"))
+                if (canonicalKey(original.url) != canonicalKey(manifest.url)) {
+                    throw StorageTransferException(StorageTransferFailure(StorageTransferFailureReason.TARGET_MANIFEST_CONFLICT,
+                        "downloads/${target.name}/$MANIFEST_FILE"))
+                }
                 val currentRecords = manifest.chapters.associateBy { chapterKey(it.url) }
                 original.chapters.filter { it.downloaded || it.bodyAvailable }.forEach { record ->
                     val current = currentRecords[chapterKey(record.url)]
-                    check(current != null && current.fileName == record.fileName && (current.downloaded || current.bodyAvailable))
+                    if (current == null || current.fileName != record.fileName || !(current.downloaded || current.bodyAvailable)) {
+                        throw StorageTransferException(StorageTransferFailure(StorageTransferFailureReason.TARGET_MANIFEST_CONFLICT,
+                            "downloads/${target.name}/$MANIFEST_FILE"))
+                    }
                 }
             } else {
                 val copied = targetFiles[entry.file.relativePathFrom(source)]
-                check(copied != null && copied.size == entry.size &&
-                    copied.file.sameContent(entry.file, checkActive, sizesChecked = true))
+                if (copied == null || copied.size != entry.size ||
+                    !copied.file.sameContent(entry.file, checkActive, sizesChecked = true,
+                        buffer = comparisonBuffer, otherBuffer = otherComparisonBuffer)) {
+                    throw StorageTransferException(StorageTransferFailure(StorageTransferFailureReason.TARGET_FILE_CONFLICT,
+                        "downloads/${target.name}/${entry.file.relativePathFrom(source)}"))
+                }
             }
         }
     }
@@ -1627,11 +1677,14 @@ object NovelDownloadStore {
         }
     }
 
-    private fun scanNovelDirectories(root: StorageFile): LinkedHashMap<String, StorageFile> {
+    private fun scanNovelDirectories(
+        root: StorageFile, migrationFailureReason: StorageTransferFailureReason? = null
+    ): LinkedHashMap<String, StorageFile> {
         val directories = LinkedHashMap<String, StorageFile>()
-        root.listFiles().orEmpty().filter { it.isDirectory && !isStagingDirectory(it.name) }
+        if (!root.exists()) return directories
+        root.entries().filter { it.directory && !isStagingDirectory(it.file.name) }.map { it.file }
             .sortedBy(StorageFile::name).forEach { directory ->
-                val manifest = readManifest(directory) ?: return@forEach
+                val manifest = readManifest(directory, migrationFailureReason) ?: return@forEach
                 if (manifest.url.isNotBlank()) directories.putIfAbsent(canonicalKey(manifest.url), directory)
             }
         return directories
@@ -1641,10 +1694,10 @@ object NovelDownloadStore {
         Regex("(?:migration|restore)-[a-zA-Z0-9-]+\\.tmp").matches(name)
 
     /** Lazy so a disconnected public volume never blocks startup and access to Settings. */
-    private fun ensureNovelDirectoryIndex() {
+    private fun ensureNovelDirectoryIndex(migrationFailureReason: StorageTransferFailureReason? = null) {
         if (novelDirectoryIndexLoaded) return
         val root = rootDirectory ?: return
-        val directories = scanNovelDirectories(root)
+        val directories = scanNovelDirectories(root, migrationFailureReason)
         novelDirectories.forEach { (key, directory) ->
             if (key !in directories && directory.isDirectory) directories[key] = directory
         }
@@ -1697,12 +1750,32 @@ object NovelDownloadStore {
         return shortened.trimEnd(' ', '.').ifBlank { "Untitled" }
     }
 
-    private fun readManifest(directory: StorageFile?): DownloadedNovelManifest? {
+    private fun readManifest(
+        directory: StorageFile?, migrationFailureReason: StorageTransferFailureReason? = null
+    ): DownloadedNovelManifest? {
         if (directory == null) return null
         val key = directory.absolutePath
-        if (manifestCache.containsKey(key)) return manifestCache[key]
-        val manifest = readJson(StorageFile(directory, MANIFEST_FILE), DownloadedNovelManifest::class.java)?.also {
-            if (it.version !in 1..2) throw IOException("Unsupported downloaded novel version")
+        if (migrationFailureReason == null && manifestCache.containsKey(key)) return manifestCache[key]
+        val file = StorageFile(directory, MANIFEST_FILE)
+        val manifest = try {
+            readJson(file, DownloadedNovelManifest::class.java, propagateErrors = migrationFailureReason != null)?.also {
+                if (it.version !in 1..2) throw IOException("Unsupported downloaded novel version")
+                if (migrationFailureReason != null) {
+                    require(it.url.isNotBlank())
+                    requireNotNull(it.chapters)
+                }
+            }.also {
+                // An unrelated directory without a manifest can be ignored; a damaged manifest cannot.
+                if (migrationFailureReason != null && it == null && file.exists()) {
+                    throw IOException("Invalid downloaded novel manifest")
+                }
+            }
+        } catch (error: Exception) {
+            if (migrationFailureReason == null || error is CancellationException) throw error
+            val reason = if (error is com.breakyuna.esjzone.storage.StorageAccessException)
+                StorageTransferFailureReason.ACCESS else migrationFailureReason
+            throw StorageTransferException(StorageTransferFailure(reason,
+                "downloads/${directory.name}/$MANIFEST_FILE"), error)
         }?.let { stored ->
             if (directory.isDocument) stored.copy(commonPassword = privatePasswords?.getString(digest(canonicalKey(stored.url)), null))
             else stored
@@ -1987,14 +2060,14 @@ object NovelDownloadStore {
         destination.replaceWith(temporary)
     }
 
-    private fun <T> readJson(file: StorageFile, type: Class<T>): T? {
+    private fun <T> readJson(file: StorageFile, type: Class<T>, propagateErrors: Boolean = false): T? {
         return runCatching {
             file.recoverReplacement()
             if (!file.isFile) return@runCatching null
             file.storedTextReader().use { gson.fromJson(it, type) }
         }.onFailure { error ->
             // Lost access must reach the UI; it is not evidence that a chapter is absent/corrupt.
-            if (error is com.breakyuna.esjzone.storage.StorageAccessException || error is CancellationException) throw error
+            if (propagateErrors || error is com.breakyuna.esjzone.storage.StorageAccessException || error is CancellationException) throw error
             AppLogger.w("NovelDownloadStore", "Unable to read ${file.name}", error)
         }.getOrNull()
     }

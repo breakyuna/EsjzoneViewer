@@ -6,7 +6,9 @@ import android.net.Uri
 import androidx.datastore.core.handlers.ReplaceFileCorruptionHandler
 import androidx.datastore.preferences.core.*
 import androidx.datastore.preferences.preferencesDataStoreFile
+import com.breakyuna.esjzone.BuildConfig
 import com.breakyuna.esjzone.offline.NovelDownloadStore
+import com.breakyuna.esjzone.util.AppLogger
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -23,7 +25,8 @@ data class StorageTransferProgress(
     val phase: StorageTransferPhase = StorageTransferPhase.IDLE,
     val book: String = "",
     val completed: Int = 0,
-    val total: Int = 0
+    val total: Int = 0,
+    val failure: StorageTransferFailure? = null
 ) {
     val running: Boolean get() = phase in setOf(StorageTransferPhase.QUEUED, StorageTransferPhase.COPYING,
         StorageTransferPhase.VERIFYING, StorageTransferPhase.CLEANING, StorageTransferPhase.WAITING_FOR_READER)
@@ -50,6 +53,8 @@ class UserStorage(context: Context) {
     private val stagingKey = stringPreferencesKey("migration_staging_directory")
     private val backupStagingKey = stringPreferencesKey("migration_backup_staging_file")
     private val failedKey = booleanPreferencesKey("migration_failed")
+    private val failureReasonKey = stringPreferencesKey("migration_failure_reason")
+    private val failureItemKey = stringPreferencesKey("migration_failure_item")
     private val setupUpgradeKey = booleanPreferencesKey("setup_from_private_storage")
     private val mutableSetupUpgrade = MutableStateFlow<Boolean?>(null)
     val setupUpgrade = mutableSetupUpgrade.asStateFlow()
@@ -65,6 +70,7 @@ class UserStorage(context: Context) {
     private val readers = AtomicInteger()
     @Volatile private var root: StorageFile? = null
     @Volatile private var initialized = false
+    @Volatile private var cleanupPending = false
 
     suspend fun initialize() {
         if (initialized) return
@@ -79,12 +85,16 @@ class UserStorage(context: Context) {
             mutableLabel.value = preferences[pendingLabelKey] ?: preferences[labelKey].orEmpty()
             mutableSetupUpgrade.value = preferences[setupUpgradeKey]
             val hasCleanup = preferences[cleanupSourceKey] != null
+            cleanupPending = hasCleanup
             mutableTransfer.value = StorageTransferProgress(when {
                 preferences[failedKey] == true && pending != null -> StorageTransferPhase.FAILED
                 preferences[failedKey] == true && hasCleanup -> StorageTransferPhase.CLEANUP_FAILED
                 pending != null || hasCleanup -> StorageTransferPhase.QUEUED
                 else -> StorageTransferPhase.IDLE
-            })
+            }, failure = if (preferences[failedKey] == true) StorageTransferFailure(
+                StorageTransferFailureReason.entries.firstOrNull { it.name == preferences[failureReasonKey] }
+                    ?: StorageTransferFailureReason.UNKNOWN,
+                preferences[failureItemKey].orEmpty()) else null)
             NovelDownloadStore.setStorageMigrationPending(pending != null || hasCleanup)
             initialized = true
             if (mutableTransfer.value.running) StorageMigrationWorker.enqueue(context)
@@ -108,8 +118,9 @@ class UserStorage(context: Context) {
         .takeIf { it.isNotBlank() && it != PRIVATE_LOCATION }
         ?.let { StorageFile.fromTree(context, Uri.parse(it)) }
 
-    /** Queue the same durable transfer, targeting the original private directories. */
+    /** Debug-only experiment: return downloads to the original private directories. */
     suspend fun moveToPrivate() = withContext(Dispatchers.IO) {
+        check(BuildConfig.DEBUG) { "Returning to private storage is only available in debug builds" }
         initialize()
         operationMutex.withLock {
             check(!mutableTransfer.value.running)
@@ -222,10 +233,28 @@ class UserStorage(context: Context) {
         operationMutex.withLock {
             val transferContext = currentCoroutineContext()
             val checkActive = { transferContext.ensureActive() }
-            val report: (StorageTransferProgress) -> Unit = { mutableTransfer.value = it; onProgress(it) }
+            var lastReported: StorageTransferProgress? = null
+            var lastReportedAt = 0L
+            val report: (StorageTransferProgress) -> Unit = { progress ->
+                val now = android.os.SystemClock.elapsedRealtime()
+                val previous = lastReported
+                // Publish phase/book changes and completion immediately, but coalesce file counters.
+                if (previous == null || progress.phase != previous.phase || progress.book != previous.book ||
+                    progress.total != previous.total || progress.completed == progress.total ||
+                    now - lastReportedAt >= 250L) {
+                    mutableTransfer.value = progress
+                    onProgress(progress)
+                    lastReported = progress
+                    lastReportedAt = now
+                }
+            }
             var preferences = store.data.first()
             val pending = preferences[pendingKey]
             if (pending != null) {
+                if (!BuildConfig.DEBUG && pending == PRIVATE_LOCATION) {
+                    AppLogger.w("UserStorage", "Returning to private storage is disabled in release builds; originals preserved")
+                    error("Returning to private storage is only available in debug builds")
+                }
                 val target = sharedRoot(pending)
                 val nextDownloads = target?.let { StorageFile(it, "downloads") }
                     ?: StorageFile(File(context.filesDir, "downloaded_novels"))
@@ -276,6 +305,7 @@ class UserStorage(context: Context) {
                                 it.remove(pendingKey); it.remove(pendingLabelKey); it.remove(stagingKey); it.remove(backupStagingKey)
                                 it[failedKey] = false
                             }
+                            cleanupPending = true
                         } catch (error: Exception) {
                             NovelDownloadStore.restoreStorage(previousDownloads)
                             throw error
@@ -320,11 +350,20 @@ class UserStorage(context: Context) {
                                 StorageFile(downloads(), checkNotNull(targets[file.name])), checkActive)
                         } else {
                             val copied = StorageFile(backups(), file.name)
-                            check(copied.isFile)
-                            if (file.exists()) check(copied.sameContent(file, checkActive))
+                            if (!copied.isFile) {
+                                throw StorageTransferException(StorageTransferFailure(StorageTransferFailureReason.TARGET_FILE_CONFLICT,
+                                    "autobackup/${file.name}"))
+                            }
+                            if (file.exists() && !copied.sameContent(file, checkActive)) {
+                                throw StorageTransferException(StorageTransferFailure(StorageTransferFailureReason.TARGET_FILE_CONFLICT,
+                                    "autobackup/${file.name}"))
+                            }
                         }
                     }
-                    check(!file.exists() || file.deleteRecursively())
+                    if (file.exists() && !file.deleteRecursively()) {
+                        throw StorageTransferException(StorageTransferFailure(StorageTransferFailureReason.IO,
+                            "${if (key == cleanupBooksKey) "downloads" else "autobackup"}/${file.name}"))
+                    }
                     // An interrupted delete is retried using only the remaining committed source names.
                     store.edit { it[key] = it[key].orEmpty() - file.name }
                 }
@@ -334,6 +373,7 @@ class UserStorage(context: Context) {
                         it[failedKey] = false
                     }
                     NovelDownloadStore.finishStorageMigration()
+                    cleanupPending = false
                 }
             }
             report(StorageTransferProgress(StorageTransferPhase.DONE))
@@ -341,10 +381,26 @@ class UserStorage(context: Context) {
         }
     }
 
-    internal suspend fun recordTransferFailure() {
-        store.edit { it[failedKey] = true }
-        val cleanup = store.data.first()[cleanupSourceKey] != null
-        mutableTransfer.value = StorageTransferProgress(if (cleanup) StorageTransferPhase.CLEANUP_FAILED else StorageTransferPhase.FAILED)
+    internal suspend fun recordTransferFailure(error: Exception = IOException()) {
+        val previous = mutableTransfer.value
+        val failure = error.transferFailure(previous.book)
+        // The retry button must remain available even when persisting the failure also fails.
+        mutableTransfer.value = previous.copy(
+            phase = if (cleanupPending) StorageTransferPhase.CLEANUP_FAILED else StorageTransferPhase.FAILED,
+            failure = failure)
+        AppLogger.e("UserStorage", "Storage transfer failed: phase=${previous.phase}, reason=${failure.reason}, " +
+            "item=${failure.item}, exception=${error.javaClass.simpleName}, cause=${error.cause?.javaClass?.simpleName.orEmpty()}")
+        try {
+            store.edit {
+                it[failedKey] = true
+                it[failureReasonKey] = failure.reason.name
+                it[failureItemKey] = failure.item
+            }
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (persistenceError: Exception) {
+            AppLogger.e("UserStorage", "Unable to persist transfer failure: ${persistenceError.javaClass.simpleName}")
+        }
     }
 
     suspend fun reindex() = withContext(Dispatchers.IO) {
