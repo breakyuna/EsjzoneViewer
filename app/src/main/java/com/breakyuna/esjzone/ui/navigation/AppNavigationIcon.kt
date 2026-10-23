@@ -40,7 +40,8 @@ internal fun AppNavigationIcon(
     tab: AppTabId,
     selected: Boolean,
     progress: State<Float>,
-    tint: Color
+    tint: Color,
+    cutoutColor: Color = Color.White
 ) {
     val path = remember { Path() }
     val stroke = remember {
@@ -70,7 +71,7 @@ internal fun AppNavigationIcon(
                     when (tab) {
                         AppTabId.HOME -> drawHomeIcon(value, tint, path, stroke)
                         AppTabId.HISTORY -> drawHistoryIcon(historyRotation.value, tint, path, stroke)
-                        AppTabId.BOOKSHELF -> drawBookshelfIcon(value, tint, path, stroke)
+                        AppTabId.BOOKSHELF -> drawBookshelfIcon(value, tint, cutoutColor, path, stroke)
                         AppTabId.PROFILE -> drawProfileIcon(value, tint, path, stroke)
                     }
                 }
@@ -153,7 +154,13 @@ private fun DrawScope.drawHistoryIcon(rotationDegrees: Float, tint: Color, path:
     drawPath(path, tint, style = stroke)
 }
 
-private fun DrawScope.drawBookshelfIcon(progress: Float, tint: Color, path: Path, stroke: Stroke) {
+private fun DrawScope.drawBookshelfIcon(
+    progress: Float,
+    tint: Color,
+    cutoutColor: Color,
+    path: Path,
+    stroke: Stroke
+) {
     path.reset()
     path.moveTo(12f, 6f)
     path.cubicTo(9f, 4f, 5f, 3.5f, 2.5f, 4.5f)
@@ -188,9 +195,9 @@ private fun DrawScope.drawBookshelfIcon(progress: Float, tint: Color, path: Path
     drawPath(path, leafColor)
     drawPath(path, leafColor, style = stroke)
 
-    // Draw above the turning leaf so the selected book retains its white spine.
+    // Draw above the turning leaf so the selected book retains its spine cutout.
     drawLine(
-        color = lerp(tint, Color.White, progress),
+        color = lerp(tint, cutoutColor, progress),
         start = Offset(12f, 7f),
         end = Offset(12f, 19f),
         strokeWidth = stroke.width,

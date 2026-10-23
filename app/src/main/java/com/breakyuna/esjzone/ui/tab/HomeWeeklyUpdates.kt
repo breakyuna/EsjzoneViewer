@@ -29,6 +29,7 @@ import androidx.compose.ui.unit.dp
 import com.breakyuna.esjzone.R
 import com.breakyuna.esjzone.novellibrary.data.WeeklyUpdateDay
 import com.breakyuna.esjzone.novellibrary.novel.CoveredNovel
+import com.breakyuna.esjzone.ui.component.AppSectionTitle
 import com.breakyuna.esjzone.ui.designsystem.AppSpacing
 import com.breakyuna.esjzone.ui.discovery.DiscoveryEmptyState
 import java.time.DayOfWeek
@@ -45,13 +46,13 @@ internal fun LazyListScope.weeklyUpdatesCollection(
     onNovelClick: (CoveredNovel) -> Unit
 ) {
     if (days.isEmpty()) return
-    if (showDivider) {
-        item(key = "home-weekly-divider", contentType = "home-section-divider") {
-            HomeSectionDividerItem()
-        }
-    }
     item(key = "home-weekly-header", contentType = "home-weekly-header") {
-        WeeklyUpdatesHeader(days, selectedIndex, onSelect)
+        WeeklyUpdatesHeader(
+            days = days,
+            selectedIndex = selectedIndex,
+            showDivider = showDivider,
+            onSelect = onSelect
+        )
     }
     item(key = "home-weekly-content", contentType = "home-weekly-content") {
         AnimatedContent(
@@ -114,27 +115,28 @@ private fun HomeNovelGrid(
 private fun WeeklyUpdatesHeader(
     days: List<WeeklyUpdateDay>,
     selectedIndex: Int,
+    showDivider: Boolean,
     onSelect: (Int) -> Unit
 ) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
+            .padding(top = if (showDivider) AppSpacing.md else AppSpacing.zero)
             .weeklyDaySwipe(days, selectedIndex, onSelect),
         verticalArrangement = Arrangement.spacedBy(AppSpacing.xs)
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .defaultMinSize(minHeight = 48.dp),
-            verticalAlignment = Alignment.CenterVertically
+        AppSectionTitle(title = stringResource(R.string.home_weekly_updates))
+        TabRow(
+            selectedTabIndex = selectedIndex,
+            containerColor = MaterialTheme.colorScheme.surface,
+            contentColor = MaterialTheme.colorScheme.primary
         ) {
-            Text(stringResource(R.string.home_weekly_updates), style = MaterialTheme.typography.titleMedium)
-        }
-        TabRow(selectedTabIndex = selectedIndex) {
             days.forEachIndexed { index, day ->
                 Tab(
                     selected = index == selectedIndex,
                     onClick = { onSelect(index) },
+                    selectedContentColor = MaterialTheme.colorScheme.primary,
+                    unselectedContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
                     text = { Text(weeklyDayLabel(day.date.dayOfWeek), maxLines = 1, overflow = TextOverflow.Clip) }
                 )
             }

@@ -25,8 +25,10 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.selected
@@ -34,7 +36,9 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import com.breakyuna.esjzone.ui.designsystem.AppCoverBackdrop
 import com.breakyuna.esjzone.ui.designsystem.AppCoverImage
+import com.breakyuna.esjzone.ui.designsystem.AppElevation
 import com.breakyuna.esjzone.ui.designsystem.AppLoadedImage
 import com.breakyuna.esjzone.novellibrary.novel.CoverState
 import com.breakyuna.esjzone.ui.designsystem.AppShapes
@@ -55,14 +59,22 @@ data class NovelCoverModel(
 )
 
 @Composable
-fun NovelCover(model: NovelCoverModel, modifier: Modifier = Modifier, shape: Shape = AppShapes.standard) {
+fun NovelCover(model: NovelCoverModel, modifier: Modifier = Modifier, shape: Shape = AppShapes.cover) {
     AppCoverImage(
         model = model.model,
         sourceState = model.state,
         cachedModel = model.cachedModel,
         initialImage = model.initialImage,
         contentDescription = model.contentDescription,
-        modifier = modifier.aspectRatio(model.aspectRatio).clip(shape)
+        modifier = modifier
+            .aspectRatio(model.aspectRatio)
+            .shadow(
+                elevation = AppElevation.cover,
+                shape = shape,
+                ambientColor = Color.Black.copy(alpha = 0.2f),
+                spotColor = Color.Black.copy(alpha = 0.25f)
+            )
+            .clip(shape)
     )
 }
 
@@ -112,10 +124,26 @@ fun NovelTag(
 data class NovelMetricModel(val label: String, val value: String)
 
 @Composable
-fun NovelMetric(metric: NovelMetricModel, modifier: Modifier = Modifier) {
+fun NovelMetric(
+    metric: NovelMetricModel,
+    modifier: Modifier = Modifier,
+    valueColor: Color = MaterialTheme.colorScheme.onSurface,
+    labelColor: Color = appStateColors().contentMuted
+) {
     Column(modifier = modifier, horizontalAlignment = Alignment.CenterHorizontally) {
-        Text(metric.value, style = AppTypography.labelLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
-        Text(metric.label, style = AppTypography.bodySmall, color = appStateColors().contentMuted, maxLines = 1)
+        Text(
+            metric.value,
+            style = AppTypography.labelLarge,
+            color = valueColor,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
+        Text(
+            metric.label,
+            style = AppTypography.bodySmall,
+            color = labelColor,
+            maxLines = 1
+        )
     }
 }
 
@@ -133,14 +161,16 @@ fun NovelMetadata(
     modifier: Modifier = Modifier,
     showMetrics: Boolean = true,
     onTagClick: ((NovelTagModel) -> Unit)? = null,
-    authorModifier: Modifier = Modifier
+    authorModifier: Modifier = Modifier,
+    primaryTextColor: Color = MaterialTheme.colorScheme.onSurface,
+    mutedTextColor: Color = appStateColors().contentMuted
 ) {
     Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(AppSpacing.sm)) {
         metadata.author?.takeIf { it.isNotBlank() }?.let {
-            Text(it, modifier = authorModifier, style = AppTypography.labelLarge, color = appStateColors().contentMuted)
+            Text(it, modifier = authorModifier, style = AppTypography.labelLarge, color = mutedTextColor)
         }
         metadata.description?.takeIf { it.isNotBlank() }?.let {
-            Text(it, style = AppTypography.bodyMedium, maxLines = 3, overflow = TextOverflow.Ellipsis)
+            Text(it, style = AppTypography.bodyMedium, color = primaryTextColor, maxLines = 3, overflow = TextOverflow.Ellipsis)
         }
         if (metadata.tags.isNotEmpty()) {
             Row(
@@ -155,7 +185,7 @@ fun NovelMetadata(
                 modifier = Modifier.horizontalScroll(rememberScrollState()),
                 horizontalArrangement = Arrangement.spacedBy(AppSpacing.md)
             ) {
-                metadata.metrics.forEach { NovelMetric(it) }
+                metadata.metrics.forEach { NovelMetric(it, valueColor = primaryTextColor, labelColor = mutedTextColor) }
             }
         }
     }
@@ -209,36 +239,79 @@ fun NovelHero(
     authorModifier: Modifier = Modifier,
     animateContentArrival: Boolean = true
 ) {
-    Row(
+    val coverUrl = (novel.cover.model as? String).orEmpty()
+    val coverState = novel.cover.state ?: CoverState.Unknown
+    Card(
         modifier = modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(AppSpacing.md)
+        shape = AppShapes.prominent,
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
     ) {
-        NovelCover(novel.cover, Modifier.then(coverModifier).width(104.dp).then(
-            if (onCoverClick != null) Modifier.clickable(onClick = onCoverClick) else Modifier
-        ), shape = AppShapes.compact)
-        Column(
-            modifier = Modifier
-                .weight(1f)
-                .then(if (animateContentArrival) Modifier.contentArrival(novel.id, delayMillis = 80) else Modifier)
-                .heightIn(min = 148.dp),
-            verticalArrangement = Arrangement.SpaceBetween
+        AppCoverBackdrop(
+            coverUrl = coverUrl,
+            coverState = coverState,
+            modifier = Modifier.fillMaxWidth()
         ) {
-            Column(verticalArrangement = Arrangement.spacedBy(AppSpacing.xs)) {
-                Text(novel.title, modifier = titleModifier, style = AppTypography.titleLarge, maxLines = 3, overflow = TextOverflow.Ellipsis)
-                NovelMetadata(novel.metadata, showMetrics = false, authorModifier = authorModifier)
-            }
-            if (novel.metadata.metrics.isNotEmpty() || (actionLabel != null && onAction != null)) {
-                Column(verticalArrangement = Arrangement.spacedBy(AppSpacing.xs)) {
-                    if (novel.metadata.metrics.isNotEmpty()) {
-                        Row(
-                            modifier = Modifier.horizontalScroll(rememberScrollState()),
-                            horizontalArrangement = Arrangement.spacedBy(AppSpacing.md)
-                        ) {
-                            novel.metadata.metrics.forEach { NovelMetric(it) }
-                        }
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(AppSpacing.lg),
+                horizontalArrangement = Arrangement.spacedBy(AppSpacing.md),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                NovelCover(
+                    novel.cover,
+                    Modifier.then(coverModifier).width(104.dp).then(
+                        if (onCoverClick != null) Modifier.clickable(onClick = onCoverClick) else Modifier
+                    ),
+                    shape = AppShapes.cover
+                )
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .then(if (animateContentArrival) Modifier.contentArrival(novel.id, delayMillis = 80) else Modifier)
+                        .heightIn(min = 148.dp),
+                    verticalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Column(verticalArrangement = Arrangement.spacedBy(AppSpacing.xs)) {
+                        Text(
+                            novel.title,
+                            modifier = titleModifier,
+                            style = AppTypography.titleLarge,
+                            color = Color.White,
+                            maxLines = 3,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        NovelMetadata(
+                            novel.metadata,
+                            showMetrics = false,
+                            authorModifier = authorModifier,
+                            primaryTextColor = Color.White.copy(alpha = 0.88f),
+                            mutedTextColor = Color.White.copy(alpha = 0.78f)
+                        )
                     }
-                    if (actionLabel != null && onAction != null) {
-                        androidx.compose.material3.TextButton(onClick = onAction) { Text(actionLabel) }
+                    if (novel.metadata.metrics.isNotEmpty() || (actionLabel != null && onAction != null)) {
+                        Column(verticalArrangement = Arrangement.spacedBy(AppSpacing.xs)) {
+                            if (novel.metadata.metrics.isNotEmpty()) {
+                                Row(
+                                    modifier = Modifier.horizontalScroll(rememberScrollState()),
+                                    horizontalArrangement = Arrangement.spacedBy(AppSpacing.lg)
+                                ) {
+                                    novel.metadata.metrics.forEach {
+                                        NovelMetric(
+                                            it,
+                                            valueColor = Color.White,
+                                            labelColor = Color.White.copy(alpha = 0.72f)
+                                        )
+                                    }
+                                }
+                            }
+                            if (actionLabel != null && onAction != null) {
+                                androidx.compose.material3.TextButton(onClick = onAction) {
+                                    Text(actionLabel, color = Color.White)
+                                }
+                            }
+                        }
                     }
                 }
             }

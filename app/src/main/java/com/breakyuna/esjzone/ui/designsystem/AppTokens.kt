@@ -1,9 +1,13 @@
 package com.breakyuna.esjzone.ui.designsystem
 
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
+import androidx.compose.runtime.ReadOnlyComposable
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
@@ -13,6 +17,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.breakyuna.esjzone.AppPalette
 
 /** Product geometry. Feature code must use these tokens instead of inventing local constants. */
 object AppSpacing {
@@ -49,6 +54,8 @@ object AppLayout {
 object AppShapes {
     val none = RoundedCornerShape(0.dp)
     val compact = RoundedCornerShape(8.dp)
+    /** Novel covers in grids, rails and list rows. */
+    val cover = RoundedCornerShape(10.dp)
     val standard = RoundedCornerShape(16.dp)
     val prominent = RoundedCornerShape(24.dp)
     val pill = RoundedCornerShape(50)
@@ -70,16 +77,28 @@ object AppTypography {
         lineHeight = 36.sp,
         fontWeight = FontWeight.Bold
     )
+    val headlineSmall = TextStyle(
+        fontFamily = display,
+        fontSize = 24.sp,
+        lineHeight = 32.sp,
+        fontWeight = FontWeight.Bold
+    )
     val titleLarge = TextStyle(
         fontFamily = display,
         fontSize = 22.sp,
         lineHeight = 28.sp,
-        fontWeight = FontWeight.SemiBold
+        fontWeight = FontWeight.Bold
     )
     val titleMedium = TextStyle(
         fontFamily = display,
         fontSize = 18.sp,
         lineHeight = 24.sp,
+        fontWeight = FontWeight.Bold
+    )
+    val titleSmall = TextStyle(
+        fontFamily = display,
+        fontSize = 15.sp,
+        lineHeight = 22.sp,
         fontWeight = FontWeight.SemiBold
     )
     val bodyLarge = TextStyle(fontFamily = body, fontSize = 16.sp, lineHeight = 24.sp)
@@ -109,6 +128,8 @@ object AppElevation {
     val flat = 0.dp
     val raised = 1.dp
     val floating = 4.dp
+    /** Soft cover shadow; nearly invisible on dark surfaces by design. */
+    val cover = 3.dp
 }
 
 object AppTouchTarget {
@@ -171,6 +192,56 @@ fun appSurfaceColors(): AppSurfaceColors {
         )
     }
 }
+
+/** Theme-derived accents for states that Material roles do not name directly. */
+@Immutable
+data class AppSemanticColors(
+    val heat: Color,
+    val onHeat: Color,
+    val success: Color,
+    val favorite: Color,
+    val onFavorite: Color,
+    val chart: Color,
+    val chartMuted: Color,
+    /** Dark scrim drawn over cover backdrops so white text stays legible. */
+    val heroScrim: Color
+)
+
+internal fun buildSemanticColors(
+    scheme: ColorScheme,
+    palette: AppPalette,
+    darkTheme: Boolean
+): AppSemanticColors = if (palette == AppPalette.MONOCHROME) {
+    AppSemanticColors(
+        heat = Color(0xFFA21917),
+        onHeat = Color.White,
+        success = if (darkTheme) Color(0xFF4ADE80) else Color(0xFF22C55E),
+        favorite = scheme.primary,
+        onFavorite = scheme.onPrimary,
+        chart = if (darkTheme) Color(0xFF82B1FF) else Color(0xFF2563EB),
+        chartMuted = if (darkTheme) Color(0xFF38BDF8) else Color(0xFF7DD3FC),
+        heroScrim = Color.Black
+    )
+} else {
+    AppSemanticColors(
+        heat = scheme.tertiary,
+        onHeat = scheme.onTertiary,
+        success = if (darkTheme) Color(0xFF6DD58C) else Color(0xFF1E8E4F),
+        favorite = scheme.tertiaryContainer,
+        onFavorite = scheme.onTertiaryContainer,
+        chart = scheme.primary,
+        chartMuted = scheme.primary.copy(alpha = 0.45f),
+        heroScrim = Color.Black
+    )
+}
+
+internal val LocalAppSemanticColors = staticCompositionLocalOf {
+    buildSemanticColors(lightColorScheme(), AppPalette.INK, darkTheme = false)
+}
+
+@Composable
+@ReadOnlyComposable
+fun appSemanticColors(): AppSemanticColors = LocalAppSemanticColors.current
 
 /** R18 is the only content marker which intentionally keeps a red semantic accent. */
 @Immutable

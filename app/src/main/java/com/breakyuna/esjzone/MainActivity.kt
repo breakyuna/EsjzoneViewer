@@ -126,6 +126,7 @@ class MainActivity : ComponentActivity() {
             val state by startup.collectAsStateWithLifecycle()
             val appLanguage by PresentationAccess.settings.language
             val appThemeMode by PresentationAccess.settings.themeMode
+            val appPalette by PresentationAccess.settings.palette
             val globalScript by PresentationAccess.readerSettings.settings.collectAsStateWithLifecycle()
             val systemDark = isSystemInDarkTheme()
             val appDark = when (appThemeMode) {
@@ -155,7 +156,7 @@ class MainActivity : ComponentActivity() {
                 LocalConfiguration provides localizedConfiguration,
                 LocalGlobalScript provides globalScript.script
             ) {
-                AppTheme(darkTheme = appDark) {
+                AppTheme(darkTheme = appDark, palette = appPalette) {
                     if (state is StartupState.Ready) {
                         App()
                     } else {

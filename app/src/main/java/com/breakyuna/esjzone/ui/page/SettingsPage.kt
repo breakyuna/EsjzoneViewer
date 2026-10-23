@@ -109,6 +109,12 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
 import com.breakyuna.esjzone.AppThemeMode
+import com.breakyuna.esjzone.AppPalette
+import com.breakyuna.esjzone.ui.designsystem.paletteSwatch
+import androidx.compose.foundation.border
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.luminance
 import com.breakyuna.esjzone.AppLanguage
 import com.breakyuna.esjzone.ui.reader.ReaderScript
 import com.breakyuna.esjzone.BuildConfig
@@ -173,6 +179,7 @@ object SettingsPage : AppDestination {
         val domain by PresentationAccess.settings.domain
         val language by PresentationAccess.settings.language
         val themeMode by PresentationAccess.settings.themeMode
+        val palette by PresentationAccess.settings.palette
         val autoSave by PresentationAccess.settings.readerAutoSave
         val downloadConcurrency by PresentationAccess.settings.downloadConcurrency
         val navigationOrder by PresentationAccess.settings.navigationOrder
@@ -255,6 +262,7 @@ object SettingsPage : AppDestination {
                             ),
                             selectedIndex = themeMode.ordinal
                         ) { PresentationAccess.settings.setThemeMode(AppThemeMode.entries[it]) }
+                        PaletteSettingRow(selected = palette) { PresentationAccess.settings.setPalette(it) }
                         ChoiceSettingRow(
                             icon = Icons.Filled.Language,
                             title = stringResource(R.string.settings_language_label),
@@ -754,7 +762,7 @@ internal fun SettingsSection(
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(AppSpacing.sm)) {
         if (title != null) {
             Text(title, style = AppTypography.labelLarge,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                color = MaterialTheme.colorScheme.primary,
                 modifier = Modifier.padding(start = AppSpacing.md).semantics { heading() })
         }
         Surface(
@@ -988,10 +996,96 @@ internal fun LinkRow(
 private fun SettingIcon(icon: ImageVector) {
     Box(
         modifier = Modifier.size(36.dp)
-            .background(MaterialTheme.colorScheme.surfaceContainerHigh, AppShapes.compact),
+            .background(MaterialTheme.colorScheme.primaryContainer, AppShapes.compact),
         contentAlignment = Alignment.Center
     ) {
         Icon(icon, contentDescription = null, modifier = Modifier.size(20.dp),
-            tint = MaterialTheme.colorScheme.onSurfaceVariant)
+            tint = MaterialTheme.colorScheme.onPrimaryContainer)
+    }
+}
+
+@Composable
+private fun PaletteSettingRow(
+    selected: AppPalette,
+    onSelect: (AppPalette) -> Unit
+) {
+    val darkTheme = MaterialTheme.colorScheme.background.luminance() < 0.5f
+    Column(
+        Modifier.fillMaxWidth().padding(horizontal = AppSpacing.lg, vertical = AppSpacing.sm),
+        verticalArrangement = Arrangement.spacedBy(AppSpacing.md)
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(AppSpacing.md)) {
+            SettingIcon(Icons.Filled.Palette)
+            Text(stringResource(R.string.settings_palette), style = AppTypography.bodyLarge)
+        }
+        Row(
+            Modifier.fillMaxWidth().selectableGroup(),
+            horizontalArrangement = Arrangement.SpaceEvenly
+        ) {
+            AppPalette.available.forEach { palette ->
+                val isSelected = palette == selected
+                val label = stringResource(
+                    when (palette) {
+                        AppPalette.INK -> R.string.settings_palette_ink
+                        AppPalette.SAKURA -> R.string.settings_palette_sakura
+                        AppPalette.DYNAMIC -> R.string.settings_palette_dynamic
+                        AppPalette.MONOCHROME -> R.string.settings_palette_monochrome
+                    }
+                )
+                Column(
+                    modifier = Modifier
+                        .clip(AppShapes.compact)
+                        .selectable(
+                            selected = isSelected,
+                            role = Role.RadioButton,
+                            onClick = { if (!isSelected) onSelect(palette) }
+                        )
+                        .padding(horizontal = AppSpacing.sm, vertical = AppSpacing.xs),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(AppSpacing.xs)
+                ) {
+                    val (accent, base) = paletteSwatch(palette, darkTheme)
+                    val fill = if (palette == AppPalette.DYNAMIC) {
+                        Brush.sweepGradient(
+                            listOf(Color(0xFF4285F4), Color(0xFF34A853), Color(0xFFFBBC05), Color(0xFFEA4335), Color(0xFF4285F4))
+                        )
+                    } else {
+                        Brush.verticalGradient(0f to accent, 0.5f to accent, 0.5f to base, 1f to base)
+                    }
+                    Box(
+                        modifier = Modifier
+                            .size(48.dp)
+                            .border(
+                                width = 2.dp,
+                                color = if (isSelected) MaterialTheme.colorScheme.primary else Color.Transparent,
+                                shape = CircleShape
+                            )
+                            .padding(4.dp)
+                            .clip(CircleShape)
+                            .background(fill)
+                            .border(1.dp, MaterialTheme.colorScheme.outlineVariant, CircleShape),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        if (isSelected) {
+                            Icon(
+                                Icons.Filled.Check,
+                                contentDescription = null,
+                                modifier = Modifier
+                                    .size(20.dp)
+                                    .background(Color.Black.copy(alpha = 0.35f), CircleShape)
+                                    .padding(2.dp),
+                                tint = Color.White
+                            )
+                        }
+                    }
+                    Text(
+                        label,
+                        style = AppTypography.labelMedium,
+                        color = if (isSelected) MaterialTheme.colorScheme.primary
+                            else MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+        }
     }
 }

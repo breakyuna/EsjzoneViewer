@@ -12,6 +12,7 @@ import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStoreFile
 import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import com.breakyuna.esjzone.AppLanguage
+import com.breakyuna.esjzone.AppPalette
 import com.breakyuna.esjzone.AppThemeMode
 import com.breakyuna.esjzone.BuildConfig
 import com.breakyuna.esjzone.domain.repository.SettingsRepository
@@ -70,6 +71,8 @@ class SettingsDataStore(
         .stateIn(scope, SharingStarted.Eagerly, defaults.adult)
     override val themeMode: StateFlow<AppThemeMode> = values.map { it.themeMode }
         .stateIn(scope, SharingStarted.Eagerly, defaults.themeMode)
+    override val palette: StateFlow<AppPalette> = values.map { it.palette }
+        .stateIn(scope, SharingStarted.Eagerly, defaults.palette)
     override val hideHomeRecommendations: StateFlow<Boolean> = values.map { it.hideHomeRecommendations }
         .stateIn(scope, SharingStarted.Eagerly, defaults.hideHomeRecommendations)
     override val domain: StateFlow<String> = values.map { it.domain }
@@ -110,6 +113,7 @@ class SettingsDataStore(
 
     override fun setAdult(value: Boolean) = write { it[ADULT] = value }
     override fun setThemeMode(value: AppThemeMode) = write { it[THEME_MODE] = value.name }
+    override fun setPalette(value: AppPalette) = write { it[PALETTE] = value.name }
     override fun setHideHomeRecommendations(value: Boolean) = write { it[HIDE_HOME_RECOMMENDATIONS] = value }
     override fun setDomain(value: String) {
         write { it[DOMAIN] = value.takeIf { candidate -> candidate in SettingsDefaults.DOMAINS } ?: defaults.domain }
@@ -184,6 +188,7 @@ class SettingsDataStore(
 
     private data class SettingsValues(
         val themeMode: AppThemeMode = AppThemeMode.SYSTEM,
+        val palette: AppPalette = AppPalette.INK,
         val adult: Boolean = true,
         val hideHomeRecommendations: Boolean = true,
         val domain: String = SettingsDefaults.DOMAINS.first(),
@@ -200,6 +205,7 @@ class SettingsDataStore(
 
     private fun Preferences.toSettingsValues(): SettingsValues = SettingsValues(
         themeMode = AppThemeMode.fromName(this[THEME_MODE]),
+        palette = AppPalette.fromName(this[PALETTE]),
         adult = this[ADULT] ?: defaults.adult,
         hideHomeRecommendations = this[HIDE_HOME_RECOMMENDATIONS] ?: defaults.hideHomeRecommendations,
         domain = this[DOMAIN]?.takeIf { it in SettingsDefaults.DOMAINS } ?: defaults.domain,
@@ -230,6 +236,7 @@ class SettingsDataStore(
         val PAGE_CACHE_LIMIT_MIB = intPreferencesKey("page_cache_limit_mib")
         val ADULT = booleanPreferencesKey("adult")
         val THEME_MODE = stringPreferencesKey("theme_mode")
+        val PALETTE = stringPreferencesKey("palette")
         val HIDE_HOME_RECOMMENDATIONS = booleanPreferencesKey("hide_home_recommendations")
         val DOMAIN = stringPreferencesKey("domain")
         val LANGUAGE = stringPreferencesKey("language")

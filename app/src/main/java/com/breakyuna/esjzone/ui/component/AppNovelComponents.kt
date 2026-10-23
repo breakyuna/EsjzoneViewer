@@ -2,7 +2,6 @@ package com.breakyuna.esjzone.ui.component
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.Arrangement
@@ -34,6 +33,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
@@ -53,6 +53,7 @@ import com.breakyuna.esjzone.ui.designsystem.AppContentType
 import com.breakyuna.esjzone.ui.designsystem.AppCoverImage
 import com.breakyuna.esjzone.ui.designsystem.AppLoadedImage
 import com.breakyuna.esjzone.ui.designsystem.AppLayout
+import com.breakyuna.esjzone.ui.designsystem.AppElevation
 import com.breakyuna.esjzone.ui.designsystem.AppShapes
 import com.breakyuna.esjzone.ui.designsystem.AppSpacing
 import com.breakyuna.esjzone.ui.designsystem.AppTypography
@@ -100,11 +101,20 @@ fun AppNovelCover(
     modifier: Modifier,
     isAdult: Boolean = false,
     coverState: CoverState? = null,
-    onImageLoaded: ((AppLoadedImage) -> Unit)? = null
+    onImageLoaded: ((AppLoadedImage) -> Unit)? = null,
+    elevated: Boolean = true
 ) {
     Box(
         modifier = modifier
-            .clip(AppShapes.compact)
+            .then(
+                if (elevated) Modifier.shadow(
+                    elevation = AppElevation.cover,
+                    shape = AppShapes.cover,
+                    ambientColor = Color.Black.copy(alpha = 0.10f),
+                    spotColor = Color.Black.copy(alpha = 0.22f)
+                ) else Modifier
+            )
+            .clip(AppShapes.cover)
             .background(MaterialTheme.colorScheme.surfaceContainerHighest)
     ) {
         val cover = CoverSource.fromUrl(coverUrl, coverState ?: CoverState.Missing)
@@ -280,8 +290,8 @@ fun AppNovelListItem(
     Column(
         modifier = modifier
             .fillMaxWidth()
-            .background(MaterialTheme.colorScheme.surface, AppShapes.standard)
-            .border(1.dp, MaterialTheme.colorScheme.outlineVariant, AppShapes.standard)
+            .clip(AppShapes.standard)
+            .background(MaterialTheme.colorScheme.surface)
             .then(novelClickModifier(open))
     ) {
         Row(
@@ -351,8 +361,8 @@ fun AppNovelPreviewCard(
     Column(
         modifier = modifier
             .fillMaxWidth()
-            .background(MaterialTheme.colorScheme.surface, AppShapes.standard)
-            .border(1.dp, MaterialTheme.colorScheme.outlineVariant, AppShapes.standard)
+            .clip(AppShapes.standard)
+            .background(MaterialTheme.colorScheme.surface)
             .then(novelClickModifier(open))
     ) {
         Row(

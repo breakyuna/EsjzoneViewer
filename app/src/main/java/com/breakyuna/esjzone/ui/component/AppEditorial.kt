@@ -11,6 +11,8 @@ import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -18,6 +20,7 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.ArrowForwardIos
 import androidx.compose.material.icons.filled.Category
 import androidx.compose.material.icons.filled.ChatBubbleOutline
@@ -26,7 +29,6 @@ import androidx.compose.material.icons.filled.Forum
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -44,6 +46,10 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.breakyuna.esjzone.R
@@ -87,10 +93,6 @@ fun AppBackHeader(
                 actions()
             }
             belowContent()
-            HorizontalDivider(
-                thickness = 1.dp,
-                color = appSurfaceColors().divider.copy(alpha = 0.6f)
-            )
         }
     }
 }
@@ -288,6 +290,79 @@ fun AppSectionHeader(
                     imageVector = Icons.Filled.ArrowForwardIos,
                     contentDescription = actionLabel,
                     modifier = Modifier.padding(start = AppSpacing.xs).size(14.dp)
+                )
+            }
+        }
+    }
+}
+
+private val SectionDescriptor = Regex("[（(][^（）()]*[）)]")
+
+/**
+ * Compact in-content section title: a short primary accent bar, a bold title whose
+ * parenthetical descriptors are subordinate, and an optional primary "more" action.
+ * Callers own horizontal padding.
+ */
+@Composable
+fun AppSectionTitle(
+    title: String,
+    modifier: Modifier = Modifier,
+    supportingText: String? = null,
+    actionLabel: String? = null,
+    onAction: (() -> Unit)? = null
+) {
+    val muted = MaterialTheme.colorScheme.onSurfaceVariant
+    val descriptorStyle = SpanStyle(
+        fontSize = AppTypography.labelLarge.fontSize,
+        fontWeight = FontWeight.Medium,
+        color = muted
+    )
+    val annotated = buildAnnotatedString {
+        var cursor = 0
+        SectionDescriptor.findAll(title).forEach { match ->
+            append(title.substring(cursor, match.range.first).trimEnd())
+            withStyle(descriptorStyle) {
+                append(" ")
+                append(match.value.trim('（', '）', '(', ')'))
+            }
+            cursor = match.range.last + 1
+        }
+        append(title.substring(cursor))
+    }
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .heightIn(min = 48.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(
+            modifier = Modifier
+                .width(4.dp)
+                .height(18.dp)
+                .background(MaterialTheme.colorScheme.primary, AppShapes.pill)
+        )
+        Text(
+            text = annotated,
+            style = AppTypography.titleMedium,
+            color = MaterialTheme.colorScheme.onSurface,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f).padding(start = AppSpacing.sm)
+        )
+        supportingText?.takeIf(String::isNotBlank)?.let {
+            Text(it, style = AppTypography.bodySmall, color = muted, maxLines = 1)
+        }
+        if (actionLabel != null && onAction != null) {
+            TextButton(
+                onClick = onAction,
+                contentPadding = PaddingValues(start = AppSpacing.sm, end = AppSpacing.xs)
+            ) {
+                Text(actionLabel, style = AppTypography.labelLarge, color = MaterialTheme.colorScheme.primary)
+                Icon(
+                    imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(18.dp)
                 )
             }
         }

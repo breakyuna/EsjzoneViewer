@@ -429,7 +429,7 @@ private fun NovelListGridCard(
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(AppShapes.standard)
+            .clip(AppShapes.cover)
             .clickable(onClick = onClick),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
@@ -439,8 +439,7 @@ private fun NovelListGridCard(
             title = novel.name,
             modifier = Modifier
                 .fillMaxWidth()
-                .aspectRatio(0.7f)
-                .clip(AppShapes.standard),
+                .aspectRatio(0.7f),
             isAdult = novel.isAdult
         )
         Text(

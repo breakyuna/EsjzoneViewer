@@ -1,8 +1,9 @@
 package com.breakyuna.esjzone.ui.tab
 
-import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -23,7 +24,6 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
-import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import com.breakyuna.esjzone.ui.designsystem.GlobalText as Text
@@ -72,8 +72,7 @@ internal fun HomeSearchBar(
                 onClick = onClick
             ),
         shape = AppShapes.pill,
-        color = MaterialTheme.colorScheme.surfaceContainerLow,
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f))
+        color = MaterialTheme.colorScheme.surfaceContainerHigh
     ) {
         Row(
             modifier = Modifier
@@ -85,7 +84,7 @@ internal fun HomeSearchBar(
             Icon(
                 imageVector = Icons.Filled.Search,
                 contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                tint = MaterialTheme.colorScheme.primary,
                 modifier = Modifier.size(18.dp)
             )
             Text(
@@ -113,21 +112,18 @@ internal fun HomeActions(
             label = stringResource(R.string.forum),
             icon = Icons.Filled.Forum,
             modifier = Modifier.weight(1f).containerTransformSource(ContainerTransformTarget.FORUM),
-            iconTint = Color(162, 25, 23),
             onClick = onForum
         )
         HomeShortcut(
             label = stringResource(R.string.guestbook),
             icon = Icons.Filled.RateReview,
             modifier = Modifier.weight(1f).containerTransformSource(ContainerTransformTarget.GUESTBOOK),
-            iconTint = Color(0xFFC67D0A),
             onClick = onGuestbook
         )
         HomeShortcut(
             label = stringResource(R.string.home_water_cooler),
             icon = Icons.Filled.WaterDrop,
             modifier = Modifier.weight(1f).containerTransformSource(ContainerTransformTarget.WATER_COOLER),
-            iconTint = Color(0xFF0288D1),
             onClick = onWaterCooler
         )
     }
@@ -138,31 +134,42 @@ private fun HomeShortcut(
     label: String,
     icon: ImageVector?,
     modifier: Modifier,
-    iconTint: Color = LocalContentColor.current,
     onClick: () -> Unit
 ) {
     Card(
         onClick = onClick,
-        modifier = modifier.height(64.dp).semantics { contentDescription = label },
-        shape = RoundedCornerShape(18.dp),
+        modifier = modifier.height(60.dp).semantics { contentDescription = label },
+        shape = AppShapes.standard,
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f))
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
     ) {
         Row(
-            modifier = Modifier.containerTransformContent().fillMaxSize(),
+            modifier = Modifier.containerTransformContent().fillMaxSize().padding(horizontal = AppSpacing.sm),
             horizontalArrangement = Arrangement.Center,
             verticalAlignment = Alignment.CenterVertically
         ) {
             if (icon != null) {
-                Icon(
-                    imageVector = icon,
-                    contentDescription = null,
-                    tint = iconTint,
-                    modifier = Modifier.size(22.dp)
-                )
+                Box(
+                    modifier = Modifier
+                        .size(34.dp)
+                        .background(MaterialTheme.colorScheme.primaryContainer, AppShapes.compact),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = icon,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
             }
             Spacer(Modifier.width(AppSpacing.sm))
-            Text(label, style = MaterialTheme.typography.titleSmall)
+            Text(
+                text = label,
+                style = MaterialTheme.typography.titleSmall,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
         }
     }
 }
@@ -176,7 +183,7 @@ internal fun NovelGridRow(
 ) {
     Row(
         modifier = modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(AppSpacing.md / 2)
+        horizontalArrangement = Arrangement.spacedBy(AppSpacing.sm)
     ) {
         row.forEach { novel ->
             HomeGridNovelTile(

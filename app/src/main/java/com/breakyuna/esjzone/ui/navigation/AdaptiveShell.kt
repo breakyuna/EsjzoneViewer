@@ -514,7 +514,8 @@ private fun TabStackDisplay(
 }
 
 private val BottomBarHeight = 68.dp
-private val BottomBarSelectionSize = 60.dp
+private val BottomBarIndicatorWidth = 56.dp
+private val BottomBarIndicatorHeight = 30.dp
 
 @Composable
 private fun AppNavigationBar(
@@ -565,7 +566,7 @@ private fun AppNavigationBarItem(
         animationSpec = NavigationSelectionAnimationSpec,
         label = "${tab.name}BottomSelection"
     )
-    val indicatorColor = MaterialTheme.colorScheme.secondaryContainer
+    val indicatorColor = MaterialTheme.colorScheme.primaryContainer
     val backgroundColor = indicatorColor.copy(alpha = indicatorColor.alpha * selectionProgress.value)
     val contentColor = lerp(
         MaterialTheme.colorScheme.onSurfaceVariant,
@@ -574,37 +575,44 @@ private fun AppNavigationBarItem(
     )
     val iconColor = lerp(
         MaterialTheme.colorScheme.onSurfaceVariant,
-        MaterialTheme.colorScheme.onSecondaryContainer,
+        MaterialTheme.colorScheme.onPrimaryContainer,
         selectionProgress.value
     )
-    Box(
-        modifier = modifier,
-        contentAlignment = Alignment.Center
+    Column(
+        modifier = modifier
+            .fillMaxHeight()
+            .selectable(
+                selected = selected,
+                interactionSource = remember(tab) { MutableInteractionSource() },
+                indication = ripple(bounded = false, radius = 32.dp, color = MaterialTheme.colorScheme.onSurfaceVariant),
+                role = Role.Tab,
+                onClick = { onSelected(tab) }
+            ),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(4.dp, Alignment.CenterVertically)
     ) {
-        Column(
+        Box(
             modifier = Modifier
-                .size(BottomBarSelectionSize)
+                .size(width = BottomBarIndicatorWidth, height = BottomBarIndicatorHeight)
                 .clip(CircleShape)
-                .background(backgroundColor)
-                .selectable(
-                    selected = selected,
-                    interactionSource = remember(tab) { MutableInteractionSource() },
-                    indication = ripple(color = MaterialTheme.colorScheme.onSurfaceVariant),
-                    role = Role.Tab,
-                    onClick = { onSelected(tab) }
-                ),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(2.dp, Alignment.CenterVertically)
+                .background(backgroundColor),
+            contentAlignment = Alignment.Center
         ) {
-            AppNavigationIcon(tab, selected, selectionProgress, tint = iconColor)
-            Text(
-                text = tabLabel(tab),
-                color = contentColor,
-                style = MaterialTheme.typography.labelMedium,
-                fontWeight = FontWeight.Medium,
-                maxLines = 1
+            AppNavigationIcon(
+                tab = tab,
+                selected = selected,
+                progress = selectionProgress,
+                tint = iconColor,
+                cutoutColor = indicatorColor
             )
         }
+        Text(
+            text = tabLabel(tab),
+            color = contentColor,
+            style = MaterialTheme.typography.labelMedium,
+            fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+            maxLines = 1
+        )
     }
 }
 
@@ -637,10 +645,10 @@ private fun AppSideNavigationBar(
                 )
                 val iconColor = lerp(
                     MaterialTheme.colorScheme.onSurfaceVariant,
-                    MaterialTheme.colorScheme.onSecondaryContainer,
+                    MaterialTheme.colorScheme.onPrimaryContainer,
                     selectionProgress.value
                 )
-                val indicatorColor = MaterialTheme.colorScheme.secondaryContainer
+                val indicatorColor = MaterialTheme.colorScheme.primaryContainer
                 NavigationRailItem(
                     selected = isSelected,
                     onClick = { onSelected(tab) },
@@ -659,7 +667,13 @@ private fun AppSideNavigationBar(
                                 )
                             }
                         ) {
-                            AppNavigationIcon(tab, isSelected, selectionProgress, tint = iconColor)
+                            AppNavigationIcon(
+                                tab = tab,
+                                selected = isSelected,
+                                progress = selectionProgress,
+                                tint = iconColor,
+                                cutoutColor = indicatorColor
+                            )
                         }
                     },
                     label = {
@@ -673,7 +687,7 @@ private fun AppSideNavigationBar(
                     },
                     alwaysShowLabel = true,
                     colors = NavigationRailItemDefaults.colors(
-                        selectedIconColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                        selectedIconColor = MaterialTheme.colorScheme.onPrimaryContainer,
                         selectedTextColor = MaterialTheme.colorScheme.primary,
                         indicatorColor = Color.Transparent,
                         unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,

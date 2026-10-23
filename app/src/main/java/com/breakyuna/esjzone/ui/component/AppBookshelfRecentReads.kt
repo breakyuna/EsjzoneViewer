@@ -49,7 +49,7 @@ fun AppBookshelfRecentReads(
     if (books.isEmpty()) return
     val order = remember(books.size) { recentReadOrder.filter { it < books.size } }
     val colors = MaterialTheme.colorScheme
-    val shape = AppShapes.compact
+    val shape = AppShapes.cover
     Layout(
         modifier = modifier.fillMaxWidth().semantics { isTraversalGroup = true },
         content = {

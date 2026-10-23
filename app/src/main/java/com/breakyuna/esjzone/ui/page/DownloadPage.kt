@@ -295,11 +295,13 @@ private fun DownloadCard(
                     Modifier
                         .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.08f), AppShapes.standard)
                         .border(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.62f), AppShapes.standard)
-                } else Modifier
+                } else {
+                    Modifier.background(MaterialTheme.colorScheme.surface, AppShapes.standard)
+                }
             )
             .then(if (editing && !deleting) Modifier.clickable { onToggle() } else Modifier)
             .semantics { if (editing) role = Role.Button }
-            .padding(vertical = AppSpacing.sm, horizontal = AppSpacing.sm),
+            .padding(AppSpacing.md),
         verticalAlignment = Alignment.Top,
         horizontalArrangement = Arrangement.spacedBy(AppSpacing.md)
     ) {

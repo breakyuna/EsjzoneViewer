@@ -50,7 +50,11 @@ import com.breakyuna.esjzone.network.EsjzoneUrls
 import com.breakyuna.esjzone.novellibrary.data.WeeklyPopularNovel
 import com.breakyuna.esjzone.novellibrary.novel.CoveredNovel
 import com.breakyuna.esjzone.ui.component.AppNovelCover
+import com.breakyuna.esjzone.ui.component.AppSectionTitle
+import com.breakyuna.esjzone.ui.designsystem.AppCoverBackdrop
+import com.breakyuna.esjzone.ui.designsystem.AppShapes
 import com.breakyuna.esjzone.ui.designsystem.AppSpacing
+import com.breakyuna.esjzone.ui.designsystem.appSemanticColors
 import com.breakyuna.esjzone.ui.discovery.DiscoveryEmptyState
 import com.breakyuna.esjzone.ui.navigation.ContainerTransformTarget
 import com.breakyuna.esjzone.ui.navigation.HomeCarouselElement
@@ -182,131 +186,131 @@ private fun WeeklyPopularCard(
     val coverSource = rememberNovelCoverSource(
         novel.url, novel.coverUrl, novel.coverState, enableSharedElement = false
     )
+    val semantics = appSemanticColors()
     Card(
         onClick = { coverSource.open(onClick) },
         modifier = modifier.fillMaxWidth().height(HOME_WEEKLY_POPULAR_CARD_HEIGHT),
-        shape = RoundedCornerShape(26.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f))
+        shape = AppShapes.prominent,
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(
-                    Brush.horizontalGradient(
-                        listOf(
-                            MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.42f),
-                            MaterialTheme.colorScheme.surfaceContainer,
-                            MaterialTheme.colorScheme.surfaceContainerLow
-                        )
-                    )
-                )
-                .containerTransformContent()
-                .padding(start = 12.dp, end = 18.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-            verticalAlignment = Alignment.CenterVertically
+        AppCoverBackdrop(
+            coverUrl = novel.coverUrl,
+            coverState = novel.coverState,
+            modifier = Modifier.fillMaxSize()
         ) {
-            Box(
+            Row(
                 modifier = Modifier
-                    .width(HOME_WEEKLY_POPULAR_COVER_WIDTH)
-                    .height(HOME_WEEKLY_POPULAR_CONTENT_HEIGHT)
+                    .fillMaxSize()
+                    .containerTransformContent()
+                    .padding(start = 14.dp, end = 18.dp),
+                horizontalArrangement = Arrangement.spacedBy(14.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                AppNovelCover(
-                    coverUrl = novel.coverUrl,
-                    onImageLoaded = coverSource.onImageLoaded,
-                    coverState = novel.coverState,
-                    title = novel.name,
+                Box(
                     modifier = Modifier
-                        .homeCarouselSharedElement(target, HomeCarouselElement.COVER)
-                        .fillMaxSize(),
-                    isAdult = novel.isAdult
-                )
-                Text(
-                    text = stringResource(R.string.home_weekly_popular_badge, novel.rank),
-                    style = MaterialTheme.typography.labelSmall,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onPrimaryContainer,
-                    modifier = Modifier
-                        .align(Alignment.TopStart)
-                        .padding(8.dp)
-                        .clip(RoundedCornerShape(7.dp))
-                        .background(MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.92f))
-                        .padding(horizontal = 7.dp, vertical = 4.dp)
-                )
-            }
-            Column(
-                modifier = Modifier
-                    .weight(1f)
-                    .height(HOME_WEEKLY_POPULAR_CONTENT_HEIGHT)
-            ) {
-                Text(
-                    text = novel.name,
-                    modifier = Modifier.homeCarouselSharedElement(target, HomeCarouselElement.TITLE),
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.Bold,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis
-                )
-                Text(
-                    text = novel.descriptionPreview.ifBlank { stringResource(R.string.home_weekly_popular_no_description) },
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 4,
-                    overflow = TextOverflow.Ellipsis,
+                        .width(HOME_WEEKLY_POPULAR_COVER_WIDTH)
+                        .height(HOME_WEEKLY_POPULAR_CONTENT_HEIGHT)
+                ) {
+                    AppNovelCover(
+                        coverUrl = novel.coverUrl,
+                        onImageLoaded = coverSource.onImageLoaded,
+                        coverState = novel.coverState,
+                        title = novel.name,
+                        modifier = Modifier
+                            .homeCarouselSharedElement(target, HomeCarouselElement.COVER)
+                            .fillMaxSize(),
+                        isAdult = novel.isAdult
+                    )
+                    Text(
+                        text = stringResource(R.string.home_weekly_popular_badge, novel.rank),
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onPrimary,
+                        modifier = Modifier
+                            .align(Alignment.TopStart)
+                            .padding(6.dp)
+                            .clip(RoundedCornerShape(7.dp))
+                            .background(MaterialTheme.colorScheme.primary)
+                            .padding(horizontal = 7.dp, vertical = 3.dp)
+                    )
+                }
+                Column(
                     modifier = Modifier
                         .weight(1f)
-                        .fillMaxWidth()
-                )
-                Spacer(Modifier.height(7.dp))
-                Text(
-                    text = novel.author
-                        ?.takeIf(String::isNotBlank)
-                        ?.let { stringResource(R.string.home_weekly_popular_author, it) }
-                        ?: " ",
-                    modifier = Modifier.homeCarouselSharedElement(target, HomeCarouselElement.AUTHOR),
-                    style = MaterialTheme.typography.bodySmall,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                Text(
-                    text = novel.type
-                        .takeIf(String::isNotBlank)
-                        ?.let { stringResource(R.string.home_weekly_popular_type, it) }
-                        ?: " ",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                Spacer(Modifier.height(4.dp))
-                Card(
-                    shape = RoundedCornerShape(8.dp),
-                    colors = CardDefaults.cardColors(
-                        containerColor = Color(162, 25, 23),
-                        contentColor = Color.White
-                    )
+                        .height(HOME_WEEKLY_POPULAR_CONTENT_HEIGHT)
                 ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
-                        verticalAlignment = Alignment.CenterVertically
+                    Text(
+                        text = novel.name,
+                        modifier = Modifier.homeCarouselSharedElement(target, HomeCarouselElement.TITLE),
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        text = novel.descriptionPreview.ifBlank { stringResource(R.string.home_weekly_popular_no_description) },
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = Color.White.copy(alpha = 0.84f),
+                        maxLines = 4,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxWidth()
+                    )
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        text = novel.author
+                            ?.takeIf(String::isNotBlank)
+                            ?.let { stringResource(R.string.home_weekly_popular_author, it) }
+                            ?: " ",
+                        modifier = Modifier.homeCarouselSharedElement(target, HomeCarouselElement.AUTHOR),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Color.White.copy(alpha = 0.9f),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Text(
+                        text = novel.type
+                            .takeIf(String::isNotBlank)
+                            ?.let { stringResource(R.string.home_weekly_popular_type, it) }
+                            ?: " ",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Color.White.copy(alpha = 0.72f),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    Card(
+                        shape = RoundedCornerShape(8.dp),
+                        colors = CardDefaults.cardColors(
+                            containerColor = semantics.heat,
+                            contentColor = semantics.onHeat
+                        )
                     ) {
-                        Icon(
-                            imageVector = Icons.Filled.Whatshot,
-                            contentDescription = null,
-                            tint = Color.White,
-                            modifier = Modifier.size(13.dp)
-                        )
-                        Spacer(Modifier.width(3.dp))
-                        Text(
-                            text = stringResource(
-                                R.string.home_weekly_popular_heat,
-                                formatWeeklyHeat(novel.weeklyViews)
-                            ),
-                            style = MaterialTheme.typography.labelMedium,
-                            fontWeight = FontWeight.Bold,
-                            color = Color.White
-                        )
+                        Row(
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.Whatshot,
+                                contentDescription = null,
+                                tint = semantics.onHeat,
+                                modifier = Modifier.size(13.dp)
+                            )
+                            Spacer(Modifier.width(3.dp))
+                            Text(
+                                text = stringResource(
+                                    R.string.home_weekly_popular_heat,
+                                    formatWeeklyHeat(novel.weeklyViews)
+                                ),
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = semantics.onHeat
+                            )
+                        }
                     }
                 }
             }
@@ -332,27 +336,13 @@ internal fun LazyListScope.homeCollection(
     emptyTitle: String,
     emptyMessage: String
 ) {
-    if (showDivider) {
-        item(key = "home-divider-$title", contentType = "home-section-divider") {
-            HomeSectionDividerItem()
-        }
-    }
     item(key = "home-section-$title", contentType = "home-section") {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .defaultMinSize(minHeight = 48.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                text = homeSectionTitleText(title),
-                style = MaterialTheme.typography.titleMedium,
-                modifier = Modifier.weight(1f)
-            )
-            if (onMore != null) {
-                TextButton(onClick = onMore) { Text(browseMoreLabel) }
-            }
-        }
+        AppSectionTitle(
+            title = title,
+            actionLabel = browseMoreLabel.takeIf { onMore != null },
+            onAction = onMore,
+            modifier = Modifier.padding(top = if (showDivider) AppSpacing.md else AppSpacing.zero)
+        )
     }
     if (rows.isEmpty()) {
         item(key = "home-empty-$title", contentType = "empty") {

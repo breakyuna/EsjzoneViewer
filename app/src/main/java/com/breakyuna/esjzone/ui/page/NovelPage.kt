@@ -144,6 +144,7 @@ import com.breakyuna.esjzone.offline.DownloadedNovelManifest
 import com.breakyuna.esjzone.offline.NovelDownloadManager
 import com.breakyuna.esjzone.offline.NovelExporter
 import com.breakyuna.esjzone.storage.StorageMigrationBusyException
+import com.breakyuna.esjzone.ui.component.AppSectionTitle
 import com.breakyuna.esjzone.ui.component.Description
 import com.breakyuna.esjzone.ui.designsystem.AppShapes
 import com.breakyuna.esjzone.ui.designsystem.AppLottieAsset
@@ -151,6 +152,7 @@ import com.breakyuna.esjzone.ui.designsystem.AppLottieState
 import com.breakyuna.esjzone.ui.designsystem.AppSpacing
 import com.breakyuna.esjzone.ui.designsystem.AppTypography
 import com.breakyuna.esjzone.ui.designsystem.AppTouchTarget
+import com.breakyuna.esjzone.ui.designsystem.appSemanticColors
 import com.breakyuna.esjzone.ui.designsystem.appStateColors
 import com.breakyuna.esjzone.ui.designsystem.AppWindowSizeClass
 import com.breakyuna.esjzone.ui.designsystem.rememberAppAdaptiveMetrics
@@ -680,10 +682,10 @@ private fun novelDetailItems(
                             .heightIn(min = AppTouchTarget.minimum),
                         shape = AppShapes.standard,
                         colors = ButtonDefaults.buttonColors(
-                            containerColor = Color(0xFF1976D2),
-                            contentColor = Color.White,
-                            disabledContainerColor = Color(0xFF1976D2).copy(alpha = 0.38f),
-                            disabledContentColor = Color.White.copy(alpha = 0.38f)
+                            containerColor = MaterialTheme.colorScheme.primary,
+                            contentColor = MaterialTheme.colorScheme.onPrimary,
+                            disabledContainerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.38f),
+                            disabledContentColor = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.38f)
                         ),
                         contentPadding = PaddingValues(horizontal = AppSpacing.sm, vertical = AppSpacing.sm)
                     ) {
@@ -701,6 +703,7 @@ private fun novelDetailItems(
                             overflow = TextOverflow.Ellipsis
                         )
                     }
+                    val semantics = appSemanticColors()
                     Button(
                         onClick = onToggleFavorite,
                         modifier = Modifier
@@ -708,8 +711,8 @@ private fun novelDetailItems(
                             .heightIn(min = AppTouchTarget.minimum),
                         shape = AppShapes.standard,
                         colors = ButtonDefaults.buttonColors(
-                            containerColor = Color(0xFFE53935),
-                            contentColor = Color.White
+                            containerColor = if (favorite) MaterialTheme.colorScheme.secondaryContainer else semantics.favorite,
+                            contentColor = if (favorite) MaterialTheme.colorScheme.onSecondaryContainer else semantics.onFavorite
                         ),
                         contentPadding = PaddingValues(horizontal = AppSpacing.sm, vertical = AppSpacing.sm)
                     ) {
@@ -852,10 +855,8 @@ private fun novelDetailItems(
 
         item(key = "detail-chapters-heading", contentType = "chapter-heading") {
             Column(
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier.fillMaxWidth().padding(top = AppSpacing.md)
             ) {
-                RebuiltRule()
-                Spacer(modifier = Modifier.height(AppSpacing.lg))
                 RebuiltSectionHeading(
                     title = stringResource(R.string.novel_chapterlist),
                     supportingText = orderedChapters.takeIf { it.isNotEmpty() }?.let {
@@ -973,14 +974,9 @@ private fun novelDetailItems(
             }
         }
 
-        item(key = "detail-comments-rule", contentType = "section-divider") {
-            Column(
-                modifier = Modifier.fillMaxWidth()
-            ) { RebuiltRule() }
-        }
         item(key = "detail-comments", contentType = "comments") {
             Column(
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier.fillMaxWidth().padding(top = AppSpacing.md)
             ) {
                 RebuiltSectionHeading(title = stringResource(R.string.comments))
                 Spacer(modifier = Modifier.height(AppSpacing.sm))
@@ -1151,26 +1147,12 @@ private fun RebuiltSectionHeading(
     actionLabel: String? = null,
     onAction: (() -> Unit)? = null
 ) {
-    Row(
-        modifier = Modifier.fillMaxWidth().padding(vertical = AppSpacing.sm),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Text(title, style = AppTypography.titleMedium, modifier = Modifier.weight(1f))
-        supportingText?.takeIf(String::isNotBlank)?.let {
-            Text(it, style = AppTypography.bodySmall, color = appStateColors().contentMuted)
-        }
-        if (actionLabel != null && onAction != null) {
-            TextButton(onClick = onAction, modifier = Modifier.heightIn(min = AppTouchTarget.minimum)) {
-                Text(actionLabel)
-                Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = actionLabel)
-            }
-        }
-    }
-}
-
-@Composable
-private fun RebuiltRule() {
-    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f))
+    AppSectionTitle(
+        title = title,
+        supportingText = supportingText,
+        actionLabel = actionLabel,
+        onAction = onAction
+    )
 }
 
 @Composable

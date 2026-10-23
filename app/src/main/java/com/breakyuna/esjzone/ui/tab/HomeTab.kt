@@ -205,7 +205,6 @@ object HomeTab : AppTab {
                 if (weeklyPopularNovels.isNotEmpty()) add(HomeCoverRow("home-weekly-popular", covers(weeklyPopularNovels.take(2))))
                 add(HomeCoverRow("home-actions"))
                 fun collection(title: String, rows: List<List<CoveredNovel>>) {
-                    add(HomeCoverRow("home-divider-$title"))
                     add(HomeCoverRow("home-section-$title"))
                     if (rows.isEmpty()) add(HomeCoverRow("home-empty-$title"))
                     rows.forEach { row -> add(HomeCoverRow(homeGridRowKey(title, row), covers(row))) }
@@ -218,12 +217,10 @@ object HomeTab : AppTab {
                     collection(originalAdultTitle, originalAdultRows)
                 }
                 if (weeklyNovelsByDay.isNotEmpty()) {
-                    add(HomeCoverRow("home-weekly-divider"))
                     add(HomeCoverRow("home-weekly-header"))
                     add(HomeCoverRow("home-weekly-content", covers(weeklyNovelsByDay.getOrNull(weeklyIndex).orEmpty())))
                 }
                 if (randomState.items.isNotEmpty()) {
-                    add(HomeCoverRow("home-random-divider"))
                     add(HomeCoverRow("home-random-header"))
                     randomState.items.chunked(HOME_GRID_COLUMNS).forEach { row ->
                         add(HomeCoverRow("home-random-row:${novelKey(row.first())}", covers(row)))

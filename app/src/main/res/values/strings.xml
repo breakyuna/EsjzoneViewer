@@ -871,6 +871,11 @@
     <string name="settings_data_group">数据</string>
     <string name="settings_system_group">系统</string>
     <string name="settings_theme">主题</string>
+    <string name="settings_palette">主题配色</string>
+    <string name="settings_palette_ink">墨韵</string>
+    <string name="settings_palette_sakura">樱</string>
+    <string name="settings_palette_dynamic">动态取色</string>
+    <string name="settings_palette_monochrome">经典黑白</string>
     <string name="settings_theme_light">浅色</string>
     <string name="settings_language_label">语言</string>
     <string name="settings_navigation_label">导航</string>

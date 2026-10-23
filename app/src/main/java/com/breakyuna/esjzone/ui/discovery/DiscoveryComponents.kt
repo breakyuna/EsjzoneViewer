@@ -425,7 +425,8 @@ fun DiscoveryLoadingState(modifier: Modifier = Modifier) {
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 AppShimmerPlaceholder(
-                    modifier = Modifier.size(width = 88.dp, height = 120.dp)
+                    modifier = Modifier.size(width = 88.dp, height = 120.dp),
+                    shape = AppShapes.cover
                 )
                 Column(
                     modifier = Modifier.weight(1f),

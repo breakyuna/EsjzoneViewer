@@ -19,6 +19,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import com.breakyuna.esjzone.R
 import com.breakyuna.esjzone.novellibrary.novel.CoveredNovel
+import com.breakyuna.esjzone.ui.component.AppSectionTitle
 import com.breakyuna.esjzone.ui.designsystem.AppSpacing
 import com.breakyuna.esjzone.ui.discovery.DiscoveryErrorState
 
@@ -60,19 +61,16 @@ internal fun LazyListScope.randomRecommendationsSection(
         return
     }
 
-    item(key = "home-random-divider", contentType = "home-section-divider") {
-        HomeSectionDividerItem()
-    }
     item(key = "home-random-header", contentType = "home-random-header") {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
+                .padding(top = AppSpacing.md)
                 .defaultMinSize(minHeight = 48.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Text(
-                text = title,
-                style = MaterialTheme.typography.titleMedium,
+            AppSectionTitle(
+                title = title,
                 modifier = Modifier.weight(1f)
             )
             TextButton(

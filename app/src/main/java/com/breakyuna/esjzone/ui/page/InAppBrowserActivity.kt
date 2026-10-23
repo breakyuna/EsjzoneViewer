@@ -64,6 +64,7 @@ class InAppBrowserActivity : ComponentActivity() {
         setContent {
             val appLanguage by PresentationAccess.settings.language
             val themeMode by PresentationAccess.settings.themeMode
+            val appPalette by PresentationAccess.settings.palette
             val readerSettings by PresentationAccess.readerSettings.settings.collectAsStateWithLifecycle()
             val systemDark = isSystemInDarkTheme()
             val darkTheme = when (themeMode) {
@@ -84,7 +85,7 @@ class InAppBrowserActivity : ComponentActivity() {
                 LocalConfiguration provides Configuration(localizedContext.resources.configuration),
                 LocalGlobalScript provides readerSettings.script
             ) {
-                AppTheme(darkTheme = darkTheme) {
+                AppTheme(darkTheme = darkTheme, palette = appPalette) {
                     var currentUrl by remember { mutableStateOf(initialUrl) }
                     var canGoBack by remember { mutableStateOf(false) }
                     val browser = remember {

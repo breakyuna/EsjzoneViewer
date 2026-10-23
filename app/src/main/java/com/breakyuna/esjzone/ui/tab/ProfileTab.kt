@@ -49,6 +49,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -227,7 +228,21 @@ private fun profileMenuItems(): List<ProfileMenuItem> = listOf(
 @Composable
 private fun ProfileHero(profile: UserProfile?, domain: String, avatarCacheKey: String, loading: Boolean, onRetry: () -> Unit) {
     Card(shape = AppShapes.prominent, colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
-        Row(Modifier.fillMaxWidth().padding(AppSpacing.xl), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(AppSpacing.lg)) {
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .background(
+                    Brush.horizontalGradient(
+                        listOf(
+                            MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.55f),
+                            MaterialTheme.colorScheme.surface
+                        )
+                    )
+                )
+                .padding(AppSpacing.xl),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(AppSpacing.lg)
+        ) {
             if (profile == null && loading) {
                 AppShimmerPlaceholder(
                     modifier = Modifier.size(72.dp),
@@ -308,8 +323,19 @@ private fun ProfileAction(item: ProfileMenuItem, modifier: Modifier = Modifier, 
         ) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically) {
-                Icon(item.icon, contentDescription = null, modifier = Modifier.size(22.dp),
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                Box(
+                    modifier = Modifier
+                        .size(36.dp)
+                        .background(MaterialTheme.colorScheme.primaryContainer, AppShapes.compact),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        item.icon,
+                        contentDescription = null,
+                        modifier = Modifier.size(20.dp),
+                        tint = MaterialTheme.colorScheme.onPrimaryContainer
+                    )
+                }
                 Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null,
                     tint = MaterialTheme.colorScheme.outline, modifier = Modifier.size(18.dp))
             }

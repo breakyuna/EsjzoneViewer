@@ -211,9 +211,7 @@ private fun AppListSurface(
                         )
                         .border(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.62f), selectionShape)
                 } else {
-                    Modifier
-                        .background(MaterialTheme.colorScheme.surface, selectionShape)
-                        .border(1.dp, MaterialTheme.colorScheme.outlineVariant, selectionShape)
+                    Modifier.background(MaterialTheme.colorScheme.surface, selectionShape)
                 }
             )
             .then(

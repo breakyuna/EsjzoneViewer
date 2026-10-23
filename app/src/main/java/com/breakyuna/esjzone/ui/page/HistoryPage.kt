@@ -623,7 +623,11 @@ private fun LocalHistoryCard(
     Column(
         modifier = modifier
             .fillMaxWidth()
-            .then(if (selected) Modifier.background(MaterialTheme.colorScheme.primaryContainer) else Modifier)
+            .clip(AppShapes.standard)
+            .background(
+                if (selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface,
+                AppShapes.standard
+            )
             .combinedClickable(
                 onClick = onOpen,
                 onLongClickLabel = stringResource(R.string.history_local_edit),
@@ -632,7 +636,7 @@ private fun LocalHistoryCard(
             .semantics { role = Role.Button }
     ) {
         Row(
-            Modifier.fillMaxWidth().padding(horizontal = AppSpacing.md, vertical = AppSpacing.xs),
+            Modifier.fillMaxWidth().padding(AppSpacing.md),
             verticalAlignment = Alignment.Top,
             horizontalArrangement = Arrangement.spacedBy(AppSpacing.md)
         ) {
@@ -778,14 +782,18 @@ private fun CloudHistoryCard(
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .then(if (selected) Modifier.background(MaterialTheme.colorScheme.primaryContainer) else Modifier)
+            .clip(AppShapes.standard)
+            .background(
+                if (selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface,
+                AppShapes.standard
+            )
             .combinedClickable(
                 onClick = open,
                 onLongClickLabel = stringResource(R.string.history_cloud_edit),
                 onLongClick = onLongClick.takeIf { history.vid.isNotBlank() }
             )
             .semantics { role = Role.Button }
-            .padding(vertical = AppSpacing.xs),
+            .padding(AppSpacing.md),
         verticalAlignment = Alignment.Top,
         horizontalArrangement = Arrangement.spacedBy(AppSpacing.md)
     ) {
@@ -867,7 +875,7 @@ private fun HistoryItemSkeleton(modifier: Modifier = Modifier) {
     ) {
         AppShimmerPlaceholder(
             modifier = Modifier.size(width = 96.dp, height = 132.dp),
-            shape = AppShapes.compact
+            shape = AppShapes.cover
         )
         Column(
             modifier = Modifier.weight(1f),

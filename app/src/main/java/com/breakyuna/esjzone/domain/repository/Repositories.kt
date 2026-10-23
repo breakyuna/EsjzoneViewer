@@ -1,6 +1,7 @@
 package com.breakyuna.esjzone.domain.repository
 
 import com.breakyuna.esjzone.AppLanguage
+import com.breakyuna.esjzone.AppPalette
 import com.breakyuna.esjzone.AppThemeMode
 import com.breakyuna.esjzone.database.entity.Bookmark
 import com.breakyuna.esjzone.database.entity.BookshelfEntry
@@ -33,6 +34,7 @@ interface SessionRepository {
 /** Settings are exposed as flows; callers do not need to know the legacy cache key format. */
 interface SettingsRepository {
     val themeMode: StateFlow<AppThemeMode>
+    val palette: StateFlow<AppPalette>
     val adult: StateFlow<Boolean>
     val hideHomeRecommendations: StateFlow<Boolean>
     val domain: StateFlow<String>
@@ -47,6 +49,7 @@ interface SettingsRepository {
     val startTab: StateFlow<String>
     fun setAdult(value: Boolean)
     fun setThemeMode(value: AppThemeMode)
+    fun setPalette(value: AppPalette)
     fun setHideHomeRecommendations(value: Boolean)
     fun setDomain(value: String)
     fun setLanguage(value: AppLanguage)

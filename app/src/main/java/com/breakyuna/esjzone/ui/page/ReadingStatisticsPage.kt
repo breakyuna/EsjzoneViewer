@@ -98,6 +98,7 @@ import com.breakyuna.esjzone.database.ReadingStatisticsSummary
 import com.breakyuna.esjzone.ui.designsystem.AppSpacing
 import com.breakyuna.esjzone.ui.designsystem.AppShapes
 import com.breakyuna.esjzone.ui.designsystem.AppTypography
+import com.breakyuna.esjzone.ui.designsystem.appSemanticColors
 import com.breakyuna.esjzone.ui.designsystem.AppLoadingState
 import com.breakyuna.esjzone.ui.designsystem.AppErrorState
 import com.breakyuna.esjzone.ui.designsystem.accountContentWidth
@@ -634,7 +635,7 @@ internal fun ReadingHeatmap(summary: ReadingStatisticsSummary, selectedDate: Loc
             .maxOf { summary.daily[firstDate.plusDays(it)] ?: 0L }
             .coerceAtLeast(1L)
     }
-    val heatColor = if (MaterialTheme.colorScheme.surface.luminance() < .5f) Color(0xFF82B1FF) else Color(0xFF2563EB)
+    val heatColor = appSemanticColors().chart
     val shades = listOf(
         MaterialTheme.colorScheme.outlineVariant.copy(alpha = .45f),
         heatColor.copy(alpha = .25f),
@@ -730,9 +731,9 @@ private fun TrendChart(summary: ReadingStatisticsSummary, days: Int, lineChart: 
         .coerceAtLeast(1L)) * tickStep
     val scaleMs = halfScaleMinutes * 2 * 60_000L
     val colors = MaterialTheme.colorScheme
-    val darkBackground = colors.surface.luminance() < .5f
-    val accent = if (darkBackground) Color(0xFF82B1FF) else Color(0xFF2563EB)
-    val barBase = if (darkBackground) Color(0xFF38BDF8) else Color(0xFF7DD3FC)
+    val semantics = appSemanticColors()
+    val accent = semantics.chart
+    val barBase = semantics.chartMuted
     val muted = colors.onSurfaceVariant
     val grid = colors.outlineVariant.copy(alpha = .5f)
     val locale = LocalConfiguration.current.locales[0]

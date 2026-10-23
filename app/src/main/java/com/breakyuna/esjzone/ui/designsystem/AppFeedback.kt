@@ -341,19 +341,23 @@ fun AppSyncStatusDot(
     isSuccess: Boolean,
     modifier: Modifier = Modifier
 ) {
+    val semantics = appSemanticColors()
     if (syncing) {
-        BreathingSyncDot(modifier = modifier)
+        BreathingSyncDot(modifier = modifier, color = semantics.success)
     } else {
         Surface(
             modifier = modifier.size(AppSpacing.sm),
             shape = CircleShape,
-            color = if (isSuccess) SyncStatusGreen else SyncStatusLightGray
+            color = if (isSuccess) semantics.success else MaterialTheme.colorScheme.outline
         ) {}
     }
 }
 
 @Composable
-private fun BreathingSyncDot(modifier: Modifier = Modifier) {
+private fun BreathingSyncDot(
+    modifier: Modifier = Modifier,
+    color: Color = appSemanticColors().success
+) {
     val infiniteTransition = rememberInfiniteTransition(label = "SyncBreathingLight")
     val alpha by infiniteTransition.animateFloat(
         initialValue = 0.25f,
@@ -369,6 +373,6 @@ private fun BreathingSyncDot(modifier: Modifier = Modifier) {
             .size(AppSpacing.sm)
             .graphicsLayer { this.alpha = alpha },
         shape = CircleShape,
-        color = SyncStatusGreen
+        color = color
     ) {}
 }

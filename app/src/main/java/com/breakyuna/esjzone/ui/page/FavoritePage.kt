@@ -121,6 +121,7 @@ import com.breakyuna.esjzone.ui.designsystem.AppShapes
 import com.breakyuna.esjzone.ui.designsystem.AppSpacing
 import com.breakyuna.esjzone.ui.designsystem.AppSyncStatusDot
 import com.breakyuna.esjzone.ui.designsystem.AppTypography
+import com.breakyuna.esjzone.ui.designsystem.appSemanticColors
 import com.breakyuna.esjzone.ui.navigation.AppDestination
 import com.breakyuna.esjzone.ui.navigation.BooleanStateHolder
 import com.breakyuna.esjzone.ui.navigation.ContainerTransformTarget
@@ -993,9 +994,7 @@ private fun ShelfCard(
     val cover = BookshelfCoverStore.rememberCover(entry)
     val coverSource = rememberNovelCoverSource(entry.url, cover.url, cover.state)
     val open = { if (editing) onClick() else coverSource.open(onClick) }
-    // Keep bookshelf covers aligned with the compact 8dp corners used by
-    // the home discovery tiles.
-    val shape = AppShapes.compact
+    val shape = AppShapes.cover
     Column(
         Modifier.fillMaxWidth().clip(shape).then(
             if (selected && editing) Modifier.border(2.dp, MaterialTheme.colorScheme.primary, shape) else Modifier
@@ -1070,7 +1069,7 @@ private fun BookshelfUpdateDot(modifier: Modifier = Modifier) {
     Box(
         modifier = modifier
             .size(AppSpacing.sm)
-            .background(Color(0xFF22C55E), CircleShape)
+            .background(appSemanticColors().success, CircleShape)
     )
 }
 
@@ -1088,15 +1087,16 @@ private fun ShelfListItem(
     val cover = BookshelfCoverStore.rememberCover(entry)
     val coverSource = rememberNovelCoverSource(entry.url, cover.url, cover.state)
     val open = { if (editing) onClick() else coverSource.open(onClick) }
+    val coverShape = AppShapes.cover
     Row(
-        Modifier.fillMaxWidth().clip(AppShapes.compact)
+        Modifier.fillMaxWidth().clip(AppShapes.standard)
             .then(if (editing && selected) Modifier.background(MaterialTheme.colorScheme.secondaryContainer) else Modifier)
             .combinedClickable(enabled = enabled, onClick = open, onLongClick = onLongClick)
             .padding(vertical = AppSpacing.xs),
         horizontalArrangement = Arrangement.spacedBy(AppSpacing.md), verticalAlignment = Alignment.Top
     ) {
         Box(
-            Modifier.size(width = 100.dp, height = 140.dp).clip(AppShapes.compact).combinedClickable(
+            Modifier.size(width = 100.dp, height = 140.dp).clip(coverShape).combinedClickable(
                 enabled = enabled,
                 onClick = open,
                 onLongClickLabel = stringResource(R.string.bookshelf_edit),
@@ -1107,7 +1107,7 @@ private fun ShelfListItem(
                 coverUrl = cover.url,
                 onImageLoaded = coverSource.onImageLoaded,
                 title = entry.title,
-                modifier = Modifier.then(coverModifier).then(coverSource.modifier).fillMaxSize().clip(AppShapes.compact),
+                modifier = Modifier.then(coverModifier).then(coverSource.modifier).fillMaxSize().clip(coverShape),
                 coverState = cover.state
             )
             AppSelectionReveal(editing, Modifier.align(Alignment.TopStart).padding(AppSpacing.xs)) {

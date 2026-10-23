@@ -3,6 +3,7 @@ package com.breakyuna.esjzone.ui.page
 import androidx.lifecycle.viewModelScope
 
 import androidx.compose.ui.draw.clip
+import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import com.breakyuna.esjzone.ui.designsystem.AppShapes
 import androidx.compose.foundation.layout.Arrangement
@@ -247,10 +248,15 @@ private fun BookmarkCard(
         modifier = Modifier
             .fillMaxWidth()
             .clip(AppShapes.standard)
+            .background(
+                if (selected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f)
+                else MaterialTheme.colorScheme.surface,
+                AppShapes.standard
+            )
             .then(if (selected) Modifier.border(2.dp, MaterialTheme.colorScheme.primary, AppShapes.standard) else Modifier)
             .clickable(onClick = onOpen)
             .semantics { role = Role.Button }
-            .padding(vertical = AppSpacing.sm, horizontal = AppSpacing.xs),
+            .padding(AppSpacing.md),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(AppSpacing.md)
     ) {

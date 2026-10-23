@@ -690,9 +690,8 @@ private fun CommentComposer(
             .wrapContentHeight(),
         color = appStateColors().containerRaised,
         tonalElevation = 0.dp,
-        shadowElevation = AppElevation.raised,
-        shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+        shadowElevation = AppElevation.floating,
+        shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp)
     ) {
         Column(
             modifier = Modifier
@@ -891,7 +890,6 @@ private fun CommentPager(
             .padding(vertical = AppSpacing.sm),
         shape = AppShapes.standard,
         color = MaterialTheme.colorScheme.surface,
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
         shadowElevation = AppElevation.raised
     ) {
         Row(
@@ -914,8 +912,8 @@ private fun CommentPager(
             }
             Surface(
                 shape = AppShapes.pill,
-                color = MaterialTheme.colorScheme.onSurface,
-                contentColor = MaterialTheme.colorScheme.surface
+                color = MaterialTheme.colorScheme.primaryContainer,
+                contentColor = MaterialTheme.colorScheme.onPrimaryContainer
             ) {
                 Text(
                     text = stringResource(id = R.string.page_indicator, page, totalPages),
@@ -946,7 +944,6 @@ private fun CommentCard(comment: Comment, onReply: (() -> Unit)?) {
             .padding(vertical = AppSpacing.xs),
         shape = AppShapes.standard,
         color = appStateColors().containerRaised,
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
         shadowElevation = AppElevation.raised
     ) {
         Column(
@@ -987,14 +984,13 @@ private fun CommentCard(comment: Comment, onReply: (() -> Unit)?) {
                     ?.let { floor ->
                         Surface(
                             shape = AppShapes.compact,
-                            color = MaterialTheme.colorScheme.surface,
-                            contentColor = MaterialTheme.colorScheme.onSurface,
-                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
+                            color = MaterialTheme.colorScheme.surfaceContainer,
+                            contentColor = MaterialTheme.colorScheme.onSurfaceVariant
                         ) {
                             Text(
                                 text = floor,
                                 style = AppTypography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
-                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
                             )
                         }
                     }
@@ -1008,7 +1004,7 @@ private fun CommentCard(comment: Comment, onReply: (() -> Unit)?) {
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(top = 16.dp),
-                        color = MaterialTheme.colorScheme.surface,
+                        color = MaterialTheme.colorScheme.surfaceContainer,
                         contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
                         shape = AppShapes.standard
                     ) {

@@ -19,6 +19,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import com.breakyuna.esjzone.R
+import com.breakyuna.esjzone.ui.component.AppSectionTitle
 import com.breakyuna.esjzone.ui.designsystem.AppShapes
 import com.breakyuna.esjzone.ui.designsystem.AppShimmerPlaceholder
 import com.breakyuna.esjzone.ui.designsystem.AppSpacing
@@ -39,14 +40,10 @@ internal fun LazyListScope.homeLoadingHero() {
 }
 
 internal fun LazyListScope.homeLoadingCollection(title: String) {
-    item(key = "home-divider-$title", contentType = "home-section-divider") {
-        HomeSectionDividerItem()
-    }
     item(key = "home-section-$title", contentType = "home-section") {
-        Text(
-            text = homeSectionTitleText(title),
-            style = MaterialTheme.typography.titleMedium,
-            modifier = Modifier.fillMaxWidth().height(48.dp).padding(top = AppSpacing.sm)
+        AppSectionTitle(
+            title = title,
+            modifier = Modifier.padding(top = AppSpacing.md)
         )
     }
     item(key = "home-loading-grid-$title", contentType = "home-grid-row") {
@@ -55,16 +52,12 @@ internal fun LazyListScope.homeLoadingCollection(title: String) {
 }
 
 internal fun LazyListScope.homeLoadingWeeklyUpdates() {
-    item(key = "home-weekly-divider", contentType = "home-section-divider") {
-        HomeSectionDividerItem()
-    }
     item(key = "home-weekly-header", contentType = "home-weekly-header") {
-        Column(verticalArrangement = Arrangement.spacedBy(AppSpacing.sm)) {
-            Text(
-                text = stringResource(R.string.home_weekly_updates),
-                style = MaterialTheme.typography.titleMedium,
-                modifier = Modifier.fillMaxWidth().height(48.dp).padding(top = AppSpacing.sm)
-            )
+        Column(
+            modifier = Modifier.padding(top = AppSpacing.md),
+            verticalArrangement = Arrangement.spacedBy(AppSpacing.sm)
+        ) {
+            AppSectionTitle(title = stringResource(R.string.home_weekly_updates))
             AppShimmerPlaceholder(Modifier.fillMaxWidth().height(44.dp))
         }
     }
@@ -77,7 +70,7 @@ internal fun LazyListScope.homeLoadingWeeklyUpdates() {
 private fun HomeLoadingGridRow() {
     Row(
         modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(AppSpacing.md / 2)
+        horizontalArrangement = Arrangement.spacedBy(AppSpacing.sm)
     ) {
         repeat(HOME_GRID_COLUMNS) {
             Column(
@@ -86,7 +79,7 @@ private fun HomeLoadingGridRow() {
             ) {
                 AppShimmerPlaceholder(
                     modifier = Modifier.fillMaxWidth().aspectRatio(0.7f),
-                    shape = AppShapes.compact
+                    shape = AppShapes.cover
                 )
                 AppShimmerPlaceholder(Modifier.fillMaxWidth().height(12.dp))
                 AppShimmerPlaceholder(Modifier.width(44.dp).height(12.dp))
