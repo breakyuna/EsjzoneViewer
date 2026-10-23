@@ -2214,7 +2214,7 @@ private fun NovelDownloadSheet(
             }
 
             if (completed > 0 && !downloading) {
-                RebuiltRule()
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f))
                 Text(
                     text = stringResource(R.string.novel_export_title),
                     style = AppTypography.titleMedium
