@@ -28,11 +28,10 @@ fun Modifier.accountContentWidth(): Modifier =
 @Composable
 fun AccountIconBadge(icon: ImageVector, modifier: Modifier = Modifier) {
     Box(
-        modifier = modifier.size(44.dp)
-            .background(MaterialTheme.colorScheme.primaryContainer, AppShapes.standard),
+        modifier = modifier.size(44.dp),
         contentAlignment = Alignment.Center
     ) {
-        Icon(icon, null, Modifier.size(22.dp), tint = MaterialTheme.colorScheme.onPrimaryContainer)
+        Icon(icon, null, Modifier.size(22.dp), tint = MaterialTheme.colorScheme.primary)
     }
 }
 

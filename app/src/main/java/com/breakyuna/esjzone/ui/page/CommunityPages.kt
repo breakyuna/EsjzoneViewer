@@ -574,19 +574,16 @@ private fun ForumCategoryCard(
             verticalAlignment = Alignment.Top,
             horizontalArrangement = Arrangement.spacedBy(AppSpacing.md)
         ) {
-            Surface(
+            Box(
                 modifier = Modifier.size(AppTouchTarget.minimum),
-                shape = AppShapes.standard,
-                color = MaterialTheme.colorScheme.primaryContainer
+                contentAlignment = Alignment.Center
             ) {
-                Box(contentAlignment = Alignment.Center) {
-                    Icon(
-                        imageVector = categoryIcon,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onPrimaryContainer,
-                        modifier = Modifier.size(22.dp)
-                    )
-                }
+                Icon(
+                    imageVector = categoryIcon,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(22.dp)
+                )
             }
             Column(
                 modifier = Modifier.weight(1f),

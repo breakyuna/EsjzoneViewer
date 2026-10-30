@@ -1,9 +1,7 @@
 package com.breakyuna.esjzone.ui.tab
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -14,7 +12,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Forum
 import androidx.compose.material.icons.filled.RateReview
@@ -112,18 +109,21 @@ internal fun HomeActions(
             label = stringResource(R.string.forum),
             icon = Icons.Filled.Forum,
             modifier = Modifier.weight(1f).containerTransformSource(ContainerTransformTarget.FORUM),
+            iconTint = Color(162, 25, 23),
             onClick = onForum
         )
         HomeShortcut(
             label = stringResource(R.string.guestbook),
             icon = Icons.Filled.RateReview,
             modifier = Modifier.weight(1f).containerTransformSource(ContainerTransformTarget.GUESTBOOK),
+            iconTint = Color(0xFFC67D0A),
             onClick = onGuestbook
         )
         HomeShortcut(
             label = stringResource(R.string.home_water_cooler),
             icon = Icons.Filled.WaterDrop,
             modifier = Modifier.weight(1f).containerTransformSource(ContainerTransformTarget.WATER_COOLER),
+            iconTint = Color(0xFF0288D1),
             onClick = onWaterCooler
         )
     }
@@ -134,6 +134,7 @@ private fun HomeShortcut(
     label: String,
     icon: ImageVector?,
     modifier: Modifier,
+    iconTint: Color,
     onClick: () -> Unit
 ) {
     Card(
@@ -149,19 +150,12 @@ private fun HomeShortcut(
             verticalAlignment = Alignment.CenterVertically
         ) {
             if (icon != null) {
-                Box(
-                    modifier = Modifier
-                        .size(34.dp)
-                        .background(MaterialTheme.colorScheme.primaryContainer, AppShapes.compact),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        imageVector = icon,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onPrimaryContainer,
-                        modifier = Modifier.size(18.dp)
-                    )
-                }
+                Icon(
+                    imageVector = icon,
+                    contentDescription = null,
+                    tint = iconTint,
+                    modifier = Modifier.size(22.dp)
+                )
             }
             Spacer(Modifier.width(AppSpacing.sm))
             Text(

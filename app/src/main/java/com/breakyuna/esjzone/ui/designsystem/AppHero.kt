@@ -4,11 +4,11 @@ import android.os.Build
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.blur
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
@@ -32,7 +32,7 @@ fun AppCoverBackdrop(
     val colors = MaterialTheme.colorScheme
     val scrim = appSemanticColors().heroScrim
     Box(
-        modifier = modifier.background(
+        modifier = modifier.clipToBounds().background(
             Brush.linearGradient(listOf(colors.primary, colors.tertiary))
         )
     ) {
@@ -45,14 +45,14 @@ fun AppCoverBackdrop(
                 loading = {},
                 error = {},
                 modifier = Modifier
-                    .fillMaxSize()
+                    .matchParentSize()
                     .graphicsLayer { scaleX = 1.25f; scaleY = 1.25f }
                     .then(if (BlurSupported) Modifier.blur(28.dp) else Modifier)
             )
         }
         Box(
             Modifier
-                .fillMaxSize()
+                .matchParentSize()
                 .background(
                     Brush.horizontalGradient(
                         if (BlurSupported) listOf(scrim.copy(alpha = 0.18f), scrim.copy(alpha = 0.58f))
