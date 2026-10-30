@@ -24,6 +24,7 @@ import com.breakyuna.esjzone.ui.designsystem.AppSpacing
 import com.breakyuna.esjzone.ui.discovery.DiscoveryErrorState
 
 internal fun LazyListScope.randomRecommendationsSection(
+    columns: Int = HOME_GRID_COLUMNS,
     state: HomeTabModel.RandomRecommendationsState,
     showInitialLoading: Boolean,
     title: String,
@@ -98,7 +99,7 @@ internal fun LazyListScope.randomRecommendationsSection(
         }
     }
 
-    val rows = state.items.chunked(HOME_GRID_COLUMNS)
+    val rows = state.items.chunked(columns)
     items(
         count = rows.size,
         key = { rowIndex -> "home-random-row:${novelKey(rows[rowIndex].first())}" },

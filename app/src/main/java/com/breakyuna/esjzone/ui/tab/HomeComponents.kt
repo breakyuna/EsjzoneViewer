@@ -1,5 +1,8 @@
 package com.breakyuna.esjzone.ui.tab
 
+import com.breakyuna.esjzone.ui.designsystem.appViewportSize
+import com.breakyuna.esjzone.ui.designsystem.appUsesWideLayout
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -52,6 +55,14 @@ import com.breakyuna.esjzone.ui.navigation.containerTransformContent
 import com.breakyuna.esjzone.ui.navigation.containerTransformSource
 
 internal const val HOME_GRID_COLUMNS = 4
+
+@Composable
+internal fun homeGridColumnCount(): Int {
+    if (!appUsesWideLayout()) return HOME_GRID_COLUMNS
+    val width = minOf(appViewportSize().width, 1280f) - 32f
+    val cellWidth = 120f * LocalConfiguration.current.fontScale.coerceAtLeast(1f)
+    return ((width + 8f) / (cellWidth + 8f)).toInt().coerceIn(4, 8)
+}
 private val HOME_SECTION_TITLE_PARENTHESIS = Regex("[（(][^（）()]*[）)]")
 
 @Composable
@@ -173,7 +184,8 @@ internal fun NovelGridRow(
     row: List<CoveredNovel>,
     showLatestTitle: Boolean,
     onNovelClick: (CoveredNovel) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    columns: Int = homeGridColumnCount()
 ) {
     Row(
         modifier = modifier.fillMaxWidth(),
@@ -187,7 +199,7 @@ internal fun NovelGridRow(
                 modifier = Modifier.weight(1f)
             )
         }
-        repeat(HOME_GRID_COLUMNS - row.size) {
+        repeat(columns - row.size) {
             Spacer(Modifier.weight(1f))
         }
     }

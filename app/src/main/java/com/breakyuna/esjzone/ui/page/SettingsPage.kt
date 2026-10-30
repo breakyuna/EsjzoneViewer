@@ -1,5 +1,12 @@
 package com.breakyuna.esjzone.ui.page
 
+import com.breakyuna.esjzone.ui.designsystem.AppLayout
+import com.breakyuna.esjzone.ui.designsystem.appUsesWideLayout
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material3.VerticalDivider
+import androidx.compose.material3.NavigationDrawerItem
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.width
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedContentTransitionScope
@@ -131,7 +138,6 @@ import com.breakyuna.esjzone.network.LocalAuthorization
 import com.breakyuna.esjzone.network.hasCredentials
 import com.breakyuna.esjzone.database.BookshelfRepository
 import com.breakyuna.esjzone.data.settings.SettingsDefaults
-import com.breakyuna.esjzone.network.features.CommunitySyncManager
 import com.breakyuna.esjzone.ui.navigation.AppDestination
 import com.breakyuna.esjzone.ui.navigation.LocalAppNavigator
 import com.breakyuna.esjzone.ui.navigation.LocalBaseNavigator
@@ -227,9 +233,10 @@ object SettingsPage : AppDestination {
                 )
             }
         ) { padding ->
+            SettingsPaneLayout(section, { section = it }, Modifier.fillMaxSize().padding(padding)) {
             AnimatedContent(
                 targetState = section,
-                modifier = Modifier.fillMaxSize().padding(padding),
+                modifier = Modifier.fillMaxSize(),
                 transitionSpec = {
                     val direction = if (targetState == "MAIN") {
                         AnimatedContentTransitionScope.SlideDirection.Right
@@ -334,7 +341,6 @@ object SettingsPage : AppDestination {
                                             PresentationAccess.client.clearParsedPageCache()
                                             if (PresentationAccess.client.hasSiteSession(candidate)) {
                                                 BookshelfRepository.scheduleSync(session)
-                                                CommunitySyncManager.schedulePreSync(session)
                                             }
                                             rootNavigator?.replaceAll(MainScreen(session))
                                         } else {
@@ -700,6 +706,7 @@ object SettingsPage : AppDestination {
                         )
                     }
 
+            }
             }
             }
             }
@@ -1086,5 +1093,44 @@ private fun PaletteSettingRow(
                 }
             }
         }
+    }
+}
+
+/** The section state and saved scroll positions are shared by both window layouts. */
+@Composable
+private fun SettingsPaneLayout(
+    selected: String,
+    onSelected: (String) -> Unit,
+    modifier: Modifier = Modifier,
+    content: @Composable () -> Unit
+) {
+    val wide = appUsesWideLayout()
+    Row(modifier) {
+        if (wide) {
+            Column(
+                Modifier.width(AppLayout.settingsNavigationWidth).fillMaxHeight().verticalScroll(rememberScrollState())
+                    .padding(horizontal = AppSpacing.md, vertical = AppSpacing.sm),
+                verticalArrangement = Arrangement.spacedBy(AppSpacing.xs)
+            ) {
+                val sections = listOf(
+                    Triple("MAIN", R.string.settings_general_section, Icons.Filled.Settings),
+                    Triple("NAVIGATION", R.string.settings_navigation_section, Icons.Filled.Reorder),
+                    Triple("READING", R.string.settings_reading_section, Icons.Filled.MenuBook),
+                    Triple("DOWNLOAD", R.string.download_settings, Icons.Filled.Download),
+                    Triple("STORAGE", R.string.settings_storage_analysis, Icons.Filled.Storage),
+                    Triple("ABOUT", R.string.about, Icons.Filled.Info)
+                )
+                sections.forEach { (id, title, icon) ->
+                    NavigationDrawerItem(
+                        selected = selected == id,
+                        onClick = { onSelected(id) },
+                        label = { Text(stringResource(title)) },
+                        icon = { Icon(icon, null) }
+                    )
+                }
+            }
+            VerticalDivider()
+        }
+        Box(Modifier.weight(1f).fillMaxHeight()) { content() }
     }
 }

@@ -32,6 +32,7 @@
     <string name="login_network_fail">网络连接失败，请检查网络后重试</string>
     <string name="login_same_account_required">请使用当前账号补登此站；如需更换账号，请先退出登录。</string>
     <string name="download_image_unavailable">[图片暂不可用]</string>
+    <string name="reader_image_loading">[图片加载中]</string>
     <string name="screen_main_tab_home">主页</string>
     <string name="screen_main_tab_category">分类</string>
     <string name="screen_main_tab_search">搜索</string>
@@ -923,4 +924,24 @@
     <string name="storage_size_calculating">正在统计大小…</string>
     <string name="storage_move_private">迁回应用私有目录</string>
     <string name="storage_move_private_confirm">将下载和自动备份迁回应用私有目录，成功后删除公共目录中的对应原文件。卸载应用会删除私有目录中的文件。</string>
+    <string name="home_carousel_previous">上一条推荐</string>
+    <string name="home_carousel_next">下一条推荐</string>
+    <string name="home_refresh_retained">更新失败，保留上次内容</string>
+    <string name="home_weekly_failed">一周更新加载失败</string>
+    <string name="local_start_reading">开始阅读</string>
+    <string name="local_pause_download">暂停下载</string>
+    <string name="local_download_waiting">等待下载</string>
+    <string name="local_download_count">已保存 %1$d / %2$d 章</string>
+    <string name="local_downloaded">已下载</string>
+    <string name="local_text_saved">正文已保存</string>
+    <string name="local_not_downloaded">未下载</string>
+    <string name="local_search_empty">本地没有匹配的作品</string>
+    <string name="search_scope_local">本地</string>
+    <string name="search_scope_site">站点</string>
+    <string name="cover_retry">重试封面</string>
+    <string name="cover_unavailable">封面暂不可用</string>
+    <string name="cover_placeholder">暂无封面</string>
+    <string name="reader_catalog_search">搜索章节</string>
+    <string name="reader_catalog_current">定位当前章节</string>
+    <string name="reader_boundary_failed">章节加载失败，当前正文已保留</string>
 </resources>

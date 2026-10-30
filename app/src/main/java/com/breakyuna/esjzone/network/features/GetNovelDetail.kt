@@ -14,6 +14,7 @@ import com.breakyuna.esjzone.network.CacheEventType
 import com.breakyuna.esjzone.network.CacheAnalysis
 import com.breakyuna.esjzone.network.CacheLayer
 import com.breakyuna.esjzone.network.CacheEventReason
+import com.breakyuna.esjzone.novellibrary.novel.validNovelTitle
 import com.breakyuna.esjzone.novellibrary.novel.DetailedNovel
 import com.breakyuna.esjzone.novellibrary.novel.Novel
 import com.breakyuna.esjzone.novellibrary.novel.NovelChapterList
@@ -38,7 +39,7 @@ fun EsjzoneClient.getNovelDetail(
     val detailCacheEpoch = NovelDetailCache.currentEpoch
     if (!includeComments && !forceRefresh) {
         NovelDetailCache.read(detailCacheKey)?.takeIf { cached ->
-            cached.name.isNotBlank() && !cached.name.all(Char::isDigit)
+            validNovelTitle(cached.name, cached.id(), targetUrl).isNotBlank()
         }?.let {
             CacheAnalysis.lookup(CacheLayer.DETAIL, fresh = true)
             CacheDiagnostics.record(CacheEventType.HIT, CacheLayer.DETAIL, CacheEventReason.MEMORY, detailCacheKey)
@@ -85,7 +86,7 @@ fun EsjzoneClient.getNovelDetail(
 
     val detailInfo = document.selectFirst(".book-detail")
     val resolvedName = detailSelector.first(document, ".book-detail h2")?.text()?.trim()
-        ?.takeIf(String::isNotBlank) ?: novel.name
+        ?.takeIf(String::isNotBlank) ?: validNovelTitle(novel.name, novelUrl = targetUrl)
     val type = detailInfo?.let {
         detailSelector.first(it, "ul li[data-field='type'], ul li")?.text()
     }

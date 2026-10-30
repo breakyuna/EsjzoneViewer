@@ -177,8 +177,9 @@ fun AdaptiveAppShell(
         AppTabId.BOOKSHELF -> bookshelfStack
         AppTabId.PROFILE -> profileStack
     }
-    // A tab bar is a root-level control, not a child-page overlay. Keeping it off a pushed
-    // destination prevents a second navigation hierarchy from appearing above detail pages.
+    // Compact navigation stays at tab roots. Wide landscape keeps the rail available
+    // while each tab retains its child stack; edit modes can still suppress it.
+    val keepWideRail = com.breakyuna.esjzone.ui.designsystem.appUsesWideLayout()
     val showFloatingNavigation = selectedStack.lastOrNull() == tab.route && suppressedTabs[tab] != true
 
     val floatingNavPadding = PaddingValues(0.dp)
@@ -236,7 +237,7 @@ fun AdaptiveAppShell(
     val onTabSelected: (AppTabId) -> Unit = { targetTab ->
         focusManager.clearFocus(force = true)
         if (tab == targetTab) {
-            if (targetTab == AppTabId.HISTORY) {
+            if (targetTab == AppTabId.HISTORY && (!keepWideRail || selectedStack.lastOrNull() == tab.route)) {
                 val now = System.currentTimeMillis()
                 if (now - lastHistoryTabClickTime < 400L) {
                     HistoryTab.requestOpenLastReading()
@@ -302,7 +303,7 @@ fun AdaptiveAppShell(
                         shellSafeDrawing(top = !topInsetConsumed, bottom = true)
                     )
                 ) {
-                    if (showFloatingNavigation) {
+                    if (showFloatingNavigation || (keepWideRail && suppressedTabs[tab] != true)) {
                         AppSideNavigationBar(
                             selected = tab,
                             onSelected = onTabSelected,
@@ -448,67 +449,69 @@ private fun TabStackDisplay(
         LocalLifecycleOwner provides lifecycleOwner,
         LocalNavigationEventDispatcherOwner provides dispatcherOwner
     ) {
-        ContainerTransformLayout(modifier) {
-            NavDisplay(
-                backStack = stack,
-                modifier = Modifier.fillMaxSize(),
-                onBack = { if (!navigator.pop()) Unit },
-                transitionSpec = {
-                    if (usesContainerTransform(initialState, targetState)) {
-                        containerContentTransform()
-                    } else {
-                        pushTransition()
-                    }
-                },
-                popTransitionSpec = {
-                    if (usesContainerTransform(initialState, targetState)) {
-                        containerContentTransform()
-                    } else {
-                        popTransition()
-                    }
-                },
-                predictivePopTransitionSpec = { edge ->
-                    if (usesContainerTransform(initialState, targetState)) {
-                        containerContentTransform()
-                    } else {
-                        predictivePopTransition(edge)
-                    }
-                },
-                entryDecorators = listOf(
-                    rememberSaveableStateHolderNavEntryDecorator(),
-                    rememberViewModelStoreNavEntryDecorator()
-                ),
-                entryProvider = entryProvider {
-                    entry<AppNavKey.HomeTab>(metadata = ::containerTransformMetadata) { HomeTab.Content() }
-                    entry<AppNavKey.HistoryTab>(metadata = ::containerTransformMetadata) { HistoryTab.Content() }
-                    entry<AppNavKey.BookshelfTab>(metadata = ::containerTransformMetadata) { FavoriteTab.Content() }
-                    entry<AppNavKey.ProfileTab>(metadata = ::containerTransformMetadata) { ProfileTab.Content() }
-                    entry<AppNavKey.Legacy>(metadata = ::containerTransformMetadata) { key ->
-                        val destination = navigator.destination(key.route)
-                        if (destination != null) {
-                            val containerTarget = ContainerTransformTarget.forKey(key, origin = tabId.route)
-                            if (containerTarget != null) {
-                                ContainerTransformDestination(containerTarget) { destination.Content() }
-                            } else {
-                                destination.Content()
-                            }
+        com.breakyuna.esjzone.ui.designsystem.AppViewport(modifier) {
+            ContainerTransformLayout(Modifier.fillMaxSize()) {
+                NavDisplay(
+                    backStack = stack,
+                    modifier = Modifier.fillMaxSize(),
+                    onBack = { if (!navigator.pop()) Unit },
+                    transitionSpec = {
+                        if (usesContainerTransform(initialState, targetState)) {
+                            containerContentTransform()
                         } else {
-                            DiscoveryScaffold(
-                                title = stringResource(R.string.load_failed_short),
-                                onBack = { if (!navigator.pop()) Unit }
-                            ) { padding ->
-                                EmptyState(
+                            pushTransition()
+                        }
+                    },
+                    popTransitionSpec = {
+                        if (usesContainerTransform(initialState, targetState)) {
+                            containerContentTransform()
+                        } else {
+                            popTransition()
+                        }
+                    },
+                    predictivePopTransitionSpec = { edge ->
+                        if (usesContainerTransform(initialState, targetState)) {
+                            containerContentTransform()
+                        } else {
+                            predictivePopTransition(edge)
+                        }
+                    },
+                    entryDecorators = listOf(
+                        rememberSaveableStateHolderNavEntryDecorator(),
+                        rememberViewModelStoreNavEntryDecorator()
+                    ),
+                    entryProvider = entryProvider {
+                        entry<AppNavKey.HomeTab>(metadata = ::containerTransformMetadata) { HomeTab.Content() }
+                        entry<AppNavKey.HistoryTab>(metadata = ::containerTransformMetadata) { HistoryTab.Content() }
+                        entry<AppNavKey.BookshelfTab>(metadata = ::containerTransformMetadata) { FavoriteTab.Content() }
+                        entry<AppNavKey.ProfileTab>(metadata = ::containerTransformMetadata) { ProfileTab.Content() }
+                        entry<AppNavKey.Legacy>(metadata = ::containerTransformMetadata) { key ->
+                            val destination = navigator.destination(key.route)
+                            if (destination != null) {
+                                val containerTarget = ContainerTransformTarget.forKey(key, origin = tabId.route)
+                                if (containerTarget != null) {
+                                    ContainerTransformDestination(containerTarget) { destination.Content() }
+                                } else {
+                                    destination.Content()
+                                }
+                            } else {
+                                DiscoveryScaffold(
                                     title = stringResource(R.string.load_failed_short),
-                                    message = stringResource(R.string.community_empty_guidance),
-                                    modifier = Modifier.fillMaxSize().padding(padding),
-                                    actionLabel = stringResource(R.string.close),
-                                    onAction = { if (!navigator.pop()) Unit }
-                                )
+                                    onBack = { if (!navigator.pop()) Unit }
+                                ) { padding ->
+                                    EmptyState(
+                                        title = stringResource(R.string.load_failed_short),
+                                        message = stringResource(R.string.community_empty_guidance),
+                                        modifier = Modifier.fillMaxSize().padding(padding),
+                                        actionLabel = stringResource(R.string.close),
+                                        onAction = { if (!navigator.pop()) Unit }
+                                    )
+                                }
                             }
                         }
                     }
-                }
-            )
+                )
+            }
         }
     }
 }

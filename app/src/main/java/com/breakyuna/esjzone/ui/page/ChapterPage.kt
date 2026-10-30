@@ -1,6 +1,8 @@
 @file:OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 
 package com.breakyuna.esjzone.ui.page
+import com.breakyuna.esjzone.ui.designsystem.AppLayout
+import com.breakyuna.esjzone.ui.designsystem.appUsesWideLayout
 import com.breakyuna.esjzone.app.PresentationAccess
 
 import android.app.Activity
@@ -132,7 +134,6 @@ import com.breakyuna.esjzone.ui.designsystem.globalStringResource as stringResou
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.ProgressBarRangeInfo
 import androidx.compose.ui.semantics.progressBarRangeInfo
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextOverflow
@@ -254,6 +255,7 @@ class ChapterPage(
         val stableTopInset = WindowInsets.statusBarsIgnoringVisibility.union(WindowInsets.displayCutout).asPaddingValues().calculateTopPadding()
         val density = LocalDensity.current
         val adaptiveMetrics = rememberAppAdaptiveMetrics()
+        val wide = appUsesWideLayout()
         val scope = rememberCoroutineScope()
         val sidePanels = rememberReaderSidePanelsState()
         var sideCommentChapter by remember { mutableStateOf<Chapter?>(null) }
@@ -339,6 +341,7 @@ class ChapterPage(
                 )
             }
         val state by chapterPageModel.state.collectAsState()
+        val resolvedNovelName by chapterPageModel.novelNameState
         var wenkuVerificationChapter by remember { mutableStateOf<Chapter?>(null) }
         var dismissedWenkuPrompt by remember { mutableStateOf<String?>(null) }
         val pendingWenkuVerification = (state as? ChapterPageModel.State.Result)?.verificationChapter
@@ -653,8 +656,11 @@ class ChapterPage(
         }
         val displayByKey = remember(displayItems) { displayItems.associateBy { it.key } }
         val hasPreviousVerification = result?.verificationChapter != null && result.verificationOffset < 0
-        fun readerListIndex(bodyIndex: Int): Int =
-            com.breakyuna.esjzone.ui.reader.readerBodyListIndex(bodyIndex, hasPreviousVerification)
+        val hasPreviousRetry = result?.previousFailed == true
+        val readerBodyStartOffset = com.breakyuna.esjzone.ui.reader.readerBodyListIndex(
+            0, hasPreviousVerification, hasPreviousRetry
+        )
+        fun readerListIndex(bodyIndex: Int): Int = bodyIndex + readerBodyStartOffset
 
         // At index zero LazyColumn can retain the numeric position when new
         // chapters are prepended. Preserve the old visible body key and offset
@@ -700,7 +706,7 @@ class ChapterPage(
                 if (item.ordinal == 0) item.chapterKey to index else null
             }.toMap()
         }
-        LaunchedEffect(readerResumed, commentReturnKey, displayItems) {
+        LaunchedEffect(readerResumed, commentReturnKey, displayItems, readerBodyStartOffset) {
             val key = commentReturnKey ?: return@LaunchedEffect
             if (!readerResumed) return@LaunchedEffect
             val index = displayIndexByKey[key] ?: run {
@@ -1036,11 +1042,7 @@ class ChapterPage(
                 novelId = novelId.ifBlank {
                     currentReadingChapter.novelId()
                 },
-                novelName = novelName.ifBlank {
-                    novelId.ifBlank {
-                        currentReadingChapter.novelId()
-                    }.ifBlank { currentReadingChapter.name }
-                },
+                novelName = resolvedNovelName,
                 novelUrl = novelUrl.ifBlank {
                     novelId.ifBlank {
                         currentReadingChapter.novelId()
@@ -1134,10 +1136,7 @@ class ChapterPage(
                                 com.breakyuna.esjzone.database.entity.Bookmark(
                                     chapterUrl = bookmarkChapterUrl,
                                     novelId = finalNovelId,
-                                    novelName = novelName
-                                        .ifBlank { novelId }
-                                        .ifBlank { target.novelId() }
-                                        .ifBlank { target.name },
+                                    novelName = resolvedNovelName,
                                     chapterName = target.name
                                 )
                             )
@@ -1277,7 +1276,7 @@ class ChapterPage(
         }
 
         var previousRequestedChapterUrl by remember { mutableStateOf<String?>(null) }
-        LaunchedEffect(requestedChapter.value.url) {
+        LaunchedEffect(requestedChapter.value.url, readerBodyStartOffset) {
             val currentRequestedChapterUrl = requestedChapter.value.url
             val oldRequestedChapterUrl = previousRequestedChapterUrl
             previousRequestedChapterUrl = currentRequestedChapterUrl
@@ -1370,7 +1369,7 @@ class ChapterPage(
             pendingUnderline = null
         }
 
-        LaunchedEffect(pendingSeekLocation, displayItems, paginationReady, scriptReady, hasPreviousVerification) {
+        LaunchedEffect(pendingSeekLocation, displayItems, paginationReady, scriptReady, readerBodyStartOffset) {
             if (!paginationReady || !scriptReady) return@LaunchedEffect
             val target = pendingSeekLocation ?: return@LaunchedEffect
             val targetKey = chapterIdentity(target.chapter)
@@ -1655,7 +1654,7 @@ class ChapterPage(
             }
         }
 
-        LaunchedEffect(result, displayItems, pendingBoundaryTurn, pagingEnabled, paginationReady) {
+        LaunchedEffect(result, displayItems, pendingBoundaryTurn, pagingEnabled, paginationReady, readerBodyStartOffset) {
             val pending = pendingBoundaryTurn ?: return@LaunchedEffect
             if (!pagingEnabled || result == null) return@LaunchedEffect
             val loading = if (pending.forward) result.isLoadingNext else result.isLoadingPrevious
@@ -1713,6 +1712,7 @@ class ChapterPage(
             },
             contents = {
                 ReaderContentsContent(
+                    novelUrl = novelUrl,
                     chapters = readerChapters,
                     currentChapter = currentReadingChapter,
                     novelId = novelId.ifBlank { currentReadingChapter.novelId() },
@@ -1767,6 +1767,7 @@ class ChapterPage(
                         userScrollEnabled = !pagedMode,
                         modifier = Modifier
                             .fillMaxHeight()
+                            .then(if (wide) Modifier.widthIn(max = AppLayout.wideReaderMaxWidth) else Modifier)
                             .fillMaxWidth()
                             .widthIn(max = adaptiveMetrics.contentMaxWidth)
                             .align(Alignment.Center)
@@ -1942,7 +1943,7 @@ class ChapterPage(
 
                         is ChapterPageModel.State.Result -> {
                             val readerResult = state as ChapterPageModel.State.Result
-                            if (readerResult.verificationChapter != null && readerResult.verificationOffset < 0) {
+                            if (hasPreviousVerification) {
                                 item(key = "reader-verification-previous") {
                                     ReaderWenkuVerificationState(
                                         unavailable = readerResult.verificationWebViewUnavailable,
@@ -1959,6 +1960,9 @@ class ChapterPage(
                                         }
                                     )
                                 }
+                            }
+                            if (hasPreviousRetry) item(key = "reader-previous-retry") {
+                                ReaderBoundaryRetry { chapterPageModel.retryBoundary(false) }
                             }
                             items(items = displayItems, key = ReaderDisplayItem::key) { item ->
                                 if (item.ordinal == 0) {
@@ -2018,6 +2022,9 @@ class ChapterPage(
                                 }
                             }
 
+                            if (readerResult.nextFailed) item(key = "reader-next-retry") {
+                                ReaderBoundaryRetry { chapterPageModel.retryBoundary(true) }
+                            }
                             if (readerResult.isLoadingNext) {
                                 item(key = "reader-loading-next") {
                                     val loadingDescription = stringResource(R.string.reader_loading)
@@ -2156,6 +2163,10 @@ class ChapterPage(
                                     }
                                 )
                             }
+                        } else if ((atNextBoundary && result.nextFailed) || (atPreviousBoundary && result.previousFailed)) {
+                            Surface(modifier = Modifier.align(Alignment.BottomCenter).padding(16.dp), shape = MaterialTheme.shapes.medium) {
+                                ReaderBoundaryRetry { chapterPageModel.retryBoundary(atNextBoundary && result.nextFailed) }
+                            }
                         } else if (!paginationReady ||
                             (atPreviousBoundary && result.isLoadingPrevious) ||
                             (atNextBoundary && result.isLoadingNext)) {
@@ -2186,7 +2197,7 @@ class ChapterPage(
             }
 
             ReaderStatusBar(
-                novelName = novelName,
+                novelName = resolvedNovelName,
                 chapterName = currentChapterName,
                 chapterIndex = currentBookLocation?.chapterIndex ?: -1,
                 totalChapters = currentBookLocation?.totalChapters ?: bookChapterOrder.size,
@@ -2291,6 +2302,7 @@ class ChapterPage(
             ) {
                 Surface(
                     modifier = Modifier
+                        .then(if (wide) Modifier.widthIn(max = AppLayout.wideReaderMaxWidth) else Modifier)
                         .fillMaxWidth()
                         .clickable(
                             interactionSource = remember { MutableInteractionSource() },
@@ -2413,7 +2425,7 @@ class ChapterPage(
                                                     ReaderTool.BOOKMARK -> toggleBookmark()
                                                     ReaderTool.COMMENTS -> openReaderComments()
                                                     ReaderTool.NOVEL_DETAIL -> navigator?.pushIfNotCurrent(
-                                                        NovelPage(FavoriteNovel(novelName.ifBlank { novelId.ifBlank { commentChapter.name } }, detailUrl), history)
+                                                        NovelPage(FavoriteNovel(resolvedNovelName, detailUrl), history)
                                                     )
                                                     ReaderTool.EYE_PROTECTION -> updateReaderSettings(readerSettings.copy(eyeProtectionEnabled = !readerSettings.eyeProtectionEnabled))
                                                     ReaderTool.BRIGHTNESS -> {
@@ -2483,7 +2495,7 @@ class ChapterPage(
                         }
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                text = novelName.ifBlank { stringResource(R.string.reader_contents) },
+                                text = resolvedNovelName.ifBlank { stringResource(R.string.reader_contents) },
                                 style = MaterialTheme.typography.titleMedium,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis
@@ -2510,6 +2522,7 @@ class ChapterPage(
             }
 
             ReaderContentsSheet(
+                novelUrl = novelUrl,
                 visible = showReaderContents,
                 chapters = readerChapters,
                 currentChapter = currentReadingChapter,
@@ -2573,7 +2586,7 @@ class ChapterPage(
             loadedReaderChapterKeys,
             displayItems,
             pagedMode,
-            hasPreviousVerification
+            readerBodyStartOffset
         ) {
             if (pagedMode) return@LaunchedEffect
             var previousSnapshot: ReaderScrollSnapshot? = null
@@ -3146,3 +3159,11 @@ private fun ReaderToolButton(
 
 private fun sameReaderChapter(first: Chapter, second: Chapter): Boolean =
     chapterIdentity(first) == chapterIdentity(second)
+
+@Composable
+private fun ReaderBoundaryRetry(onRetry: () -> Unit) {
+    Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text(stringResource(R.string.reader_boundary_failed), Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
+        TextButton(onClick = onRetry) { Text(stringResource(R.string.retry)) }
+    }
+}

@@ -52,7 +52,6 @@ import com.breakyuna.esjzone.ui.navigation.AppDestination
 import com.breakyuna.esjzone.ui.navigation.LocalAppNavigator
 import com.breakyuna.esjzone.R
 import com.breakyuna.esjzone.database.BookshelfRepository
-import com.breakyuna.esjzone.network.features.CommunitySyncManager
 import com.breakyuna.esjzone.network.features.loginMirrors
 import kotlinx.coroutines.flow.first
 import com.breakyuna.esjzone.ui.component.AppGroup
@@ -103,7 +102,6 @@ object LoginScreen : AppDestination {
                         }
                         password = ""
                         BookshelfRepository.scheduleSync(authorization, delayMillis = 2000L)
-                        CommunitySyncManager.schedulePreSync(authorization, delayMillis = 3500L)
                         navigator.replace(MainScreen(authorization))
                     } else {
                         loginFailed = true

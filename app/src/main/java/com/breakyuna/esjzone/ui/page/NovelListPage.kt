@@ -2,6 +2,12 @@
 
 package com.breakyuna.esjzone.ui.page
 
+import com.breakyuna.esjzone.ui.designsystem.PreserveAdaptiveListAnchor
+import com.breakyuna.esjzone.ui.designsystem.adaptiveItems
+import com.breakyuna.esjzone.ui.designsystem.wideContentWidth
+import com.breakyuna.esjzone.ui.designsystem.wideListColumns
+import com.breakyuna.esjzone.ui.designsystem.appUsesWideLayout
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -269,12 +275,18 @@ private fun NovelListResult(
         }
     }
 
-    BoxWithConstraints(modifier = modifier.contentArrival()) {
+    BoxWithConstraints(modifier = modifier.wideContentWidth().contentArrival()) {
         val columns = if (gridView) bookshelfColumnCount(
             availableWidth = maxWidth.value - 32.dp.value,
-            gap = AppSpacing.md.value
-        ) else 1
+            gap = AppSpacing.md.value,
+            minCellWidth = if (appUsesWideLayout()) 140f * LocalConfiguration.current.fontScale.coerceAtLeast(1f) else 96f
+        ) else wideListColumns(maxWidth = 1280f)
         val rows = remember(visibleItems, columns) { visibleItems.chunked(columns) }
+        PreserveAdaptiveListAnchor(
+            listState, visibleItems, columns,
+            leadingItemCount = if (model.refreshFailure != null) 1 else 0,
+            key = ::novelKey
+        )
 
         Column(modifier = Modifier.fillMaxSize()) {
             Surface(color = MaterialTheme.colorScheme.background) {
@@ -328,8 +340,9 @@ private fun NovelListResult(
                     }
                 }
             } else {
-                items(
+                adaptiveItems(
                     items = visibleItems,
+                    columns = columns,
                     key = { novel -> "novel-list:${novelKey(novel)}" },
                     contentType = { "novel" }
                 ) { novel ->

@@ -69,4 +69,27 @@ class HomeRefreshInstrumentedTest {
             withContext(Dispatchers.Main) { model.viewModelScope.cancel() }
         }
     }
+    @Test fun failedRefreshRetainsContentAndExposesFailure() = runBlocking {
+        val saved = HomeData(emptyList(), emptyList(), emptyList(), emptyList(), emptyList(),
+            weeklyPopular = listOf(WeeklyPopularNovel(name = "Saved")))
+        var calls = 0
+        val model = withContext(Dispatchers.Main) {
+            HomeTabModel(Authorization("", "", "example.invalid")) { _, _ ->
+                if (++calls == 1) saved else throw java.net.SocketTimeoutException()
+            }
+        }
+        try {
+            withTimeout(5_000) {
+                withContext(Dispatchers.Main) { model.getHomeData() }
+                model.state.first { it is HomeTabModel.State.Result && !it.isSyncing }
+                withContext(Dispatchers.Main) { model.reload() }
+                val failed = model.state.first { it is HomeTabModel.State.Result && it.refreshFailure != null }
+                    as HomeTabModel.State.Result
+                assertEquals(saved, failed.homeData)
+                assertFalse(failed.isRefreshing)
+                assertEquals(com.breakyuna.esjzone.network.LoadFailureKind.NETWORK, failed.refreshFailure)
+            }
+        } finally { withContext(Dispatchers.Main) { model.viewModelScope.cancel() } }
+    }
+
 }

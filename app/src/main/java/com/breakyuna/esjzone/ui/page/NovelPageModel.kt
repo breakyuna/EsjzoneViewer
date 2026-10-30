@@ -5,6 +5,10 @@ import com.breakyuna.esjzone.app.PresentationAccess
 
 import com.breakyuna.esjzone.ui.navigation.AppStateViewModel
 import com.breakyuna.esjzone.database.ReadingStatisticsRecorder
+import com.breakyuna.esjzone.database.NovelTitleRepository
+import com.breakyuna.esjzone.novellibrary.novel.CoveredNovel
+import com.breakyuna.esjzone.novellibrary.novel.FavoriteNovel
+import com.breakyuna.esjzone.novellibrary.novel.preferredNovelTitle
 import com.breakyuna.esjzone.database.BookshelfRepository
 import com.breakyuna.esjzone.network.Authorization
 import com.breakyuna.esjzone.network.LoadFailureKind
@@ -49,9 +53,18 @@ class NovelPageModel(
         }
         viewModelScope.launch(Dispatchers.IO) {
             mutableState.value = State.Loading
-            val downloaded = runCatching { PresentationAccess.downloads.readDetailedNovel(novel.url) }
-                .onFailure { AppLogger.w("NovelPageModel", "Failed to read downloaded detail", it) }
-                .getOrNull()
+            val downloaded = try {
+                PresentationAccess.downloads.readDetailedNovel(novel.url)?.let { stored ->
+                    val title = NovelTitleRepository.resolve(null, stored.id(), stored.url, novel.name)
+                    NovelTitleRepository.repair(stored.id(), stored.url, title)
+                    stored.copy(name = preferredNovelTitle(title, stored.name, stored.id(), stored.url))
+                }
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                AppLogger.w("NovelPageModel", "Failed to read downloaded detail", error)
+                null
+            }
             ensureActive()
             if (downloaded != null) mutableState.value = State.Result(downloaded, fromDownload = true)
             try {
@@ -62,14 +75,17 @@ class NovelPageModel(
                         includeComments = false
                     )
                 }
-                val detail = if (fetchedDetail.chapterList.orderedChapters.isEmpty()) {
-                    downloaded ?: fetchedDetail
-                } else {
-                    fetchedDetail
-                }
+                val useDownloadedCatalog = fetchedDetail.chapterList.orderedChapters.isEmpty() && downloaded != null
+                val detail = if (useDownloadedCatalog) {
+                    val offlineDetail = requireNotNull(downloaded)
+                    offlineDetail.copy(name = preferredNovelTitle(
+                        fetchedDetail.name, offlineDetail.name, offlineDetail.id(), offlineDetail.url
+                    ))
+                } else fetchedDetail
                 ensureActive()
-                mutableState.value = State.Result(detail, fromDownload = detail === downloaded)
+                mutableState.value = State.Result(detail, fromDownload = useDownloadedCatalog)
                 ReadingStatisticsRecorder.recordTags(detail)
+                NovelTitleRepository.repair(detail.id(), detail.url, detail.name)
             } catch (error: CancellationException) {
                 throw error
             } catch (error: Exception) {
@@ -100,7 +116,7 @@ class NovelPageModel(
             try {
                 BookshelfRepository.setFavorite(
                     authorization = authorization,
-                    novel = novel,
+                    novel = favoriteSource(),
                     desired = desired
                 )
                 if (!desired && favoriteIntentVersion.get() == version) {
@@ -160,12 +176,24 @@ class NovelPageModel(
         PresentationAccess.downloads.manifest(novel.url)?.chapters?.forEach { add(it.url) }
     }
 
+    private fun favoriteSource(): Novel {
+        val detailed = (state.value as? State.Result)?.detailed
+        val title = preferredNovelTitle(
+            detailed?.name.orEmpty(), novel.name, detailed?.id().orEmpty(), novel.url
+        )
+        return if (novel is CoveredNovel) {
+            object : CoveredNovel by novel {
+                override val name = title
+            }
+        } else FavoriteNovel(title, novel.url)
+    }
+
     fun seedFavoriteMetadata(author: String, coverUrl: String, isAdult: Boolean) {
         viewModelScope.launch(Dispatchers.IO) {
             try {
                 BookshelfRepository.seedRemoteFavorite(
                     authorization = authorization,
-                    novel = novel,
+                    novel = favoriteSource(),
                     author = author,
                     coverUrl = coverUrl,
                     isAdult = isAdult

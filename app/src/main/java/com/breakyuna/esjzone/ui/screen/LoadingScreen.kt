@@ -29,7 +29,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import com.breakyuna.esjzone.database.BookshelfRepository
 import com.breakyuna.esjzone.network.Authorization
-import com.breakyuna.esjzone.network.features.CommunitySyncManager
 import com.breakyuna.esjzone.network.hasCredentials
 import com.breakyuna.esjzone.util.AppLogger
 import com.breakyuna.esjzone.R
@@ -102,7 +101,6 @@ class LoadingScreen : AppDestination {
                 // not wait for this network operation.
                 if (PresentationAccess.client.hasSiteSession(authorization.domain)) {
                     BookshelfRepository.scheduleSync(authorization, delayMillis = 1000L)
-                    CommunitySyncManager.schedulePreSync(authorization, delayMillis = 2000L)
                 }
                 navigator.replace(MainScreen(authorization = authorization))
             } else {

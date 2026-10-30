@@ -1,5 +1,8 @@
 package com.breakyuna.esjzone.offline
 
+import com.breakyuna.esjzone.novellibrary.novel.preferredNovelTitle
+import com.breakyuna.esjzone.novellibrary.novel.validNovelTitle
+
 import com.breakyuna.esjzone.data.reader.ChapterBody
 import com.breakyuna.esjzone.data.reader.withStructuredBody
 import com.breakyuna.esjzone.domain.reader.sourceText
@@ -805,20 +808,20 @@ object NovelDownloadStore {
             ?: throw IOException("Common chapter password is unavailable")
         require(selectedChapterUrls.isNotEmpty())
         val selectedKeys = requireNotNull(selectionKeys(initialManifest.chapters.map { it.url }, selectedChapterUrls))
-        // Keep the queued scope, including bodies whose images need another attempt.
+        // Keep the queued scope, but an already saved body no longer needs unlocking.
         val targets = initialManifest.chapters.filter { chapterKey(it.url) in selectedKeys }
             .distinctBy { chapterKey(it.url) }
         val chapterOrder = initialManifest.chapters.filterNot { it.localOnly }
             .map { Chapter(it.name, it.url, false) }
 
-        var unlocked = targets.count { it.downloaded }
+        var unlocked = targets.count { it.bodyAvailable || it.downloaded }
         var failed = 0
         val total = targets.size
         var retryableError: Exception? = null
         var processed = unlocked
 
         onProgress(DownloadProgress(processed, total, ""))
-        for (record in targets.filterNot { it.downloaded }) {
+        for (record in targets.filterNot { it.bodyAvailable || it.downloaded }) {
             currentCoroutineContext().ensureActive()
             onProgress(DownloadProgress(processed, total, record.name))
             try {
@@ -838,7 +841,7 @@ object NovelDownloadStore {
                     detail = detail,
                     authorization = authorization
                 )
-                if (saved?.chapters?.any { chapterKey(it.url) == chapterKey(record.url) && it.downloaded } != true) {
+                if (saved?.chapters?.any { chapterKey(it.url) == chapterKey(record.url) && it.bodyAvailable } != true) {
                     throw IOException("Unlocked chapter download is incomplete")
                 }
                 currentCoroutineContext().ensureActive()
@@ -1190,13 +1193,14 @@ object NovelDownloadStore {
                                 var success = false
                                 var isPasswordProtected = false
                                 var lastError: Throwable? = null
+                                var savedContent: DownloadedChapterContent? = null
 
                                 while (attempt < CHAPTER_MAX_ATTEMPTS && !success) {
                                     currentCoroutineContext().ensureActive()
                                     attempt++
                                     try {
                                         val download: suspend () -> Unit = {
-                                            downloadSingleChapter(
+                                            savedContent = downloadSingleChapter(
                                                 authorization = authorization,
                                                 record = record,
                                                 directory = directory,
@@ -1219,7 +1223,7 @@ object NovelDownloadStore {
                                     } catch (error: ChapterPasswordRequiredException) {
                                         if (!previousCommonPassword.isNullOrBlank()) {
                                             try {
-                                                downloadSingleChapter(
+                                                savedContent = downloadSingleChapter(
                                                     authorization = authorization,
                                                     record = record,
                                                     directory = directory,
@@ -1252,10 +1256,14 @@ object NovelDownloadStore {
                                 }
 
                                 if (success) {
-                                    val finished = completedCounter.incrementAndGet()
+                                    val saved = requireNotNull(savedContent)
                                     var published: DownloadedNovelManifest? = null
                                     synchronized(ioLock) {
-                                        currentRecords[record.index] = record.copy(downloaded = true, requiresPassword = false)
+                                        val fullyDownloaded = saved.hasAllImagesOnDisk(directory)
+                                        val finished = if (fullyDownloaded) completedCounter.incrementAndGet()
+                                            else completedCounter.get()
+                                        currentRecords[record.index] = record.copy(downloaded = fullyDownloaded,
+                                            requiresPassword = false, bodyAvailable = true, textLength = saved.body?.textLength)
                                         if (finished % MANIFEST_CHECKPOINT_INTERVAL == 0 ||
                                             finished == totalCount) {
                                             currentManifest = manifestFrom(
@@ -1368,7 +1376,8 @@ object NovelDownloadStore {
             // Keep the source version across image retries; reclamation still waits for the manifest.
             sourceReference?.let(onCacheReady)
         }
-        if (!committed.hasAllImagesOnDisk(directory)) throw IOException("Chapter images are incomplete")
+        // Missing images remain retryable assets; their failure must not discard a saved body
+        // or fail the task. The manifest still distinguishes readable bodies from complete assets.
         return committed
     }
 
@@ -1443,6 +1452,16 @@ object NovelDownloadStore {
             sourceUrl = stored.sourceUrl,
             updatedAt = stored.updatedAt
         )
+    }
+
+    fun repairNovelName(novelUrl: String, name: String): Boolean = synchronized(ioLock) {
+        val title = validNovelTitle(name, novelUrl = novelUrl)
+        if (title.isBlank()) return@synchronized false
+        val directory = directoryFor(novelUrl, create = false) ?: return@synchronized false
+        val previous = readManifest(directory) ?: return@synchronized false
+        if (validNovelTitle(previous.name, novelUrl = previous.url).isNotBlank()) return@synchronized false
+        writeManifest(directory, previous.copy(name = title), newWriteGuard(directory))
+        true
     }
 
     /** Recompute displayed history progress after a catalog gains chapters, without moving its anchor. */
@@ -1536,7 +1555,7 @@ object NovelDownloadStore {
         commonPassword: String? = previous?.commonPassword
     ) = DownloadedNovelManifest(
         version = 2,
-        name = name.trim().ifBlank { previous?.name.orEmpty() },
+        name = preferredNovelTitle(name, previous?.name.orEmpty(), novelUrl = url),
         url = url,
         coverUrl = coverUrl.trim().ifBlank { previous?.coverUrl.orEmpty() },
         views = previous?.views ?: 0,

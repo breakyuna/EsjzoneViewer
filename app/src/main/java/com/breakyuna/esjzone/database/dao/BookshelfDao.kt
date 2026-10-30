@@ -20,6 +20,15 @@ interface BookshelfDao {
     @Query("SELECT * FROM bookshelf WHERE scope = :scope ORDER BY added_at DESC")
     suspend fun getAll(scope: String): List<BookshelfEntry>
 
+    @Query("SELECT * FROM bookshelf")
+    suspend fun getAllEntries(): List<BookshelfEntry>
+
+    @Query("SELECT * FROM bookshelf WHERE (:novelId != '' AND novel_id = :novelId) OR book_key = :bookKey")
+    suspend fun forNovel(novelId: String, bookKey: String): List<BookshelfEntry>
+
+    @Query("UPDATE bookshelf SET title = :name WHERE scope = :scope AND book_key = :bookKey AND title = :previous")
+    suspend fun repairNovelName(scope: String, bookKey: String, previous: String, name: String)
+
     /** Cover files are shared across accounts and mirrors. */
     @Query("SELECT * FROM bookshelf WHERE visible = 1 AND cover_url != ''")
     suspend fun getAllVisibleWithCovers(): List<BookshelfEntry>
@@ -96,7 +105,7 @@ interface BookshelfDao {
     suspend fun migrateScope(oldScope: String, newScope: String): Int
 
     @Query(
-        "UPDATE bookshelf SET title = CASE WHEN title = '' THEN :title ELSE title END, " +
+        "UPDATE bookshelf SET title = CASE WHEN :title != '' AND :title != novel_id AND :title != url AND :title != book_key AND (TRIM(title) = '' OR title = novel_id OR title = url OR title = book_key) THEN :title ELSE title END, " +
             "author = CASE WHEN author = '' THEN :author ELSE author END, " +
             "cover_url = CASE WHEN cover_url = '' THEN :coverUrl ELSE cover_url END, " +
             "is_adult = CASE WHEN :isAdult = 1 THEN 1 ELSE is_adult END " +

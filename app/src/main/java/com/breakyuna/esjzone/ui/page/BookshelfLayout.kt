@@ -6,10 +6,11 @@ import kotlin.math.floor
 internal fun bookshelfColumnCount(
     availableWidth: Float,
     gap: Float,
-    minColumns: Int = 3
+    minColumns: Int = 3,
+    minCellWidth: Float = 96f
 ): Int {
     if (!availableWidth.isFinite() || availableWidth <= 0f) return minColumns
-    return floor((availableWidth + gap) / (96f + gap)).toInt().coerceAtLeast(minColumns)
+    return floor((availableWidth + gap) / (minCellWidth + gap)).toInt().coerceAtLeast(minColumns)
 }
 
 /** Header occupies item zero; preserve the book identity when row grouping changes. */

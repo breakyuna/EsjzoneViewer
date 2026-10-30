@@ -178,4 +178,25 @@ class ReadingStatisticsTest {
         assertEquals(21L, slices.single().durationMs)
     }
 
+    @Test
+    fun rankingUsesKnownTitleEvenWhenRecentRowsContainAnIdOrNoName() {
+        val today = LocalDate.parse("2026-10-30")
+        val summary = ReadingStatisticsSummary(listOf(
+            ReadingStat("2026-09-01", "123", "1984", 500_000L),
+            ReadingStat("2026-10-29", "123", "123", 60_000L),
+            ReadingStat("2026-10-30", "123", "", 90_000L)
+        ), today)
+        assertEquals("1984", summary.topBooks(7).single().bookName)
+        assertEquals(150_000L, summary.topBooks(7).single().durationMs)
+        assertEquals(650_000L, summary.topBooks(null).single().durationMs)
+    }
+
+    @Test
+    fun unresolvedIdentityIsNotDisplayedAsATitleAndTimeRemainsCounted() {
+        val today = LocalDate.parse("2026-10-30")
+        val summary = ReadingStatisticsSummary(listOf(ReadingStat(today.toString(), "123", "123", 60_000L)), today)
+        assertEquals("", summary.topBooks(7).single().bookName)
+        assertEquals(60_000L, summary.totalMs)
+    }
+
 }

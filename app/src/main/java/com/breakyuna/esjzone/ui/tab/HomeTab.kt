@@ -2,6 +2,7 @@
 
 package com.breakyuna.esjzone.ui.tab
 
+import com.breakyuna.esjzone.ui.designsystem.wideContentWidth
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
@@ -103,6 +104,7 @@ object HomeTab : AppTab {
     @Composable
     @OptIn(ExperimentalMaterial3Api::class)
     override fun Content() {
+        val homeColumns = homeGridColumnCount()
         val navigator = LocalBaseNavigator.current
         val authorization = LocalAuthorization.current
         val model = rememberAppViewModel { HomeTabModel(authorization) }
@@ -173,31 +175,36 @@ object HomeTab : AppTab {
             }
         }
         val homeData = (state as? HomeTabModel.State.Result)?.homeData
+        val coverPolicy by CoverLoadingPolicy.state.collectAsStateWithLifecycle()
+        val heroVisible by remember { derivedStateOf {
+            listState.layoutInfo.visibleItemsInfo.any { it.key == "home-weekly-popular" }
+        } }
+
         val weeklyPopularNovels = remember(homeData?.weeklyPopular, adult) {
             homeData?.weeklyPopular.orEmpty().filter { adult || !it.isAdult }
         }
-        val editorPicksRows = remember(homeData?.recommendation, adult) {
-            prepareHomeSectionRows(homeData?.recommendation.orEmpty(), adult)
+        val editorPicksRows = remember(homeData?.recommendation, adult, homeColumns) {
+            prepareHomeSectionRows(homeData?.recommendation.orEmpty(), adult, homeColumns)
         }
-        val translatedRows = remember(homeData?.recentlyUpdateTranslated, adult) {
-            prepareHomeSectionRows(homeData?.recentlyUpdateTranslated.orEmpty(), adult)
+        val translatedRows = remember(homeData?.recentlyUpdateTranslated, adult, homeColumns) {
+            prepareHomeSectionRows(homeData?.recentlyUpdateTranslated.orEmpty(), adult, homeColumns)
         }
-        val originalRows = remember(homeData?.recentlyUpdateOriginal, adult) {
-            prepareHomeSectionRows(homeData?.recentlyUpdateOriginal.orEmpty(), adult)
+        val originalRows = remember(homeData?.recentlyUpdateOriginal, adult, homeColumns) {
+            prepareHomeSectionRows(homeData?.recentlyUpdateOriginal.orEmpty(), adult, homeColumns)
         }
-        val translatedAdultRows = remember(homeData?.recentlyUpdateTranslatedR18, adult) {
-            if (adult) prepareHomeSectionRows(homeData?.recentlyUpdateTranslatedR18.orEmpty(), true)
+        val translatedAdultRows = remember(homeData?.recentlyUpdateTranslatedR18, adult, homeColumns) {
+            if (adult) prepareHomeSectionRows(homeData?.recentlyUpdateTranslatedR18.orEmpty(), true, homeColumns)
             else emptyList()
         }
-        val originalAdultRows = remember(homeData?.recentlyUpdateOriginalR18, adult) {
-            if (adult) prepareHomeSectionRows(homeData?.recentlyUpdateOriginalR18.orEmpty(), true)
+        val originalAdultRows = remember(homeData?.recentlyUpdateOriginalR18, adult, homeColumns) {
+            if (adult) prepareHomeSectionRows(homeData?.recentlyUpdateOriginalR18.orEmpty(), true, homeColumns)
             else emptyList()
         }
 
         val homeCoverRows = remember(
             weeklyPopularNovels, editorPicksRows, translatedRows, originalRows,
             translatedAdultRows, originalAdultRows, hideHomeRecommendations,
-            weeklyNovelsByDay, weeklyIndex, randomState.items, adult,
+            weeklyNovelsByDay, weeklyIndex, randomState.items, adult, homeColumns,
             editorPicksTitle, translatedTitle, originalTitle, translatedAdultTitle, originalAdultTitle
         ) {
             fun covers(novels: List<CoveredNovel>) = novels.map { EsjzoneUrls.coverOrEmpty(it.coverUrl) }
@@ -222,7 +229,7 @@ object HomeTab : AppTab {
                 }
                 if (randomState.items.isNotEmpty()) {
                     add(HomeCoverRow("home-random-header"))
-                    randomState.items.chunked(HOME_GRID_COLUMNS).forEach { row ->
+                    randomState.items.chunked(homeColumns).forEach { row ->
                         add(HomeCoverRow("home-random-row:${novelKey(row.first())}", covers(row)))
                     }
                 }
@@ -410,6 +417,7 @@ object HomeTab : AppTab {
                 },
                 modifier = Modifier
                     .fillMaxSize()
+                    .wideContentWidth()
                     .padding(top = padding.calculateTopPadding())
                     .clipToBounds()
             ) {
@@ -485,8 +493,15 @@ object HomeTab : AppTab {
                             }
                         }
                         is HomeTabModel.State.Result -> {
+                            if (snapshot.refreshFailure != null) {
+                                item(key = "home-refresh-failed") {
+                                    HomeRetryRow(stringResource(R.string.home_refresh_retained), model::reload)
+                                }
+                            }
                             weeklyPopularCarousel(
                                 novels = weeklyPopularNovels,
+                                enrichmentEnabled = heroVisible && coverPolicy.visiblePage == "HOME" && !snapshot.isSyncing,
+                                onVisible = model::loadVisiblePopular,
                                 onNovelClick = { novel, page ->
                                     navigator?.pushIfNotCurrent(NovelPage(novel), homeCarouselPage = page)
                                 }
@@ -546,6 +561,12 @@ object HomeTab : AppTab {
                                     emptyMessage = emptyCollectionMessage
                                 )
                             }
+                            if (snapshot.homeData.weeklyFailure != null) {
+                                item(key = "home-weekly-failed") {
+                                    HomeRetryRow(stringResource(R.string.home_weekly_failed), model::retryWeekly,
+                                        enabled = !snapshot.isSyncing)
+                                }
+                            }
                             weeklyUpdatesCollection(
                                 days = weeklyDays,
                                 selectedIndex = weeklyIndex,
@@ -559,6 +580,7 @@ object HomeTab : AppTab {
                             }
                             randomRecommendationsSection(
                                 state = randomState,
+                                columns = homeColumns,
                                 showInitialLoading = !isLoadingFromPull,
                                 title = randomRecommendationsTitle,
                                 changeBatchLabel = changeBatchLabel,
@@ -590,5 +612,18 @@ private fun LazyListScope.homeActionsItem(
 ) {
     item(key = "home-actions", contentType = "home-actions") {
         HomeActions(onForum, onGuestbook, onWaterCooler)
+    }
+}
+
+@Composable
+private fun HomeRetryRow(message: String, onRetry: () -> Unit, enabled: Boolean = true) {
+    androidx.compose.foundation.layout.Row(
+        modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(message, modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant)
+        androidx.compose.material3.TextButton(onClick = onRetry, enabled = enabled) {
+            Text(stringResource(R.string.retry))
+        }
     }
 }

@@ -87,4 +87,22 @@ class DownloadManifestMergeTest {
         assertEquals(3, index.chapterIndex(0.1f))
         assertNull(book.copy(chapters = book.chapters.map { it.copy(textLength = null) }).textProgressIndex(urls))
     }
+    @Test
+    fun staleReaderSaveCannotReplaceTheOfflineTitleWithAnId() {
+        val existing = manifest(listOf(record(1, true)))
+        val lateSave = existing.copy(name = "9001", chapters = listOf(record(2, true)))
+        val merged = mergeDownloadManifest(existing, lateSave, false)
+        assertEquals("Novel", merged.name)
+        assertEquals(2, merged.chapters.size)
+        assertTrue(merged.chapters.all { it.downloaded })
+    }
+
+    @Test
+    fun correctedTitleRepairsOldManifestAndNumericTitlesRemainValid() {
+        val existing = manifest(listOf(record(1, true))).copy(name = "9001")
+        assertEquals("Real title", mergeDownloadManifest(existing, existing.copy(name = "Real title"), false).name)
+        assertEquals("1984", mergeDownloadManifest(existing, existing.copy(name = "1984"), true).name)
+        assertEquals("", mergeDownloadManifest(null, existing, false).name)
+    }
+
 }

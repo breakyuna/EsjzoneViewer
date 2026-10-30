@@ -17,6 +17,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import com.breakyuna.esjzone.R
 import com.breakyuna.esjzone.database.entity.LocalReadingActivity
+import com.breakyuna.esjzone.novellibrary.novel.validNovelTitle
 import com.breakyuna.esjzone.novellibrary.novel.Chapter
 import com.breakyuna.esjzone.ui.navigation.LocalBaseNavigator
 import com.breakyuna.esjzone.ui.navigation.ChapterStateHolder
@@ -98,7 +99,7 @@ object HistoryTab : AppTab {
                 novelId = activity.novelId.ifBlank { chapter.novelId() },
                 chapter = chapter,
                 history = ChapterStateHolder(chapter),
-                novelName = activity.novelName,
+                novelName = validNovelTitle(activity.novelName, activity.novelId, activity.novelUrl, activity.chapterName),
                 novelUrl = novelUrl,
                 novelCoverUrl = activity.novelCoverUrl,
                 resumeChapterProgress = activity.chapterProgress

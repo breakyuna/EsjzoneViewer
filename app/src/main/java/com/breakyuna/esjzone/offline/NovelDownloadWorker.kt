@@ -1,5 +1,7 @@
 package com.breakyuna.esjzone.offline
 
+import com.breakyuna.esjzone.novellibrary.novel.validNovelTitle
+
 import android.annotation.SuppressLint
 import android.Manifest
 import android.os.Build
@@ -134,7 +136,7 @@ object NovelDownloadManager {
             )
             .setInputData(
                 workDataOf(
-                    NovelDownloadWorker.KEY_NAME to novel.name,
+                    NovelDownloadWorker.KEY_NAME to validNovelTitle(novel.name, novel.id(), novel.url),
                     NovelDownloadWorker.KEY_URL to novel.url,
                     NovelDownloadWorker.KEY_FORUM_URL to novel.forumUrl,
                     NovelDownloadWorker.KEY_DOMAIN to domain,
@@ -251,11 +253,16 @@ class NovelDownloadWorker(
 ) : CoroutineWorker(appContext, params) {
 
     private val unlockOnly: Boolean get() = inputData.getBoolean(KEY_UNLOCK_ONLY, false)
+    private var resolvedNovelName: String? = null
+
+    private fun notificationTitle(name: String): String =
+        validNovelTitle(name, novelUrl = inputData.getString(KEY_URL).orEmpty())
+            .ifBlank { applicationContext.getString(R.string.download_unknown_novel) }
 
     @SuppressLint("MissingPermission")
     override suspend fun doWork(): Result {
-        val name = inputData.getString(KEY_NAME)?.trim().orEmpty()
         val rawUrl = inputData.getString(KEY_URL)?.trim().orEmpty()
+        val name = validNovelTitle(inputData.getString(KEY_NAME).orEmpty(), novelUrl = rawUrl)
         val forumUrl = inputData.getString(KEY_FORUM_URL)?.trim().orEmpty()
         val domain = inputData.getString(KEY_DOMAIN)?.trim().orEmpty()
         val selectedChapterUrls = inputData.getString(KEY_SELECTED_CHAPTERS)?.takeIf { it.isNotEmpty() }
@@ -264,7 +271,7 @@ class NovelDownloadWorker(
             KEY_CONCURRENCY,
             NovelDownloadStore.DEFAULT_DOWNLOAD_CONCURRENCY
         ).coerceIn(SettingsDefaults.MIN_DOWNLOAD_CONCURRENCY, SettingsDefaults.MAX_DOWNLOAD_CONCURRENCY)
-        if (name.isBlank() || rawUrl.isBlank()) return Result.failure()
+        if (rawUrl.isBlank()) return Result.failure()
 
         return try {
             AppLogger.init(applicationContext)
@@ -307,7 +314,7 @@ class NovelDownloadWorker(
                     else -> applicationContext.getString(R.string.novel_download_batch_unlock_failed)
                 }
                 sendResultNotification(rawUrl, applicationContext.getString(
-                    R.string.novel_download_unlock_completed_title, name), message)
+                    R.string.novel_download_unlock_completed_title, notificationTitle(resolvedNovelName ?: name)), message)
                 return Result.success(workDataOf(
                     KEY_UNLOCKED to result.unlockedCount, KEY_FAILED to result.failedCount))
             }
@@ -318,6 +325,7 @@ class NovelDownloadWorker(
                 forceRefresh = true,
                 baseUrl = actualBaseUrl
             )
+            resolvedNovelName = validNovelTitle(detail.name, detail.id(), detail.url)
             val manifest = NovelDownloadStore.download(authorization, detail, actualBaseUrl, concurrency,
                 selectedChapterUrls) { next ->
                 publishProgress(next)
@@ -327,7 +335,7 @@ class NovelDownloadWorker(
                 selectedKeys == null || NovelDownloadStore.chapterKey(record.url) in selectedKeys
             }
             if (pendingPasswordCount > 0) {
-                sendPasswordRequiredNotification(name, rawUrl, pendingPasswordCount)
+                sendPasswordRequiredNotification(resolvedNovelName.orEmpty(), rawUrl, pendingPasswordCount)
             }
             Result.success()
         } catch (error: CancellationException) {
@@ -345,7 +353,7 @@ class NovelDownloadWorker(
             }
             if (runAttemptCount < MAX_RETRIES) Result.retry() else {
                 if (unlockOnly) sendResultNotification(rawUrl, applicationContext.getString(
-                    R.string.novel_download_unlock_completed_title, name),
+                    R.string.novel_download_unlock_completed_title, notificationTitle(resolvedNovelName ?: name)),
                     applicationContext.getString(R.string.novel_download_batch_unlock_failed))
                 Result.failure()
             }
@@ -359,7 +367,7 @@ class NovelDownloadWorker(
             ContextCompat.checkSelfPermission(applicationContext, Manifest.permission.POST_NOTIFICATIONS) ==
             android.content.pm.PackageManager.PERMISSION_GRANTED) {
             applicationContext.getSystemService(NotificationManager::class.java)
-                .notify(notificationId(), createNotification(inputData.getString(KEY_NAME).orEmpty(), progress))
+                .notify(notificationId(), createNotification(resolvedNovelName ?: inputData.getString(KEY_NAME).orEmpty(), progress))
         }
     }
 
@@ -378,7 +386,7 @@ class NovelDownloadWorker(
         NotificationCompat.Builder(applicationContext, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.stat_sys_warning)
             .setContentTitle(applicationContext.getString(R.string.wenku_download_verification_title))
-            .setContentText(novelName)
+            .setContentText(notificationTitle(resolvedNovelName ?: novelName))
             .setContentIntent(pending)
             .setAutoCancel(true)
             .build().let { applicationContext.getSystemService(NotificationManager::class.java)
@@ -411,7 +419,7 @@ class NovelDownloadWorker(
         .setContentTitle(
             applicationContext.getString(
                 if (unlockOnly) R.string.novel_download_unlock_notification_title
-                else R.string.novel_download_notification_title, novelName)
+                else R.string.novel_download_notification_title, notificationTitle(novelName))
         )
         .setContentText(
             progress?.let {
@@ -459,7 +467,7 @@ class NovelDownloadWorker(
         passwordCount: Int
     ) {
         sendResultNotification(novelUrl,
-            applicationContext.getString(R.string.novel_download_password_required_title, novelName, passwordCount),
+            applicationContext.getString(R.string.novel_download_password_required_title, notificationTitle(novelName), passwordCount),
             applicationContext.getString(R.string.novel_download_password_required_desc))
     }
 

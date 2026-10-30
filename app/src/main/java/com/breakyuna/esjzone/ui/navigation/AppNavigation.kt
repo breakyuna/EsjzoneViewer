@@ -136,6 +136,7 @@ sealed interface AppNavKey : NavKey {
 sealed interface LegacyRoute {
     @Serializable data class Static(val token: String) : LegacyRoute
     @Serializable data class Search(val keyword: String) : LegacyRoute
+    @Serializable data class DownloadedNovel(val url: String) : LegacyRoute
     @Serializable data class Novel(val identity: String) : LegacyRoute
     @Serializable data class Category(val identity: String, val name: String = "") : LegacyRoute
     @Serializable data class NovelList(
@@ -162,6 +163,7 @@ internal fun decodeRouteTokenPart(value: String): String = Uri.decode(value)
 private fun LegacyRoute.token(): String = when (this) {
     is LegacyRoute.Static -> token
     is LegacyRoute.Search -> "SearchPage:$keyword"
+    is LegacyRoute.DownloadedNovel -> "DownloadedNovelPage:$url"
     is LegacyRoute.Novel -> "NovelPage:$identity"
     is LegacyRoute.Category -> if (name.isNotBlank()) "CategoryPage:$identity:$name" else "CategoryPage:$identity"
     is LegacyRoute.NovelList -> "NovelListPage:$novelType:$sortType:$adultOnly"
@@ -177,6 +179,7 @@ private fun routeFromToken(token: String): LegacyRoute {
     val argument = token.substringAfter(':', missingDelimiterValue = "")
     return when (kind) {
         "SearchPage" -> LegacyRoute.Search(argument)
+        "DownloadedNovelPage" -> LegacyRoute.DownloadedNovel(argument)
         "NovelPage" -> LegacyRoute.Novel(argument)
         "CategoryPage" -> {
             val parts = argument.split(':', limit = 2)
@@ -462,7 +465,7 @@ private fun ReaderRoute.restore(): AppDestination = ChapterPage(
     novelId = novelId,
     chapter = Chapter(name = "", url = chapterIdentity, isHistory = true),
     history = ChapterStateHolder(),
-    novelName = novelId,
+    novelName = "",
     novelUrl = novelId.takeIf { it.isNotBlank() }
         ?.let { EsjzoneUrls.resolve("/detail/$it.html") }
         .orEmpty(),
@@ -491,6 +494,7 @@ private fun LegacyRoute.restore(): AppDestination? = when (this) {
         else -> null
     }
     is LegacyRoute.Search -> SearchPage(keyword)
+    is LegacyRoute.DownloadedNovel -> com.breakyuna.esjzone.ui.page.DownloadedNovelPage(url)
     is LegacyRoute.Novel -> NovelPage(FavoriteNovel(name = "", url = identity))
     is LegacyRoute.Category -> CategoryPage(
         Category(name = name, url = identity, isAdult = false)
@@ -596,6 +600,18 @@ fun AppNavigation() {
             storageSetupPending = true
             // Restored reader/detail entries can bypass LoadingScreen.
             PresentationAccess.storage.prepareSetup(restoredSession = true)
+        }
+    }
+    val titleRepairRequest by com.breakyuna.esjzone.database.NovelTitleRepository.repairRequests.collectAsState()
+    LaunchedEffect(authorization, storageLocation, showStorageSetup, titleRepairRequest) {
+        val session = authorization ?: return@LaunchedEffect
+        if (showStorageSetup) return@LaunchedEffect
+        try {
+            com.breakyuna.esjzone.database.NovelTitleRepository.repairAll(session)
+        } catch (error: kotlinx.coroutines.CancellationException) {
+            throw error
+        } catch (error: Exception) {
+            com.breakyuna.esjzone.util.AppLogger.w("NovelTitle", "Unable to scan stored titles", error)
         }
     }
     val currentAuthorizationState = rememberUpdatedState(authorizationState)

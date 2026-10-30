@@ -2,6 +2,7 @@
 
 package com.breakyuna.esjzone.ui.tab
 
+import com.breakyuna.esjzone.ui.designsystem.appUsesWideLayout
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -119,6 +120,7 @@ object ProfileTab : AppTab {
         var retry by remember { mutableStateOf(0) }
         val profile = profileName?.let { UserProfile(it, profileAvatar, profileExp, profileLevel) }
         val menuItems = profileMenuItems()
+        val wide = appUsesWideLayout()
 
         LaunchedEffect(domain, authorization.ewsKey, authorization.ewsToken) {
             val prefix = profileCachePrefix(authorization, domain)
@@ -191,22 +193,29 @@ object ProfileTab : AppTab {
                 ),
                 verticalArrangement = Arrangement.spacedBy(AppSpacing.md)
             ) {
-                item(key = "profile-hero") { ProfileHero(profile, domain, avatarCacheKey, loading, onRetry = { retry++ }) }
-                item(key = "profile-menu-title") {
-                    Text(stringResource(R.string.profile_tools), style = AppTypography.labelMedium,
-                        modifier = Modifier.padding(start = AppSpacing.xs, top = AppSpacing.sm).semantics { heading() },
-                        color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-                item(key = "profile-actions") {
-                    Column(verticalArrangement = Arrangement.spacedBy(AppSpacing.md)) {
-                        menuItems.chunked(2).forEach { items ->
-                            Row(Modifier.height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(AppSpacing.md)) {
-                                items.forEach { item ->
-                                    ProfileAction(item, modifier = Modifier.weight(1f).fillMaxHeight(),
-                                        onClick = { navigator?.pushIfNotCurrent(item.destination) })
-                                }
+                if (wide) {
+                    item(key = "profile-wide-hub") {
+                        Row(horizontalArrangement = Arrangement.spacedBy(AppSpacing.xl)) {
+                            Box(Modifier.weight(1f)) {
+                                ProfileHero(profile, domain, avatarCacheKey, loading, onRetry = { retry++ })
+                            }
+                            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(AppSpacing.md)) {
+                                Text(stringResource(R.string.profile_tools), style = AppTypography.labelMedium,
+                                    modifier = Modifier.semantics { heading() },
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                ProfileActions(menuItems) { navigator?.pushIfNotCurrent(it.destination) }
                             }
                         }
+                    }
+                } else {
+                    item(key = "profile-hero") { ProfileHero(profile, domain, avatarCacheKey, loading, onRetry = { retry++ }) }
+                    item(key = "profile-menu-title") {
+                        Text(stringResource(R.string.profile_tools), style = AppTypography.labelMedium,
+                            modifier = Modifier.padding(start = AppSpacing.xs, top = AppSpacing.sm).semantics { heading() },
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    item(key = "profile-actions") {
+                        ProfileActions(menuItems) { navigator?.pushIfNotCurrent(it.destination) }
                     }
                 }
             }
@@ -224,6 +233,19 @@ private fun profileMenuItems(): List<ProfileMenuItem> = listOf(
     ProfileMenuItem(ContainerTransformTarget.DOWNLOADS, Icons.Filled.Download, stringResource(R.string.downloads), DownloadPage),
     ProfileMenuItem(ContainerTransformTarget.SETTINGS, Icons.Filled.Settings, stringResource(R.string.settings), SettingsPage)
 )
+
+@Composable
+private fun ProfileActions(items: List<ProfileMenuItem>, onClick: (ProfileMenuItem) -> Unit) {
+    Column(verticalArrangement = Arrangement.spacedBy(AppSpacing.md)) {
+        items.chunked(2).forEach { row ->
+            Row(Modifier.height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(AppSpacing.md)) {
+                row.forEach { item ->
+                    ProfileAction(item, modifier = Modifier.weight(1f).fillMaxHeight(), onClick = { onClick(item) })
+                }
+            }
+        }
+    }
+}
 
 @Composable
 private fun ProfileHero(profile: UserProfile?, domain: String, avatarCacheKey: String, loading: Boolean, onRetry: () -> Unit) {

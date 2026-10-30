@@ -26,6 +26,8 @@ import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import com.breakyuna.esjzone.network.features.enrichWeeklyPopular
+import com.breakyuna.esjzone.network.features.getWeeklyUpdates
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -60,7 +62,8 @@ class HomeTabModel internal constructor(
         data class Result(
             val homeData: HomeData,
             val isSyncing: Boolean = false,
-            val isRefreshing: Boolean = false
+            val isRefreshing: Boolean = false,
+            val refreshFailure: LoadFailureKind? = null
         ) : State()
     }
 
@@ -212,7 +215,7 @@ class HomeTabModel internal constructor(
                 val visibleData = mutableState.value as? State.Result
                 mutableState.value = visibleData?.copy(
                     isSyncing = true,
-                    isRefreshing = forceRefresh
+                    isRefreshing = forceRefresh, refreshFailure = null
                 ) ?: State.Loading
                 try {
                     val data = loadHome(forceRefresh) { partialData ->
@@ -237,7 +240,7 @@ class HomeTabModel internal constructor(
                 } catch (e: Exception) {
                     if (generation == homeLoadGeneration) {
                         val current = mutableState.value as? State.Result
-                        mutableState.value = current?.copy(isSyncing = false, isRefreshing = false)
+                        mutableState.value = current?.copy(isSyncing = false, isRefreshing = false, refreshFailure = e.loadFailureKind())
                             ?: State.Error(e.loadFailureKind())
                         loadStarted = false
                     }
@@ -249,7 +252,60 @@ class HomeTabModel internal constructor(
         }
     }
 
+    private var weeklyJob: Job? = null
+    fun retryWeekly() {
+        if (weeklyJob?.isActive == true) return
+        weeklyJob = viewModelScope.launch {
+            val before = mutableState.value as? State.Result ?: return@launch
+            val cacheEpoch = PageCache.currentEpoch
+            mutableState.value = before.copy(isSyncing = true)
+            try {
+                val days = com.breakyuna.esjzone.network.cancellablePageRequest {
+                    PresentationAccess.client.getWeeklyUpdates(authorization, forceRefresh = true)
+                }
+                val current = mutableState.value as? State.Result ?: return@launch
+                val updated = current.homeData.copy(weeklyUpdates = days, weeklyFailure = null)
+                mutableState.value = current.copy(isSyncing = false, homeData = updated)
+                withContext(Dispatchers.IO) {
+                    HomeDataCache.updateMemorySnapshot(authorization, updated, cacheEpoch)
+                    HomeDataCache.writeSnapshot(authorization, updated, cacheEpoch)
+                }
+            } catch (e: CancellationException) { throw e }
+            catch (e: Exception) {
+                val current = mutableState.value as? State.Result ?: return@launch
+                mutableState.value = current.copy(isSyncing = false,
+                    homeData = current.homeData.copy(weeklyFailure = e.loadFailureKind()))
+            }
+        }
+    }
+
+    private val enrichedPopular = mutableSetOf<String>()
+    suspend fun loadVisiblePopular(items: List<com.breakyuna.esjzone.novellibrary.data.WeeklyPopularNovel>) {
+        for (item in items) {
+            if (item.url in enrichedPopular) continue
+            val cacheEpoch = PageCache.currentEpoch
+            val enriched = try {
+                com.breakyuna.esjzone.network.cancellablePageRequest(background = true) {
+                    PresentationAccess.client.enrichWeeklyPopular(authorization,
+                        com.breakyuna.esjzone.network.features.WeeklyPopularSeed(rank = item.rank, name = item.name, url = item.url, weeklyViews = item.weeklyViews))
+                }
+            } catch (e: CancellationException) { throw e }
+            catch (_: Exception) { continue }
+            kotlin.coroutines.coroutineContext.ensureActive()
+            enrichedPopular += item.url
+            val current = mutableState.value as? State.Result ?: continue
+            val updated = current.homeData.copy(weeklyPopular = current.homeData.weeklyPopular.map {
+                if (it.url == item.url) com.breakyuna.esjzone.network.features.mergeWeeklyPopularEnrichment(it, enriched) else it
+            })
+            mutableState.value = current.copy(homeData = updated)
+            HomeDataCache.updateMemorySnapshot(authorization, updated, cacheEpoch)
+            withContext(Dispatchers.IO) { HomeDataCache.writeSnapshot(authorization, updated, cacheEpoch) }
+        }
+    }
+
     fun reload() {
+        weeklyJob?.cancel()
+        enrichedPopular.clear()
         unloadRandomRecommendations(clearDeduplication = true)
         getHomeData(forceRefresh = true)
     }

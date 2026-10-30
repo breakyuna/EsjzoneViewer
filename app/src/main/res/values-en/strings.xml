@@ -32,6 +32,7 @@
     <string name="login_network_fail">Network connection failed. Check your connection and try again.</string>
     <string name="login_same_account_required">Use the current account for this site. Sign out first to change accounts.</string>
     <string name="download_image_unavailable">[Image unavailable]</string>
+    <string name="reader_image_loading">[Image loading]</string>
     <string name="screen_main_tab_home">Home</string>
     <string name="screen_main_tab_category">Category</string>
     <string name="screen_main_tab_profile">Profile</string>
@@ -922,4 +923,24 @@
     <string name="storage_size_calculating">Calculating size…</string>
     <string name="storage_move_private">Move to app private storage</string>
     <string name="storage_move_private_confirm">Move downloads and automatic backups to app private storage, then remove the corresponding originals from the shared folder. Uninstalling the app deletes files in private storage.</string>
+    <string name="home_carousel_previous">Previous recommendation</string>
+    <string name="home_carousel_next">Next recommendation</string>
+    <string name="home_refresh_retained">Update failed. Showing saved content.</string>
+    <string name="home_weekly_failed">Weekly updates could not be loaded.</string>
+    <string name="local_start_reading">Start reading</string>
+    <string name="local_pause_download">Pause download</string>
+    <string name="local_download_waiting">Waiting to download</string>
+    <string name="local_download_count">%1$d / %2$d chapters saved</string>
+    <string name="local_downloaded">Downloaded</string>
+    <string name="local_text_saved">Text saved</string>
+    <string name="local_not_downloaded">Not downloaded</string>
+    <string name="local_search_empty">No matching local books</string>
+    <string name="search_scope_local">Local</string>
+    <string name="search_scope_site">Website</string>
+    <string name="cover_retry">Retry cover</string>
+    <string name="cover_unavailable">Cover unavailable</string>
+    <string name="cover_placeholder">No cover</string>
+    <string name="reader_catalog_search">Search chapters</string>
+    <string name="reader_catalog_current">Go to current chapter</string>
+    <string name="reader_boundary_failed">Chapter could not be loaded. Current text is retained.</string>
 </resources>

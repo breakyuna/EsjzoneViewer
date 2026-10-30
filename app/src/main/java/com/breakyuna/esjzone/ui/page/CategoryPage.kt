@@ -2,6 +2,10 @@
 
 package com.breakyuna.esjzone.ui.page
 
+import com.breakyuna.esjzone.ui.designsystem.wideContentWidth
+import com.breakyuna.esjzone.ui.designsystem.wideListColumns
+import com.breakyuna.esjzone.ui.designsystem.PreserveAdaptiveListAnchor
+import com.breakyuna.esjzone.ui.designsystem.adaptiveItems
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.lifecycle.viewModelScope
 
@@ -10,6 +14,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.runtime.Composable
@@ -51,6 +56,7 @@ class CategoryPage(private val category: Category) : AppDestination {
 
     @Composable
     override fun Content() {
+        val columns = wideListColumns(maxWidth = 1280f)
         val navigator = LocalBaseNavigator.current
         val authorization = LocalAuthorization.current
         val model = rememberAppViewModel { CategoryPageModel(authorization, category) }
@@ -89,15 +95,20 @@ class CategoryPage(private val category: Category) : AppDestination {
                             modifier = Modifier.fillMaxSize().padding(padding)
                         )
                     } else {
+                        val novels = snapshot.categoryNovels.distinctBy {
+                            it.url.trim().ifBlank { it.name.trim() }
+                        }
+                        val listState = rememberLazyListState()
+                        PreserveAdaptiveListAnchor(listState, novels, columns, key = ::categoryNovelKey)
                         LazyColumn(
-                            modifier = Modifier.fillMaxSize().padding(padding),
+                            state = listState,
+                            modifier = Modifier.fillMaxSize().wideContentWidth().padding(padding),
                             contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
                             verticalArrangement = Arrangement.spacedBy(10.dp)
                         ) {
-                            items(
-                                items = snapshot.categoryNovels.distinctBy {
-                                    it.url.trim().ifBlank { it.name.trim() }
-                                },
+                            adaptiveItems(
+                                columns = columns,
+                                items = novels,
                                 key = { novel -> categoryNovelKey(novel) },
                                 contentType = { "category-novel" }
                             ) { novel ->

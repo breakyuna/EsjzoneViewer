@@ -1,5 +1,10 @@
 package com.breakyuna.esjzone.ui.page
 
+import com.breakyuna.esjzone.ui.designsystem.wideListColumns
+import com.breakyuna.esjzone.ui.designsystem.PreserveAdaptiveListAnchor
+import com.breakyuna.esjzone.ui.designsystem.adaptiveItems
+import com.breakyuna.esjzone.novellibrary.novel.validNovelTitle
+
 import androidx.lifecycle.viewModelScope
 
 import androidx.activity.compose.BackHandler
@@ -15,6 +20,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
@@ -121,6 +127,7 @@ object DownloadPage : AppDestination {
                 scanModel.dismissResult()
             }
         }
+        val adult by PresentationAccess.settings.adult
         val autoSave by PresentationAccess.settings.readerAutoSave
         var editing by rememberSaveable { mutableStateOf(false) }
         var selected by remember { mutableStateOf<Set<String>>(emptySet()) }
@@ -128,9 +135,14 @@ object DownloadPage : AppDestination {
         var showDelete by remember { mutableStateOf(false) }
         var showSettings by remember { mutableStateOf(false) }
 
-        LaunchedEffect(activeLocation) { model.refresh() }
-        val entries = (state as? DownloadPageModel.State.Content)?.novels.orEmpty()
+        LaunchedEffect(Unit) { com.breakyuna.esjzone.database.NovelTitleRepository.requestRepair() }
+        val titleChanges by com.breakyuna.esjzone.database.NovelTitleRepository.titleChanges.collectAsState()
+        val downloadChanges by PresentationAccess.downloads.changes.collectAsState()
+        val entries = (state as? DownloadPageModel.State.Content)?.novels.orEmpty().filter { adult || !it.manifest.isAdult }
         val deleting = (state as? DownloadPageModel.State.Content)?.deleting == true
+        LaunchedEffect(activeLocation, titleChanges, downloadChanges, deleting) {
+            if (!deleting) model.refresh()
+        }
         LaunchedEffect(entries) { selected = selected.intersect(entries.mapTo(LinkedHashSet()) { it.novelUrl }) }
         BackHandler(enabled = editing && !showDelete) {
             if (!deleting) { editing = false; selected = emptySet() }
@@ -210,7 +222,7 @@ object DownloadPage : AppDestination {
                         onRetry = model::refresh,
                         modifier = Modifier.fillMaxSize().accountContentWidth()
                     )
-                    is DownloadPageModel.State.Content -> if (current.novels.isEmpty()) {
+                    is DownloadPageModel.State.Content -> if (entries.isEmpty()) {
                         EmptyState(
                             title = stringResource(R.string.download_empty),
                             message = stringResource(R.string.download_empty_hint),
@@ -218,12 +230,13 @@ object DownloadPage : AppDestination {
                         )
                     } else {
                         DownloadList(
-                            novels = current.novels,
+                            novels = entries,
                             selected = selected,
                             editing = editing,
                             deleting = deleting || migrationLocked,
                             onToggle = { url -> selected = if (url in selected) selected - url else selected + url },
                             onDelete = { requestDelete(listOf(it)) },
+                            onOpen = { navigator?.pushIfNotCurrent(DownloadedNovelPage(it)) },
                             modifier = Modifier.fillMaxSize().accountContentWidth()
                         )
                     }
@@ -255,10 +268,15 @@ private fun DownloadList(
     deleting: Boolean,
     onToggle: (String) -> Unit,
     onDelete: (String) -> Unit,
+    onOpen: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val columns = wideListColumns()
     val totalBytes = remember(novels) { novels.sumOf { it.storageBytes } }
+    val listState = rememberLazyListState()
+    PreserveAdaptiveListAnchor(listState, novels, columns, leadingItemCount = 1, key = { it.novelUrl })
     LazyColumn(
+        state = listState,
         modifier = modifier.contentArrival(),
         contentPadding = PaddingValues(AppSpacing.lg),
         verticalArrangement = Arrangement.spacedBy(AppSpacing.sm)
@@ -270,8 +288,8 @@ private fun DownloadList(
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
-        items(novels, key = { it.novelUrl }, contentType = { "download" }) { summary ->
-            DownloadCard(summary, editing, summary.novelUrl in selected, deleting, { onToggle(summary.novelUrl) }, { onDelete(summary.novelUrl) }, Modifier.animateItem())
+        adaptiveItems(novels, columns = columns, key = { it.novelUrl }, contentType = { "download" }) { summary ->
+            DownloadCard(summary, editing, summary.novelUrl in selected, deleting, { onToggle(summary.novelUrl) }, { onDelete(summary.novelUrl) }, { onOpen(summary.novelUrl) }, Modifier.animateItem())
         }
     }
 }
@@ -284,6 +302,7 @@ private fun DownloadCard(
     deleting: Boolean,
     onToggle: () -> Unit,
     onDelete: () -> Unit,
+    onOpen: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     Row(
@@ -299,7 +318,7 @@ private fun DownloadCard(
                     Modifier.background(MaterialTheme.colorScheme.surface, AppShapes.standard)
                 }
             )
-            .then(if (editing && !deleting) Modifier.clickable { onToggle() } else Modifier)
+            .clickable(enabled = !deleting) { if (editing) onToggle() else onOpen() }
             .semantics { if (editing) role = Role.Button }
             .padding(AppSpacing.md),
         verticalAlignment = Alignment.Top,
@@ -309,15 +328,16 @@ private fun DownloadCard(
         AppNovelCover(
             coverUrl = summary.coverUrl,
             coverState = if (summary.coverUrl.isBlank()) CoverState.Unknown else null,
-            title = summary.novelName,
+            title = validNovelTitle(summary.novelName, novelUrl = summary.novelUrl),
             modifier = Modifier.size(width = 64.dp, height = 88.dp)
         )
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(AppSpacing.xs)) {
-            Text(summary.novelName.ifBlank { stringResource(R.string.download_unknown_novel) }, style = AppTypography.labelLarge, maxLines = 2, overflow = TextOverflow.Ellipsis)
-            Text(stringResource(R.string.download_chapters_count, summary.downloadedChapterCount), style = AppTypography.bodyMedium, color = MaterialTheme.colorScheme.primary)
+            Text(validNovelTitle(summary.novelName, novelUrl = summary.novelUrl).ifBlank { stringResource(R.string.download_unknown_novel) }, style = AppTypography.labelLarge, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            Text(if (summary.manifest.catalogComplete) stringResource(R.string.local_download_count, summary.downloadedChapterCount, summary.manifest.chapters.size)
+                else stringResource(R.string.download_chapters_count, summary.downloadedChapterCount), style = AppTypography.bodyMedium, color = MaterialTheme.colorScheme.primary)
             Text(if (summary.storageBytes < 0) stringResource(R.string.storage_size_calculating) else formatBytes(summary.storageBytes), style = AppTypography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
-        IconButton(onClick = onDelete, enabled = !deleting) { Icon(Icons.Filled.DeleteOutline, stringResource(R.string.download_delete), tint = MaterialTheme.colorScheme.error) }
+        if (editing) IconButton(onClick = onDelete, enabled = !deleting) { Icon(Icons.Filled.DeleteOutline, stringResource(R.string.download_delete), tint = MaterialTheme.colorScheme.error) }
     }
 }
 
@@ -332,7 +352,7 @@ private class DownloadPageModel : AppStateViewModel<DownloadPageModel.State>(Sta
 
     fun refresh() {
         refreshJob?.cancel()
-        mutableState.value = State.Loading
+        if (mutableState.value !is State.Content) mutableState.value = State.Loading
         refreshJob = viewModelScope.launch(Dispatchers.IO) {
             try {
                 val novels = PresentationAccess.downloads.listDownloadedNovels(onMetadata = {

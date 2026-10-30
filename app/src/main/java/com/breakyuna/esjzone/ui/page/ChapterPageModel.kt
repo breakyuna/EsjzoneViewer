@@ -2,6 +2,8 @@ package com.breakyuna.esjzone.ui.page
 
 import androidx.lifecycle.viewModelScope
 import com.breakyuna.esjzone.app.PresentationAccess
+import com.breakyuna.esjzone.database.NovelTitleRepository
+import com.breakyuna.esjzone.novellibrary.novel.validNovelTitle
 
 import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.mutableStateOf
@@ -46,6 +48,8 @@ class ChapterPageModel(
     private val novelCoverUrl: String = ""
 ) : AppStateViewModel<ChapterPageModel.State>(State.Loading) {
 
+    val novelNameState = mutableStateOf(validNovelTitle(novelName, novelId, novelUrl))
+
     private val downloadNovelUrl = novelUrl.takeIf(String::isNotBlank)
         ?: novelId.takeIf(String::isNotBlank)?.let { "/detail/$it.html" }
 
@@ -61,7 +65,6 @@ class ChapterPageModel(
     private companion object {
         /** Keep a small bidirectional reading window instead of the whole book in RAM. */
         const val MAX_LOADED_CHAPTERS = 9
-        const val APPEND_RETRY_COOLDOWN_MILLIS = 3_000L
         /** A consumed chapter must finish saving even after the reader entry is popped. */
         val persistenceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
         val persistenceSemaphore = Semaphore(2)
@@ -89,7 +92,9 @@ class ChapterPageModel(
             val verificationChapter: Chapter? = null,
             val verificationWebViewUnavailable: Boolean = false,
             val verificationStorageUnavailable: Boolean = false,
-            val verificationOffset: Int = 0
+            val verificationOffset: Int = 0,
+            val nextFailed: Boolean = false,
+            val previousFailed: Boolean = false
         ) : State()
     }
 
@@ -117,9 +122,7 @@ class ChapterPageModel(
     private var pendingPreviousRequest = false
     private var initialLoadStarted = false
     private var failedAppendChapterKey: String? = null
-    private var failedAppendAtMillis = 0L
     private var failedPrependChapterKey: String? = null
-    private var failedPrependAtMillis = 0L
     private var verificationChapter: Chapter? = null
     private var verificationOffset = 0
     private var verificationWebViewUnavailable = false
@@ -143,6 +146,19 @@ class ChapterPageModel(
         synchronized(lock) {
             if (initialLoadStarted) return
             initialLoadStarted = true
+        }
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val title = NovelTitleRepository.resolve(authorization, novelId, downloadNovelUrl.orEmpty(), novelNameState.value)
+                if (title.isNotBlank()) {
+                    novelNameState.value = title
+                    NovelTitleRepository.repair(novelId, downloadNovelUrl.orEmpty(), title)
+                }
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                AppLogger.w("ChapterPageModel", "Unable to resolve novel title", error)
+            }
         }
         openChapter(requestedChapter.value)
     }
@@ -179,7 +195,6 @@ class ChapterPageModel(
             offlineChapterKeys.clear()
             failedAppendChapterKey = null
             failedPrependChapterKey = null
-            failedPrependAtMillis = 0L
             verificationChapter = null
             verificationOffset = 0
             verificationWebViewUnavailable = false
@@ -323,6 +338,13 @@ class ChapterPageModel(
     }
 
     /** Loads the next canonical TOC chapter when the reader reaches the end buffer. */
+    fun retryBoundary(forward: Boolean) {
+        synchronized(lock) {
+            if (forward) failedAppendChapterKey = null else failedPrependChapterKey = null
+        }
+        if (forward) loadNextChapter() else loadPreviousChapter()
+    }
+
     fun loadNextChapter() {
         val shouldWaitForOrder = synchronized(lock) {
             !orderResolved && orderedChapters.isEmpty() && novelId.isNotBlank()
@@ -342,8 +364,7 @@ class ChapterPageModel(
                 (verificationChapter != null && verificationOffset > 0)) return
             val last = loadedChapters.last()
             val candidate = adjacentChapter(last.chapter, 1, last.fallbackNext) ?: return
-            if (chapterKey(candidate) == failedAppendChapterKey &&
-                System.currentTimeMillis() - failedAppendAtMillis < APPEND_RETRY_COOLDOWN_MILLIS) return
+            if (chapterKey(candidate) == failedAppendChapterKey) return
             if (loadedChapters.any { sameChapter(it.chapter, candidate) }) return
             nextChapter = candidate
             loadingNext = true
@@ -363,7 +384,6 @@ class ChapterPageModel(
                         ) {
                             loadedChapters += entry
                             failedAppendChapterKey = null
-                            failedAppendAtMillis = 0L
                             clearVerificationLocked()
                             trimLoadedChaptersFromStart()
                         }
@@ -383,7 +403,6 @@ class ChapterPageModel(
                 synchronized(lock) {
                     if (isCurrentSessionLocked(session)) {
                         failedAppendChapterKey = chapterKey(chapterToLoad)
-                        failedAppendAtMillis = System.currentTimeMillis()
                     }
                 }
                 AppLogger.e(
@@ -422,8 +441,7 @@ class ChapterPageModel(
                 (verificationChapter != null && verificationOffset < 0)) return
             val first = loadedChapters.first()
             val candidate = adjacentChapter(first.chapter, -1, first.fallbackPrevious) ?: return
-            if (chapterKey(candidate) == failedPrependChapterKey &&
-                System.currentTimeMillis() - failedPrependAtMillis < APPEND_RETRY_COOLDOWN_MILLIS) return
+            if (chapterKey(candidate) == failedPrependChapterKey) return
             if (loadedChapters.any { sameChapter(it.chapter, candidate) }) return
             previousChapter = candidate
             loadingPrevious = true
@@ -443,7 +461,6 @@ class ChapterPageModel(
                         ) {
                             loadedChapters.add(0, entry)
                             failedPrependChapterKey = null
-                            failedPrependAtMillis = 0L
                             clearVerificationLocked()
                             trimLoadedChaptersFromEnd()
                         }
@@ -463,7 +480,6 @@ class ChapterPageModel(
                 synchronized(lock) {
                     if (isCurrentSessionLocked(session)) {
                         failedPrependChapterKey = chapterKey(chapterToLoad)
-                        failedPrependAtMillis = System.currentTimeMillis()
                     }
                 }
                 AppLogger.e(
@@ -603,16 +619,25 @@ class ChapterPageModel(
         if (detail.content.isEmpty()) return
         val orderSnapshot = synchronized(lock) { orderedChapters.toList() }
         val novelIdSnapshot = novelId
-        val novelNameSnapshot = novelName
+        val novelNameStateSnapshot = novelNameState
         val novelUrlSnapshot = novelUrl
         val novelCoverUrlSnapshot = novelCoverUrl
         val authorizationSnapshot = authorization
         persistenceScope.launch {
             persistenceSemaphore.withPermit {
+                val savedName = novelNameStateSnapshot.value
                 persistLoadedChapter(
-                    chapter, detail, orderSnapshot, novelIdSnapshot, novelNameSnapshot,
+                    chapter, detail, orderSnapshot, novelIdSnapshot, savedName,
                     novelUrlSnapshot, novelCoverUrlSnapshot, authorizationSnapshot
                 )
+                // A title lookup can finish while chapter assets are being saved.
+                if (novelNameStateSnapshot.value != savedName) {
+                    runCatching {
+                        PresentationAccess.downloads.repairNovelName(
+                            novelUrlSnapshot.ifBlank { "/detail/$novelIdSnapshot.html" }, novelNameStateSnapshot.value
+                        )
+                    }.onFailure { AppLogger.w("ChapterPageModel", "Unable to repair saved chapter title", it) }
+                }
             }
         }
     }
@@ -676,7 +701,14 @@ class ChapterPageModel(
         )
         val fetchedOrder = try {
             cancellablePageRequest { PresentationAccess.client.getNovelDetail(authorization, source) }
-                .also { com.breakyuna.esjzone.database.ReadingStatisticsRecorder.recordTags(it) }
+                .also {
+                    com.breakyuna.esjzone.database.ReadingStatisticsRecorder.recordTags(it)
+                    val title = validNovelTitle(it.name, novelId, it.url)
+                    if (title.isNotBlank()) {
+                        novelNameState.value = title
+                        NovelTitleRepository.repair(novelId, it.url, title)
+                    }
+                }
                 .chapterList
                 .orderedChapters
         } catch (e: CancellationException) {
@@ -728,7 +760,9 @@ class ChapterPageModel(
                 verificationChapter = verificationChapter,
                 verificationWebViewUnavailable = verificationWebViewUnavailable,
                 verificationStorageUnavailable = verificationStorageUnavailable,
-                verificationOffset = verificationOffset
+                verificationOffset = verificationOffset,
+                nextFailed = failedAppendChapterKey != null,
+                previousFailed = failedPrependChapterKey != null
             )
         }
     }

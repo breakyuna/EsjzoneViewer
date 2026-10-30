@@ -8,6 +8,17 @@ import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.MyLocation
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.lifecycle.viewModelScope
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.breakyuna.esjzone.app.PresentationAccess
+import com.breakyuna.esjzone.offline.NovelDownloadStore
+import com.breakyuna.esjzone.ui.navigation.AppStateViewModel
+import com.breakyuna.esjzone.ui.navigation.rememberAppViewModel
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.flow.collectLatest
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -47,11 +58,12 @@ internal fun ReaderContentsSheet(
     underlines: Map<String, List<ReaderUnderline>>,
     onChapterSelected: (Chapter) -> Unit,
     onUnderlineSelected: (Chapter, ReaderUnderline) -> Unit,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    novelUrl: String = ""
 ) {
     AppSideSheet(visible = visible, edge = AppSideSheetEdge.START, onDismissRequest = onDismiss) {
         ReaderContentsContent(chapters, currentChapter, novelId, bookmarks, underlines,
-            onChapterSelected, onUnderlineSelected, onDismiss)
+            onChapterSelected, onUnderlineSelected, onDismiss, novelUrl)
     }
 }
 
@@ -65,7 +77,8 @@ internal fun ReaderContentsContent(
     underlines: Map<String, List<ReaderUnderline>>,
     onChapterSelected: (Chapter) -> Unit,
     onUnderlineSelected: (Chapter, ReaderUnderline) -> Unit,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    novelUrl: String = ""
 ) {
     val pager = rememberPagerState { 3 }
     val scope = rememberCoroutineScope()
@@ -73,6 +86,14 @@ internal fun ReaderContentsContent(
     val bookmarkState = rememberLazyListState()
     val underlineState = rememberLazyListState()
     val currentKey = chapterIdentity(currentChapter)
+    var query by rememberSaveable(novelId) { mutableStateOf("") }
+    var locate by remember { mutableIntStateOf(0) }
+    val catalogModel = rememberAppViewModel { ReaderCatalogModel(novelUrl) }
+    val savedChapters by catalogModel.state.collectAsStateWithLifecycle()
+    val filteredChapters by produceState(chapters, chapters, query) {
+        value = withContext(Dispatchers.Default) { filterReaderCatalog(chapters, query) }
+    }
+
     val bookBookmarks by produceState<List<Chapter>>(emptyList(), chapters, bookmarks, novelId) {
         value = withContext(Dispatchers.Default) {
             val catalog = chapters.associateBy(::chapterIdentity)
@@ -93,8 +114,8 @@ internal fun ReaderContentsContent(
             }
         }
     }
-    LaunchedEffect(chapters, currentKey) {
-        val index = chapters.indexOfFirst { chapterIdentity(it) == currentKey }
+    LaunchedEffect(filteredChapters, currentKey, locate) {
+        val index = filteredChapters.indexOfFirst { chapterIdentity(it) == currentKey }
         if (index >= 0) catalogState.scrollToItem(index)
     }
     val labels = listOf(R.string.reader_contents, R.string.reader_bookmark_action, R.string.reader_underline_tab)
@@ -116,10 +137,17 @@ internal fun ReaderContentsContent(
                 Icon(Icons.Filled.Close, stringResource(R.string.close))
             }
         }
+        if (pager.currentPage == 0) Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            OutlinedTextField(value = query, onValueChange = { query = it }, singleLine = true,
+                label = { Text(stringResource(R.string.reader_catalog_search)) }, modifier = Modifier.weight(1f))
+            IconButton(onClick = { query = ""; locate++ }) {
+                Icon(Icons.Filled.MyLocation, stringResource(R.string.reader_catalog_current))
+            }
+        }
         HorizontalPager(state = pager, modifier = Modifier.fillMaxWidth().weight(1f)) { page ->
             val description = stringResource(labels[page])
             val isEmpty = when (page) {
-                0 -> chapters.isEmpty()
+                0 -> filteredChapters.isEmpty()
                 1 -> bookBookmarks.isEmpty()
                 else -> bookUnderlines.isEmpty()
             }
@@ -138,8 +166,10 @@ internal fun ReaderContentsContent(
                     modifier = Modifier.fillMaxSize().semantics { contentDescription = description }
                 ) {
                     when (page) {
-                        0, 1 -> items(if (page == 0) chapters else bookBookmarks, key = ::chapterIdentity) { chapter ->
-                            ReaderContentsRow(chapter.name, selected = chapterIdentity(chapter) == currentKey,
+                        0, 1 -> items(if (page == 0) filteredChapters else bookBookmarks, key = ::chapterIdentity) { chapter ->
+                            ReaderContentsRow(chapter.name, quote = savedChapters[NovelDownloadStore.chapterKey(chapter.url)]?.let {
+                                stringResource(if (it) R.string.local_downloaded else R.string.local_text_saved)
+                            }, selected = chapterIdentity(chapter) == currentKey,
                                 onClick = { onChapterSelected(chapter) })
                         }
                         else -> items(bookUnderlines, key = { (chapter, mark) ->
@@ -169,6 +199,24 @@ private fun ReaderContentsRow(title: String, quote: String? = null, selected: Bo
                 fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal)
             if (quote != null) Text(quote, maxLines = 3, overflow = TextOverflow.Ellipsis,
                 style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+}
+
+internal fun filterReaderCatalog(chapters: List<Chapter>, query: String): List<Chapter> =
+    query.trim().let { term -> if (term.isEmpty()) chapters else chapters.filter { it.name.contains(term, ignoreCase = true) } }
+
+private class ReaderCatalogModel(novelUrl: String) : AppStateViewModel<Map<String, Boolean>>(emptyMap()) {
+    init {
+        if (novelUrl.isNotBlank()) viewModelScope.launch(Dispatchers.IO) {
+            PresentationAccess.downloads.changes.collectLatest {
+                try {
+                    mutableState.value = PresentationAccess.downloads.manifest(novelUrl)?.chapters.orEmpty()
+                        .filter { it.bodyAvailable || it.downloaded }
+                        .associate { NovelDownloadStore.chapterKey(it.url) to it.downloaded }
+                } catch (e: CancellationException) { throw e }
+                catch (_: Exception) { mutableState.value = emptyMap() }
+            }
         }
     }
 }

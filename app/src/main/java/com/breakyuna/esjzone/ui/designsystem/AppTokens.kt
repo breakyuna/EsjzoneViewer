@@ -40,6 +40,9 @@ object AppLayout {
     val item = AppSpacing.md
     val divider = 1.dp
     val contentMaxWidth = 960.dp
+    val wideContentMaxWidth = 1280.dp
+    val wideReaderMaxWidth = 840.dp
+    val settingsNavigationWidth = 240.dp
     val compactCardWidth = 148.dp
     val compactCardHeight = 196.dp
     /** Fixed home-rail tile geometry: the cover itself is a strict 2:3 portrait. */

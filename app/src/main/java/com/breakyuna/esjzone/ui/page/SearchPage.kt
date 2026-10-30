@@ -1,6 +1,10 @@
 @file:OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 
 package com.breakyuna.esjzone.ui.page
+import com.breakyuna.esjzone.ui.designsystem.wideContentWidth
+import com.breakyuna.esjzone.ui.designsystem.wideListColumns
+import com.breakyuna.esjzone.ui.designsystem.PreserveAdaptiveListAnchor
+import com.breakyuna.esjzone.ui.designsystem.adaptiveItems
 import com.breakyuna.esjzone.network.cancellablePageRequest
 
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
@@ -162,9 +166,17 @@ fun DiscoverySearchResults(
     modifier: Modifier = Modifier
 ) {
     val listState = rememberLazyListState()
+    val columns = wideListColumns(maxWidth = 1280f)
+    if (state is SearchPageModel.State.Result) {
+        PreserveAdaptiveListAnchor(
+            listState, model.visibleItems, columns,
+            leadingItemCount = 1 + if (model.refreshFailure != null) 1 else 0,
+            key = { "search:${novelKey(it)}" }
+        )
+    }
     LazyColumn(
         state = listState,
-        modifier = modifier,
+        modifier = modifier.wideContentWidth(),
         contentPadding = PaddingValues(horizontal = 16.dp, vertical = 6.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
@@ -204,8 +216,9 @@ fun DiscoverySearchResults(
                         )
                     }
                 }
-                items(
+                adaptiveItems(
                     items = visible,
+                    columns = columns,
                     key = { novel -> "search:${novelKey(novel)}" },
                     contentType = { "novel" }
                 ) { novel ->
@@ -399,6 +412,14 @@ class SearchPageModel(
                 if (token == generation) isRefreshing = false
             }
         }
+    }
+
+    fun cancelRequests() {
+        generation += 1
+        requestJob?.cancel()
+        moreJob?.cancel()
+        isRefreshing = false
+        loadingMore = false
     }
 
     fun refresh(keyword: String, category: Int = 0, sort: Int = 1) {

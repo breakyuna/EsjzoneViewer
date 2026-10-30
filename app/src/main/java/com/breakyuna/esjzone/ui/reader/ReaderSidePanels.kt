@@ -1,5 +1,6 @@
 package com.breakyuna.esjzone.ui.reader
 
+import com.breakyuna.esjzone.ui.designsystem.appUsesWideLayout
 import androidx.compose.animation.core.animate
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
@@ -133,12 +134,13 @@ internal fun ReaderSidePanels(
     content: @Composable BoxScope.() -> Unit
 ) {
     val density = LocalDensity.current
+    val wide = appUsesWideLayout()
     val currentOnOpening by rememberUpdatedState(onOpening)
     Box(
         Modifier.fillMaxSize().clipToBounds()
             .onSizeChanged { size ->
-                state.contentsWidth = minOf(size.width * 0.82f, with(density) { 340.dp.toPx() }).coerceAtLeast(1f)
-                state.commentsWidth = minOf(size.width * 0.92f, with(density) { 480.dp.toPx() }).coerceAtLeast(1f)
+                state.contentsWidth = minOf(size.width * 0.82f, with(density) { (if (wide) 400.dp else 340.dp).toPx() }).coerceAtLeast(1f)
+                state.commentsWidth = minOf(size.width * 0.92f, with(density) { (if (wide) 560.dp else 480.dp).toPx() }).coerceAtLeast(1f)
             }
             .pointerInput(state, gesturesEnabled, commentsEnabled) {
                 awaitEachGesture {

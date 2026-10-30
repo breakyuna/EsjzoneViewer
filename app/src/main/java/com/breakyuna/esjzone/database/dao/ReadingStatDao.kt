@@ -7,6 +7,7 @@ import androidx.room.Query
 import androidx.room.Transaction
 import com.breakyuna.esjzone.database.entity.ReadingStat
 import kotlinx.coroutines.flow.Flow
+import com.breakyuna.esjzone.novellibrary.novel.validNovelTitle
 
 @Dao
 interface ReadingStatDao {
@@ -16,25 +17,36 @@ interface ReadingStatDao {
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     fun insertIfMissing(stat: ReadingStat): Long
 
-    @Query("UPDATE reading_stats SET duration_ms = duration_ms + :durationMs, book_name = :bookName WHERE date = :date AND book_key = :bookKey")
+    @Query("UPDATE reading_stats SET duration_ms = duration_ms + :durationMs, book_name = CASE WHEN :bookName != '' THEN :bookName ELSE book_name END WHERE date = :date AND book_key = :bookKey")
     fun addDuration(date: String, bookKey: String, bookName: String, durationMs: Long)
 
     @Transaction
     fun add(stat: ReadingStat) {
         if (stat.durationMs <= 0L) return
-        if (insertIfMissing(stat) == -1L) {
-            addDuration(stat.date, stat.bookKey, stat.bookName, stat.durationMs)
+        val name = validNovelTitle(stat.bookName, novelTitleIdForKey(stat.bookKey), stat.bookKey)
+        if (insertIfMissing(stat.copy(bookName = name)) == -1L) {
+            addDuration(stat.date, stat.bookKey, name, stat.durationMs)
         }
     }
 
     @Query("SELECT * FROM reading_stats")
     fun getAll(): List<ReadingStat>
-    @Query("UPDATE reading_stats SET duration_ms = MAX(duration_ms, :duration), book_name = :name WHERE date = :date AND book_key = :key")
+    @Query("UPDATE reading_stats SET duration_ms = MAX(duration_ms, :duration), book_name = CASE WHEN :name != '' THEN :name ELSE book_name END WHERE date = :date AND book_key = :key")
     fun mergeDuration(date: String, key: String, name: String, duration: Long)
     @Transaction
     fun merge(stat: ReadingStat) {
-        if (insertIfMissing(stat) == -1L) mergeDuration(stat.date, stat.bookKey, stat.bookName, stat.durationMs)
+        val name = validNovelTitle(stat.bookName, novelTitleIdForKey(stat.bookKey), stat.bookKey)
+        if (insertIfMissing(stat.copy(bookName = name)) == -1L) mergeDuration(stat.date, stat.bookKey, name, stat.durationMs)
     }
+    @Query("SELECT * FROM reading_stats WHERE book_key = :key ORDER BY date DESC")
+    fun forBook(key: String): List<ReadingStat>
+
+    @Query("UPDATE reading_stats SET book_name = :name WHERE book_key = :key AND book_name = :previous")
+    fun repairBookName(key: String, previous: String, name: String)
+
     @Query("DELETE FROM reading_stats")
     fun deleteAll()
 }
+
+private fun novelTitleIdForKey(key: String): String =
+    com.breakyuna.esjzone.novellibrary.novel.novelTitleId(novelUrl = key).ifBlank { key }

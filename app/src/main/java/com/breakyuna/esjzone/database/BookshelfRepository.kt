@@ -13,6 +13,8 @@ import com.breakyuna.esjzone.network.features.getAllFavorites
 import com.breakyuna.esjzone.network.features.getNovelDetail
 import com.breakyuna.esjzone.network.features.toggleFavorite
 import com.breakyuna.esjzone.network.hasCredentials
+import com.breakyuna.esjzone.novellibrary.novel.preferredNovelTitle
+import com.breakyuna.esjzone.novellibrary.novel.validNovelTitle
 import com.breakyuna.esjzone.novellibrary.novel.Novel
 import com.breakyuna.esjzone.novellibrary.novel.CoveredNovel
 import com.breakyuna.esjzone.novellibrary.novel.FavoriteNovel
@@ -198,7 +200,7 @@ object BookshelfRepository {
                 scope = scope,
                 bookKey = key,
                 url = EsjzoneUrls.resolve(novel.url).substringBefore('#'),
-                title = novel.name
+                title = validNovelTitle(novel.name, novelIdFor(novel.url), novel.url)
             )
             val next = if (desired) {
                 base.copy(
@@ -206,7 +208,7 @@ object BookshelfRepository {
                     bookKey = key,
                     novelId = current?.novelId?.takeIf { it.isNotBlank() } ?: novelIdFor(novel.url),
                     url = EsjzoneUrls.resolve(novel.url).substringBefore('#'),
-                    title = novel.name,
+                    title = preferredNovelTitle(novel.name, current?.title.orEmpty(), novelIdFor(novel.url), novel.url),
                     author = author,
                     coverUrl = retainedCover,
                     isAdult = isAdult,
@@ -231,7 +233,7 @@ object BookshelfRepository {
                     bookKey = key,
                     novelId = current?.novelId?.takeIf { it.isNotBlank() } ?: novelIdFor(novel.url),
                     url = EsjzoneUrls.resolve(novel.url).substringBefore('#'),
-                    title = novel.name,
+                    title = preferredNovelTitle(novel.name, current?.title.orEmpty(), novelIdFor(novel.url), novel.url),
                     author = author,
                     coverUrl = retainedCover,
                     isAdult = isAdult,
@@ -305,7 +307,7 @@ object BookshelfRepository {
                     bookKey = key,
                     novelId = novelIdFor(novel.url),
                     url = EsjzoneUrls.resolve(novel.url).substringBefore('#'),
-                    title = novel.name,
+                    title = validNovelTitle(novel.name, novelIdFor(novel.url), novel.url),
                     author = effectiveAuthor,
                     coverUrl = effectiveCover,
                     isAdult = effectiveIsAdult,
@@ -313,7 +315,7 @@ object BookshelfRepository {
                 )
             )
         } else {
-            dao.supplementMetadata(scope, key, novel.name, effectiveAuthor, effectiveCover, effectiveIsAdult)
+            dao.supplementMetadata(scope, key, validNovelTitle(novel.name, novelIdFor(novel.url), novel.url), effectiveAuthor, effectiveCover, effectiveIsAdult)
             dao.updateCoverIfChanged(scope, key, EsjzoneUrls.coverOrEmpty(effectiveCover))
         }
     }
@@ -413,7 +415,7 @@ object BookshelfRepository {
                 val remainingCandidates = dao.getAll(scope)
                     .asSequence()
                     // A reading-history cover does not provide author or R18 metadata.
-                    .filter { it.visible && it.url.isNotBlank() && (it.coverUrl.isBlank() || it.author.isBlank()) }
+                    .filter { it.visible && it.url.isNotBlank() && (it.coverUrl.isBlank() || it.author.isBlank() || validNovelTitle(it.title, it.novelId, it.url).isBlank()) }
                     .filter { row ->
                         val attemptKey = "$scope:${row.bookKey}"
                         val previous = metadataAttempts.putIfAbsent(attemptKey, now)
@@ -627,7 +629,7 @@ object BookshelfRepository {
                         bookKey = key,
                         novelId = novelIdFor(remoteNovel.url),
                         url = EsjzoneUrls.resolve(remoteNovel.url).substringBefore('#'),
-                        title = remoteNovel.name,
+                        title = validNovelTitle(remoteNovel.name, novelIdFor(remoteNovel.url), remoteNovel.url),
                         author = existing?.author.orEmpty(),
                         coverUrl = resolvedCover,
                         isAdult = existing?.isAdult ?: false,

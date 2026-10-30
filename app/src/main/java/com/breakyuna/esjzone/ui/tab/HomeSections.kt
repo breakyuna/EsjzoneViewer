@@ -1,5 +1,17 @@
 package com.breakyuna.esjzone.ui.tab
 
+import kotlinx.coroutines.launch
+import com.breakyuna.esjzone.ui.designsystem.appViewportSize
+import com.breakyuna.esjzone.ui.designsystem.appUsesWideLayout
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
+import androidx.compose.material3.IconButton
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.foundation.pager.PageSize
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -79,18 +91,21 @@ private const val HOME_COLLECTION_MAX_ITEMS = 16
 
 internal fun prepareHomeSectionRows(
     novels: List<CoveredNovel>,
-    adult: Boolean
+    adult: Boolean,
+    columns: Int = HOME_GRID_COLUMNS
 ): List<List<CoveredNovel>> = novels
     .asSequence()
     .filter { adult || !it.isAdult }
     .distinctBy { it.url.trim().ifBlank { it.name.trim() } }
     .take(HOME_COLLECTION_MAX_ITEMS)
-    .chunked(HOME_GRID_COLUMNS)
+    .chunked(columns)
     .toList()
 
 internal fun LazyListScope.weeklyPopularCarousel(
     novels: List<WeeklyPopularNovel>,
-    onNovelClick: (CoveredNovel, Int) -> Unit
+    onNovelClick: (CoveredNovel, Int) -> Unit,
+    enrichmentEnabled: Boolean = false,
+    onVisible: suspend (List<WeeklyPopularNovel>) -> Unit = {}
 ) {
     val visible = novels.take(10)
     if (visible.isEmpty()) return
@@ -102,7 +117,23 @@ internal fun LazyListScope.weeklyPopularCarousel(
             initialPage = initialPage,
             pageCount = { pageCount }
         )
+        val wide = appUsesWideLayout()
+        val scope = rememberCoroutineScope()
+        val cardWidth = ((minOf(appViewportSize().width, 1280f) - 40f) / 2).dp
         val lifecycleOwner = LocalLifecycleOwner.current
+        var enriching by remember { mutableStateOf(false) }
+        LaunchedEffect(enrichmentEnabled, pagerState.settledPage, visible.map { it.url }) {
+            if (enrichmentEnabled) {
+                lifecycleOwner.repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.RESUMED) {
+                    enriching = true
+                    try {
+                        onVisible(listOf(visible[pagerState.settledPage % visible.size],
+                            visible[(pagerState.settledPage + 1) % visible.size]).distinctBy { it.url })
+                    } finally { enriching = false }
+                }
+            }
+        }
+
         LaunchedEffect(pagerState, visible.size, lifecycleOwner) {
             lifecycleOwner.repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.RESUMED) {
                 // Navigation can cancel an auto-play animation between pages. The
@@ -124,6 +155,7 @@ internal fun LazyListScope.weeklyPopularCarousel(
                         }
                         continue
                     }
+                    if (enriching) continue
                     try {
                         pagerState.animateScrollToPage(
                             page = pagerState.currentPage + 1,
@@ -138,6 +170,7 @@ internal fun LazyListScope.weeklyPopularCarousel(
         Column(modifier = Modifier.contentArrival(), verticalArrangement = Arrangement.spacedBy(AppSpacing.sm)) {
             HorizontalPager(
                 state = pagerState,
+                pageSize = if (wide) PageSize.Fixed(cardWidth) else PageSize.Fill,
                 pageSpacing = AppSpacing.sm,
                 modifier = Modifier.fillMaxWidth()
             ) { page ->
@@ -158,6 +191,11 @@ internal fun LazyListScope.weeklyPopularCarousel(
                 horizontalArrangement = Arrangement.Center,
                 verticalAlignment = Alignment.CenterVertically
             ) {
+                if (wide) {
+                    IconButton(onClick = { scope.launch { pagerState.animateScrollToPage(pagerState.currentPage - 1) } }) {
+                        Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, stringResource(R.string.home_carousel_previous))
+                    }
+                }
                 visible.indices.forEach { index ->
                     Box(
                         Modifier
@@ -170,6 +208,11 @@ internal fun LazyListScope.weeklyPopularCarousel(
                                 else MaterialTheme.colorScheme.outlineVariant
                             )
                     )
+                }
+                if (wide) {
+                    IconButton(onClick = { scope.launch { pagerState.animateScrollToPage(pagerState.currentPage + 1) } }) {
+                        Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, stringResource(R.string.home_carousel_next))
+                    }
                 }
             }
         }

@@ -2,6 +2,9 @@
 
 package com.breakyuna.esjzone.ui.tab
 
+import androidx.compose.ui.platform.LocalConfiguration
+import com.breakyuna.esjzone.ui.designsystem.appUsesWideLayout
+import com.breakyuna.esjzone.ui.designsystem.wideContentWidth
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.lifecycle.viewModelScope
 
@@ -131,8 +134,10 @@ private fun CategoryBrowserContent(model: CategoryModel, modifier: Modifier) {
                 )
             } else {
                 LazyVerticalGrid(
-                    modifier = Modifier.fillMaxSize(),
-                    columns = GridCells.Adaptive(minSize = 156.dp),
+                    modifier = Modifier.fillMaxSize().wideContentWidth(),
+                    columns = GridCells.Adaptive(minSize = if (appUsesWideLayout()) {
+                        200.dp * LocalConfiguration.current.fontScale.coerceAtLeast(1f)
+                    } else 156.dp),
                     contentPadding = PaddingValues(16.dp),
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp)

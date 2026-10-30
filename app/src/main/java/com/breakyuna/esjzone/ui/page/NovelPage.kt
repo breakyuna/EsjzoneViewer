@@ -1,4 +1,9 @@
 package com.breakyuna.esjzone.ui.page
+import androidx.compose.ui.platform.testTag
+import com.breakyuna.esjzone.ui.designsystem.AppLayout
+import com.breakyuna.esjzone.ui.designsystem.appUsesWideLayout
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.layout.fillMaxHeight
 import com.breakyuna.esjzone.app.PresentationAccess
 import com.breakyuna.esjzone.network.features.getChapterDetail
 import com.breakyuna.esjzone.network.cancellablePageRequest
@@ -333,37 +338,19 @@ class NovelPage(
                     onMore = { showMoreActions = true }
                 )
 
-                val detailItems: LazyListScope.() -> Unit = when (val snapshot = state) {
+                val detailItems: NovelDetailContent = when (val snapshot = state) {
                     NovelPageModel.State.Loading -> {
-                        {
+                        NovelDetailContent(overview = {
                             item(key = "detail-loading", contentType = "loading") {
                                 LoadingSkeleton(modifier = Modifier.fillMaxWidth())
                             }
-                        }
+                        })
                     }
-                    is NovelPageModel.State.Error -> { {} }
+                    is NovelPageModel.State.Error -> NovelDetailContent()
 
                     is NovelPageModel.State.Result -> {
                         val detailed = snapshot.detailed
                         val chapterList = detailed.chapterList
-                        LaunchedEffect(localReading?.activityId, localReading?.novelName, detailed.name) {
-                            val activity = localReading ?: return@LaunchedEffect
-                            if (detailed.name.isNotBlank() && detailed.name != activity.novelId &&
-                                detailed.name != activity.chapterName &&
-                                (activity.novelName.isBlank() || activity.novelName == activity.novelId ||
-                                    activity.novelName == activity.chapterName)) {
-                                try {
-                                    withContext(Dispatchers.IO) {
-                                        PresentationAccess.database.localReadingActivityDao()
-                                            .updateName(activity.activityId, detailed.name)
-                                    }
-                                } catch (error: CancellationException) {
-                                    throw error
-                                } catch (error: Exception) {
-                                    AppLogger.w("NovelPage", "Unable to repair local history title", error)
-                                }
-                            }
-                        }
                         val historyState = history.state()
                         val hasHistory = chapterList.hasHistory || historyState.value != null || localReading != null
                         val favoriteState = favorite.state()
@@ -481,7 +468,8 @@ class NovelPage(
                                 Snackbar(snackbarData = data, shape = AppShapes.standard)
                             }
                         },
-                        content = detailItems
+                        overview = detailItems.overview,
+                        content = detailItems.chapters
                     )
                 }
                 if (detailed != null) CommentComposerHost(model = commentModel)
@@ -517,39 +505,74 @@ internal fun NovelDetailLayout(
     hero: @Composable () -> Unit,
     modifier: Modifier = Modifier,
     snackbarHost: @Composable () -> Unit = {},
+    overview: LazyListScope.() -> Unit = {},
     content: LazyListScope.() -> Unit
 ) {
     val metrics = rememberAppAdaptiveMetrics()
+    val wide = appUsesWideLayout()
+    val overviewState = rememberLazyListState()
+    val contentState = rememberLazyListState()
     val horizontalPadding = when (metrics.sizeClass) {
         AppWindowSizeClass.Compact -> AppSpacing.sm
         AppWindowSizeClass.Medium -> AppSpacing.md
         AppWindowSizeClass.Expanded -> AppSpacing.lg
     }
     Box(modifier.fillMaxWidth(), contentAlignment = Alignment.TopCenter) {
-        LazyColumn(
-            modifier = Modifier
-                .then(
-                    if (metrics.sizeClass != AppWindowSizeClass.Compact) {
-                        Modifier.widthIn(max = metrics.contentMaxWidth)
-                    } else {
-                        Modifier
-                    }
+        if (wide) {
+            Row(
+                Modifier.widthIn(max = AppLayout.wideContentMaxWidth).fillMaxSize().padding(horizontal = AppSpacing.lg),
+                horizontalArrangement = Arrangement.spacedBy(AppSpacing.xl)
+            ) {
+                LazyColumn(
+                    state = overviewState,
+                    modifier = Modifier.weight(0.42f).fillMaxHeight().testTag("detail-overview-pane"),
+                    contentPadding = PaddingValues(bottom = AppSpacing.lg),
+                    verticalArrangement = Arrangement.spacedBy(AppSpacing.sm)
+                ) {
+                    item(key = "detail-hero", contentType = "novel-hero") { hero() }
+                    overview()
+                }
+                LazyColumn(
+                    state = contentState,
+                    modifier = Modifier.weight(0.58f).fillMaxHeight().testTag("detail-content-pane"),
+                    contentPadding = PaddingValues(bottom = AppSpacing.lg),
+                    verticalArrangement = Arrangement.spacedBy(AppSpacing.sm),
+                    content = content
                 )
-                .fillMaxSize(),
-            contentPadding = PaddingValues(
-                start = horizontalPadding,
-                end = horizontalPadding,
-                bottom = AppSpacing.lg
-            ),
-            verticalArrangement = Arrangement.spacedBy(AppSpacing.sm)
-        ) {
-            item(key = "detail-hero", contentType = "novel-hero") { hero() }
-            content()
+            }
+        } else {
+            LazyColumn(
+                state = contentState,
+                modifier = Modifier.testTag("detail-compact-pane")
+                    .then(
+                        if (metrics.sizeClass != AppWindowSizeClass.Compact) {
+                            Modifier.widthIn(max = metrics.contentMaxWidth)
+                        } else {
+                            Modifier
+                        }
+                    )
+                    .fillMaxSize(),
+                contentPadding = PaddingValues(
+                    start = horizontalPadding,
+                    end = horizontalPadding,
+                    bottom = AppSpacing.lg
+                ),
+                verticalArrangement = Arrangement.spacedBy(AppSpacing.sm)
+            ) {
+                item(key = "detail-hero", contentType = "novel-hero") { hero() }
+                overview()
+                content()
+            }
         }
         // The composer is outside this content area, including its system/IME insets.
         Box(Modifier.align(Alignment.BottomCenter)) { snackbarHost() }
     }
 }
+
+private data class NovelDetailContent(
+    val overview: LazyListScope.() -> Unit = {},
+    val chapters: LazyListScope.() -> Unit = {}
+)
 
 @Composable
 private fun novelDetailItems(
@@ -576,7 +599,7 @@ private fun novelDetailItems(
     context: Context,
     downloaded: DownloadedNovelManifest?,
     onDownloadedChange: (DownloadedNovelManifest?) -> Unit
-): LazyListScope.() -> Unit {
+): NovelDetailContent {
     val orderedChapters = detailed.chapterList.orderedChapters
     val passwordRequiredChapterKeys = remember(downloaded) {
         downloaded?.pendingPasswordChapters.orEmpty()
@@ -633,7 +656,7 @@ private fun novelDetailItems(
         }
     }
 
-    return {
+    return NovelDetailContent(overview = {
         if (detailed.tags.isNotEmpty()) {
             item(key = "detail-tags", contentType = "novel-tags") {
                 RebuiltNovelTags(
@@ -853,6 +876,7 @@ private fun novelDetailItems(
             }
         }
 
+    }, chapters = {
         item(key = "detail-chapters-heading", contentType = "chapter-heading") {
             Column(
                 modifier = Modifier.fillMaxWidth().padding(top = AppSpacing.md)
@@ -987,7 +1011,7 @@ private fun novelDetailItems(
                 )
             }
         }
-    }
+    })
 }
 
 /** Feature-owned detail building blocks. They intentionally consume only the
@@ -1266,6 +1290,9 @@ private suspend fun exportNovel(
     withContext(Dispatchers.IO) {
         val manifest = PresentationAccess.downloads.manifest(novel.url)
             ?: error("Novel download is unavailable")
+        val exportManifest = manifest.copy(name = com.breakyuna.esjzone.novellibrary.novel.preferredNovelTitle(
+            novel.name, manifest.name, novel.id(), novel.url
+        ))
         val output = context.contentResolver.openOutputStream(uri, "w")
             ?: error("Unable to open the selected file")
         output.use { stream ->
@@ -1273,9 +1300,9 @@ private suspend fun exportNovel(
                 PresentationAccess.downloads.chapterContent(novel.url, record)
             }
             when (format) {
-                NovelExportFormat.TXT -> NovelExporter.exportTxt(manifest, loader, stream, selectedChapterUrls)
+                NovelExportFormat.TXT -> NovelExporter.exportTxt(exportManifest, loader, stream, selectedChapterUrls)
                 NovelExportFormat.EPUB -> NovelExporter.exportEpub(
-                    manifest = manifest,
+                    manifest = exportManifest,
                     chapterLoader = loader,
                     output = stream,
                     imageLoader = { component ->

@@ -233,6 +233,7 @@ object LocalBackup {
                 }
             }
             checkActive()
+            com.breakyuna.esjzone.database.NovelTitleRepository.requestRepair()
         } finally { staging.deleteRecursively() }
     }
 

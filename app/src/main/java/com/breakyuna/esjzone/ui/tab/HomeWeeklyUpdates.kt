@@ -96,7 +96,8 @@ private fun HomeNovelGrid(
     onNovelClick: (CoveredNovel) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val rows = remember(novels) { novels.chunked(HOME_GRID_COLUMNS) }
+    val columns = homeGridColumnCount()
+    val rows = remember(novels, columns) { novels.chunked(columns) }
     Column(
         modifier = modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(AppSpacing.lg)

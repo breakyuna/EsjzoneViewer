@@ -1,5 +1,10 @@
 package com.breakyuna.esjzone.ui.page
 
+import com.breakyuna.esjzone.ui.designsystem.wideListColumns
+import com.breakyuna.esjzone.ui.designsystem.PreserveAdaptiveListAnchor
+import com.breakyuna.esjzone.ui.designsystem.adaptiveItems
+import com.breakyuna.esjzone.novellibrary.novel.validNovelTitle
+
 import androidx.lifecycle.viewModelScope
 
 import androidx.compose.ui.draw.clip
@@ -15,6 +20,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
@@ -85,6 +91,7 @@ object BookmarksPage : AppDestination {
     @OptIn(ExperimentalMaterial3Api::class)
     @Composable
     override fun Content() {
+        val columns = wideListColumns()
         val navigator = LocalBaseNavigator.current
         val model = rememberAppViewModel { BookmarksPageModel() }
         val state by model.state.collectAsState()
@@ -160,13 +167,17 @@ object BookmarksPage : AppDestination {
                         modifier = Modifier.fillMaxSize().accountContentWidth().padding(padding)
                     )
                 } else {
+                    val listState = rememberLazyListState()
+                    PreserveAdaptiveListAnchor(listState, current.bookmarks, columns, key = { "bookmark:${it.chapterUrl}" })
                     LazyColumn(
+                        state = listState,
                         modifier = Modifier.fillMaxSize().accountContentWidth().padding(padding),
                         contentPadding = PaddingValues(AppSpacing.lg),
                         verticalArrangement = Arrangement.spacedBy(AppSpacing.sm)
                     ) {
-                        items(
+                        adaptiveItems(
                             current.bookmarks,
+                            columns = columns,
                             key = { "bookmark:${it.chapterUrl}" },
                             contentType = { "bookmark" }
                         ) { bookmark ->
@@ -184,7 +195,7 @@ object BookmarksPage : AppDestination {
                                                 novelId = cleanId,
                                                 chapter = chapter,
                                                 history = ChapterStateHolder(chapter),
-                                                novelName = bookmark.novelName,
+                                                novelName = validNovelTitle(bookmark.novelName, bookmark.novelId, bookmark.chapterUrl, bookmark.chapterName),
                                                 novelUrl = "/detail/$cleanId.html",
                                                 novelCoverUrl = model.coverFor(bookmark).url
                                             )
@@ -263,11 +274,11 @@ private fun BookmarkCard(
         AppNovelCover(
             coverUrl = cover.url,
             coverState = cover.state,
-            title = bookmark.novelName.ifBlank { bookmark.novelId },
+            title = validNovelTitle(bookmark.novelName, bookmark.novelId, bookmark.chapterUrl, bookmark.chapterName).ifBlank { stringResource(R.string.download_unknown_novel) },
             modifier = Modifier.size(width = 56.dp, height = 76.dp)
         )
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(AppSpacing.xs)) {
-            Text(bookmark.novelName.ifBlank { bookmark.novelId }, style = AppTypography.labelLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(validNovelTitle(bookmark.novelName, bookmark.novelId, bookmark.chapterUrl, bookmark.chapterName).ifBlank { stringResource(R.string.download_unknown_novel) }, style = AppTypography.labelLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text(bookmark.chapterName, style = AppTypography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
         }
         if (editing) {
@@ -297,6 +308,7 @@ private class BookmarksPageModel : AppStateViewModel<BookmarksPageModel.State>(S
     fun load() {
         if (loadStarted) return
         loadStarted = true
+        com.breakyuna.esjzone.database.NovelTitleRepository.requestRepair()
         viewModelScope.launch(Dispatchers.IO) {
             try {
                 PresentationAccess.database.bookmarkDao().observeAll().collect { bookmarks ->

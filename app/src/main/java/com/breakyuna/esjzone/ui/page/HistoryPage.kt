@@ -2,6 +2,12 @@
 
 package com.breakyuna.esjzone.ui.page
 
+import com.breakyuna.esjzone.ui.designsystem.wideContentWidth
+import com.breakyuna.esjzone.ui.designsystem.wideListColumns
+import com.breakyuna.esjzone.ui.designsystem.PreserveAdaptiveListAnchor
+import com.breakyuna.esjzone.ui.designsystem.adaptiveItems
+import com.breakyuna.esjzone.novellibrary.novel.validNovelTitle
+
 import androidx.activity.compose.BackHandler
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.lifecycle.viewModelScope
@@ -23,6 +29,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.pager.HorizontalPager
@@ -75,6 +82,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalLayoutDirection
@@ -319,7 +327,7 @@ object HistoryPage : AppDestination {
                 )
             }
         ) { padding ->
-            Column(Modifier.fillMaxSize().padding(top = padding.calculateTopPadding())) {
+            Column(Modifier.fillMaxSize().wideContentWidth().padding(top = padding.calculateTopPadding())) {
                 if (searchOpen) {
                     OutlinedTextField(
                         value = query,
@@ -540,6 +548,7 @@ private fun LocalHistoryContent(
     onToggleSelected: (String) -> Unit,
     onSelect: (String) -> Unit
 ) {
+    val columns = wideListColumns(maxWidth = 1280f)
     when (val current = state) {
         LocalHistoryPageModel.State.Loading -> HistoryListSkeleton()
         is LocalHistoryPageModel.State.Error -> ErrorState(
@@ -558,8 +567,11 @@ private fun LocalHistoryContent(
             } else {
                 val navPadding = LocalFloatingNavPadding.current
                 val layoutDirection = LocalLayoutDirection.current
+                val listState = rememberLazyListState()
+                PreserveAdaptiveListAnchor(listState, rows, columns, key = { it.activityId })
                 LazyColumn(
                     Modifier.fillMaxSize(),
+                    state = listState,
                     contentPadding = PaddingValues(
                         start = AppSpacing.lg + navPadding.calculateStartPadding(layoutDirection),
                         end = AppSpacing.lg,
@@ -568,7 +580,7 @@ private fun LocalHistoryContent(
                     ),
                     verticalArrangement = Arrangement.spacedBy(AppSpacing.sm)
                 ) {
-                    items(rows, key = { it.activityId }, contentType = { "history" }) { activity ->
+                    adaptiveItems(rows, columns = columns, key = { it.activityId }, contentType = { "history" }) { activity ->
                         LocalHistoryCard(
                             modifier = Modifier.animateItem(),
                             activity = activity,
@@ -584,7 +596,7 @@ private fun LocalHistoryContent(
                                         novelId = activity.novelId.ifBlank { chapter.novelId() },
                                         chapter = chapter,
                                         history = ChapterStateHolder(chapter),
-                                        novelName = activity.novelName,
+                                        novelName = validNovelTitle(activity.novelName, activity.novelId, activity.novelUrl, activity.chapterName),
                                         novelUrl = novelUrl,
                                         novelCoverUrl = activity.novelCoverUrl,
                                         resumeChapterProgress = activity.chapterProgress
@@ -625,7 +637,7 @@ private fun LocalHistoryCard(
             .fillMaxWidth()
             .clip(AppShapes.standard)
             .background(
-                if (selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface,
+                if (selected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent,
                 AppShapes.standard
             )
             .combinedClickable(
@@ -643,11 +655,11 @@ private fun LocalHistoryCard(
             AppNovelCover(
                 coverUrl = cover.url,
                 coverState = cover.state,
-                title = activity.novelName,
-                modifier = Modifier.size(width = 96.dp, height = 132.dp)
+                title = validNovelTitle(activity.novelName, activity.novelId, activity.novelUrl, activity.chapterName),
+                modifier = Modifier.size(width = 72.dp, height = 100.dp)
             )
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(AppSpacing.xs)) {
-                Text(activity.novelName.ifBlank { activity.novelId }, style = AppTypography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                Text(validNovelTitle(activity.novelName, activity.novelId, activity.novelUrl, activity.chapterName).ifBlank { stringResource(R.string.download_unknown_novel) }, style = AppTypography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 Text(activity.chapterName, style = AppTypography.bodySmall, color = MaterialTheme.colorScheme.primary, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 androidx.compose.material3.LinearProgressIndicator(progress = (activity.bookProgress ?: fullBookProgress(activity.chapterIndex, activity.totalChapters, activity.chapterProgress)), modifier = Modifier.fillMaxWidth())
                 Text(position, style = AppTypography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -672,6 +684,7 @@ private fun CloudHistoryContent(
     onToggleSelected: (String) -> Unit,
     onSelect: (String) -> Unit
 ) {
+    val columns = wideListColumns(maxWidth = 1280f)
     when (state) {
         HistoryPageModel.State.Loading -> CloudHistoryLoadingState()
         is HistoryPageModel.State.Error -> if (state.failure == LoadFailureKind.NETWORK) {
@@ -694,8 +707,11 @@ private fun CloudHistoryContent(
             } else {
                 val navPadding = LocalFloatingNavPadding.current
                 val layoutDirection = LocalLayoutDirection.current
+                val listState = rememberLazyListState()
+                PreserveAdaptiveListAnchor(listState, rows, columns, key = { "cloud-history:${detailLoader.key(it)}" })
                 LazyColumn(
                     Modifier.fillMaxSize(),
+                    state = listState,
                     contentPadding = PaddingValues(
                         start = AppSpacing.lg + navPadding.calculateStartPadding(layoutDirection),
                         end = AppSpacing.lg,
@@ -704,7 +720,7 @@ private fun CloudHistoryContent(
                     ),
                     verticalArrangement = Arrangement.spacedBy(AppSpacing.sm)
                 ) {
-                    items(rows, key = { "cloud-history:${detailLoader.key(it)}" }, contentType = { "history" }) { history ->
+                    adaptiveItems(rows, columns = columns, key = { "cloud-history:${detailLoader.key(it)}" }, contentType = { "history" }) { history ->
                         val key = detailLoader.key(history)
                         val detail = detailLoader.details[key]
                         if (detail == null) {
@@ -784,7 +800,7 @@ private fun CloudHistoryCard(
             .fillMaxWidth()
             .clip(AppShapes.standard)
             .background(
-                if (selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface,
+                if (selected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent,
                 AppShapes.standard
             )
             .combinedClickable(
@@ -874,7 +890,7 @@ private fun HistoryItemSkeleton(modifier: Modifier = Modifier) {
         horizontalArrangement = Arrangement.spacedBy(AppSpacing.md)
     ) {
         AppShimmerPlaceholder(
-            modifier = Modifier.size(width = 96.dp, height = 132.dp),
+            modifier = Modifier.size(width = 72.dp, height = 100.dp),
             shape = AppShapes.cover
         )
         Column(
@@ -935,6 +951,7 @@ class LocalHistoryPageModel(private val authorization: Authorization) : AppState
     fun observe() {
         if (observeStarted) return
         observeStarted = true
+        com.breakyuna.esjzone.database.NovelTitleRepository.requestRepair()
         observeJob?.cancel()
         observeJob = viewModelScope.launch(Dispatchers.IO) {
             try {
@@ -989,11 +1006,11 @@ class LocalHistoryPageModel(private val authorization: Authorization) : AppState
                 resolvedCovers[key] = CoverSource(state = CoverState.Resolving)
             }
             try {
-                val cover = coverPermits.withPermit {
-                    EsjzoneUrls.coverOrEmpty(PresentationAccess.client.getNovelDetail(
-                        authorization, FavoriteNovel(activity.novelName, target)
-                    ).coverUrl)
+                val detail = coverPermits.withPermit {
+                    PresentationAccess.client.getNovelDetail(authorization, FavoriteNovel(activity.novelName, target))
                 }
+                com.breakyuna.esjzone.database.NovelTitleRepository.repair(activity.novelId, target, detail.name)
+                val cover = EsjzoneUrls.coverOrEmpty(detail.coverUrl)
                 withContext(Dispatchers.Main) {
                     resolvedCovers[key] = CoverSource.fromUrl(cover)
                 }

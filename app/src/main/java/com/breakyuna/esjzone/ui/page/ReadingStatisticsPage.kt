@@ -1,5 +1,6 @@
 package com.breakyuna.esjzone.ui.page
 
+import com.breakyuna.esjzone.ui.designsystem.appUsesWideLayout
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
@@ -28,6 +29,9 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -198,104 +202,131 @@ object ReadingStatisticsPage : AppDestination {
                 )
                 is ReadingStatisticsPageModel.State.Ready -> {
                     val summary = current.summary
-                    LazyColumn(
+                    StatisticsLayout(
                         modifier = Modifier.fillMaxSize().padding(padding).accountContentWidth(),
-                        contentPadding = PaddingValues(start = AppSpacing.lg, end = AppSpacing.lg, top = AppSpacing.sm, bottom = AppSpacing.xl),
-                        verticalArrangement = Arrangement.spacedBy(AppSpacing.md)
-                    ) {
-                        item {
-                            StatisticsOverview(summary)
-                        }
-                        item {
-                            StatisticsPanel(stringResource(R.string.reading_stats_activity)) {
-                                Row(
-                                    Modifier.fillMaxWidth().semantics(mergeDescendants = true) {},
-                                    horizontalArrangement = Arrangement.spacedBy(AppSpacing.md),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Text(selectedDate.toString(), modifier = Modifier.weight(1f),
-                                        style = AppTypography.bodyMedium,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                    Text(formatDuration(summary.daily[selectedDate] ?: 0L),
-                                        modifier = Modifier.weight(1f), textAlign = TextAlign.End,
-                                        style = AppTypography.titleMedium)
+                        panels = listOf<@Composable () -> Unit>(
+                            {
+                                StatisticsOverview(summary)
+                            },
+                            {
+                                StatisticsPanel(stringResource(R.string.reading_stats_activity)) {
+                                    Row(
+                                        Modifier.fillMaxWidth().semantics(mergeDescendants = true) {},
+                                        horizontalArrangement = Arrangement.spacedBy(AppSpacing.md),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text(selectedDate.toString(), modifier = Modifier.weight(1f),
+                                            style = AppTypography.bodyMedium,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                        Text(formatDuration(summary.daily[selectedDate] ?: 0L),
+                                            modifier = Modifier.weight(1f), textAlign = TextAlign.End,
+                                            style = AppTypography.titleMedium)
+                                    }
+                                    Column(
+                                        Modifier.fillMaxWidth().clip(AppShapes.standard)
+                                            .background(MaterialTheme.colorScheme.surfaceContainerLow)
+                                            .padding(AppSpacing.md),
+                                        verticalArrangement = Arrangement.spacedBy(AppSpacing.md)
+                                    ) {
+                                        ReadingHeatmap(summary, selectedDate) { selectedDate = it }
+                                    }
                                 }
-                                Column(
-                                    Modifier.fillMaxWidth().clip(AppShapes.standard)
-                                        .background(MaterialTheme.colorScheme.surfaceContainerLow)
-                                        .padding(AppSpacing.md),
-                                    verticalArrangement = Arrangement.spacedBy(AppSpacing.md)
-                                ) {
-                                    ReadingHeatmap(summary, selectedDate) { selectedDate = it }
-                                }
-                            }
-                        }
-                        item {
-                            StatCard {
-                                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically) {
-                                    StatSectionTitle(stringResource(R.string.reading_stats_trend))
-                                    Row(Modifier.clip(AppShapes.pill)
-                                        .background(MaterialTheme.colorScheme.surfaceContainerLow)) {
-                                        listOf(false, true).forEach { line ->
-                                            val active = trendLineChart == line
-                                            IconToggleButton(
-                                                checked = active,
-                                                onCheckedChange = { trendLineChart = line },
-                                                modifier = Modifier.size(48.dp).padding(4.dp).clip(AppShapes.pill)
-                                                    .background(if (active) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent)
-                                            ) {
-                                                Icon(
-                                                    if (line) Icons.Filled.ShowChart else Icons.Filled.BarChart,
-                                                    stringResource(if (line) R.string.reading_stats_line_chart else R.string.reading_stats_bar_chart),
-                                                    modifier = Modifier.size(20.dp),
-                                                    tint = if (active) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
-                                                )
+                            },
+                            {
+                                StatCard {
+                                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically) {
+                                        StatSectionTitle(stringResource(R.string.reading_stats_trend))
+                                        Row(Modifier.clip(AppShapes.pill)
+                                            .background(MaterialTheme.colorScheme.surfaceContainerLow)) {
+                                            listOf(false, true).forEach { line ->
+                                                val active = trendLineChart == line
+                                                IconToggleButton(
+                                                    checked = active,
+                                                    onCheckedChange = { trendLineChart = line },
+                                                    modifier = Modifier.size(48.dp).padding(4.dp).clip(AppShapes.pill)
+                                                        .background(if (active) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent)
+                                                ) {
+                                                    Icon(
+                                                        if (line) Icons.Filled.ShowChart else Icons.Filled.BarChart,
+                                                        stringResource(if (line) R.string.reading_stats_line_chart else R.string.reading_stats_bar_chart),
+                                                        modifier = Modifier.size(20.dp),
+                                                        tint = if (active) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
+                                                    )
+                                                }
                                             }
                                         }
                                     }
+                                    StatPeriodFilter(listOf(7, 30), trendDays) { trendDays = it ?: 7 }
+                                    TrendChart(summary, trendDays, trendLineChart)
                                 }
-                                StatPeriodFilter(listOf(7, 30), trendDays) { trendDays = it ?: 7 }
-                                TrendChart(summary, trendDays, trendLineChart)
-                            }
-                        }
-                        item {
-                            StatisticsPanel(stringResource(R.string.reading_stats_ranking)) {
-                                StatPeriodFilter(listOf(7, 30, null), rankingDays) { rankingDays = it }
-                                val topBooks = current.rankings[rankingDays].orEmpty()
-                                if (topBooks.isEmpty()) {
-                                    StatisticsEmptyState(stringResource(R.string.reading_stats_no_books))
-                                } else {
-                                    topBooks.forEachIndexed { index, book ->
-                                        BookRank(index + 1, book, topBooks.first().durationMs)
+                            },
+                            {
+                                StatisticsPanel(stringResource(R.string.reading_stats_ranking)) {
+                                    StatPeriodFilter(listOf(7, 30, null), rankingDays) { rankingDays = it }
+                                    val topBooks = current.rankings[rankingDays].orEmpty()
+                                    if (topBooks.isEmpty()) {
+                                        StatisticsEmptyState(stringResource(R.string.reading_stats_no_books))
+                                    } else {
+                                        topBooks.forEachIndexed { index, book ->
+                                            BookRank(index + 1, book, topBooks.first().durationMs)
+                                        }
+                                    }
+                                }
+                            },
+                            {
+                                StatisticsPanel(stringResource(R.string.reading_stats_tags)) {
+                                    StatPeriodFilter(listOf(7, 30, null), tagDays) { tagDays = it }
+                                    val tags = current.tagRankings[tagDays].orEmpty()
+                                    if (tags.isEmpty()) {
+                                        StatisticsEmptyState(stringResource(R.string.reading_stats_no_tags))
+                                    } else {
+                                        val dark = MaterialTheme.colorScheme.surface.luminance() < .5f
+                                        val otherColor = MaterialTheme.colorScheme.outline
+                                        val tagColors = tags.mapIndexed { index, tag ->
+                                            tag.tag to if (tag.tag == null) otherColor else Color.hsv(
+                                                (index * 137.508f + 215f) % 360f,
+                                                if (dark) .55f else .65f,
+                                                if (dark) .9f else .8f
+                                            )
+                                        }.toMap()
+                                        TagDonutChart(tags, tagColors)
+                                        TagDistributionList(current.allTagRankings[tagDays].orEmpty(), tagColors, otherColor)
                                     }
                                 }
                             }
-                        }
-                        item {
-                            StatisticsPanel(stringResource(R.string.reading_stats_tags)) {
-                                StatPeriodFilter(listOf(7, 30, null), tagDays) { tagDays = it }
-                                val tags = current.tagRankings[tagDays].orEmpty()
-                                if (tags.isEmpty()) {
-                                    StatisticsEmptyState(stringResource(R.string.reading_stats_no_tags))
-                                } else {
-                                    val dark = MaterialTheme.colorScheme.surface.luminance() < .5f
-                                    val otherColor = MaterialTheme.colorScheme.outline
-                                    val tagColors = tags.mapIndexed { index, tag ->
-                                        tag.tag to if (tag.tag == null) otherColor else Color.hsv(
-                                            (index * 137.508f + 215f) % 360f,
-                                            if (dark) .55f else .65f,
-                                            if (dark) .9f else .8f
-                                        )
-                                    }.toMap()
-                                    TagDonutChart(tags, tagColors)
-                                    TagDistributionList(current.allTagRankings[tagDays].orEmpty(), tagColors, otherColor)
-                                }
-                            }
-                        }
-                    }
+                        )
+                    )
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun StatisticsLayout(modifier: Modifier, panels: List<@Composable () -> Unit>) {
+    val contentPadding = PaddingValues(
+        start = AppSpacing.lg, end = AppSpacing.lg, top = AppSpacing.sm, bottom = AppSpacing.xl
+    )
+    if (appUsesWideLayout()) {
+        LazyVerticalGrid(
+            columns = GridCells.Fixed(2),
+            modifier = modifier,
+            contentPadding = contentPadding,
+            horizontalArrangement = Arrangement.spacedBy(AppSpacing.md),
+            verticalArrangement = Arrangement.spacedBy(AppSpacing.md)
+        ) {
+            panels.forEachIndexed { index, panel ->
+                item(span = { GridItemSpan(if (index == 0) maxLineSpan else 1) }) { panel() }
+            }
+        }
+    } else {
+        LazyColumn(
+            modifier = modifier,
+            contentPadding = contentPadding,
+            verticalArrangement = Arrangement.spacedBy(AppSpacing.md)
+        ) {
+            panels.forEach { panel -> item { panel() } }
         }
     }
 }
@@ -839,25 +870,23 @@ private fun BookRank(rank: Int, book: ReadingBookTotal, maximumDuration: Long) {
     val leading = rank == 1
     val fraction = (book.durationMs.toDouble() / maximumDuration.coerceAtLeast(1L)).toFloat().coerceIn(0f, 1f)
     Row(
-        Modifier.fillMaxWidth().clip(AppShapes.standard)
-            .background(if (leading) colors.primaryContainer else colors.surfaceContainerLow)
-            .padding(AppSpacing.md).semantics(mergeDescendants = true) {},
+        Modifier.fillMaxWidth()
+            .padding(vertical = AppSpacing.md).semantics(mergeDescendants = true) {},
         horizontalArrangement = Arrangement.spacedBy(AppSpacing.md),
         verticalAlignment = Alignment.Top
     ) {
         Box(
-            Modifier.size(32.dp).clip(AppShapes.compact)
-                .background(if (leading) colors.primary else colors.surface),
+            Modifier.size(28.dp),
             contentAlignment = Alignment.Center
         ) {
             Text(rank.toString().padStart(2, '0'), style = AppTypography.labelLarge,
-                color = if (leading) colors.onPrimary else colors.onSurfaceVariant)
+                color = if (leading) colors.primary else colors.onSurfaceVariant)
         }
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(AppSpacing.sm)) {
-            Text(book.bookName, style = AppTypography.labelLarge, maxLines = 2, overflow = TextOverflow.Ellipsis,
-                color = if (leading) colors.onPrimaryContainer else colors.onSurface)
+            Text(book.bookName.ifBlank { stringResource(R.string.download_unknown_novel) }, style = AppTypography.labelLarge, maxLines = 2, overflow = TextOverflow.Ellipsis,
+                color = colors.onSurface)
             Text(formatDuration(book.durationMs), style = AppTypography.bodySmall,
-                color = if (leading) colors.onPrimaryContainer.copy(alpha = .7f) else colors.onSurfaceVariant)
+                color = colors.onSurfaceVariant)
             Box(Modifier.fillMaxWidth().height(4.dp).clip(AppShapes.pill)
                 .background(colors.onSurface.copy(alpha = .06f))) {
                 Box(Modifier.fillMaxWidth(fraction).height(4.dp).clip(AppShapes.pill)
@@ -895,6 +924,7 @@ private class ReadingStatisticsPageModel : AppStateViewModel<ReadingStatisticsPa
     fun observe() {
         if (observing) return
         observing = true
+        com.breakyuna.esjzone.database.NovelTitleRepository.requestRepair()
         observeJob = viewModelScope.launch(Dispatchers.IO) {
             try {
                 combine(

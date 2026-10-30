@@ -8,17 +8,23 @@ import androidx.compose.foundation.clickable
 import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.text.selection.DisableSelection
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -27,6 +33,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.testTag
 import com.breakyuna.esjzone.ui.designsystem.globalStringResource as stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
@@ -280,6 +287,7 @@ internal fun ReaderImage(
         return
     }
     var expanded by rememberSaveable(url) { mutableStateOf(false) }
+    var retryCount by remember(url) { mutableStateOf(0) }
     Box(
         modifier = modifier
             .fillMaxWidth()
@@ -289,16 +297,45 @@ internal fun ReaderImage(
             .semantics { this.contentDescription = contentDescription },
         contentAlignment = Alignment.Center
     ) {
-        AppReaderImage(
-            model = url,
-            contentDescription = contentDescription,
-            contentScale = contentScale,
-            modifier = Modifier.fillMaxWidth()
-        )
+        key(url, retryCount) {
+            AppReaderImage(
+                model = url,
+                contentDescription = contentDescription,
+                contentScale = contentScale,
+                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+                loading = {
+                    ReaderImagePlaceholder(stringResource(R.string.reader_image_loading), contentColor,
+                        Modifier.testTag("reader-image-loading")) { retryCount++ }
+                },
+                error = {
+                    ReaderImagePlaceholder(stringResource(R.string.download_image_unavailable), contentColor,
+                        Modifier.testTag("reader-image-unavailable")) { retryCount++ }
+                }
+            )
+        }
     }
 
     if (expanded) {
         AppImageViewer(model = url, contentDescription = contentDescription,
             onDismiss = { expanded = false })
+    }
+}
+
+@Composable
+private fun ReaderImagePlaceholder(
+    label: String,
+    contentColor: Color,
+    modifier: Modifier = Modifier,
+    onRetry: () -> Unit
+) {
+    Row(
+        modifier = modifier.fillMaxWidth().padding(horizontal = 12.dp),
+        horizontalArrangement = Arrangement.Center,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(label, color = contentColor, modifier = Modifier.weight(1f, fill = false))
+        TextButton(onClick = onRetry, contentPadding = PaddingValues(horizontal = 8.dp)) {
+            Text(stringResource(R.string.retry))
+        }
     }
 }

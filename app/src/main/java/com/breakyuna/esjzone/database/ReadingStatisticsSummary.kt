@@ -1,6 +1,8 @@
 package com.breakyuna.esjzone.database
 
 import com.breakyuna.esjzone.database.entity.ReadingStat
+import com.breakyuna.esjzone.novellibrary.novel.validNovelTitle
+import com.breakyuna.esjzone.novellibrary.novel.novelTitleId
 import java.time.LocalDate
 
 data class ReadingBookTotal(val bookKey: String, val bookName: String, val durationMs: Long)
@@ -15,6 +17,13 @@ class ReadingStatisticsSummary(
     private val datedRows = rows.mapNotNull { row ->
         runCatching { LocalDate.parse(row.date) }.getOrNull()?.let { date -> date to row }
     }
+    private val bookNames = datedRows.filter { !it.first.isAfter(today) }.groupBy { it.second.bookKey }
+        .mapValues { (key, values) ->
+            val id = novelTitleId(novelUrl = key).ifBlank { key }
+            values.sortedByDescending { it.first }.firstNotNullOfOrNull {
+                validNovelTitle(it.second.bookName, id, key).takeIf(String::isNotBlank)
+            }.orEmpty()
+        }
     val daily: Map<LocalDate, Long> = datedRows.groupBy { it.first }
         .mapValues { (_, values) -> values.sumOf { it.second.durationMs } }
     val totalMs: Long = daily.values.sum()
@@ -64,7 +73,7 @@ class ReadingStatisticsSummary(
             }
             .groupBy { it.second.bookKey }
             .map { (key, values) ->
-                ReadingBookTotal(key, values.maxBy { it.first }.second.bookName, values.sumOf { it.second.durationMs })
+                ReadingBookTotal(key, bookNames[key].orEmpty(), values.sumOf { it.second.durationMs })
             }
             .sortedWith(compareByDescending<ReadingBookTotal> { it.durationMs }.thenBy { it.bookName })
             .take(5)

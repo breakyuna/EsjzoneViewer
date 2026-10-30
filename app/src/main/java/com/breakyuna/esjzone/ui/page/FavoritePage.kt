@@ -2,6 +2,12 @@
 
 package com.breakyuna.esjzone.ui.page
 
+import com.breakyuna.esjzone.ui.designsystem.wideContentWidth
+import com.breakyuna.esjzone.ui.designsystem.wideListColumns
+import com.breakyuna.esjzone.ui.designsystem.appUsesWideLayout
+import androidx.compose.ui.platform.LocalConfiguration
+import com.breakyuna.esjzone.novellibrary.novel.validNovelTitle
+
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
@@ -191,6 +197,9 @@ object FavoritePage : AppDestination {
         val adult by PresentationAccess.settings.adult
         val snackbar = remember { SnackbarHostState() }
         val uiScope = rememberCoroutineScope()
+        val listColumns = wideListColumns(maxWidth = 1280f)
+        val wide = appUsesWideLayout()
+        val fontScale = LocalConfiguration.current.fontScale.coerceAtLeast(1f)
         val listState = rememberLazyListState()
         val gridState = rememberLazyListState()
         var gridColumns by remember { mutableStateOf(3) }
@@ -483,7 +492,7 @@ object FavoritePage : AppDestination {
                             ?.key?.toString()?.removePrefix("bookshelf_row:")
                         val targetIndex = bookshelfAnchorRow(
                             shown.map { it.bookKey }, firstKey,
-                            columns = if (listView) gridColumns else 1,
+                            columns = if (listView) gridColumns else listColumns,
                             headerVisible = current.firstVisibleItemIndex == 0
                         )
                         target.requestScrollToItem(targetIndex, if (targetIndex == 0) current.firstVisibleItemScrollOffset else 0)
@@ -537,7 +546,7 @@ object FavoritePage : AppDestination {
             PullToRefreshBox(
                 isRefreshing = syncing,
                 onRefresh = { if (!syncing && !editing) model.sync() },
-                modifier = Modifier.fillMaxSize().padding(top = padding.calculateTopPadding())
+                modifier = Modifier.fillMaxSize().wideContentWidth().padding(top = padding.calculateTopPadding())
             ) {
             BoxWithConstraints(Modifier.fillMaxSize()) {
                 // Show the header and books together once both local snapshots are ready.
@@ -547,7 +556,8 @@ object FavoritePage : AppDestination {
                 }
                 val startPadding = AppSpacing.lg + navPadding.calculateStartPadding(layoutDirection)
                 val endPadding = AppSpacing.lg
-                val adaptiveColumns = bookshelfColumnCount((maxWidth - startPadding - endPadding).value, AppSpacing.xl.value)
+                val adaptiveColumns = bookshelfColumnCount((maxWidth - startPadding - endPadding).value, AppSpacing.xl.value,
+                    minCellWidth = if (wide) 140f * fontScale else 96f)
                 SideEffect { gridColumns = adaptiveColumns }
                 SharedTransitionLayout {
                     val layoutScope = this
@@ -558,7 +568,7 @@ object FavoritePage : AppDestination {
                         label = "BookshelfLayout"
                     ) { (displayedListView, displayedBooks) ->
                         val layoutVisibility = this
-                        val columns = if (displayedListView) 1 else adaptiveColumns
+                        val columns = if (displayedListView) listColumns else adaptiveColumns
                         val rows = remember(displayedBooks, columns) { displayedBooks.chunked(columns) }
                         val liveState = if (displayedListView) listState else gridState
                         val currentLayout = displayedListView == listView &&
@@ -1013,7 +1023,7 @@ private fun ShelfCard(
                 coverUrl = cover.url,
                 onImageLoaded = coverSource.onImageLoaded,
                 coverState = cover.state,
-                title = entry.title,
+                title = validNovelTitle(entry.title, entry.novelId, entry.url),
                 modifier = Modifier.then(coverModifier).then(coverSource.modifier).fillMaxSize().clip(shape)
             )
             if (entry.hasUpdate) {
@@ -1038,7 +1048,7 @@ private fun ShelfCard(
             }
         }
         Text(
-            entry.title.ifBlank { stringResource(R.string.download_unknown_novel) },
+            validNovelTitle(entry.title, entry.novelId, entry.url).ifBlank { stringResource(R.string.download_unknown_novel) },
             style = AppTypography.bodyMedium,
             maxLines = 2,
             overflow = TextOverflow.Ellipsis,
@@ -1106,7 +1116,7 @@ private fun ShelfListItem(
             AppNovelCover(
                 coverUrl = cover.url,
                 onImageLoaded = coverSource.onImageLoaded,
-                title = entry.title,
+                title = validNovelTitle(entry.title, entry.novelId, entry.url),
                 modifier = Modifier.then(coverModifier).then(coverSource.modifier).fillMaxSize().clip(coverShape),
                 coverState = cover.state
             )
@@ -1127,7 +1137,7 @@ private fun ShelfListItem(
             }
         }
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(AppSpacing.xs)) {
-            Text(entry.title, modifier = titleModifier, style = AppTypography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            Text(validNovelTitle(entry.title, entry.novelId, entry.url).ifBlank { stringResource(R.string.download_unknown_novel) }, modifier = titleModifier, style = AppTypography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
             entry.latestChapterTitle.takeIf { it.isNotBlank() }?.let { Text(stringResource(R.string.bookshelf_entry_latest, it), style = AppTypography.bodyMedium, maxLines = 2, overflow = TextOverflow.Ellipsis) }
             entry.remoteUpdatedAt.takeIf { it.isNotBlank() }?.let { Text(stringResource(R.string.bookshelf_entry_updated_at, it), style = AppTypography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
             entry.remoteLastViewedTitle.takeIf { it.isNotBlank() }?.let { Text(stringResource(R.string.bookshelf_entry_last_viewed, it), style = AppTypography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis) }
@@ -1137,7 +1147,7 @@ private fun ShelfListItem(
 
 private fun BookshelfEntry.asCoveredNovel() = CoveredNovelImpl(
     coverUrl = coverUrl,
-    name = title,
+    name = validNovelTitle(title, novelId, url),
     url = url,
     views = 0,
     likes = 0,

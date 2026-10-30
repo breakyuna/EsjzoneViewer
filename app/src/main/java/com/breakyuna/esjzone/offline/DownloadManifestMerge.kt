@@ -1,12 +1,14 @@
 package com.breakyuna.esjzone.offline
 
+import com.breakyuna.esjzone.novellibrary.novel.preferredNovelTitle
+
 /** Rebase a chapter completion on the latest inventory instead of publishing a stale snapshot. */
 internal fun mergeDownloadManifest(
     existing: DownloadedNovelManifest?,
     incoming: DownloadedNovelManifest,
     replaceCatalog: Boolean
 ): DownloadedNovelManifest {
-    if (existing == null) return incoming
+    if (existing == null) return incoming.copy(name = preferredNovelTitle(incoming.name, "", novelUrl = incoming.url))
     val old = existing.chapters.associateBy { NovelDownloadStore.chapterKey(it.url) }
     val next = incoming.chapters.associateBy { NovelDownloadStore.chapterKey(it.url) }
     val order = if (replaceCatalog) (incoming.chapters + existing.chapters) else (existing.chapters + incoming.chapters)
@@ -23,6 +25,7 @@ internal fun mergeDownloadManifest(
             localOnly = if (replaceCatalog) key !in next else metadata.localOnly)
     }
     return incoming.copy(version = 2, chapters = records,
+        name = preferredNovelTitle(incoming.name, existing.name, novelUrl = incoming.url),
         catalogComplete = if (replaceCatalog) incoming.catalogComplete else existing.catalogComplete || existing.complete,
         commonPassword = existing.commonPassword)
 }

@@ -1,5 +1,6 @@
 package com.breakyuna.esjzone.network.features
 
+import com.breakyuna.esjzone.network.loadFailureKind
 import com.breakyuna.esjzone.network.Authorization
 import com.breakyuna.esjzone.network.EsjzoneClient
 import com.breakyuna.esjzone.network.EsjzoneUrls
@@ -8,7 +9,6 @@ import com.breakyuna.esjzone.network.PageKind
 import com.breakyuna.esjzone.network.cancellablePageRequest
 import com.breakyuna.esjzone.novellibrary.data.HomeData
 import com.breakyuna.esjzone.novellibrary.data.WeeklyPopularNovel
-import com.breakyuna.esjzone.novellibrary.novel.coverFailure
 import com.breakyuna.esjzone.novellibrary.novel.CoveredNovel
 import com.breakyuna.esjzone.novellibrary.novel.NovelDescription
 import com.breakyuna.esjzone.novellibrary.novel.analyseDescription
@@ -17,10 +17,6 @@ import com.breakyuna.esjzone.util.AppLogger
 import java.io.IOException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
-import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import org.jsoup.Jsoup
 
@@ -40,6 +36,8 @@ suspend fun EsjzoneClient.getHomeData(
             pageKind = PageKind.HOME
         ) }
     }
+    val previousWeekly = HomeDataCache.readSnapshot(authorization)?.weeklyUpdates.orEmpty()
+    var weeklyFailure: com.breakyuna.esjzone.network.LoadFailureKind? = null
     val weeklyUpdatesDeferred = async {
         try {
             cancellablePageRequest { getWeeklyUpdates(authorization, forceRefresh = forceRefresh) }
@@ -47,7 +45,8 @@ suspend fun EsjzoneClient.getHomeData(
             throw error
         } catch (error: Exception) {
             AppLogger.w("GetHomeData", "Error parsing weekly updates", error)
-            emptyList()
+            weeklyFailure = error.loadFailureKind()
+            previousWeekly
         }
     }
 
@@ -128,7 +127,7 @@ suspend fun EsjzoneClient.getHomeData(
     val popularSeeds = selectWeeklyPopularSeeds(document)
 
     // Reuse already parsed covers without decoding detail files before the first publication.
-    // Detail cache reads and parsing belong to the concurrent enrichment below.
+    // Visible carousel items are enriched separately after the home sections settle.
     val initialPopular = initialWeeklyPopular(
         popularSeeds, HomeDataCache.readSnapshot(authorization)?.weeklyPopular.orEmpty()
     )
@@ -137,7 +136,7 @@ suspend fun EsjzoneClient.getHomeData(
     val initialWeeklyUpdates = if (weeklyUpdatesDeferred.isCompleted) {
         weeklyUpdatesDeferred.await()
     } else {
-        emptyList()
+        previousWeekly
     }
 
     val initialHomeData = HomeData(
@@ -147,55 +146,13 @@ suspend fun EsjzoneClient.getHomeData(
         recentlyUpdateOriginalR18Novels,
         recommendationNovels,
         initialWeeklyUpdates,
-        initialPopular
+        initialPopular,
+        weeklyFailure = if (weeklyUpdatesDeferred.isCompleted) weeklyFailure else null
     )
 
     // Publish the home sections before reading or parsing any popular detail pages.
     onProgress?.invoke(initialHomeData)
 
-    // Popular covers must not wait for the independent weekly-update request.
-    // The page client's existing six-request limit bounds detail enrichment.
-    // Publish each completed item immediately, keeping the original ranking order.
-    var currentPopular = initialPopular
-    val progressLock = Mutex()
-    coroutineScope {
-        popularSeeds.forEach { seed ->
-            launch {
-                val result = try {
-                    cancellablePageRequest { enrichWeeklyPopular(authorization, seed) }
-                } catch (error: kotlinx.coroutines.CancellationException) {
-                    throw error
-                } catch (error: Exception) {
-                    AppLogger.w("GetHomeData", "Failed to enrich weekly popular item: ${seed.name}", error)
-                    seedToInitialWeeklyPopular(seed).copy(coverFailure = error.coverFailure())
-                }
-                progressLock.withLock {
-                    val previous = currentPopular.firstOrNull { it.url == seed.url }
-                    val enriched = if (previous == null) result else mergeWeeklyPopularEnrichment(previous, result)
-                    currentPopular = currentPopular.map { item ->
-                        if (item.url == seed.url) enriched else item
-                    }
-                    if (previous != null && enriched != previous &&
-                        (enriched.coverUrl.isNotBlank() || enriched.isAdult != previous.isAdult ||
-                            enriched.coverState != previous.coverState)
-                    ) {
-                        onProgress?.invoke(
-                            HomeData(
-                                recentlyUpdateTranslatedNovels,
-                                recentlyUpdateOriginalNovels,
-                                recentlyUpdateTranslatedR18Novels,
-                                recentlyUpdateOriginalR18Novels,
-                                recommendationNovels,
-                                if (weeklyUpdatesDeferred.isCompleted) weeklyUpdatesDeferred.await()
-                                else initialWeeklyUpdates,
-                                currentPopular
-                            )
-                        )
-                    }
-                }
-            }
-        }
-    }
     val finalWeeklyUpdates = weeklyUpdatesDeferred.await()
 
     HomeData(
@@ -205,7 +162,8 @@ suspend fun EsjzoneClient.getHomeData(
         recentlyUpdateOriginalR18Novels,
         recommendationNovels,
         finalWeeklyUpdates,
-        currentPopular
+        initialPopular,
+        weeklyFailure = weeklyFailure
     )
 }
 
@@ -273,7 +231,7 @@ internal fun selectWeeklyPopularSeeds(document: org.jsoup.nodes.Document): List<
  * Reads only carousel metadata from a detail page. Deliberately avoids parsing the chapter tree
  * and comments, which can be very large for popular long-running novels.
  */
-private fun EsjzoneClient.enrichWeeklyPopular(
+internal fun EsjzoneClient.enrichWeeklyPopular(
     authorization: Authorization,
     seed: WeeklyPopularSeed
 ): WeeklyPopularNovel {

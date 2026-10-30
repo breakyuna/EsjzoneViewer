@@ -1,5 +1,6 @@
 package com.breakyuna.esjzone.ui.discovery
 
+import com.breakyuna.esjzone.ui.designsystem.wideContentWidth
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -106,7 +107,7 @@ fun DiscoveryTopBar(
         colors = TopAppBarDefaults.topAppBarColors(
             containerColor = MaterialTheme.colorScheme.background
         ),
-        modifier = modifier
+        modifier = modifier.wideContentWidth()
     )
 }
 
@@ -144,6 +145,7 @@ fun DiscoverySearchTopBar(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
+                .wideContentWidth()
                 .statusBarsPadding()
                 .padding(
                     start = AppSpacing.xs,

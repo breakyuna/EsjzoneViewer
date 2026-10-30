@@ -7,8 +7,8 @@ import kotlinx.coroutines.suspendCancellableCoroutine
 import okhttp3.Call
 
 /** Bridges the synchronous HTML parser APIs to page jobs that users can cancel. */
-internal suspend fun <T> cancellablePageRequest(block: () -> T): T = suspendCancellableCoroutine { continuation ->
-    val state = PageRequestCancellation()
+internal suspend fun <T> cancellablePageRequest(background: Boolean = false, block: () -> T): T = suspendCancellableCoroutine { continuation ->
+    val state = PageRequestCancellation(background)
     continuation.invokeOnCancellation { state.cancel() }
     Dispatchers.IO.dispatch(continuation.context, Runnable {
         if (!continuation.isActive) return@Runnable
@@ -30,7 +30,7 @@ internal suspend fun <T> cancellablePageRequest(block: () -> T): T = suspendCanc
 
 internal val pageRequestCancellation = ThreadLocal<PageRequestCancellation?>()
 
-internal class PageRequestCancellation {
+internal class PageRequestCancellation(val background: Boolean = false) {
     private var thread: Thread? = null
     private var call: Call? = null
     private var cancelled = false

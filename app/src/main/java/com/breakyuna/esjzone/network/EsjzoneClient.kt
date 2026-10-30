@@ -7,7 +7,6 @@ import java.security.MessageDigest
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.ExecutionException
-import java.util.concurrent.Semaphore
 import java.util.concurrent.TimeoutException
 import java.util.concurrent.atomic.AtomicLong
 import com.breakyuna.esjzone.network.external.WenkuChapterClient
@@ -81,7 +80,7 @@ object EsjzoneClient {
     private val refreshScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val inFlightPages = ConcurrentHashMap<String, CompletableFuture<String>>()
     private val cacheEpoch = AtomicLong(0L)
-    private val networkPermits = Semaphore(6, true)
+    private val networkPermits = PageRequestGate()
 
     @Volatile
     private var initialized = false
@@ -224,7 +223,7 @@ object EsjzoneClient {
                         requestEpoch,
                         pageKind,
                         allowStaleOnError,
-                        coalesceRequests, writeToken, cacheResponse, validateBody, forceRefresh || !coalesceRequests
+                        coalesceRequests, writeToken, cacheResponse, validateBody, forceRefresh || !coalesceRequests, background = true
                     )
                 }
             }
@@ -256,7 +255,8 @@ object EsjzoneClient {
         writeToken: PageCache.WriteToken,
         cacheResponse: Boolean,
         validateBody: ((String) -> Unit)?,
-        replaceRequest: Boolean
+        replaceRequest: Boolean,
+        background: Boolean = pageRequestCancellation.get()?.background == true
     ): String {
         val owner = CompletableFuture<String>()
         val requestKey = "$cacheKey|$requestEpoch|${writeToken.epoch}|${pageKind.name}|$cacheResponse|" +
@@ -278,7 +278,7 @@ object EsjzoneClient {
                     // false network failure to every remaining waiter.
                     return fetchPageCoalesced(
                         authorization, url, cacheKey, stalePage, requestEpoch, pageKind, allowStaleOnError,
-                        coalesceRequests, writeToken, cacheResponse, validateBody, replaceRequest
+                        coalesceRequests, writeToken, cacheResponse, validateBody, replaceRequest, background
                     )
                 }
                 if (cause is Exception) throw cause
@@ -292,7 +292,7 @@ object EsjzoneClient {
         val commitToken = if (replaceRequest) writeToken else PageCache.beginWrite(cacheKey)
         return try {
             val permitAcquired = try {
-                networkPermits.tryAcquire(NETWORK_PERMIT_WAIT_SECONDS, TimeUnit.SECONDS)
+                networkPermits.acquire(background, NETWORK_PERMIT_WAIT_SECONDS, TimeUnit.SECONDS)
             } catch (error: InterruptedException) {
                 Thread.currentThread().interrupt()
                 throw NetworkRequestException(url, error)
@@ -334,7 +334,7 @@ object EsjzoneClient {
                 }
             } finally {
                 cancellation?.detachCall()
-                networkPermits.release()
+                networkPermits.release(background)
             }
             if (cancellation?.isCancelled() == true) throw CancellationException("Page request cancelled")
             val validation = PageResponsePolicy.validate(

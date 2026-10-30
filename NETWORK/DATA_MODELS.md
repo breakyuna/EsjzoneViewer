@@ -118,7 +118,7 @@
 
 `DownloadedChapterContent.schemaVersion = 2` 的 `body` 为显式 `ChapterBody` DTO：`schemaVersion`、`parserVersion`、有序 `blocks`、SHA-256 `fingerprint` 与 UTF-16 `textLength`。块类型为 paragraph/text/image/break；文本片段保存样式标签、数值参数及 ruby 读音。图片原 URL 属于正文身份，下载相对路径及媒体类型仍位于 `components` 资源记录中，不参与指纹。`contentHtml` 仅用于富结构导出。
 
-下载 manifest 版本 2 另存 `catalogComplete`；章节记录包含 `bodyAvailable`、`textLength` 和仅本地保留的 `localOnly`。正文可读与图片齐全分别判断，部分选择不会被标为全本完整。增量提交仅补新章、缺章和缺图，不覆盖有效的已有正文。
+下载 manifest 版本 2 另存 `catalogComplete`；章节记录包含 `bodyAvailable`、`textLength` 和仅本地保留的 `localOnly`。正文可读与图片齐全分别判断，部分选择不会被标为全本完整。增量提交仅补新章、缺章和缺图，不覆盖有效的已有正文。正文成功保存后，图片超时、TLS 握手失败等图片获取错误不再使下载任务失败；保留图片原 URL、已有正文与已下载图片，`bodyAvailable` 为 true，缺图章节的 `downloaded` 及全书 `complete` 仍为 false，后续继续下载只补缺图。批量密码解锁以正文保存成功为准，缺图不计为解锁失败。
 
 通用密码批量解锁复用 `NovelDownloadWorker`，与同一本书的普通下载串行执行。私有下载目录将通用密码保存在本地 manifest；公共下载目录将密码保存在私有 `download_secrets`，manifest 的 `commonPassword` 为 null，读取时在内存中补充。迁移时先保存私有密码，再生成不含密码的公共 manifest。任务参数仅保存站点和待解锁章节范围，不携带密码。Worker 按该范围读取本地清单并逐章解锁、保存，不重新请求小说详情；页面及通知使用 WorkManager 进度，暂停取消该书任务。重试跳过已完成章节，保留尚未下载完整的图片；密码不匹配保留为待解锁，网络或保存失败执行有界重试。
 

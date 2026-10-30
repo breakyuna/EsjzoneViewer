@@ -15,11 +15,10 @@ This package is the only presentation entry point for the rebuilt visual system.
 - `AppProfileAvatarImage` restores the account's last successfully loaded avatar from that
   cache before requesting a replacement. Loading, failed, and empty replacements retain the
   displayed image; only a successful image updates the persisted avatar pointer.
-- `AppCoverImage.sourceState` preserves unknown, resolving, and confirmed missing metadata;
-  actual image callbacks track loading, loaded, or a categorized failure internally. `coverFallbackResource()` uses `cover_network_error.jpg` only for confirmed
-  network failures (including timeouts and HTTP errors); all other fallback states use
-  `cover_missing.jpg`. Avatars, description images, and reader images use the same error policy.
-  A successfully loaded fallback never marks the actual cover loaded.
+- `AppCoverImage.sourceState` distinguishes unknown, resolving, missing, loading and failed metadata.
+  Covers retain successful images across replacement failures. Empty covers use a muted book icon;
+  failed image requests expose a small, accessible image-only retry button. Decorative backgrounds
+  can supply empty loading/error slots. Other images retain their existing fallback policy.
 - `AppFeedback`, `AppLoadingState`, `AppErrorState`, `AppOfflineState`, `AppDialog`, `AppBottomSheet`, `AppSideSheet`, `AppSnackbarHost`, and `AppSyncStatusDot`: feedback primitives.
 
 Component APIs live in `ui.component` and are named `App*`: `AppNovel*`, `AppCommentItem`,
@@ -38,6 +37,12 @@ rebuilt presentation has one visual implementation and one set of accessibility 
 Reader offline badges and feedback blocks use Material 3 `Surface` with theme container
 colors. The compact shell uses a Material bottom bar; medium and expanded shells use
 `NavigationRail`.
+
+Wide landscape pages measure their viewport after the rail and insets. `AppWideLayout`
+owns the landscape/large-text policy, bounded content widths and record columns;
+portrait and compact windows retain their existing presentation. Detail uses independently
+scrollable overview and chapter panes, while settings retain their section state beside
+a section rail. See [the wide-layout contract](../../../../../../../../../docs/wide-layout.md).
 
 The home weekly-popular carousel, forum, guestbook, and water-cooler cards and the profile settings card
 use a 300 ms shared-bounds container transform into their full-page destinations.

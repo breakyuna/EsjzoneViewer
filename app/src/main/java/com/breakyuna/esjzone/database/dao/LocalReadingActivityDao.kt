@@ -7,6 +7,7 @@ import androidx.room.Query
 import androidx.room.Transaction
 import com.breakyuna.esjzone.database.entity.LocalReadingActivity
 import kotlinx.coroutines.flow.Flow
+import com.breakyuna.esjzone.novellibrary.novel.validNovelTitle
 
 @Dao
 interface LocalReadingActivityDao {
@@ -59,17 +60,15 @@ interface LocalReadingActivityDao {
     @Transaction
     fun upsertLatest(activity: LocalReadingActivity) {
         val previous = getLatestForIdentity(activity.novelId, activity.novelUrl)
-        val validName = activity.novelName.trim().takeIf {
-            it.isNotBlank() && it != activity.novelId && it != activity.chapterName
-        }
+        val validName = validNovelTitle(activity.novelName, activity.novelId, activity.novelUrl, activity.chapterName)
+            .ifBlank { previous?.let { validNovelTitle(it.novelName, it.novelId, it.novelUrl, it.chapterName) }.orEmpty() }
         deleteOtherRecordsForNovel(
             activityId = activity.activityId,
             novelId = activity.novelId,
             novelUrl = activity.novelUrl
         )
         upsert(activity.copy(
-            novelName = validName ?: previous?.novelName?.takeIf(String::isNotBlank)
-                ?: activity.novelName,
+            novelName = validName,
             novelCoverUrl = activity.novelCoverUrl.ifBlank {
                 previous?.novelCoverUrl.orEmpty()
             }
@@ -81,6 +80,14 @@ interface LocalReadingActivityDao {
             "WHERE activity_id = :activityId"
     )
     fun updateCover(activityId: String, coverUrl: String)
+
+    @Query("SELECT * FROM local_reading_history WHERE " +
+        "(:novelId != '' AND novel_id = :novelId) OR (:novelUrl != '' AND novel_url = :novelUrl) OR " +
+        "(:novelId != '' AND novel_id = '' AND chapter_url LIKE '%/forum/' || :novelId || '/%')")
+    fun forNovel(novelId: String, novelUrl: String): List<LocalReadingActivity>
+
+    @Query("UPDATE local_reading_history SET novel_name = :name WHERE activity_id = :activityId AND novel_name = :previous")
+    fun repairNovelName(activityId: String, previous: String, name: String)
 
     @Query("UPDATE local_reading_history SET novel_name = :name WHERE activity_id = :activityId")
     fun updateName(activityId: String, name: String)

@@ -23,6 +23,8 @@ import java.util.concurrent.TimeUnit
 import java.util.zip.GZIPInputStream
 import java.util.zip.ZipInputStream
 import java.io.ByteArrayOutputStream
+import java.net.SocketTimeoutException
+import okhttp3.OkHttpClient
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.*
 import org.junit.Test
@@ -327,6 +329,71 @@ class StructuredDownloadStoreTest {
         val manifest = requireNotNull(NovelDownloadStore.manifest(novelUrl))
         assertEquals(12, manifest.chapters.count { it.downloaded })
         assertEquals(order.map { NovelDownloadStore.chapterKey(it.url) }, manifest.chapters.map { NovelDownloadStore.chapterKey(it.url) })
+    }
+
+    @Test
+    fun imageTimeoutKeepsReadableBodyAndExistingImagesAndAllowsLaterRepair() = withStorage { root ->
+        val order = listOf(chapter(1), chapter(2))
+        val manifest = save(1, order)
+        save(2, order)
+        val directory = root.listFiles()!!.single()
+        val imageUrl = "https://example.test/timeout.png"
+        val existingImageUrl = "https://example.test/saved.png"
+        val existingImage = File(directory, "images/saved.png").apply {
+            parentFile!!.mkdirs()
+            writeBytes(byteArrayOf(1, 2, 3))
+        }
+        val body = ChapterBody.from(listOf(TextComponent("保留正文"),
+            com.breakyuna.esjzone.novellibrary.component.ImageComponent(existingImageUrl),
+            com.breakyuna.esjzone.novellibrary.component.ImageComponent(imageUrl)))
+        val chapterFile = File(directory, manifest.chapters.first().fileName)
+        chapterFile.writeText(Gson().toJson(DownloadedChapterContent("Chapter 1", chapter(1).url,
+            listOf(DownloadedComponent("text", "保留正文"),
+                DownloadedComponent("image", existingImageUrl, "images/saved.png"),
+                DownloadedComponent("image", imageUrl)), schemaVersion = 2, body = body)))
+        val clientField = EsjzoneClient::class.java.getDeclaredField("sharedHttpClient").apply { isAccessible = true }
+        val originalClient = clientField.get(EsjzoneClient) as OkHttpClient
+        val requestedImages = mutableListOf<String>()
+        clientField.set(EsjzoneClient, originalClient.newBuilder().addInterceptor { chain ->
+            requestedImages += chain.request().url.toString()
+            throw SocketTimeoutException("Fixture image timeout")
+        }.build())
+        try {
+            val progress = mutableListOf<DownloadProgress>()
+            val partial = runBlocking { NovelDownloadStore.download(auth, novel(order)) { progress += it } }
+            assertTrue(requestedImages.isNotEmpty())
+            assertTrue(requestedImages.all { it == imageUrl })
+            assertTrue(partial.chapters.first().bodyAvailable)
+            assertFalse(partial.chapters.first().downloaded)
+            assertTrue(partial.chapters.last().downloaded)
+            assertFalse(partial.complete)
+            assertEquals(1, progress.last().completed)
+            val offline = requireNotNull(NovelDownloadStore.readChapter(chapter(1).url))
+            assertEquals(body, offline.body)
+            assertEquals("保留正文", offline.content.filterIsInstance<TextComponent>().single().text)
+            assertEquals(imageUrl, (offline.toReaderDocument(chapter(1)).blocks.last() as
+                com.breakyuna.esjzone.domain.reader.ReaderBlock.Image).url)
+            assertArrayEquals(byteArrayOf(1, 2, 3), existingImage.readBytes())
+
+            NovelDownloadStore.updateCommonPassword(novelUrl, "fixture")
+            val unlocked = runBlocking { NovelDownloadStore.unlockChaptersWithCommonPassword(auth, novelUrl,
+                setOf(chapter(1).url), "https://www.esjzone.cc/") }
+            assertEquals(1, unlocked.unlockedCount)
+            assertEquals(0, unlocked.failedCount)
+            assertFalse(unlocked.updatedManifest!!.chapters.first().downloaded)
+
+            val digest = java.security.MessageDigest.getInstance("SHA-256").digest(imageUrl.toByteArray())
+                .joinToString("") { "%02x".format(it) }
+            File(directory, "images/image-$digest.png").writeBytes(byteArrayOf(4, 5, 6))
+            NovelDownloadStore.initializeDirectory(root)
+            requestedImages.clear()
+            val repaired = runBlocking { NovelDownloadStore.download(auth, novel(order)) }
+            assertTrue(repaired.complete)
+            assertTrue(requestedImages.isEmpty())
+            assertEquals(body, NovelDownloadStore.readChapter(chapter(1).url)!!.body)
+        } finally {
+            clientField.set(EsjzoneClient, originalClient)
+        }
     }
 
     @Test

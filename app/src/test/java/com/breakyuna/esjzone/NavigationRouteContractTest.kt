@@ -23,6 +23,14 @@ import org.junit.Test
 /** Pure JVM coverage for the value objects stored by Navigation 3. */
 class NavigationRouteContractTest {
     @Test
+    fun downloadedCatalogRestoresWithoutAnInMemoryRegistry() {
+        val route = LegacyRoute.DownloadedNovel("https://www.esjzone.cc/detail/123.html")
+        val restored = Json.decodeFromString(LegacyRoute.serializer(), Json.encodeToString(LegacyRoute.serializer(), route))
+        val navigator = com.breakyuna.esjzone.ui.navigation.AppNavigator(mutableListOf(), mutableMapOf())
+        assertEquals("DownloadedNovelPage:https://www.esjzone.cc/detail/123.html", navigator.destination(restored)?.key)
+    }
+
+    @Test
     fun storageSetupWaitsForLoginAndAlsoGuardsRestoredReadersAndDetails() {
         val session = Authorization("fixture-key", "fixture-token", "www.esjzone.cc")
         for (destination in listOf(null, AppNavKey.Loading, AppNavKey.Login)) {

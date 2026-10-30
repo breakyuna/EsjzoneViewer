@@ -72,7 +72,7 @@ private fun HomeLoadingGridRow() {
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(AppSpacing.sm)
     ) {
-        repeat(HOME_GRID_COLUMNS) {
+        repeat(homeGridColumnCount()) {
             Column(
                 modifier = Modifier.weight(1f),
                 verticalArrangement = Arrangement.spacedBy(AppSpacing.xs)

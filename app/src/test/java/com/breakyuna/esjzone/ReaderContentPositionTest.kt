@@ -30,8 +30,30 @@ class ReaderContentPositionTest {
 
     @Test
     fun previousVerificationOffsetsBothTheFirstAndLastBodyItems() {
-        assertEquals(0, readerBodyListIndex(0, false))
-        assertEquals(1, readerBodyListIndex(0, true))
-        assertEquals(31, readerBodyListIndex(30, true))
+        assertEquals(0, readerBodyListIndex(0, false, false))
+        assertEquals(1, readerBodyListIndex(0, true, false))
+        assertEquals(31, readerBodyListIndex(30, true, false))
+    }
+
+    @Test
+    fun retryInsertionAndRemovalKeepSeekTargetsAndVisibleBodyMappingAligned() {
+        val body = listOf("heading", "paragraph", "chapter-end")
+        for (verification in listOf(false, true)) {
+            for (retry in listOf(false, true, false)) {
+                val rows = buildList {
+                    if (verification) add("previous-verification")
+                    if (retry) add("previous-retry")
+                    addAll(body)
+                    add("next-retry")
+                }
+                val bodyStart = readerBodyListIndex(0, verification, retry)
+                body.forEachIndexed { index, key ->
+                    // Progress/comment restoration must land on the requested body key.
+                    assertEquals(key, rows[readerBodyListIndex(index, verification, retry)])
+                    // Continuous loading must recognize the visible items as the loaded window.
+                    assertEquals(key, body[rows.indexOf(key) - bodyStart])
+                }
+            }
+        }
     }
 }

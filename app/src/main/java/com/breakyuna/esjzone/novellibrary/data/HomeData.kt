@@ -18,7 +18,8 @@ data class HomeData(
     /** The site-provided days for the current Monday-to-today update window. */
     val weeklyUpdates: List<WeeklyUpdateDay> = emptyList(),
     /** The first ten entries from the site's server-rendered previous-week ranking. */
-    val weeklyPopular: List<WeeklyPopularNovel> = emptyList()
+    val weeklyPopular: List<WeeklyPopularNovel> = emptyList(),
+    @Transient val weeklyFailure: com.breakyuna.esjzone.network.LoadFailureKind? = null
 )
 
 @Immutable
