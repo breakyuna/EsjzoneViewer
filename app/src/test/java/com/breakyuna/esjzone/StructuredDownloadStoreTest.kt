@@ -884,14 +884,19 @@ class StructuredDownloadStoreTest {
         val executor = Executors.newSingleThreadExecutor()
         var sizeWalks = 0
         var checkConcurrentReads = true
+        val insideRead = ThreadLocal.withInitial { false }
         val root = object : File(rootFile.path) {
             override fun listFiles(): Array<File>? = super.listFiles()?.map { file ->
                 object : File(file.path) {
                     override fun listFiles(): Array<File>? {
                         sizeWalks++
                         // A size traversal holding ioLock would deadlock this independent reader.
-                        if (checkConcurrentReads) assertNotNull(executor.submit<DetailedChapter?> {
-                            NovelDownloadStore.readChapter(chapter(1).url)
+                        if (checkConcurrentReads && !insideRead.get()) assertNotNull(executor.submit<DetailedChapter?> {
+                            // Index recovery may list this directory on the reader
+                            // thread; do not submit another task to the same executor.
+                            insideRead.set(true)
+                            try { NovelDownloadStore.readChapter(chapter(1).url) }
+                            finally { insideRead.remove() }
                         }.get(5, TimeUnit.SECONDS))
                         return super.listFiles()
                     }
