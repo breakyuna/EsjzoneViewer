@@ -11,8 +11,6 @@ import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import com.breakyuna.esjzone.ui.designsystem.GlobalText as Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -20,6 +18,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.platform.testTag
 import com.breakyuna.esjzone.ui.designsystem.globalStringResource as stringResource
 import androidx.compose.ui.unit.dp
 import com.breakyuna.esjzone.ui.navigation.AppDestination
@@ -42,23 +41,7 @@ class LoadingScreen : AppDestination {
     override fun Content() {
         val navigator = LocalAppNavigator.current ?: error("Navigation 3 root is not provided")
 
-        Box(modifier = Modifier.fillMaxSize().safeDrawingPadding(), contentAlignment = Alignment.Center) {
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(16.dp),
-                modifier = Modifier.padding(32.dp)
-            ) {
-                Image(
-                    painter = painterResource(R.drawable.esjzone_icon_round),
-                    contentDescription = stringResource(R.string.app_name),
-                    modifier = Modifier
-                        .size(72.dp)
-                        .clip(CircleShape)
-                )
-                Text(stringResource(R.string.app_name), style = AppTypography.displayMedium)
-                CircularProgressIndicator(strokeWidth = 2.5.dp)
-            }
-        }
+        SessionLoadingContent()
 
         LaunchedEffect(Unit) {
             val authorization = withContext(Dispatchers.IO) {
@@ -109,4 +92,27 @@ class LoadingScreen : AppDestination {
         }
     }
 
+}
+
+/** Shared loading presentation; only LoadingScreen owns session import and navigation. */
+@Composable
+internal fun SessionLoadingContent() {
+    Box(
+        modifier = Modifier.fillMaxSize().safeDrawingPadding().testTag("session-loading"),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+            modifier = Modifier.padding(32.dp)
+        ) {
+            Image(
+                painter = painterResource(R.drawable.esjzone_icon_round),
+                contentDescription = stringResource(R.string.app_name),
+                modifier = Modifier.size(72.dp).clip(CircleShape)
+            )
+            Text(stringResource(R.string.app_name), style = AppTypography.displayMedium)
+            CircularProgressIndicator(strokeWidth = 2.5.dp)
+        }
+    }
 }

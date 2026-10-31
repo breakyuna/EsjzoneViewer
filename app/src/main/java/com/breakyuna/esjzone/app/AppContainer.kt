@@ -41,6 +41,8 @@ import okhttp3.Dispatcher
 import okhttp3.OkHttpClient
 import okio.Path.Companion.toOkioPath
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
@@ -128,6 +130,7 @@ class AppContainer(context: Context) {
 
     private val cacheInitializationMutex = Mutex()
     private var cachesInitialized = false
+    private val maintenanceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     /** Shared by Activity startup and workers before either can open or trim page caches. */
     suspend fun initializeCaches() = withContext(Dispatchers.IO) {
@@ -141,9 +144,21 @@ class AppContainer(context: Context) {
                     HistoryDataCache.initialize(appContext)
                 }
             }
-            CacheAnalysis.initialize(appContext)
-            CacheStorage.start()
             cachesInitialized = true
+            // Image inventory restoration and quota eviction can touch every cached file.
+            // They must not keep StartupCoordinator in Starting until maintenance finishes.
+            maintenanceScope.launch {
+                runCatching { CacheAnalysis.initialize(appContext) }.onFailure {
+                    com.breakyuna.esjzone.util.AppLogger.w("AppContainer", "Unable to initialize cache analysis", it)
+                }
+                runCatching { CacheStorage.start() }.onFailure {
+                    com.breakyuna.esjzone.util.AppLogger.w("AppContainer", "Unable to trim caches", it)
+                }
+                val legacyCacheDir = appContext.filesDir.resolve("image_cache")
+                if (legacyCacheDir.exists()) {
+                    runCatching { legacyCacheDir.deleteRecursively() }
+                }
+            }
         }
     }
 
@@ -153,12 +168,6 @@ class AppContainer(context: Context) {
         coroutineScope {
             launch { initializeCaches() }
             launch { initializeDownloads() }
-            launch {
-                val legacyCacheDir = appContext.filesDir.resolve("image_cache")
-                if (legacyCacheDir.exists()) {
-                    runCatching { legacyCacheDir.deleteRecursively() }
-                }
-            }
         }
     }
 

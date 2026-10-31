@@ -21,6 +21,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import android.net.Uri
 import androidx.lifecycle.viewmodel.compose.LocalViewModelStoreOwner
 import androidx.lifecycle.ViewModel
@@ -69,6 +70,7 @@ import com.breakyuna.esjzone.ui.page.ReadingStatisticsPage
 import com.breakyuna.esjzone.ui.tab.CategoryBrowserPage
 import com.breakyuna.esjzone.ui.tab.SearchTab
 import com.breakyuna.esjzone.ui.screen.LoadingScreen
+import com.breakyuna.esjzone.ui.screen.SessionLoadingContent
 import com.breakyuna.esjzone.ui.screen.LoginScreen
 import com.breakyuna.esjzone.ui.screen.MainScreen
 import com.breakyuna.esjzone.update.ReleaseUpdateChecker
@@ -76,6 +78,8 @@ import com.breakyuna.esjzone.update.ReleaseUpdateDialog
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 
 /**
@@ -573,19 +577,29 @@ fun AppNavigation() {
     }
     // A restored Reader can be the first visible root entry, so it cannot rely
     // on MainScreen's CompositionLocal scope. Read the process-persisted
-    // cookie session before composing the root NavDisplay; LoadingScreen still
+    // cookie session on IO before composing the root NavDisplay; LoadingScreen still
     // owns the legacy Room import for the normal Loading route.
     val currentDomain by PresentationAccess.settings.domain
     val loginSessionChanges by PresentationAccess.client.loginSessionChanges.collectAsState()
     val loginSessionRevision = loginSessionChanges[currentDomain] ?: 0L
     val authorizationState = remember(currentDomain, loginSessionRevision) {
-        mutableStateOf(
-            PresentationAccess.client.restoreAuthorization(
-                currentDomain
-            )
-        )
+        mutableStateOf<Authorization?>(null)
     }
     var authorization by authorizationState
+    var sessionRestored by remember(currentDomain, loginSessionRevision) { mutableStateOf(false) }
+    LaunchedEffect(currentDomain, loginSessionRevision) {
+        authorization = withContext(Dispatchers.IO) {
+            try {
+                PresentationAccess.client.restoreAuthorization(currentDomain)
+            } catch (error: kotlinx.coroutines.CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                com.breakyuna.esjzone.util.AppLogger.e("AppNavigation", "Unable to restore local session", error)
+                null
+            }
+        }
+        sessionRestored = true
+    }
     val storageLocation by PresentationAccess.storage.location.collectAsState()
     val storageSetupModel = rememberAppViewModel { StorageLocationModel() }
     val storageSetupState by storageSetupModel.state.collectAsState()
@@ -650,10 +664,12 @@ fun AppNavigation() {
             // The root host stays edge-to-edge. Loading/Login own their
             // standalone safe drawing insets; Main's adaptive shell owns
             // content/chrome insets; Reader owns its immersive insets.
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier.fillMaxSize().testTag("app-navigation"),
             color = MaterialTheme.colorScheme.background
         ) {
-            if (showStorageSetup) {
+            if (!sessionRestored) {
+                SessionLoadingContent()
+            } else if (showStorageSetup) {
                 StorageSetupScreen(storageSetupModel, storageSetupState, storageSetupUpgrade) {
                     storageSetupModel.dismissResult()
                     storageSetupPending = false
