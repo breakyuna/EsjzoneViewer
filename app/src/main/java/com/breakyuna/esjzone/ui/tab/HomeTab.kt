@@ -51,6 +51,7 @@ import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.platform.testTag
 import com.breakyuna.esjzone.ui.designsystem.globalStringResource as stringResource
 import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.dp
@@ -179,6 +180,11 @@ object HomeTab : AppTab {
         val heroVisible by remember { derivedStateOf {
             listState.layoutInfo.visibleItemsInfo.any { it.key == "home-weekly-popular" }
         } }
+        // Resolve layout-derived state in composition, before LazyColumn builds its item
+        // provider. Reading it inside the content builder makes the provider depend on
+        // its own measurement result and can loop in DerivedSnapshotState during startup.
+        val popularEnrichmentEnabled = heroVisible && coverPolicy.visiblePage == "HOME" &&
+            (state as? HomeTabModel.State.Result)?.isSyncing == false
 
         val weeklyPopularNovels = remember(homeData?.weeklyPopular, adult) {
             homeData?.weeklyPopular.orEmpty().filter { adult || !it.isAdult }
@@ -455,6 +461,7 @@ object HomeTab : AppTab {
                 LazyColumn(
                     state = listState,
                     modifier = Modifier
+                        .testTag("home-feed")
                         .fillMaxSize()
                         .nestedScroll(bottomSwipeConnection)
                         .graphicsLayer {
@@ -500,7 +507,7 @@ object HomeTab : AppTab {
                             }
                             weeklyPopularCarousel(
                                 novels = weeklyPopularNovels,
-                                enrichmentEnabled = heroVisible && coverPolicy.visiblePage == "HOME" && !snapshot.isSyncing,
+                                enrichmentEnabled = popularEnrichmentEnabled,
                                 onVisible = model::loadVisiblePopular,
                                 onNovelClick = { novel, page ->
                                     navigator?.pushIfNotCurrent(NovelPage(novel), homeCarouselPage = page)
