@@ -37,6 +37,8 @@ import com.breakyuna.esjzone.network.EsjzoneClient
 import com.breakyuna.esjzone.network.features.HomeDataCache
 import com.breakyuna.esjzone.network.features.HistoryDataCache
 import com.breakyuna.esjzone.offline.NovelDownloadStore
+import com.breakyuna.esjzone.storage.UserStorage
+import com.breakyuna.esjzone.util.AppLogger
 import okhttp3.Dispatcher
 import okhttp3.OkHttpClient
 import okio.Path.Companion.toOkioPath
@@ -55,7 +57,10 @@ import kotlinx.coroutines.withContext
  * This is deliberately a small hand-written container for the transition period. It has no
  * Compose dependency and does not alter the existing database or download contracts.
  */
-class AppContainer(context: Context) {
+class AppContainer(
+    context: Context,
+    val storage: UserStorage = UserStorage(context)
+) {
     private val appContext = context.applicationContext
 
     val database: GeneralDatabase = Room.databaseBuilder(
@@ -113,7 +118,6 @@ class AppContainer(context: Context) {
     }
 
     val session: SessionRepository = NetworkSessionRepository()
-    val storage = com.breakyuna.esjzone.storage.UserStorage(appContext)
     val autoBackup = com.breakyuna.esjzone.backup.AutoBackup(appContext)
     val settingsDataStore = SettingsDataStore(appContext)
     val readerSettingsDataStore = ReaderSettingsDataStore(appContext)
@@ -136,12 +140,19 @@ class AppContainer(context: Context) {
     suspend fun initializeCaches() = withContext(Dispatchers.IO) {
         cacheInitializationMutex.withLock {
             if (cachesInitialized) return@withLock
+            AppLogger.i("Startup", "Restoring cache quota")
             CacheStorage.initialize(imageLoader.diskCache as CacheImageDiskCache, settingsDataStore.readCacheLimitMiB())
             coroutineScope {
-                launch { EsjzoneClient.initialize(appContext) }
                 launch {
+                    AppLogger.i("Startup", "Initializing network and page cache")
+                    EsjzoneClient.initialize(appContext)
+                    AppLogger.i("Startup", "Network and page cache ready")
+                }
+                launch {
+                    AppLogger.i("Startup", "Restoring home and history snapshots")
                     HomeDataCache.initialize(appContext)
                     HistoryDataCache.initialize(appContext)
+                    AppLogger.i("Startup", "Home and history snapshots ready")
                 }
             }
             cachesInitialized = true
@@ -163,7 +174,9 @@ class AppContainer(context: Context) {
     }
 
     suspend fun initializeAsync() = withContext(Dispatchers.IO) {
+        AppLogger.i("Startup", "Opening database and cleaning obsolete reader data")
         database.cacheDao().deleteObsoleteReaderUnderlines()
+        AppLogger.i("Startup", "Database ready")
         CoverLoadingPolicy.initialize(appContext)
         coroutineScope {
             launch { initializeCaches() }
@@ -172,8 +185,11 @@ class AppContainer(context: Context) {
     }
 
     suspend fun initializeDownloads() = withContext(Dispatchers.IO) {
+        AppLogger.i("Startup", "Restoring storage selection")
         storage.initialize()
+        AppLogger.i("Startup", "Storage selection ready; initializing downloads")
         // A background transfer must not block startup or reset its in-memory root switch.
         NovelDownloadStore.initialize(appContext, storage.downloads(), onlyIfUninitialized = true)
+        AppLogger.i("Startup", "Download storage ready")
     }
 }

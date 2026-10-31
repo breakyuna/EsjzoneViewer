@@ -5,6 +5,7 @@ import com.breakyuna.esjzone.app.AppContainer
 import com.breakyuna.esjzone.update.ReleaseUpdateChecker
 import com.breakyuna.esjzone.util.AppLogger
 import com.breakyuna.esjzone.util.CrashHandler
+import com.breakyuna.esjzone.storage.UserStorage
 
 /** Process owner for application infrastructure; Activities only consume this container. */
 class EsjzoneApplication : Application() {
@@ -21,8 +22,13 @@ class EsjzoneApplication : Application() {
         instance = this
         AppLogger.init(this)
         CrashHandler.init(this)
+        val storage = UserStorage(this)
+        AppLogger.startPublicLogging(storage)
+        AppLogger.i("Startup", "Checking installed update APK")
         ReleaseUpdateChecker.cleanupInstalledApk(this)
-        container = AppContainer(this)
+        AppLogger.i("Startup", "Creating application container")
+        container = AppContainer(this, storage)
+        AppLogger.i("Startup", "Application container ready")
         container.autoBackup.startScheduling()
     }
 }

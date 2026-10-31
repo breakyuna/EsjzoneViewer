@@ -44,6 +44,7 @@ class LoadingScreen : AppDestination {
         SessionLoadingContent()
 
         LaunchedEffect(Unit) {
+            AppLogger.i("Startup", "Restoring local login state")
             val authorization = withContext(Dispatchers.IO) {
                 try {
                     val dao = PresentationAccess.database.cacheDao()
@@ -77,7 +78,9 @@ class LoadingScreen : AppDestination {
                 }
             }
 
+            AppLogger.i("Startup", "Local login state restored; preparing storage setup")
             PresentationAccess.storage.prepareSetup(restoredSession = authorization != null)
+            AppLogger.i("Startup", "Storage setup ready; opening destination")
             if (authorization != null) {
                 // Start the shelf retry/import in the process-scoped worker.
                 // MainScreen and the shelf itself remain local-first and do

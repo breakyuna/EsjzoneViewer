@@ -130,6 +130,22 @@ class StorageFile private constructor(
 
     fun bufferedWriter(charset: Charset = Charsets.UTF_8) = outputStream().bufferedWriter(charset)
     fun writeText(text: String) = bufferedWriter().use { it.write(text) }
+    /** Append and close each log record so it is visible outside the app immediately. */
+    fun appendText(text: String) {
+        if (local != null) {
+            local.appendText(text, Charsets.UTF_8)
+            return
+        }
+        if (!exists()) {
+            check(parentFile?.mkdirs() == true)
+            tree!!.create(relative, "text/plain")
+        }
+        documentAccess {
+            checkNotNull(tree).context.contentResolver.openOutputStream(uri, "wa")
+                ?.bufferedWriter(Charsets.UTF_8)?.use { it.write(text) }
+                ?: throw IOException("Unable to append storage document")
+        }
+    }
     fun storedTextReader(): java.io.BufferedReader {
         val input = inputStream().buffered()
         return try {

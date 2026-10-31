@@ -13,6 +13,8 @@ import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import java.io.File
@@ -71,6 +73,12 @@ class UserStorage(context: Context) {
     @Volatile private var root: StorageFile? = null
     @Volatile private var initialized = false
     @Volatile private var cleanupPending = false
+
+    /** Logging must restore the selection without waiting for startup or the migration lock. */
+    internal fun logDirectories() = store.data
+        .map { preferences -> preferences[pendingKey] ?: preferences[locationKey].orEmpty() }
+        .distinctUntilChanged()
+        .map { location -> sharedRoot(location)?.let { StorageFile(it, "logs") } }
 
     suspend fun initialize() {
         if (initialized) return

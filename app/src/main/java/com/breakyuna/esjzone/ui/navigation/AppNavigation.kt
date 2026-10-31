@@ -588,6 +588,7 @@ fun AppNavigation() {
     var authorization by authorizationState
     var sessionRestored by remember(currentDomain, loginSessionRevision) { mutableStateOf(false) }
     LaunchedEffect(currentDomain, loginSessionRevision) {
+        com.breakyuna.esjzone.util.AppLogger.i("Startup", "Restoring root session")
         authorization = withContext(Dispatchers.IO) {
             try {
                 PresentationAccess.client.restoreAuthorization(currentDomain)
@@ -599,6 +600,7 @@ fun AppNavigation() {
             }
         }
         sessionRestored = true
+        com.breakyuna.esjzone.util.AppLogger.i("Startup", "Root session restored")
     }
     val storageLocation by PresentationAccess.storage.location.collectAsState()
     val storageSetupModel = rememberAppViewModel { StorageLocationModel() }

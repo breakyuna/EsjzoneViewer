@@ -6,6 +6,13 @@ import android.util.Log
 import com.breakyuna.esjzone.BuildConfig
 import com.breakyuna.esjzone.EsjzoneApplication
 import com.breakyuna.esjzone.data.settings.SettingsDefaults
+import com.breakyuna.esjzone.storage.UserStorage
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import java.io.File
@@ -16,6 +23,7 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicLong
 
 enum class LogLevel { DEBUG, INFO, WARN, ERROR, CRASH }
@@ -44,6 +52,10 @@ object AppLogger {
     private val stateLock = Any()
     private val fileLock = Any()
     private val fileExecutor = Executors.newSingleThreadExecutor { r -> Thread(r, "app-log-writer") }
+    private val publicExecutor = Executors.newSingleThreadExecutor { r -> Thread(r, "public-log-writer") }
+    private val publicWriter = PublicLogWriter()
+    private val publicScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private var publicLoggingStarted = false
     private val logList = mutableListOf<LogEntry>()
     private val _logsFlow = MutableStateFlow<List<LogEntry>>(emptyList())
     private val _crashReportFlow = MutableStateFlow<String?>(null)
@@ -70,6 +82,30 @@ object AppLogger {
     fun w(tag: String, message: String, throwable: Throwable? = null) = log(LogLevel.WARN, tag, message, throwable)
     fun e(tag: String, message: String, throwable: Throwable? = null) = log(LogLevel.ERROR, tag, message, throwable)
 
+    /** Runs before AppContainer initialization; never waits for a document provider on main. */
+    fun startPublicLogging(storage: UserStorage) {
+        synchronized(stateLock) {
+            if (publicLoggingStarted) return
+            publicLoggingStarted = true
+        }
+        publicScope.launch {
+            try {
+                storage.logDirectories().collect { directory ->
+                    publicExecutor.execute {
+                        writePublic {
+                            publicWriter.attach(directory)
+                            if (directory != null) i("AppLogger", "Public log directory ready")
+                        }
+                    }
+                }
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                e("AppLogger", "Unable to restore public log directory", error)
+            }
+        }
+    }
+
     private fun log(level: LogLevel, tag: String, message: String, throwable: Throwable?) {
         val entry = LogEntry(level = level, tag = tag, message = sanitize(message), stackTrace = throwable?.let(::stackTrace))
         val output = entry.toFormattedString()
@@ -85,6 +121,9 @@ object AppLogger {
             addLogEntryLocked(entry)
             val commandGeneration = generation
             fileExecutor.execute { if (commandGeneration == synchronizedGeneration()) append(output) }
+            publicExecutor.execute {
+                if (commandGeneration == synchronizedGeneration()) writePublic { publicWriter.append(output) }
+            }
         }
     }
 
@@ -113,6 +152,9 @@ object AppLogger {
             _crashReportFlow.value = null
             val clearGeneration = generation
             fileExecutor.execute { if (clearGeneration == synchronizedGeneration()) clearFiles() }
+            publicExecutor.execute {
+                if (clearGeneration == synchronizedGeneration()) writePublic { publicWriter.clear() }
+            }
         }
     }
 
@@ -195,7 +237,26 @@ object AppLogger {
         crashFile?.writeText(safeReport)
         logFile?.let { rotateIfNeeded(it, safeReport.toByteArray(StandardCharsets.UTF_8).size.toLong() + 1); it.appendText(safeReport + "\n") }
         _crashReportFlow.value = safeReport
+        // Give fatal errors a bounded chance to reach SAF before Android terminates the process.
+        // A stalled provider must not keep the uncaught-exception handler waiting indefinitely.
+        val publicCrash = publicExecutor.submit { writePublic { publicWriter.writeCrashReport(safeReport) } }
+        try {
+            publicCrash.get(2, TimeUnit.SECONDS)
+        } catch (_: java.util.concurrent.TimeoutException) {
+            // The private crash report is already durable; the public task remains queued.
+        } catch (_: InterruptedException) {
+            Thread.currentThread().interrupt()
+        }
     } catch (e: Exception) { runCatching { Log.e("AppLogger", "Failed to write crash report: ${sanitize(e.message.orEmpty())}") } }
+
+    private fun writePublic(write: () -> Unit) {
+        try {
+            write()
+        } catch (error: Exception) {
+            // Do not feed a provider failure back through AppLogger and recursively retry itself.
+            runCatching { Log.w("AppLogger", "Public log write unavailable (${error.javaClass.simpleName})") }
+        }
+    }
 
     private fun currentDomain(): String = runCatching {
         EsjzoneApplication.instance.container.settings.domain.value

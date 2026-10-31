@@ -108,9 +108,12 @@ class MainActivity : ComponentActivity() {
                 val container = (appContext as EsjzoneApplication).container
                 AppLogger.i("MainActivity", "Initializing network, download store, settings and Room database...")
                 container.initializeAsync()
+                AppLogger.i("Startup", "Infrastructure ready; migrating application settings")
                 val settings = container.settingsDataStore
                 settings.migrateFromLegacy(container.database)
+                AppLogger.i("Startup", "Application settings ready; migrating reader settings")
                 container.readerSettingsDataStore.migrateFromLegacy(appContext)
+                AppLogger.i("Startup", "Initialization complete")
             }
         }
 
@@ -118,6 +121,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        AppLogger.i("Startup", "MainActivity created")
         handleNovelIntent(intent)
 
         enableEdgeToEdge()
