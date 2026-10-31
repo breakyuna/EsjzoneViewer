@@ -580,8 +580,8 @@ internal fun needsStorageSetup(destination: NavKey?, authorization: Authorizatio
 fun AppNavigation() {
     val backStack: MutableList<NavKey> = rememberNavBackStack(AppNavKey.Loading)
     // Keep entry state owners alive while session/storage gates temporarily hide NavDisplay.
-    val savedStateDecorator = rememberSaveableStateHolderNavEntryDecorator()
-    val viewModelDecorator = rememberViewModelStoreNavEntryDecorator()
+    val savedStateDecorator = rememberSaveableStateHolderNavEntryDecorator<NavKey>()
+    val viewModelDecorator = rememberViewModelStoreNavEntryDecorator<NavKey>()
     val readerRoutes = rememberSaveable(saver = mapSaver<MutableMap<String, String>>(
         save = { it.toMap() },
         restore = { saved -> saved.mapValues { it.value as String }.toMutableMap() }
