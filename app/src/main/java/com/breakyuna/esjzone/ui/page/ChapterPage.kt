@@ -477,6 +477,7 @@ class ChapterPage(
         }
         LaunchedEffect(restoreFromLocalHistory, novelId, chapter.url, resumeChapterProgress) {
             if (searchHit != null || (!restoreFromLocalHistory && resumeChapterProgress == null)) return@LaunchedEffect
+            val started = System.nanoTime()
             // The restored route may be newer than the entry's saved requestedChapter
             // after continuous reading. Resolve history before starting either load.
             requestedChapter.value = chapter
@@ -503,6 +504,7 @@ class ChapterPage(
                 AppLogger.w("ChapterPage", "Unable to restore local reading position", error)
             } finally {
                 restoreLookupPending = false
+                AppLogger.i("ReaderTiming", "historyMs=${(System.nanoTime() - started) / 1_000_000}")
             }
         }
         var isBookProgressDragging by remember { mutableStateOf(false) }
@@ -565,6 +567,7 @@ class ChapterPage(
             val previous = convertedText?.takeIf { it.script == script }?.let {
                 ReaderScriptSnapshot(it.script, it.values, it.blockMappings)
             }
+            val started = System.nanoTime()
             val snapshot = withContext(Dispatchers.Default) {
                 val prepared = ReaderScriptConverter.snapshot(chapters.map { it.document }, script, previous)
                 val values = prepared.values.toMutableMap().apply {
@@ -578,6 +581,7 @@ class ChapterPage(
                 ReaderTextSnapshot(script, chapters, values, prepared.blockMappings)
             }
             convertedText = snapshot
+            AppLogger.i("ReaderTiming", "scriptMs=${(System.nanoTime() - started) / 1_000_000} chapters=${chapters.size}")
         }
         val pagedMode = readerSettings.pageAnimation != ReaderPageAnimation.VERTICAL_SCROLL
         var readerStatusHeightPx by remember { mutableStateOf(0) }
@@ -787,6 +791,28 @@ class ChapterPage(
         val activeChapterKey = remember(activeChapter?.chapter) {
             activeChapter?.chapter?.let(::chapterIdentity)
         }
+        // A growing reading window does not invalidate an unchanged visible chapter.
+        // Full-window readiness still gates seeks and cross-chapter restoration below.
+        val visiblePageEntry = pagerVisibleItem?.entry
+            ?: pagedDisplayItems.getOrNull(horizontalPagerState.currentPage)?.entry
+        val visibleScriptReady = readerSettings.script == ReaderScript.ORIGINAL ||
+            (convertedText?.script == readerSettings.script && visiblePageEntry != null &&
+                convertedText?.chapters?.contains(visiblePageEntry) == true)
+        val visiblePaginationReady = !pagedMode || (visibleScriptReady &&
+            paginationSnapshot?.hasReadablePage(paginationLayoutKey, visiblePageEntry, result?.chapters.orEmpty()) == true)
+        val firstContentStarted = remember(chapterPageModel, requestedChapter.value.url) { System.nanoTime() }
+        // Read layout state only in the one-shot observer, using the latest content.
+        val isContentLaidOut by rememberUpdatedState {
+            result != null && if (pagedMode) {
+                visiblePaginationReady && pagerLayoutReady
+            } else scrollState.layoutInfo.visibleItemsInfo.any { it.key.toString() in displayByKey }
+        }
+        val firstContentPagedMode by rememberUpdatedState(pagedMode)
+        LaunchedEffect(firstContentStarted, scrollState) {
+            snapshotFlow { isContentLaidOut() }.first { it }
+            androidx.compose.runtime.withFrameNanos { }
+            AppLogger.i("ReaderTiming", "firstContentFrameMs=${(System.nanoTime() - firstContentStarted) / 1_000_000} paged=$firstContentPagedMode")
+        }
         val activeChapterItem by remember(displayByKey, activeChapter, scrollState) {
             derivedStateOf {
                 scrollState.layoutInfo.visibleItemsInfo.firstOrNull {
@@ -967,6 +993,7 @@ class ChapterPage(
         val latestBookLocation by rememberUpdatedState(currentBookLocation)
         LaunchedEffect(pagedMode, paginationKey, scriptReady) {
             if (!pagedMode || !scriptReady || pageContentWidthPx <= 0 || pageContentHeightPx <= 0) return@LaunchedEffect
+            val started = System.nanoTime()
             val cached = paginationSnapshot?.takeIf { it.layoutKey == paginationLayoutKey }?.pages.orEmpty()
             val entries = result?.chapters.orEmpty()
             val snapshot = withContext(Dispatchers.Default) {
@@ -996,6 +1023,7 @@ class ChapterPage(
                 pendingSeekLocation = latestBookLocation
             }
             paginationSnapshot = snapshot
+            AppLogger.i("ReaderTiming", "paginationMs=${(System.nanoTime() - started) / 1_000_000} chapters=${entries.size} pages=${snapshot.items.size}")
         }
         // Keep the last measured chapter as the UI/history anchor while a
         // list update briefly leaves no matching visible item.
@@ -1576,7 +1604,7 @@ class ChapterPage(
         val reducedMotion = com.breakyuna.esjzone.ui.designsystem.rememberReaderReducedMotion()
         val readerDialogVisible = showBrightness || wenkuVerificationChapter != null ||
             (pendingWenkuVerification != null && pendingWenkuVerification.url != dismissedWenkuPrompt)
-        val readerInteractionEnabled = readerResumed && paginationReady && (!pagedMode || pagerLayoutReady) &&
+        val readerInteractionEnabled = readerResumed && visiblePaginationReady && (!pagedMode || pagerLayoutReady) &&
             state is ChapterPageModel.State.Result &&
             !showReaderSettings && !showReaderContents && !readerDialogVisible
         val pagingEnabled = readerInteractionEnabled && !sidePanels.isVisible
@@ -2207,7 +2235,7 @@ class ChapterPage(
                             Surface(modifier = Modifier.align(Alignment.BottomCenter).padding(16.dp), shape = MaterialTheme.shapes.medium) {
                                 ReaderBoundaryRetry { chapterPageModel.retryBoundary(atNextBoundary && result.nextFailed) }
                             }
-                        } else if (!paginationReady ||
+                        } else if (!visiblePaginationReady ||
                             (atPreviousBoundary && result.isLoadingPrevious) ||
                             (atNextBoundary && result.isLoadingNext)) {
                             CircularProgressIndicator(
@@ -2699,14 +2727,17 @@ class ChapterPage(
 
 }
 
-private data class ReaderPaginationSnapshot(
+internal data class ReaderPaginationSnapshot(
     val key: List<Any?>,
     val layoutKey: List<Any?>,
     val pages: Map<ReaderChapter, List<ReaderPage>>,
     val items: List<ReaderDisplayItem>
-)
+) {
+    fun hasReadablePage(currentLayoutKey: List<Any?>, entry: ReaderChapter?, loaded: List<ReaderChapter>): Boolean =
+        layoutKey == currentLayoutKey && entry != null && entry in loaded && !pages[entry].isNullOrEmpty()
+}
 
-private data class ReaderDisplayItem(
+internal data class ReaderDisplayItem(
     val key: String,
     val chapterKey: String,
     val entry: ReaderChapter,

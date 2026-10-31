@@ -64,5 +64,7 @@ data class DetailedChapter(
     val sourceUrl: String? = null,
     val body: com.breakyuna.esjzone.data.reader.ChapterBody? = null,
     val imageLocations: Map<String, String> = emptyMap(),
-    @Transient val sourceCacheReference: String? = null
+    @Transient val sourceCacheReference: String? = null,
+    /** A validated local snapshot; any store publication invalidates this revision. */
+    @Transient val downloadedSourceRevision: Long? = null
 ) : Serializable

@@ -560,13 +560,17 @@ class ChapterPageModel(
     }
 
     private suspend fun loadReaderChapter(chapter: Chapter, showSecurityCheck: Boolean = false): ReaderChapter? {
+        val started = System.nanoTime()
         val detail = try {
             loadDetail(chapter, showSecurityCheck)
         } catch (_: ChapterPasswordRequiredException) {
             return ReaderChapter.passwordRequired(chapter)
         } ?: return null
+        val loaded = System.nanoTime()
         val offline = synchronized(lock) { offlineChapterKeys.remove(chapterKey(chapter)) }
-        return ReaderChapter(chapter, detail.toReaderDocument(chapter), detail.previous, detail.next, offline)
+        val entry = ReaderChapter(chapter, detail.toReaderDocument(chapter), detail.previous, detail.next, offline)
+        AppLogger.i("ReaderTiming", "detailMs=${(loaded - started) / 1_000_000} documentMs=${(System.nanoTime() - loaded) / 1_000_000}")
+        return entry
     }
 
     private suspend fun loadDetail(chapter: Chapter, showSecurityCheck: Boolean = false): DetailedChapter? {

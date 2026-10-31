@@ -26,6 +26,8 @@ import java.io.ByteArrayOutputStream
 import java.net.SocketTimeoutException
 import okhttp3.OkHttpClient
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.withTimeout
 import org.junit.Assert.*
 import org.junit.Test
 
@@ -44,6 +46,56 @@ class StructuredDownloadStoreTest {
         val root = Files.createTempDirectory("structured-download-").toFile()
         NovelDownloadStore.initializeDirectory(root)
         try { block(root) } finally { root.deleteRecursively() }
+    }
+
+    private fun awaitMaintenance(condition: () -> Boolean) = runBlocking {
+        withTimeout(5_000L) {
+            while (!condition()) delay(10L)
+        }
+    }
+
+    @Test
+    fun validatedLocalReadDoesNotRewriteUnchangedDownloadsButStillUpdatesMetadata() = withStorage { _ ->
+        val order = listOf(chapter(1))
+        val manifest = save(1, order)
+        val local = requireNotNull(NovelDownloadStore.readChapter(chapter(1).url))
+        assertNotNull(local.downloadedSourceRevision)
+        assertFalse(Gson().toJson(local).contains("downloadedSourceRevision"))
+        val revision = NovelDownloadStore.changes.value
+        assertSame(manifest, NovelDownloadStore.saveChapter("Novel", novelUrl, "", order, chapter(1), local, auth))
+        assertEquals(revision, NovelDownloadStore.changes.value)
+
+        val updated = requireNotNull(NovelDownloadStore.saveChapter(
+            "Renamed novel", novelUrl, "", order, chapter(1), local, auth))
+        assertEquals("Renamed novel", updated.name)
+        assertTrue(NovelDownloadStore.changes.value > revision)
+    }
+
+    @Test
+    fun rescanInvalidatesValidatedReadBeforeAutoSaveRepairsAChangedFile() = withStorage { root ->
+        val order = listOf(chapter(1))
+        val manifest = save(1, order)
+        val local = requireNotNull(NovelDownloadStore.readChapter(chapter(1).url))
+        val file = File(root.listFiles()!!.single(), manifest.chapters.single().fileName)
+        file.writeText("invalid chapter")
+        NovelDownloadStore.initializeDirectory(root)
+
+        NovelDownloadStore.saveChapter("Novel", novelUrl, "", order, chapter(1), local, auth)
+        assertEquals(local.body, NovelDownloadStore.readChapter(chapter(1).url)!!.body)
+    }
+
+    @Test
+    fun missingLocalImageDoesNotQualifyForTheValidatedDownloadShortcut() = withStorage { root ->
+        val manifest = save(1, listOf(chapter(1)))
+        val file = File(root.listFiles()!!.single(), manifest.chapters.single().fileName)
+        val image = "https://example.test/illustration.png"
+        val body = ChapterBody.from(listOf(com.breakyuna.esjzone.novellibrary.component.ImageComponent(image)))
+        file.writeText(Gson().toJson(DownloadedChapterContent("Chapter 1", chapter(1).url,
+            listOf(DownloadedComponent("image", image, "images/missing.png")),
+            schemaVersion = 2, body = body)))
+        val local = requireNotNull(NovelDownloadStore.readChapter(chapter(1).url))
+        assertEquals(image, local.imageLocations[image])
+        assertNull(local.downloadedSourceRevision)
     }
 
     @Test
@@ -615,6 +667,11 @@ class StructuredDownloadStoreTest {
         file.writeText(Gson().toJson(legacy))
         val first = requireNotNull(NovelDownloadStore.readChapter(chapter(1).url))
         assertNotNull(first.body)
+        awaitMaintenance {
+            runCatching { GZIPInputStream(file.inputStream()).bufferedReader().use {
+                Gson().fromJson(it, DownloadedChapterContent::class.java).schemaVersion == 2
+            } }.getOrDefault(false)
+        }
         val migrated = GZIPInputStream(file.inputStream()).bufferedReader().use {
             Gson().fromJson(it, DownloadedChapterContent::class.java)
         }
@@ -762,7 +819,7 @@ class StructuredDownloadStoreTest {
         save(3, order)
         assertEquals("恢复正文", NovelDownloadStore.readChapter(chapter(2).url)!!.body!!
             .readerBlocks().single().sourceText())
-        assertTrue(NovelDownloadStore.manifest(novelUrl)!!.chapters[1].bodyAvailable)
+        awaitMaintenance { NovelDownloadStore.manifest(novelUrl)!!.chapters[1].bodyAvailable }
     }
 
     @Test

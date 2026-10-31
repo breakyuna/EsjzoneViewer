@@ -4,6 +4,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyListScope
@@ -13,10 +14,12 @@ import com.breakyuna.esjzone.ui.designsystem.GlobalText as Text
 import androidx.compose.material3.TextButton
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import com.breakyuna.esjzone.ui.designsystem.globalStringResource as stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.Dp
 import com.breakyuna.esjzone.R
 import com.breakyuna.esjzone.novellibrary.novel.CoveredNovel
 import com.breakyuna.esjzone.ui.component.AppSectionTitle
@@ -26,7 +29,7 @@ import com.breakyuna.esjzone.ui.discovery.DiscoveryErrorState
 internal fun LazyListScope.randomRecommendationsSection(
     columns: Int = HOME_GRID_COLUMNS,
     state: HomeTabModel.RandomRecommendationsState,
-    showInitialLoading: Boolean,
+    initialLoadingHeight: Dp? = null,
     title: String,
     changeBatchLabel: String,
     collapseLabel: String,
@@ -40,15 +43,17 @@ internal fun LazyListScope.randomRecommendationsSection(
     }
 
     if (state.items.isEmpty() && (state.isLoading || state.failure != null)) {
-        if (state.isLoading && showInitialLoading) {
+        if (state.isLoading) {
             item(key = "home-random-initial-loading", contentType = "loading") {
                 Box(
                     modifier = Modifier
+                        .testTag("home-random-initial-loading")
                         .fillMaxWidth()
-                        .padding(AppSpacing.xxl),
+                        .then(if (initialLoadingHeight != null) Modifier.height(initialLoadingHeight)
+                            else Modifier.padding(AppSpacing.xxl)),
                     contentAlignment = Alignment.Center
                 ) {
-                    CircularProgressIndicator()
+                    CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
                 }
             }
         } else if (state.failure != null) {

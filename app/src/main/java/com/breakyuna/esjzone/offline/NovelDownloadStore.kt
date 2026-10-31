@@ -48,7 +48,9 @@ import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
@@ -154,6 +156,7 @@ object NovelDownloadStore {
 
     private val gson = Gson()
     private val ioLock = Any()
+    private val readMaintenanceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO.limitedParallelism(1))
     private val imageIndex = DownloadedImageIndex()
     /** Every successful commit publishes the latest manifest under ioLock. Keys are directory paths. */
     private val manifestCache = HashMap<String, DownloadedNovelManifest?>()
@@ -930,9 +933,12 @@ object NovelDownloadStore {
         val existing = previous?.chapters?.firstOrNull { chapterKey(it.url) == targetKey }
         val existingFile = existing?.fileName?.let { resolveLocalFile(directory, it) }
 
+        val validatedDownload = synchronized(ioLock) {
+            detail.downloadedSourceRevision != null && detail.downloadedSourceRevision == mutableChanges.value &&
+                chapterKey(detail.sourceUrl.orEmpty()) == targetKey && previous === readManifest(directory)
+        }
         if (existing?.downloaded == true &&
-            existingFile?.isFile == true &&
-            isChapterFullyDownloaded(directory, existingFile) &&
+            (validatedDownload || (existingFile?.isFile == true && isChapterFullyDownloaded(directory, existingFile))) &&
             previous.name == novelName && previous.coverUrl == coverUrl &&
             (!chapterOrderComplete || previous.catalogComplete || previous.complete) &&
             chapterOrder.isNotEmpty() &&
@@ -1438,17 +1444,69 @@ object NovelDownloadStore {
     }
 
     /** Returns a downloaded chapter without touching the network. */
-    fun readChapter(chapterUrl: String, novelUrl: String? = null): DetailedChapter? = synchronized(ioLock) {
-        val match = findChapter(chapterUrl, novelUrl) ?: return@synchronized null
-        val chapterFile = resolveLocalFile(match.directory, match.record.fileName)
-            ?: return@synchronized null
-        val stored = readStoredChapter(match.directory, chapterFile) ?: return@synchronized null
-        if (match.record.textLength != stored.body?.textLength || !match.record.bodyAvailable) {
-            // Optional length metadata must not prevent reading a locally migrated chapter.
-            runCatching {
-                writeManifest(match.directory, match.manifest.copy(chapters = match.manifest.chapters.map {
-                    if (chapterKey(it.url) == chapterKey(chapterUrl)) it.copy(textLength = stored.body?.textLength, bodyAvailable = true) else it
-                }))
+    fun readChapter(chapterUrl: String, novelUrl: String? = null): DetailedChapter? {
+        val started = System.nanoTime()
+        var lockAcquired = started
+        val snapshot: ChapterReadSnapshot
+        val original: DownloadedChapterContent
+        val opened: Long
+        try {
+            snapshot = synchronized(ioLock) {
+                lockAcquired = System.nanoTime()
+                val match = findChapter(chapterUrl, novelUrl) ?: return null
+                val file = resolveLocalFile(match.directory, match.record.fileName) ?: return null
+                file.recoverReplacement()
+                if (!file.isFile) return null
+                // Open a stable handle while replacements are excluded. Decode and validate
+                // outside the store lock; a concurrent rename cannot change this handle.
+                ChapterReadSnapshot(match, newWriteGuard(match.directory), mutableChanges.value,
+                    file.storedTextReader())
+            }
+            opened = System.nanoTime()
+            original = snapshot.reader.use { gson.fromJson(it, DownloadedChapterContent::class.java) }
+                ?: return null
+        } catch (error: Exception) {
+            if (error is com.breakyuna.esjzone.storage.StorageAccessException || error is CancellationException) throw error
+            AppLogger.w("NovelDownloadStore", "Unable to read downloaded chapter", error)
+            return null
+        }
+        val decoded = System.nanoTime()
+        val stored = decodeStoredChapter(original) ?: return null
+        val validated = System.nanoTime()
+        val match = snapshot.match
+        val locations = imageLocations(match.directory, stored)
+        val content = restoreComponents(stored, locations)
+        synchronized(ioLock) {
+            if (snapshot.guard.storage != storageGeneration ||
+                snapshot.guard.generation != (deletionGenerations[snapshot.guard.directoryPath] ?: 0L)) {
+                throw CancellationException("Download storage changed or the novel was removed")
+            }
+        }
+        if (original.schemaVersion != 2 || match.record.textLength != stored.body?.textLength || !match.record.bodyAvailable) {
+            // Migration and optional metadata repair must not delay first publication.
+            readMaintenanceScope.launch {
+                runCatching {
+                    synchronized(ioLock) {
+                        ensureWriteAllowed(snapshot.guard)
+                        val current = readManifest(match.directory) ?: return@synchronized
+                        val currentRecord = current.chapters.firstOrNull {
+                            chapterKey(it.url) == chapterKey(chapterUrl)
+                        } ?: return@synchronized
+                        val file = resolveLocalFile(match.directory, currentRecord.fileName) ?: return@synchronized
+                        // Re-read under the lock so a newer committed file is never overwritten
+                        // with the older reader snapshot during legacy migration.
+                        val latest = readStoredChapter(match.directory, file) ?: return@synchronized
+                        if (currentRecord.textLength != latest.body?.textLength || !currentRecord.bodyAvailable) {
+                            writeManifest(match.directory, current.copy(chapters = current.chapters.map {
+                                if (chapterKey(it.url) == chapterKey(chapterUrl))
+                                    it.copy(textLength = latest.body?.textLength, bodyAvailable = true) else it
+                            }), snapshot.guard)
+                        }
+                    }
+                }.onFailure { error ->
+                    if (error !is CancellationException && error !is StorageMigrationBusyException)
+                        AppLogger.w("NovelDownloadStore", "Unable to maintain downloaded chapter metadata", error)
+                }
             }
         }
         val previous = match.manifest.chapters.getOrNull(match.record.index - 1)
@@ -1456,15 +1514,23 @@ object NovelDownloadStore {
         val next = match.manifest.chapters.getOrNull(match.record.index + 1)
             ?.toChapter()
 
-        DetailedChapter(
+        val fullyLocal = match.record.downloaded && stored.components.filter { it.type == IMAGE_COMPONENT }.all {
+            it.localFile != null && locations[it.value] != it.value
+        }
+        AppLogger.i("ReaderTiming", "local waitMs=${(lockAcquired - started) / 1_000_000} " +
+            "openMs=${(opened - lockAcquired) / 1_000_000} decodeMs=${(decoded - opened) / 1_000_000} " +
+            "validateMs=${(validated - decoded) / 1_000_000} " +
+            "assetsMs=${(System.nanoTime() - validated) / 1_000_000} totalMs=${(System.nanoTime() - started) / 1_000_000}")
+        return DetailedChapter(
             name = stored.name,
-            content = restoreComponents(match.directory, stored),
+            content = content,
             previous = previous,
             next = next,
             contentHtml = stored.contentHtml,
             sourceUrl = stored.baseUrl ?: stored.url,
             body = stored.body,
-            imageLocations = imageLocations(match.directory, stored)
+            imageLocations = locations,
+            downloadedSourceRevision = snapshot.revision.takeIf { fullyLocal && original.schemaVersion == 2 }
         )
     }
 
@@ -1689,11 +1755,20 @@ object NovelDownloadStore {
 
     private fun readStoredChapter(directory: StorageFile, file: StorageFile): DownloadedChapterContent? = synchronized(ioLock) {
         val stored = readJson(file, DownloadedChapterContent::class.java) ?: return@synchronized null
+        val decoded = decodeStoredChapter(stored) ?: return@synchronized null
+        if (stored.schemaVersion != 2) {
+            // Reading remains possible if storage is full; the original survives a failed rename.
+            runCatching { writeJson(file, decoded, newWriteGuard(directory)) }
+        }
+        decoded
+    }
+
+    private fun decodeStoredChapter(stored: DownloadedChapterContent): DownloadedChapterContent? {
         if (stored.schemaVersion == 2) {
-            return@synchronized runCatching { requireNotNull(stored.body).validate(); stored }.getOrNull()
+            return runCatching { requireNotNull(stored.body).validate(); stored }.getOrNull()
         }
         if (stored.schemaVersion !in 0..1) throw IOException("Unsupported downloaded chapter version")
-        val converted = runCatching {
+        return runCatching {
             val html = stored.contentHtml
             val components = if (!html.isNullOrBlank()) {
                 val document = Jsoup.parseBodyFragment(html, stored.baseUrl ?: stored.url)
@@ -1712,14 +1787,10 @@ object NovelDownloadStore {
             }
             require(components.isNotEmpty())
             stored.copy(schemaVersion = 2, body = ChapterBody.from(components))
-        }.getOrNull() ?: return@synchronized null
-        // Reading remains possible if storage is full; the original file survives a failed rename.
-        runCatching { writeJson(file, converted, newWriteGuard(directory)) }
-        return@synchronized converted
+        }.getOrNull()
     }
 
-    private fun restoreComponents(directory: StorageFile, stored: DownloadedChapterContent): List<Component> {
-        val locations = imageLocations(directory, stored)
+    private fun restoreComponents(stored: DownloadedChapterContent, locations: Map<String, String>): List<Component> {
         return requireNotNull(stored.body).components { locations[it] ?: it }.map { component ->
             if (component is ImageComponent && component.url.isBlank()) TextComponent(missingImageLabel()) else component
         }
@@ -2239,6 +2310,13 @@ object NovelDownloadStore {
     private data class DownloadedImage(
         val relativeName: String,
         val mediaType: String
+    )
+
+    private data class ChapterReadSnapshot(
+        val match: ChapterMatch,
+        val guard: DownloadWriteGuard,
+        val revision: Long,
+        val reader: java.io.Reader
     )
 
     private data class ChapterMatch(

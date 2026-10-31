@@ -51,6 +51,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -58,6 +59,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLayoutDirection
 import com.breakyuna.esjzone.ui.designsystem.globalStringResource as stringResource
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.breakyuna.esjzone.R
 import com.breakyuna.esjzone.app.PresentationAccess
@@ -313,8 +315,15 @@ private fun ProfileHero(profile: UserProfile?, domain: String, avatarCacheKey: S
                         profile.exp?.let {
                             Text(
                                 text = stringResource(R.string.profile_experience, it),
-                                style = AppTypography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                style = AppTypography.bodySmall.copy(
+                                    brush = Brush.verticalGradient(
+                                        0.0f to Color(0xFF29231C),
+                                        0.35f to Color(0xFF987331),
+                                        0.6f to Color(0xFFE8CA7E),
+                                        1.0f to Color(0xFF8A662B)
+                                    ),
+                                    fontWeight = FontWeight.SemiBold
+                                ),
                                 maxLines = 1
                             )
                         }
