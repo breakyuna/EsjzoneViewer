@@ -5,6 +5,7 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
+import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Box
@@ -18,6 +19,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -65,6 +68,8 @@ fun ReaderShell(
     content: @Composable BoxScope.() -> Unit
 ) {
     val haptics by rememberUpdatedState(LocalHapticFeedback.current)
+    val focusManager by rememberUpdatedState(LocalFocusManager.current)
+    var contentHasFocus by remember { mutableStateOf(false) }
     val currentTap by rememberUpdatedState(onReadingAreaTap)
     val currentBookmarkPull by rememberUpdatedState(onBookmarkPull)
     var pullingBookmark by remember { mutableStateOf(false) }
@@ -82,6 +87,8 @@ fun ReaderShell(
         modifier = Modifier
             .fillMaxSize()
             .background(pullBackground)
+            .onFocusChanged { contentHasFocus = it.hasFocus }
+            .focusGroup()
             .pointerInput(pagedGesturesEnabled, verticalContentScrollable, bookmarkPullEnabled) {
                 awaitEachGesture {
                     try {
@@ -155,10 +162,16 @@ fun ReaderShell(
                                 currentBookmarkPull()
                             release != null && !childConsumed && !multiTouch &&
                                 duration < viewConfiguration.longPressTimeoutMillis && maxDistance < viewConfiguration.touchSlop -> {
-                                currentTap(
-                                    (release.x / size.width.coerceAtLeast(1)).coerceIn(0f, 1f),
-                                    (release.y / size.height.coerceAtLeast(1)).coerceIn(0f, 1f)
-                                )
+                                if (contentHasFocus) {
+                                    // SelectionContainer releases its selection when focus is cleared.
+                                    // Dismiss it before interpreting a subsequent tap as a reader action.
+                                    focusManager.clearFocus(force = true)
+                                } else {
+                                    currentTap(
+                                        (release.x / size.width.coerceAtLeast(1)).coerceIn(0f, 1f),
+                                        (release.y / size.height.coerceAtLeast(1)).coerceIn(0f, 1f)
+                                    )
+                                }
                             }
                         }
                     } finally {

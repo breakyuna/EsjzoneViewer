@@ -29,21 +29,18 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.automirrored.filled.Reply
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.EmojiEmotions
 import androidx.compose.material.icons.filled.FirstPage
 import androidx.compose.material.icons.filled.FormatQuote
 import androidx.compose.material.icons.filled.LastPage
@@ -395,12 +392,12 @@ internal fun CommentSectionHost(
     Column(
         modifier = modifier
             .widthIn(max = 960.dp)
-            .padding(horizontal = AppSpacing.lg)
     ) {
         Box(
             modifier = Modifier
                 .weight(1f)
                 .fillMaxWidth()
+                .padding(horizontal = AppSpacing.lg)
                 .verticalScroll(scrollState)
         ) {
             CommentSectionContent(
@@ -557,15 +554,10 @@ internal fun CommentComposerHost(
             model.load(forceRefresh = true, allowRetryAfterRefresh = uncertainSubmission)
         },
         onSubmit = { model.submit(draft, model.replyToken.value) },
-        // Keep system insets outside the painted composer surface.
-        // Combining navigationBars and IME insets using union (taking the max
-        // of both) ensures the composer sits above the navigation bar when the
-        // keyboard is closed, and sits flush directly above the keyboard when
-        // the keyboard opens, eliminating additive double-padding (navigation
-        // bar height + keyboard height) that causes an extra blank gap above
-        // the keyboard.
+        // Keep the keyboard outside the surface. This consumes its inset so
+        // the navigation bar padding inside the surface only adds any remainder.
         modifier = modifier
-            .windowInsetsPadding(WindowInsets.navigationBars.union(WindowInsets.ime))
+            .windowInsetsPadding(WindowInsets.ime)
             .onSizeChanged { onHeightChanged?.invoke(it.height) }
     )
 }
@@ -689,15 +681,15 @@ private fun CommentComposer(
             .fillMaxWidth()
             .wrapContentHeight(),
         color = appStateColors().containerRaised,
-        tonalElevation = 0.dp,
-        shadowElevation = AppElevation.floating,
-        shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp)
+        tonalElevation = 0.dp
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .wrapContentHeight()
-                .padding(horizontal = 16.dp, vertical = 8.dp)
+                // Paint behind the navigation area while keeping controls clear.
+                .windowInsetsPadding(WindowInsets.navigationBars)
+                .padding(horizontal = AppSpacing.lg, vertical = AppSpacing.sm)
         ) {
             if (replyAuthor != null) {
                 Surface(
@@ -773,7 +765,7 @@ private fun CommentComposer(
                                     max = AppTouchTarget.minimum
                                 )
                                 .clip(AppShapes.standard)
-                                .background(MaterialTheme.colorScheme.surface)
+                                .background(MaterialTheme.colorScheme.surfaceContainerLow)
                                 .padding(horizontal = AppSpacing.md),
                             contentAlignment = Alignment.CenterStart
                         ) {
@@ -790,18 +782,6 @@ private fun CommentComposer(
                         }
                     }
                 )
-                IconButton(
-                    onClick = { },
-                    enabled = !isSubmitting,
-                    modifier = Modifier.size(AppTouchTarget.minimum)
-                ) {
-                    Icon(
-                        imageVector = Icons.Filled.EmojiEmotions,
-                        contentDescription = stringResource(id = R.string.comment_emoji),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(24.dp)
-                    )
-                }
                 Button(
                     onClick = onSubmit,
                     enabled = !isSubmitting && draft.isNotBlank() &&

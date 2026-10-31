@@ -96,6 +96,7 @@ import com.breakyuna.esjzone.ui.reader.ReaderBrightness
 import com.breakyuna.esjzone.ui.reader.ReaderKeepScreenOn
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.State
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.DisposableEffect
@@ -754,7 +755,7 @@ class ChapterPage(
         }
         val visibleActiveChapterKey by remember(displayByKey, scrollState, chapterActivationOffset,
             pagedMode, horizontalPagerState, pagerVisibleItem) {
-            derivedStateOf {
+            derivedStateOf(structuralEqualityPolicy()) {
                 if (pagedMode) {
                     pagerVisibleItem?.chapterKey
                 } else {
@@ -778,14 +779,18 @@ class ChapterPage(
                 retainedActiveChapterKey = key
             }
         }
-        val activeChapter = result?.chapters?.firstOrNull {
-            chapterIdentity(it.chapter) == retainedActiveChapterKey
+        val activeChapter = remember(result?.chapters, retainedActiveChapterKey) {
+            result?.chapters?.firstOrNull {
+                chapterIdentity(it.chapter) == retainedActiveChapterKey
+            }
+        }
+        val activeChapterKey = remember(activeChapter?.chapter) {
+            activeChapter?.chapter?.let(::chapterIdentity)
         }
         val activeChapterItem by remember(displayByKey, activeChapter, scrollState) {
             derivedStateOf {
-                val activeKey = activeChapter?.chapter?.let(::chapterIdentity)
                 scrollState.layoutInfo.visibleItemsInfo.firstOrNull {
-                    displayByKey[it.key.toString()]?.chapterKey == activeKey
+                    displayByKey[it.key.toString()]?.chapterKey == activeChapterKey
                 }
             }
         }
@@ -810,17 +815,16 @@ class ChapterPage(
 
         val isAtEndOfChapter = remember(displayByKey, activeChapter, scrollState, pagedMode,
             horizontalPagerState, pagerVisibleItem) {
-            derivedStateOf {
+            derivedStateOf(structuralEqualityPolicy()) {
                 if (pagedMode) {
                     val item = pagerVisibleItem
-                    item != null && item.chapterKey == activeChapter?.chapter?.let(::chapterIdentity) &&
+                    item != null && item.chapterKey == activeChapterKey &&
                         item.ordinal == item.itemCount - 1
                 } else {
                     val layoutInfo = scrollState.layoutInfo
                     val lastVisible = layoutInfo.visibleItemsInfo.lastOrNull() ?: return@derivedStateOf false
-                    val activeKey = activeChapter?.chapter?.let(::chapterIdentity)
                     val item = displayByKey[lastVisible.key.toString()]
-                    item != null && item.chapterKey == activeKey &&
+                    item != null && item.chapterKey == activeChapterKey &&
                         item.ordinal == item.itemCount - 1 &&
                         (lastVisible.offset + lastVisible.size <= layoutInfo.viewportEndOffset)
                 }
@@ -857,7 +861,7 @@ class ChapterPage(
                 else textOffsets(block)?.toSource(displayOffset) ?: return null
             return ReaderAnchor(item.chapterKey, document.contentFingerprint, blockIndex, sourceOffset)
         }
-        val measuredAnchor by remember(displayByKey, activeChapter, scrollState, pagedMode,
+        val measuredAnchorState = remember(displayByKey, activeChapter, scrollState, pagedMode,
             horizontalPagerState, textLayouts, scriptReady, readerSettings.script, convertedText) {
             derivedStateOf(structuralEqualityPolicy()) {
                 if (pagedMode) pagerVisibleItem?.let { anchorFor(it) } else activeChapterItem?.let { visible ->
@@ -865,24 +869,31 @@ class ChapterPage(
                 }
             }
         }
-        val preciseChapterProgress = measuredAnchor?.let { anchor ->
-            activeChapter?.document?.let { readerChapterProgress(it, if (isAtEndOfChapter.value) anchor.copy(kind = "end") else anchor) }
-        }
-        val measuredChapterProgress = if (activeChapter?.requiresPassword == true) {
-            0f
-        } else if (isAtEndOfChapter.value) {
-            1.0f
-        } else if (preciseChapterProgress != null) {
-            preciseChapterProgress
-        } else if (pagedMode) {
-            pagerVisibleItem
-                ?.takeIf { it.chapterKey == activeChapter?.chapter?.let(::chapterIdentity) }
-                ?.let { it.ordinal.toFloat() / it.itemCount.coerceAtLeast(1) }
-        } else {
-            activeChapterItem?.let { visible ->
-                displayByKey[visible.key.toString()]?.let { item ->
-                    (item.ordinal + (chapterProgressFor(visible.offset, visible.size) ?: 0f)) /
-                        item.itemCount.toFloat()
+        val measuredAnchor by measuredAnchorState
+        // Observe the resulting progress, rather than every pixel of item geometry.
+        val measuredChapterProgress by remember(measuredAnchorState, isAtEndOfChapter,
+            activeChapter, pagedMode, pagerVisibleItem, displayByKey, scrollState) {
+            derivedStateOf(structuralEqualityPolicy()) {
+                val preciseChapterProgress = measuredAnchor?.let { anchor ->
+                    activeChapter?.document?.let { readerChapterProgress(it, if (isAtEndOfChapter.value) anchor.copy(kind = "end") else anchor) }
+                }
+                if (activeChapter?.requiresPassword == true) {
+                    0f
+                } else if (isAtEndOfChapter.value) {
+                    1.0f
+                } else if (preciseChapterProgress != null) {
+                    preciseChapterProgress
+                } else if (pagedMode) {
+                    pagerVisibleItem
+                        ?.takeIf { it.chapterKey == activeChapterKey }
+                        ?.let { it.ordinal.toFloat() / it.itemCount.coerceAtLeast(1) }
+                } else {
+                    activeChapterItem?.let { visible ->
+                        displayByKey[visible.key.toString()]?.let { item ->
+                            (item.ordinal + (chapterProgressFor(visible.offset, visible.size) ?: 0f)) /
+                                item.itemCount.toFloat()
+                        }
+                    }
                 }
             }
         }
@@ -908,14 +919,20 @@ class ChapterPage(
         val bookChapterIndices = remember(bookChapterOrder) {
             bookChapterOrder.mapIndexed { index, item -> chapterIdentity(item) to index }.toMap()
         }
-        val measuredContentPosition = if (pagedMode) {
-            pagerVisibleItem?.page?.contentPosition
-        } else if (measuredAnchor != null && activeChapter != null) {
-            readerContentPosition(activeChapter.document, measuredAnchor!!)
-        } else {
-            activeChapterItem?.let { visible ->
-                displayByKey[visible.key.toString()]?.let { item ->
-                    item.ordinal - 1f + (chapterProgressFor(visible.offset, visible.size) ?: 0f)
+        val measuredContentPosition by remember(measuredAnchorState, activeChapter,
+            pagedMode, pagerVisibleItem, displayByKey, scrollState) {
+            derivedStateOf(structuralEqualityPolicy()) {
+                val anchor = measuredAnchor
+                if (pagedMode) {
+                    pagerVisibleItem?.page?.contentPosition
+                } else if (anchor != null && activeChapter != null) {
+                    readerContentPosition(activeChapter.document, anchor)
+                } else {
+                    activeChapterItem?.let { visible ->
+                        displayByKey[visible.key.toString()]?.let { item ->
+                            item.ordinal - 1f + (chapterProgressFor(visible.offset, visible.size) ?: 0f)
+                        }
+                    }
                 }
             }
         }
@@ -1007,11 +1024,8 @@ class ChapterPage(
             }
         }
         val visibleReaderChapterKeys by remember(result, scrollState, pagedMode, horizontalPagerState, pagerVisibleItem) {
-            derivedStateOf {
-                val loadedKeys = result?.chapters
-                    .orEmpty()
-                    .map { chapterIdentity(it.chapter) }
-                    .toSet()
+            val loadedKeys = result?.chapters.orEmpty().map { chapterIdentity(it.chapter) }.toSet()
+            derivedStateOf(structuralEqualityPolicy()) {
                 if (pagedMode) {
                     listOfNotNull(pagerVisibleItem?.chapterKey)
                         .filter { it in loadedKeys }.toSet()
@@ -1241,11 +1255,11 @@ class ChapterPage(
                 }
             }
         }
-        val displayedBookProgress = if (isBookProgressDragging) {
+        val displayedBookProgress = rememberUpdatedState(if (isBookProgressDragging) {
             draggingBookProgress ?: progressPreview?.bookProgress ?: currentBookLocation?.bookProgress ?: 0f
         } else {
             pendingSeekLocation?.bookProgress ?: currentBookLocation?.bookProgress ?: 0f
-        }
+        })
         val currentChapterName = currentReadingChapter.name
         var previousBootstrapFor by remember { mutableStateOf<String?>(null) }
         var suppressPreviousBootstrapFor by remember {
@@ -2344,7 +2358,9 @@ class ChapterPage(
                         modifier = Modifier
                             .fillMaxWidth()
                             .windowInsetsPadding(WindowInsets.displayCutout.only(WindowInsetsSides.Horizontal))
-                            .navigationBarsPadding(),
+                            // Keep measured toolbar height stable while system bars animate out.
+                            .windowInsetsPadding(WindowInsets.navigationBarsIgnoringVisibility
+                                .union(WindowInsets.displayCutout).only(WindowInsetsSides.Bottom)),
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
                         Column(
@@ -2358,8 +2374,9 @@ class ChapterPage(
                         ) {
                             val readerResult = state as? ChapterPageModel.State.Result
                             val navigationChapter = pendingSeekLocation?.chapter ?: currentReadingChapter
-                            val navigationIndex = bookChapterOrder.indexOfFirst {
-                                sameReaderChapter(it, navigationChapter)
+                            // Position changes within a chapter do not change its neighbors.
+                            val navigationIndex = remember(bookChapterIndices, navigationChapter) {
+                                bookChapterIndices[chapterIdentity(navigationChapter)] ?: -1
                             }
                             val activePrevious = if (navigationIndex > 0) {
                                 bookChapterOrder.getOrNull(navigationIndex - 1)
@@ -2944,7 +2961,7 @@ private fun localReadingHistoryKey(
 
 @Composable
 private fun ReaderProgressRail(
-    progress: Float,
+    progress: State<Float>,
     enabled: Boolean,
     previousEnabled: Boolean,
     nextEnabled: Boolean,
@@ -2965,10 +2982,12 @@ private fun ReaderProgressRail(
     val trackInset = with(LocalDensity.current) { 10.dp.toPx() }
     val previousDescription = stringResource(id = R.string.previous_chapter)
     val nextDescription = stringResource(id = R.string.next_chapter)
-    val progressDescription = stringResource(
-        id = R.string.reader_book_progress_percent,
-        (progress.coerceIn(0f, 1f) * 100f).roundToInt()
-    )
+    val progressPercent by remember(progress) {
+        derivedStateOf(structuralEqualityPolicy()) {
+            (progress.value.coerceIn(0f, 1f) * 100f).roundToInt()
+        }
+    }
+    val progressDescription = stringResource(R.string.reader_book_progress_percent, progressPercent)
 
     Row(
         modifier = Modifier.fillMaxWidth(),
@@ -3053,7 +3072,7 @@ private fun ReaderProgressRail(
                 .semantics {
                     contentDescription = progressDescription
                     progressBarRangeInfo = ProgressBarRangeInfo(
-                        progress.coerceIn(0f, 1f),
+                        progress.value.coerceIn(0f, 1f),
                         0f..1f
                     )
                 }
@@ -3061,7 +3080,7 @@ private fun ReaderProgressRail(
             val centerY = size.height / 2f
             val startX = trackInset
             val endX = max(size.width - trackInset, startX)
-            val thumbX = startX + (endX - startX) * progress.coerceIn(0f, 1f)
+            val thumbX = startX + (endX - startX) * progress.value.coerceIn(0f, 1f)
             val trackColor = if (enabled) inactiveColor else disabledColor
             val progressColor = if (enabled) activeColor else disabledColor
 
