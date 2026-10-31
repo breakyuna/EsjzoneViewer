@@ -56,7 +56,8 @@ class DownloadedNovelPage(private val url: String) : AppDestination {
             val chapter = Chapter(record.name, record.url, true)
             navigator?.pushIfNotCurrent(ChapterPage(
                 novelId = novelTitleId("", book.url), chapter = chapter, history = ChapterStateHolder(chapter),
-                chapterOrder = records.map { Chapter(it.name, it.url, true) },
+                chapterOrder = records.filterNot { it.localOnly }.map { Chapter(it.name, it.url, true) },
+                chapterOrderComplete = book.catalogComplete || book.complete,
                 novelName = book.name, novelUrl = book.url, novelCoverUrl = book.coverUrl,
                 restoreFromLocalHistory = state.history?.chapterUrl?.let {
                     NovelDownloadStore.chapterKey(it) == NovelDownloadStore.chapterKey(record.url)

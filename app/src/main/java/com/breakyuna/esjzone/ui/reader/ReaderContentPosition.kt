@@ -10,3 +10,18 @@ internal fun readerBodyListIndex(
     hasPreviousVerification: Boolean,
     hasPreviousRetry: Boolean
 ): Int = bodyIndex + (if (hasPreviousVerification) 1 else 0) + (if (hasPreviousRetry) 1 else 0)
+
+internal data class ReaderScrollAnchor(val key: String, val index: Int, val offset: Int)
+
+/** Preserve the visible paragraph even when a whole chapter moves it beyond LazyColumn's key map. */
+internal fun readerRebasedScrollAnchor(
+    previousHeadKey: String?,
+    currentHeadKey: String?,
+    visible: ReaderScrollAnchor?,
+    bodyIndices: Map<String, Int>,
+    bodyStartOffset: Int
+): ReaderScrollAnchor? {
+    if (previousHeadKey == null || previousHeadKey == currentHeadKey || visible == null) return null
+    val bodyIndex = bodyIndices[visible.key] ?: return null
+    return visible.copy(index = bodyIndex + bodyStartOffset)
+}

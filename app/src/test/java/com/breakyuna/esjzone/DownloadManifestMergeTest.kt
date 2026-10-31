@@ -36,6 +36,17 @@ class DownloadManifestMergeTest {
     }
 
     @Test
+    fun refreshedCatalogDoesNotPromoteAnExplicitLocalSnapshot() {
+        val old = manifest(listOf(record(1, true), record(2, true)))
+        val incoming = manifest(listOf(record(1), record(2).copy(localOnly = true)))
+        val merged = mergeDownloadManifest(old, incoming, true)
+        assertEquals(listOf(record(1).url), merged.chapters.filterNot { it.localOnly }.map { it.url })
+        assertTrue(merged.chapters.last().downloaded)
+        assertTrue(merged.chapters.last().bodyAvailable)
+        assertTrue(merged.chapters.last().localOnly)
+    }
+
+    @Test
     fun fullBookPercentageRequiresAllLengthsAndWeightsByTextSize() {
         val complete = manifest(listOf(record(1, true), record(2, true)))
         val urls = complete.chapters.map { it.url }

@@ -19,6 +19,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.saveable.mapSaver
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
@@ -295,7 +296,8 @@ class AppNavigator internal constructor(
     private val backStack: MutableList<NavKey>,
     private val registry: MutableMap<String, AppDestination>,
     private val rootNavigator: AppNavigator? = null,
-    private val setAuthorization: ((Authorization) -> Unit)? = null
+    private val setAuthorization: ((Authorization) -> Unit)? = null,
+    private val readerRoutes: MutableMap<String, String> = mutableMapOf()
 ) {
     val items: List<AppDestination>
         get() = backStack.mapNotNull { key ->
@@ -324,9 +326,9 @@ class AppNavigator internal constructor(
         backStack.add(AppNavKey.Legacy(routeFromToken(destination.key), homeCarouselPage))
     }
 
-    /** Keep the persisted root reader key aligned with continuous-reading state. */
-    fun updateReaderRoute(novelId: String, chapterIdentity: String, destination: AppDestination) {
-        root.updateReaderRoute(ReaderRoute(novelId, chapterIdentity), destination)
+    /** Save the latest chapter separately so the live reader entry keeps its ViewModel. */
+    fun updateReaderRoute(novelId: String, chapterIdentity: String) {
+        root.updateReaderRoute(ReaderRoute(novelId, chapterIdentity))
     }
 
     fun pushIfNotCurrent(destination: AppDestination, homeCarouselPage: Int? = null): Boolean {
@@ -430,17 +432,21 @@ class AppNavigator internal constructor(
         }
         if (!stillInUse) {
             registry.remove(token)
+            readerRoutes.remove(token)
         }
     }
 
     internal fun child(stack: MutableList<NavKey>): AppNavigator =
-        AppNavigator(stack, registry, root, setAuthorization)
+        AppNavigator(stack, registry, root, setAuthorization, readerRoutes)
 
     internal fun destination(route: LegacyRoute): AppDestination? =
         registry[route.token()] ?: route.restore()
 
-    internal fun readerDestination(route: ReaderRoute): AppDestination? =
-        registry[readerToken(route)] ?: route.restore()
+    internal fun readerDestination(route: ReaderRoute): AppDestination =
+        registry.getOrPut(readerToken(route)) {
+            val latest = readerRoutes[readerToken(route)]?.let(::readerRouteFromToken)
+            (latest ?: route).restore(restoreLatestHistory = latest == null)
+        }
 
     private fun openReader(destination: AppDestination) {
         register(destination)
@@ -448,16 +454,17 @@ class AppNavigator internal constructor(
         if (backStack.lastOrNull() !is AppNavKey.Reader) {
             backStack.add(AppNavKey.Reader(route))
         } else {
+            val previous = backStack[backStack.lastIndex]
             backStack[backStack.lastIndex] = AppNavKey.Reader(route)
+            cleanupKey(previous)
         }
     }
 
-    private fun updateReaderRoute(route: ReaderRoute, destination: AppDestination) {
+    private fun updateReaderRoute(route: ReaderRoute) {
         val index = backStack.indexOfLast { it is AppNavKey.Reader }
         if (index < 0) return
         val old = backStack[index] as AppNavKey.Reader
-        if (old.route == route) return
-        registry[readerToken(route)] = destination
+        readerRoutes[readerToken(old.route)] = readerToken(route)
         // Do not mutate backStack in-place during continuous reading sessions.
         // Mutating a NavBackStack key triggers a Navigation 3 transition and resets the active entry's ViewModelStore.
     }
@@ -466,7 +473,7 @@ class AppNavigator internal constructor(
 private fun readerToken(route: ReaderRoute): String =
     "ChapterPage:${route.novelId}:${route.chapterIdentity}"
 
-private fun ReaderRoute.restore(): AppDestination = ChapterPage(
+private fun ReaderRoute.restore(restoreLatestHistory: Boolean = true): AppDestination = ChapterPage(
     novelId = novelId,
     chapter = Chapter(name = "", url = chapterIdentity, isHistory = true),
     history = ChapterStateHolder(),
@@ -475,7 +482,9 @@ private fun ReaderRoute.restore(): AppDestination = ChapterPage(
         ?.let { EsjzoneUrls.resolve("/detail/$it.html") }
         .orEmpty(),
     novelCoverUrl = "",
-    restoreFromLocalHistory = true
+    // A saved latest route is authoritative; use history only for its matching position.
+    resumeChapterProgress = if (restoreLatestHistory) null else 0f,
+    restoreFromLocalHistory = restoreLatestHistory
 )
 
 private fun LegacyRoute.restore(): AppDestination? = when (this) {
@@ -570,6 +579,13 @@ internal fun needsStorageSetup(destination: NavKey?, authorization: Authorizatio
 @Composable
 fun AppNavigation() {
     val backStack: MutableList<NavKey> = rememberNavBackStack(AppNavKey.Loading)
+    // Keep entry state owners alive while session/storage gates temporarily hide NavDisplay.
+    val savedStateDecorator = rememberSaveableStateHolderNavEntryDecorator()
+    val viewModelDecorator = rememberViewModelStoreNavEntryDecorator()
+    val readerRoutes = rememberSaveable(saver = mapSaver<MutableMap<String, String>>(
+        save = { it.toMap() },
+        restore = { saved -> saved.mapValues { it.value as String }.toMutableMap() }
+    )) { mutableMapOf<String, String>() }
     val registry = remember {
         object : java.util.LinkedHashMap<String, AppDestination>(32, 0.75f, true) {
             override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, AppDestination>?): Boolean =
@@ -633,7 +649,8 @@ fun AppNavigation() {
     }
     val currentAuthorizationState = rememberUpdatedState(authorizationState)
     val navigator = remember(backStack, registry) {
-        AppNavigator(backStack, registry, setAuthorization = { currentAuthorizationState.value.value = it })
+        AppNavigator(backStack, registry, setAuthorization = { currentAuthorizationState.value.value = it },
+            readerRoutes = readerRoutes)
     }
 
     val appContext = LocalContext.current.applicationContext
@@ -681,8 +698,8 @@ fun AppNavigation() {
                 backStack = backStack,
                 onBack = { navigator.pop() },
                 entryDecorators = listOf(
-                    rememberSaveableStateHolderNavEntryDecorator(),
-                    rememberViewModelStoreNavEntryDecorator()
+                    savedStateDecorator,
+                    viewModelDecorator
                 ),
                 transitionSpec = pushTransition,
                 popTransitionSpec = popTransition,
@@ -718,7 +735,7 @@ fun AppNavigation() {
                             LoginScreen.Content()
                         } else {
                             CompositionLocalProvider(LocalAuthorization provides session) {
-                                navigator.readerDestination(key.route)?.Content()
+                                navigator.readerDestination(key.route).Content()
                             }
                         }
                     }

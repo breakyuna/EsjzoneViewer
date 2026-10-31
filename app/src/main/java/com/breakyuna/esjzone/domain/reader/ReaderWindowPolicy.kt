@@ -10,7 +10,10 @@ data class ReaderScrollSnapshot(
     val layoutMatchesLoadedWindow: Boolean,
     val isScrollInProgress: Boolean,
     val isProgrammaticScroll: Boolean,
-    val canScrollForward: Boolean = true
+    val canScrollForward: Boolean = true,
+    val canScrollBackward: Boolean = true,
+    val hasNextChapter: Boolean = false,
+    val isLoadingNext: Boolean = false
 )
 
 data class ReaderWindowAnchor(
@@ -35,6 +38,7 @@ fun shouldLoadNextChapter(
     threshold: Int
 ): Boolean {
     val before = previous ?: return false
+    if (!before.layoutMatchesLoadedWindow || before.isProgrammaticScroll) return false
     if (!current.layoutMatchesLoadedWindow || !current.isScrollInProgress || current.isProgrammaticScroll) return false
     if (current.lastVisibleChapterKey == null || current.lastVisibleChapterKey != current.loadedChapterKeys.lastOrNull()) return false
     if (current.distanceToLoadedTail > threshold) return false
@@ -47,11 +51,21 @@ fun shouldLoadPreviousChapter(
     threshold: Int
 ): Boolean {
     val before = previous ?: return false
+    if (!before.layoutMatchesLoadedWindow || before.isProgrammaticScroll) return false
     if (!current.layoutMatchesLoadedWindow || !current.isScrollInProgress || current.isProgrammaticScroll) return false
     if (current.firstVisibleChapterKey == null || current.firstVisibleChapterKey != current.loadedChapterKeys.firstOrNull()) return false
     if (current.firstVisibleOffset > threshold) return false
     return dataWindowStable(before, current) && scrollingTowardsStart(before, current)
 }
+
+/** Only fill a viewport that is too short to scroll; reaching the tail is not a gesture. */
+fun shouldFillReaderViewport(current: ReaderScrollSnapshot): Boolean =
+    current.hasNextChapter && !current.isLoadingNext &&
+        current.layoutMatchesLoadedWindow && !current.isProgrammaticScroll &&
+        !current.canScrollForward && !current.canScrollBackward &&
+        current.lastVisibleChapterKey != null &&
+        current.lastVisibleChapterKey == current.loadedChapterKeys.lastOrNull() &&
+        current.distanceToLoadedTail == 0
 
 fun dataWindowStable(previous: ReaderScrollSnapshot, current: ReaderScrollSnapshot): Boolean =
     previous.loadedChapterKeys == current.loadedChapterKeys

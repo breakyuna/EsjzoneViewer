@@ -47,6 +47,191 @@ class StructuredDownloadStoreTest {
     }
 
     @Test
+    fun autoSavePersistsCompleteCatalogWithoutDownloadingTheWholeBook() = withStorage { root ->
+        val order = (1..3).map(::chapter)
+        val saved = requireNotNull(NovelDownloadStore.saveChapter(
+            "Novel", novelUrl, "", order, chapter(1), detail(1), auth,
+            chapterOrderComplete = true))
+        assertTrue(saved.catalogComplete)
+        assertFalse(saved.complete)
+        save(2, order)
+
+        NovelDownloadStore.initializeDirectory(root)
+        val restored = requireNotNull(NovelDownloadStore.manifest(novelUrl))
+        assertTrue(restored.catalogComplete)
+        assertFalse(restored.complete)
+        assertEquals(order.map { it.url }, restored.chapters.map { it.url })
+        assertNotNull(NovelDownloadStore.readChapter(chapter(1).url))
+        assertNotNull(NovelDownloadStore.readChapter(chapter(2).url))
+    }
+
+    @Test
+    fun staleReaderCompletionPreservesTheCatalogPublishedByADownload() = withStorage { root ->
+        val readerOrder = listOf(chapter(1), chapter(2))
+        requireNotNull(NovelDownloadStore.saveChapter(
+            "Novel", novelUrl, "", readerOrder, chapter(1), detail(1), auth, chapterOrderComplete = true))
+        val cache = Files.createTempDirectory("newer-catalog-cache-").toFile()
+        PageCache.initializeDirectory(cache)
+        try {
+            val key = EsjzoneClient.novelDetailCacheKey(auth, chapter(3).url)
+            PageCache.write(key, "fixture")
+            requireNotNull(StructuredChapterCache.write(key, "fixture", detail(3)))
+            val newerOrder = listOf(chapter(3), chapter(1), chapter(2))
+            runBlocking {
+                NovelDownloadStore.download(auth, novel(newerOrder), selectedChapterUrls = setOf(chapter(3).url))
+            }
+
+            val saved = requireNotNull(NovelDownloadStore.saveChapter(
+                "Novel", novelUrl, "", readerOrder, chapter(2), detail(2), auth, chapterOrderComplete = true))
+            assertTrue(saved.complete)
+            NovelDownloadStore.initializeDirectory(root)
+            val restored = requireNotNull(NovelDownloadStore.manifest(novelUrl))
+            assertEquals(newerOrder.map { it.url }, restored.chapters.filterNot { it.localOnly }.map { it.url })
+            assertTrue(restored.chapters.all { it.downloaded && it.bodyAvailable })
+            assertNotNull(NovelDownloadStore.readChapter(chapter(3).url))
+        } finally { cache.deleteRecursively() }
+    }
+
+    @Test
+    fun queuedReaderCatalogCannotReplaceAnAlreadyPublishedCompleteCatalog() = withStorage { root ->
+        val newerOrder = listOf(chapter(3), chapter(1), chapter(2))
+        requireNotNull(NovelDownloadStore.saveChapterCatalog("Novel", novelUrl, "", newerOrder))
+        requireNotNull(NovelDownloadStore.saveChapterCatalog("Novel", novelUrl, "", listOf(chapter(1), chapter(2))))
+        NovelDownloadStore.initializeDirectory(root)
+        val restored = requireNotNull(NovelDownloadStore.manifest(novelUrl))
+        assertTrue(restored.catalogComplete)
+        assertEquals(newerOrder.map { it.url }, restored.chapters.filterNot { it.localOnly }.map { it.url })
+    }
+
+    @Test
+    fun staleReaderCannotRestoreRemovedEntriesWithoutAnExistingLocalSnapshot() = withStorage { root ->
+        val newerOrder = listOf(chapter(3), chapter(1))
+        requireNotNull(NovelDownloadStore.saveChapterCatalog("Novel", novelUrl, "", newerOrder))
+        val staleOrder = listOf(chapter(1), chapter(2), chapter(4))
+        requireNotNull(NovelDownloadStore.saveChapter(
+            "Novel", novelUrl, "", staleOrder, chapter(2), detail(2), auth, chapterOrderComplete = true))
+
+        NovelDownloadStore.initializeDirectory(root)
+        val restored = requireNotNull(NovelDownloadStore.manifest(novelUrl))
+        assertEquals(newerOrder.map { it.url }, restored.chapters.filterNot { it.localOnly }.map { it.url })
+        assertTrue(restored.chapters.single { it.url == chapter(2).url }.localOnly)
+        assertFalse(restored.chapters.any { it.url == chapter(4).url })
+        assertNotNull(NovelDownloadStore.readChapter(chapter(2).url))
+    }
+
+    @Test
+    fun readerAutosavesReuseUnchangedChapterFilesWhenSeedingOrUpdatingCatalogs() {
+        for (hasCatalog in listOf(false, true)) withStorage { root ->
+            val order = (1..3).map(::chapter)
+            val initial = requireNotNull(NovelDownloadStore.saveChapter(
+                "Novel", novelUrl, "", order, chapter(1), detail(1), auth, chapterOrderComplete = hasCatalog))
+            val previous = initial.chapters.first()
+            val file = File(root.listFiles()!!.single(), previous.fileName)
+            // Reading legacy content migrates the file. Unrelated autosaves must
+            // leave it untouched, including the first complete-catalog publication.
+            val legacy = Gson().toJson(DownloadedChapterContent("Chapter 1", chapter(1).url,
+                listOf(DownloadedComponent("text", "正文 1")), schemaVersion = 1))
+            file.writeText(legacy)
+
+            val saved = requireNotNull(NovelDownloadStore.saveChapter(
+                "Novel", novelUrl, "", order, chapter(2), detail(2), auth, chapterOrderComplete = true))
+            assertTrue(saved.catalogComplete)
+            assertEquals(previous, saved.chapters.first())
+            assertEquals(legacy, file.readText())
+            assertNotNull(NovelDownloadStore.readChapter(chapter(2).url))
+        }
+    }
+
+    @Test
+    fun catalogOnlyPublicationReordersMetadataWithoutReadingSavedContents() = withStorage { root ->
+        val initial = save(1, (1..3).map(::chapter))
+        val previous = initial.chapters.first()
+        val file = File(root.listFiles()!!.single(), previous.fileName)
+        val legacy = Gson().toJson(DownloadedChapterContent("Chapter 1", chapter(1).url,
+            listOf(DownloadedComponent("text", "正文 1")), schemaVersion = 1))
+        file.writeText(legacy)
+
+        val order = listOf(chapter(3), chapter(1), chapter(2))
+        val saved = requireNotNull(NovelDownloadStore.saveChapterCatalog("Novel", novelUrl, "", order))
+        assertEquals(order.map { it.url }, saved.chapters.map { it.url })
+        assertEquals(previous.copy(index = 1), saved.chapters[1])
+        assertEquals(legacy, file.readText())
+    }
+
+    @Test
+    fun savingAnExistingChapterUpgradesCatalogCompleteness() = withStorage { root ->
+        val order = (1..3).map(::chapter)
+        val partial = save(1, order)
+        assertFalse(partial.catalogComplete)
+        assertFalse(partial.complete)
+
+        val upgraded = requireNotNull(NovelDownloadStore.saveChapter(
+            "Novel", novelUrl, "", order, chapter(1), detail(1), auth,
+            chapterOrderComplete = true))
+        assertTrue(upgraded.catalogComplete)
+        assertFalse(upgraded.complete)
+        NovelDownloadStore.initializeDirectory(root)
+        assertTrue(requireNotNull(NovelDownloadStore.manifest(novelUrl)).catalogComplete)
+    }
+
+    @Test
+    fun completeReaderCatalogRetainsRemovedChaptersOnlyAsLocalSnapshots() = withStorage { root ->
+        save(2, (1..3).map(::chapter))
+        val order = listOf(chapter(1), chapter(3))
+        val saved = requireNotNull(NovelDownloadStore.saveChapter(
+            "Novel", novelUrl, "", order, chapter(1), detail(1), auth,
+            chapterOrderComplete = true))
+        assertEquals(order.map { it.url }, saved.chapters.filterNot { it.localOnly }.map { it.url })
+        assertTrue(saved.chapters.single { it.url == chapter(2).url }.localOnly)
+        assertNotNull(NovelDownloadStore.readChapter(chapter(2).url))
+
+        // Opening a saved chapter that has left the catalog must not add it back.
+        requireNotNull(NovelDownloadStore.saveChapter(
+            "Novel", novelUrl, "", order, chapter(2), detail(2), auth,
+            chapterOrderComplete = true))
+        NovelDownloadStore.initializeDirectory(root)
+        val restored = requireNotNull(NovelDownloadStore.manifest(novelUrl))
+        assertTrue(restored.catalogComplete)
+        assertEquals(order.map { it.url }, restored.chapters.filterNot { it.localOnly }.map { it.url })
+        assertTrue(restored.chapters.single { it.url == chapter(2).url }.localOnly)
+        assertNotNull(NovelDownloadStore.readChapter(chapter(2).url))
+    }
+
+    @Test
+    fun resolvedCatalogSurvivesReloadRegardlessOfInitialBodySaveOrder() {
+        for (bodySavedFirst in listOf(true, false)) withStorage { root ->
+            val order = (1..3).map(::chapter)
+            if (bodySavedFirst) save(1, emptyList())
+            val catalog = requireNotNull(NovelDownloadStore.saveChapterCatalog("Novel", novelUrl, "", order))
+            assertTrue(catalog.catalogComplete)
+            assertFalse(catalog.complete)
+            if (!bodySavedFirst) save(1, emptyList())
+
+            NovelDownloadStore.initializeDirectory(root)
+            val restored = requireNotNull(NovelDownloadStore.manifest(novelUrl))
+            assertTrue(restored.catalogComplete)
+            assertFalse(restored.complete)
+            assertEquals(order.map { it.url }, restored.chapters.filterNot { it.localOnly }.map { it.url })
+            assertNotNull(NovelDownloadStore.readChapter(chapter(1).url))
+            assertNull(NovelDownloadStore.readChapter(chapter(2).url))
+        }
+    }
+
+    @Test
+    fun resolvedCatalogKeepsOldBodiesAndReclassifiesRemovedSnapshots() = withStorage { root ->
+        save(2, (1..3).map(::chapter))
+        val order = listOf(chapter(3), chapter(1))
+        requireNotNull(NovelDownloadStore.saveChapterCatalog("Novel", novelUrl, "", order))
+
+        NovelDownloadStore.initializeDirectory(root)
+        val restored = requireNotNull(NovelDownloadStore.manifest(novelUrl))
+        assertTrue(restored.catalogComplete)
+        assertEquals(order.map { it.url }, restored.chapters.filterNot { it.localOnly }.map { it.url })
+        assertTrue(restored.chapters.single { it.url == chapter(2).url }.localOnly)
+        assertNotNull(NovelDownloadStore.readChapter(chapter(2).url))
+    }
+
+    @Test
     fun historyProgressReusesUnchangedBooksAndRefreshesAfterCatalogChanges() = withStorage { root ->
         val order = listOf(chapter(1), chapter(2))
         val saved = save(1, order)
@@ -569,6 +754,11 @@ class StructuredDownloadStoreTest {
         // Simulate a chapter committed before its manifest checkpoint at process exit.
         NovelDownloadStore.initializeDirectory(root)
         assertNotNull(NovelDownloadStore.readChapter(chapter(1).url))
+        // Directory-based recovery must expose the unpublished file immediately,
+        // while a missing chapter in the same catalog remains absent.
+        assertEquals("恢复正文", NovelDownloadStore.readChapter(chapter(2).url)!!.body!!
+            .readerBlocks().single().sourceText())
+        assertNull(NovelDownloadStore.readChapter(chapter(3).url))
         save(3, order)
         assertEquals("恢复正文", NovelDownloadStore.readChapter(chapter(2).url)!!.body!!
             .readerBlocks().single().sourceText())

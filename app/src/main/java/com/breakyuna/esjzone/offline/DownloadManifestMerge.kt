@@ -22,7 +22,7 @@ internal fun mergeDownloadManifest(
             bodyAvailable = previous?.bodyAvailable == true || update?.bodyAvailable == true,
             textLength = previous?.textLength ?: update?.textLength,
             requiresPassword = previous?.requiresPassword == true || update?.requiresPassword == true,
-            localOnly = if (replaceCatalog) key !in next else metadata.localOnly)
+            localOnly = if (replaceCatalog) update?.localOnly ?: true else metadata.localOnly)
     }
     return incoming.copy(version = 2, chapters = records,
         name = preferredNovelTitle(incoming.name, existing.name, novelUrl = incoming.url),

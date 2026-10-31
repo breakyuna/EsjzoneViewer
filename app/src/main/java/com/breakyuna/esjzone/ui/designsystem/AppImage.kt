@@ -1,11 +1,5 @@
 package com.breakyuna.esjzone.ui.designsystem
 
-import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.size
-import androidx.compose.material.icons.outlined.MenuBook
-import androidx.compose.material.icons.outlined.Refresh
-import androidx.compose.material3.IconButton
-import androidx.compose.runtime.key
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.fillMaxSize
@@ -141,7 +135,7 @@ fun AppCoverImage(
         else -> CoverState.Loading
     }
     val hasImage = source == CoverState.Loading || source == CoverState.Loaded
-    val request = sharedMirrorImageRequest(if (hasImage) model else null, allowed)
+    val request = sharedMirrorImageRequest(if (hasImage) model else coverFallbackResource(source), allowed)
     if (cachedModel != null || initialImage != null) {
         CachedCoverImage(
             request = request,
@@ -154,37 +148,24 @@ fun AppCoverImage(
         return
     }
     var imageState by remember(request, source) { mutableStateOf(source) }
-    var retained by remember(contentDescription) { mutableStateOf<AppLoadedImage?>(null) }
-    var retry by remember(model) { mutableStateOf(0) }
-    val context = LocalContext.current
-    Box(modifier) {
-        if (retained == null) {
-            when {
-                imageState == CoverState.Loading && loading != null -> loading()
-                (imageState is CoverState.Failed || !hasImage) && error != null -> error()
-                else -> AppCoverPlaceholder(if (hasImage) imageState else source)
-            }
-        }
-        if (hasImage) key(retry) {
-            AsyncImage(model = request, imageLoader = PresentationAccess.imageLoader,
-                placeholder = retained?.image?.asPainter(context), error = retained?.image?.asPainter(context),
-                contentDescription = contentDescription, modifier = Modifier.fillMaxSize(), contentScale = contentScale,
-                onLoading = { imageState = CoverState.Loading },
-                onSuccess = {
-                    imageState = CoverState.Loaded
-                    retained = AppLoadedImage(it.result.image)
-                    onImageLoaded?.invoke(retained!!)
-                },
-                onError = { imageState = CoverState.Failed(if (allowed) it.result.throwable.imageFailure() else CoverFailure.UNAVAILABLE) })
-        }
-        if (!hasImage) retained?.let {
-            Image(it.image.asPainter(context), contentDescription, Modifier.fillMaxSize(), contentScale = contentScale)
-        }
-        if (retained == null && imageState is CoverState.Failed && hasImage && allowed && error == null) {
-            AppCoverPlaceholder(imageState, onRetry = { retry++ })
-        }
-    }
-
+    val state = if (hasImage) imageState else source
+    AppImage(
+        model = request,
+        contentDescription = contentDescription,
+        modifier = modifier,
+        contentScale = contentScale,
+        loading = loading,
+        error = error,
+        onLoading = { if (hasImage) imageState = CoverState.Loading },
+        onSuccess = { if (hasImage) imageState = CoverState.Loaded },
+        onError = { failure ->
+            if (hasImage) imageState = CoverState.Failed(
+                if (allowed) failure.imageFailure() else CoverFailure.UNAVAILABLE
+            )
+        },
+        errorResource = coverFallbackResource(state),
+        onImageLoaded = { if (hasImage) onImageLoaded?.invoke(it) }
+    )
 }
 
 /** Keep the entry cover visible until a replacement has actually decoded. */
@@ -204,32 +185,17 @@ internal fun CachedCoverImage(
     val sizedCachedRequest = remember(cachedRequest) { cachedRequest.newBuilder().size(720).build() }
     var image by remember(cachedRequest.data) { mutableStateOf(initialImage?.image) }
     var failure by remember(request) { mutableStateOf<CoverState>(CoverState.Loading) }
-    var retry by remember(request) { mutableStateOf(0) }
-    LaunchedEffect(sizedRequest, sizedCachedRequest, retry) {
-        failure = CoverState.Loading
+    LaunchedEffect(sizedRequest, sizedCachedRequest) {
         loadCachedCover(sizedRequest, sizedCachedRequest, imageLoader, restoreCached = image == null,
             onImage = { image = it },
             onError = { failure = CoverState.Failed(it.imageFailure()) })
     }
-    Box(modifier) {
-        if (image != null) Image(
-            painter = image!!.asPainter(context), contentDescription = contentDescription,
-            modifier = Modifier.fillMaxSize(), contentScale = contentScale
-        ) else AppCoverPlaceholder(failure, onRetry = if (failure is CoverState.Failed && request.data != null) ({ retry++ }) else null)
-    }
-
-}
-
-@Composable
-private fun AppCoverPlaceholder(state: CoverState, onRetry: (() -> Unit)? = null) {
-    Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surfaceContainerLow), contentAlignment = Alignment.Center) {
-        if (onRetry != null) IconButton(onClick = onRetry) {
-            Icon(Icons.Outlined.Refresh, globalStringResource(R.string.cover_retry),
-                tint = MaterialTheme.colorScheme.onSurfaceVariant)
-        } else Icon(if (state is CoverState.Failed) Icons.Outlined.BrokenImage else Icons.Outlined.MenuBook,
-            contentDescription = globalStringResource(if (state is CoverState.Failed) R.string.cover_unavailable else R.string.cover_placeholder),
-            modifier = Modifier.size(24.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = .5f))
-    }
+    Image(
+        painter = image?.asPainter(context) ?: painterResource(coverFallbackResource(failure)),
+        contentDescription = contentDescription,
+        modifier = modifier,
+        contentScale = contentScale
+    )
 }
 
 internal suspend fun loadCachedCover(

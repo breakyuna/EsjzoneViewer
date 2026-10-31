@@ -937,9 +937,6 @@
     <string name="local_search_empty">No matching local books</string>
     <string name="search_scope_local">Local</string>
     <string name="search_scope_site">Website</string>
-    <string name="cover_retry">Retry cover</string>
-    <string name="cover_unavailable">Cover unavailable</string>
-    <string name="cover_placeholder">No cover</string>
     <string name="reader_catalog_search">Search chapters</string>
     <string name="reader_catalog_current">Go to current chapter</string>
     <string name="reader_boundary_failed">Chapter could not be loaded. Current text is retained.</string>

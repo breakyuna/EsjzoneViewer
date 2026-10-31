@@ -37,8 +37,8 @@ class ReaderPasswordChapterTest {
         assertTrue(locked.requiresPassword)
         assertTrue(locked.document.blocks.isEmpty())
         assertEquals(order[1].url, locked.document.chapter.url)
-        assertEquals(order[0], catalog.adjacent(locked.chapter, -1, locked.fallbackPrevious))
-        assertEquals(order[2], catalog.adjacent(locked.chapter, 1, locked.fallbackNext))
+        assertEquals(order[0], catalog.adjacent(locked.chapter, -1))
+        assertEquals(order[2], catalog.adjacent(locked.chapter, 1))
     }
 
     @Test

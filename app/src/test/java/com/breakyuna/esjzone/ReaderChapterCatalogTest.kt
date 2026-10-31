@@ -3,7 +3,9 @@ package com.breakyuna.esjzone
 import com.breakyuna.esjzone.novellibrary.novel.Chapter
 import com.breakyuna.esjzone.ui.page.ReaderChapterCatalog
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ReaderChapterCatalogTest {
@@ -18,9 +20,9 @@ class ReaderChapterCatalogTest {
         val catalog = ReaderChapterCatalog(listOf(first, duplicate, fragment,
             Chapter("外部", "https://example.test/chapter", false), second))
         assertEquals(listOf(first, fragment, second), catalog.chapters)
-        assertEquals(fragment, catalog.adjacent(duplicate, 1, null))
-        assertEquals(first, catalog.adjacent(fragment, -1, null))
-        assertEquals(second, catalog.adjacent(fragment, 1, null))
+        assertEquals(fragment, catalog.adjacent(duplicate, 1))
+        assertEquals(first, catalog.adjacent(fragment, -1))
+        assertEquals(second, catalog.adjacent(fragment, 1))
     }
 
     @Test
@@ -28,10 +30,38 @@ class ReaderChapterCatalogTest {
         val first = chapter(1)
         val last = chapter(2)
         val catalog = ReaderChapterCatalog(listOf(first, last))
-        assertNull(catalog.adjacent(first, -1, chapter(10)))
-        assertNull(catalog.adjacent(last, 1, chapter(10)))
-        assertEquals(last, catalog.adjacent(chapter(9), 1, last))
-        assertNull(catalog.adjacent(chapter(9), 1, Chapter("外部", "https://example.test/chapter", false)))
+        assertNull(catalog.adjacent(first, -1))
+        assertNull(catalog.adjacent(last, 1))
+        assertNull(catalog.adjacent(chapter(9), 1))
+        assertNull(catalog.adjacent(chapter(9), -1))
+    }
+
+    @Test
+    fun partialInventoryCannotSkipMissingChaptersInEitherDirection() {
+        val saved = listOf(chapter(10), chapter(15), chapter(18))
+        val partial = ReaderChapterCatalog(saved, complete = false)
+
+        assertEquals(saved, partial.chapters)
+        assertFalse(partial.isComplete)
+        assertNull(partial.adjacent(chapter(10), 1))
+        assertNull(partial.adjacent(chapter(18), -1))
+
+        val resolved = ReaderChapterCatalog((10..18).map(::chapter))
+        assertTrue(resolved.isComplete)
+        assertEquals(chapter(11), resolved.adjacent(chapter(10), 1))
+        assertEquals(chapter(17), resolved.adjacent(chapter(18), -1))
+    }
+
+    @Test
+    fun emptyOrUnsupportedCatalogCannotResolveChapterOrder() {
+        val empty = ReaderChapterCatalog(emptyList())
+        val unsupported = ReaderChapterCatalog(listOf(
+            Chapter("外部", "https://example.test/chapter", false)
+        ))
+        assertFalse(empty.isComplete)
+        assertFalse(unsupported.isComplete)
+        assertNull(empty.adjacent(chapter(1), 1))
+        assertNull(unsupported.adjacent(chapter(1), 1))
     }
 
     @Test
@@ -40,8 +70,8 @@ class ReaderChapterCatalogTest {
         val before = ReaderChapterCatalog(source)
         source.add(1, chapter(3))
         val after = ReaderChapterCatalog(source)
-        assertEquals(chapter(2), before.adjacent(chapter(1), 1, null))
-        assertEquals(chapter(3), after.adjacent(chapter(1), 1, null))
+        assertEquals(chapter(2), before.adjacent(chapter(1), 1))
+        assertEquals(chapter(3), after.adjacent(chapter(1), 1))
         assertEquals(listOf(chapter(1), chapter(2)), before.chapters)
         assertEquals(source, after.chapters)
     }

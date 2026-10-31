@@ -938,9 +938,6 @@
     <string name="local_search_empty">本地没有匹配的作品</string>
     <string name="search_scope_local">本地</string>
     <string name="search_scope_site">站点</string>
-    <string name="cover_retry">重试封面</string>
-    <string name="cover_unavailable">封面暂不可用</string>
-    <string name="cover_placeholder">暂无封面</string>
     <string name="reader_catalog_search">搜索章节</string>
     <string name="reader_catalog_current">定位当前章节</string>
     <string name="reader_boundary_failed">章节加载失败，当前正文已保留</string>

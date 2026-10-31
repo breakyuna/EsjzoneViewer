@@ -870,6 +870,37 @@ object NovelDownloadStore {
         )
     }
 
+    /** Fill a missing catalog even when its first chapter is still being saved. */
+    fun saveChapterCatalog(
+        novelName: String,
+        novelUrl: String,
+        coverUrl: String,
+        chapterOrder: List<Chapter>
+    ): DownloadedNovelManifest? = synchronized(ioLock) {
+        val normalizedNovelUrl = novelUrl.trim()
+        val ordered = chapterOrder.filterNot { it.isExternal }
+            .filter { chapterKey(it.url).isNotBlank() }.distinctBy { chapterKey(it.url) }
+        if (normalizedNovelUrl.isBlank() || ordered.isEmpty()) return@synchronized null
+        val directory = directoryFor(normalizedNovelUrl, create = true, novelName = novelName)
+            ?: return@synchronized null
+        val writeGuard = newWriteGuard(directory)
+        ensureWriteAllowed(writeGuard)
+        val previous = readManifest(directory)
+        // A queued reader snapshot has no revision proving it is newer than the
+        // catalog already published by a download or another reader.
+        if (previous?.catalogComplete == true || previous?.complete == true) return@synchronized previous
+        val previousByKey = previous?.chapters.orEmpty().associateBy { chapterKey(it.url) }
+        val records = ordered.mapIndexed { index, chapter ->
+            previousByKey[chapterKey(chapter.url)]?.copy(
+                index = index, name = chapter.name, url = chapter.url, localOnly = false
+            ) ?: DownloadedChapterRecord(index, chapter.name, chapter.url,
+                chapterFileName(chapter.url), downloaded = false)
+        }
+        val current = manifestFromMetadata(previous, novelName, normalizedNovelUrl, coverUrl,
+            records, previous?.downloadedAt ?: 0L, complete = false, catalogComplete = true)
+        writeManifest(directory, current, writeGuard, replaceCatalog = true, revalidateChapterFiles = false)
+    }
+
     /**
      * Persists one chapter loaded by the reader for offline access.
      * Images are persisted locally (reusing Coil's disk cache or downloaded)
@@ -882,7 +913,8 @@ object NovelDownloadStore {
         chapterOrder: List<Chapter>,
         chapter: Chapter,
         detail: DetailedChapter,
-        authorization: Authorization? = null
+        authorization: Authorization? = null,
+        chapterOrderComplete: Boolean = false
     ): DownloadedNovelManifest? {
         val normalizedNovelUrl = novelUrl.trim()
         if (normalizedNovelUrl.isBlank()) return null
@@ -902,6 +934,7 @@ object NovelDownloadStore {
             existingFile?.isFile == true &&
             isChapterFullyDownloaded(directory, existingFile) &&
             previous.name == novelName && previous.coverUrl == coverUrl &&
+            (!chapterOrderComplete || previous.catalogComplete || previous.complete) &&
             chapterOrder.isNotEmpty() &&
             previous.chapters.size == chapterOrder.size &&
             previous.chapters.indices.all { index ->
@@ -942,6 +975,7 @@ object NovelDownloadStore {
                 novelUrl = normalizedNovelUrl,
                 coverUrl = coverUrl,
                 chapterOrder = chapterOrder,
+                chapterOrderComplete = chapterOrderComplete,
                 chapter = chapter,
                 detail = sourceDetail,
                 downloadedImages = downloadedImages,
@@ -971,6 +1005,7 @@ object NovelDownloadStore {
         novelUrl: String,
         coverUrl: String,
         chapterOrder: List<Chapter>,
+        chapterOrderComplete: Boolean,
         chapter: Chapter,
         detail: DetailedChapter,
         downloadedImages: Map<String, DownloadedImage> = emptyMap(),
@@ -1001,12 +1036,17 @@ object NovelDownloadStore {
             if (existing?.downloaded == true &&
                 existingFile?.isFile == true &&
                 isChapterFullyDownloaded(directory, existingFile) &&
-                previous.name == novelName && previous.coverUrl == coverUrl
+                previous.name == novelName && previous.coverUrl == coverUrl &&
+                (!chapterOrderComplete || previous.catalogComplete || previous.complete)
             ) return previous
         }
         val previousByKey = previous?.chapters.orEmpty().associateBy { chapterKey(it.url) }
+        // Completeness does not establish freshness. Only seed a missing catalog;
+        // subsequent reader saves rebase completions on the published order.
+        val replaceCatalog = chapterOrderComplete && previous?.catalogComplete != true && previous?.complete != true
+        val catalogKeys = chapterOrder.map { chapterKey(it.url) }.toHashSet()
         val ordered = buildList {
-            addAll(chapterOrder)
+            if (!chapterOrderComplete || replaceCatalog) addAll(chapterOrder)
             add(chapter)
         }.filter { chapterKey(it.url).isNotBlank() }.distinctBy { chapterKey(it.url) }
         val knownKeys = ordered.map { chapterKey(it.url) }.toHashSet()
@@ -1021,14 +1061,19 @@ object NovelDownloadStore {
                 requiresPassword = old?.requiresPassword == true,
                 textLength = old?.textLength,
                 bodyAvailable = old?.bodyAvailable == true,
-                localOnly = old?.localOnly == true
+                localOnly = when {
+                    chapterOrderComplete && !replaceCatalog -> old?.localOnly ?: true
+                    chapterOrderComplete -> chapterKey(item.url) !in catalogKeys
+                    else -> old?.localOnly == true
+                }
             )
         }.toMutableList()
-        // Preserve old records absent from a temporarily incomplete TOC. A
-        // later full download can reconcile them against the refreshed TOC.
-        previous?.chapters.orEmpty()
-            .filter { chapterKey(it.url) !in knownKeys }
-            .forEach { old -> records += old.copy(index = records.size) }
+        // Only the first complete catalog reclassifies absent snapshots as local-only.
+        if (!replaceCatalog) {
+            previous?.chapters.orEmpty()
+                .filter { chapterKey(it.url) !in knownKeys }
+                .forEach { old -> records += old.copy(index = records.size) }
+        }
 
         val targetKey = chapterKey(chapter.url)
         val targetIndex = records.indexOfFirst { chapterKey(it.url) == targetKey }
@@ -1084,9 +1129,11 @@ object NovelDownloadStore {
             coverUrl = coverUrl,
             records = records,
             downloadedAt = System.currentTimeMillis(),
-            complete = complete
+            complete = complete,
+            catalogComplete = chapterOrderComplete || previous?.catalogComplete == true || previous?.complete == true
         )
         return writeManifest(directory, current, writeGuard,
+            replaceCatalog = replaceCatalog, revalidateChapterFiles = false,
             changedContents = savedContent?.let { mapOf(targetKey to it) }.orEmpty())
     }
 
@@ -1552,7 +1599,8 @@ object NovelDownloadStore {
         records: List<DownloadedChapterRecord>,
         downloadedAt: Long,
         complete: Boolean,
-        commonPassword: String? = previous?.commonPassword
+        commonPassword: String? = previous?.commonPassword,
+        catalogComplete: Boolean = previous?.catalogComplete == true || previous?.complete == true
     ) = DownloadedNovelManifest(
         version = 2,
         name = preferredNovelTitle(name, previous?.name.orEmpty(), novelUrl = url),
@@ -1573,7 +1621,7 @@ object NovelDownloadStore {
         downloadedAt = downloadedAt,
         complete = complete,
         commonPassword = commonPassword,
-        catalogComplete = previous?.catalogComplete == true || previous?.complete == true
+        catalogComplete = catalogComplete
     )
 
     private fun findChapter(chapterUrl: String, novelUrl: String?): ChapterMatch? {
@@ -1615,11 +1663,17 @@ object NovelDownloadStore {
         val knownKeys = chapterKeysByDirectory[directory.absolutePath].orEmpty()
         removeChapterIndex(directory)
         val keys = HashSet<String>()
+        // One directory listing replaces a provider query for every unpublished chapter.
+        val unpublishedFiles = if (recoverUnpublishedFiles && manifest.chapters.any {
+            !it.bodyAvailable && !it.downloaded && chapterKey(it.url) !in knownKeys
+        }) directory.entries().filterNot { it.directory }.mapTo(HashSet()) { it.file.name }
+            else emptySet()
         manifest.chapters.forEach { record ->
             val key = chapterKey(record.url)
             // After restart, recover files committed just before an interrupted manifest checkpoint.
             if (record.bodyAvailable || record.downloaded || key in knownKeys ||
-                (recoverUnpublishedFiles && resolveLocalFile(directory, record.fileName)?.isFile == true)) {
+                (recoverUnpublishedFiles && (record.fileName in unpublishedFiles ||
+                    ('/' in record.fileName && resolveLocalFile(directory, record.fileName)?.isFile == true)))) {
                 chapterIndex.putIfAbsent(key, ChapterMatch(directory, manifest, record))
                 keys += key
             }
@@ -1809,7 +1863,8 @@ object NovelDownloadStore {
         writeGuard: DownloadWriteGuard? = null,
         replaceCatalog: Boolean = false,
         updatePassword: Boolean = false,
-        changedContents: Map<String, DownloadedChapterContent> = emptyMap()
+        changedContents: Map<String, DownloadedChapterContent> = emptyMap(),
+        revalidateChapterFiles: Boolean = true
     ): DownloadedNovelManifest {
         ensureWriteAllowed(writeGuard)
         val existing = readManifest(directory)
@@ -1819,9 +1874,11 @@ object NovelDownloadStore {
             val records = merged.chapters.map { record ->
                 val key = chapterKey(record.url)
                 val previous = oldRecords[key]
-                if (!replaceCatalog && key !in changedContents && previous != null &&
+                // Reader writes supply changed content explicitly; catalog-only
+                // records reuse metadata without querying every chapter file.
+                if (key !in changedContents && (!revalidateChapterFiles || (!replaceCatalog && previous != null &&
                     previous.downloaded == record.downloaded && previous.bodyAvailable == record.bodyAvailable &&
-                    previous.textLength == record.textLength && previous.fileName == record.fileName) {
+                    previous.textLength == record.textLength && previous.fileName == record.fileName))) {
                     return@map record.copy(requiresPassword = if (record.downloaded) false else record.requiresPassword)
                 }
                 val content = changedContents[key] ?: resolveLocalFile(directory, record.fileName)

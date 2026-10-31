@@ -93,6 +93,29 @@ class NavigationRouteContractTest {
     }
 
     @Test
+    fun readerRestoresLatestChapterWithoutReplacingTheLiveEntry() {
+        val original = AppNavKey.Reader(ReaderRoute("123", "/forum/123/1.html"))
+        val stack = mutableListOf<NavKey>(AppNavKey.Main, original)
+        val savedRoutes = mutableMapOf<String, String>()
+        val navigator = com.breakyuna.esjzone.ui.navigation.AppNavigator(stack, mutableMapOf(),
+            readerRoutes = savedRoutes)
+
+        navigator.updateReaderRoute("123", "/forum/123/2.html")
+        navigator.updateReaderRoute("123", "/forum/123/3.html")
+        assertEquals(listOf(AppNavKey.Main, original), stack)
+        // Simulate recreation without the live destination registry.
+        val restored = com.breakyuna.esjzone.ui.navigation.AppNavigator(stack.toMutableList(), mutableMapOf(),
+            readerRoutes = savedRoutes.toMutableMap())
+        val restoredPage = restored.readerDestination(original.route)
+        assertEquals("ChapterPage:123:/forum/123/3.html", restoredPage.key)
+        restored.updateReaderRoute("123", "/forum/123/4.html")
+        // Recomposition must retain the live destination, even as its resume snapshot advances.
+        org.junit.Assert.assertSame(restoredPage, restored.readerDestination(original.route))
+        assertTrue(navigator.pop())
+        assertTrue(savedRoutes.isEmpty())
+    }
+
+    @Test
     fun readerRouteRemainsSeparateFromLegacyRoutes() {
         val route = ReaderRoute(novelId = "novel", chapterIdentity = "chapter")
         assertEquals(AppNavKey.Reader(route), AppNavKey.Reader(route))

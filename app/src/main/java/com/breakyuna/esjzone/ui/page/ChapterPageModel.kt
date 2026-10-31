@@ -45,7 +45,8 @@ class ChapterPageModel(
     chapterOrder: List<Chapter>,
     private val novelName: String = "",
     private val novelUrl: String = "",
-    private val novelCoverUrl: String = ""
+    private val novelCoverUrl: String = "",
+    chapterOrderComplete: Boolean = true
 ) : AppStateViewModel<ChapterPageModel.State>(State.Loading) {
 
     val novelNameState = mutableStateOf(validNovelTitle(novelName, novelId, novelUrl))
@@ -105,9 +106,8 @@ class ChapterPageModel(
     private val prefetchJobs = mutableMapOf<String, Job>()
     private val passwordJobs = mutableMapOf<String, Job>()
     private val passwordStates = mutableMapOf<String, ReaderChapterPasswordState>()
-    private var catalog = ReaderChapterCatalog(chapterOrder)
+    private var catalog = ReaderChapterCatalog(chapterOrder, complete = chapterOrderComplete)
     private val orderedChapters: List<Chapter> get() = catalog.chapters
-    private var orderResolved = orderedChapters.isNotEmpty()
     val chapterOrderState = mutableStateOf(orderedChapters)
     private var sessionId = 0L
     private var initialJob: Job? = null
@@ -118,6 +118,7 @@ class ChapterPageModel(
     private var loadingNext = false
     private var loadingPrevious = false
     private var orderLoading = false
+    private var orderFailed = false
     private var pendingNextRequest = false
     private var pendingPreviousRequest = false
     private var initialLoadStarted = false
@@ -142,7 +143,7 @@ class ChapterPageModel(
         }
     }
 
-    fun getDetail() {
+    fun getDetail(initialChapter: Chapter = requestedChapter.value) {
         synchronized(lock) {
             if (initialLoadStarted) return
             initialLoadStarted = true
@@ -160,7 +161,7 @@ class ChapterPageModel(
                 AppLogger.w("ChapterPageModel", "Unable to resolve novel title", error)
             }
         }
-        openChapter(requestedChapter.value)
+        openChapter(initialChapter)
     }
 
     fun openChapter(chapter: Chapter) {
@@ -190,6 +191,7 @@ class ChapterPageModel(
             loadingNext = false
             loadingPrevious = false
             orderLoading = false
+            orderFailed = false
             pendingNextRequest = false
             pendingPreviousRequest = false
             offlineChapterKeys.clear()
@@ -213,25 +215,6 @@ class ChapterPageModel(
         mutableState.value = State.Loading
 
         initialJob = viewModelScope.launch(Dispatchers.IO) {
-            if (!orderResolved) {
-                val targetNovelUrl = novelUrl.takeIf { it.isNotBlank() }
-                    ?: novelId.takeIf { it.isNotBlank() }
-                        ?.let { "${EsjzoneUrls.Base}/detail/$it.html" }
-                val localOrder = targetNovelUrl?.let { url ->
-                    runCatching { PresentationAccess.downloads.manifest(url)?.chapters
-                        ?.filterNot { it.localOnly }
-                        ?.map { Chapter(it.name, it.url, false) } }.getOrNull()
-                }.orEmpty()
-                if (localOrder.isNotEmpty()) {
-                    val localCatalog = ReaderChapterCatalog(localOrder)
-                    synchronized(lock) {
-                        if (isCurrentSessionLocked(currentSession) && orderedChapters.isEmpty()) {
-                            catalog = localCatalog
-                            chapterOrderState.value = orderedChapters
-                        }
-                    }
-                }
-            }
             val entry = try {
                 loadReaderChapter(chapter, showSecurityCheck = true)
             } catch (error: CancellationException) {
@@ -274,11 +257,36 @@ class ChapterPageModel(
             }
             publish(currentSession)
 
-            val hasCanonicalOrder = synchronized(lock) { orderResolved }
-            if (hasCanonicalOrder || novelId.isBlank()) {
-                prefetchNext(chapter, entry.fallbackNext)
+            if (!synchronized(lock) { catalog.isComplete }) {
+                val targetNovelUrl = novelUrl.takeIf { it.isNotBlank() }
+                    ?: novelId.takeIf { it.isNotBlank() }
+                        ?.let { "${EsjzoneUrls.Base}/detail/$it.html" }
+                val manifest = targetNovelUrl?.let { url ->
+                    runCatching { PresentationAccess.downloads.manifest(url) }.getOrNull()
+                }
+                if (manifest != null) {
+                    val localCatalog = ReaderChapterCatalog(
+                        manifest.chapters.filterNot { it.localOnly }.sortedBy { it.index }
+                            .map { Chapter(it.name, it.url, false) },
+                        complete = manifest.catalogComplete || manifest.complete
+                    )
+                    synchronized(lock) {
+                        if (isCurrentSessionLocked(currentSession) &&
+                            (localCatalog.isComplete || orderedChapters.isEmpty())) {
+                            catalog = localCatalog
+                            chapterOrderState.value = orderedChapters
+                        }
+                    }
+                }
+            }
+            if (!isCurrentSession(currentSession)) return@launch
+            publish(currentSession)
+
+            val hasCanonicalOrder = synchronized(lock) { catalog.isComplete }
+            if (hasCanonicalOrder) {
+                prefetchNext(chapter)
             } else {
-                requestChapterOrder(currentSession, chapter, entry.fallbackNext)
+                requestChapterOrder(currentSession, chapter)
             }
         }
     }
@@ -308,7 +316,7 @@ class ChapterPageModel(
                 if (replaced) {
                     queueChapterPersistence(target, detail)
                     publish(currentSession)
-                    prefetchNext(target, detail.next)
+                    prefetchNext(target)
                 }
             } catch (error: CancellationException) {
                 throw error
@@ -340,20 +348,21 @@ class ChapterPageModel(
     /** Loads the next canonical TOC chapter when the reader reaches the end buffer. */
     fun retryBoundary(forward: Boolean) {
         synchronized(lock) {
+            orderFailed = false
             if (forward) failedAppendChapterKey = null else failedPrependChapterKey = null
         }
         if (forward) loadNextChapter() else loadPreviousChapter()
     }
 
     fun loadNextChapter() {
-        val shouldWaitForOrder = synchronized(lock) {
-            !orderResolved && orderedChapters.isEmpty() && novelId.isNotBlank()
-        }
-        if (shouldWaitForOrder) {
-            synchronized(lock) {
+        val orderSession = synchronized(lock) {
+            if (catalog.isComplete) null else {
                 pendingNextRequest = true
+                sessionId
             }
-            requestChapterOrder(sessionId, null, null)
+        }
+        if (orderSession != null) {
+            requestChapterOrder(orderSession)
             return
         }
 
@@ -363,7 +372,7 @@ class ChapterPageModel(
             if (loadingNext || loadedChapters.isEmpty() ||
                 (verificationChapter != null && verificationOffset > 0)) return
             val last = loadedChapters.last()
-            val candidate = adjacentChapter(last.chapter, 1, last.fallbackNext) ?: return
+            val candidate = adjacentChapter(last.chapter, 1) ?: return
             if (chapterKey(candidate) == failedAppendChapterKey) return
             if (loadedChapters.any { sameChapter(it.chapter, candidate) }) return
             nextChapter = candidate
@@ -389,7 +398,7 @@ class ChapterPageModel(
                         }
                     }
                     publish(session)
-                    prefetchNext(chapterToLoad, entry.fallbackNext)
+                    prefetchNext(chapterToLoad)
                 }
             } catch (e: CancellationException) {
                 throw e
@@ -423,14 +432,14 @@ class ChapterPageModel(
 
     /** Loads the previous canonical TOC chapter when the reader reaches the top buffer. */
     fun loadPreviousChapter() {
-        val shouldWaitForOrder = synchronized(lock) {
-            !orderResolved && orderedChapters.isEmpty() && novelId.isNotBlank()
-        }
-        if (shouldWaitForOrder) {
-            synchronized(lock) {
+        val orderSession = synchronized(lock) {
+            if (catalog.isComplete) null else {
                 pendingPreviousRequest = true
+                sessionId
             }
-            requestChapterOrder(sessionId, null, null)
+        }
+        if (orderSession != null) {
+            requestChapterOrder(orderSession)
             return
         }
 
@@ -440,7 +449,7 @@ class ChapterPageModel(
             if (loadingPrevious || loadedChapters.isEmpty() ||
                 (verificationChapter != null && verificationOffset < 0)) return
             val first = loadedChapters.first()
-            val candidate = adjacentChapter(first.chapter, -1, first.fallbackPrevious) ?: return
+            val candidate = adjacentChapter(first.chapter, -1) ?: return
             if (chapterKey(candidate) == failedPrependChapterKey) return
             if (loadedChapters.any { sameChapter(it.chapter, candidate) }) return
             previousChapter = candidate
@@ -466,7 +475,7 @@ class ChapterPageModel(
                         }
                     }
                     publish(session)
-                    prefetchPrevious(chapterToLoad, entry.fallbackPrevious)
+                    prefetchPrevious(chapterToLoad)
                 }
             } catch (e: CancellationException) {
                 throw e
@@ -500,22 +509,32 @@ class ChapterPageModel(
 
     private fun requestChapterOrder(
         currentSession: Long,
-        chapter: Chapter?,
-        fallbackNext: Chapter?
+        chapter: Chapter? = null
     ) {
         var requestId = 0L
         synchronized(lock) {
-            if (orderResolved || orderLoading) return
+            if (!isCurrentSessionLocked(currentSession) || catalog.isComplete || orderLoading || orderFailed) return
             orderLoading = true
             orderRequestId += 1
             requestId = orderRequestId
             orderJob = viewModelScope.launch(Dispatchers.IO) {
                 try {
-                    ensureChapterOrder()
+                    val resolved = ensureChapterOrder(currentSession)
                     if (!isCurrentSession(currentSession)) return@launch
+                    if (!resolved) {
+                        synchronized(lock) {
+                            if (isCurrentSessionLocked(currentSession)) {
+                                orderFailed = true
+                                pendingNextRequest = false
+                                pendingPreviousRequest = false
+                            }
+                        }
+                        return@launch
+                    }
                     publish(currentSession)
-                    if (chapter != null && fallbackNext != null) {
-                        prefetchNext(chapter, fallbackNext)
+                    queueChapterCatalogPersistence()
+                    if (chapter != null) {
+                        prefetchNext(chapter)
                     }
                     val pendingLoads = synchronized(lock) {
                         val requested = pendingNextRequest
@@ -531,10 +550,12 @@ class ChapterPageModel(
                         if (orderRequestId == requestId) {
                             orderLoading = false
                             orderJob = null
+                            publish(currentSession)
                         }
                     }
                 }
             }
+            publish(currentSession)
         }
     }
 
@@ -558,6 +579,10 @@ class ChapterPageModel(
 
         val prefetchJob = synchronized(lock) { prefetchJobs[key] }
         if (prefetchJob != null) {
+            PresentationAccess.downloads.readChapter(chapter.url, downloadNovelUrl)?.let { downloaded ->
+                queueChapterPersistence(chapter, downloaded)
+                return downloaded
+            }
             try {
                 prefetchJob.join()
             } catch (e: CancellationException) {
@@ -613,11 +638,29 @@ class ChapterPageModel(
         return detail
     }
 
+    private fun queueChapterCatalogPersistence() {
+        if (!PresentationAccess.settings.readerAutoSaveFlow.value) return
+        val targetNovelUrl = downloadNovelUrl ?: return
+        val orderSnapshot = synchronized(lock) { orderedChapters.toList() }
+        val savedName = novelNameState.value
+        persistenceScope.launch {
+            persistenceSemaphore.withPermit {
+                runCatching {
+                    PresentationAccess.downloads.saveChapterCatalog(
+                        savedName, targetNovelUrl, novelCoverUrl, orderSnapshot
+                    )
+                }.onFailure { AppLogger.w("ChapterPageModel", "Unable to save resolved chapter catalog", it) }
+            }
+        }
+    }
+
     /** Disk manifest work must not hold up publication of the reader window. */
     private fun queueChapterPersistence(chapter: Chapter, detail: DetailedChapter) {
         if (!PresentationAccess.settings.readerAutoSaveFlow.value) return
         if (detail.content.isEmpty()) return
-        val orderSnapshot = synchronized(lock) { orderedChapters.toList() }
+        val (orderSnapshot, orderCompleteSnapshot) = synchronized(lock) {
+            orderedChapters.toList() to catalog.isComplete
+        }
         val novelIdSnapshot = novelId
         val novelNameStateSnapshot = novelNameState
         val novelUrlSnapshot = novelUrl
@@ -627,7 +670,7 @@ class ChapterPageModel(
             persistenceSemaphore.withPermit {
                 val savedName = novelNameStateSnapshot.value
                 persistLoadedChapter(
-                    chapter, detail, orderSnapshot, novelIdSnapshot, savedName,
+                    chapter, detail, orderSnapshot, orderCompleteSnapshot, novelIdSnapshot, savedName,
                     novelUrlSnapshot, novelCoverUrlSnapshot, authorizationSnapshot
                 )
                 // A title lookup can finish while chapter assets are being saved.
@@ -642,12 +685,12 @@ class ChapterPageModel(
         }
     }
 
-    private fun prefetchNext(chapter: Chapter, fallbackNext: Chapter?) {
-        adjacentChapter(chapter, 1, fallbackNext)?.let(::prefetch)
+    private fun prefetchNext(chapter: Chapter) {
+        adjacentChapter(chapter, 1)?.let(::prefetch)
     }
 
-    private fun prefetchPrevious(chapter: Chapter, fallbackPrevious: Chapter?) {
-        adjacentChapter(chapter, -1, fallbackPrevious)?.let(::prefetch)
+    private fun prefetchPrevious(chapter: Chapter) {
+        adjacentChapter(chapter, -1)?.let(::prefetch)
     }
 
     private fun prefetch(chapter: Chapter) {
@@ -686,18 +729,15 @@ class ChapterPageModel(
         }
     }
 
-    private suspend fun ensureChapterOrder() {
+    private suspend fun ensureChapterOrder(currentSession: Long): Boolean {
         synchronized(lock) {
-            if (orderResolved) return
-            if (novelId.isBlank()) {
-                orderResolved = true
-                return
-            }
+            if (!isCurrentSessionLocked(currentSession)) return false
+            if (catalog.isComplete) return true
         }
 
         val source = FavoriteNovel(
             name = "",
-            url = "${EsjzoneUrls.Base}/detail/$novelId.html"
+            url = EsjzoneUrls.resolve(downloadNovelUrl ?: return false)
         )
         val fetchedOrder = try {
             cancellablePageRequest { PresentationAccess.client.getNovelDetail(authorization, source) }
@@ -722,21 +762,19 @@ class ChapterPageModel(
             emptyList()
         }
 
-        val fetchedCatalog = fetchedOrder.takeIf { it.isNotEmpty() }?.let(::ReaderChapterCatalog)
-        synchronized(lock) {
-            if (fetchedOrder.isNotEmpty()) {
-                catalog = requireNotNull(fetchedCatalog)
-                chapterOrderState.value = orderedChapters
-            }
-            orderResolved = true
+        val fetchedCatalog = fetchedOrder.takeIf { it.isNotEmpty() }?.let { ReaderChapterCatalog(it) }
+        return synchronized(lock) {
+            if (!isCurrentSessionLocked(currentSession) || fetchedCatalog?.isComplete != true) return@synchronized false
+            catalog = fetchedCatalog
+            chapterOrderState.value = orderedChapters
+            true
         }
     }
 
     private fun adjacentChapter(
         chapter: Chapter,
-        offset: Int,
-        fallback: Chapter?
-    ): Chapter? = synchronized(lock) { catalog.adjacent(chapter, offset, fallback) }
+        offset: Int
+    ): Chapter? = synchronized(lock) { catalog.adjacent(chapter, offset) }
 
     private fun publish(currentSession: Long? = null) {
         synchronized(lock) {
@@ -750,10 +788,10 @@ class ChapterPageModel(
             // after another append/prepend has already published it.
             mutableState.value = State.Result(
                 chapters = snapshot,
-                previous = first?.let { adjacentChapter(it.chapter, -1, it.fallbackPrevious) },
-                next = last?.let { adjacentChapter(it.chapter, 1, it.fallbackNext) },
-                isLoadingNext = loadingNext,
-                isLoadingPrevious = loadingPrevious,
+                previous = first?.let { adjacentChapter(it.chapter, -1) },
+                next = last?.let { adjacentChapter(it.chapter, 1) },
+                isLoadingNext = loadingNext || (orderLoading && pendingNextRequest),
+                isLoadingPrevious = loadingPrevious || (orderLoading && pendingPreviousRequest),
                 chapterOrder = orderedChapters,
                 passwordStates = passwordStates.filterKeys { key -> snapshot.any { chapterKey(it.chapter) == key } },
                 isOffline = snapshot.any(ReaderChapter::isOffline),
@@ -761,8 +799,8 @@ class ChapterPageModel(
                 verificationWebViewUnavailable = verificationWebViewUnavailable,
                 verificationStorageUnavailable = verificationStorageUnavailable,
                 verificationOffset = verificationOffset,
-                nextFailed = failedAppendChapterKey != null,
-                previousFailed = failedPrependChapterKey != null
+                nextFailed = orderFailed || failedAppendChapterKey != null,
+                previousFailed = orderFailed || failedPrependChapterKey != null
             )
         }
     }
@@ -848,6 +886,7 @@ private fun persistLoadedChapter(
     chapter: Chapter,
     detail: DetailedChapter,
     orderSnapshot: List<Chapter>,
+    orderCompleteSnapshot: Boolean,
     novelId: String,
     novelName: String,
     novelUrl: String,
@@ -864,6 +903,7 @@ private fun persistLoadedChapter(
             novelUrl = targetNovelUrl,
             coverUrl = novelCoverUrl,
             chapterOrder = orderSnapshot,
+            chapterOrderComplete = orderCompleteSnapshot,
             chapter = chapter,
             detail = detail,
             authorization = authorization

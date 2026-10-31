@@ -67,6 +67,11 @@ class MainActivity : ComponentActivity() {
         com.breakyuna.esjzone.network.CacheAnalysis.requestCheckpoint()
     }
 
+    override fun onDestroy() {
+        AppLogger.i("Startup", "MainActivity destroyed: changingConfiguration=$isChangingConfigurations, finishing=$isFinishing")
+        super.onDestroy()
+    }
+
     // Handle volume keys before a focused reader control can consume them.
     @SuppressLint("RestrictedApi")
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
@@ -121,7 +126,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        AppLogger.i("Startup", "MainActivity created")
+        AppLogger.i("Startup", "MainActivity created: savedState=${savedInstanceState != null}")
         handleNovelIntent(intent)
 
         enableEdgeToEdge()
