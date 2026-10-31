@@ -25,6 +25,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawWithContent
+import java.util.concurrent.atomic.AtomicBoolean
+import com.breakyuna.esjzone.util.AppLogger
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.breakyuna.esjzone.ui.designsystem.globalStringResource as stringResource
 import androidx.compose.ui.unit.dp
@@ -49,6 +52,10 @@ class MainScreen(val authorization: Authorization) : AppDestination {
 
     @Composable
     override fun Content() {
+        val firstDraw = remember { AtomicBoolean(false) }
+        LaunchedEffect(Unit) {
+            AppLogger.i("Startup", "Main screen composition committed")
+        }
         val appNavigator = LocalAppNavigator.current
         val activeDomain = PresentationAccess.settings.domain.value
         val loginSessionChanges by PresentationAccess.client.loginSessionChanges.collectAsStateWithLifecycle()
@@ -100,7 +107,12 @@ class MainScreen(val authorization: Authorization) : AppDestination {
         androidx.compose.runtime.CompositionLocalProvider(
             LocalAuthorization provides authorization
         ) {
-            Column(modifier = Modifier.fillMaxSize()) {
+            Column(modifier = Modifier.fillMaxSize().drawWithContent {
+                drawContent()
+                if (firstDraw.compareAndSet(false, true)) {
+                    AppLogger.i("Startup", "Main screen first draw completed")
+                }
+            }) {
                 val showSessionBanner = authorization.hasCredentials() &&
                     authorizationCheckResult == AuthorizationCheckResult.UNAUTHORIZED &&
                     !sessionPromptDismissed

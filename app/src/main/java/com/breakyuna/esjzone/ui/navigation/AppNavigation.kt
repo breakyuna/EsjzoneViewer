@@ -367,6 +367,7 @@ class AppNavigator internal constructor(
                 register(destination)
                 setAuthorization?.invoke(destination.authorization)
                 replaceTop(AppNavKey.Main)
+                com.breakyuna.esjzone.util.AppLogger.i("Startup", "Main destination installed in root back stack")
             }
             else -> {
                 if (destination.isReaderDestination) {

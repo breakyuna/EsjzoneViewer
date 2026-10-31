@@ -82,6 +82,15 @@ object AppLogger {
     fun w(tag: String, message: String, throwable: Throwable? = null) = log(LogLevel.WARN, tag, message, throwable)
     fun e(tag: String, message: String, throwable: Throwable? = null) = log(LogLevel.ERROR, tag, message, throwable)
 
+    /** Avoid taking the UI log-list lock while reporting a blocked main thread. */
+    internal fun startupStall(report: String) {
+        val entry = LogEntry(level = LogLevel.ERROR, tag = "StartupWatchdog", message = sanitize(report))
+        val output = entry.toFormattedString()
+        runCatching { Log.e(entry.tag, output) }
+        fileExecutor.execute { append(output) }
+        publicExecutor.execute { writePublic { publicWriter.append(output) } }
+    }
+
     /** Runs before AppContainer initialization; never waits for a document provider on main. */
     fun startPublicLogging(storage: UserStorage) {
         synchronized(stateLock) {
