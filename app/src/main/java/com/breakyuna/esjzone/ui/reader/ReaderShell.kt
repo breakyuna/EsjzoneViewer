@@ -17,6 +17,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
@@ -62,6 +64,7 @@ fun ReaderShell(
     onBookmarkPull: () -> Unit = {},
     content: @Composable BoxScope.() -> Unit
 ) {
+    val haptics by rememberUpdatedState(LocalHapticFeedback.current)
     val currentTap by rememberUpdatedState(onReadingAreaTap)
     val currentBookmarkPull by rememberUpdatedState(onBookmarkPull)
     var pullingBookmark by remember { mutableStateOf(false) }
@@ -94,6 +97,7 @@ fun ReaderShell(
                         var axis: ReaderDragAxis? = null
                         var ownsSwipe = false
                         var longPress = false
+                        var bookmarkThresholdReported = false
                         do {
                             // Lock direction before Pager can claim incidental horizontal drift.
                             val event = awaitPointerEvent(PointerEventPass.Initial)
@@ -121,6 +125,11 @@ fun ReaderShell(
                             }
                             if (ownsSwipe && !childConsumed && !multiTouch) change.consume()
                             if (ownsSwipe && bookmarkPullEnabled && !childConsumed && !multiTouch) {
+                                if (!bookmarkThresholdReported && !longPress && change.pressed &&
+                                    readerSwipeDirection(last.x - start.x, last.y - start.y, false, verticalThreshold) == false) {
+                                    haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                                    bookmarkThresholdReported = true
+                                }
                                 pullingBookmark = true
                                 val distance = (last.y - start.y - viewConfiguration.touchSlop).coerceAtLeast(0f)
                                 val limit = 80.dp.toPx()

@@ -19,6 +19,28 @@ import org.junit.runner.RunWith
 class ReaderSettingsInstrumentedTest {
     @get:Rule val composeRule = createComposeRule()
 
+    @Test fun layoutParameterCanBeSelectedDirectlyAndAdjusted() {
+        val initial = ReaderSettings(horizontalPaddingDp = 24f)
+        var settings by mutableStateOf(initial)
+        var paddingLabel = ""
+        var increaseLabel = ""
+        var decreaseLabel = ""
+        composeRule.setContent {
+            paddingLabel = globalStringResource(R.string.reader_horizontal_padding)
+            increaseLabel = globalStringResource(R.string.reader_setting_increase)
+            decreaseLabel = globalStringResource(R.string.reader_setting_decrease)
+            MaterialTheme {
+                ReaderSettingsSheet(visible = true, settings = settings,
+                    onSettingsChange = { settings = it }, onDismiss = {})
+            }
+        }
+        composeRule.onNodeWithText(paddingLabel).performScrollTo().performClick()
+        composeRule.onNodeWithContentDescription(increaseLabel).performScrollTo().performClick()
+        composeRule.runOnIdle { assertEquals(initial.copy(horizontalPaddingDp = 28f), settings) }
+        composeRule.onNodeWithContentDescription(decreaseLabel).performClick()
+        composeRule.runOnIdle { assertEquals(initial, settings) }
+    }
+
     @Test fun moreTabCanEnableAndDisableKeepScreenOn() {
         val initial = ReaderSettings()
         var settings by mutableStateOf(initial)

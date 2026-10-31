@@ -38,6 +38,7 @@ object AppLayout {
     val pageVertical = AppSpacing.lg
     val section = AppSpacing.xxl
     val item = AppSpacing.md
+    val hairline = 0.5.dp
     val divider = 1.dp
     val contentMaxWidth = 960.dp
     val wideContentMaxWidth = 1280.dp

@@ -3,6 +3,15 @@ package com.breakyuna.esjzone.ui.tab
 import com.breakyuna.esjzone.ui.designsystem.appViewportSize
 import com.breakyuna.esjzone.ui.designsystem.appUsesWideLayout
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.snap
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.getValue
+import androidx.compose.ui.graphics.graphicsLayer
+import com.breakyuna.esjzone.ui.designsystem.appReducedMotion
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -120,21 +129,21 @@ internal fun HomeActions(
             label = stringResource(R.string.forum),
             icon = Icons.Filled.Forum,
             modifier = Modifier.weight(1f).containerTransformSource(ContainerTransformTarget.FORUM),
-            iconTint = Color(162, 25, 23),
+            iconTint = MaterialTheme.colorScheme.primary,
             onClick = onForum
         )
         HomeShortcut(
             label = stringResource(R.string.guestbook),
             icon = Icons.Filled.RateReview,
             modifier = Modifier.weight(1f).containerTransformSource(ContainerTransformTarget.GUESTBOOK),
-            iconTint = Color(0xFFC67D0A),
+            iconTint = MaterialTheme.colorScheme.tertiary,
             onClick = onGuestbook
         )
         HomeShortcut(
             label = stringResource(R.string.home_water_cooler),
             icon = Icons.Filled.WaterDrop,
             modifier = Modifier.weight(1f).containerTransformSource(ContainerTransformTarget.WATER_COOLER),
-            iconTint = Color(0xFF0288D1),
+            iconTint = MaterialTheme.colorScheme.secondary,
             onClick = onWaterCooler
         )
     }
@@ -148,9 +157,21 @@ private fun HomeShortcut(
     iconTint: Color,
     onClick: () -> Unit
 ) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val pressed by interactionSource.collectIsPressedAsState()
+    val reducedMotion = appReducedMotion()
+    val pressScale = animateFloatAsState(
+        targetValue = if (pressed && !reducedMotion) 0.97f else 1f,
+        animationSpec = if (reducedMotion) snap() else spring(dampingRatio = 1f, stiffness = 600f),
+        label = "homeShortcutPress"
+    )
     Card(
         onClick = onClick,
-        modifier = modifier.height(60.dp).semantics { contentDescription = label },
+        interactionSource = interactionSource,
+        modifier = modifier.graphicsLayer {
+            scaleX = pressScale.value
+            scaleY = pressScale.value
+        }.height(60.dp).semantics { contentDescription = label },
         shape = AppShapes.standard,
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)

@@ -940,4 +940,6 @@
     <string name="reader_catalog_search">Search chapters</string>
     <string name="reader_catalog_current">Go to current chapter</string>
     <string name="reader_boundary_failed">Chapter could not be loaded. Current text is retained.</string>
+    <string name="reader_setting_decrease">Decrease value</string>
+    <string name="reader_setting_increase">Increase value</string>
 </resources>

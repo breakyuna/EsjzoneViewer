@@ -37,6 +37,7 @@ class WideNovelDetailInstrumentedTest {
     @Test
     fun scrollingWideChaptersLeavesTheOverviewAndReadActionAvailable() {
         var readClicks = 0
+        var heroScrolledAway = false
         composeRule.setContent {
             // Fit tablet geometry inside a phone test surface without relying on device rotation.
             val configuration = Configuration(LocalConfiguration.current).apply {
@@ -52,9 +53,11 @@ class WideNovelDetailInstrumentedTest {
                     Column(Modifier.requiredSize(1000.dp, 600.dp)) {
                         NovelDetailLayout(
                             hero = { Text("Book overview") },
+                            onHeroScrolledAway = { heroScrolledAway = it },
                             modifier = Modifier.weight(1f),
                             overview = {
                                 item { Button(onClick = { readClicks++ }) { Text("Read book") } }
+                                items(80) { Text("Overview $it") }
                             }
                         ) {
                             items(80) { Text("Chapter $it") }
@@ -67,11 +70,19 @@ class WideNovelDetailInstrumentedTest {
         composeRule.onNodeWithText("Chapter 60").assertIsDisplayed()
         composeRule.onNodeWithText("Book overview").assertIsDisplayed()
         composeRule.onNodeWithText("Read book").performClick()
-        composeRule.runOnIdle { assertEquals(1, readClicks) }
+        composeRule.runOnIdle {
+            assertEquals(1, readClicks)
+            assertEquals(false, heroScrolledAway)
+        }
+        composeRule.onNodeWithTag("detail-overview-pane").performScrollToNode(hasText("Overview 60"))
+        composeRule.runOnIdle { assertEquals(true, heroScrolledAway) }
+        composeRule.onNodeWithTag("detail-overview-pane").performScrollToNode(hasText("Book overview"))
+        composeRule.runOnIdle { assertEquals(false, heroScrolledAway) }
     }
 
     @Test
     fun compactOverviewAndChaptersRemainInTheSameScrollArea() {
+        var heroScrolledAway = false
         composeRule.setContent {
             CompositionLocalProvider(
                 LocalAppViewport provides AppViewportSize(390f, 844f),
@@ -81,6 +92,7 @@ class WideNovelDetailInstrumentedTest {
                     Column(Modifier.requiredSize(390.dp, 844.dp)) {
                         NovelDetailLayout(
                             hero = { Text("Book overview") },
+                            onHeroScrolledAway = { heroScrolledAway = it },
                             modifier = Modifier.weight(1f),
                             overview = { item { Text("Book actions") } }
                         ) {
@@ -95,5 +107,8 @@ class WideNovelDetailInstrumentedTest {
         composeRule.onNodeWithText("Book actions").assertIsDisplayed()
         composeRule.onNodeWithTag("detail-compact-pane").performScrollToNode(hasText("Chapter 60"))
         composeRule.onNodeWithText("Chapter 60").assertIsDisplayed()
+        composeRule.runOnIdle { assertEquals(true, heroScrolledAway) }
+        composeRule.onNodeWithTag("detail-compact-pane").performScrollToNode(hasText("Book overview"))
+        composeRule.runOnIdle { assertEquals(false, heroScrolledAway) }
     }
 }

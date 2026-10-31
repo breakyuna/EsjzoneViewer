@@ -2869,8 +2869,8 @@ private fun ReaderProgressLens(
             .width(280.dp)
             .height(56.dp),
         shape = RoundedCornerShape(12.dp),
-        color = Color(0xEE222222),
-        contentColor = Color.White,
+        color = MaterialTheme.colorScheme.inverseSurface,
+        contentColor = MaterialTheme.colorScheme.inverseOnSurface,
         shadowElevation = 6.dp
     ) {
         Row(
@@ -2887,7 +2887,7 @@ private fun ReaderProgressLens(
                 Text(
                     text = location.chapter.name,
                     style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium),
-                    color = Color.White,
+                    color = MaterialTheme.colorScheme.inverseOnSurface,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
@@ -2900,7 +2900,7 @@ private fun ReaderProgressLens(
                 Text(
                     text = progressText,
                     style = MaterialTheme.typography.bodySmall,
-                    color = Color.White.copy(alpha = 0.72f),
+                    color = MaterialTheme.colorScheme.inverseOnSurface.copy(alpha = 0.72f),
                     maxLines = 1
                 )
             }
@@ -2908,7 +2908,7 @@ private fun ReaderProgressLens(
                 modifier = Modifier
                     .width(1.dp)
                     .fillMaxHeight()
-                    .background(Color.White.copy(alpha = 0.18f))
+                    .background(MaterialTheme.colorScheme.inverseOnSurface.copy(alpha = 0.18f))
             )
             IconButton(
                 onClick = onReturn,
@@ -2920,7 +2920,7 @@ private fun ReaderProgressLens(
                 Icon(
                     imageVector = Icons.AutoMirrored.Filled.Undo,
                     contentDescription = stringResource(R.string.reader_preview_return),
-                    tint = if (canReturn) Color.White else Color.White.copy(alpha = 0.38f),
+                    tint = if (canReturn) MaterialTheme.colorScheme.inverseOnSurface else MaterialTheme.colorScheme.inverseOnSurface.copy(alpha = 0.38f),
                     modifier = Modifier.size(24.dp)
                 )
             }

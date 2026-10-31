@@ -16,6 +16,10 @@ import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.hapticfeedback.HapticFeedback
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
@@ -43,6 +47,45 @@ import org.junit.runner.RunWith
 class ReaderGestureInstrumentedTest {
     @get:Rule
     val composeRule = createComposeRule()
+
+    @Test
+    fun bookmarkThresholdFeedbackOccursOncePerGestureAndDoesNotCommitEarly() {
+        val feedback = mutableListOf<HapticFeedbackType>()
+        var bookmarks = 0
+        var density = 1f
+        val haptics = object : HapticFeedback {
+            override fun performHapticFeedback(hapticFeedbackType: HapticFeedbackType) {
+                feedback.add(hapticFeedbackType)
+            }
+        }
+        composeRule.setContent {
+            density = LocalDensity.current.density
+            CompositionLocalProvider(LocalHapticFeedback provides haptics) {
+                Box(Modifier.size(240.dp).testTag("reader")) {
+                    ReaderShell(background = Color.White, onReadingAreaTap = { _, _ -> },
+                        pagedGesturesEnabled = true, bookmarkPullEnabled = true,
+                        onBookmarkPull = { bookmarks++ }) { Box(Modifier.fillMaxSize()) }
+                }
+            }
+        }
+        composeRule.onNodeWithTag("reader").performTouchInput {
+            val start = center - Offset(0f, 70f) * density
+            down(start)
+            moveTo(start + Offset(0f, 40f) * density, delayMillis = 50)
+        }
+        composeRule.runOnIdle { assertTrue(feedback.isEmpty()) }
+        composeRule.onNodeWithTag("reader").performTouchInput {
+            moveTo(center + Offset(0f, 40f) * density, delayMillis = 50)
+            moveTo(center - Offset(0f, 20f) * density, delayMillis = 50)
+            moveTo(center + Offset(0f, 50f) * density, delayMillis = 50)
+        }
+        composeRule.runOnIdle {
+            assertEquals(listOf(HapticFeedbackType.LongPress), feedback)
+            assertEquals(0, bookmarks)
+        }
+        composeRule.onNodeWithTag("reader").performTouchInput { up() }
+        composeRule.runOnIdle { assertEquals(1, bookmarks) }
+    }
 
     @Test
     fun verticalReadingLocksOutSidePanelsEvenWhenTheFingerTurnsSideways() {

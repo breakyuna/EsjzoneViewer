@@ -197,15 +197,24 @@ internal fun LazyListScope.weeklyPopularCarousel(
                     }
                 }
                 visible.indices.forEach { index ->
+                    // Interpolate directly from the gesture, including the last-to-first wrap.
+                    val position = (pagerState.currentPage % visible.size) + pagerState.currentPageOffsetFraction
+                    val distance = kotlin.math.abs(position - index)
+                    val wrappedDistance = minOf(distance, kotlin.math.abs(distance - visible.size))
+                    // A single book remains selected while the infinite pager moves between copies.
+                    val selectedFraction = if (visible.size == 1) 1f else (1f - wrappedDistance).coerceIn(0f, 1f)
                     Box(
                         Modifier
                             .padding(horizontal = 3.dp)
-                            .width(if (index == pagerState.currentPage % visible.size) 28.dp else HOME_WEEKLY_POPULAR_INDICATOR_SIZE)
+                            .width(HOME_WEEKLY_POPULAR_INDICATOR_SIZE + (28.dp - HOME_WEEKLY_POPULAR_INDICATOR_SIZE) * selectedFraction)
                             .height(HOME_WEEKLY_POPULAR_INDICATOR_SIZE)
                             .clip(CircleShape)
                             .background(
-                                if (index == pagerState.currentPage % visible.size) MaterialTheme.colorScheme.primary
-                                else MaterialTheme.colorScheme.outlineVariant
+                                androidx.compose.ui.graphics.lerp(
+                                    MaterialTheme.colorScheme.outlineVariant,
+                                    MaterialTheme.colorScheme.primary,
+                                    selectedFraction
+                                )
                             )
                     )
                 }

@@ -29,6 +29,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import com.breakyuna.esjzone.ui.designsystem.GlobalText as Text
 import com.breakyuna.esjzone.ui.navigation.rememberNovelCoverSource
+import androidx.compose.foundation.border
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -115,6 +116,7 @@ fun AppNovelCover(
                 ) else Modifier
             )
             .clip(AppShapes.cover)
+            .border(AppLayout.hairline, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f), AppShapes.cover)
             .background(MaterialTheme.colorScheme.surfaceContainerHighest)
     ) {
         val cover = CoverSource.fromUrl(coverUrl, coverState ?: CoverState.Missing)

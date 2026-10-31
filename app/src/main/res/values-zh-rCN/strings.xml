@@ -941,4 +941,6 @@
     <string name="reader_catalog_search">搜索章节</string>
     <string name="reader_catalog_current">定位当前章节</string>
     <string name="reader_boundary_failed">章节加载失败，当前正文已保留</string>
+    <string name="reader_setting_decrease">减小数值</string>
+    <string name="reader_setting_increase">增大数值</string>
 </resources>

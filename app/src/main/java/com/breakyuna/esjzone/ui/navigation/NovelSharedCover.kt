@@ -1,7 +1,6 @@
 package com.breakyuna.esjzone.ui.navigation
 
 import androidx.compose.animation.core.tween
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.compositionLocalOf
@@ -10,10 +9,10 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.unit.dp
 import androidx.navigation3.ui.LocalNavAnimatedContentScope
 import com.breakyuna.esjzone.novellibrary.novel.CoverState
 import com.breakyuna.esjzone.network.EsjzoneUrls
+import com.breakyuna.esjzone.ui.designsystem.AppShapes
 import com.breakyuna.esjzone.ui.designsystem.AppMotion
 import com.breakyuna.esjzone.ui.designsystem.AppLoadedImage
 import java.util.UUID
@@ -92,7 +91,7 @@ private fun Modifier.novelCoverSharedElement(token: String): Modifier {
             sharedContentState = rememberSharedContentState("novel-cover:$token"),
             animatedVisibilityScope = visibility,
             boundsTransform = { _, _ -> tween(AppMotion.expressive, easing = AppMotion.standardEasing) },
-            clipInOverlayDuringTransition = OverlayClip(RoundedCornerShape(8.dp))
+            clipInOverlayDuringTransition = OverlayClip(AppShapes.cover)
         )
     }
 }

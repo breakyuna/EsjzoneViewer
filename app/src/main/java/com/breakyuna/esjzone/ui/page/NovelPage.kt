@@ -70,6 +70,12 @@ import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.runtime.snapshotFlow
+import androidx.compose.runtime.rememberUpdatedState
+import kotlinx.coroutines.flow.distinctUntilChanged
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -251,6 +257,7 @@ class NovelPage(
                 PresentationAccess.downloads.manifest(novel.url)
             }
         }
+        var heroScrolledAway by remember(novel.url) { mutableStateOf(false) }
         var showMoreActions by rememberSaveable(novel.url) { mutableStateOf(false) }
         var exportFormat by rememberSaveable(novel.url) { mutableStateOf<NovelExportFormat?>(null) }
         var exportSelection by rememberSaveable(novel.url, stateSaver = DownloadChapterSelectionSaver) {
@@ -326,6 +333,8 @@ class NovelPage(
                     .background(MaterialTheme.colorScheme.background)
             ) {
                 RebuiltDetailTopBar(
+                    title = detailed?.name?.takeIf(String::isNotBlank) ?: novel.name,
+                    showTitle = heroScrolledAway && state !is NovelPageModel.State.Error,
                     onBack = { navigator?.pop() },
                     onOpenExternal = {
                         openSystemBrowser(
@@ -457,6 +466,7 @@ class NovelPage(
                     // Keep the list and hero mounted when loading becomes readable content.
                     NovelDetailLayout(
                         hero = { RebuiltNovelHero(novel, detailed, sourceCover) },
+                        onHeroScrolledAway = { heroScrolledAway = it },
                         modifier = Modifier.weight(1f),
                         snackbarHost = {
                             SnackbarHost(
@@ -506,12 +516,20 @@ internal fun NovelDetailLayout(
     modifier: Modifier = Modifier,
     snackbarHost: @Composable () -> Unit = {},
     overview: LazyListScope.() -> Unit = {},
+    onHeroScrolledAway: (Boolean) -> Unit = {},
     content: LazyListScope.() -> Unit
 ) {
     val metrics = rememberAppAdaptiveMetrics()
     val wide = appUsesWideLayout()
     val overviewState = rememberLazyListState()
     val contentState = rememberLazyListState()
+    val heroState = if (wide) overviewState else contentState
+    val reportHeroScrolledAway by rememberUpdatedState(onHeroScrolledAway)
+    LaunchedEffect(heroState) {
+        snapshotFlow { heroState.firstVisibleItemIndex > 0 }
+            .distinctUntilChanged()
+            .collect { reportHeroScrolledAway(it) }
+    }
     val horizontalPadding = when (metrics.sizeClass) {
         AppWindowSizeClass.Compact -> AppSpacing.sm
         AppWindowSizeClass.Medium -> AppSpacing.md
@@ -1109,12 +1127,39 @@ private fun RebuiltNovelHero(preview: Novel, detailed: DetailedNovel?, sourceCov
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun RebuiltDetailTopBar(
+    title: String,
+    showTitle: Boolean,
     onBack: () -> Unit,
     onOpenExternal: () -> Unit,
     onMore: () -> Unit
 ) {
+    val dividerAlpha = animateFloatAsState(
+        targetValue = if (showTitle) 1f else 0f,
+        animationSpec = AppMotion.standardSpec(),
+        label = "detailTopBarDivider"
+    )
+    val dividerColor = MaterialTheme.colorScheme.outlineVariant
     CenterAlignedTopAppBar(
-        title = {},
+        modifier = Modifier.drawWithContent {
+            drawContent()
+            val thickness = AppLayout.hairline.toPx()
+            drawLine(
+                color = dividerColor.copy(alpha = dividerColor.alpha * dividerAlpha.value),
+                start = Offset(0f, size.height - thickness / 2),
+                end = Offset(size.width, size.height - thickness / 2),
+                strokeWidth = thickness
+            )
+        },
+        title = {
+            AnimatedVisibility(
+                visible = showTitle,
+                enter = fadeIn(tween(AppMotion.quick)),
+                exit = fadeOut(tween(AppMotion.quick))
+            ) {
+                Text(title, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                    style = MaterialTheme.typography.titleMedium)
+            }
+        },
         navigationIcon = {
             IconButton(onClick = onBack, modifier = Modifier.size(AppTouchTarget.minimum)) {
                 Icon(

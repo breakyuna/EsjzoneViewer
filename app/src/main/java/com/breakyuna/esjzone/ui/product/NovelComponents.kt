@@ -21,6 +21,8 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
 import com.breakyuna.esjzone.ui.designsystem.GlobalText as Text
 import com.breakyuna.esjzone.ui.designsystem.contentArrival
+import androidx.compose.foundation.border
+import com.breakyuna.esjzone.ui.designsystem.AppLayout
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
 import androidx.compose.ui.Alignment
@@ -75,6 +77,7 @@ fun NovelCover(model: NovelCoverModel, modifier: Modifier = Modifier, shape: Sha
                 spotColor = Color.Black.copy(alpha = 0.25f)
             )
             .clip(shape)
+            .border(AppLayout.hairline, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f), shape)
     )
 }
 

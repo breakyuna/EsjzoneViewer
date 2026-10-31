@@ -18,6 +18,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Remove
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ChevronLeft
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Brightness4
@@ -251,24 +253,19 @@ private fun ReaderLayoutSlider(
         R.string.reader_line_spacing, R.string.reader_paragraph_spacing,
         R.string.reader_page_spacing, R.string.reader_horizontal_padding
     )
-    val pagerState = rememberPagerState(pageCount = { labels.size })
-    val scope = rememberCoroutineScope()
-    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        IconButton(
-            onClick = { scope.launch { pagerState.animateScrollToPage(pagerState.currentPage - 1) } },
-            enabled = pagerState.currentPage > 0
-        ) { Icon(Icons.Default.ChevronLeft, stringResource(labels[(pagerState.currentPage - 1).coerceAtLeast(0)])) }
-        HorizontalPager(state = pagerState, modifier = Modifier.weight(1f)) { page ->
-            Box(Modifier.fillMaxWidth().height(44.dp), contentAlignment = Alignment.Center) {
-                Text(stringResource(labels[page]), style = MaterialTheme.typography.titleSmall)
-            }
+    var index by androidx.compose.runtime.saveable.rememberSaveable { mutableIntStateOf(0) }
+    FlowRow(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(AppSpacing.xs)
+    ) {
+        labels.forEachIndexed { option, label ->
+            FilterChip(
+                selected = index == option,
+                onClick = { index = option },
+                label = { Text(stringResource(label)) }
+            )
         }
-        IconButton(
-            onClick = { scope.launch { pagerState.animateScrollToPage(pagerState.currentPage + 1) } },
-            enabled = pagerState.currentPage < labels.lastIndex
-        ) { Icon(Icons.Default.ChevronRight, stringResource(labels[(pagerState.currentPage + 1).coerceAtMost(labels.lastIndex)])) }
     }
-    val index = pagerState.currentPage
     val value = when (index) {
         0 -> settings.fontSizeSp
         1 -> settings.letterSpacingSp
@@ -293,6 +290,7 @@ private fun ReaderLayoutSlider(
     key(index) {
         ReaderSettingSlider(
             value = value,
+            showStepButtons = true,
             valueLabel = {
                 val amount = if (index == 1) "${(it * 10f).roundToInt() / 10f}" else "${it.roundToInt()}"
                 amount + if (index >= 3) "dp" else "sp"
@@ -368,7 +366,8 @@ private fun ReaderSettingSlider(
     valueRange: ClosedFloatingPointRange<Float>,
     steps: Int,
     onValueChange: (Float) -> Unit,
-    onValueChangeFinished: (Float) -> Unit
+    onValueChangeFinished: (Float) -> Unit,
+    showStepButtons: Boolean = false
 ) {
     var sliderPosition by remember(value) { mutableFloatStateOf(value) }
     val interactionSource = remember { MutableInteractionSource() }
@@ -383,15 +382,31 @@ private fun ReaderSettingSlider(
         }
     }
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        Slider(
-            value = sliderPosition,
-            interactionSource = interactionSource,
-            onValueChange = { sliderPosition = it; onValueChange(it) },
-            onValueChangeFinished = { onValueChangeFinished(sliderPosition) },
-            valueRange = valueRange,
-            steps = steps,
-            modifier = Modifier.fillMaxWidth().height(40.dp)
-        )
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            if (showStepButtons) {
+                IconButton(enabled = sliderPosition > valueRange.start, onClick = {
+                    sliderPosition = (sliderPosition - (valueRange.endInclusive - valueRange.start) / (steps + 1)).coerceIn(valueRange)
+                    onValueChange(sliderPosition)
+                    onValueChangeFinished(sliderPosition)
+                }) { Icon(Icons.Default.Remove, stringResource(R.string.reader_setting_decrease)) }
+            }
+            Slider(
+                value = sliderPosition,
+                interactionSource = interactionSource,
+                onValueChange = { sliderPosition = it; onValueChange(it) },
+                onValueChangeFinished = { onValueChangeFinished(sliderPosition) },
+                valueRange = valueRange,
+                steps = steps,
+                modifier = Modifier.weight(1f).height(40.dp)
+            )
+            if (showStepButtons) {
+                IconButton(enabled = sliderPosition < valueRange.endInclusive, onClick = {
+                    sliderPosition = (sliderPosition + (valueRange.endInclusive - valueRange.start) / (steps + 1)).coerceIn(valueRange)
+                    onValueChange(sliderPosition)
+                    onValueChangeFinished(sliderPosition)
+                }) { Icon(Icons.Default.Add, stringResource(R.string.reader_setting_increase)) }
+            }
+        }
         Text(valueLabel(sliderPosition), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
     }
 }
