@@ -228,7 +228,7 @@ object NovelDownloadManager {
         // Full downloads refresh the catalog when they start. Keep that newer
         // denominator if the worker is subsequently stopped while offline.
         val total = if (selectedKeys == null) maxOf(queuedTotal, targets.size) else queuedTotal
-        return if (total > 0) DownloadProgress(targets.count { it.downloaded }.coerceAtMost(total), total, "") else null
+        return if (total > 0) DownloadProgress(targets.count { it.isSaved }.coerceAtMost(total), total, "") else null
     }
 
     /**

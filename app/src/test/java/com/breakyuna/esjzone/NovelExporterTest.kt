@@ -19,6 +19,21 @@ import org.junit.Test
 class NovelExporterTest {
 
     @Test
+    fun savedBodyWithMissingImagesRemainsSelectableForTxtAndEpub() {
+        val original = manifest()
+        val record = original.chapters.single().copy(downloaded = false, bodyAvailable = true)
+        val partial = original.copy(chapters = listOf(record), complete = false, catalogComplete = true)
+        val txt = ByteArrayOutputStream()
+        NovelExporter.exportTxt(partial, ::chapter, txt, selectedChapterUrls = setOf(record.url))
+        assertTrue(txt.toString("UTF-8").contains("章节正文"))
+        val epub = ByteArrayOutputStream()
+        NovelExporter.exportEpub(partial, ::chapter, epub, imageLoader = { null },
+            selectedChapterUrls = setOf(record.url))
+        assertTrue(epubChapter(epub).contains("章节正文"))
+        assertTrue(epubChapter(epub).contains("[图片：https://example.com/illustration.jpg]"))
+    }
+
+    @Test
     fun structuredTxtUsesBodyAndEpubRetainsRichSource() {
         val record = manifest().chapters.single()
         val body = com.breakyuna.esjzone.data.reader.ChapterBody.fromBlocks(listOf(

@@ -122,7 +122,7 @@ object NovelExporter {
         selectedChapterUrls: Set<String>?
     ): List<DownloadedChapterRecord> {
         val chapters = manifest.chapters.filter {
-            it.downloaded && (selectedChapterUrls == null || it.url in selectedChapterUrls)
+            it.isSaved && (selectedChapterUrls == null || it.url in selectedChapterUrls)
         }
         require(chapters.isNotEmpty()) { "No downloaded chapters are available for export" }
         if (selectedChapterUrls != null) {

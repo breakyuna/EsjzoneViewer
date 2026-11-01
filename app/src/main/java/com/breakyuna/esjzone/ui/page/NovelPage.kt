@@ -213,7 +213,8 @@ class NovelPage(
         val context = LocalContext.current
         val screenModel = rememberAppViewModel { NovelPageModel(authorization, novel) }
         val commentModel = rememberAppViewModel { CommentPageModel(authorization, novel.url) }
-        val state by screenModel.state.collectAsState()
+        val state by rememberNovelDetailPresentationState(screenModel.state)
+        val transitionSettled = rememberNovelDetailTransitionSettled()
         val cleanupState by screenModel.cleanupState.collectAsState()
         val snackbar = remember { SnackbarHostState() }
         val cleanupPrompt = stringResource(R.string.novel_local_cleanup_prompt)
@@ -353,7 +354,8 @@ class NovelPage(
                     NovelPageModel.State.Loading -> {
                         NovelDetailContent(overview = {
                             item(key = "detail-loading", contentType = "loading") {
-                                LoadingSkeleton(modifier = Modifier.fillMaxWidth())
+                                // A window-anchored shimmer drifts against the sliding page; start it once settled.
+                                LoadingSkeleton(modifier = Modifier.fillMaxWidth(), animated = transitionSettled.value)
                             }
                         })
                     }
@@ -1114,7 +1116,7 @@ private fun RebuiltNovelHero(preview: Novel, detailed: DetailedNovel?, sourceCov
             .novelCoverDestination(preview.url),
         titleModifier = Modifier.homeCarouselSharedElement(carouselTarget, HomeCarouselElement.TITLE),
         authorModifier = Modifier.homeCarouselSharedElement(carouselTarget, HomeCarouselElement.AUTHOR),
-        animateContentArrival = carouselTarget == null,
+        animateContentArrival = false,
         onCoverClick = if (coverUrl.isNotBlank()) ({ viewingCover = true }) else null,
         modifier = Modifier
             .fillMaxWidth()
@@ -1425,6 +1427,7 @@ private fun NovelDownloadActions(
                 onDownloadedChange(updated)
                 if (requestedWorkId == status.id && !status.cancelled) {
                     val pendingPasswordCount = updated?.pendingPasswordChapters?.size ?: 0
+                    val pendingImageCount = updated?.pendingImageChapterCount ?: 0
                     if (status.unlockOnly) {
                         val message = when {
                             !status.succeeded || status.unlockedCount == 0 ->
@@ -1441,6 +1444,10 @@ private fun NovelDownloadActions(
                             appContext.getString(R.string.novel_download_completed_with_passwords, pendingPasswordCount),
                             Toast.LENGTH_LONG
                         ).show()
+                    } else if (status.succeeded && pendingImageCount > 0) {
+                        Toast.makeText(context, appContext.getString(
+                            R.string.novel_download_saved_with_images, pendingImageCount),
+                            Toast.LENGTH_LONG).show()
                     } else {
                         Toast.makeText(
                             context,
@@ -1469,7 +1476,7 @@ private fun NovelDownloadActions(
         if (targetChapters.isEmpty()) return
         val targetKeys = targetChapters.map { com.breakyuna.esjzone.offline.NovelDownloadStore.chapterKey(it.url) }.toSet()
         val existingCompleted = downloaded?.chapters.orEmpty().filter { record ->
-            record.downloaded && com.breakyuna.esjzone.offline.NovelDownloadStore.chapterKey(record.url) in targetKeys
+            record.isSaved && com.breakyuna.esjzone.offline.NovelDownloadStore.chapterKey(record.url) in targetKeys
         }.distinctBy { com.breakyuna.esjzone.offline.NovelDownloadStore.chapterKey(it.url) }.size
         progress = DownloadProgress(
             completed = existingCompleted,
@@ -1481,7 +1488,7 @@ private fun NovelDownloadActions(
         downloadScope.launch {
             var pendingWenku: com.breakyuna.esjzone.novellibrary.novel.Chapter? = null
             try {
-                val completedKeys = downloaded?.chapters.orEmpty().filter { it.downloaded }
+                val completedKeys = downloaded?.chapters.orEmpty().filter { it.isSaved }
                     .map { com.breakyuna.esjzone.offline.NovelDownloadStore.chapterKey(it.url) }.toSet()
                 val wenkuChapters = targetChapters.filter {
                     it.source == com.breakyuna.esjzone.novellibrary.novel.ChapterSource.WENKU8 &&
@@ -1609,7 +1616,7 @@ private fun NovelDownloadActions(
         contentPadding = PaddingValues(horizontal = AppSpacing.sm, vertical = AppSpacing.sm)
     ) {
         Icon(
-            imageVector = if (downloaded?.complete == true) Icons.Filled.DownloadDone else Icons.Filled.Download,
+            imageVector = if (downloaded?.chaptersSaved == true) Icons.Filled.DownloadDone else Icons.Filled.Download,
             contentDescription = stringResource(R.string.novel_download),
             modifier = Modifier.size(19.dp)
         )
@@ -1622,10 +1629,11 @@ private fun NovelDownloadActions(
                     progress?.total ?: novel.chapterList.orderedChapters.size
                 )
             } else {
-                val downloadedCount = downloaded?.chapters?.count { it.downloaded } ?: 0
+                val downloadedCount = downloaded?.savedChapterCount ?: 0
                 stringResource(
                     when {
-                        downloaded?.complete == true -> R.string.novel_download_update
+                        downloaded?.chaptersSaved == true && downloaded.pendingImageChapterCount > 0 -> R.string.novel_download_retry_images
+                        downloaded?.chaptersSaved == true -> R.string.novel_download_update
                         downloadedCount > 0 -> R.string.novel_download_continue
                         else -> R.string.novel_download
                     }
@@ -1950,7 +1958,8 @@ private fun NovelDownloadSheet(
     onBatchUnlock: () -> Unit = {},
     onClearCommonPassword: () -> Unit = {}
 ) {
-    val completed = manifest?.chapters?.count { it.downloaded } ?: 0
+    val completed = manifest?.savedChapterCount ?: 0
+    val pendingImages = manifest?.pendingImageChapterCount ?: 0
     val total = novel.chapterList.orderedChapters.size
     val actualTotal = manifest?.chapters?.size?.takeIf { it > 0 } ?: total
     val metrics = rememberAppAdaptiveMetrics()
@@ -2055,7 +2064,7 @@ private fun NovelDownloadSheet(
                                 )
                             }
                         }
-                        manifest?.complete == true -> {
+                        manifest?.chaptersSaved == true -> {
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 AppLottieState(
                                     asset = AppLottieAsset.Completion,
@@ -2111,6 +2120,10 @@ private fun NovelDownloadSheet(
                         }
                     }
                 }
+            }
+            if (pendingImages > 0) {
+                Text(stringResource(R.string.novel_download_pending_images_count, pendingImages),
+                    style = AppTypography.bodyMedium)
             }
             val pendingPasswords = manifest?.pendingPasswordChapters.orEmpty()
             if (pendingPasswords.isNotEmpty()) {
@@ -2251,7 +2264,7 @@ private fun NovelDownloadSheet(
                     shape = AppShapes.standard
                 ) {
                     Icon(
-                        imageVector = if (manifest?.complete == true) Icons.Filled.Refresh else Icons.Filled.Download,
+                        imageVector = if (manifest?.chaptersSaved == true) Icons.Filled.Refresh else Icons.Filled.Download,
                         contentDescription = null,
                         modifier = Modifier.size(19.dp)
                     )
@@ -2259,7 +2272,8 @@ private fun NovelDownloadSheet(
                     Text(
                         text = stringResource(
                             when {
-                                manifest?.complete == true -> R.string.novel_download_update
+                                manifest?.chaptersSaved == true && pendingImages > 0 -> R.string.novel_download_retry_images
+                                manifest?.chaptersSaved == true -> R.string.novel_download_update
                                 completed > 0 -> R.string.novel_download_continue
                                 else -> R.string.novel_download
                             }

@@ -20,15 +20,12 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.ChevronLeft
-import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Brightness4
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalConfiguration
 import com.breakyuna.esjzone.ui.designsystem.globalStringResource as stringResource
 import androidx.compose.ui.text.font.FontFamily
@@ -36,6 +33,7 @@ import androidx.compose.ui.unit.dp
 import com.breakyuna.esjzone.R
 import com.breakyuna.esjzone.AppThemeMode
 import com.breakyuna.esjzone.app.PresentationAccess
+import com.breakyuna.esjzone.ui.designsystem.AppShapes
 import com.breakyuna.esjzone.ui.designsystem.AppSpacing
 import com.breakyuna.esjzone.ui.designsystem.GlobalText as Text
 import com.breakyuna.esjzone.ui.reader.*
@@ -98,111 +96,105 @@ internal fun ReaderSettingsSheet(
                 HorizontalPager(state = tabPager, modifier = Modifier.weight(1f)) { tab ->
                     Column(
                         Modifier.fillMaxSize().verticalScroll(rememberScrollState())
-                            .padding(horizontal = 16.dp, vertical = 8.dp),
-                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                            .padding(horizontal = AppSpacing.lg, vertical = AppSpacing.sm),
+                        verticalArrangement = Arrangement.spacedBy(if (tab == 0) AppSpacing.md else 6.dp)
                     ) {
                     if (tab == 0) {
-                        Text(stringResource(R.string.reader_background), style = MaterialTheme.typography.titleSmall)
-                        Row(
-                            Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Surface(
-                                onClick = {
-                                    PresentationAccess.settings.setThemeMode(AppThemeMode.SYSTEM)
-                                    commit(draft.copy(background = ReaderBackground.SYSTEM))
-                                },
-                                modifier = Modifier.size(48.dp),
-                                shape = CircleShape,
-                                color = Color.Transparent,
-                                border = BorderStroke(
-                                    if (draft.background == ReaderBackground.SYSTEM && themeMode == AppThemeMode.SYSTEM) 2.dp else 1.dp,
-                                    if (draft.background == ReaderBackground.SYSTEM && themeMode == AppThemeMode.SYSTEM)
-                                        MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline
-                                )
+                        ReaderAppearanceSection(stringResource(R.string.reader_background)) {
+                            Row(
+                                Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                                horizontalArrangement = Arrangement.spacedBy(AppSpacing.sm),
+                                verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Box(contentAlignment = Alignment.Center) {
-                                    Text(stringResource(R.string.reader_background_system), style = MaterialTheme.typography.labelSmall)
-                                }
-                            }
-                            Surface(
-                                onClick = {
-                                    PresentationAccess.settings.setThemeMode(
-                                        if (darkTheme) AppThemeMode.LIGHT else AppThemeMode.DARK
-                                    )
-                                    commit(draft.copy(background = ReaderBackground.SYSTEM))
-                                },
-                                modifier = Modifier.size(48.dp),
-                                shape = CircleShape,
-                                color = if (darkTheme) Color(0xFF333333) else Color(0xFFEAEAEA),
-                                border = BorderStroke(
-                                    if (draft.background == ReaderBackground.SYSTEM && themeMode != AppThemeMode.SYSTEM) 2.dp else 1.dp,
-                                    if (draft.background == ReaderBackground.SYSTEM && themeMode != AppThemeMode.SYSTEM)
-                                        MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline
+                                ReaderAppearanceChip(
+                                    selected = draft.background == ReaderBackground.SYSTEM && themeMode == AppThemeMode.SYSTEM,
+                                    onClick = {
+                                        PresentationAccess.settings.setThemeMode(AppThemeMode.SYSTEM)
+                                        commit(draft.copy(background = ReaderBackground.SYSTEM))
+                                    },
+                                    label = { Text(stringResource(R.string.reader_background_system)) }
                                 )
-                            ) {
-                                Box(contentAlignment = Alignment.Center) {
-                                    Icon(
-                                        Icons.Default.Brightness4,
-                                        contentDescription = stringResource(
-                                            if (darkTheme) R.string.reader_theme_switch_light else R.string.reader_theme_switch_dark
-                                        ),
-                                        tint = if (darkTheme) Color.White else Color.Black,
-                                        modifier = Modifier.size(24.dp)
-                                    )
-                                }
-                            }
-                            ReaderBackground.entries.filterNot { it == ReaderBackground.SYSTEM }.forEach { background ->
-                                FilterChip(
-                                    selected = draft.background == background,
-                                    onClick = { commit(draft.copy(background = background)) },
-                                    label = { Text(stringResource(background.label())) },
-                                    leadingIcon = {
-                                        Surface(
-                                            color = background.containerColor(),
-                                            border = BorderStroke(1.dp, background.contentColor().copy(alpha = 0.3f)),
-                                            shape = RoundedCornerShape(50)
-                                        ) { Spacer(Modifier.size(18.dp)) }
-                                    }
-                                )
-                            }
-                        }
-                        Text(stringResource(R.string.reader_font), style = MaterialTheme.typography.titleSmall)
-                        Row(
-                            Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            ReaderFont.entries.forEach { font ->
-                                FilterChip(
-                                    selected = draft.font == font,
-                                    onClick = { commit(draft.copy(font = font)) },
-                                    label = {
-                                        Text(
-                                            stringResource(font.label()),
-                                            fontFamily = if (draft.font == font) font.family() else FontFamily.Default
+                                ReaderAppearanceChip(
+                                    selected = draft.background == ReaderBackground.SYSTEM && themeMode != AppThemeMode.SYSTEM,
+                                    onClick = {
+                                        PresentationAccess.settings.setThemeMode(
+                                            if (darkTheme) AppThemeMode.LIGHT else AppThemeMode.DARK
                                         )
-                                    }
+                                        commit(draft.copy(background = ReaderBackground.SYSTEM))
+                                    },
+                                    label = {
+                                        Text(stringResource(
+                                            if (darkTheme) R.string.reader_theme_switch_light else R.string.reader_theme_switch_dark
+                                        ))
+                                    },
+                                    leadingIcon = { Icon(Icons.Default.Brightness4, null, Modifier.size(18.dp)) }
+                                )
+                                ReaderBackground.entries.filterNot { it == ReaderBackground.SYSTEM }.forEach { background ->
+                                    ReaderAppearanceChip(
+                                        selected = draft.background == background,
+                                        onClick = { commit(draft.copy(background = background)) },
+                                        label = { Text(stringResource(background.label())) },
+                                        leadingIcon = {
+                                            Surface(
+                                                color = background.containerColor(),
+                                                border = BorderStroke(1.dp, background.contentColor().copy(alpha = 0.3f)),
+                                                shape = CircleShape
+                                            ) { Spacer(Modifier.size(18.dp)) }
+                                        }
+                                    )
+                                }
+                            }
+                        }
+                        ReaderAppearanceSection(stringResource(R.string.reader_font)) {
+                            Row(
+                                Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                                horizontalArrangement = Arrangement.spacedBy(AppSpacing.sm)
+                            ) {
+                                ReaderFont.entries.forEach { font ->
+                                    ReaderAppearanceChip(
+                                        selected = draft.font == font,
+                                        onClick = { commit(draft.copy(font = font)) },
+                                        label = {
+                                            Text(
+                                                stringResource(font.label()),
+                                                fontFamily = if (draft.font == font) font.family() else FontFamily.Default
+                                            )
+                                        }
+                                    )
+                                }
+                            }
+                            if (!ReaderFontStore.isAvailable(draft.font)) {
+                                Text(
+                                    stringResource(R.string.reader_font_downloading),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                             }
                         }
-                        if (!ReaderFontStore.isAvailable(draft.font)) {
-                            Text(stringResource(R.string.reader_font_downloading), style = MaterialTheme.typography.labelSmall)
+                        ReaderAppearanceSection(stringResource(R.string.reader_script)) {
+                            ReaderSettingChoices(draft.script, listOf(
+                                ReaderScript.ORIGINAL to stringResource(R.string.reader_script_original),
+                                ReaderScript.SIMPLIFIED to stringResource(R.string.reader_script_simplified),
+                                ReaderScript.TRADITIONAL to stringResource(R.string.reader_script_traditional)
+                            ), tonal = true) { commit(draft.copy(script = it)) }
                         }
-                        Text(stringResource(R.string.reader_script), style = MaterialTheme.typography.titleSmall)
-                        ReaderSettingChoices(draft.script, listOf(
-                            ReaderScript.ORIGINAL to stringResource(R.string.reader_script_original),
-                            ReaderScript.SIMPLIFIED to stringResource(R.string.reader_script_simplified),
-                            ReaderScript.TRADITIONAL to stringResource(R.string.reader_script_traditional)
-                        )) { commit(draft.copy(script = it)) }
-                        Text(stringResource(R.string.reader_paging_method), style = MaterialTheme.typography.titleSmall)
-                        ReaderSettingChoices(draft.pageAnimation, listOf(
-                            ReaderPageAnimation.VERTICAL_SCROLL to stringResource(R.string.reader_page_animation_vertical),
-                            ReaderPageAnimation.HORIZONTAL_SLIDE to stringResource(R.string.reader_page_animation_slide),
-                            ReaderPageAnimation.FADE to stringResource(R.string.reader_page_animation_fade),
-                            ReaderPageAnimation.COVER to stringResource(R.string.reader_page_animation_cover)
-                        )) { commit(draft.copy(pageAnimation = it)) }
-                        ReaderLayoutSlider(draft, settings, ::commit) { draft = it }
+                        ReaderAppearanceSection(stringResource(R.string.reader_paging_method)) {
+                            ReaderSettingChoices(draft.pageAnimation, listOf(
+                                ReaderPageAnimation.VERTICAL_SCROLL to stringResource(R.string.reader_page_animation_vertical),
+                                ReaderPageAnimation.HORIZONTAL_SLIDE to stringResource(R.string.reader_page_animation_slide),
+                                ReaderPageAnimation.FADE to stringResource(R.string.reader_page_animation_fade),
+                                ReaderPageAnimation.COVER to stringResource(R.string.reader_page_animation_cover)
+                            ), tonal = true) { commit(draft.copy(pageAnimation = it)) }
+                        }
+                        Surface(
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = AppShapes.standard,
+                            color = MaterialTheme.colorScheme.surfaceContainerLow
+                        ) {
+                            Column(Modifier.padding(AppSpacing.md)) {
+                                ReaderLayoutSlider(draft, settings, ::commit) { draft = it }
+                            }
+                        }
                     } else if (tab == 1) {
                         ReaderToggle(stringResource(R.string.reader_show_system_status), draft.showSystemStatusBar) { commit(draft.copy(showSystemStatusBar = it)) }
                         ReaderToggle(stringResource(R.string.reader_show_system_navigation), draft.showSystemNavigationBar) { commit(draft.copy(showSystemNavigationBar = it)) }
@@ -242,6 +234,40 @@ internal fun ReaderSettingsSheet(
 }
 
 @Composable
+private fun ReaderAppearanceSection(title: String, content: @Composable ColumnScope.() -> Unit) {
+    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(AppSpacing.xs)) {
+        Text(
+            title,
+            style = MaterialTheme.typography.labelLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        content()
+    }
+}
+
+@Composable
+private fun ReaderAppearanceChip(
+    selected: Boolean,
+    onClick: () -> Unit,
+    label: @Composable () -> Unit,
+    leadingIcon: (@Composable () -> Unit)? = null
+) {
+    FilterChip(
+        selected = selected,
+        onClick = onClick,
+        label = label,
+        leadingIcon = leadingIcon,
+        shape = AppShapes.compact,
+        border = null,
+        colors = FilterChipDefaults.filterChipColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+            selectedContainerColor = MaterialTheme.colorScheme.secondaryContainer,
+            selectedLabelColor = MaterialTheme.colorScheme.onSecondaryContainer
+        )
+    )
+}
+
+@Composable
 private fun ReaderLayoutSlider(
     draft: ReaderSettings,
     settings: ReaderSettings,
@@ -259,7 +285,7 @@ private fun ReaderLayoutSlider(
         horizontalArrangement = Arrangement.spacedBy(AppSpacing.xs)
     ) {
         labels.forEachIndexed { option, label ->
-            FilterChip(
+            ReaderAppearanceChip(
                 selected = index == option,
                 onClick = { index = option },
                 label = { Text(stringResource(label)) }
@@ -351,10 +377,19 @@ private fun ReaderBackground.label(): Int = when (this) {
 }
 
 @Composable
-private fun <T> ReaderSettingChoices(selected: T, options: List<Pair<T, String>>, onSelected: (T) -> Unit) {
+private fun <T> ReaderSettingChoices(
+    selected: T,
+    options: List<Pair<T, String>>,
+    tonal: Boolean = false,
+    onSelected: (T) -> Unit
+) {
     FlowRow(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(AppSpacing.sm)) {
         options.forEach { (value, label) ->
-            FilterChip(selected = selected == value, onClick = { onSelected(value) }, label = { Text(label) })
+            if (tonal) {
+                ReaderAppearanceChip(selected = selected == value, onClick = { onSelected(value) }, label = { Text(label) })
+            } else {
+                FilterChip(selected = selected == value, onClick = { onSelected(value) }, label = { Text(label) })
+            }
         }
     }
 }
@@ -407,6 +442,13 @@ private fun ReaderSettingSlider(
                 }) { Icon(Icons.Default.Add, stringResource(R.string.reader_setting_increase)) }
             }
         }
-        Text(valueLabel(sliderPosition), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+        Surface(shape = AppShapes.pill, color = MaterialTheme.colorScheme.secondaryContainer) {
+            Text(
+                valueLabel(sliderPosition),
+                modifier = Modifier.padding(horizontal = AppSpacing.md, vertical = AppSpacing.xs),
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.onSecondaryContainer
+            )
+        }
     }
 }

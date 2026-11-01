@@ -38,6 +38,10 @@ import com.breakyuna.esjzone.ui.navigation.pushTransition
 import com.breakyuna.esjzone.ui.navigation.rememberNovelCoverSource
 import com.breakyuna.esjzone.ui.navigation.rememberSharedCoverOrigin
 import com.breakyuna.esjzone.ui.designsystem.contentArrival
+import com.breakyuna.esjzone.ui.page.NovelPageModel
+import com.breakyuna.esjzone.ui.page.rememberNovelDetailPresentationState
+import com.breakyuna.esjzone.network.LoadFailureKind
+import kotlinx.coroutines.flow.MutableStateFlow
 import com.breakyuna.esjzone.ui.page.NovelDetailLayout
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertSame
@@ -55,6 +59,8 @@ class NovelSharedCoverInstrumentedTest {
         lateinit var stack: MutableList<NavKey>
         var destinationPreview: String? = null
         var detailRevision by mutableStateOf(0)
+        val detailSource = MutableStateFlow<NovelPageModel.State>(NovelPageModel.State.Loading)
+        var presentedDetail: NovelPageModel.State? = null
         var heroInstance: Any? = null
         composeRule.setContent {
             MaterialTheme {
@@ -82,6 +88,8 @@ class NovelSharedCoverInstrumentedTest {
                                 }
                             }
                             entry<AppNavKey.Legacy> {
+                                val presented by rememberNovelDetailPresentationState(detailSource)
+                                SideEffect { presentedDetail = presented }
                                 destinationPreview = rememberSharedCoverOrigin(url)?.coverUrl
                                 NovelDetailLayout(
                                     hero = {
@@ -122,18 +130,31 @@ class NovelSharedCoverInstrumentedTest {
         composeRule.mainClock.advanceTimeBy(120)
         val moving = blueBounds()
         val loadingHero = heroInstance
-        composeRule.runOnIdle { detailRevision = 1 }
+        val failure = NovelPageModel.State.Error(LoadFailureKind.NETWORK)
+        composeRule.runOnIdle {
+            detailRevision = 1
+            detailSource.value = failure
+        }
         composeRule.mainClock.advanceTimeByFrame()
         val movingWithDetail = blueBounds()
+        assertEquals("Detail arrival must not replace the page during entry",
+            NovelPageModel.State.Loading, presentedDetail)
         assertSame("Loading completion must retain the shared cover and hero", loadingHero, heroInstance)
         composeRule.mainClock.advanceTimeBy(600)
         val destination = blueBounds()
+        assertEquals("The latest result must appear once motion settles", failure, presentedDetail)
         assertEquals("clicked-cover", destinationPreview)
         assertTrue(moving.width > source.width && moving.width < destination.width)
         assertTrue(movingWithDetail.width >= moving.width && movingWithDetail.width < destination.width)
         assertTrue(moving.top < source.top && moving.top > destination.top)
         composeRule.runOnIdle { detailRevision = 2 }
         composeRule.mainClock.advanceTimeByFrame()
+        assertEquals(failure, presentedDetail)
+        composeRule.runOnIdle { detailSource.value = NovelPageModel.State.Loading }
+        composeRule.mainClock.advanceTimeByFrame()
+        composeRule.mainClock.advanceTimeByFrame()
+        assertEquals("Updates on an idle page must not wait for another transition",
+            NovelPageModel.State.Loading, presentedDetail)
         val titlePixels = composeRule.onNodeWithTag("hero-title-2").captureToImage().toPixelMap()
         val titleColor = titlePixels[titlePixels.width / 2, titlePixels.height / 2]
         assertTrue("Metadata refresh must not restart the title fade", titleColor.red > 0.95f && titleColor.green < 0.05f)

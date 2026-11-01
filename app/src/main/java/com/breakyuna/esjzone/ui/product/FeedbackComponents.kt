@@ -29,7 +29,11 @@ import com.breakyuna.esjzone.ui.designsystem.AppTheme
 import com.breakyuna.esjzone.ui.designsystem.AppTypography
 
 @Composable
-fun LoadingSkeleton(modifier: Modifier = Modifier, label: String = stringResource(R.string.loading)) {
+fun LoadingSkeleton(
+    modifier: Modifier = Modifier,
+    label: String = stringResource(R.string.loading),
+    animated: Boolean = true
+) {
     Column(
         modifier = modifier
             .fillMaxWidth()
@@ -39,7 +43,8 @@ fun LoadingSkeleton(modifier: Modifier = Modifier, label: String = stringResourc
     ) {
         AppShimmerPlaceholder(
             modifier = Modifier.fillMaxWidth().height(136.dp),
-            shape = AppShapes.standard
+            shape = AppShapes.standard,
+            animated = animated
         )
         repeat(2) {
             Row(
@@ -47,13 +52,13 @@ fun LoadingSkeleton(modifier: Modifier = Modifier, label: String = stringResourc
                 horizontalArrangement = Arrangement.spacedBy(AppSpacing.md),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                AppShimmerPlaceholder(Modifier.size(width = 72.dp, height = 96.dp))
+                AppShimmerPlaceholder(Modifier.size(width = 72.dp, height = 96.dp), animated = animated)
                 Column(
                     modifier = Modifier.weight(1f),
                     verticalArrangement = Arrangement.spacedBy(AppSpacing.sm)
                 ) {
-                    AppShimmerPlaceholder(Modifier.fillMaxWidth(0.82f).height(18.dp), shape = AppShapes.compact)
-                    AppShimmerPlaceholder(Modifier.fillMaxWidth(0.58f).height(14.dp), shape = AppShapes.compact)
+                    AppShimmerPlaceholder(Modifier.fillMaxWidth(0.82f).height(18.dp), shape = AppShapes.compact, animated = animated)
+                    AppShimmerPlaceholder(Modifier.fillMaxWidth(0.58f).height(14.dp), shape = AppShapes.compact, animated = animated)
                 }
             }
         }

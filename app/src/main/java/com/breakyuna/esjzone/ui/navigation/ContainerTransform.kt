@@ -1,6 +1,8 @@
 package com.breakyuna.esjzone.ui.navigation
 
 import androidx.compose.animation.EnterExitState
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.SharedTransitionLayout
 import androidx.compose.animation.SharedTransitionScope
 import androidx.compose.animation.core.FastOutSlowInEasing
@@ -100,9 +102,14 @@ internal fun usesContainerTransform(from: Scene<NavKey>, to: Scene<NavKey>): Boo
         to.entries.lastOrNull()?.metadata?.get(ContainerTransformRouteMetadata) as? AppNavKey
     )
 
-internal fun containerContentTransform() =
-    fadeIn(tween(ContainerTransformDurationMillis)) togetherWith
-        fadeOut(tween(ContainerTransformDurationMillis))
+/** The container crossfades in the shared overlay; the underlying list page stays opaque
+ * instead of fading the whole screen through the window background. */
+internal fun containerContentTransform(pop: Boolean = false) =
+    if (pop) {
+        EnterTransition.None togetherWith fadeOut(tween(ContainerTransformDurationMillis))
+    } else {
+        fadeIn(tween(ContainerTransformDurationMillis)) togetherWith ExitTransition.KeepUntilTransitionsFinished
+    }
 
 @Composable
 internal fun ContainerTransformLayout(modifier: Modifier = Modifier, content: @Composable () -> Unit) {

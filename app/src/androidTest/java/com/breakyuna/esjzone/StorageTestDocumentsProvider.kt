@@ -50,6 +50,9 @@ class StorageTestDocumentsProvider : DocumentsProvider() {
             "reject-file-metadata" -> if (operation == "metadata" && file(documentId).isFile) {
                 throw SecurityException("Fixture rejects per-file metadata queries")
             }
+            "reject-image-metadata" -> if (operation == "metadata" && file(documentId).parentFile?.name == "images") {
+                throw SecurityException("Fixture rejects per-image metadata queries")
+            }
             "reject-file-rename" -> if (operation == "rename" && file(documentId).isFile) {
                 throw SecurityException("Fixture rejects per-file renames")
             }
@@ -93,6 +96,7 @@ class StorageTestDocumentsProvider : DocumentsProvider() {
     }
     override fun queryChildDocuments(parentDocumentId: String, projection: Array<out String>?, sortOrder: String?): Cursor {
         checkAccess(parentDocumentId, "children")
+        if (!file(parentDocumentId).isDirectory) throw java.io.FileNotFoundException("Fixture directory missing")
         return MatrixCursor(projection ?: columns).apply {
             file(parentDocumentId).listFiles().orEmpty().forEach { row(this, it) }
             if (fixtures[parentDocumentId]?.first == "odd-names") {

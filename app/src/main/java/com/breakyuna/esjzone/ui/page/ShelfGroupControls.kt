@@ -145,7 +145,6 @@ internal fun ShelfGroupDialogs(
             title = { Text(stringResource(R.string.group_manage)) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text(stringResource(R.string.group_local_hint), style = MaterialTheme.typography.bodySmall)
                     OutlinedButton(onClick = { onNavigate(ShelfGroupDialog.CREATE, "") }, modifier = Modifier.fillMaxWidth()) {
                         Icon(Icons.Filled.Add, null)
                         Text(stringResource(R.string.group_create), Modifier.padding(start = 8.dp))
@@ -173,7 +172,6 @@ internal fun ShelfGroupDialogs(
             title = { Text(stringResource(R.string.group_move_title, selectedCount)) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text(stringResource(R.string.group_move_hint), style = MaterialTheme.typography.bodySmall)
                     LazyColumn(Modifier.fillMaxWidth().weight(1f, fill = false).heightIn(max = 320.dp).selectableGroup()) {
                         items(listOf("") + names, key = { it }) { name ->
                             Row(

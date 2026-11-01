@@ -253,6 +253,7 @@ fun NovelHero(
         AppCoverBackdrop(
             coverUrl = coverUrl,
             coverState = coverState,
+            initialImage = novel.cover.initialImage,
             modifier = Modifier.fillMaxWidth()
         ) {
             Row(

@@ -816,6 +816,7 @@ private fun CloudHistoryCard(
         AppNovelCover(
             coverUrl = coverUrl,
             title = history.name,
+            onImageLoaded = coverSource.onImageLoaded,
             modifier = Modifier.then(coverSource.modifier).size(width = 96.dp, height = 132.dp)
         )
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(AppSpacing.xs)) {

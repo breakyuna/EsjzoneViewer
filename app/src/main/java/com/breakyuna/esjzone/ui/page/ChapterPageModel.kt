@@ -122,6 +122,7 @@ class ChapterPageModel(
     private var pendingNextRequest = false
     private var pendingPreviousRequest = false
     private var initialLoadStarted = false
+    private var titleResolutionStarted = false
     private var failedAppendChapterKey: String? = null
     private var failedPrependChapterKey: String? = null
     private var verificationChapter: Chapter? = null
@@ -148,6 +149,14 @@ class ChapterPageModel(
             if (initialLoadStarted) return
             initialLoadStarted = true
         }
+        openChapter(initialChapter)
+    }
+
+    private fun resolveNovelTitle() {
+        synchronized(lock) {
+            if (titleResolutionStarted) return
+            titleResolutionStarted = true
+        }
         viewModelScope.launch(Dispatchers.IO) {
             try {
                 val title = NovelTitleRepository.resolve(authorization, novelId, downloadNovelUrl.orEmpty(), novelNameState.value)
@@ -161,7 +170,6 @@ class ChapterPageModel(
                 AppLogger.w("ChapterPageModel", "Unable to resolve novel title", error)
             }
         }
-        openChapter(initialChapter)
     }
 
     fun openChapter(chapter: Chapter) {
@@ -256,6 +264,10 @@ class ChapterPageModel(
                 if (isCurrentSessionLocked(currentSession)) loadedChapters += entry
             }
             publish(currentSession)
+
+            // Metadata repair can scan download manifests; start only after the
+            // requested body has been published, so it cannot win the storage lock.
+            resolveNovelTitle()
 
             if (!synchronized(lock) { catalog.isComplete }) {
                 val targetNovelUrl = novelUrl.takeIf { it.isNotBlank() }
@@ -662,6 +674,12 @@ class ChapterPageModel(
     private fun queueChapterPersistence(chapter: Chapter, detail: DetailedChapter) {
         if (!PresentationAccess.settings.readerAutoSaveFlow.value) return
         if (detail.content.isEmpty()) return
+        // A validated local read is already durable. Do not re-read/rewrite its
+        // assets just because a history route has no catalog or cover metadata.
+        if (detail.downloadedSourceRevision != null) {
+            if (synchronized(lock) { catalog.isComplete }) queueChapterCatalogPersistence()
+            return
+        }
         val (orderSnapshot, orderCompleteSnapshot) = synchronized(lock) {
             orderedChapters.toList() to catalog.isComplete
         }

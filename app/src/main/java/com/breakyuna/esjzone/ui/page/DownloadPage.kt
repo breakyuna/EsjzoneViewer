@@ -333,6 +333,9 @@ private fun DownloadCard(
         )
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(AppSpacing.xs)) {
             Text(validNovelTitle(summary.novelName, novelUrl = summary.novelUrl).ifBlank { stringResource(R.string.download_unknown_novel) }, style = AppTypography.labelLarge, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            if (summary.manifest.pendingImageChapterCount > 0) Text(
+                stringResource(R.string.novel_download_pending_images_count, summary.manifest.pendingImageChapterCount),
+                style = AppTypography.bodyMedium)
             Text(if (summary.manifest.catalogComplete) stringResource(R.string.local_download_count, summary.downloadedChapterCount, summary.manifest.chapters.size)
                 else stringResource(R.string.download_chapters_count, summary.downloadedChapterCount), style = AppTypography.bodyMedium, color = MaterialTheme.colorScheme.primary)
             Text(if (summary.storageBytes < 0) stringResource(R.string.storage_size_calculating) else formatBytes(summary.storageBytes), style = AppTypography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)

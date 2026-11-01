@@ -170,7 +170,10 @@ class SharedDownloadStorageInstrumentedTest {
             val fresh = StorageFile(StorageFile.fromTree(context, treeUri), shared.name + "/downloads")
             NovelDownloadStore.reindex(fresh)
             assertEquals(1, NovelDownloadStore.listDownloadedNovels().size)
-            val restoredImage = NovelDownloadStore.readChapter(chapter.url)!!.content.filterIsInstance<ImageComponent>().single()
+            configure(shared, "reject-image-metadata", "metadata")
+            val restoredImage = try {
+                NovelDownloadStore.readChapter(chapter.url)!!.content.filterIsInstance<ImageComponent>().single()
+            } finally { configure(shared) }
             assertTrue(restoredImage.url.startsWith("content://"))
             assertArrayEquals(imageBytes, context.contentResolver.openInputStream(android.net.Uri.parse(restoredImage.url))!!.use { it.readBytes() })
             val saved = requireNotNull(NovelDownloadStore.manifest(novelUrl))
@@ -200,6 +203,16 @@ class SharedDownloadStorageInstrumentedTest {
             NovelDownloadStore.importBackup(backup)
             assertNotNull(NovelDownloadStore.readChapter(chapter.url))
             assertNull(NovelDownloadStore.manifest(novelUrl)!!.commonPassword)
+            configure(shared, "security", "children")
+            try {
+                assertThrows(StorageAccessException::class.java) { NovelDownloadStore.readChapter(chapter.url) }
+            } finally { configure(shared) }
+            val restoredBook = StorageFile(shared, "restored").listFiles()!!.single { it.isDirectory }
+            // Bypass StorageFile invalidation, as an external file manager would.
+            check(DocumentsContract.deleteDocument(context.contentResolver, StorageFile(restoredBook, "images").uri))
+            val withoutImages = requireNotNull(NovelDownloadStore.readChapter(chapter.url))
+            assertEquals(imageUrl, withoutImages.content.filterIsInstance<ImageComponent>().single().url)
+            assertTrue(withoutImages.content.filterIsInstance<TextComponent>().isNotEmpty())
         } finally {
             context.getSharedPreferences("download_secrets", Context.MODE_PRIVATE).edit().remove(secretKey).commit()
             kotlinx.coroutines.runBlocking { EsjzoneApplication.instance.container.initializeDownloads() }

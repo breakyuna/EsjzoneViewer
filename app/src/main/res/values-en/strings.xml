@@ -169,7 +169,7 @@
     <string name="novel_download">Download for offline reading</string>
     <string name="novel_download_select_chapters">Select chapters to download</string>
     <string name="novel_download_clear_selection">Clear</string>
-    <string name="novel_download_already_saved">Downloaded</string>
+    <string name="novel_download_already_saved">Saved</string>
     <string name="novel_download_selected_action">Download selected chapters</string>
     <string name="novel_download_update">Check for new chapters</string>
     <string name="novel_downloading">Downloading %1$d/%2$d · %3$s</string>
@@ -213,6 +213,9 @@
     <string name="novel_local_copy_none">No local copy yet</string>
     <string name="novel_local_copy_partial">%1$d/%2$d chapters available locally</string>
     <string name="novel_local_copy_complete">%1$d/%2$d chapters available locally</string>
+    <string name="novel_download_retry_images">Retry images</string>
+    <string name="novel_download_pending_images_count">Images pending in %1$d chapters</string>
+    <string name="novel_download_saved_with_images">Chapters saved; images pending in %1$d chapters</string>
     <string name="novel_download_continue">Continue download</string>
     <string name="novel_download_pause">Pause download</string>
     <string name="novel_download_paused">Download paused</string>
@@ -664,7 +667,6 @@
     <string name="reading_stats_title">Reading statistics</string>
     <string name="reading_stats_back">Back</string>
     <string name="reading_stats_loading">Loading reading statistics…</string>
-    <string name="reading_stats_local_note">Stored on this device. Tracking starts with this version.</string>
     <string name="reading_stats_empty">Start reading a chapter to see your statistics here.</string>
     <string name="reading_stats_total">Total</string>
     <string name="reading_stats_today">Today</string>
@@ -723,7 +725,7 @@
     <string name="novel_download_pending_count">%1$d chapters to download</string>
     <string name="novel_download_expand_group">Expand group</string>
     <string name="novel_download_collapse_group">Collapse group</string>
-    <string name="novel_download_downloaded_count">%1$d / %2$d chapters downloaded</string>
+    <string name="novel_download_downloaded_count">%1$d / %2$d chapters saved</string>
     <string name="novel_download_range_start">Start position</string>
     <string name="novel_download_range_end">End position</string>
     <string name="novel_download_range_error">Enter whole numbers from 1 to %1$d. The end must be at or after the start.</string>
@@ -782,12 +784,10 @@
     <string name="reading_stats_show_tags">Show all tags and percentages</string>
     <string name="reading_stats_hide_tags">Hide tag list</string>
     <string name="group_manage">Manage groups</string>
-    <string name="group_local_hint">Groups are saved on this device.</string>
     <string name="group_manage_empty">Create a group, then long-press books to move them into it.</string>
     <string name="group_rename_named">Rename %1$s</string>
     <string name="group_delete_named">Delete group %1$s</string>
     <string name="group_move_title">Move %1$d books</string>
-    <string name="group_move_hint">Choose a destination, then confirm the move.</string>
     <string name="group_current">Current group</string>
     <string name="group_create_and_move">Create and move</string>
     <string name="group_move_confirm">Confirm move</string>
@@ -931,7 +931,7 @@
     <string name="local_download_waiting">Waiting to download</string>
     <string name="local_download_count">%1$d / %2$d chapters saved</string>
     <string name="local_downloaded">Downloaded</string>
-    <string name="local_text_saved">Text saved</string>
+    <string name="local_text_saved">Saved · images pending</string>
     <string name="local_not_downloaded">Not downloaded</string>
     <string name="local_search_empty">No matching local books</string>
     <string name="search_scope_local">Local</string>

@@ -55,6 +55,101 @@ class StructuredDownloadStoreTest {
     }
 
     @Test
+    fun cachedDirectoryIndexOpensOnlyTheRequestedManifestAfterRestart() = withStorage { root ->
+        val cache = File.createTempFile("download-directory-index-", ".json")
+        val otherUrl = "https://www.esjzone.cc/detail/9002.html"
+        try {
+            NovelDownloadStore.initializeDirectory(root, cache)
+            save(1, listOf(chapter(1)))
+            val other = requireNotNull(NovelDownloadStore.saveChapterCatalog(
+                "Other", otherUrl, "", listOf(Chapter("Other chapter", "/forum/9002/1.html", false))))
+            val otherFile = File(root, "Other/manifest.json")
+
+            NovelDownloadStore.initializeDirectory(root, cache)
+            assertNotNull(NovelDownloadStore.readChapter(chapter(1).url, novelUrl))
+            // If opening book 1 scanned book 2, this later on-disk title would be
+            // hidden by the stale in-memory manifest populated during that scan.
+            otherFile.writeText(Gson().toJson(other.copy(name = "Changed after opening book 1")))
+            assertEquals("Changed after opening book 1", NovelDownloadStore.manifest(otherUrl)?.name)
+        } finally { cache.delete() }
+    }
+
+    @Test
+    fun cachedDirectoryHintsCannotOpenTheWrongBookAfterFoldersAreSwapped() = withStorage { root ->
+        val cache = File.createTempFile("download-directory-index-", ".json")
+        val otherUrl = "https://www.esjzone.cc/detail/9002.html"
+        try {
+            NovelDownloadStore.initializeDirectory(root, cache)
+            save(1, listOf(chapter(1)))
+            NovelDownloadStore.saveChapterCatalog("Other", otherUrl, "",
+                listOf(Chapter("Other chapter", "/forum/9002/1.html", false)))
+            val original = File(root, "Novel")
+            val other = File(root, "Other")
+            val temporary = File(root, "swapping")
+            assertTrue(original.renameTo(temporary))
+            assertTrue(other.renameTo(original))
+            assertTrue(temporary.renameTo(other))
+
+            NovelDownloadStore.initializeDirectory(root, cache)
+            assertEquals(novelUrl, NovelDownloadStore.manifest(novelUrl)?.url)
+            assertNotNull(NovelDownloadStore.readChapter(chapter(1).url, novelUrl))
+            assertEquals(otherUrl, NovelDownloadStore.manifest(otherUrl)?.url)
+            NovelDownloadStore.reindex()
+            assertNotNull(NovelDownloadStore.readChapter(chapter(1).url, novelUrl))
+        } finally { cache.delete() }
+    }
+
+    @Test
+    fun replacementRestoreDiscardsDirectoryHintsAfterCompletionOrPartialCommit() = withStorage { root ->
+        val cache = File.createTempFile("restore-directory-index-", ".json")
+        val incoming = Files.createTempDirectory("restore-incoming-").toFile()
+        val backup = Files.createTempDirectory("restore-backup-").toFile()
+        val otherUrl = "https://www.esjzone.cc/detail/9002.html"
+        val otherChapter = Chapter("Other chapter", "https://www.esjzone.cc/forum/9002/1.html", false)
+        try {
+            NovelDownloadStore.initializeDirectory(incoming)
+            NovelDownloadStore.saveChapter("Novel", otherUrl, "", listOf(otherChapter), otherChapter,
+                DetailedChapter("Other chapter", listOf(TextComponent("恢复的正文")), null, null), auth)
+            NovelDownloadStore.saveChapterCatalog("Later", "https://www.esjzone.cc/detail/9003.html", "", emptyList())
+            NovelDownloadStore.exportBackup(backup)
+            val first = Gson().fromJson(File(backup.listFiles()!!.first(), "manifest.json").readText(),
+                DownloadedNovelManifest::class.java)
+            for (cancelAfterCommit in listOf(false, true)) {
+                root.deleteRecursively()
+                NovelDownloadStore.initializeDirectory(root, cache)
+                NovelDownloadStore.saveChapter(first.name, novelUrl, "", listOf(chapter(1)), chapter(1), detail(1), auth)
+                assertTrue(cache.isFile)
+                try {
+                    NovelDownloadStore.importBackup(backup, replaceExisting = true) {
+                        val committed = File(root, "${first.name}/manifest.json")
+                        if (cancelAfterCommit && committed.isFile &&
+                            Gson().fromJson(committed.readText(), DownloadedNovelManifest::class.java).url == first.url) {
+                            throw kotlinx.coroutines.CancellationException("Cancelled after first book committed")
+                        }
+                    }
+                    assertFalse(cancelAfterCommit)
+                } catch (_: kotlinx.coroutines.CancellationException) {
+                    assertTrue(cancelAfterCommit)
+                }
+                // Change roots to discard in-memory mappings, as a process restart does.
+                NovelDownloadStore.initializeDirectory(incoming)
+                NovelDownloadStore.initializeDirectory(root, cache)
+                assertEquals(first.url, NovelDownloadStore.manifest(first.url)?.url)
+                assertNull(NovelDownloadStore.manifest(novelUrl))
+                assertTrue(NovelDownloadStore.listDownloadedNovels().any { it.novelUrl == first.url })
+                if (first.url == otherUrl || !cancelAfterCommit) {
+                    assertNotNull(NovelDownloadStore.readChapter(otherChapter.url, otherUrl))
+                }
+            }
+        } finally {
+            cache.delete()
+            incoming.deleteRecursively()
+            backup.deleteRecursively()
+            NovelDownloadStore.initializeDirectory(root)
+        }
+    }
+
+    @Test
     fun validatedLocalReadDoesNotRewriteUnchangedDownloadsButStillUpdatesMetadata() = withStorage { _ ->
         val order = listOf(chapter(1))
         val manifest = save(1, order)
@@ -569,6 +664,52 @@ class StructuredDownloadStoreTest {
     }
 
     @Test
+    fun firstDownloadCountsSavedChaptersEvenWhenAnImageTimesOut() = withStorage { _ ->
+        val cache = Files.createTempDirectory("download-image-timeout-").toFile()
+        PageCache.initializeDirectory(cache)
+        val order = listOf(chapter(1), chapter(2))
+        val imageUrl = "https://example.test/new-image.png"
+        val first = detail(1).copy(content = listOf(TextComponent("保留正文"),
+            com.breakyuna.esjzone.novellibrary.component.ImageComponent(imageUrl)),
+            contentHtml = "<p>保留正文</p><img src='$imageUrl'>").withStructuredBody()
+        for ((chapter, detail) in listOf(chapter(1) to first, chapter(2) to detail(2))) {
+            val key = EsjzoneClient.novelDetailCacheKey(auth, chapter.url)
+            PageCache.write(key, detail.contentHtml.orEmpty())
+            requireNotNull(StructuredChapterCache.write(key, detail.contentHtml.orEmpty(), detail))
+        }
+        val clientField = EsjzoneClient::class.java.getDeclaredField("sharedHttpClient").apply { isAccessible = true }
+        val original = clientField.get(EsjzoneClient) as OkHttpClient
+        val requests = mutableListOf<String>()
+        clientField.set(EsjzoneClient, original.newBuilder().addInterceptor { chain ->
+            requests += chain.request().url.toString()
+            throw SocketTimeoutException("Fixture image timeout")
+        }.build())
+        try {
+            val progress = mutableListOf<DownloadProgress>()
+            val saved = runBlocking {
+                NovelDownloadStore.download(auth, novel(order), concurrency = 1) { progress += it }
+            }
+            assertEquals(0, progress.first().completed)
+            assertEquals(2, progress.last().completed)
+            assertTrue(progress.all { it.completed in 0..it.total })
+            assertTrue(saved.chaptersSaved)
+            assertFalse(saved.complete)
+            assertEquals(1, saved.pendingImageChapterCount)
+            assertEquals(first.body, NovelDownloadStore.readChapter(chapter(1).url)!!.body)
+            assertTrue(requests.isNotEmpty())
+            assertTrue(requests.all { it == imageUrl })
+
+            // Repeated image failure must not double-count already durable bodies.
+            progress.clear()
+            runBlocking { NovelDownloadStore.download(auth, novel(order), concurrency = 1) { progress += it } }
+            assertTrue(progress.all { it.completed == 2 && it.total == 2 })
+        } finally {
+            clientField.set(EsjzoneClient, original)
+            cache.deleteRecursively()
+        }
+    }
+
+    @Test
     fun imageTimeoutKeepsReadableBodyAndExistingImagesAndAllowsLaterRepair() = withStorage { root ->
         val order = listOf(chapter(1), chapter(2))
         val manifest = save(1, order)
@@ -604,7 +745,13 @@ class StructuredDownloadStoreTest {
             assertFalse(partial.chapters.first().downloaded)
             assertTrue(partial.chapters.last().downloaded)
             assertFalse(partial.complete)
-            assertEquals(1, progress.last().completed)
+            assertEquals(2, progress.last().completed)
+            assertTrue(progress.all { it.completed <= it.total })
+            assertEquals(2, partial.savedChapterCount)
+            assertTrue(partial.chaptersSaved)
+            assertEquals(1, partial.pendingImageChapterCount)
+            assertTrue(partial.chapters.first().isSaved)
+            assertTrue(partial.chapters.first().needsImages)
             val offline = requireNotNull(NovelDownloadStore.readChapter(chapter(1).url))
             assertEquals(body, offline.body)
             assertEquals("保留正文", offline.content.filterIsInstance<TextComponent>().single().text)
@@ -626,6 +773,8 @@ class StructuredDownloadStoreTest {
             requestedImages.clear()
             val repaired = runBlocking { NovelDownloadStore.download(auth, novel(order)) }
             assertTrue(repaired.complete)
+            assertEquals(2, repaired.savedChapterCount)
+            assertEquals(0, repaired.pendingImageChapterCount)
             assertTrue(requestedImages.isEmpty())
             assertEquals(body, NovelDownloadStore.readChapter(chapter(1).url)!!.body)
         } finally {

@@ -32,6 +32,7 @@ import com.breakyuna.esjzone.novellibrary.novel.NovelDescription
 import com.breakyuna.esjzone.util.copyWithCancellation
 import com.breakyuna.esjzone.util.AppLogger
 import com.google.gson.Gson
+import com.breakyuna.esjzone.storage.StorageAccessException
 import com.breakyuna.esjzone.storage.StorageFile
 import com.breakyuna.esjzone.storage.StorageTransferProgress
 import com.breakyuna.esjzone.storage.StorageTransferPhase
@@ -91,7 +92,12 @@ data class DownloadedNovelManifest(
     val catalogComplete: Boolean = false
 ) {
     val pendingPasswordChapters: List<DownloadedChapterRecord>
-        get() = chapters.filter { it.requiresPassword && !it.downloaded }
+        get() = chapters.filter { it.requiresPassword && !it.isSaved }
+    val savedChapterCount: Int get() = chapters.count { it.isSaved }
+    val pendingImageChapterCount: Int get() = chapters.count { it.needsImages }
+    /** Body completion is independent of the existing full-asset completion flag. */
+    val chaptersSaved: Boolean get() = (catalogComplete || complete) &&
+        chapters.any { !it.localOnly } && chapters.filterNot { it.localOnly }.all { it.isSaved }
 }
 
 data class DownloadedChapterRecord(
@@ -104,7 +110,10 @@ data class DownloadedChapterRecord(
     val textLength: Int? = null,
     val bodyAvailable: Boolean = false,
     val localOnly: Boolean = false
-)
+) {
+    val isSaved: Boolean get() = bodyAvailable || downloaded
+    val needsImages: Boolean get() = bodyAvailable && !downloaded
+}
 
 data class DownloadedChapterContent(
     val name: String,
@@ -162,6 +171,7 @@ object NovelDownloadStore {
     private val manifestCache = HashMap<String, DownloadedNovelManifest?>()
     /** Folder names are presentation; the manifest URL remains the book identity. */
     private val novelDirectories = LinkedHashMap<String, StorageFile>()
+    private var directoryIndexCache: File? = null
     private var novelDirectoryIndexLoaded = false
     private var renameLegacyDirectories = false
     private val historyProgressCache = HashMap<String, DownloadedHistoryProgress>()
@@ -209,12 +219,16 @@ object NovelDownloadStore {
 
     fun initialize(context: Context, selectedDirectory: StorageFile? = null, onlyIfUninitialized: Boolean = false) = synchronized(ioLock) {
         appContext = context.applicationContext
+        directoryIndexCache = File(context.applicationContext.cacheDir, "download-directory-index.json")
         privatePasswords = context.applicationContext.getSharedPreferences("download_secrets", Context.MODE_PRIVATE)
         val directory = selectedDirectory ?: StorageFile(File(context.applicationContext.filesDir, "downloaded_novels"))
         if ((!onlyIfUninitialized || rootDirectory == null) && rootDirectory?.absolutePath != directory.absolutePath) initializeStorageDirectory(directory)
     }
 
-    internal fun initializeDirectory(directory: File) = initializeStorageDirectory(StorageFile(directory))
+    internal fun initializeDirectory(directory: File, indexCache: File? = null) = synchronized(ioLock) {
+        directoryIndexCache = indexCache
+        initializeStorageDirectory(StorageFile(directory))
+    }
 
     private fun initializeStorageDirectory(directory: StorageFile) = synchronized(ioLock) {
         // A disconnected user-selected volume must not prevent opening Settings to repair access.
@@ -245,6 +259,7 @@ object NovelDownloadStore {
 
     /** Rescan metadata after files are restored or changed outside the app. */
     fun reindex(directory: StorageFile? = null) = synchronized(ioLock) {
+        directoryIndexCache?.delete()
         (directory ?: rootDirectory)?.let { initializeStorageDirectory(it) }
     }
 
@@ -583,6 +598,8 @@ object NovelDownloadStore {
             }
         } finally {
             // Earlier novels may already have committed when a later copy is cancelled.
+            // Restores can reuse a deleted book's folder for a different identity.
+            directoryIndexCache?.delete()
             chapterIndex.clear()
             chapterKeysByDirectory.clear()
             chapterIndexLoaded = false
@@ -1175,7 +1192,8 @@ object NovelDownloadStore {
             val previous = previousByUrl[chapterKey(chapter.url)]
             val fileName = previous?.fileName ?: chapterFileName(chapter.url)
             val chapterFile = StorageFile(directory, fileName)
-            val isDownloaded = isChapterFullyDownloaded(directory, chapterFile)
+            val stored = synchronized(ioLock) { readStoredChapter(directory, chapterFile) }
+            val isDownloaded = stored?.hasAllImagesOnDisk(directory) == true
             DownloadedChapterRecord(
                 index = index,
                 name = chapter.name,
@@ -1184,7 +1202,9 @@ object NovelDownloadStore {
                 // Chapter files are atomically renamed. A process stopped between
                 // checkpoints can safely recover a completed file on the next run.
                 downloaded = isDownloaded,
-                requiresPassword = if (isDownloaded) false else (previous?.requiresPassword == true)
+                requiresPassword = stored == null && previous?.requiresPassword == true,
+                bodyAvailable = stored != null,
+                textLength = stored?.body?.textLength
             )
         }
 
@@ -1200,7 +1220,7 @@ object NovelDownloadStore {
 
         val targetRecords = currentRecords.filter { selectedKeys == null || chapterKey(it.url) in selectedKeys }
         val totalCount = targetRecords.size
-        val completedCounter = AtomicInteger(targetRecords.count { it.downloaded })
+        val completedCounter = AtomicInteger(targetRecords.count { it.isSaved })
         val lastProgressTime = AtomicLong(0L)
 
         fun reportProgress(chapterName: String, force: Boolean = false) {
@@ -1313,7 +1333,7 @@ object NovelDownloadStore {
                                     var published: DownloadedNovelManifest? = null
                                     synchronized(ioLock) {
                                         val fullyDownloaded = saved.hasAllImagesOnDisk(directory)
-                                        val finished = if (fullyDownloaded) completedCounter.incrementAndGet()
+                                        val finished = if (!record.isSaved) completedCounter.incrementAndGet()
                                             else completedCounter.get()
                                         currentRecords[record.index] = record.copy(downloaded = fullyDownloaded,
                                             requiresPassword = false, bodyAvailable = true, textLength = saved.body?.textLength)
@@ -1747,11 +1767,29 @@ object NovelDownloadStore {
         chapterKeysByDirectory[directory.absolutePath] = keys
     }
 
-    private fun imageLocations(directory: StorageFile, stored: DownloadedChapterContent): Map<String, String> =
-        stored.components.filter { it.type == IMAGE_COMPONENT }.associate { image ->
+    private fun imageLocations(directory: StorageFile, stored: DownloadedChapterContent): Map<String, String> {
+        val images = stored.components.filter { it.type == IMAGE_COMPONENT }
+        val files = images.mapNotNull { it.localFile?.let { path -> resolveLocalFile(directory, path) } }
+        // SAF metadata properties each issue a provider query. List each asset folder
+        // once, retaining type/size from that same query for all images in this chapter.
+        val available = if (directory.isDocument) {
+            files.mapNotNull { it.parentFile }.distinct().flatMap { parent ->
+                val entries = try {
+                    parent.entries()
+                } catch (error: StorageAccessException) {
+                    // Cached SAF URIs can outlive an externally deleted images folder.
+                    // exists() also verifies tree access, so provider failures still surface.
+                    if (parent.exists()) throw error
+                    emptyList()
+                }
+                entries.filter { !it.directory && it.size > 0L }.map { it.file }
+            }.toHashSet()
+        } else files.filter { it.isFile && it.length() > 0L }.toHashSet()
+        return images.associate { image ->
             image.value to (image.localFile?.let { resolveLocalFile(directory, it) }
-                ?.takeIf { it.isFile && it.length() > 0L }?.uriString ?: image.value)
+                ?.takeIf { it in available }?.uriString ?: image.value)
         }
+    }
 
     private fun readStoredChapter(directory: StorageFile, file: StorageFile): DownloadedChapterContent? = synchronized(ioLock) {
         val stored = readJson(file, DownloadedChapterContent::class.java) ?: return@synchronized null
@@ -1802,8 +1840,16 @@ object NovelDownloadStore {
         ensureNovelDirectoryIndex()
         val key = canonicalKey(novelUrl)
         novelDirectories[key]?.let { directory ->
-            if (directory.isDirectory) return@synchronized directory
+            // The persisted directory index is only a hint. Always verify the requested
+            // book against its manifest before using it (folders can be replaced externally).
+            if (directory.isDirectory && readManifest(directory)?.let { canonicalKey(it.url) == key } != false) {
+                return@synchronized directory
+            }
             novelDirectories.remove(key)
+            novelDirectoryIndexLoaded = false
+            directoryIndexCache?.delete()
+            ensureNovelDirectoryIndex()
+            novelDirectories[key]?.let { return@synchronized it }
         }
         if (!create) return@synchronized null
         prepareDownloadRoot(root)
@@ -1822,14 +1868,16 @@ object NovelDownloadStore {
     }
 
     private fun scanNovelDirectories(
-        root: StorageFile, migrationFailureReason: StorageTransferFailureReason? = null
+        root: StorageFile, migrationFailureReason: StorageTransferFailureReason? = null,
+        directoryHints: Map<String, String> = emptyMap()
     ): LinkedHashMap<String, StorageFile> {
         val directories = LinkedHashMap<String, StorageFile>()
         if (!root.exists()) return directories
         root.entries().filter { it.directory && !isStagingDirectory(it.file.name) }.map { it.file }
             .sortedBy(StorageFile::name).forEach { directory ->
-                val manifest = readManifest(directory, migrationFailureReason) ?: return@forEach
-                if (manifest.url.isNotBlank()) directories.putIfAbsent(canonicalKey(manifest.url), directory)
+                val key = directoryHints[directory.name] ?: readManifest(directory, migrationFailureReason)
+                    ?.url?.takeIf(String::isNotBlank)?.let(::canonicalKey) ?: return@forEach
+                directories.putIfAbsent(key, directory)
             }
         return directories
     }
@@ -1841,7 +1889,8 @@ object NovelDownloadStore {
     private fun ensureNovelDirectoryIndex(migrationFailureReason: StorageTransferFailureReason? = null) {
         if (novelDirectoryIndexLoaded) return
         val root = rootDirectory ?: return
-        val directories = scanNovelDirectories(root, migrationFailureReason)
+        val hints = if (migrationFailureReason == null) readDirectoryHints(root) else emptyMap()
+        val directories = scanNovelDirectories(root, migrationFailureReason, hints)
         novelDirectories.forEach { (key, directory) ->
             if (key !in directories && directory.isDirectory) directories[key] = directory
         }
@@ -1861,6 +1910,32 @@ object NovelDownloadStore {
         novelDirectories.putAll(directories)
         novelDirectoryIndexLoaded = true
         renameLegacyDirectories = false
+        saveDirectoryHints()
+    }
+
+    private data class DirectoryHints(val root: String, val directories: Map<String, String>)
+
+    private fun readDirectoryHints(root: StorageFile): Map<String, String> = runCatching {
+        val file = directoryIndexCache ?: return emptyMap()
+        if (!file.isFile) return emptyMap()
+        file.reader().use { gson.fromJson(it, DirectoryHints::class.java) }
+            ?.takeIf { it.root == root.absolutePath }?.directories.orEmpty()
+    }.getOrDefault(emptyMap())
+
+    /** Private, disposable name-to-identity hints; no chapter data or credentials. */
+    private fun saveDirectoryHints() {
+        val file = directoryIndexCache ?: return
+        val root = rootDirectory ?: return
+        runCatching {
+            val temporary = File(file.parentFile, "${file.name}.tmp")
+            try {
+                temporary.writer().use { writer ->
+                    gson.toJson(DirectoryHints(root.absolutePath,
+                        novelDirectories.entries.associate { it.value.name to it.key }), writer)
+                }
+                check(temporary.renameTo(file))
+            } finally { temporary.delete() }
+        }.onFailure { AppLogger.w("NovelDownloadStore", "Unable to cache download directory index", it) }
     }
 
     private fun availableNovelDirectory(root: StorageFile, name: String, key: String): StorageFile {
@@ -1965,6 +2040,7 @@ object NovelDownloadStore {
         writeJson(StorageFile(directory, MANIFEST_FILE),
             if (directory.isDocument) manifest.copy(commonPassword = null) else manifest, writeGuard)
         manifestCache[directory.absolutePath] = manifest
+        saveDirectoryHints()
         historyProgressCache.remove(directory.absolutePath)
         mutableChanges.value += 1
         if (chapterIndexLoaded || directory.absolutePath in chapterKeysByDirectory) {

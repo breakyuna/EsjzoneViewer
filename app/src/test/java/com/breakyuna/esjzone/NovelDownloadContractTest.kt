@@ -53,13 +53,13 @@ class NovelDownloadContractTest {
     }
 
     @Test
-    fun queuedUnlock_keepsIncompleteImageTargetsAfterPasswordGateIsRemoved() {
+    fun queuedUnlock_countsSavedBodiesAfterPasswordGateIsRemoved() {
         val tags = setOf(NovelDownloadManager.UNLOCK_TAG,
             NovelDownloadManager.TOTAL_TAG_PREFIX + 1,
             NovelDownloadManager.SELECTION_TAG_PREFIX + ChapterSelectionCodec.encode(setOf("/forum/9001/1.html")))
         val chapter = progressRecord(1, false).copy(bodyAvailable = true, requiresPassword = false)
 
-        assertEquals(DownloadProgress(0, 1, ""), NovelDownloadManager.restoredProgress(tags, listOf(chapter)))
+        assertEquals(DownloadProgress(1, 1, ""), NovelDownloadManager.restoredProgress(tags, listOf(chapter)))
     }
 
     @Test
@@ -78,10 +78,10 @@ class NovelDownloadContractTest {
     }
 
     @Test
-    fun queuedDownload_doesNotCountIncompleteImagesOrChaptersOutsideCatalog() {
+    fun queuedDownload_countsSavedBodiesButExcludesDuplicatesAndChaptersOutsideCatalog() {
         val chapters = listOf(progressRecord(1, true), progressRecord(1, true),
             progressRecord(2, false).copy(bodyAvailable = true), progressRecord(3, true).copy(localOnly = true))
-        assertEquals(DownloadProgress(1, 2, ""), NovelDownloadManager.restoredProgress(emptySet(), chapters))
+        assertEquals(DownloadProgress(2, 2, ""), NovelDownloadManager.restoredProgress(emptySet(), chapters))
     }
 
     @Test

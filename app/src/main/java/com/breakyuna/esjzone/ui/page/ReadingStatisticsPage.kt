@@ -375,8 +375,6 @@ private fun StatisticsOverview(summary: ReadingStatisticsSummary) {
                     color = colors.onPrimaryContainer.copy(alpha = .7f))
             }
         }
-        Text(stringResource(R.string.reading_stats_local_note), style = AppTypography.bodySmall,
-            modifier = Modifier.padding(horizontal = AppSpacing.xs), color = colors.onSurfaceVariant)
     }
 }
 

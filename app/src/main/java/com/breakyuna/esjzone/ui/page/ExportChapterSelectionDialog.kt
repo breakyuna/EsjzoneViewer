@@ -61,7 +61,7 @@ internal fun ExportChapterSelectionDialog(
     val chapters by produceState<List<DownloadedChapterRecord>?>(null, novelUrl) {
         try {
             value = withContext(Dispatchers.IO) {
-                PresentationAccess.downloads.manifest(novelUrl)?.chapters.orEmpty().filter { it.downloaded }
+                PresentationAccess.downloads.manifest(novelUrl)?.chapters.orEmpty().filter { it.isSaved }
             }
         } catch (error: CancellationException) {
             throw error

@@ -45,7 +45,6 @@ import androidx.compose.material3.NavigationRail
 import androidx.compose.material3.NavigationRailItem
 import androidx.compose.material3.NavigationRailItemDefaults
 import androidx.compose.material3.Surface
-import androidx.compose.material3.ripple
 import com.breakyuna.esjzone.ui.designsystem.GlobalText as Text
 import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
@@ -464,14 +463,14 @@ private fun TabStackDisplay(
                     },
                     popTransitionSpec = {
                         if (usesContainerTransform(initialState, targetState)) {
-                            containerContentTransform()
+                            containerContentTransform(pop = true)
                         } else {
                             popTransition()
                         }
                     },
                     predictivePopTransitionSpec = { edge ->
                         if (usesContainerTransform(initialState, targetState)) {
-                            containerContentTransform()
+                            containerContentTransform(pop = true)
                         } else {
                             predictivePopTransition(edge)
                         }
@@ -587,7 +586,7 @@ private fun AppNavigationBarItem(
             .selectable(
                 selected = selected,
                 interactionSource = remember(tab) { MutableInteractionSource() },
-                indication = ripple(bounded = false, radius = 32.dp, color = MaterialTheme.colorScheme.onSurfaceVariant),
+                indication = null,
                 role = Role.Tab,
                 onClick = { onSelected(tab) }
             ),

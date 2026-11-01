@@ -7,6 +7,9 @@ import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
+import androidx.compose.animation.core.tween
+import androidx.compose.ui.unit.IntOffset
+import com.breakyuna.esjzone.ui.designsystem.AppMotion
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
@@ -551,15 +554,18 @@ private fun LegacyRoute.restore(): AppDestination? = when (this) {
     )
 }
 
+// Same duration and curve as the shared novel cover, so the cover lands with its page.
+private val pageSlideSpec = tween<IntOffset>(AppMotion.expressive, easing = AppMotion.standardEasing)
+
 /** Predictive-back compatible defaults: new content covers the old entry. */
 internal val pushTransition: AnimatedContentTransitionScope<Scene<NavKey>>.() -> ContentTransform = {
-    slideInHorizontally(initialOffsetX = { it }) togetherWith
+    slideInHorizontally(pageSlideSpec, initialOffsetX = { it }) togetherWith
         ExitTransition.KeepUntilTransitionsFinished
 }
 
 internal val popTransition: AnimatedContentTransitionScope<Scene<NavKey>>.() -> ContentTransform = {
-    slideInHorizontally(initialOffsetX = { -it }) togetherWith
-        slideOutHorizontally(targetOffsetX = { it })
+    slideInHorizontally(pageSlideSpec, initialOffsetX = { -it }) togetherWith
+        slideOutHorizontally(pageSlideSpec, targetOffsetX = { it })
 }
 
 internal val predictivePopTransition:

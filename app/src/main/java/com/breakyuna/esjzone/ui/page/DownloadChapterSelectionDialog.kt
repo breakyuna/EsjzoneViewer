@@ -81,7 +81,7 @@ internal fun DownloadChapterSelectionDialog(
     ) {
         value = withContext(Dispatchers.Default) {
             val catalog = DownloadChapterSelection(novel.chapterList)
-            val savedKeys = downloaded?.chapters.orEmpty().filter { it.downloaded }
+            val savedKeys = downloaded?.chapters.orEmpty().filter { it.isSaved }
                 .map { NovelDownloadStore.chapterKey(it.url) }.toSet()
             catalog to catalog.chapters.filter { NovelDownloadStore.chapterKey(it.url) in savedKeys }
                 .map { it.url }.toSet()

@@ -169,7 +169,7 @@
     <string name="novel_download">下载到本地</string>
     <string name="novel_download_select_chapters">选择章节下载</string>
     <string name="novel_download_clear_selection">清除</string>
-    <string name="novel_download_already_saved">已下载</string>
+    <string name="novel_download_already_saved">已保存</string>
     <string name="novel_download_selected_action">下载所选章节</string>
     <string name="novel_download_update">检查新章节</string>
     <string name="novel_downloading">正在下载 %1$d/%2$d · %3$s</string>
@@ -213,6 +213,9 @@
     <string name="novel_local_copy_none">还没有本地副本</string>
     <string name="novel_local_copy_partial">本地已有 %1$d/%2$d 章</string>
     <string name="novel_local_copy_complete">本地已有 %1$d/%2$d 章</string>
+    <string name="novel_download_retry_images">补全图片</string>
+    <string name="novel_download_pending_images_count">%1$d 章图片待补全</string>
+    <string name="novel_download_saved_with_images">章节已保存，%1$d 章图片待补全</string>
     <string name="novel_download_continue">继续下载</string>
     <string name="novel_download_pause">暂停下载</string>
     <string name="novel_download_paused">下载已暂停</string>
@@ -664,7 +667,6 @@
     <string name="reading_stats_title">阅读统计</string>
     <string name="reading_stats_back">返回</string>
     <string name="reading_stats_loading">正在加载阅读统计…</string>
-    <string name="reading_stats_local_note">数据保存在本机，从此版本开始统计。</string>
     <string name="reading_stats_empty">打开章节开始阅读后，这里会显示统计数据。</string>
     <string name="reading_stats_total">累计</string>
     <string name="reading_stats_today">今天</string>
@@ -723,7 +725,7 @@
     <string name="novel_download_pending_count">本次待下载 %1$d 章</string>
     <string name="novel_download_expand_group">展开分组</string>
     <string name="novel_download_collapse_group">收起分组</string>
-    <string name="novel_download_downloaded_count">已下载章节 %1$d / %2$d</string>
+    <string name="novel_download_downloaded_count">已保存章节 %1$d / %2$d</string>
     <string name="novel_download_range_start">起始序号</string>
     <string name="novel_download_range_end">终止序号</string>
     <string name="novel_download_range_error">请输入 1–%1$d 内的整数，终止序号不能小于起始序号。</string>
@@ -783,12 +785,10 @@
     <string name="reading_stats_show_tags">展开全部标签与占比</string>
     <string name="reading_stats_hide_tags">收起标签列表</string>
     <string name="group_manage">管理分组</string>
-    <string name="group_local_hint">分组仅保存在本机。</string>
     <string name="group_manage_empty">新建分组后，长按书籍即可批量移入。</string>
     <string name="group_rename_named">重命名“%1$s”</string>
     <string name="group_delete_named">删除分组“%1$s”</string>
     <string name="group_move_title">移动 %1$d 本书</string>
-    <string name="group_move_hint">选择目标分组后，点击“确认移动”。</string>
     <string name="group_current">当前所在分组</string>
     <string name="group_create_and_move">新建并移入</string>
     <string name="group_move_confirm">确认移动</string>
@@ -932,7 +932,7 @@
     <string name="local_download_waiting">等待下载</string>
     <string name="local_download_count">已保存 %1$d / %2$d 章</string>
     <string name="local_downloaded">已下载</string>
-    <string name="local_text_saved">正文已保存</string>
+    <string name="local_text_saved">已保存 · 图片待补全</string>
     <string name="local_not_downloaded">未下载</string>
     <string name="local_search_empty">本地没有匹配的作品</string>
     <string name="search_scope_local">本地</string>

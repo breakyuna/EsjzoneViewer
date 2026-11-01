@@ -60,9 +60,10 @@ fun AppShimmerPlaceholder(
     modifier: Modifier = Modifier,
     shape: Shape = AppShapes.standard,
     color: Color = appStateColors().containerRaised,
-    contentDescription: String? = null
+    contentDescription: String? = null,
+    animated: Boolean = true
 ) {
-    val reducedMotion = appReducedMotion()
+    val reducedMotion = !animated || appReducedMotion()
     val description = contentDescription
     val placeholderModifier = modifier
         .clip(shape)

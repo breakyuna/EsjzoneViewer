@@ -27,6 +27,7 @@ fun AppCoverBackdrop(
     coverUrl: String,
     modifier: Modifier = Modifier,
     coverState: CoverState? = null,
+    initialImage: AppLoadedImage? = null,
     content: @Composable BoxScope.() -> Unit
 ) {
     val colors = MaterialTheme.colorScheme
@@ -41,6 +42,7 @@ fun AppCoverBackdrop(
                 model = coverUrl,
                 contentDescription = null,
                 sourceState = coverState,
+                initialImage = initialImage,
                 contentScale = ContentScale.Crop,
                 loading = {},
                 error = {},

@@ -86,9 +86,16 @@ class DownloadedNovelPage(private val url: String) : AppDestination {
                             }
                             TextButton(onClick = { if (active) model.pause() else model.resume(authorization) },
                                 enabled = !migrating && !state.busy) {
-                                Text(stringResource(if (active) R.string.local_pause_download else R.string.novel_download_continue))
+                                Text(stringResource(when {
+                                    active -> R.string.local_pause_download
+                                    manifest.chaptersSaved && manifest.pendingImageChapterCount > 0 -> R.string.novel_download_retry_images
+                                    manifest.chaptersSaved -> R.string.novel_download_update
+                                    else -> R.string.novel_download_continue
+                                }))
                             }
                         }
+                        if (manifest.pendingImageChapterCount > 0) Text(stringResource(
+                            R.string.novel_download_pending_images_count, manifest.pendingImageChapterCount))
                         work?.progress?.let { Text(stringResource(R.string.local_download_count, it.completed, it.total)) }
                         if (work?.waiting == true) Text(stringResource(R.string.local_download_waiting))
                         if (state.busy) LinearProgressIndicator(Modifier.fillMaxWidth())

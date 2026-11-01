@@ -19,6 +19,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.painter.ColorPainter
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.res.painterResource
@@ -37,6 +39,7 @@ import coil3.compose.SubcomposeAsyncImage
 import coil3.ImageLoader
 import coil3.Image as CoilImage
 import coil3.request.CachePolicy
+import coil3.memory.MemoryCache
 import coil3.request.ImageRequest
 import coil3.request.SuccessResult
 import coil3.request.ErrorResult
@@ -183,20 +186,34 @@ internal fun CachedCoverImage(
     // Match the durable shelf thumbnail bound rather than decode a full-size hero.
     val sizedRequest = remember(request) { request.newBuilder().size(720).build() }
     val sizedCachedRequest = remember(cachedRequest) { cachedRequest.newBuilder().size(720).build() }
-    var image by remember(cachedRequest.data) { mutableStateOf(initialImage?.image) }
+    // Seed synchronously so the first transition frame never shows placeholder artwork,
+    // and keep the last decoded image when the hero swaps to the detail cover URL.
+    var image by remember {
+        mutableStateOf(initialImage?.image ?: imageLoader.memoryCache?.get(
+            MemoryCache.Key(cachedRequest.memoryCacheKey ?: cachedRequest.data.toString())
+        )?.image)
+    }
     var failure by remember(request) { mutableStateOf<CoverState>(CoverState.Loading) }
     LaunchedEffect(sizedRequest, sizedCachedRequest) {
         loadCachedCover(sizedRequest, sizedCachedRequest, imageLoader, restoreCached = image == null,
             onImage = { image = it },
             onError = { failure = CoverState.Failed(it.imageFailure()) })
     }
+    val loadedImage = image
     Image(
-        painter = image?.asPainter(context) ?: painterResource(coverFallbackResource(failure)),
+        painter = when {
+            loadedImage != null -> loadedImage.asPainter(context)
+            failure is CoverState.Failed -> painterResource(coverFallbackResource(failure))
+            // Draw nothing while decoding instead of flashing the missing-cover artwork.
+            else -> EmptyPainter
+        },
         contentDescription = contentDescription,
         modifier = modifier,
         contentScale = contentScale
     )
 }
+
+private val EmptyPainter = ColorPainter(Color.Transparent)
 
 internal suspend fun loadCachedCover(
     request: ImageRequest,
@@ -275,6 +292,10 @@ fun AppReaderImage(
     error: (@Composable () -> Unit)? = null
 ) {
     val loader = readerImageLoader(model)
+    if (contentScale == ContentScale.FillWidth) {
+        ReaderInlineImage(sharedMirrorImageRequest(model), loader, contentDescription, modifier, loading, error)
+        return
+    }
     AppImage(
         model = model,
         contentDescription = contentDescription,
