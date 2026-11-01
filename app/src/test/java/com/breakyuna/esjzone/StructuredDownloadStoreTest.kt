@@ -106,13 +106,18 @@ class StructuredDownloadStoreTest {
         val backup = Files.createTempDirectory("restore-backup-").toFile()
         val otherUrl = "https://www.esjzone.cc/detail/9002.html"
         val otherChapter = Chapter("Other chapter", "https://www.esjzone.cc/forum/9002/1.html", false)
+        val laterUrl = "https://www.esjzone.cc/detail/9003.html"
+        val laterChapter = Chapter("Later chapter", "https://www.esjzone.cc/forum/9003/1.html", false)
         try {
             NovelDownloadStore.initializeDirectory(incoming)
-            NovelDownloadStore.saveChapter("Novel", otherUrl, "", listOf(otherChapter), otherChapter,
-                DetailedChapter("Other chapter", listOf(TextComponent("恢复的正文")), null, null), auth)
-            NovelDownloadStore.saveChapterCatalog("Later", "https://www.esjzone.cc/detail/9003.html", "", emptyList())
+            requireNotNull(NovelDownloadStore.saveChapter("Novel", otherUrl, "", listOf(otherChapter), otherChapter,
+                DetailedChapter("Other chapter", listOf(TextComponent("恢复的正文")), null, null), auth))
+            requireNotNull(NovelDownloadStore.saveChapter("Later", laterUrl, "", listOf(laterChapter), laterChapter,
+                DetailedChapter("Later chapter", listOf(TextComponent("另一段正文")), null, null), auth))
             NovelDownloadStore.exportBackup(backup)
-            val first = Gson().fromJson(File(backup.listFiles()!!.first(), "manifest.json").readText(),
+            val snapshots = requireNotNull(backup.listFiles())
+            assertEquals(2, snapshots.size)
+            val first = Gson().fromJson(File(snapshots.first(), "manifest.json").readText(),
                 DownloadedNovelManifest::class.java)
             for (cancelAfterCommit in listOf(false, true)) {
                 root.deleteRecursively()
