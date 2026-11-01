@@ -3,6 +3,7 @@ package com.breakyuna.esjzone.ui.page
 import androidx.compose.animation.EnterExitState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.State
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
@@ -34,7 +35,9 @@ internal fun rememberNovelDetailPresentationState(
     source: StateFlow<NovelPageModel.State>
 ): State<NovelPageModel.State> {
     val settledState = rememberNovelDetailTransitionSettled()
-    return produceState(source.value, source, settledState) {
+    val current = source.collectAsState()
+    val initial = remember(source) { current.value }
+    return produceState(initial, source, settledState) {
         combine(source, snapshotFlow { settledState.value }) { latest, settled -> latest to settled }
             .collect { (latest, settled) ->
                 if (settled) value = latest
