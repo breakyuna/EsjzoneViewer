@@ -127,7 +127,8 @@ fun AppCoverImage(
     sourceState: CoverState? = null,
     cachedModel: Any? = null,
     initialImage: AppLoadedImage? = null,
-    onImageLoaded: ((AppLoadedImage) -> Unit)? = null
+    onImageLoaded: ((AppLoadedImage) -> Unit)? = null,
+    replacementEnabled: Boolean = true
 ) {
     val policy by CoverLoadingPolicy.state.collectAsState()
     val page = LocalCoverPage.current
@@ -140,10 +141,15 @@ fun AppCoverImage(
     val hasImage = source == CoverState.Loading || source == CoverState.Loaded
     val request = sharedMirrorImageRequest(if (hasImage) model else coverFallbackResource(source), allowed)
     if (cachedModel != null || initialImage != null) {
+        // Fallback artwork is a display state, not a decoded cover replacement.
         CachedCoverImage(
-            request = request,
-            cachedRequest = sharedMirrorImageRequest(cachedModel ?: model, allowNetwork = false),
+            request = request.takeIf { hasImage },
+            cachedRequest = sharedMirrorImageRequest(cachedModel ?: model, allowNetwork = false)
+                .takeIf { cachedModel != null || hasImage },
             initialImage = initialImage,
+            onImageLoaded = onImageLoaded,
+            loadEnabled = source != CoverState.Resolving && replacementEnabled,
+            fallbackState = source.takeIf { !hasImage && it != CoverState.Resolving },
             contentDescription = contentDescription,
             modifier = modifier,
             contentScale = contentScale
@@ -174,36 +180,47 @@ fun AppCoverImage(
 /** Keep the entry cover visible until a replacement has actually decoded. */
 @Composable
 internal fun CachedCoverImage(
-    request: ImageRequest,
-    cachedRequest: ImageRequest,
+    request: ImageRequest?,
+    cachedRequest: ImageRequest?,
     initialImage: AppLoadedImage? = null,
     contentDescription: String?,
     modifier: Modifier,
     contentScale: ContentScale,
-    imageLoader: ImageLoader = PresentationAccess.imageLoader
+    imageLoader: ImageLoader = PresentationAccess.imageLoader,
+    onImageLoaded: ((AppLoadedImage) -> Unit)? = null,
+    loadEnabled: Boolean = true,
+    fallbackState: CoverState? = null
 ) {
     val context = LocalContext.current
     // Match the durable shelf thumbnail bound rather than decode a full-size hero.
-    val sizedRequest = remember(request) { request.newBuilder().size(720).build() }
-    val sizedCachedRequest = remember(cachedRequest) { cachedRequest.newBuilder().size(720).build() }
+    val sizedRequest = remember(request) { request?.newBuilder()?.size(720)?.build() }
+    val sizedCachedRequest = remember(cachedRequest) { cachedRequest?.newBuilder()?.size(720)?.build() }
     // Seed synchronously so the first transition frame never shows placeholder artwork,
     // and keep the last decoded image when the hero swaps to the detail cover URL.
     var image by remember {
-        mutableStateOf(initialImage?.image ?: imageLoader.memoryCache?.get(
-            MemoryCache.Key(cachedRequest.memoryCacheKey ?: cachedRequest.data.toString())
-        )?.image)
+        mutableStateOf(initialImage?.image ?: cachedRequest?.let {
+            imageLoader.memoryCache?.get(MemoryCache.Key(it.memoryCacheKey ?: it.data.toString()))?.image
+        })
     }
-    var failure by remember(request) { mutableStateOf<CoverState>(CoverState.Loading) }
-    LaunchedEffect(sizedRequest, sizedCachedRequest) {
-        loadCachedCover(sizedRequest, sizedCachedRequest, imageLoader, restoreCached = image == null,
-            onImage = { image = it },
-            onError = { failure = CoverState.Failed(it.imageFailure()) })
+    var reportSeededImage by remember { mutableStateOf(initialImage == null && image != null) }
+    var failure by remember(request) { mutableStateOf<CoverState?>(null) }
+    LaunchedEffect(sizedRequest, sizedCachedRequest, loadEnabled) {
+        if (reportSeededImage) {
+            reportSeededImage = false
+            image?.let { onImageLoaded?.invoke(AppLoadedImage(it)) }
+        }
+        if (loadEnabled) {
+            loadCachedCover(sizedRequest, sizedCachedRequest, imageLoader, restoreCached = image == null,
+                onImage = { image = it; onImageLoaded?.invoke(AppLoadedImage(it)) },
+                onError = { failure = CoverState.Failed(it.imageFailure()) })
+        }
     }
     val loadedImage = image
+    val fallback = failure ?: fallbackState
     Image(
         painter = when {
             loadedImage != null -> loadedImage.asPainter(context)
-            failure is CoverState.Failed -> painterResource(coverFallbackResource(failure))
+            fallback != null -> painterResource(coverFallbackResource(fallback))
             // Draw nothing while decoding instead of flashing the missing-cover artwork.
             else -> EmptyPainter
         },
@@ -216,21 +233,23 @@ internal fun CachedCoverImage(
 private val EmptyPainter = ColorPainter(Color.Transparent)
 
 internal suspend fun loadCachedCover(
-    request: ImageRequest,
-    cachedRequest: ImageRequest,
+    request: ImageRequest?,
+    cachedRequest: ImageRequest?,
     imageLoader: ImageLoader,
     restoreCached: Boolean,
     onImage: (CoilImage) -> Unit,
     onError: (Throwable) -> Unit
 ) {
-    if (restoreCached) {
+    if (restoreCached && cachedRequest != null) {
         val cached = imageLoader.execute(cachedRequest.newBuilder()
             .networkCachePolicy(CachePolicy.DISABLED).build()) as? SuccessResult
         if (cached != null) onImage(cached.image)
     }
-    when (val fresh = imageLoader.execute(request)) {
-        is SuccessResult -> onImage(fresh.image)
-        is ErrorResult -> onError(fresh.throwable)
+    if (request != null) {
+        when (val fresh = imageLoader.execute(request)) {
+            is SuccessResult -> onImage(fresh.image)
+            is ErrorResult -> onError(fresh.throwable)
+        }
     }
 }
 

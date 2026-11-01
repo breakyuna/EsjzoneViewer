@@ -57,7 +57,8 @@ data class NovelCoverModel(
     val aspectRatio: Float = 0.7f,
     val state: CoverState? = null,
     val cachedModel: Any? = null,
-    val initialImage: AppLoadedImage? = null
+    val initialImage: AppLoadedImage? = null,
+    val onImageLoaded: ((AppLoadedImage) -> Unit)? = null
 )
 
 @Composable
@@ -67,6 +68,7 @@ fun NovelCover(model: NovelCoverModel, modifier: Modifier = Modifier, shape: Sha
         sourceState = model.state,
         cachedModel = model.cachedModel,
         initialImage = model.initialImage,
+        onImageLoaded = model.onImageLoaded,
         contentDescription = model.contentDescription,
         modifier = modifier
             .aspectRatio(model.aspectRatio)

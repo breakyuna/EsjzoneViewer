@@ -80,6 +80,7 @@ fun AppBookshelfRecentReads(
                     AppNovelCover(
                         coverUrl = cover.url,
                         onImageLoaded = transition.onImageLoaded,
+                        initialImage = transition.initialImage,
                         coverState = cover.state,
                         title = entry.title.ifBlank { stringResource(R.string.download_unknown_novel) },
                         modifier = Modifier.then(transition.modifier)

@@ -56,6 +56,10 @@ Each rendered occurrence has a saved key, so repeated books in different rails d
 match each other. Detail loading and results retain the same keyed list and hero;
 metadata updates keep the hero text's arrival identity. The entry cover stays in place
 during the initial shared transition, then adopts the detail response's cover.
+The detail hero retains its latest decoded cover for the clicked source occurrence on
+return. That source holds the image until navigation and shared motion settle, then
+replaces it only with a decoded cover; missing or failed sources cannot replace it with
+placeholder artwork. Duplicate occurrences do not inherit the image.
 Reading history and download metadata begin loading when the page opens, before the
 detail response arrives. Full-card carousel transforms remain separate.
 Routes without a cover keep their ordinary navigation animation.
@@ -67,6 +71,8 @@ action groups and titles crossfade, and history/download/search rows animate ins
 removal and placement. Reader toolbar reordering keeps the dragged item under the finger
 while neighbouring rows ease into their new positions; chapter groups rotate their chevrons
 and fade visible chapter rows without animating the height of the entire directory.
+Local history applies live row updates only while its page is resumed, keeping the
+outgoing list's order stable when the reader immediately saves a new reading timestamp.
 
 Loading placeholders preserve home hero/pager spacing and discovery cover dimensions.
 Content arrival uses a short, saved one-time fade, rather than restarting on refresh.

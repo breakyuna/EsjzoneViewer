@@ -1100,7 +1100,8 @@ private fun RebuiltNovelHero(preview: Novel, detailed: DetailedNovel?, sourceCov
                 contentDescription = title,
                 state = coverState,
                 cachedModel = previewCoverUrl.takeIf(String::isNotBlank),
-                initialImage = sourceCover?.image
+                initialImage = sourceCover?.image,
+                onImageLoaded = { sourceCover?.image = it }
             ),
             metadata = NovelMetadataModel(
                 author = novel?.author?.trim()?.takeIf(String::isNotBlank),

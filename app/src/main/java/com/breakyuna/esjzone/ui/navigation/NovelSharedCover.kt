@@ -3,6 +3,8 @@ package com.breakyuna.esjzone.ui.navigation
 import androidx.compose.animation.core.tween
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
@@ -17,12 +19,14 @@ import com.breakyuna.esjzone.ui.designsystem.AppMotion
 import com.breakyuna.esjzone.ui.designsystem.AppLoadedImage
 import java.util.UUID
 
-internal data class SharedCoverOrigin(
+internal class SharedCoverOrigin(
     val token: String,
     val coverUrl: String?,
     val state: CoverState?,
-    val image: AppLoadedImage? = null
-)
+    image: AppLoadedImage? = null
+) {
+    var image by mutableStateOf(image)
+}
 
 internal val LocalSharedCoverDestinationEnabled = compositionLocalOf { true }
 
@@ -34,6 +38,7 @@ internal val LocalNovelSharedCovers = compositionLocalOf<NovelSharedCovers?> { n
 
 internal class NovelCoverSource(
     val modifier: Modifier,
+    val initialImage: AppLoadedImage?,
     val onImageLoaded: (AppLoadedImage) -> Unit,
     val open: (() -> Unit) -> Unit
 )
@@ -49,9 +54,14 @@ internal fun rememberNovelCoverSource(
     val identity = remember(url) { EsjzoneUrls.canonicalPageKey(url) }
     val token = rememberSaveable(identity) { UUID.randomUUID().toString() }
     val transitions = LocalNovelSharedCovers.current
-    val image = remember(identity, coverUrl) { mutableStateOf<AppLoadedImage?>(null) }
+    // Restore only the clicked occurrence, even while its local URL is resolving.
+    // Keep this reference after the outgoing detail page releases the registry entry.
+    val initialImage = remember(identity, token) {
+        transitions?.sources?.get(identity)?.takeIf { it.token == token }?.image
+    }
+    val image = remember(identity, coverUrl) { mutableStateOf(initialImage) }
     val modifier = if (enableSharedElement) Modifier.novelCoverSharedElement(token) else Modifier
-    return NovelCoverSource(modifier, onImageLoaded = { image.value = it }) { action ->
+    return NovelCoverSource(modifier, initialImage, onImageLoaded = { image.value = it }) { action ->
         transitions?.sources?.set(identity, SharedCoverOrigin(token, coverUrl, state, image.value))
         action()
     }

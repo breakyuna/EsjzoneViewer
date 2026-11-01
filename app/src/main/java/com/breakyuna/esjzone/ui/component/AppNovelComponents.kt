@@ -1,5 +1,6 @@
 package com.breakyuna.esjzone.ui.component
 
+import androidx.compose.animation.EnterExitState
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -46,6 +47,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.navigation3.ui.LocalNavAnimatedContentScope
 import com.breakyuna.esjzone.R
 import com.breakyuna.esjzone.novellibrary.novel.CoveredNovel
 import com.breakyuna.esjzone.novellibrary.novel.CoverSource
@@ -59,6 +61,7 @@ import com.breakyuna.esjzone.ui.designsystem.AppShapes
 import com.breakyuna.esjzone.ui.designsystem.AppSpacing
 import com.breakyuna.esjzone.ui.designsystem.AppTypography
 import com.breakyuna.esjzone.ui.designsystem.appAdultColors
+import com.breakyuna.esjzone.ui.navigation.LocalContainerTransformScope
 
 /** A compact semantic tag used for genres, content warnings, and filters. */
 @Composable
@@ -103,8 +106,17 @@ fun AppNovelCover(
     isAdult: Boolean = false,
     coverState: CoverState? = null,
     onImageLoaded: ((AppLoadedImage) -> Unit)? = null,
-    elevated: Boolean = true
+    elevated: Boolean = true,
+    initialImage: AppLoadedImage? = null
 ) {
+    val sharedTransition = LocalContainerTransformScope.current
+    // A returned detail image must remain stable through both navigation and shared motion.
+    val replacementEnabled = if (initialImage != null && sharedTransition != null) {
+        val transition = LocalNavAnimatedContentScope.current.transition
+        transition.currentState == EnterExitState.Visible &&
+            transition.targetState == EnterExitState.Visible &&
+            !transition.isRunning && !sharedTransition.isTransitionActive
+    } else true
     Box(
         modifier = modifier
             .then(
@@ -122,7 +134,9 @@ fun AppNovelCover(
         val cover = CoverSource.fromUrl(coverUrl, coverState ?: CoverState.Missing)
         AppCoverImage(
             model = cover.url,
+            initialImage = initialImage,
             onImageLoaded = onImageLoaded,
+            replacementEnabled = replacementEnabled,
             sourceState = coverState ?: cover.state,
             contentDescription = title,
             modifier = Modifier.fillMaxSize(),
@@ -194,6 +208,7 @@ fun AppHomeNovelTile(
         AppNovelCover(
             coverUrl = novel.coverUrl,
             onImageLoaded = coverSource.onImageLoaded,
+            initialImage = coverSource.initialImage,
             coverState = novel.coverState,
             title = novel.name,
             modifier = Modifier.then(coverSource.modifier)
@@ -234,6 +249,7 @@ fun AppFeaturedNovelCard(
             AppNovelCover(
                 coverUrl = novel.coverUrl,
                 onImageLoaded = coverSource.onImageLoaded,
+                initialImage = coverSource.initialImage,
                 coverState = novel.coverState,
                 title = novel.name,
                 modifier = Modifier.then(coverSource.modifier).size(AppLayout.featureCoverWidth, AppLayout.featureCoverHeight),
@@ -306,6 +322,7 @@ fun AppNovelListItem(
             AppNovelCover(
                 coverUrl = novel.coverUrl,
                 onImageLoaded = coverSource.onImageLoaded,
+                initialImage = coverSource.initialImage,
                 coverState = novel.coverState,
                 title = novel.name,
                 modifier = Modifier.then(coverSource.modifier).size(coverWidth, coverHeight),
@@ -377,6 +394,7 @@ fun AppNovelPreviewCard(
             AppNovelCover(
                 coverUrl = novel.coverUrl,
                 onImageLoaded = coverSource.onImageLoaded,
+                initialImage = coverSource.initialImage,
                 coverState = novel.coverState,
                 title = novel.name,
                 modifier = Modifier.then(coverSource.modifier).size(coverWidth, coverHeight),

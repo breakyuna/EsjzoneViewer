@@ -69,10 +69,12 @@ import androidx.compose.animation.togetherWith
 import androidx.compose.animation.core.tween
 import com.breakyuna.esjzone.ui.designsystem.AppMotion
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.State
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.Lifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateMapOf
@@ -137,6 +139,13 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 
+/** Hold the visible order while navigation is moving, without delaying history writes. */
+@Composable
+internal fun rememberLocalHistoryPresentationState(
+    source: kotlinx.coroutines.flow.StateFlow<LocalHistoryPageModel.State>
+): State<LocalHistoryPageModel.State> =
+    source.collectAsStateWithLifecycle(minActiveState = Lifecycle.State.RESUMED)
+
 /** Local and cloud history are deliberately separate sources and gestures. */
 object HistoryPage : AppDestination {
     private fun readResolve(): Any = HistoryPage
@@ -155,7 +164,7 @@ object HistoryPage : AppDestination {
         val localModel = rememberAppViewModel { LocalHistoryPageModel(authorization) }
         val cloudModel = rememberAppViewModel { HistoryPageModel(authorization) }
         val cloudDetailLoader = rememberAppViewModel { NovelDetailLoader(authorization) }
-        val localState by localModel.state.collectAsStateWithLifecycle()
+        val localState by rememberLocalHistoryPresentationState(localModel.state)
         val cloudState by cloudModel.state.collectAsStateWithLifecycle()
         var selectedPage by rememberSaveable { mutableIntStateOf(0) }
         var searchOpen by rememberSaveable { mutableStateOf(false) }
@@ -817,6 +826,7 @@ private fun CloudHistoryCard(
             coverUrl = coverUrl,
             title = history.name,
             onImageLoaded = coverSource.onImageLoaded,
+            initialImage = coverSource.initialImage,
             modifier = Modifier.then(coverSource.modifier).size(width = 96.dp, height = 132.dp)
         )
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(AppSpacing.xs)) {
