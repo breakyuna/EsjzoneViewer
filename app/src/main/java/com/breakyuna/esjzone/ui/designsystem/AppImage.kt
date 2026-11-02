@@ -13,6 +13,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -128,7 +129,9 @@ fun AppCoverImage(
     cachedModel: Any? = null,
     initialImage: AppLoadedImage? = null,
     onImageLoaded: ((AppLoadedImage) -> Unit)? = null,
-    replacementEnabled: Boolean = true
+    replacementEnabled: Boolean = true,
+    refreshFromNetwork: Boolean = false,
+    onRefreshSuccess: (() -> Unit)? = null
 ) {
     val policy by CoverLoadingPolicy.state.collectAsState()
     val page = LocalCoverPage.current
@@ -139,8 +142,16 @@ fun AppCoverImage(
         else -> CoverState.Loading
     }
     val hasImage = source == CoverState.Loading || source == CoverState.Loaded
-    val request = sharedMirrorImageRequest(if (hasImage) model else coverFallbackResource(source), allowed)
-    if (cachedModel != null || initialImage != null) {
+    val baseRequest = sharedMirrorImageRequest(if (hasImage) model else coverFallbackResource(source), allowed)
+    val refreshing = refreshFromNetwork && allowed && hasImage &&
+        (baseRequest.data as? String)?.toHttpUrlOrNull() != null
+    val request = remember(baseRequest, refreshing) {
+        if (refreshing) baseRequest.newBuilder()
+            .memoryCachePolicy(CachePolicy.WRITE_ONLY)
+            .diskCachePolicy(CachePolicy.WRITE_ONLY)
+            .build() else baseRequest
+    }
+    if (cachedModel != null || initialImage != null || refreshFromNetwork || !replacementEnabled) {
         // Fallback artwork is a display state, not a decoded cover replacement.
         CachedCoverImage(
             request = request.takeIf { hasImage },
@@ -148,6 +159,7 @@ fun AppCoverImage(
                 .takeIf { cachedModel != null || hasImage },
             initialImage = initialImage,
             onImageLoaded = onImageLoaded,
+            onRefreshSuccess = onRefreshSuccess.takeIf { refreshing },
             loadEnabled = source != CoverState.Resolving && replacementEnabled,
             fallbackState = source.takeIf { !hasImage && it != CoverState.Resolving },
             contentDescription = contentDescription,
@@ -189,7 +201,8 @@ internal fun CachedCoverImage(
     imageLoader: ImageLoader = PresentationAccess.imageLoader,
     onImageLoaded: ((AppLoadedImage) -> Unit)? = null,
     loadEnabled: Boolean = true,
-    fallbackState: CoverState? = null
+    fallbackState: CoverState? = null,
+    onRefreshSuccess: (() -> Unit)? = null
 ) {
     val context = LocalContext.current
     // Match the durable shelf thumbnail bound rather than decode a full-size hero.
@@ -204,16 +217,23 @@ internal fun CachedCoverImage(
     }
     var reportSeededImage by remember { mutableStateOf(initialImage == null && image != null) }
     var failure by remember(request) { mutableStateOf<CoverState?>(null) }
+    val replacementAllowed by rememberUpdatedState(loadEnabled)
+    // Local artwork may be restored during entry motion, without starting a remote request.
     LaunchedEffect(sizedRequest, sizedCachedRequest, loadEnabled) {
         if (reportSeededImage) {
             reportSeededImage = false
             image?.let { onImageLoaded?.invoke(AppLoadedImage(it)) }
         }
-        if (loadEnabled) {
-            loadCachedCover(sizedRequest, sizedCachedRequest, imageLoader, restoreCached = image == null,
-                onImage = { image = it; onImageLoaded?.invoke(AppLoadedImage(it)) },
-                onError = { failure = CoverState.Failed(it.imageFailure()) })
-        }
+        loadCachedCover(sizedRequest, sizedCachedRequest, imageLoader, restoreCached = image == null,
+            onImage = {
+                if (image == null || replacementAllowed) {
+                    image = it
+                    onImageLoaded?.invoke(AppLoadedImage(it))
+                }
+            },
+            onError = { if (replacementAllowed) failure = CoverState.Failed(it.imageFailure()) },
+            onRefreshSuccess = { if (replacementAllowed) onRefreshSuccess?.invoke() },
+            loadReplacement = loadEnabled)
     }
     val loadedImage = image
     val fallback = failure ?: fallbackState
@@ -238,16 +258,30 @@ internal suspend fun loadCachedCover(
     imageLoader: ImageLoader,
     restoreCached: Boolean,
     onImage: (CoilImage) -> Unit,
-    onError: (Throwable) -> Unit
+    onError: (Throwable) -> Unit,
+    onRefreshSuccess: (() -> Unit)? = null,
+    loadReplacement: Boolean = true
 ) {
-    if (restoreCached && cachedRequest != null) {
-        val cached = imageLoader.execute(cachedRequest.newBuilder()
-            .networkCachePolicy(CachePolicy.DISABLED).build()) as? SuccessResult
-        if (cached != null) onImage(cached.image)
+    if (restoreCached) {
+        // An unavailable entry thumbnail must not hide a usable remote-image cache.
+        val remoteCacheRequest = request?.takeIf { (it.data as? String)?.toHttpUrlOrNull() != null }
+        for (candidate in listOfNotNull(cachedRequest, remoteCacheRequest).distinctBy { it.data }) {
+            val cached = imageLoader.execute(candidate.newBuilder()
+                .memoryCachePolicy(CachePolicy.ENABLED)
+                .diskCachePolicy(CachePolicy.READ_ONLY)
+                .networkCachePolicy(CachePolicy.DISABLED).build()) as? SuccessResult
+            if (cached != null) {
+                onImage(cached.image)
+                break
+            }
+        }
     }
-    if (request != null) {
+    if (loadReplacement && request != null) {
         when (val fresh = imageLoader.execute(request)) {
-            is SuccessResult -> onImage(fresh.image)
+            is SuccessResult -> {
+                onImage(fresh.image)
+                onRefreshSuccess?.invoke()
+            }
             is ErrorResult -> onError(fresh.throwable)
         }
     }

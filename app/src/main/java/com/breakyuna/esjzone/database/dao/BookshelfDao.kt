@@ -29,6 +29,12 @@ interface BookshelfDao {
     @Query("UPDATE bookshelf SET title = :name WHERE scope = :scope AND book_key = :bookKey AND title = :previous")
     suspend fun repairNovelName(scope: String, bookKey: String, previous: String, name: String)
 
+    @Query(
+        "UPDATE bookshelf SET title = :title WHERE scope = :scope AND book_key = :bookKey " +
+            "AND visible = 1 AND sync_state != 'PENDING_REMOVE' AND :title != '' AND title != :title"
+    )
+    suspend fun updateTitleIfChanged(scope: String, bookKey: String, title: String): Int
+
     /** Cover files are shared across accounts and mirrors. */
     @Query("SELECT * FROM bookshelf WHERE visible = 1 AND cover_url != ''")
     suspend fun getAllVisibleWithCovers(): List<BookshelfEntry>

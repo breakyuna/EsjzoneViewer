@@ -57,7 +57,7 @@ fun AppCoverBackdrop(
                 .matchParentSize()
                 .background(
                     Brush.horizontalGradient(
-                        if (BlurSupported) listOf(scrim.copy(alpha = 0.18f), scrim.copy(alpha = 0.58f))
+                        if (BlurSupported) listOf(scrim.copy(alpha = 0.10f), scrim.copy(alpha = 0.40f))
                         else listOf(scrim.copy(alpha = 0.5f), scrim.copy(alpha = 0.72f))
                     )
                 )

@@ -5,7 +5,9 @@ import com.breakyuna.esjzone.app.CoverLoadingPolicy
 import com.breakyuna.esjzone.app.PresentationAccess
 import com.breakyuna.esjzone.data.settings.SettingsDefaults
 import com.breakyuna.esjzone.database.entity.BookshelfEntry
+import com.breakyuna.esjzone.database.entity.BookshelfSyncState
 import com.breakyuna.esjzone.network.EsjzoneUrls
+import com.breakyuna.esjzone.network.Authorization
 import com.breakyuna.esjzone.util.AppLogger
 import coil3.request.CachePolicy
 import coil3.request.ImageRequest
@@ -164,7 +166,41 @@ object BookshelfCoverStore {
     fun localOrRemote(entry: BookshelfEntry): String {
         if (entry.coverUrl.isBlank()) return ""
         val local = fileFor(entry)
-        return if (local.isFile && local.length() > 0L) local.toURI().toString() else entry.coverUrl
+        return if (local.isFile && local.length() > 0L) {
+            // Same-address replacements must also invalidate the decoded image cache.
+            "${local.toURI()}#${local.lastModified()}-${local.length()}"
+        } else entry.coverUrl
+    }
+
+    /** Reuses the successful detail request; never starts another image download. */
+    fun writeBackFromDetail(authorization: Authorization, novelUrl: String, coverUrl: String) {
+        val source = EsjzoneUrls.coverOrEmpty(coverUrl)
+        if (source.toHttpUrlOrNull() == null) return
+        scope.launch {
+            try {
+                maintenanceMutex.withLock {
+                    val dao = PresentationAccess.database.bookshelfDao()
+                    val account = BookshelfRepository.scopeFor(authorization)
+                    val bookKey = BookshelfRepository.keyFor(novelUrl)
+                    val entry = dao.find(account, bookKey)?.takeIf {
+                        it.visible && it.syncState != BookshelfSyncState.PENDING_REMOVE
+                    } ?: return@withLock
+                    val cacheKey = if (source.toHttpUrlOrNull()?.host?.let(EsjzoneUrls::isEsjHost) == true) {
+                        EsjzoneUrls.canonicalCacheUrl(source)
+                    } else source
+                    PresentationAccess.imageLoader.diskCache?.openSnapshot(cacheKey)?.use { snapshot ->
+                        val updated = entry.copy(coverUrl = source)
+                        if (writeThumbnail(File(snapshot.data.toString()), File(directory, fileName(updated)))) {
+                            dao.updateCoverIfChanged(account, bookKey, source)
+                        }
+                    }
+                }
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                AppLogger.w("BookshelfCoverStore", "Unable to write back detail cover", error)
+            }
+        }
     }
 
     /** Resolve each visible cover off the UI thread; keep it stable across recompositions. */
@@ -193,19 +229,19 @@ object BookshelfCoverStore {
         maintenanceJob?.cancel()
         maintenanceJob = scope.launch {
             try {
-                maintenanceMutex.withLock {
+                val pending = maintenanceMutex.withLock {
                     val allEntries = pruneUnused()
-                    // Shrink existing files across accounts before waiting on any network work.
-                    val pending = (entries + allEntries.filter { fileFor(it).isFile })
+                    (entries + allEntries.filter { fileFor(it).isFile })
                         .filter { it.visible && EsjzoneUrls.coverOrEmpty(it.coverUrl).isNotBlank() }
                         .distinctBy(::fileName)
                         .filter { File(directory, fileName(it)).length() <= 0L }
-                    val (local, remote) = pending.partition { fileFor(it).isFile }
-                    persistBatches(local)
-                    pruneUnused()
-                    persistBatches(remote)
-                    pruneUnused()
                 }
+                // Shrink existing files before waiting on any network work.
+                val (local, remote) = pending.partition { fileFor(it).isFile }
+                persistBatches(local)
+                maintenanceMutex.withLock { pruneUnused() }
+                persistBatches(remote)
+                maintenanceMutex.withLock { pruneUnused() }
             } catch (error: CancellationException) {
                 throw error
             } catch (error: Exception) {
@@ -248,15 +284,18 @@ object BookshelfCoverStore {
 
     private suspend fun persist(entry: BookshelfEntry) = withContext(Dispatchers.IO) {
         val target = File(directory, fileName(entry))
-        if (target.isFile && target.length() > 0L) return@withContext
         val source = EsjzoneUrls.coverOrEmpty(entry.coverUrl)
         if (source.isBlank()) return@withContext
 
         // First use an already-downloaded Coil source.  This avoids duplicate
         // transfers for the covers visible while the shelf is opened.
-        val existing = fileFor(entry).takeIf { it.isFile && it.length() > 0L }
-        val cached = existing ?: BookmarkCoverStore.findCoilCachedCover(source)
-        if (cached != null && writeThumbnail(cached, target)) return@withContext
+        val persisted = maintenanceMutex.withLock {
+            if (target.isFile && target.length() > 0L) return@withLock true
+            val existing = fileFor(entry).takeIf { it.isFile && it.length() > 0L }
+            val cached = existing ?: BookmarkCoverStore.findCoilCachedCover(source)
+            cached != null && writeThumbnail(cached, target)
+        }
+        if (persisted) return@withContext
 
         // A cold shelf still needs to become fully offline-capable.  Loading via
         // the app-scoped Coil loader keeps this request in the same cache and
@@ -280,7 +319,14 @@ object BookshelfCoverStore {
                         .networkCachePolicy(CachePolicy.ENABLED)
                         .build()
                     PresentationAccess.imageLoader.execute(request)
-                    BookmarkCoverStore.findCoilCachedCover(source)?.let { writeThumbnail(it, target) }
+                    maintenanceMutex.withLock {
+                        // The detail page may have replaced this cover while the request waited.
+                        val stillReferenced = PresentationAccess.database.bookshelfDao()
+                            .getAllVisibleWithCovers().any { fileName(it) == fileName(entry) }
+                        if (stillReferenced && (!target.isFile || target.length() <= 0L)) {
+                            BookmarkCoverStore.findCoilCachedCover(source)?.let { writeThumbnail(it, target) }
+                        }
+                    }
                     emit(Unit)
                 }.first()
         } catch (error: CancellationException) {

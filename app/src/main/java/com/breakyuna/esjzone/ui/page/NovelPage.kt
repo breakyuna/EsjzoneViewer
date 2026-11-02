@@ -139,6 +139,7 @@ import com.breakyuna.esjzone.database.entity.BookshelfSyncState
 import com.breakyuna.esjzone.network.Authorization
 import com.breakyuna.esjzone.network.EsjzoneUrls
 import com.breakyuna.esjzone.network.LocalAuthorization
+import com.breakyuna.esjzone.database.BookshelfCoverStore
 import com.breakyuna.esjzone.network.LoadFailureKind
 import com.breakyuna.esjzone.novellibrary.component.ChapterItem
 import com.breakyuna.esjzone.novellibrary.component.TextComponent
@@ -469,7 +470,7 @@ class NovelPage(
                 } else {
                     // Keep the list and hero mounted when loading becomes readable content.
                     NovelDetailLayout(
-                        hero = { RebuiltNovelHero(novel, detailed, sourceCover) },
+                        hero = { RebuiltNovelHero(novel, detailed, sourceCover, transitionSettled.value) },
                         onHeroScrolledAway = { heroScrolledAway = it },
                         modifier = Modifier.weight(1f),
                         snackbarHost = {
@@ -1039,7 +1040,13 @@ private fun novelDetailItems(
 /** Feature-owned detail building blocks. They intentionally consume only the
  * rebuilt token/component layer; networking and domain models stay untouched. */
 @Composable
-private fun RebuiltNovelHero(preview: Novel, detailed: DetailedNovel?, sourceCover: SharedCoverOrigin?) {
+private fun RebuiltNovelHero(
+    preview: Novel,
+    detailed: DetailedNovel?,
+    sourceCover: SharedCoverOrigin?,
+    replacementEnabled: Boolean
+) {
+    val authorization = LocalAuthorization.current
     val carouselTarget = LocalHomeCarouselTransformTarget.current
     val previewCover = preview as? CoveredNovel
     val transitionActive = LocalContainerTransformScope.current?.isTransitionActive == true
@@ -1061,6 +1068,11 @@ private fun RebuiltNovelHero(preview: Novel, detailed: DetailedNovel?, sourceCov
         if (usePreviewCover) sourceCover?.state ?: previewCover?.coverState ?: CoverState.Unknown
         else detailed?.coverState ?: CoverState.Unknown
     ).state
+    var refreshedCoverUrl by rememberSaveable(preview.url) { mutableStateOf<String?>(null) }
+    // Keep this request stable after success; a restored lazy hero reuses the refreshed cache.
+    val refreshCover = remember(coverUrl, detailed != null, usePreviewCover) {
+        detailed != null && !usePreviewCover && refreshedCoverUrl != coverUrl
+    }
     // Loading a newer detail response must not replace shared text mid-transition.
     val useEntryMetadata = carouselTarget != null && !entryCoverReleased
     val novel = if (useEntryMetadata) previewCover else detailed ?: previewCover
@@ -1101,7 +1113,15 @@ private fun RebuiltNovelHero(preview: Novel, detailed: DetailedNovel?, sourceCov
                 state = coverState,
                 cachedModel = previewCoverUrl.takeIf(String::isNotBlank),
                 initialImage = sourceCover?.image,
-                onImageLoaded = { sourceCover?.image = it }
+                onImageLoaded = { sourceCover?.image = it },
+                refreshFromNetwork = refreshCover,
+                replacementEnabled = replacementEnabled,
+                onRefreshSuccess = {
+                    refreshedCoverUrl = coverUrl
+                    BookshelfCoverStore.writeBackFromDetail(
+                        authorization, preview.url, coverUrl
+                    )
+                }
             ),
             metadata = NovelMetadataModel(
                 author = novel?.author?.trim()?.takeIf(String::isNotBlank),

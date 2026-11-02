@@ -30,6 +30,7 @@ import coil3.Image
 import coil3.ImageLoader
 import coil3.memory.MemoryCache
 import coil3.request.ImageRequest
+import coil3.request.CachePolicy
 import coil3.request.SuccessResult
 import coil3.request.allowHardware
 import coil3.toBitmap
@@ -37,6 +38,7 @@ import com.breakyuna.esjzone.ui.designsystem.loadCachedCover
 import com.breakyuna.esjzone.ui.designsystem.AppCoverImage
 import com.breakyuna.esjzone.ui.designsystem.AppLoadedImage
 import com.breakyuna.esjzone.ui.designsystem.CachedCoverImage
+import com.breakyuna.esjzone.ui.page.rememberNovelDetailTransitionSettled
 import com.breakyuna.esjzone.ui.component.AppNovelCover
 import com.breakyuna.esjzone.network.EsjzoneUrls
 import com.breakyuna.esjzone.novellibrary.novel.CoverFailure
@@ -187,6 +189,72 @@ class CachedCoverInstrumentedTest {
         }
     }
 
+    @Test fun refreshWithoutTransferredArtworkRestoresMemoryDuringEntry() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val loader = EsjzoneApplication.instance.container.imageLoader
+        val cover = File.createTempFile("refresh-entry-", ".png", context.cacheDir)
+        val url = "https://images.example.invalid/${cover.name}"
+        val key = MemoryCache.Key(url)
+        var restored by mutableStateOf<AppLoadedImage?>(null)
+        try {
+            writeCover(cover, Color.RED)
+            val decoded = runBlocking {
+                loader.execute(ImageRequest.Builder(context).data(cover.toURI().toString())
+                    .allowHardware(false).build()) as SuccessResult
+            }.image
+            loader.memoryCache!![key] = MemoryCache.Value(decoded)
+            cover.delete()
+            composeRule.setContent {
+                AppCoverImage(
+                    model = url, refreshFromNetwork = true, replacementEnabled = false,
+                    onRefreshSuccess = { throw AssertionError("Entry motion must not refresh") },
+                    onImageLoaded = { restored = it }, contentDescription = null,
+                    modifier = Modifier.size(60.dp).testTag("refresh-entry")
+                )
+            }
+            composeRule.waitUntil(5_000) { restored != null }
+            assertSame(decoded, restored!!.image)
+            val pixels = composeRule.onNodeWithTag("refresh-entry").captureToImage().toPixelMap()
+            val center = pixels[pixels.width / 2, pixels.height / 2]
+            assertTrue(center.red > 0.95f && center.blue < 0.05f)
+        } finally {
+            loader.memoryCache?.remove(key)
+            cover.delete()
+        }
+    }
+
+    @Test fun missingThumbnailFallsBackToRequestCacheWithoutRefreshing() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val loader = ImageLoader.Builder(context).build()
+        val cover = File.createTempFile("refresh-cache-", ".png", context.cacheDir)
+        val missing = File.createTempFile("missing-refresh-thumbnail-", ".png", context.cacheDir)
+        try {
+            writeCover(cover, Color.BLUE)
+            val request = ImageRequest.Builder(context).data(cover.toURI().toString())
+                .memoryCacheKey("refresh-cache").allowHardware(false).build()
+            val decoded = (loader.execute(request) as SuccessResult).image
+            loader.memoryCache!![MemoryCache.Key("refresh-cache")] = MemoryCache.Value(decoded)
+            cover.delete()
+            missing.delete()
+            val colors = mutableListOf<Int>()
+            loadCachedCover(
+                request.newBuilder().data("https://images.example.invalid/refresh-cache.png")
+                    .memoryCachePolicy(CachePolicy.WRITE_ONLY)
+                    .diskCachePolicy(CachePolicy.WRITE_ONLY).build(),
+                ImageRequest.Builder(context).data(missing.toURI().toString()).build(),
+                loader, restoreCached = true, loadReplacement = false,
+                onImage = { colors += it.toBitmap().getPixel(0, 0) },
+                onError = { throw AssertionError("Only cached artwork should load", it) },
+                onRefreshSuccess = { throw AssertionError("Cache restoration must not write back") }
+            )
+            assertEquals(listOf(Color.BLUE), colors)
+        } finally {
+            cover.delete()
+            missing.delete()
+            loader.shutdown()
+        }
+    }
+
     @Test fun sourceReplacementWaitsForTheSharedCoverReturn() =
         verifySourceReplacementWaitsForReturn(carousel = false)
 
@@ -262,6 +330,7 @@ class CachedCoverInstrumentedTest {
                             entry<AppNavKey.Legacy>(metadata = ::containerTransformMetadata) {
                                 val detail: @androidx.compose.runtime.Composable () -> Unit = {
                                     val origin = rememberSharedCoverOrigin(url, releaseOnDispose = true)
+                                    val settled by rememberNovelDetailTransitionSettled()
                                     CachedCoverImage(
                                         request = freshRequest, cachedRequest = oldRequest,
                                         initialImage = origin?.image, contentDescription = null,
@@ -269,6 +338,7 @@ class CachedCoverInstrumentedTest {
                                             .homeCarouselSharedElement(LocalHomeCarouselTransformTarget.current, HomeCarouselElement.COVER)
                                             .novelCoverDestination(url).size(120.dp),
                                         contentScale = ContentScale.Crop, imageLoader = loader,
+                                        loadEnabled = settled,
                                         onImageLoaded = { origin?.image = it; detailImage = it }
                                     )
                                 }
@@ -511,6 +581,7 @@ class CachedCoverInstrumentedTest {
             .data(file.toURI().toString()).allowHardware(false).build()
         var displayed: Image? = null
         val colors = mutableListOf<Int>()
+        var refreshed = 0
         try {
             writeCover(old, Color.RED)
             broken.writeText("invalid image fixture")
@@ -521,15 +592,21 @@ class CachedCoverInstrumentedTest {
                     colors += color
                     // The replacement cannot decode until the local image is displayed.
                     if (color == Color.RED) writeCover(fresh, Color.BLUE)
-                }, onError = { throw AssertionError("Valid replacement must load", it) })
+                }, onError = { throw AssertionError("Valid replacement must load", it) },
+                onRefreshSuccess = {
+                    assertEquals(listOf(Color.RED, Color.BLUE), colors)
+                    refreshed++
+                })
             assertEquals(listOf(Color.RED, Color.BLUE), colors)
+            assertEquals(1, refreshed)
 
             var failure: Throwable? = null
             colors.clear()
             loadCachedCover(request(broken), request(old), loader, restoreCached = false,
                 onImage = { displayed = it; colors += it.toBitmap().getPixel(0, 0) },
-                onError = { failure = it })
+                onError = { failure = it }, onRefreshSuccess = { refreshed++ })
             assertNotNull(failure)
+            assertEquals(1, refreshed)
             assertEquals(emptyList<Int>(), colors)
             assertEquals(Color.BLUE, displayed!!.toBitmap().getPixel(0, 0))
 

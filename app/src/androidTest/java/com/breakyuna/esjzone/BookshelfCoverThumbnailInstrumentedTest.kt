@@ -59,6 +59,24 @@ class BookshelfCoverThumbnailInstrumentedTest {
     }
 
     @Test
+    fun replacementAtTheSamePathUpdatesTheThumbnail() = withDirectory { directory ->
+        val source = File(directory, "source.png")
+        val target = File(directory, "thumbnail.img")
+        for (color in listOf(Color.RED, Color.BLUE)) {
+            val bitmap = Bitmap.createBitmap(16, 16, Bitmap.Config.ARGB_8888)
+            bitmap.eraseColor(color)
+            source.outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
+            bitmap.recycle()
+            writeBookshelfThumbnail(source, target)
+            val decoded = requireNotNull(BitmapFactory.decodeFile(target.path))
+            val pixel = decoded.getPixel(0, 0)
+            assertTrue(kotlin.math.abs(Color.red(color) - Color.red(pixel)) < 10)
+            assertTrue(kotlin.math.abs(Color.blue(color) - Color.blue(pixel)) < 10)
+            decoded.recycle()
+        }
+    }
+
+    @Test
     fun cancelledCommitKeepsThePreviousFileAndRemovesTemporaryFiles() = withDirectory { directory ->
         val source = File(directory, "source.png")
         val bitmap = Bitmap.createBitmap(32, 32, Bitmap.Config.ARGB_8888)

@@ -280,6 +280,13 @@ object BookshelfRepository {
         return removed
     }
 
+    /** Only the opened detail page may replace an otherwise valid stored title. */
+    suspend fun updateTitleFromDetail(authorization: Authorization, novel: Novel) {
+        val title = validNovelTitle(novel.name, novelIdFor(novel.url), novel.url)
+        if (title.isBlank()) return
+        requireDao().updateTitleIfChanged(scopeFor(authorization), keyFor(novel.url), title)
+    }
+
     suspend fun seedRemoteFavorite(
         authorization: Authorization,
         novel: Novel,

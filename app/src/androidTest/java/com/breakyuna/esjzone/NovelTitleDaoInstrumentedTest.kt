@@ -54,6 +54,29 @@ class NovelTitleDaoInstrumentedTest {
     }
 
     @Test
+    fun detailTitleRefreshPreservesShelfStateAndAccountIsolation() = runBlocking {
+        val dao = database.bookshelfDao()
+        val shelf = BookshelfEntry("account", "/detail/123.html", "123", "/detail/123.html", "Old title",
+            coverUrl = "https://example.invalid/cover.jpg", syncState = BookshelfSyncState.PENDING_ADD,
+            operationVersion = 7L, hasUpdate = true)
+        val otherAccount = shelf.copy(scope = "other-account")
+        dao.upsert(shelf)
+        dao.upsert(otherAccount)
+
+        assertEquals(1, dao.updateTitleIfChanged(shelf.scope, shelf.bookKey, "New title"))
+        assertEquals(shelf.copy(title = "New title"), dao.find(shelf.scope, shelf.bookKey))
+        assertEquals(otherAccount, dao.find(otherAccount.scope, otherAccount.bookKey))
+        assertEquals(0, dao.updateTitleIfChanged(shelf.scope, shelf.bookKey, "New title"))
+        assertEquals(0, dao.updateTitleIfChanged(shelf.scope, shelf.bookKey, ""))
+        assertEquals(0, dao.updateTitleIfChanged(shelf.scope, "/detail/missing.html", "New title"))
+
+        val removed = shelf.copy(visible = false, syncState = BookshelfSyncState.PENDING_REMOVE)
+        dao.upsert(removed)
+        assertEquals(0, dao.updateTitleIfChanged(shelf.scope, shelf.bookKey, "New title"))
+        assertEquals(removed, dao.find(shelf.scope, shelf.bookKey))
+    }
+
+    @Test
     fun repairingLegacyTitlesDoesNotMoveProgressOrOverwriteNewerNames() = runBlocking {
         val history = LocalReadingActivity("book:123", "123", "123", "/detail/123.html",
             "/forum/123/1.html", "Chapter one", 0, 10, .5f, 1L, 2L, 10L)

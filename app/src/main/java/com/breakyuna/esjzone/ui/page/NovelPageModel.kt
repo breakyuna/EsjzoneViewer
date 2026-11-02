@@ -86,6 +86,13 @@ class NovelPageModel(
                 mutableState.value = State.Result(detail, fromDownload = useDownloadedCatalog)
                 ReadingStatisticsRecorder.recordTags(detail)
                 NovelTitleRepository.repair(detail.id(), detail.url, detail.name)
+                try {
+                    BookshelfRepository.updateTitleFromDetail(authorization, fetchedDetail)
+                } catch (error: CancellationException) {
+                    throw error
+                } catch (error: Exception) {
+                    AppLogger.w("NovelPageModel", "Failed to update bookshelf title", error)
+                }
             } catch (error: CancellationException) {
                 throw error
             } catch (error: Exception) {

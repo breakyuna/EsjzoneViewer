@@ -58,7 +58,10 @@ data class NovelCoverModel(
     val state: CoverState? = null,
     val cachedModel: Any? = null,
     val initialImage: AppLoadedImage? = null,
-    val onImageLoaded: ((AppLoadedImage) -> Unit)? = null
+    val onImageLoaded: ((AppLoadedImage) -> Unit)? = null,
+    val refreshFromNetwork: Boolean = false,
+    val onRefreshSuccess: (() -> Unit)? = null,
+    val replacementEnabled: Boolean = true
 )
 
 @Composable
@@ -69,6 +72,9 @@ fun NovelCover(model: NovelCoverModel, modifier: Modifier = Modifier, shape: Sha
         cachedModel = model.cachedModel,
         initialImage = model.initialImage,
         onImageLoaded = model.onImageLoaded,
+        refreshFromNetwork = model.refreshFromNetwork,
+        onRefreshSuccess = model.onRefreshSuccess,
+        replacementEnabled = model.replacementEnabled,
         contentDescription = model.contentDescription,
         modifier = modifier
             .aspectRatio(model.aspectRatio)
