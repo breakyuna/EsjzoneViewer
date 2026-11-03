@@ -132,7 +132,6 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.ensureActive
-import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -962,13 +961,26 @@ class LocalHistoryPageModel(private val authorization: Authorization) : AppState
     fun observe() {
         if (observeStarted) return
         observeStarted = true
-        com.breakyuna.esjzone.database.NovelTitleRepository.requestRepair()
         observeJob?.cancel()
-        observeJob = viewModelScope.launch(Dispatchers.IO) {
+        observeJob = viewModelScope.launch {
             try {
-                PresentationAccess.database.localReadingActivityDao().observeAll()
-                    .combine(PresentationAccess.downloads.changes) { rows, _ -> rows.map(PresentationAccess.downloads::refreshProgress) }
-                    .collect { mutableState.value = State.Result(it) }
+                // AppNavigation already schedules title repair after session/storage restoration.
+                collectLocalHistory(
+                    activities = PresentationAccess.database.localReadingActivityDao().observeAll(),
+                    downloadChanges = PresentationAccess.downloads.changes,
+                    refreshProgress = { rows ->
+                        withContext(Dispatchers.IO) {
+                            rows.map { activity ->
+                                ensureActive()
+                                PresentationAccess.downloads.refreshProgress(activity)
+                            }
+                        }
+                    },
+                    onResult = { mutableState.value = State.Result(it) },
+                    onProgressFailure = {
+                        AppLogger.w("LocalHistoryPageModel", "Download progress is unavailable; keeping local history", it)
+                    }
+                )
             } catch (e: CancellationException) { throw e }
             catch (e: Exception) { observeStarted = false; mutableState.value = State.Error(e.loadFailureKind()); AppLogger.e("LocalHistoryPageModel", "Failed to load local history", e) }
         }
