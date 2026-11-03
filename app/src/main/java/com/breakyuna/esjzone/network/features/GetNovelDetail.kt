@@ -57,7 +57,7 @@ fun EsjzoneClient.getNovelDetail(
         pageKind = PageKind.DETAIL
     )
     val sourceReference = if (!includeComments) {
-        PageCache.readEntry(detailCacheKey)?.takeIf { it.body == responseBody }?.reference
+        PageCache.referenceForBody(detailCacheKey, responseBody)
     } else null
 
     val document = Jsoup.parse(responseBody, targetUrl)

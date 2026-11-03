@@ -11,6 +11,7 @@ import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 
 /** Publish Room rows independently of slow download storage; callbacks stay on the caller's context. */
@@ -22,10 +23,13 @@ internal suspend fun collectLocalHistory(
     onProgressFailure: (Exception) -> Unit
 ) = coroutineScope {
     val latestRows = MutableStateFlow<List<LocalReadingActivity>?>(null)
+    val publicationLock = Any()
     launch {
-        activities.collect { rows ->
-            onResult(rows)
-            latestRows.value = rows
+        activities.distinctUntilChanged().collect { rows ->
+            synchronized(publicationLock) {
+                onResult(rows)
+                latestRows.value = rows
+            }
         }
     }
     latestRows.filterNotNull().combine(downloadChanges) { rows, _ -> rows }
@@ -36,7 +40,9 @@ internal suspend fun collectLocalHistory(
                 val refreshed = refreshProgress(rows)
                 currentCoroutineContext().ensureActive()
                 // Room can publish a newer position or deletion while storage is blocked.
-                if (latestRows.value === rows) onResult(refreshed)
+                synchronized(publicationLock) {
+                    if (latestRows.value === rows) onResult(refreshed)
+                }
             } catch (error: CancellationException) {
                 throw error
             } catch (error: Exception) {

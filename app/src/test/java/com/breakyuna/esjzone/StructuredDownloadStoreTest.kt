@@ -26,12 +26,54 @@ import java.io.ByteArrayOutputStream
 import java.net.SocketTimeoutException
 import okhttp3.OkHttpClient
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withTimeout
 import org.junit.Assert.*
 import org.junit.Test
 
 class StructuredDownloadStoreTest {
+    @Test
+    fun selectedDownloadDoesNotDecodeOrRevalidateUnselectedChapterBodies() = withStorage { root ->
+        val order = listOf(chapter(1), chapter(2))
+        save(1, order)
+        val stored = save(2, order)
+        val unselected = stored.chapters.single { it.url == chapter(2).url }
+        val file = root.walkTopDown().single { it.isFile && it.name == unselected.fileName }
+        file.writeText("Not a chapter JSON; this unselected file must not be inspected")
+        val result = runBlocking {
+            NovelDownloadStore.download(auth, novel(order), selectedChapterUrls = setOf(chapter(1).url))
+        }
+        assertTrue(result.chapters.single { it.url == chapter(1).url }.isSaved)
+        assertTrue(result.chapters.single { it.url == chapter(2).url }.isSaved)
+    }
+
+    @Test
+    fun metadataIndexIsReusedAndUnrelatedCommitsDoNotInvalidateBookObservers() = withStorage { _ ->
+        val order = listOf(chapter(1))
+        save(1, order)
+        val first = NovelDownloadStore.listDownloadedMetadata()
+        assertSame(first, NovelDownloadStore.listDownloadedMetadata())
+        runBlocking {
+            val revisions = mutableListOf<Long>()
+            val observer = launch(start = kotlinx.coroutines.CoroutineStart.UNDISPATCHED) {
+                NovelDownloadStore.observeNovelChanges(novelUrl).collect { revisions.add(it) }
+            }
+            try {
+                val other = Chapter("Other", "/forum/9002/1.html", false)
+                NovelDownloadStore.saveChapter("Other", "/detail/9002.html", "", listOf(other), other,
+                    DetailedChapter("Other", listOf(TextComponent("other")), null, null), auth)
+                kotlinx.coroutines.yield()
+                assertEquals(1, revisions.size)
+                NovelDownloadStore.saveChapterCatalog("Novel", novelUrl, "", order + chapter(2))
+                kotlinx.coroutines.yield()
+                assertEquals(2, revisions.size)
+                assertEquals(2, NovelDownloadStore.listDownloadedMetadata().size)
+            } finally { observer.cancel(); observer.join() }
+        }
+    }
+
     private val auth = Authorization("", "", "www.esjzone.cc")
     private val novelUrl = "https://www.esjzone.cc/detail/9001.html"
     private fun chapter(number: Int) = Chapter("Chapter $number", "https://www.esjzone.cc/forum/9001/$number.html", false)

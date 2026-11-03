@@ -29,7 +29,7 @@ import kotlinx.coroutines.withContext
 class HistoryPageModel(
     private val authorization: Authorization
 ) : AppStateViewModel<HistoryPageModel.State>(
-    HistoryDataCache.readSnapshot(authorization)?.let { State.Result(it, isSyncSuccess = false) } ?: State.Loading
+    HistoryDataCache.readMemorySnapshot(authorization)?.let { State.Result(it, isSyncSuccess = false) } ?: State.Loading
 ) {
 
     private var loadJob: Job? = null
@@ -56,13 +56,16 @@ class HistoryPageModel(
         val cacheEpoch = PageCache.currentEpoch
         loadJob?.cancel()
         loadJob = viewModelScope.launch(Dispatchers.IO) {
-            val visibleData = mutableState.value as? State.Result
-            mutableState.value = visibleData?.copy(
-                isSyncing = true,
-                isSyncSuccess = false,
-                lastSyncFailure = null
-            ) ?: State.Loading
+            var visibleData = mutableState.value as? State.Result
             try {
+                if (visibleData == null) visibleData = HistoryDataCache.readSnapshot(authorization)?.let { State.Result(it) }
+                ensureActive()
+                if (generation != loadGeneration) return@launch
+                mutableState.value = visibleData?.copy(
+                    isSyncing = true,
+                    isSyncSuccess = false,
+                    lastSyncFailure = null
+                ) ?: State.Loading
                 val histories = com.breakyuna.esjzone.network.cancellablePageRequest {
                     PresentationAccess.client.getHistories(
                         authorization,

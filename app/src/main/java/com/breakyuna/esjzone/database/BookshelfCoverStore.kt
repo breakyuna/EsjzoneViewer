@@ -13,7 +13,6 @@ import coil3.request.CachePolicy
 import coil3.request.ImageRequest
 import coil3.request.SuccessResult
 import coil3.decode.BlackholeDecoder
-import androidx.room.withTransaction
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.key
@@ -261,11 +260,11 @@ object BookshelfCoverStore {
 
     private suspend fun pruneUnused(): List<BookshelfEntry> {
         val database = PresentationAccess.database
-        return database.withTransaction {
-            val entries = database.bookshelfDao().getAllVisibleWithCovers()
-            pruneUnused(directory, entries)
-            entries
-        }
+        // Caller holds maintenanceMutex, also used by thumbnail publication. Do not hold a
+        // Room write transaction while enumerating/removing recoverable cover files.
+        val entries = database.bookshelfDao().getAllVisibleWithCovers()
+        pruneUnused(directory, entries)
+        return entries
     }
 
     /** Called with all scopes, never a filtered/current-account shelf. */

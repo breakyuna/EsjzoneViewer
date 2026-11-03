@@ -204,7 +204,7 @@ object HistoryPage : AppDestination {
             .distinctBy { it.url.ifBlank { it.name } }.filterByHistoryQuery(query)
         val cloudRowIds = cloudRows.filter { history ->
             val detail = cloudDetailLoader.details[cloudDetailLoader.key(history)]
-            history.vid.isNotBlank() && detail != null && (PresentationAccess.settings.adult.value || !detail.isAdult)
+            history.vid.isNotBlank() && (PresentationAccess.settings.adult.value || detail?.isAdult == false)
         }.mapTo(linkedSetOf()) { it.vid }
 
         // This destination's ViewModels outlive recompositions. Start the one
@@ -733,7 +733,20 @@ private fun CloudHistoryContent(
                         val detail = detailLoader.details[key]
                         if (detail == null) {
                             LaunchedEffect(key) { detailLoader.load(history) }
-                            if (detailLoader.failures[key] != null) {
+                            if (PresentationAccess.settings.adult.value) {
+                                // The history itself already supplies a usable title, chapter and destination.
+                                CloudHistoryCard(
+                                    modifier = Modifier.animateItem(), history = history, coverUrl = "",
+                                    chapterIndex = null, totalChapters = 0,
+                                    editing = editing, selected = history.vid in selected,
+                                    onLongClick = { onSelect(history.vid) },
+                                    onOpen = {
+                                        if (editing) {
+                                            if (history.vid.isNotBlank()) onToggleSelected(history.vid)
+                                        } else navigator?.pushIfNotCurrent(NovelPage(history, history = ChapterStateHolder(history.chapter)))
+                                    }
+                                )
+                            } else if (detailLoader.failures[key] != null) {
                                 ErrorState(
                                     title = stringResource(R.string.history_load_failed),
                                     message = stringResource(R.string.load_network_error),

@@ -66,6 +66,7 @@ internal object PageCache {
     // Tokens stay live only while a requester or an in-flight operation owns them.
     private val requests = WeakHashMap<WriteToken, String>()
     private val versions = mutableMapOf<String, Long>()
+    private val bodyFingerprints = mutableMapOf<String, String>()
     private var nextRequest = 0L
     private var nextVersion = 0L
 
@@ -98,6 +99,7 @@ internal object PageCache {
         epoch += 1L
         requests.clear()
         versions.clear()
+        bodyFingerprints.clear()
     }
 
     @Volatile
@@ -138,6 +140,7 @@ internal object PageCache {
             cachedSizeBytes = 0L
             cachedEntryCount = 0
             cacheDirectory.listFiles().orEmpty().forEach { file ->
+                if (file.name.startsWith("pending-page-")) file.delete()
                 if (file.isFile && file.name.startsWith("esj-page-")) {
                     if (file.name.startsWith(FILE_PREFIX)) {
                         cachedSizeBytes += file.length()
@@ -155,24 +158,49 @@ internal object PageCache {
     fun read(key: String, maxAgeMillis: Long, nowMillis: Long = System.currentTimeMillis()): String? =
         readEntry(key, maxAgeMillis, nowMillis)?.body
 
+    private data class ReadHandle(val reader: java.io.BufferedReader, val file: File,
+        val id: String, val version: Long, val reference: String)
+
     fun readEntry(key: String, maxAgeMillis: Long = Long.MAX_VALUE,
-                  nowMillis: Long = System.currentTimeMillis(), sourceKey: String = key): Entry? = synchronized(ioLock) {
-        if (maxAgeMillis <= 0L) return@synchronized null
-        val file = fileFor(key) ?: return@synchronized null
-        if (!file.isFile) return@synchronized null
+                  nowMillis: Long = System.currentTimeMillis(), sourceKey: String = key): Entry? {
+        if (maxAgeMillis <= 0L) return null
         try {
-            file.storedTextReader().use { reader ->
-                val fetchedAt = reader.readLine()?.toLongOrNull() ?: return@synchronized null
-                if (fetchedAt > nowMillis || nowMillis - fetchedAt > maxAgeMillis) return@synchronized null
-                val body = reader.readText()
-                if (nowMillis - file.lastModified() >= ACCESS_TOUCH_INTERVAL_MILLIS) file.setLastModified(nowMillis)
-                val version = versions.getOrPut(digest(key)) { ++nextVersion }
-                val id = digest(sourceKey)
-                Entry(fetchedAt, body, "$id:${digest(structuredKey(sourceKey))}:$epoch:${versions[id] ?: version}")
+            val opened = synchronized(ioLock) {
+                val file = fileFor(key) ?: return null
+                if (!file.isFile) return null
+                val id = digest(key)
+                val version = versions.getOrPut(id) { ++nextVersion }
+                val sourceId = digest(sourceKey)
+                ReadHandle(file.storedTextReader(), file, id, version,
+                    "$sourceId:${digest(structuredKey(sourceKey))}:$epoch:${versions[sourceId] ?: version}")
+            }
+            val entry = opened.reader.use { reader ->
+                val fetchedAt = reader.readLine()?.toLongOrNull() ?: return null
+                if (fetchedAt > nowMillis || nowMillis - fetchedAt > maxAgeMillis) return null
+                Entry(fetchedAt, reader.readText(), opened.reference)
+            }
+            val fingerprint = digest(entry.body)
+            return synchronized(ioLock) {
+                if (versions[opened.id] != opened.version || !matchesReference(opened.reference.split(':'))) null
+                else {
+                    bodyFingerprints[opened.id] = fingerprint
+                    if (nowMillis - opened.file.lastModified() >= ACCESS_TOUCH_INTERVAL_MILLIS) {
+                        opened.file.setLastModified(nowMillis)
+                    }
+                    entry
+                }
             }
         } catch (_: Exception) {
             CacheDiagnostics.record(CacheEventType.FAILURE, diagnosticLayer(key), CacheEventReason.READ_FAILED, key)
-            null
+            return null
+        }
+    }
+
+    internal fun referenceForBody(key: String, body: String): String? {
+        val fingerprint = digest(body)
+        return synchronized(ioLock) {
+            val id = digest(key)
+            if (bodyFingerprints[id] != fingerprint) null else reference(key)
         }
     }
 
@@ -211,51 +239,80 @@ internal object PageCache {
             parts[2].toLongOrNull() == epoch &&
             parts[3].toLongOrNull()?.let { it == (versions[parts[0]] ?: versions[parts[1]]) } == true
 
-    /** A failed commit keeps both the previous response and its parsed snapshot. */
-    fun write(key: String, body: String, nowMillis: Long = System.currentTimeMillis(),
-              expected: WriteToken? = null, trim: Boolean = true): Boolean =
-        write(key, nowMillis, expected, trim) { it.write(body) }
+    /** Compression is private to a pending write; only atomic publication holds ioLock. */
+    internal class PreparedWrite(private val publish: () -> Boolean, private val dispose: () -> Unit) : java.io.Closeable {
+        fun commit(): Boolean = publish()
+        override fun close() = dispose()
+    }
 
-    internal fun write(key: String, nowMillis: Long = System.currentTimeMillis(),
-              expected: WriteToken? = null, trim: Boolean = true,
-              writeBody: (Writer) -> Unit): Boolean = synchronized(ioLock) {
-        if (expected != null && !accepts(key, expected)) {
-            CacheDiagnostics.record(CacheEventType.FAILURE, diagnosticLayer(key), CacheEventReason.SUPERSEDED, key)
-            return@synchronized false
+    internal fun prepareWrite(key: String, nowMillis: Long = System.currentTimeMillis(),
+        expected: WriteToken? = null, trim: Boolean = true, sourceReference: String? = null,
+        fingerprint: String? = null, writeBody: (Writer) -> Unit): PreparedWrite? {
+        val file: File
+        val token: WriteToken
+        synchronized(ioLock) {
+            if (expected != null && !accepts(key, expected)) return null
+            file = fileFor(key) ?: return null
+            token = expected ?: beginWrite(key)
         }
-        val file = fileFor(key) ?: run {
-            CacheDiagnostics.record(CacheEventType.FAILURE, diagnosticLayer(key), CacheEventReason.WRITE_FAILED, key)
-            return@synchronized false
-        }
-        val temporary = File(file.parentFile, "${file.name}.tmp")
+        val temporary = try { File.createTempFile("pending-page-", ".tmp", file.parentFile) }
+            catch (_: Exception) { return null }
         try {
-            val existed = file.isFile
-            val previousSize = if (existed) file.length() else 0L
             temporary.writeCompressedText { writer ->
                 writer.write(nowMillis.toString())
                 writer.write("\n")
                 writeBody(writer)
             }
-            try {
-                Files.move(temporary.toPath(), file.toPath(), StandardCopyOption.ATOMIC_MOVE,
-                    StandardCopyOption.REPLACE_EXISTING)
-            } catch (_: java.nio.file.AtomicMoveNotSupportedException) {
-                Files.move(temporary.toPath(), file.toPath(), StandardCopyOption.REPLACE_EXISTING)
-            }
-            cachedSizeBytes += file.length() - previousSize
-            if (!existed) cachedEntryCount += 1
-            val id = digest(key)
-            versions[id] = ++nextVersion
-            CacheDiagnostics.record(CacheEventType.UPDATE, diagnosticLayer(key),
-                if (existed) CacheEventReason.REPLACED else CacheEventReason.STORED, fileId = id, bytes = file.length())
-            if (!key.startsWith("chapter-structured-v2|")) remove(structuredKey(key), CacheEventReason.SOURCE_UPDATED)
-            CacheStorage.requestTrim()
-            if (trim) trimIfNeeded()
-            true
         } catch (_: Exception) {
+            temporary.delete()
             CacheDiagnostics.record(CacheEventType.FAILURE, diagnosticLayer(key), CacheEventReason.WRITE_FAILED, key)
-            false
-        } finally { runCatching { temporary.delete() } }
+            return null
+        }
+        return PreparedWrite(publish = {
+            synchronized(ioLock) {
+                if (!accepts(key, token) || fileFor(key) != file ||
+                    (sourceReference != null && !matchesReference(sourceReference.split(':')))) {
+                    CacheDiagnostics.record(CacheEventType.FAILURE, diagnosticLayer(key), CacheEventReason.SUPERSEDED, key)
+                    false
+                } else try {
+                    val existed = file.isFile
+                    val previousSize = if (existed) file.length() else 0L
+                    try {
+                        Files.move(temporary.toPath(), file.toPath(), StandardCopyOption.ATOMIC_MOVE,
+                            StandardCopyOption.REPLACE_EXISTING)
+                    } catch (_: java.nio.file.AtomicMoveNotSupportedException) {
+                        Files.move(temporary.toPath(), file.toPath(), StandardCopyOption.REPLACE_EXISTING)
+                    }
+                    cachedSizeBytes += file.length() - previousSize
+                    if (!existed) cachedEntryCount += 1
+                    val id = digest(key)
+                    versions[id] = ++nextVersion
+                    if (fingerprint == null) bodyFingerprints.remove(id) else bodyFingerprints[id] = fingerprint
+                    CacheDiagnostics.record(CacheEventType.UPDATE, diagnosticLayer(key),
+                        if (existed) CacheEventReason.REPLACED else CacheEventReason.STORED, fileId = id, bytes = file.length())
+                    if (!key.startsWith("chapter-structured-v2|")) remove(structuredKey(key), CacheEventReason.SOURCE_UPDATED)
+                    CacheStorage.requestTrim()
+                    if (trim) trimIfNeeded()
+                    true
+                } catch (_: Exception) {
+                    CacheDiagnostics.record(CacheEventType.FAILURE, diagnosticLayer(key), CacheEventReason.WRITE_FAILED, key)
+                    false
+                }
+            }
+        }, dispose = { temporary.delete(); Unit })
+    }
+
+    fun write(key: String, body: String, nowMillis: Long = System.currentTimeMillis(),
+              expected: WriteToken? = null, trim: Boolean = true): Boolean {
+        val prepared = prepareWrite(key, nowMillis, expected, trim, fingerprint = digest(body)) { it.write(body) }
+            ?: return false
+        return prepared.use { it.commit() }
+    }
+
+    internal fun write(key: String, nowMillis: Long = System.currentTimeMillis(),
+              expected: WriteToken? = null, trim: Boolean = true, writeBody: (Writer) -> Unit): Boolean {
+        val prepared = prepareWrite(key, nowMillis, expected, trim, writeBody = writeBody) ?: return false
+        return prepared.use { it.commit() }
     }
 
     /** Remove exactly the response used by a completed download, preserving a newer response. */
@@ -270,6 +327,7 @@ internal object PageCache {
     private fun removeId(id: String, reason: CacheEventReason, layer: CacheLayer = CacheLayer.PAGE) {
         requests.values.remove(id)
         versions.remove(id)
+        bodyFingerprints.remove(id)
         val file = directory?.let { File(it, "$FILE_PREFIX-$id.html") } ?: return
         val length = file.length()
         if (runCatching { file.delete() }.getOrDefault(false)) {
@@ -283,10 +341,12 @@ internal object PageCache {
 
     internal fun structuredKey(key: String): String = "chapter-structured-v2|$key"
 
-    internal fun writeDerived(key: String, sourceBody: String, json: String): String? = synchronized(ioLock) {
-        val source = readEntry(key)?.takeIf { it.body == sourceBody } ?: return@synchronized null
-        write(structuredKey(key), json, source.fetchedAt)
-        source.reference
+    internal fun writeDerived(key: String, sourceBody: String, json: String): String? {
+        val source = readEntry(key)?.takeIf { it.body == sourceBody } ?: return null
+        val prepared = prepareWrite(structuredKey(key), source.fetchedAt, sourceReference = source.reference) {
+            it.write(json)
+        } ?: return null
+        return prepared.use { if (it.commit()) source.reference else null }
     }
 
     fun remove(key: String, reason: CacheEventReason = CacheEventReason.INVALIDATED) = synchronized(ioLock) {
@@ -389,6 +449,7 @@ internal object PageCache {
                 val id = file.name.removePrefix("$FILE_PREFIX-").removeSuffix(".html")
                 requests.values.remove(id)
                 versions.remove(id)
+        bodyFingerprints.remove(id)
                 total -= length
                 count -= 1
                 CacheDiagnostics.record(CacheEventType.EVICT, CacheLayer.PAGE, CacheEventReason.CAPACITY,

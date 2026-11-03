@@ -13,6 +13,9 @@ import kotlinx.coroutines.flow.Flow
 @Dao
 interface BookmarkDao {
 
+    @Query("SELECT * FROM bookmarks WHERE trim(novel_name) = '' OR trim(novel_name) = novel_id OR trim(novel_name) = trim(chapter_name) OR novel_name LIKE '%/detail/%' OR novel_name LIKE '%/forum/%'")
+    suspend fun titleRepairCandidates(): List<Bookmark>
+
     @Query("SELECT * FROM bookmarks ORDER BY created_at DESC")
     fun getAll(): List<Bookmark>
 

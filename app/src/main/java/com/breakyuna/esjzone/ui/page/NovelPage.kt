@@ -255,7 +255,9 @@ class NovelPage(
                 .observeLatestForIdentity(readingId, readingUrl)
         }.collectAsState(initial = null)
         var downloaded by remember(novel.url) { mutableStateOf<DownloadedNovelManifest?>(null) }
-        val downloadChanges by PresentationAccess.downloads.changes.collectAsState()
+        val downloadChanges by remember(novel.url) {
+            PresentationAccess.downloads.observeNovelChanges(novel.url)
+        }.collectAsState(initial = 0L)
         LaunchedEffect(novel.url, downloadChanges) {
             downloaded = withContext(Dispatchers.IO) {
                 PresentationAccess.downloads.manifest(novel.url)

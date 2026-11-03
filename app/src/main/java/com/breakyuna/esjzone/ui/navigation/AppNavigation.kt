@@ -1,5 +1,7 @@
 package com.breakyuna.esjzone.ui.navigation
 
+import kotlinx.coroutines.flow.collect
+
 import androidx.compose.animation.AnimatedContentTransitionScope
 import androidx.compose.animation.ContentTransform
 import androidx.compose.animation.EnterTransition
@@ -641,16 +643,18 @@ fun AppNavigation() {
             PresentationAccess.storage.prepareSetup(restoredSession = true)
         }
     }
-    val titleRepairRequest by com.breakyuna.esjzone.database.NovelTitleRepository.repairRequests.collectAsState()
-    LaunchedEffect(authorization, storageLocation, showStorageSetup, titleRepairRequest) {
+    LaunchedEffect(authorization, storageLocation, showStorageSetup) {
         val session = authorization ?: return@LaunchedEffect
         if (showStorageSetup) return@LaunchedEffect
-        try {
-            com.breakyuna.esjzone.database.NovelTitleRepository.repairAll(session)
-        } catch (error: kotlinx.coroutines.CancellationException) {
-            throw error
-        } catch (error: Exception) {
-            com.breakyuna.esjzone.util.AppLogger.w("NovelTitle", "Unable to scan stored titles", error)
+        // StateFlow conflates requests during a pass instead of cancelling and restarting its scan.
+        com.breakyuna.esjzone.database.NovelTitleRepository.repairRequests.collect {
+            try {
+                com.breakyuna.esjzone.database.NovelTitleRepository.repairAll(session)
+            } catch (error: kotlinx.coroutines.CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                com.breakyuna.esjzone.util.AppLogger.w("NovelTitle", "Unable to scan stored titles", error)
+            }
         }
     }
     val currentAuthorizationState = rememberUpdatedState(authorizationState)

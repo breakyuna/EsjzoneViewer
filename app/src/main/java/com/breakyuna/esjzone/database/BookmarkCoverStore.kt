@@ -9,8 +9,24 @@ import com.breakyuna.esjzone.offline.NovelDownloadStore
 import com.breakyuna.esjzone.util.AppLogger
 import java.io.File
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
+
+/** Each writer owns its staging file; a cancelled synchronous copy must never publish. */
+internal suspend fun copyBookmarkCover(target: File, write: (File) -> Unit): Boolean {
+    currentCoroutineContext().ensureActive()
+    val temporary = File.createTempFile("bookmark-cover-", ".tmp", target.parentFile)
+    try {
+        write(temporary)
+        currentCoroutineContext().ensureActive()
+        return temporary.renameTo(target)
+    } finally {
+        temporary.delete()
+    }
+}
 
 /**
  * Manages local cover image files for bookmarks.
@@ -135,12 +151,11 @@ object BookmarkCoverStore {
             val coilFile = findCoilCachedCover(effectiveCoverUrl)
             if (coilFile != null && coilFile.isFile && coilFile.length() > 0L) {
                 runCatching {
-                    val temp = File(directory, "${target.name}.tmp")
-                    coilFile.copyTo(temp, overwrite = true)
-                    if (temp.renameTo(target)) {
+                    if (copyBookmarkCover(target) { coilFile.copyTo(it, overwrite = true) }) {
                         return@withContext target.toURI().toString()
                     }
                 }.onFailure {
+                    if (it is CancellationException) throw it
                     AppLogger.w("BookmarkCoverStore", "Failed to copy Coil cached cover for $cleanId", it)
                 }
             }
@@ -157,12 +172,11 @@ object BookmarkCoverStore {
             val downloadedCover = NovelDownloadStore.findDownloadedCover(candidate)
             if (downloadedCover != null && downloadedCover.isFile && downloadedCover.length() > 0L) {
                 runCatching {
-                    val temp = File(directory, "${target.name}.tmp")
-                    downloadedCover.copyTo(temp, overwrite = true)
-                    if (temp.renameTo(target)) {
+                    if (copyBookmarkCover(target) { downloadedCover.copyTo(it, overwrite = true) }) {
                         return@withContext target.toURI().toString()
                     }
                 }.onFailure {
+                    if (it is CancellationException) throw it
                     AppLogger.w("BookmarkCoverStore", "Failed to copy downloaded cover for $cleanId", it)
                 }
             }

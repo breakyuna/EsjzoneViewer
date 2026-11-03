@@ -7,6 +7,8 @@ import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
@@ -17,6 +19,35 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class LocalHistoryLoadingTest {
+    @Test fun repeatedEqualRoomSnapshotDoesNotReplaceCorrectedProgress() = runBlocking {
+        withTimeout(5_000) {
+            val row = activity("first")
+            val updated = row.copy(chapterProgress = 0.75f, lastReadAt = 2L)
+            val rows = MutableSharedFlow<List<LocalReadingActivity>>(extraBufferCapacity = 4)
+            val results = Channel<List<LocalReadingActivity>>(Channel.UNLIMITED)
+            val job = launch {
+                collectLocalHistory(rows, MutableStateFlow(0L),
+                    refreshProgress = { snapshot -> snapshot.map { it.copy(totalChapters = 20) } },
+                    onResult = { results.trySend(it) },
+                    onProgressFailure = { throw AssertionError(it) }
+                )
+            }
+            try {
+                rows.subscriptionCount.first { it > 0 }
+                rows.emit(listOf(row))
+                assertEquals(listOf(row), results.receive())
+                assertEquals(listOf(row.copy(totalChapters = 20)), results.receive())
+                // Room can emit equal fresh objects after a no-op UPDATE. Unlike StateFlow,
+                // SharedFlow preserves that emission so this regression is actually exercised.
+                rows.emit(listOf(row.copy()))
+                rows.emit(listOf(updated))
+                assertEquals(listOf(updated), results.receive())
+                assertEquals(listOf(updated.copy(totalChapters = 20)), results.receive())
+                assertTrue(results.tryReceive().isFailure)
+            } finally { job.cancelAndJoin() }
+        }
+    }
+
     @Test fun showsRoomRowsBeforeStorageCompletesAndRefreshesOnDownloadChanges() = runBlocking {
         withTimeout(5_000) {
             val row = activity("first")

@@ -101,6 +101,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runInterruptible
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.delay
 
 /** Local download inventory. Deleting it never touches bookshelf/history/bookmarks. */
 object DownloadPage : AppDestination {
@@ -135,7 +138,6 @@ object DownloadPage : AppDestination {
         var showDelete by remember { mutableStateOf(false) }
         var showSettings by remember { mutableStateOf(false) }
 
-        LaunchedEffect(Unit) { com.breakyuna.esjzone.database.NovelTitleRepository.requestRepair() }
         val titleChanges by com.breakyuna.esjzone.database.NovelTitleRepository.titleChanges.collectAsState()
         val downloadChanges by PresentationAccess.downloads.changes.collectAsState()
         val entries = (state as? DownloadPageModel.State.Content)?.novels.orEmpty().filter { adult || !it.manifest.isAdult }
@@ -352,23 +354,49 @@ private class DownloadPageModel : AppStateViewModel<DownloadPageModel.State>(Sta
     }
 
     private var refreshJob: Job? = null
+    private val refreshLock = Any()
+    private var refreshGeneration = 0L
 
-    fun refresh() {
-        refreshJob?.cancel()
-        if (mutableState.value !is State.Content) mutableState.value = State.Loading
-        refreshJob = viewModelScope.launch(Dispatchers.IO) {
-            try {
-                val novels = PresentationAccess.downloads.listDownloadedNovels(onMetadata = {
+    private fun publish(generation: Long, state: State) = synchronized(refreshLock) {
+        if (generation == refreshGeneration) mutableState.value = state
+    }
+
+    fun refresh() { startRefresh(allowDeleting = false) }
+
+    private fun startRefresh(allowDeleting: Boolean) {
+        synchronized(refreshLock) {
+            if (!allowDeleting && (mutableState.value as? State.Content)?.deleting == true) return
+            val generation = ++refreshGeneration
+            refreshJob?.cancel()
+            if (mutableState.value !is State.Content) mutableState.value = State.Loading
+            refreshJob = viewModelScope.launch(Dispatchers.IO) {
+                try {
+                    val context = currentCoroutineContext()
+                    val previous = (mutableState.value as? State.Content)?.novels.orEmpty().associateBy { it.novelUrl }
+                    val metadata = PresentationAccess.downloads.listDownloadedMetadata { context.ensureActive() }
                     ensureActive()
-                    mutableState.value = State.Content(it)
-                })
-                ensureActive()
-                mutableState.value = State.Content(novels)
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                AppLogger.e("DownloadPageModel", "Failed to list downloaded novels", e)
-                mutableState.value = State.Error(e.message.orEmpty())
+                    publish(generation, State.Content(metadata.map { row ->
+                        previous[row.novelUrl]?.takeIf { it.manifest == row.manifest } ?: row
+                    }))
+                    // Keep counts/status live, but coalesce expensive exact-size scans during downloads.
+                    delay(500)
+                    val novels = runInterruptible {
+                        PresentationAccess.downloads.listDownloadedNovels(
+                            onMetadata = {
+                                context.ensureActive()
+                                publish(generation, State.Content(it))
+                            },
+                            checkActive = { context.ensureActive() }
+                        )
+                    }
+                    ensureActive()
+                    publish(generation, State.Content(novels))
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    AppLogger.e("DownloadPageModel", "Failed to list downloaded novels", e)
+                    publish(generation, State.Error(e.message.orEmpty()))
+                }
             }
         }
     }
@@ -376,13 +404,16 @@ private class DownloadPageModel : AppStateViewModel<DownloadPageModel.State>(Sta
     fun delete(urls: Iterable<String>) {
         val targets = urls.distinct().filter(String::isNotBlank)
         if (targets.isEmpty()) return
-        val current = mutableState.value as? State.Content ?: return
-        if (current.deleting) return
-        refreshJob?.cancel()
-        mutableState.value = current.copy(deleting = true)
+        synchronized(refreshLock) {
+            val current = mutableState.value as? State.Content ?: return
+            if (current.deleting) return
+            ++refreshGeneration
+            refreshJob?.cancel()
+            mutableState.value = current.copy(deleting = true)
+        }
         viewModelScope.launch(Dispatchers.IO) {
             try { PresentationAccess.downloads.deleteAll(targets) } catch (e: CancellationException) { throw e } catch (e: Exception) { AppLogger.e("DownloadPageModel", "Failed to delete downloaded novels", e) }
-            refresh()
+            startRefresh(allowDeleting = true)
         }
     }
 

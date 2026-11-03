@@ -72,6 +72,10 @@ object HistoryDataCache {
         return dir
     }
 
+    /** Safe during model construction: no filesystem access or disk-writer lock. */
+    fun readMemorySnapshot(authorization: Authorization): List<HistoryNovel>? =
+        scopeFor(authorization)?.let(memoryCache::get)
+
     fun readSnapshot(authorization: Authorization): List<HistoryNovel>? {
         val scope = scopeFor(authorization) ?: return null
         memoryCache[scope]?.let {

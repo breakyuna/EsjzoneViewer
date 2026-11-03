@@ -922,7 +922,6 @@ private class ReadingStatisticsPageModel : AppStateViewModel<ReadingStatisticsPa
     fun observe() {
         if (observing) return
         observing = true
-        com.breakyuna.esjzone.database.NovelTitleRepository.requestRepair()
         observeJob = viewModelScope.launch(Dispatchers.IO) {
             try {
                 combine(

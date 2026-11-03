@@ -20,7 +20,10 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flowOn
-import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.channelFlow
+import kotlinx.coroutines.flow.buffer
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -120,18 +123,23 @@ class FavoritePageModel(private val authorization: Authorization) :
     // Null until local history is loaded; an empty index then means no recent reads.
     // Exclude unread recent additions from the showcase; no remote history or extra requests.
     val readingIndex: StateFlow<ReadingIndex?> =
-        PresentationAccess.database.localReadingActivityDao().observeAll()
-        .combine(PresentationAccess.downloads.changes) { rows, _ ->
-            try {
-                rows.map(PresentationAccess.downloads::refreshProgress)
-            } catch (error: CancellationException) {
-                throw error
-            } catch (error: Exception) {
-                _downloadStorageUnavailable.value = true
-                AppLogger.w("FavoritePageModel", "Download progress is unavailable; using local reading records", error)
-                rows
-            }
-        }
+        channelFlow<List<LocalReadingActivity>> {
+            collectLocalHistory(
+                activities = PresentationAccess.database.localReadingActivityDao().observeAll(),
+                downloadChanges = PresentationAccess.downloads.changes,
+                refreshProgress = { rows ->
+                    rows.map {
+                        kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                        PresentationAccess.downloads.refreshProgress(it)
+                    }
+                },
+                onResult = { trySend(it) },
+                onProgressFailure = { error ->
+                    _downloadStorageUnavailable.value = true
+                    AppLogger.w("FavoritePageModel", "Download progress is unavailable; using local reading records", error)
+                }
+            )
+        }.buffer(Channel.CONFLATED)
         .map { activities ->
             val latestByNovelId = HashMap<String, LocalReadingActivity>()
             val latestByBookKey = HashMap<String, LocalReadingActivity>()

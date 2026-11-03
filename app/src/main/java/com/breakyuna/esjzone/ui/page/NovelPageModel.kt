@@ -55,9 +55,7 @@ class NovelPageModel(
             mutableState.value = State.Loading
             val downloaded = try {
                 PresentationAccess.downloads.readDetailedNovel(novel.url)?.let { stored ->
-                    val title = NovelTitleRepository.resolve(null, stored.id(), stored.url, novel.name)
-                    NovelTitleRepository.repair(stored.id(), stored.url, title)
-                    stored.copy(name = preferredNovelTitle(title, stored.name, stored.id(), stored.url))
+                    stored.copy(name = preferredNovelTitle(stored.name, novel.name, stored.id(), stored.url))
                 }
             } catch (error: CancellationException) {
                 throw error
@@ -66,7 +64,19 @@ class NovelPageModel(
                 null
             }
             ensureActive()
-            if (downloaded != null) mutableState.value = State.Result(downloaded, fromDownload = true)
+            if (downloaded != null) {
+                mutableState.value = State.Result(downloaded, fromDownload = true)
+                viewModelScope.launch(Dispatchers.IO) {
+                    try {
+                        val title = NovelTitleRepository.resolve(null, downloaded.id(), downloaded.url, downloaded.name)
+                        NovelTitleRepository.repair(downloaded.id(), downloaded.url, title)
+                    } catch (error: CancellationException) {
+                        throw error
+                    } catch (error: Exception) {
+                        AppLogger.w("NovelPageModel", "Unable to repair downloaded title", error)
+                    }
+                }
+            }
             try {
                 val fetchedDetail = cancellablePageRequest {
                     PresentationAccess.client.getNovelDetail(
@@ -127,7 +137,7 @@ class NovelPageModel(
                     desired = desired
                 )
                 if (!desired && favoriteIntentVersion.get() == version) {
-                    val hasLocalContent = PresentationAccess.downloads.storageBytes(novel.url) > 0L ||
+                    val hasLocalContent = PresentationAccess.downloads.hasLocalContent(novel.url) ||
                         PresentationAccess.client.hasCachedNovelPages(authorization, localPageUrls())
                     ensureActive()
                     if (hasLocalContent && favoriteIntentVersion.get() == version &&

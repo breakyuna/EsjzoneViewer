@@ -25,6 +25,7 @@ import com.breakyuna.esjzone.ui.designsystem.wideContentWidth
 import com.breakyuna.esjzone.ui.navigation.*
 import com.breakyuna.esjzone.ui.page.*
 import kotlinx.coroutines.*
+import kotlinx.coroutines.flow.*
 
 internal data class LocalSearchEntry(val name: String, val url: String, val cover: String = "",
     val adult: Boolean = false, val downloaded: Boolean = false, val history: LocalReadingActivity? = null)
@@ -39,26 +40,38 @@ internal fun matchLocalBooks(entries: List<LocalSearchEntry>, keyword: String, a
             history = copies.mapNotNull { it.history }.maxByOrNull { it.lastReadAt })
     }.filter { (adult || !it.adult) && it.name.contains(keyword.trim(), ignoreCase = true) }
 
+@OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
 private class LocalSearchModel(private val authorization: Authorization) : AppStateViewModel<LocalSearchModel.State>(State()) {
     data class State(val items: List<LocalSearchEntry> = emptyList(), val loading: Boolean = false, val failed: Boolean = false)
     private var job: Job? = null
+    private val queryState = MutableStateFlow("" to false)
+
     fun search(query: String, adult: Boolean) {
-        job?.cancel()
+        queryState.value = query to adult
+        if (job?.isActive == true) return
         mutableState.value = State(loading = true)
         job = viewModelScope.launch(Dispatchers.IO) {
             try {
-                val downloads = PresentationAccess.downloads.listDownloadedNovels().map {
-                    LocalSearchEntry(it.novelName, it.novelUrl, it.coverUrl, it.manifest.isAdult, downloaded = true)
-                }
-                val history = PresentationAccess.database.localReadingActivityDao().getAll().map {
-                    LocalSearchEntry(validNovelTitle(it.novelName, it.novelId, it.novelUrl, it.chapterName),
-                        it.novelUrl, it.novelCoverUrl, history = it)
-                }
-                val shelf = PresentationAccess.database.bookshelfDao().getAll(BookshelfRepository.scopeFor(authorization))
-                    .filter { it.visible }.map { LocalSearchEntry(it.title, it.url, it.coverUrl, it.isAdult) }
-                val result = matchLocalBooks(downloads + history + shelf, query, adult)
-                ensureActive()
-                mutableState.value = State(result)
+                // Build the index only when the underlying data changes, never per keystroke.
+                val index = combine(
+                    PresentationAccess.downloads.changes.mapLatest {
+                        val context = currentCoroutineContext()
+                        PresentationAccess.downloads.listDownloadedMetadata { context.ensureActive() }
+                    },
+                    PresentationAccess.database.localReadingActivityDao().observeAll(),
+                    PresentationAccess.database.bookshelfDao().observeVisible(BookshelfRepository.scopeFor(authorization))
+                ) { downloads, history, shelf ->
+                    downloads.map {
+                        LocalSearchEntry(it.novelName, it.novelUrl, it.coverUrl, it.manifest.isAdult, downloaded = true)
+                    } + history.map {
+                        LocalSearchEntry(validNovelTitle(it.novelName, it.novelId, it.novelUrl, it.chapterName),
+                            it.novelUrl, it.novelCoverUrl, history = it)
+                    } + shelf.map { LocalSearchEntry(it.title, it.url, it.coverUrl, it.isAdult) }
+                }.map { matchLocalBooks(it, "", adult = true) }
+                combine(index, queryState) { entries, query ->
+                    entries.filter { (query.second || !it.adult) &&
+                        it.name.contains(query.first.trim(), ignoreCase = true) }
+                }.collect { mutableState.value = State(items = it) }
             } catch (e: CancellationException) { throw e }
             catch (_: Exception) { mutableState.value = State(failed = true) }
         }

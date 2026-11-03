@@ -12,6 +12,7 @@ import com.breakyuna.esjzone.novellibrary.novel.validNovelTitle
 import com.breakyuna.esjzone.util.AppLogger
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
@@ -96,29 +97,33 @@ object NovelTitleRepository {
     suspend fun repairAll(authorization: Authorization) = withContext(Dispatchers.IO) {
         val database = PresentationAccess.database
         val records = buildList {
-            database.localReadingActivityDao().getAll().forEach {
+            database.localReadingActivityDao().titleRepairCandidates().forEach {
                 val id = novelTitleId(it.novelId, it.novelUrl).ifBlank { novelTitleId(novelUrl = it.chapterUrl) }
                 add(StoredTitle(id, it.novelUrl, validNovelTitle(it.novelName, id, it.novelUrl, it.chapterName)))
             }
-            database.bookmarkDao().getAll().forEach {
+            database.bookmarkDao().titleRepairCandidates().forEach {
                 val id = novelTitleId(it.novelId, it.chapterUrl)
                 add(StoredTitle(id, "", validNovelTitle(it.novelName, id, chapterName = it.chapterName)))
             }
-            database.readingStatDao().getAll().forEach {
+            database.readingStatDao().titleRepairCandidates().forEach {
                 val id = novelTitleId(novelUrl = it.bookKey).ifBlank {
                     it.bookKey.takeIf { key -> key.isNotBlank() && key.all(Char::isDigit) }.orEmpty()
                 }
                 add(StoredTitle(id, "", validNovelTitle(it.bookName, id, it.bookKey)))
             }
-            database.bookshelfDao().getAllEntries().forEach {
+            database.bookshelfDao().titleRepairCandidates().forEach {
                 add(StoredTitle(novelTitleId(it.novelId, it.url), it.url, validNovelTitle(it.title, it.novelId, it.url)))
             }
-            PresentationAccess.downloads.listDownloadedNovels(calculateSizes = false).forEach {
+            PresentationAccess.downloads.listDownloadedMetadata().filter {
+                validNovelTitle(it.novelName, novelUrl = it.novelUrl).isBlank()
+            }.forEach {
                 add(StoredTitle(novelTitleId(novelUrl = it.novelUrl), it.novelUrl,
                     validNovelTitle(it.novelName, novelUrl = it.novelUrl)))
             }
         }
+        kotlinx.coroutines.currentCoroutineContext().ensureActive()
         records.filter { it.id.isNotBlank() }.groupBy { it.id }.forEach { (id, rows) ->
+            kotlinx.coroutines.currentCoroutineContext().ensureActive()
             if (rows.none { it.name.isBlank() }) return@forEach
             try {
                 val url = rows.firstOrNull { it.url.isNotBlank() }?.url ?: "/detail/$id.html"

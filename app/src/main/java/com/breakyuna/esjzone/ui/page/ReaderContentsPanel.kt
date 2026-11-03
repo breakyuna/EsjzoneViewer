@@ -209,7 +209,7 @@ internal fun filterReaderCatalog(chapters: List<Chapter>, query: String): List<C
 private class ReaderCatalogModel(novelUrl: String) : AppStateViewModel<Map<String, Boolean>>(emptyMap()) {
     init {
         if (novelUrl.isNotBlank()) viewModelScope.launch(Dispatchers.IO) {
-            PresentationAccess.downloads.changes.collectLatest {
+            PresentationAccess.downloads.observeNovelChanges(novelUrl).collectLatest {
                 try {
                     mutableState.value = PresentationAccess.downloads.manifest(novelUrl)?.chapters.orEmpty()
                         .filter { it.bodyAvailable || it.downloaded }

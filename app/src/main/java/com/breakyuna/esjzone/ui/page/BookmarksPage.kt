@@ -78,8 +78,13 @@ import com.breakyuna.esjzone.ui.product.ErrorState
 import com.breakyuna.esjzone.ui.product.LoadingSkeleton
 import com.breakyuna.esjzone.util.AppLogger
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -308,12 +313,19 @@ private class BookmarksPageModel : AppStateViewModel<BookmarksPageModel.State>(S
     fun load() {
         if (loadStarted) return
         loadStarted = true
-        com.breakyuna.esjzone.database.NovelTitleRepository.requestRepair()
         viewModelScope.launch(Dispatchers.IO) {
             try {
-                PresentationAccess.database.bookmarkDao().observeAll().collect { bookmarks ->
-                    mutableState.value = State.Result(bookmarks)
-                    ensureCovers(bookmarks)
+                coroutineScope {
+                    val coverRows = MutableStateFlow<List<LocalBookmark>?>(null)
+                    launch {
+                        // Cancellation waits for an in-progress synchronous copy to leave before
+                        // starting the next batch, independently of the database observer.
+                        coverRows.filterNotNull().collectLatest { ensureCovers(it) }
+                    }
+                    PresentationAccess.database.bookmarkDao().observeAll().collect { bookmarks ->
+                        mutableState.value = State.Result(bookmarks)
+                        coverRows.value = bookmarks
+                    }
                 }
             } catch (e: CancellationException) {
                 throw e
@@ -326,7 +338,10 @@ private class BookmarksPageModel : AppStateViewModel<BookmarksPageModel.State>(S
     }
 
     private suspend fun ensureCovers(bookmarks: List<LocalBookmark>) {
-        for (bookmark in bookmarks) {
+        for (bookmark in bookmarks.distinctBy {
+            BookmarkCoverStore.cleanNovelId(it.novelId, it.chapterUrl)
+        }) {
+            kotlinx.coroutines.currentCoroutineContext().ensureActive()
             val cleanId = BookmarkCoverStore.cleanNovelId(bookmark.novelId, bookmark.chapterUrl)
             val cover = try {
                 val uri = BookmarkCoverStore.getCoverUri(bookmark.novelId, bookmark.chapterUrl)

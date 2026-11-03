@@ -136,16 +136,7 @@ class UserStorage(context: Context) {
             check(preferences[cleanupSourceKey] == null && preferences[pendingKey] == null)
             check(root != null)
             withContext(NonCancellable) {
-                store.edit {
-                    it[pendingKey] = PRIVATE_LOCATION
-                    it[pendingLabelKey] = ""
-                    it[failedKey] = false
-                }
-                NovelDownloadStore.setStorageMigrationPending(true)
-                mutableLocation.value = PRIVATE_LOCATION
-                mutableLabel.value = ""
-                mutableTransfer.value = StorageTransferProgress(StorageTransferPhase.QUEUED)
-                StorageMigrationWorker.enqueue(context, replace = true)
+                queueMigration(PRIVATE_LOCATION, "")
             }
         }
     }
@@ -190,17 +181,7 @@ class UserStorage(context: Context) {
             StorageFile(nextDownloads, ".nomedia").outputStream().close()
             withContext(NonCancellable) {
                 if (migrate && uri.toString() != preferences[locationKey]) {
-                    store.edit {
-                        if (it[pendingKey] != uri.toString()) {
-                            it.remove(stagingKey); it.remove(backupStagingKey)
-                        }
-                        it[pendingKey] = uri.toString(); it[pendingLabelKey] = label; it[failedKey] = false
-                    }
-                    NovelDownloadStore.setStorageMigrationPending(true)
-                    mutableLocation.value = uri.toString()
-                    mutableLabel.value = label
-                    mutableTransfer.value = StorageTransferProgress(StorageTransferPhase.QUEUED)
-                    StorageMigrationWorker.enqueue(context, replace = true)
+                    queueMigration(uri.toString(), label)
                 } else {
                     NovelDownloadStore.setStorageMigrationPending(true)
                     try {
@@ -222,6 +203,30 @@ class UserStorage(context: Context) {
             }
             true
         }
+    }
+
+    /** Reserve migration before writing its durable journal. Called under operationMutex/NonCancellable. */
+    private suspend fun queueMigration(target: String, label: String) {
+        val wasPending = NovelDownloadStore.migrating.value
+        NovelDownloadStore.setStorageMigrationPending(true)
+        try {
+            store.edit {
+                if (it[pendingKey] != target) {
+                    it.remove(stagingKey)
+                    it.remove(backupStagingKey)
+                }
+                it[pendingKey] = target
+                it[pendingLabelKey] = label
+                it[failedKey] = false
+            }
+        } catch (error: Exception) {
+            NovelDownloadStore.setStorageMigrationPending(wasPending)
+            throw error
+        }
+        mutableLocation.value = target
+        mutableLabel.value = label
+        mutableTransfer.value = StorageTransferProgress(StorageTransferPhase.QUEUED)
+        StorageMigrationWorker.enqueue(context, replace = true)
     }
 
     suspend fun retryTransfer() = withContext(Dispatchers.IO) {

@@ -11,6 +11,9 @@ import com.breakyuna.esjzone.novellibrary.novel.validNovelTitle
 
 @Dao
 interface ReadingStatDao {
+
+    @Query("SELECT * FROM reading_stats WHERE trim(book_name) = '' OR trim(book_name) = book_key OR trim(book_name) NOT GLOB '*[^0-9]*' OR book_name LIKE '%/detail/%' OR book_name LIKE '%/forum/%'")
+    suspend fun titleRepairCandidates(): List<ReadingStat>
     @Query("SELECT * FROM reading_stats ORDER BY date DESC")
     fun observeAll(): Flow<List<ReadingStat>>
 

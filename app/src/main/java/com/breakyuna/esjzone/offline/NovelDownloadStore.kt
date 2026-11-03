@@ -56,6 +56,10 @@ import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.distinctUntilChanged
+import java.util.concurrent.locks.ReentrantLock
 import kotlinx.coroutines.supervisorScope
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
@@ -152,6 +156,22 @@ data class DownloadedNovelSummary(
 object NovelDownloadStore {
     private val mutableChanges = kotlinx.coroutines.flow.MutableStateFlow(0L)
     val changes: kotlinx.coroutines.flow.StateFlow<Long> = mutableChanges
+    private data class BookRevisions(val reset: Long = 0, val books: Map<String, Long> = emptyMap())
+    private val bookRevisions = kotlinx.coroutines.flow.MutableStateFlow(BookRevisions())
+
+    fun observeNovelChanges(novelUrl: String): Flow<Long> {
+        val key = canonicalKey(novelUrl)
+        return bookRevisions.map { it.books[key] ?: it.reset }.distinctUntilChanged()
+    }
+
+    /** Called under ioLock; resets invalidate all books, commits invalidate only their book. */
+    private fun publishChange(novelUrl: String? = null) {
+        val revision = mutableChanges.value + 1
+        val previous = bookRevisions.value
+        bookRevisions.value = if (novelUrl == null) BookRevisions(reset = revision)
+            else previous.copy(books = previous.books + (canonicalKey(novelUrl) to revision))
+        mutableChanges.value = revision
+    }
 
 
     private const val MANIFEST_FILE = "manifest.json"
@@ -165,6 +185,9 @@ object NovelDownloadStore {
 
     private val gson = Gson()
     private val ioLock = Any()
+    private val inventoryScanLock = ReentrantLock()
+    private val deletingDirectories = HashSet<String>()
+    private var metadataSnapshot: List<DownloadedNovelSummary>? = null
     private val readMaintenanceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO.limitedParallelism(1))
     private val imageIndex = DownloadedImageIndex()
     /** Every successful commit publishes the latest manifest under ioLock. Keys are directory paths. */
@@ -198,6 +221,9 @@ object NovelDownloadStore {
 
     private fun ensureWriteAllowed(guard: DownloadWriteGuard?) = synchronized(ioLock) {
         if (mutableMigrating.value) throw StorageMigrationBusyException()
+        if (guard != null && guard.directoryPath in deletingDirectories) {
+            throw CancellationException("The novel is being removed")
+        }
         if (guard != null && guard.storage != storageGeneration) throw StorageMigrationBusyException()
         if (guard != null && (deletionGenerations[guard.directoryPath] ?: 0L) != guard.generation) {
             throw CancellationException("Download storage changed or the novel was removed")
@@ -231,6 +257,7 @@ object NovelDownloadStore {
     }
 
     private fun initializeStorageDirectory(directory: StorageFile) = synchronized(ioLock) {
+        check(deletingDirectories.isEmpty()) { "Download deletion is still running" }
         // A disconnected user-selected volume must not prevent opening Settings to repair access.
         if (!directory.isDocument && !directory.isDirectory && !directory.mkdirs()) {
             throw IOException("Unable to create the novel download directory")
@@ -250,11 +277,12 @@ object NovelDownloadStore {
         chapterKeysByDirectory.clear()
         chapterIndexLoaded = false
         inventorySnapshot = null
+        metadataSnapshot = null
         dirtyInventorySizes.clear()
         manifestCache.clear()
         historyProgressCache.clear()
         rootDirectory = directory
-        mutableChanges.value += 1
+        publishChange()
     }
 
     /** Rescan metadata after files are restored or changed outside the app. */
@@ -276,7 +304,7 @@ object NovelDownloadStore {
         checkActive: () -> Unit
     ): StorageMigration {
         val source = synchronized(ioLock) {
-            check(!migrationCopyRunning)
+            check(!migrationCopyRunning && deletingDirectories.isEmpty())
             // Resolve legacy names before readers can build an index during the copy.
             ensureNovelDirectoryIndex(StorageTransferFailureReason.SOURCE_MANIFEST_INVALID)
             mutableMigrating.value = true
@@ -469,6 +497,7 @@ object NovelDownloadStore {
 
     internal fun setStorageMigrationPending(pending: Boolean) = synchronized(ioLock) {
         check(!migrationCopyRunning)
+        if (pending && deletingDirectories.isNotEmpty()) throw StorageMigrationBusyException()
         mutableMigrating.value = pending
     }
 
@@ -489,25 +518,23 @@ object NovelDownloadStore {
         check(destination.isDirectory || destination.mkdirs())
         val sources = synchronized(ioLock) {
             ensureNovelDirectoryIndex()
-            novelDirectories.values.toList()
+            novelDirectories.values.filter { it.absolutePath !in deletingDirectories }
         }
         for (source in sources) {
             checkActive()
             val target = File(destination, source.name)
-            val (manifest, guard, files) = synchronized(ioLock) {
-                if (!source.isDirectory) return@synchronized null
+            val (manifest, guard) = synchronized(ioLock) {
+                if (source.absolutePath in deletingDirectories || !source.isDirectory) return@synchronized null
                 val manifest = readManifest(source) ?: return@synchronized null
-                // Freeze the manifest and listing together; entries() queries each directory once.
-                val files = source.snapshotFiles(checkActive).filter {
-                    it.file.name != MANIFEST_FILE && !it.file.name.endsWith(".tmp")
-                }
-                Triple(manifest, newWriteGuard(source), files)
+                manifest to newWriteGuard(source)
             } ?: continue
+            // Listings and copies may be slow provider calls. Keep only stable-handle opening
+            // and generation checks under the store lock.
+            val files = source.snapshotFiles(checkActive).filter {
+                it.file.name != MANIFEST_FILE && !it.file.name.endsWith(".tmp")
+            }
             fun checkSnapshot() {
-                check(guard.storage == storageGeneration &&
-                    guard.generation == (deletionGenerations[guard.directoryPath] ?: 0L)) {
-                    "Download storage changed during backup"
-                }
+                ensureSnapshotCurrent(guard)
             }
             check(target.isDirectory || target.mkdirs())
             for (entry in files) {
@@ -516,13 +543,14 @@ object NovelDownloadStore {
                 val parent = checkNotNull(output.parentFile)
                 check(parent.isDirectory || parent.mkdirs())
                 checkActive()
-                synchronized(ioLock) {
+                val input = synchronized(ioLock) {
                     checkSnapshot()
-                    // Keep a replacement/deletion from interrupting this file's copy.
-                    file.inputStream().use { input ->
-                        output.outputStream().use { input.copyWithCancellation(it, checkActive) }
-                    }
+                    file.inputStream()
                 }
+                input.use {
+                    output.outputStream().use { out -> it.copyWithCancellation(out, checkActive) }
+                }
+                synchronized(ioLock) { checkSnapshot() }
             }
             synchronized(ioLock) { checkSnapshot() }
             checkActive()
@@ -540,6 +568,9 @@ object NovelDownloadStore {
 
     private fun importStorage(source: StorageFile, replaceExisting: Boolean, checkActive: () -> Unit) = synchronized(ioLock) {
         ensureWriteAllowed(null)
+        // Physical deletion runs outside ioLock. Reject before touching any restore target;
+        // holding ioLock for the import prevents another deletion from starting meanwhile.
+        if (deletingDirectories.isNotEmpty()) throw StorageMigrationBusyException()
         checkActive()
         val root = checkNotNull(rootDirectory)
         prepareDownloadRoot(root)
@@ -604,9 +635,10 @@ object NovelDownloadStore {
             chapterKeysByDirectory.clear()
             chapterIndexLoaded = false
             inventorySnapshot = null
+            metadataSnapshot = null
             manifestCache.clear()
             historyProgressCache.clear()
-            mutableChanges.value += 1
+            publishChange()
         }
     }
 
@@ -629,134 +661,166 @@ object NovelDownloadStore {
 
     fun isDownloaded(novelUrl: String): Boolean = manifest(novelUrl)?.complete == true
 
-    /** Shelf membership needs one readable chapter, not a recursive storage-size scan. */
-    fun downloadedNovelUrls(): Set<String> {
-        val directories = synchronized(ioLock) {
+    /** Manifest metadata only; explicit reindex/validation handles external file changes. */
+    fun listDownloadedMetadata(checkActive: () -> Unit = {}): List<DownloadedNovelSummary> {
+        val generation: Long
+        val revision: Long
+        val directories: List<StorageFile>
+        synchronized(ioLock) {
+            metadataSnapshot?.let { return it }
+            if (rootDirectory == null) return emptyList()
             ensureNovelDirectoryIndex()
-            novelDirectories.values.toList()
+            generation = storageGeneration
+            revision = mutableChanges.value
+            directories = novelDirectories.values.filter { it.absolutePath !in deletingDirectories }
         }
-        return directories.mapNotNullTo(LinkedHashSet()) { directory ->
-            synchronized(ioLock) {
-                val stored = readManifest(directory.takeIf(StorageFile::isDirectory))
-                    ?: return@synchronized null
-                stored.url.takeIf {
-                    stored.chapters.any { record ->
-                        (record.bodyAvailable || record.downloaded) &&
-                            resolveLocalFile(directory, record.fileName)?.isFile == true
-                    }
-                }
-            }
+        val rows = directories.mapNotNull { directory ->
+            checkActive()
+            val stored = synchronized(ioLock) {
+                if (storageGeneration != generation || directory.absolutePath in deletingDirectories) null
+                else readManifest(directory)
+            } ?: return@mapNotNull null
+            val count = stored.savedChapterCount
+            if (count == 0) null else DownloadedNovelSummary(stored, count, -1L)
+        }.sortedByDescending { it.manifest.downloadedAt }
+        synchronized(ioLock) {
+            if (storageGeneration == generation && mutableChanges.value == revision) metadataSnapshot = rows
         }
+        return rows
     }
+
+    fun downloadedNovelUrls(): Set<String> = listDownloadedMetadata().mapTo(LinkedHashSet()) { it.novelUrl }
 
     /** Lists partial and complete downloads; recursive size scans never hold the reader's lock. */
     fun listDownloadedNovels(
         calculateSizes: Boolean = true,
-        onMetadata: (List<DownloadedNovelSummary>) -> Unit = {}
+        onMetadata: (List<DownloadedNovelSummary>) -> Unit = {},
+        checkActive: () -> Unit = {}
     ): List<DownloadedNovelSummary> {
-        val root: StorageFile
-        val revision: Long
-        val cached: List<DownloadedNovelSummary>?
-        val dirty: Set<String>
-        val directories: Map<String, StorageFile>
-        synchronized(ioLock) {
-            root = rootDirectory ?: return emptyList()
-            ensureNovelDirectoryIndex()
-            directories = novelDirectories.toMap()
-            revision = mutableChanges.value
-            cached = inventorySnapshot
-            dirty = dirtyInventorySizes.toSet()
-        }
-        if (cached != null && (dirty.isEmpty() || !calculateSizes)) return cached
-        val snapshot = if (cached != null) {
-            onMetadata(cached.map { summary ->
-                if (canonicalKey(summary.novelUrl) in dirty) summary.copy(storageBytes = -1L) else summary
-            })
-            cached.map { summary ->
-                val key = canonicalKey(summary.novelUrl)
-                if (key !in dirty) summary else {
-                    val directory = directories[key]
-                    summary.copy(storageBytes = directory?.fileEntries()?.sumOf { it.size } ?: 0L)
+        if (!calculateSizes) return listDownloadedMetadata(checkActive)
+        inventoryScanLock.lockInterruptibly()
+        try {
+            checkActive()
+            val root: StorageFile
+            val revision: Long
+            val cached: List<DownloadedNovelSummary>?
+            val dirty: Set<String>
+            val directories: Map<String, StorageFile>
+            synchronized(ioLock) {
+                root = rootDirectory ?: return emptyList()
+                ensureNovelDirectoryIndex()
+                directories = novelDirectories.filterValues { it.absolutePath !in deletingDirectories }
+                revision = mutableChanges.value
+                cached = inventorySnapshot
+                dirty = dirtyInventorySizes.toSet()
+            }
+            if (cached != null && dirty.isEmpty()) return cached
+            val snapshot = if (cached != null) {
+                onMetadata(cached.map { summary ->
+                    if (canonicalKey(summary.novelUrl) in dirty) summary.copy(storageBytes = -1L) else summary
+                })
+                cached.map { summary ->
+                    val key = canonicalKey(summary.novelUrl)
+                    if (key !in dirty) summary else {
+                        val directory = directories[key]
+                        summary.copy(storageBytes = directory?.fileEntries(checkActive)?.sumOf { it.size } ?: 0L)
+                    }
+                }
+            } else {
+                val rootEntries = mutableMapOf<StorageFile, List<StorageFile.Entry>>()
+                val metadata = directories.values.mapNotNull { directory ->
+                    checkActive()
+                    val stored = synchronized(ioLock) { readManifest(directory) } ?: return@mapNotNull null
+                    val entries = directory.entries()
+                    rootEntries[directory] = entries
+                    val files = entries.filter { !it.directory }.mapTo(HashSet()) { it.file.name }
+                    val count = stored.chapters.count { record ->
+                        (record.bodyAvailable || record.downloaded) && record.fileName in files
+                    }
+                    if (count == 0) null else DownloadedNovelSummary(stored, count, -1L)
+                }.sortedByDescending { it.manifest.downloadedAt }
+                onMetadata(metadata)
+                metadata.map { summary ->
+                    val directory = directories.getValue(canonicalKey(summary.novelUrl))
+                    val bytes = rootEntries.getValue(directory).sumOf { entry ->
+                        if (entry.directory) entry.file.fileEntries(checkActive).sumOf { it.size } else entry.size
+                    }
+                    summary.copy(storageBytes = bytes)
                 }
             }
-        } else {
-            val rootEntries = mutableMapOf<StorageFile, List<StorageFile.Entry>>()
-            val metadata = directories.values.mapNotNull { directory ->
-                val stored = synchronized(ioLock) { readManifest(directory) } ?: return@mapNotNull null
-                val entries = directory.entries()
-                rootEntries[directory] = entries
-                val files = entries.filter { !it.directory }.mapTo(HashSet()) { it.file.name }
-                val count = stored.chapters.count { record ->
-                    (record.bodyAvailable || record.downloaded) && record.fileName in files
-                }
-                if (count == 0) null else DownloadedNovelSummary(stored, count, -1L)
-            }.sortedByDescending { it.manifest.downloadedAt }
-            if (!calculateSizes) return metadata
-            onMetadata(metadata)
-            metadata.map { summary ->
-                val directory = directories.getValue(canonicalKey(summary.novelUrl))
-                val bytes = rootEntries.getValue(directory).sumOf { entry ->
-                    if (entry.directory) entry.file.fileEntries().sumOf { it.size } else entry.size
-                }
-                summary.copy(storageBytes = bytes)
+            val current = synchronized(ioLock) {
+                // A download or deletion during the scan must not publish an obsolete inventory cache.
+                if (rootDirectory == root && mutableChanges.value == revision) {
+                    inventorySnapshot = snapshot
+                    metadataSnapshot = snapshot.map { it.copy(storageBytes = -1L) }
+                    dirtyInventorySizes.clear()
+                    true
+                } else false
             }
-        }
-        synchronized(ioLock) {
-            // A download or deletion during the scan must not publish an obsolete inventory cache.
-            if (rootDirectory == root && mutableChanges.value == revision) {
-                inventorySnapshot = snapshot
-                dirtyInventorySizes.clear()
-            }
-        }
-        return snapshot
+            return if (current) snapshot else listDownloadedMetadata(checkActive)
+        } finally { inventoryScanLock.unlock() }
     }
 
-    /** Returns the on-disk size of one downloaded novel, including its manifest. */
-    fun storageBytes(novelUrl: String): Long = synchronized(ioLock) {
-        val directory = directoryFor(novelUrl, create = false) ?: return@synchronized 0L
-        directory.fileEntries().sumOf { it.size }
+    /** Existence checks stop at the first file instead of counting every byte. */
+    fun hasLocalContent(novelUrl: String): Boolean {
+        val directory = synchronized(ioLock) { directoryFor(novelUrl, create = false) } ?: return false
+        return directory.fileEntries().any()
     }
 
-    /**
-     * Deletes only this novel's download directory. Other local data
-     * (bookshelf, reading history, bookmarks and cloud state) is untouched.
-     * Always cancels queued work; an absent directory is already cleared.
-     */
-    fun delete(novelUrl: String): Boolean = synchronized(ioLock) {
-        if (mutableMigrating.value) return@synchronized false
+    fun storageBytes(novelUrl: String): Long {
+        val directory: StorageFile
+        val guard: DownloadWriteGuard
+        synchronized(ioLock) {
+            directory = directoryFor(novelUrl, create = false) ?: return 0L
+            guard = newWriteGuard(directory)
+        }
+        val bytes = directory.fileEntries().sumOf { it.size }
+        synchronized(ioLock) { ensureSnapshotCurrent(guard) }
+        return bytes
+    }
+
+    private fun ensureSnapshotCurrent(guard: DownloadWriteGuard) {
+        check(guard.storage == storageGeneration &&
+            guard.generation == (deletionGenerations[guard.directoryPath] ?: 0L) &&
+            guard.directoryPath !in deletingDirectories) { "Download storage changed during the operation" }
+    }
+
+    /** Retire this book before slow deletion; unrelated books never wait for the recursive walk. */
+    fun delete(novelUrl: String): Boolean {
         cancelActiveWork(novelUrl)
-        val directory = directoryFor(novelUrl, create = false) ?: return@synchronized true
-        deletionGenerations[directory.absolutePath] = (deletionGenerations[directory.absolutePath] ?: 0L) + 1L
-        manifestCache.remove(directory.absolutePath)
-        historyProgressCache.remove(directory.absolutePath)
-        imageIndex.remove(directory)
-        removeChapterIndex(directory)
-        inventorySnapshot = null
-        mutableChanges.value += 1
-        directory.deleteRecursively().also { deleted ->
-            if (deleted) novelDirectories.remove(canonicalKey(novelUrl))
+        val directory: StorageFile
+        synchronized(ioLock) {
+            if (mutableMigrating.value) return false
+            if (novelDirectories[canonicalKey(novelUrl)]?.absolutePath in deletingDirectories) return false
+            directory = directoryFor(novelUrl, create = false) ?: return true
+            if (!deletingDirectories.add(directory.absolutePath)) return false
+            deletionGenerations[directory.absolutePath] = (deletionGenerations[directory.absolutePath] ?: 0L) + 1
+            manifestCache.remove(directory.absolutePath)
+            historyProgressCache.remove(directory.absolutePath)
+            imageIndex.remove(directory)
+            removeChapterIndex(directory)
+            inventorySnapshot = null
+            metadataSnapshot = null
+            publishChange(novelUrl)
+        }
+        try {
+            val deleted = directory.deleteRecursively()
+            synchronized(ioLock) {
+                if (deleted) novelDirectories.remove(canonicalKey(novelUrl))
+            }
+            return deleted
+        } finally {
+            synchronized(ioLock) {
+                deletingDirectories.remove(directory.absolutePath)
+                manifestCache.remove(directory.absolutePath)
+                inventorySnapshot = null
+                metadataSnapshot = null
+                publishChange(novelUrl)
+            }
         }
     }
 
-    /** Deletes several novel download directories and returns the number removed. */
-    fun deleteAll(novelUrls: Iterable<String>): Int = synchronized(ioLock) {
-        if (mutableMigrating.value) return@synchronized 0
-        inventorySnapshot = null
-        mutableChanges.value += 1
-        novelUrls.distinct()
-            .count { url ->
-                cancelActiveWork(url)
-                val directory = directoryFor(url, create = false) ?: return@count false
-                deletionGenerations[directory.absolutePath] = (deletionGenerations[directory.absolutePath] ?: 0L) + 1L
-                manifestCache.remove(directory.absolutePath)
-                historyProgressCache.remove(directory.absolutePath)
-                imageIndex.remove(directory)
-                removeChapterIndex(directory)
-                directory.deleteRecursively().also { deleted ->
-                    if (deleted) novelDirectories.remove(canonicalKey(url))
-                }
-            }
-    }
+    fun deleteAll(novelUrls: Iterable<String>): Int = novelUrls.distinct().count { delete(it) }
 
     private fun cancelActiveWork(novelUrl: String) {
         runCatching {
@@ -791,7 +855,8 @@ object NovelDownloadStore {
                 )
             writeManifest(directory, updated, writeGuard, updatePassword = true)
             inventorySnapshot = null
-            mutableChanges.value += 1
+            metadataSnapshot = null
+            publishChange()
             updated
         }
     }
@@ -808,7 +873,8 @@ object NovelDownloadStore {
             val updated = manifest.copy(commonPassword = trimmed)
             writeManifest(directory, updated, writeGuard, updatePassword = true)
             inventorySnapshot = null
-            mutableChanges.value += 1
+            metadataSnapshot = null
+            publishChange()
             updated
         }
     }
@@ -1189,10 +1255,16 @@ object NovelDownloadStore {
             .associateBy { chapterKey(it.url) }
 
         val records = orderedChapters.mapIndexed { index, chapter ->
-            val previous = previousByUrl[chapterKey(chapter.url)]
+            currentCoroutineContext().ensureActive()
+            val key = chapterKey(chapter.url)
+            val previous = previousByUrl[key]
+            if (selectedKeys != null && key !in selectedKeys) {
+                return@mapIndexed previous?.copy(index = index, name = chapter.name, url = chapter.url, localOnly = false)
+                    ?: DownloadedChapterRecord(index, chapter.name, chapter.url, chapterFileName(chapter.url), false)
+            }
             val fileName = previous?.fileName ?: chapterFileName(chapter.url)
             val chapterFile = StorageFile(directory, fileName)
-            val stored = synchronized(ioLock) { readStoredChapter(directory, chapterFile) }
+            val stored = readStoredSnapshot(chapterFile, writeGuard)
             val isDownloaded = stored?.hasAllImagesOnDisk(directory) == true
             DownloadedChapterRecord(
                 index = index,
@@ -1216,7 +1288,25 @@ object NovelDownloadStore {
             complete = currentRecords.all { it.downloaded },
             commonPassword = previousCommonPassword
         )
-        synchronized(ioLock) { writeManifest(directory, currentManifest, writeGuard, replaceCatalog = true) }
+        synchronized(ioLock) {
+            ensureWriteAllowed(writeGuard)
+            val latest = readManifest(directory)?.chapters.orEmpty().associateBy { chapterKey(it.url) }
+            // A reader may have saved a chapter during preflight. Preserve those newer commits.
+            val verified = records.filter { selectedKeys == null || chapterKey(it.url) in selectedKeys }
+                .associate { record ->
+                    val key = chapterKey(record.url)
+                    val current = latest[key]
+                    key to if (current != null && current != previousByUrl[key]) current else record
+                }
+            currentRecords.forEachIndexed { index, original ->
+                val record = verified[chapterKey(original.url)] ?: return@forEachIndexed
+                currentRecords[index] = original.copy(
+                    downloaded = record.downloaded, bodyAvailable = record.bodyAvailable,
+                    textLength = record.textLength, requiresPassword = record.requiresPassword)
+            }
+            currentManifest = writeManifest(directory, currentManifest.copy(chapters = currentRecords.toList()),
+                writeGuard, replaceCatalog = true, revalidateChapterFiles = false, verifiedChapters = verified)
+        }
 
         val targetRecords = currentRecords.filter { selectedKeys == null || chapterKey(it.url) in selectedKeys }
         val totalCount = targetRecords.size
@@ -1417,7 +1507,7 @@ object NovelDownloadStore {
         onCacheReady: (String) -> Unit = {}
     ): DownloadedChapterContent {
         val chapterFile = StorageFile(directory, record.fileName)
-        val existing = synchronized(ioLock) { readStoredChapter(directory, chapterFile) }
+        val existing = readStoredSnapshot(chapterFile, writeGuard)
         val chapter = Chapter(record.name, record.url, false)
         var sourceReference: String? = null
         val stored = existing ?: run {
@@ -1599,6 +1689,12 @@ object NovelDownloadStore {
 
     /** Recompute displayed history progress after a catalog gains chapters, without moving its anchor. */
     fun refreshProgress(activity: com.breakyuna.esjzone.database.entity.LocalReadingActivity): com.breakyuna.esjzone.database.entity.LocalReadingActivity = synchronized(ioLock) {
+        // Reuse unchanged catalog projections without repeated document-provider queries.
+        novelDirectories[canonicalKey(activity.novelUrl)]?.let { known ->
+            if (known.absolutePath !in deletingDirectories) historyProgressCache[known.absolutePath]?.let {
+                return@synchronized it.refresh(activity)
+            }
+        }
         val directory = directoryFor(activity.novelUrl, create = false) ?: return@synchronized activity
         val manifest = readManifest(directory) ?: return@synchronized activity
         if (!manifest.catalogComplete) return@synchronized activity
@@ -1728,6 +1824,7 @@ object NovelDownloadStore {
             return chapterIndex[target]
         }
         novelDirectories.values.forEach { directory ->
+            if (directory.absolutePath in deletingDirectories) return@forEach
             val manifest = readManifest(directory) ?: return@forEach
             indexChapterManifest(directory, manifest, recoverUnpublishedFiles = true)
         }
@@ -1791,6 +1888,26 @@ object NovelDownloadStore {
         }
     }
 
+    /** A stable read handle lets download preflight decode without excluding unrelated readers. */
+    private fun readStoredSnapshot(file: StorageFile, guard: DownloadWriteGuard): DownloadedChapterContent? {
+        return try {
+            val reader = synchronized(ioLock) {
+                ensureWriteAllowed(guard)
+                file.recoverReplacement()
+                if (!file.isFile) return null
+                file.storedTextReader()
+            }
+            val stored = reader.use { gson.fromJson(it, DownloadedChapterContent::class.java) } ?: return null
+            val decoded = decodeStoredChapter(stored)
+            synchronized(ioLock) { ensureSnapshotCurrent(guard) }
+            decoded
+        } catch (error: Exception) {
+            if (error is StorageAccessException || error is CancellationException || error is StorageMigrationBusyException) throw error
+            AppLogger.w("NovelDownloadStore", "Unable to read downloaded chapter during validation", error)
+            null
+        }
+    }
+
     private fun readStoredChapter(directory: StorageFile, file: StorageFile): DownloadedChapterContent? = synchronized(ioLock) {
         val stored = readJson(file, DownloadedChapterContent::class.java) ?: return@synchronized null
         val decoded = decodeStoredChapter(stored) ?: return@synchronized null
@@ -1839,6 +1956,7 @@ object NovelDownloadStore {
         if (create && mutableMigrating.value) return@synchronized null
         ensureNovelDirectoryIndex()
         val key = canonicalKey(novelUrl)
+        novelDirectories[key]?.takeIf { it.absolutePath in deletingDirectories }?.let { return@synchronized null }
         novelDirectories[key]?.let { directory ->
             // The persisted directory index is only a hint. Always verify the requested
             // book against its manifest before using it (folders can be replaced externally).
@@ -2010,15 +2128,20 @@ object NovelDownloadStore {
         replaceCatalog: Boolean = false,
         updatePassword: Boolean = false,
         changedContents: Map<String, DownloadedChapterContent> = emptyMap(),
-        revalidateChapterFiles: Boolean = true
+        revalidateChapterFiles: Boolean = true,
+        verifiedChapters: Map<String, DownloadedChapterRecord> = emptyMap()
     ): DownloadedNovelManifest {
         ensureWriteAllowed(writeGuard)
         val existing = readManifest(directory)
         val manifest = mergeDownloadManifest(existing, incoming, replaceCatalog).let { rebased ->
             val merged = if (updatePassword) rebased.copy(commonPassword = incoming.commonPassword) else rebased
             val oldRecords = existing?.chapters.orEmpty().associateBy { chapterKey(it.url) }
-            val records = merged.chapters.map { record ->
-                val key = chapterKey(record.url)
+            val records = merged.chapters.map { mergedRecord ->
+                val key = chapterKey(mergedRecord.url)
+                val verified = verifiedChapters[key]
+                val record = if (verified == null) mergedRecord else mergedRecord.copy(
+                    downloaded = verified.downloaded, bodyAvailable = verified.bodyAvailable,
+                    textLength = verified.textLength, requiresPassword = verified.requiresPassword)
                 val previous = oldRecords[key]
                 // Reader writes supply changed content explicitly; catalog-only
                 // records reuse metadata without querying every chapter file.
@@ -2042,7 +2165,12 @@ object NovelDownloadStore {
         manifestCache[directory.absolutePath] = manifest
         saveDirectoryHints()
         historyProgressCache.remove(directory.absolutePath)
-        mutableChanges.value += 1
+        metadataSnapshot = metadataSnapshot?.filterNot { canonicalKey(it.novelUrl) == canonicalKey(manifest.url) }?.let {
+            val count = manifest.savedChapterCount
+            (if (count > 0) it + DownloadedNovelSummary(manifest, count, -1L) else it)
+                .sortedByDescending { row -> row.manifest.downloadedAt }
+        }
+        publishChange(manifest.url)
         if (chapterIndexLoaded || directory.absolutePath in chapterKeysByDirectory) {
             indexChapterManifest(directory, manifest)
         }

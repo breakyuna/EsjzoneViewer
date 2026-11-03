@@ -12,6 +12,9 @@ import com.breakyuna.esjzone.novellibrary.novel.validNovelTitle
 @Dao
 interface LocalReadingActivityDao {
 
+    @Query("SELECT * FROM local_reading_history WHERE trim(novel_name) = '' OR trim(novel_name) = novel_id OR trim(novel_name) = novel_url OR trim(novel_name) = trim(chapter_name) OR novel_name LIKE '%/detail/%' OR novel_name LIKE '%/forum/%'")
+    suspend fun titleRepairCandidates(): List<LocalReadingActivity>
+
     @Query("SELECT * FROM local_reading_history ORDER BY last_read_at DESC, started_at DESC")
     fun observeAll(): Flow<List<LocalReadingActivity>>
 

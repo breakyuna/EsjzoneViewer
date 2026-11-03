@@ -16,13 +16,29 @@ import java.util.concurrent.ConcurrentHashMap
 /** Test APK only: exercises opaque document IDs without depending on an installed file manager. */
 class StorageTestDocumentsProvider : DocumentsProvider() {
     private val fixtures = ConcurrentHashMap<String, Pair<String, String>>()
+    private class FixtureBlock {
+        val entered = java.util.concurrent.CountDownLatch(1)
+        val release = java.util.concurrent.CountDownLatch(1)
+    }
+    private val blocks = ConcurrentHashMap<String, FixtureBlock>()
     private val root: File get() = File(requireNotNull(context).filesDir, "storage-provider-fixture").apply { mkdirs() }
     override fun onCreate() = true
     override fun call(method: String, arg: String?, extras: Bundle?): Bundle? {
+        if (method == "await-fixture-block" || method == "release-fixture-block") {
+            require(callingPackage == "com.breakyuna.esjzone")
+            require(arg != null && arg.startsWith("case-") && '/' !in arg && '\\' !in arg)
+            val block = blocks["root/$arg"]
+            return Bundle().apply {
+                if (method == "release-fixture-block") block?.release?.countDown()
+                else putBoolean("entered", block?.entered?.await(5, java.util.concurrent.TimeUnit.SECONDS) == true)
+            }
+        }
         if (method == "configure-fixture") {
             require(callingPackage == "com.breakyuna.esjzone")
             require(arg != null && arg.startsWith("case-") && '/' !in arg && '\\' !in arg)
             val mode = extras?.getString("mode")
+            blocks.remove("root/$arg")?.release?.countDown()
+            if (mode == "block-delete") blocks["root/$arg"] = FixtureBlock()
             if (mode == null) fixtures.remove("root/$arg")
             else fixtures["root/$arg"] = mode to (extras?.getString("operation") ?: "all")
             return Bundle()
@@ -42,9 +58,14 @@ class StorageTestDocumentsProvider : DocumentsProvider() {
     private fun checkAccess(documentId: String, operation: String) {
         val fixture = fixtures.entries.firstOrNull {
             documentId == it.key || documentId.startsWith("${it.key}/")
-        }?.value ?: return
-        if (fixture.second != "all" && fixture.second != operation) return
-        when (fixture.first) {
+        } ?: return
+        if (fixture.value.second != "all" && fixture.value.second != operation) return
+        when (fixture.value.first) {
+            "block-delete" -> if (operation == "delete") {
+                val block = checkNotNull(blocks[fixture.key])
+                block.entered.countDown()
+                check(block.release.await(20, java.util.concurrent.TimeUnit.SECONDS))
+            }
             "security" -> throw SecurityException("Fixture permission revoked")
             "argument" -> throw IllegalArgumentException("Fixture document unavailable")
             "reject-file-metadata" -> if (operation == "metadata" && file(documentId).isFile) {

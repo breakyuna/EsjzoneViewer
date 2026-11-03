@@ -53,8 +53,13 @@ internal object ListPageCache {
         return batch
     }
 
-    private fun save(key: String, snapshot: Snapshot, token: PageCache.WriteToken): String {
-        if (!PageCache.write(key, expected = token, trim = false) { gson.toJson(snapshot, it) }) {
+    private fun prepare(key: String, snapshot: Snapshot, token: PageCache.WriteToken): PageCache.PreparedWrite =
+        PageCache.prepareWrite(key, expected = token, trim = false) { gson.toJson(snapshot, it) }
+            ?: if (!PageCache.accepts(key, token)) throw StaleListBatchException()
+            else throw IOException("Unable to prepare list snapshot")
+
+    private fun save(key: String, prepared: PageCache.PreparedWrite): String {
+        if (!prepared.commit()) {
             throw IOException("Unable to commit list snapshot")
         }
         return requireNotNull(PageCache.reference(key))
@@ -100,14 +105,19 @@ internal object ListPageCache {
             }
             if (parsed != null) {
                 val opened = synchronized(lock) {
+                    val prepared = if (PageCache.reference(key) == null) {
+                        PageCache.prepareWrite(key, expected = initialToken) { gson.toJson(old.snapshot, it) }
+                    } else null
+                    try {
                     if (!PageCache.commitIfCurrent(key, initialToken) {
                             if (!PageCache.isCurrentReference(old.reference)) throw StaleListBatchException()
                             if (PageCache.reference(key) == null &&
-                                PageCache.write(key, expected = initialToken) { gson.toJson(old.snapshot, it) }) {
+                                prepared?.commit() == true) {
                                 old.reference = requireNotNull(PageCache.reference(key))
                                 PageCache.remove(EsjzoneClient.pageCacheKey(authorization, firstUrl))
                             }
                         }) throw StaleListBatchException()
+                    } finally { prepared?.close() }
                     session(old, initialToken)
                 }
                 PageCache.touch(key)
@@ -132,15 +142,17 @@ internal object ListPageCache {
             val snapshot = Snapshot(UUID.randomUUID().toString(), first.pageCount, pages)
             val opened = synchronized(lock) {
                 var reference: String? = null
-                if (!PageCache.commitIfCurrent(key, token) {
-                    reference = save(key, snapshot, token)
-                    // Only URLs known from the preceding list are eligible for legacy cleanup.
-                    val lastPage = maxOf(old?.snapshot?.pageCount ?: 1, snapshot.pageCount)
-                    for (page in 1..lastPage) {
-                        PageCache.remove(EsjzoneClient.pageCacheKey(authorization, pageUrl(page)))
-                    }
-                    PageCache.trim()
-                }) throw StaleListBatchException()
+                prepare(key, snapshot, token).use { prepared ->
+                    if (!PageCache.commitIfCurrent(key, token) {
+                        reference = save(key, prepared)
+                        // Only URLs known from the preceding list are eligible for legacy cleanup.
+                        val lastPage = maxOf(old?.snapshot?.pageCount ?: 1, snapshot.pageCount)
+                        for (page in 1..lastPage) {
+                            PageCache.remove(EsjzoneClient.pageCacheKey(authorization, pageUrl(page)))
+                        }
+                        PageCache.trim()
+                    }) throw StaleListBatchException()
+                }
                 session(Batch(key, token.epoch, snapshot, requireNotNull(reference)), token)
             }
             return opened to items
@@ -231,16 +243,20 @@ internal object ListPageCache {
                     if (!isCurrent()) throw StaleListBatchException()
                     if (batch.snapshot.pages[page] == null) {
                         val migrationToken = PageCache.currentToken(key)
-                        if (!PageCache.commitIfCurrent(key, migrationToken) {
-                            val latest = batch.snapshot
-                            val updated = latest.copy(pages = latest.pages + (page to requireNotNull(cached)))
-                            if (PageCache.write(key, expected = migrationToken, trim = false) { gson.toJson(updated, it) }) {
-                                batch.snapshot = updated
-                                batch.reference = requireNotNull(PageCache.reference(key))
-                                PageCache.remove(EsjzoneClient.pageCacheKey(authorization, pageUrl(page)))
-                                PageCache.trim()
-                            }
-                        }) throw StaleListBatchException()
+                        val latest = batch.snapshot
+                        val updated = latest.copy(pages = latest.pages + (page to requireNotNull(cached)))
+                        PageCache.prepareWrite(key, expected = migrationToken, trim = false) {
+                            gson.toJson(updated, it)
+                        }.use { prepared ->
+                            if (!PageCache.commitIfCurrent(key, migrationToken) {
+                                if (prepared?.commit() == true) {
+                                    batch.snapshot = updated
+                                    batch.reference = requireNotNull(PageCache.reference(key))
+                                    PageCache.remove(EsjzoneClient.pageCacheKey(authorization, pageUrl(page)))
+                                    PageCache.trim()
+                                }
+                            }) throw StaleListBatchException()
+                        }
                     }
                 }
                 PageCache.touch(key)
@@ -257,18 +273,20 @@ internal object ListPageCache {
             val parsed = parse(html, page)
             synchronized(lock) {
                 if (!isCurrent()) throw StaleListBatchException()
-                if (!PageCache.commitIfCurrent(key, requestToken) {
-                    val latest = batch.snapshot
-                    val count = parsed.pageCount.coerceAtLeast(1)
-                    val pages = latest.pages.filterKeys { it <= count }.toMutableMap()
-                    if (page <= count) pages[page] = Page(System.currentTimeMillis(), html)
-                    val updated = latest.copy(pageCount = count, pages = pages)
-                    val reference = save(key, updated, requestToken)
-                    batch.snapshot = updated
-                    batch.reference = reference
-                    PageCache.remove(EsjzoneClient.pageCacheKey(authorization, pageUrl(page)))
-                    PageCache.trim()
-                }) throw StaleListBatchException()
+                val latest = batch.snapshot
+                val count = parsed.pageCount.coerceAtLeast(1)
+                val pages = latest.pages.filterKeys { it <= count }.toMutableMap()
+                if (page <= count) pages[page] = Page(System.currentTimeMillis(), html)
+                val updated = latest.copy(pageCount = count, pages = pages)
+                prepare(key, updated, requestToken).use { prepared ->
+                    if (!PageCache.commitIfCurrent(key, requestToken) {
+                        val reference = save(key, prepared)
+                        batch.snapshot = updated
+                        batch.reference = reference
+                        PageCache.remove(EsjzoneClient.pageCacheKey(authorization, pageUrl(page)))
+                        PageCache.trim()
+                    }) throw StaleListBatchException()
+                }
             }
             return if (page <= pageCount) parsed.items else emptyList()
         }

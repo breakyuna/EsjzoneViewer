@@ -12,6 +12,58 @@ import org.junit.Test
 
 class PageCacheStorageTest {
     @Test
+    fun slowCompressionDoesNotBlockOtherEntriesAndCannotPublishAfterClear() {
+        val directory = Files.createTempDirectory("page-cache-concurrency-").toFile()
+        val pool = java.util.concurrent.Executors.newFixedThreadPool(2)
+        val entered = java.util.concurrent.CountDownLatch(1)
+        val release = java.util.concurrent.CountDownLatch(1)
+        PageCache.initializeDirectory(directory)
+        try {
+            assertTrue(PageCache.write("existing", "readable"))
+            val slow = pool.submit<Boolean> {
+                PageCache.write("slow", writeBody = { writer ->
+                    entered.countDown()
+                    check(release.await(5, java.util.concurrent.TimeUnit.SECONDS))
+                    writer.write("delayed body")
+                })
+            }
+            assertTrue(entered.await(5, java.util.concurrent.TimeUnit.SECONDS))
+            val independent = pool.submit<Boolean> {
+                assertEquals("readable", PageCache.readStale("existing"))
+                PageCache.write("other", "ready")
+            }
+            assertTrue(independent.get(2, java.util.concurrent.TimeUnit.SECONDS))
+            PageCache.clear()
+            release.countDown()
+            assertFalse(slow.get(5, java.util.concurrent.TimeUnit.SECONDS))
+            assertNull(PageCache.readStale("slow"))
+        } finally {
+            release.countDown()
+            pool.shutdownNow()
+            pool.awaitTermination(5, java.util.concurrent.TimeUnit.SECONDS)
+            directory.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun preparedDerivedBodyCannotReplaceAChangedSource() {
+        val directory = Files.createTempDirectory("page-cache-derived-race-").toFile()
+        PageCache.initializeDirectory(directory)
+        try {
+            assertTrue(PageCache.write("source", "old"))
+            val reference = requireNotNull(PageCache.readEntry("source")).reference
+            requireNotNull(PageCache.prepareWrite(PageCache.structuredKey("source"), sourceReference = reference) {
+                it.write("parsed old")
+            }).use { prepared ->
+                assertTrue(PageCache.write("source", "new"))
+                assertFalse(prepared.commit())
+            }
+            assertNull(PageCache.readStale(PageCache.structuredKey("source")))
+            assertEquals("new", PageCache.readStale("source"))
+        } finally { directory.deleteRecursively() }
+    }
+
+    @Test
     fun loweringLimitImmediatelyReclaimsOversizedCache() {
         val directory = Files.createTempDirectory("page-cache-limit-").toFile()
         val previousLimit = PageCache.limitMiB.value

@@ -11,6 +11,9 @@ import kotlinx.coroutines.flow.Flow
 @Dao
 interface BookshelfDao {
 
+    @Query("SELECT * FROM bookshelf WHERE trim(title) = '' OR trim(title) = novel_id OR trim(title) = url OR title LIKE '%/detail/%' OR title LIKE '%/forum/%'")
+    suspend fun titleRepairCandidates(): List<BookshelfEntry>
+
     @Query(
         "SELECT * FROM bookshelf WHERE scope = :scope AND visible = 1 " +
             "ORDER BY added_at DESC"

@@ -962,7 +962,12 @@ class ChapterPage(
                 }
             }
         }
-        val downloadChanges by PresentationAccess.downloads.changes.collectAsState()
+        val progressNovelUrl = novelUrl.ifBlank {
+            novelId.takeIf(String::isNotBlank)?.let { EsjzoneUrls.resolve("/detail/$it.html") }.orEmpty()
+        }
+        val downloadChanges by remember(progressNovelUrl) {
+            PresentationAccess.downloads.observeNovelChanges(progressNovelUrl)
+        }.collectAsState(initial = 0L)
         var progressTextIndex by remember(novelUrl, novelId, bookChapterOrder) {
             mutableStateOf<BookTextProgressIndex?>(null)
         }

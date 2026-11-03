@@ -130,7 +130,7 @@ private class DownloadedNovelModel(private val url: String) : AppStateViewModel<
     fun reload() {
         loadJob?.cancel()
         loadJob = viewModelScope.launch(Dispatchers.IO) {
-            combine(PresentationAccess.downloads.changes, PresentationAccess.database.localReadingActivityDao().observeAll()) {
+            combine(PresentationAccess.downloads.observeNovelChanges(url), PresentationAccess.database.localReadingActivityDao().observeAll()) {
                 _, histories -> histories
             }.collectLatest { histories ->
                 try {
