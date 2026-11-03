@@ -785,15 +785,19 @@ object NovelDownloadStore {
             guard.directoryPath !in deletingDirectories) { "Download storage changed during the operation" }
     }
 
+    private enum class DeleteResult { DELETED, ALREADY_ABSENT, BUSY_OR_FAILED }
+
     /** Retire this book before slow deletion; unrelated books never wait for the recursive walk. */
-    fun delete(novelUrl: String): Boolean {
+    fun delete(novelUrl: String): Boolean = deleteResult(novelUrl) != DeleteResult.BUSY_OR_FAILED
+
+    private fun deleteResult(novelUrl: String): DeleteResult {
         cancelActiveWork(novelUrl)
         val directory: StorageFile
         synchronized(ioLock) {
-            if (mutableMigrating.value) return false
-            if (novelDirectories[canonicalKey(novelUrl)]?.absolutePath in deletingDirectories) return false
-            directory = directoryFor(novelUrl, create = false) ?: return true
-            if (!deletingDirectories.add(directory.absolutePath)) return false
+            if (mutableMigrating.value) return DeleteResult.BUSY_OR_FAILED
+            if (novelDirectories[canonicalKey(novelUrl)]?.absolutePath in deletingDirectories) return DeleteResult.BUSY_OR_FAILED
+            directory = directoryFor(novelUrl, create = false) ?: return DeleteResult.ALREADY_ABSENT
+            if (!deletingDirectories.add(directory.absolutePath)) return DeleteResult.BUSY_OR_FAILED
             deletionGenerations[directory.absolutePath] = (deletionGenerations[directory.absolutePath] ?: 0L) + 1
             manifestCache.remove(directory.absolutePath)
             historyProgressCache.remove(directory.absolutePath)
@@ -808,7 +812,7 @@ object NovelDownloadStore {
             synchronized(ioLock) {
                 if (deleted) novelDirectories.remove(canonicalKey(novelUrl))
             }
-            return deleted
+            return if (deleted) DeleteResult.DELETED else DeleteResult.BUSY_OR_FAILED
         } finally {
             synchronized(ioLock) {
                 deletingDirectories.remove(directory.absolutePath)
@@ -820,7 +824,8 @@ object NovelDownloadStore {
         }
     }
 
-    fun deleteAll(novelUrls: Iterable<String>): Int = novelUrls.distinct().count { delete(it) }
+    fun deleteAll(novelUrls: Iterable<String>): Int =
+        novelUrls.distinct().count { deleteResult(it) == DeleteResult.DELETED }
 
     private fun cancelActiveWork(novelUrl: String) {
         runCatching {

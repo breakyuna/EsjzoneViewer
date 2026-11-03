@@ -113,11 +113,14 @@ class CacheDiagnosticsTest {
             assertEquals(html, EsjzoneClient.getPage(authorization, url, 60_000L, pageKind = PageKind.LIST))
             val reference = requireNotNull(PageCache.readEntry(key)).reference
             val file = directory.listFiles()!!.single()
-            val blockedTemporary = File(directory, "${file.name}.tmp").apply { mkdir() }
-            File(blockedTemporary, "blocker").writeText("fixture")
+            val savedFile = File(directory, "${file.name}.backup")
+            assertTrue(file.renameTo(savedFile))
+            assertTrue(file.mkdir())
+            File(file, "blocker").writeText("fixture")
             assertFalse(PageCache.write(key, "replacement"))
+            assertTrue(file.deleteRecursively())
+            assertTrue(savedFile.renameTo(file))
             assertEquals(html, PageCache.readStale(key))
-            assertTrue(blockedTemporary.deleteRecursively())
             PageCache.removeReference(reference)
             val events = CacheDiagnostics.state.value.events
             assertEquals(listOf(CacheEventType.UPDATE, CacheEventType.HIT, CacheEventType.FAILURE, CacheEventType.EVICT),

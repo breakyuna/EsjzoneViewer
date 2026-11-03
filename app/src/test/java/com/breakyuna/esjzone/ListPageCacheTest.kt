@@ -193,9 +193,10 @@ class ListPageCacheTest {
                 val (old, _) = open()
                 val before = PageCache.readStale(snapshotKey)
                 val source = directory.listFiles()!!.single()
-                val blockedTemporary = File(directory, "${source.name}.tmp")
-                assertTrue(blockedTemporary.mkdir())
-                File(blockedTemporary, "blocker").writeText("fixture")
+                val savedFile = File(directory, "${source.name}.backup")
+                assertTrue(source.renameTo(savedFile))
+                assertTrue(source.mkdir())
+                File(source, "blocker").writeText("fixture")
                 val responses = FutureTask<Unit> {
                     repeat(2) {
                         server.accept().use { socket ->
@@ -225,6 +226,8 @@ class ListPageCacheTest {
                 } catch (_: IOException) { }
                 assertTrue(parsedRefresh)
                 responses.get(5, TimeUnit.SECONDS)
+                assertTrue(source.deleteRecursively())
+                assertTrue(savedFile.renameTo(source))
                 assertEquals(before, PageCache.readStale(snapshotKey))
                 val (reopened, reopenedItems) = open()
                 assertEquals(listOf(html(1)), reopenedItems)
@@ -252,17 +255,19 @@ class ListPageCacheTest {
                 val (other, _) = open(firstUrl)
                 val before = PageCache.readStale(snapshotKey)
                 val source = directory.listFiles()!!.single()
-                val blockedTemporary = File(directory, "${source.name}.tmp")
-                assertTrue(blockedTemporary.mkdir())
-                File(blockedTemporary, "blocker").writeText("fixture")
+                val savedFile = File(directory, "${source.name}.backup")
+                assertTrue(source.renameTo(savedFile))
+                assertTrue(source.mkdir())
+                File(source, "blocker").writeText("fixture")
                 try {
                     session.more(2)
                     fail("A failed page commit must not publish the fetched page")
                 } catch (_: IOException) { }
+                assertTrue(source.deleteRecursively())
+                assertTrue(savedFile.renameTo(source))
                 assertEquals(before, PageCache.readStale(snapshotKey))
                 assertTrue(session.isCurrent())
                 assertTrue(other.isCurrent())
-                assertTrue(blockedTemporary.deleteRecursively())
                 assertEquals(listOf(refreshed), session.more(2))
                 assertEquals(listOf(refreshed), other.more(2))
                 val stored = Gson().fromJson(PageCache.readStale(snapshotKey), ListPageCache.Snapshot::class.java)

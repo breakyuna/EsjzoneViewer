@@ -161,10 +161,13 @@ class PageCacheStorageTest {
             val source = directory.listFiles()!!.first { file ->
                 GZIPInputStream(file.inputStream()).bufferedReader().use { it.readText().endsWith("\nold") }
             }
-            val blockedTemporary = java.io.File(directory, "${source.name}.tmp")
-            blockedTemporary.mkdirs()
-            java.io.File(blockedTemporary, "blocker").writeText("fixture")
+            val savedFile = java.io.File(directory, "${source.name}.backup")
+            assertTrue(source.renameTo(savedFile))
+            assertTrue(source.mkdir())
+            java.io.File(source, "blocker").writeText("fixture")
             assertFalse(PageCache.write("page", "new"))
+            assertTrue(source.deleteRecursively())
+            assertTrue(savedFile.renameTo(source))
             assertEquals("old", PageCache.readStale("page"))
             assertEquals("parsed-old", PageCache.readStale(PageCache.structuredKey("page")))
             assertEquals(2, PageCache.stats().entryCount)
