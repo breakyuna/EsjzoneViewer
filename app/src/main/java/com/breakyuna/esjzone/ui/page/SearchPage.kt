@@ -414,14 +414,6 @@ class SearchPageModel(
         }
     }
 
-    fun cancelRequests() {
-        generation += 1
-        requestJob?.cancel()
-        moreJob?.cancel()
-        isRefreshing = false
-        loadingMore = false
-    }
-
     fun refresh(keyword: String, category: Int = 0, sort: Int = 1) {
         search(keyword, category, sort, forceRefresh = true)
     }

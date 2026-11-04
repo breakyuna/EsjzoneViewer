@@ -4,8 +4,6 @@ import com.breakyuna.esjzone.novellibrary.novel.Chapter
 import com.breakyuna.esjzone.offline.DownloadedChapterRecord
 import com.breakyuna.esjzone.ui.page.filterReaderCatalog
 import com.breakyuna.esjzone.ui.page.localResumeRecord
-import com.breakyuna.esjzone.ui.tab.LocalSearchEntry
-import com.breakyuna.esjzone.ui.tab.matchLocalBooks
 import org.junit.Assert.*
 import org.junit.Test
 
@@ -19,17 +17,6 @@ class LocalReadingUsabilityTest {
         assertEquals("Text", localResumeRecord(records, records[0].url)?.name)
         assertEquals("Complete", localResumeRecord(records, records[2].url)?.name)
         assertNull(localResumeRecord(records.take(1), records[0].url))
-    }
-
-    @Test fun localSearchMergesMirrorsWithoutDroppingAdultRestriction() {
-        val entries = listOf(
-            LocalSearchEntry("Book", "https://www.esjzone.cc/detail/123.html", downloaded = true),
-            LocalSearchEntry("Book", "https://www.esjzone.one/detail/123.html", adult = true)
-        )
-        assertTrue(matchLocalBooks(entries, "book", adult = false).isEmpty())
-        val result = matchLocalBooks(entries, " BOOK ", adult = true)
-        assertEquals(1, result.size)
-        assertTrue(result.single().downloaded)
     }
 
     @Test fun catalogSearchKeepsOriginalOrderAndChapterIdentity() {

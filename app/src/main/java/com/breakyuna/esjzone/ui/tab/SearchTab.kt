@@ -5,7 +5,6 @@ package com.breakyuna.esjzone.ui.tab
 import com.breakyuna.esjzone.ui.designsystem.wideContentWidth
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -26,7 +25,6 @@ import com.breakyuna.esjzone.ui.designsystem.GlobalText as Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.key
@@ -47,8 +45,6 @@ import com.breakyuna.esjzone.database.entity.SearchHistory
 import com.breakyuna.esjzone.network.LocalAuthorization
 import com.breakyuna.esjzone.ui.designsystem.AppShapes
 import com.breakyuna.esjzone.ui.designsystem.AppSpacing
-import androidx.compose.material3.Tab
-import androidx.compose.material3.TabRow
 import androidx.compose.material3.Scaffold
 import com.breakyuna.esjzone.ui.discovery.DiscoveryEmptyState
 import com.breakyuna.esjzone.ui.discovery.DiscoveryLoadingState
@@ -81,7 +77,6 @@ object SearchTab : AppTab {
         val searchState by searchModel.state.collectAsStateWithLifecycle()
         val historyModel = rememberAppViewModel { SearchHistoryModel() }
         val historyState by historyModel.state.collectAsStateWithLifecycle()
-        var local by rememberSaveable { mutableStateOf(false) }
         var query by rememberSaveable { mutableStateOf("") }
         var activeKeyword by rememberSaveable { mutableStateOf<String?>(null) }
         var category by rememberSaveable { mutableIntStateOf(0) }
@@ -90,7 +85,7 @@ object SearchTab : AppTab {
         fun submit(value: String) {
             value.trim().takeIf { it.isNotBlank() }?.let {
                 query = it
-                if (!local && activeKeyword == it) {
+                if (activeKeyword == it) {
                     searchModel.search(it, category, sort)
                 } else {
                     activeKeyword = it
@@ -114,51 +109,39 @@ object SearchTab : AppTab {
             },
             containerColor = MaterialTheme.colorScheme.background
         ) { padding ->
-            Column(Modifier.fillMaxSize().padding(padding)) {
-                TabRow(selectedTabIndex = if (local) 0 else 1) {
-                    Tab(selected = local, onClick = { local = true; searchModel.cancelRequests() },
-                        text = { Text(stringResource(R.string.search_scope_local)) })
-                    Tab(selected = !local, onClick = { local = false },
-                        text = { Text(stringResource(R.string.search_scope_site)) })
-                }
-                if (local && activeKeyword != null) {
-                    LocalSearchResults(activeKeyword!!, Modifier.fillMaxWidth().weight(1f))
-                } else if (local) {
-                    SearchHistoryList(historyState, historyModel::clear, ::submit, Modifier.fillMaxWidth().weight(1f))
-                } else PullToRefreshBox(
-                    isRefreshing = searchModel.isRefreshing,
-                    onRefresh = {
-                        activeKeyword?.let { searchModel.refresh(it, category, sort) }
-                    },
-                    modifier = Modifier.fillMaxWidth().weight(1f)
-                ) {
-                    activeKeyword?.let { current ->
-                        DiscoverySearchResults(
-                            model = searchModel,
-                            state = searchState,
-                            keyword = current,
-                            category = category,
-                            sort = sort,
-                            onCategoryChange = { category = it },
-                            onSortChange = { sort = it },
-                            onRetry = {
-                                searchModel.search(current, category, sort, forceRefresh = true)
-                            },
-                            navigator = navigator,
-                            modifier = Modifier.fillMaxSize()
-                        )
-                    } ?: SearchHistoryList(
-                        state = historyState,
-                        onClear = historyModel::clear,
-                        onSelect = ::submit,
+            PullToRefreshBox(
+                isRefreshing = searchModel.isRefreshing,
+                onRefresh = {
+                    activeKeyword?.let { searchModel.refresh(it, category, sort) }
+                },
+                modifier = Modifier.fillMaxSize().padding(padding)
+            ) {
+                activeKeyword?.let { current ->
+                    DiscoverySearchResults(
+                        model = searchModel,
+                        state = searchState,
+                        keyword = current,
+                        category = category,
+                        sort = sort,
+                        onCategoryChange = { category = it },
+                        onSortChange = { sort = it },
+                        onRetry = {
+                            searchModel.search(current, category, sort, forceRefresh = true)
+                        },
+                        navigator = navigator,
                         modifier = Modifier.fillMaxSize()
                     )
-                }
+                } ?: SearchHistoryList(
+                    state = historyState,
+                    onClear = historyModel::clear,
+                    onSelect = ::submit,
+                    modifier = Modifier.fillMaxSize()
+                )
             }
         }
         LaunchedEffect(Unit) { historyModel.load() }
-        LaunchedEffect(activeKeyword, category, sort, local) {
-            if (!local) activeKeyword?.let { searchModel.search(it, category, sort) }
+        LaunchedEffect(activeKeyword, category, sort) {
+            activeKeyword?.let { searchModel.search(it, category, sort) }
         }
     }
 }

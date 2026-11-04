@@ -933,9 +933,6 @@
     <string name="local_downloaded">Downloaded</string>
     <string name="local_text_saved">Saved · images pending</string>
     <string name="local_not_downloaded">Not downloaded</string>
-    <string name="local_search_empty">No matching local books</string>
-    <string name="search_scope_local">Local</string>
-    <string name="search_scope_site">Website</string>
     <string name="reader_catalog_search">Search chapters</string>
     <string name="reader_catalog_current">Go to current chapter</string>
     <string name="reader_boundary_failed">Chapter could not be loaded. Current text is retained.</string>

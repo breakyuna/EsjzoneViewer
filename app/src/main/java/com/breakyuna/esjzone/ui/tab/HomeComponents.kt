@@ -81,6 +81,7 @@ internal fun HomeSearchBar(
 ) {
     Surface(
         modifier = modifier
+            .containerTransformSource(ContainerTransformTarget.SEARCH)
             .height(40.dp)
             .clip(AppShapes.pill)
             .clickable(
@@ -93,6 +94,7 @@ internal fun HomeSearchBar(
     ) {
         Row(
             modifier = Modifier
+                .containerTransformContent()
                 .fillMaxSize()
                 .padding(horizontal = AppSpacing.md),
             verticalAlignment = Alignment.CenterVertically,

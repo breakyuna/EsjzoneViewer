@@ -59,7 +59,10 @@ class ContainerTransformInstrumentedTest {
     @Test fun forumExpandsFromItsCardAndReturns() = assertExpansion(ContainerTransformTarget.FORUM)
     @Test fun guestbookExpandsFromItsCardAndReturns() = assertExpansion(ContainerTransformTarget.GUESTBOOK)
     @Test fun waterCoolerExpandsFromItsCardAndReturns() = assertExpansion(ContainerTransformTarget.WATER_COOLER)
+    @Test fun homeSearchExpandsFromItsFieldAndReturns() = assertExpansion(ContainerTransformTarget.SEARCH)
     @Test fun settingsExpandsFromItsCardAndReturns() = assertExpansion(ContainerTransformTarget.SETTINGS)
+    @Test fun bookshelfStatisticsRevealsACircleFromTheTopRightAndReturns() =
+        assertExpansion(ContainerTransformTarget.BOOKSHELF_READING_STATISTICS)
     @Test fun carouselContainerAndSharedElementsMoveTogetherWithRepeatedBooks() = assertExpansion(
         ContainerTransformTarget.homeCarousel("/detail/123.html", page = 100)
     )
@@ -79,7 +82,7 @@ class ContainerTransformInstrumentedTest {
                             else pushTransition()
                         },
                         popTransitionSpec = {
-                            if (usesContainerTransform(initialState, targetState)) containerContentTransform()
+                            if (usesContainerTransform(initialState, targetState)) containerContentTransform(pop = true)
                             else popTransition()
                         },
                         entryDecorators = listOf(
@@ -110,8 +113,9 @@ class ContainerTransformInstrumentedTest {
                                 }
                             }
                             entry<AppNavKey.ProfileTab>(metadata = ::containerTransformMetadata) { SourceCard(target) }
+                            entry<AppNavKey.BookshelfTab>(metadata = ::containerTransformMetadata) { SourceCard(target) }
                             entry<AppNavKey.Legacy>(metadata = ::containerTransformMetadata) { key ->
-                                ContainerTransformDestination(checkNotNull(ContainerTransformTarget.forKey(key))) {
+                                ContainerTransformDestination(checkNotNull(ContainerTransformTarget.forKey(key, target.origin))) {
                                     Box(
                                         Modifier.fillMaxSize().background(Color.Blue)
                                             .onSizeChanged { destinationContentSizes.add(it) }
@@ -135,11 +139,18 @@ class ContainerTransformInstrumentedTest {
         composeRule.mainClock.advanceTimeByFrame()
         composeRule.mainClock.advanceTimeBy(120)
         val expanding = bluePixelBounds()
+        if (target.circularReveal) assertCircularBoundary(card, expanding)
         val movingElements = if (sourceElements.isNotEmpty()) sharedElementPixelBounds() else emptyList()
         assertStableContentSizes()
         composeRule.mainClock.advanceTimeBy(500)
         val fullScreen = bluePixelBounds()
-        assertBetween(card, expanding, fullScreen)
+        if (target.circularReveal) {
+            assertEquals(0, fullScreen.left)
+            assertEquals(0, fullScreen.top)
+            assertFullCoverage()
+        } else {
+            assertBetween(card, expanding, fullScreen)
+        }
         val destinationElements = if (sourceElements.isNotEmpty()) sharedElementPixelBounds() else emptyList()
         for (index in sourceElements.indices) {
             assertElementBetween(sourceElements[index], movingElements[index], destinationElements[index])
@@ -149,7 +160,12 @@ class ContainerTransformInstrumentedTest {
         composeRule.mainClock.advanceTimeByFrame()
         composeRule.mainClock.advanceTimeBy(120)
         val contracting = bluePixelBounds()
-        assertBetween(card, contracting, fullScreen)
+        if (target.circularReveal) {
+            assertTrue(contracting.height < fullScreen.height)
+            assertCircularBoundary(card, contracting)
+        } else {
+            assertBetween(card, contracting, fullScreen)
+        }
         if (sourceElements.isNotEmpty()) {
             val returningElements = sharedElementPixelBounds()
             for (index in sourceElements.indices) {
@@ -166,11 +182,21 @@ class ContainerTransformInstrumentedTest {
     private fun SourceCard(target: ContainerTransformTarget) {
         Box(Modifier.fillMaxSize()) {
             Box(
-                Modifier.align(Alignment.Center)
+                Modifier.align(if (target.circularReveal) Alignment.TopEnd else Alignment.Center)
                     .containerTransformSource(target)
                     .size(
-                        if (target.homeCarouselPage == null) 96.dp else 280.dp,
-                        if (target.homeCarouselPage == null) 64.dp else 196.dp
+                        when {
+                            target.circularReveal -> 48.dp
+                            target == ContainerTransformTarget.SEARCH -> 220.dp
+                            target.homeCarouselPage == null -> 96.dp
+                            else -> 280.dp
+                        },
+                        when {
+                            target.circularReveal -> 48.dp
+                            target == ContainerTransformTarget.SEARCH -> 40.dp
+                            target.homeCarouselPage == null -> 64.dp
+                            else -> 196.dp
+                        }
                     )
                     .background(Color.Blue)
             ) {
@@ -225,6 +251,30 @@ class ContainerTransformInstrumentedTest {
         assertTrue(intermediate.height > card.height && intermediate.height < fullScreen.height)
         assertTrue(intermediate.left < card.left && intermediate.left > fullScreen.left)
         assertTrue(intermediate.top < card.top && intermediate.top > fullScreen.top)
+    }
+
+    private fun assertCircularBoundary(source: IntRect, revealed: IntRect) {
+        val pixels = composeRule.onRoot().captureToImage().toPixelMap()
+        val center = source.center
+        val radius = revealed.bottom - center.y
+        assertTrue(radius > source.height)
+        assertTrue(revealed.height < pixels.height)
+        fun sample(fraction: Float): Color = pixels[
+            (center.x - radius * fraction).toInt(),
+            (center.y + radius * fraction).toInt()
+        ]
+        // Both points lie inside the bounding rectangle; only the nearer one is in the circle.
+        assertEquals(Color.Blue, sample(0.5f))
+        assertEquals(Color.Red, sample(0.8f))
+    }
+
+    private fun assertFullCoverage() {
+        val pixels = composeRule.onRoot().captureToImage().toPixelMap()
+        for (x in listOf(0, pixels.width - 1)) {
+            for (y in listOf(0, pixels.height - 1)) {
+                assertEquals(Color.Blue, pixels[x, y])
+            }
+        }
     }
 
     private fun bluePixelBounds(): IntRect = pixelBounds {

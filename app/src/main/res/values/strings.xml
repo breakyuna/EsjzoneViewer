@@ -934,9 +934,6 @@
     <string name="local_downloaded">已下载</string>
     <string name="local_text_saved">已保存 · 图片待补全</string>
     <string name="local_not_downloaded">未下载</string>
-    <string name="local_search_empty">本地没有匹配的作品</string>
-    <string name="search_scope_local">本地</string>
-    <string name="search_scope_site">站点</string>
     <string name="reader_catalog_search">搜索章节</string>
     <string name="reader_catalog_current">定位当前章节</string>
     <string name="reader_boundary_failed">章节加载失败，当前正文已保留</string>

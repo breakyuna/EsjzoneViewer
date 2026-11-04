@@ -42,8 +42,9 @@ import com.breakyuna.esjzone.ui.page.ForumPage
 import com.breakyuna.esjzone.ui.page.GuestbookPage
 import com.breakyuna.esjzone.ui.page.ReadingStatisticsPage
 import com.breakyuna.esjzone.ui.page.SettingsPage
+import com.breakyuna.esjzone.ui.tab.SearchTab
 
-private const val ContainerTransformDurationMillis = 400
+internal const val ContainerTransformDurationMillis = 400
 internal val LocalContainerTransformScope = compositionLocalOf<SharedTransitionScope?> { null }
 internal val LocalHomeCarouselTransformTarget = compositionLocalOf<ContainerTransformTarget?> { null }
 private const val ContainerTransformRouteMetadata = "com.breakyuna.esjzone.containerTransformRoute"
@@ -52,23 +53,28 @@ private const val ContainerTransformRouteMetadata = "com.breakyuna.esjzone.conta
 internal fun containerTransformMetadata(key: AppNavKey): Map<String, Any> =
     mapOf(ContainerTransformRouteMetadata to key)
 
+internal fun containerTransformRoute(scene: Scene<NavKey>): AppNavKey? =
+    scene.entries.lastOrNull()?.metadata?.get(ContainerTransformRouteMetadata) as? AppNavKey
+
 internal data class ContainerTransformTarget(
     val name: String,
     val origin: AppNavKey,
     val route: LegacyRoute,
     val cornerRadius: Dp,
-    val homeCarouselPage: Int? = null
+    val homeCarouselPage: Int? = null,
+    val circularReveal: Boolean = false
 ) {
     companion object {
         val FORUM = ContainerTransformTarget("FORUM", AppNavKey.HomeTab, LegacyRoute.Static(ForumPage.key), 18.dp)
         val GUESTBOOK = ContainerTransformTarget("GUESTBOOK", AppNavKey.HomeTab, LegacyRoute.Static(GuestbookPage.key), 18.dp)
         val WATER_COOLER = ContainerTransformTarget("WATER_COOLER", AppNavKey.HomeTab, LegacyRoute.ForumPost(EsjzoneUrls.WATER_COOLER_PATH), 18.dp)
+        val SEARCH = ContainerTransformTarget("SEARCH", AppNavKey.HomeTab, LegacyRoute.Static(SearchTab.key), 20.dp)
         val READING_STATISTICS = ContainerTransformTarget("READING_STATISTICS", AppNavKey.ProfileTab, LegacyRoute.Static(ReadingStatisticsPage.key), 16.dp)
-        val BOOKSHELF_READING_STATISTICS = ContainerTransformTarget("BOOKSHELF_READING_STATISTICS", AppNavKey.BookshelfTab, LegacyRoute.Static(ReadingStatisticsPage.key), 24.dp)
+        val BOOKSHELF_READING_STATISTICS = ContainerTransformTarget("BOOKSHELF_READING_STATISTICS", AppNavKey.BookshelfTab, LegacyRoute.Static(ReadingStatisticsPage.key), 24.dp, circularReveal = true)
         val BOOKMARKS = ContainerTransformTarget("BOOKMARKS", AppNavKey.ProfileTab, LegacyRoute.Static(BookmarksPage.key), 16.dp)
         val DOWNLOADS = ContainerTransformTarget("DOWNLOADS", AppNavKey.ProfileTab, LegacyRoute.Static(DownloadPage.key), 16.dp)
         val SETTINGS = ContainerTransformTarget("SETTINGS", AppNavKey.ProfileTab, LegacyRoute.Static(SettingsPage.key), 16.dp)
-        private val shortcuts = listOf(FORUM, GUESTBOOK, WATER_COOLER, READING_STATISTICS, BOOKSHELF_READING_STATISTICS, BOOKMARKS, DOWNLOADS, SETTINGS)
+        private val shortcuts = listOf(FORUM, GUESTBOOK, WATER_COOLER, SEARCH, READING_STATISTICS, BOOKSHELF_READING_STATISTICS, BOOKMARKS, DOWNLOADS, SETTINGS)
 
         fun homeCarousel(novelIdentity: String, page: Int) = ContainerTransformTarget(
             name = "HOME_CAROUSEL",
@@ -99,14 +105,19 @@ internal fun usesContainerTransform(from: NavKey?, to: NavKey?): Boolean =
 // Read each scene's retained entry, including the outgoing scene after a pop.
 internal fun usesContainerTransform(from: Scene<NavKey>, to: Scene<NavKey>): Boolean =
     usesContainerTransform(
-        from.entries.lastOrNull()?.metadata?.get(ContainerTransformRouteMetadata) as? AppNavKey,
-        to.entries.lastOrNull()?.metadata?.get(ContainerTransformRouteMetadata) as? AppNavKey
+        containerTransformRoute(from),
+        containerTransformRoute(to)
     )
 
 /** The container crossfades in the shared overlay; the underlying list page stays opaque
  * instead of fading the whole screen through the window background. */
 internal fun AnimatedContentTransitionScope<Scene<NavKey>>.containerContentTransform(pop: Boolean = false) =
-    if (pop) {
+    if (usesCircularReveal(initialState, targetState)) {
+        // The destination's circular clip drives visibility, with the origin opaque below it.
+        (EnterTransition.None togetherWith ExitTransition.KeepUntilTransitionsFinished).apply {
+            targetContentZIndex = if (pop) -1f else 1f
+        }
+    } else if (pop) {
         EnterTransition.None togetherWith fadeOut(tween(ContainerTransformDurationMillis))
     } else {
         fadeIn(tween(ContainerTransformDurationMillis)) togetherWith ExitTransition.KeepUntilTransitionsFinished
@@ -116,16 +127,19 @@ internal fun AnimatedContentTransitionScope<Scene<NavKey>>.containerContentTrans
 internal fun ContainerTransformLayout(modifier: Modifier = Modifier, content: @Composable () -> Unit) {
     SharedTransitionLayout(modifier) {
         val covers = remember { NovelSharedCovers() }
+        val revealOrigins = remember { CircularRevealOrigins() }
         CompositionLocalProvider(
             LocalContainerTransformScope provides this,
-            LocalNovelSharedCovers provides covers
+            LocalNovelSharedCovers provides covers,
+            LocalCircularRevealOrigins provides revealOrigins
         ) { content() }
     }
 }
 
 @Composable
 internal fun Modifier.containerTransformSource(target: ContainerTransformTarget): Modifier =
-    containerTransformBounds(target, fullScreen = false)
+    if (target.circularReveal) circularRevealSource(target)
+    else containerTransformBounds(target, fullScreen = false)
 
 /** Keep the base card/page layout at its final size while the container changes bounds. */
 @Composable
@@ -234,7 +248,10 @@ internal fun ContainerTransformDestination(
 ) {
     Box(
         modifier
-            .containerTransformBounds(target, fullScreen = true)
+            .then(
+                if (target.circularReveal) Modifier.circularRevealDestination(target)
+                else Modifier.containerTransformBounds(target, fullScreen = true)
+            )
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
     ) {

@@ -5,6 +5,7 @@ import com.breakyuna.esjzone.ui.navigation.LegacyRoute
 import com.breakyuna.esjzone.ui.navigation.ReaderRoute
 import com.breakyuna.esjzone.ui.navigation.ContainerTransformTarget
 import com.breakyuna.esjzone.ui.navigation.usesContainerTransform
+import com.breakyuna.esjzone.ui.navigation.usesCircularReveal
 import com.breakyuna.esjzone.ui.navigation.containerTransformMetadata
 import com.breakyuna.esjzone.ui.navigation.canShowAppUpdates
 import com.breakyuna.esjzone.ui.navigation.needsStorageSetup
@@ -179,6 +180,7 @@ class NavigationRouteContractTest {
             ContainerTransformTarget.FORUM,
             ContainerTransformTarget.GUESTBOOK,
             ContainerTransformTarget.WATER_COOLER,
+            ContainerTransformTarget.SEARCH,
             ContainerTransformTarget.READING_STATISTICS,
             ContainerTransformTarget.BOOKSHELF_READING_STATISTICS,
             ContainerTransformTarget.BOOKMARKS,
@@ -212,9 +214,23 @@ class NavigationRouteContractTest {
             ContainerTransformTarget.forKey(destination, origin = AppNavKey.BookshelfTab)
         )
         assertFalse(usesContainerTransform(AppNavKey.HomeTab, destination))
+        assertTrue(usesCircularReveal(scene(AppNavKey.BookshelfTab), scene(destination)))
+        assertTrue(usesCircularReveal(scene(destination), scene(AppNavKey.BookshelfTab)))
+        assertFalse(usesCircularReveal(scene(AppNavKey.ProfileTab), scene(destination)))
         for (target in listOf(ContainerTransformTarget.BOOKMARKS, ContainerTransformTarget.DOWNLOADS, ContainerTransformTarget.SETTINGS)) {
             assertFalse(usesContainerTransform(AppNavKey.BookshelfTab, AppNavKey.Legacy(target.route)))
         }
+    }
+
+    @Test
+    fun searchTransformsOnlyFromHomeAndDoesNotUseCircularReveal() {
+        val target = ContainerTransformTarget.SEARCH
+        val destination = AppNavKey.Legacy(LegacyRoute.Static("SearchTab"))
+        assertEquals(target, ContainerTransformTarget.forKey(destination, AppNavKey.HomeTab))
+        assertTrue(usesContainerTransform(AppNavKey.HomeTab, destination))
+        assertTrue(usesContainerTransform(destination, AppNavKey.HomeTab))
+        assertFalse(usesContainerTransform(AppNavKey.BookshelfTab, destination))
+        assertFalse(usesCircularReveal(scene(AppNavKey.HomeTab), scene(destination)))
     }
 
     private fun scene(key: AppNavKey): Scene<NavKey> {

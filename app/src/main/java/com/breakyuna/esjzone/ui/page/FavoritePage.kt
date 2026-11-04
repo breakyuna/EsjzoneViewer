@@ -132,7 +132,6 @@ import com.breakyuna.esjzone.ui.navigation.AppDestination
 import com.breakyuna.esjzone.ui.navigation.BooleanStateHolder
 import com.breakyuna.esjzone.ui.navigation.ContainerTransformTarget
 import com.breakyuna.esjzone.ui.navigation.LocalBaseNavigator
-import com.breakyuna.esjzone.ui.navigation.containerTransformContent
 import com.breakyuna.esjzone.ui.navigation.containerTransformSource
 import com.breakyuna.esjzone.ui.navigation.rememberAppViewModel
 import com.breakyuna.esjzone.ui.product.EmptyState
@@ -919,8 +918,7 @@ private fun BookshelfTopBar(
                         ) {
                             Icon(
                                 Icons.Filled.QueryStats,
-                                stringResource(R.string.reading_stats_title),
-                                modifier = Modifier.containerTransformContent()
+                                stringResource(R.string.reading_stats_title)
                             )
                         }
                     }
