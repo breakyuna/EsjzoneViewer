@@ -1,34 +1,49 @@
 package com.breakyuna.esjzone
 
-import com.breakyuna.esjzone.ui.page.parseReaderTextColor
-import com.breakyuna.esjzone.ui.reader.ReaderImageBackground
+import com.breakyuna.esjzone.ui.reader.*
 import org.junit.Assert.*
 import org.junit.Test
 
 class ReaderImageBackgroundTest {
-    @Test fun invalidStoredPhotoPathsAndBlurValuesAreSanitized() {
-        val settings = ReaderImageBackground("../../outside.jpg", Float.NaN, 0x00123456L).sanitized()
-        assertEquals("", settings.fileName)
-        assertEquals(20f, settings.blur)
-        assertEquals(0xFF123456L, settings.textColor)
-        assertEquals(49f, ReaderImageBackground(blur = 49f).sanitized().blur, 0f)
-        assertEquals(50f, ReaderImageBackground(blur = 150f).sanitized().blur, 0f)
+    @Test fun defaultsAndCustomColorsPreserveOpaqueRgb() {
+        val defaults = ReaderImageBackground()
+        assertEquals(0xFFFFFFFFL, defaults.textColor)
+        assertTrue(defaults.glowEnabled)
+        assertEquals(70f, defaults.glowStrength, 0f)
+        val legacy = ReaderImageBackground("../../outside.jpg", 0x00123456L, glowStrength = Float.NaN).sanitized()
+        assertEquals("", legacy.fileName)
+        assertEquals(0xFF123456L, legacy.textColor)
+        assertEquals(70f, legacy.glowStrength, 0f)
+        assertEquals(100f, defaults.copy(glowStrength = 150f).sanitized().glowStrength, 0f)
+        assertEquals(0f, defaults.copy(glowStrength = -5f).sanitized().glowStrength, 0f)
     }
 
-    @Test fun customTextColorsRequireSixHexDigitsAndRemainOpaque() {
-        assertEquals(0xFFABCDEF, parseReaderTextColor(" #aBcDeF "))
-        assertEquals(0xFF000000, parseReaderTextColor("000000"))
-        assertNull(parseReaderTextColor("#fff"))
-        assertNull(parseReaderTextColor("#00112233"))
-        assertNull(parseReaderTextColor("#zzzzzz"))
+    @Test fun photoAdjustmentsAreBoundedAndRejectNonFiniteValues() {
+        val bounded = ReaderImageBackground(blur = 90f, transparency = -20f).sanitized()
+        assertEquals(50f, bounded.blur, 0f)
+        assertEquals(0f, bounded.transparency, 0f)
+        val invalid = ReaderImageBackground(blur = Float.NaN, transparency = Float.POSITIVE_INFINITY).sanitized()
+        assertEquals(0f, invalid.blur, 0f)
+        assertEquals(0f, invalid.transparency, 0f)
     }
 
-    @Test fun backgroundTransparencyIsBoundedAndMapsToImageOpacity() {
-        assertEquals(1f, ReaderImageBackground().imageAlpha, 0f)
-        assertEquals(0.5f, ReaderImageBackground(transparency = 50f).imageAlpha, 0f)
-        assertEquals(0f, ReaderImageBackground(transparency = 100f).imageAlpha, 0f)
-        assertEquals(0f, ReaderImageBackground(transparency = Float.NaN).sanitized().transparency, 0f)
-        assertEquals(0f, ReaderImageBackground(transparency = -10f).sanitized().transparency, 0f)
-        assertEquals(100f, ReaderImageBackground(transparency = 150f).sanitized().transparency, 0f)
+    @Test fun contrastDetectionRejectsPoorRegionsButIgnoresSparseOutliers() {
+        assertEquals(21.0, readerContrast(readerPixelLuminance(0xFFFFFFFF.toInt()), readerPixelLuminance(0xFF000000.toInt())), 0.0001)
+        assertFalse(readerGlowRequired(List(100) { 4.5 }))
+        assertTrue(readerGlowRequired(List(100) { 4.49 }))
+        assertFalse(readerGlowRequired(List(4) { 1.0 } + List(96) { 7.0 }))
+        assertTrue(readerGlowRequired(List(20) { 1.0 } + List(80) { 7.0 }))
+        assertFalse(readerGlowRequired(emptyList()))
+        assertEquals(listOf(0.07f, 0.17f, 0.30f, 0.40f), readerGlowRadiiEm)
+        assertEquals(0.9f, READER_GLOW_ALPHA, 0f)
+    }
+
+    @Test fun degradationRequiresSustainedSlowFrames() {
+        val slow = ReaderGlowFrameTracker()
+        var reduced = false
+        for (index in 0..125) reduced = reduced || slow.frame(1L + index * 33_333_334L)
+        assertTrue(reduced)
+        val fast = ReaderGlowFrameTracker()
+        assertFalse((0..300).any { fast.frame(1L + it * 16_666_667L) })
     }
 }

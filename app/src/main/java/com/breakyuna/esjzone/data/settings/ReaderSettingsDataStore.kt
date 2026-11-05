@@ -74,6 +74,16 @@ class ReaderSettingsDataStore(
             it[IMAGE_FILE] = value.fileName
             it[IMAGE_BLUR] = value.blur
             it[IMAGE_TRANSPARENCY] = value.transparency
+            it[IMAGE_GLOW_MODE] = value.glowMode.name
+            it[IMAGE_GLOW_LIGHT_L] = value.lightTextGlowL
+            it[IMAGE_GLOW_DARK_L] = value.darkTextGlowL
+            it[IMAGE_GLOW_CHROMA] = value.glowChromaRetention
+            it[IMAGE_GLOW_OUTER_ALPHA] = value.outerGlowAlpha
+            value.customGlowColor?.let { color -> it[IMAGE_GLOW_CUSTOM_COLOR] = color }
+                ?: it.remove(IMAGE_GLOW_CUSTOM_COLOR)
+            it[IMAGE_GLOW_AUTO_CLAMP] = value.autoClampLightness
+            it[IMAGE_GLOW_ENABLED] = value.glowEnabled
+            it[IMAGE_GLOW_STRENGTH] = value.glowStrength
             it[IMAGE_TEXT_COLOR] = value.textColor
             it[BACKGROUND] = ReaderBackground.CUSTOM_IMAGE.name
             it[THEME_BACKGROUND_IN_DARK] = false
@@ -82,8 +92,17 @@ class ReaderSettingsDataStore(
 
     private fun Preferences.toImageBackground() = ReaderImageBackground(
         fileName = this[IMAGE_FILE].orEmpty(),
-        blur = this[IMAGE_BLUR] ?: 20f,
-        textColor = this[IMAGE_TEXT_COLOR] ?: 0xFF202020L,
+        textColor = this[IMAGE_TEXT_COLOR] ?: 0xFFFFFFFFL,
+        glowMode = enumOrDefault(this[IMAGE_GLOW_MODE], com.breakyuna.esjzone.ui.reader.ReaderGlowMode.SAME_HUE),
+        lightTextGlowL = this[IMAGE_GLOW_LIGHT_L] ?: 18f,
+        darkTextGlowL = this[IMAGE_GLOW_DARK_L] ?: 96f,
+        glowChromaRetention = this[IMAGE_GLOW_CHROMA] ?: 40f,
+        outerGlowAlpha = this[IMAGE_GLOW_OUTER_ALPHA] ?: 0.9f,
+        customGlowColor = this[IMAGE_GLOW_CUSTOM_COLOR],
+        autoClampLightness = this[IMAGE_GLOW_AUTO_CLAMP] ?: true,
+        glowEnabled = this[IMAGE_GLOW_ENABLED] ?: true,
+        glowStrength = this[IMAGE_GLOW_STRENGTH] ?: 70f,
+        blur = this[IMAGE_BLUR] ?: 0f,
         transparency = this[IMAGE_TRANSPARENCY] ?: 0f
     ).sanitized()
 
@@ -284,6 +303,15 @@ class ReaderSettingsDataStore(
         const val LEGACY_SCRIPT = "script"
         val THEME_BACKGROUND_IN_DARK = booleanPreferencesKey("theme_background_in_dark")
         val BACKGROUND = stringPreferencesKey("background")
+        val IMAGE_GLOW_MODE = stringPreferencesKey("background_image_glow_mode")
+        val IMAGE_GLOW_LIGHT_L = floatPreferencesKey("background_image_glow_light_l")
+        val IMAGE_GLOW_DARK_L = floatPreferencesKey("background_image_glow_dark_l")
+        val IMAGE_GLOW_CHROMA = floatPreferencesKey("background_image_glow_chroma")
+        val IMAGE_GLOW_OUTER_ALPHA = floatPreferencesKey("background_image_glow_outer_alpha")
+        val IMAGE_GLOW_CUSTOM_COLOR = longPreferencesKey("background_image_glow_custom_color")
+        val IMAGE_GLOW_AUTO_CLAMP = booleanPreferencesKey("background_image_glow_auto_clamp")
+        val IMAGE_GLOW_ENABLED = booleanPreferencesKey("background_image_glow_enabled")
+        val IMAGE_GLOW_STRENGTH = floatPreferencesKey("background_image_glow_strength")
         val IMAGE_FILE = stringPreferencesKey("background_image_file")
         val IMAGE_BLUR = floatPreferencesKey("background_image_blur")
         val IMAGE_TRANSPARENCY = floatPreferencesKey("background_image_transparency")

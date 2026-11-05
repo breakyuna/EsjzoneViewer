@@ -111,7 +111,11 @@ internal fun ReaderSettingsSheet(
                                 horizontalArrangement = Arrangement.spacedBy(AppSpacing.xs),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                ReaderBackground.entries.forEach { background ->
+                                val backgrounds = listOf(ReaderBackground.SYSTEM, ReaderBackground.CUSTOM_IMAGE) +
+                                    ReaderBackground.entries.filterNot {
+                                        it == ReaderBackground.SYSTEM || it == ReaderBackground.CUSTOM_IMAGE
+                                    }
+                                backgrounds.forEach { background ->
                                     ReaderBackgroundSwatch(
                                         background = background,
                                         selected = draft.background == background &&
@@ -133,6 +137,7 @@ internal fun ReaderSettingsSheet(
                                 }
                             }
                         }
+                        if (draft.background == ReaderBackground.CUSTOM_IMAGE) ReaderGlowQualityNotice()
                         ReaderAppearanceSection(stringResource(R.string.reader_font)) {
                             Row(
                                 Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),

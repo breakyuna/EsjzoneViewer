@@ -953,4 +953,20 @@
     <string name="reader_color_hue">色相</string>
     <string name="reader_color_saturation">饱和度</string>
     <string name="reader_color_brightness">明度</string>
+    <string name="reader_glow_white">白字</string>
+    <string name="reader_glow_black">黑字</string>
+    <string name="reader_glow_enabled">文字增强（辉光）</string>
+    <string name="reader_glow_strength">增强强度</string>
+    <string name="reader_glow_reduced">已降低辉光层数以保持流畅</string>
+    <string name="reader_glow_advanced">辉光高级设置</string>
+    <string name="reader_glow_mode">光晕模式</string>
+    <string name="reader_glow_same_hue">同色相</string>
+    <string name="reader_glow_black_white">纯黑白</string>
+    <string name="reader_glow_custom">自定义颜色</string>
+    <string name="reader_glow_light_l">浅字光晕明度</string>
+    <string name="reader_glow_dark_l">深字光晕明度</string>
+    <string name="reader_glow_chroma">光晕彩度保留</string>
+    <string name="reader_glow_outer_alpha">外两层透明度</string>
+    <string name="reader_glow_custom_color">自定义光晕色</string>
+    <string name="reader_glow_auto_clamp">自动夹明度</string>
 </resources>

@@ -124,12 +124,12 @@ internal fun ReaderBlock.Text.toAnnotatedReaderText(
         ),
         children = {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Text(
+                ReaderGlowBodyText(
                     text = textTransform(rubyValue.reading),
                     style = rubyStyle,
                     maxLines = 1
                 )
-                Text(text = displayed, style = baseStyle.merge(span), maxLines = 1)
+                ReaderGlowBodyText(text = displayed, style = baseStyle.merge(span), maxLines = 1)
             }
         }
     )

@@ -294,7 +294,7 @@ class ChapterPage(
         }
         val effectiveReaderBackground = readerSettings.effectiveBackground(isDark = !appIsLight)
         val customBackground = effectiveReaderBackground == ReaderBackground.CUSTOM_IMAGE
-        val readerContentColor = if (customBackground) Color(imageBackground.textColor)
+        val readerContentColor = if (customBackground) remember(imageBackground) { Color(com.breakyuna.esjzone.ui.reader.readerGlowColors(imageBackground).text) }
             else effectiveReaderBackground.contentColor()
         val imageBackdrop = rememberReaderImageBackdrop(imageBackground, customBackground || showReaderSettings)
         val backgroundPainter = imageBackdrop.painter.takeIf { customBackground }
@@ -304,9 +304,8 @@ class ChapterPage(
             else -> effectiveReaderBackground.containerColor()
         }
         val isLightBackground = if (backgroundPainter != null) {
-            // Keep the text-color proxy for image brightness while accounting for the black underlay.
-            readerContentColor.luminance() < 0.5f &&
-                Color.White.copy(alpha = imageBackground.imageAlpha).compositeOver(Color.Black).luminance() > 0.5f
+            // Use the selected text color as the image-brightness proxy for system-bar icons.
+            readerContentColor.luminance() < 0.5f
         } else readerBackgroundColor.luminance() > 0.5f
         val currentAppIsLight by rememberUpdatedState(appIsLight)
 
@@ -1628,6 +1627,11 @@ class ChapterPage(
             state is ChapterPageModel.State.Result &&
             !showReaderSettings && !showReaderContents && !readerDialogVisible
         val pagingEnabled = readerInteractionEnabled && !sidePanels.isVisible
+        com.breakyuna.esjzone.ui.reader.ReaderGlowFrameMonitor(
+            active = customBackground && imageBackground.glowEnabled && imageBackground.glowStrength > 0f &&
+                readerSettings.fontSizeSp >= 13f && readerResumed &&
+                (scrollState.isScrollInProgress || horizontalPagerState.isScrollInProgress || pagedTurns.hasTurns)
+        )
         com.breakyuna.esjzone.ui.reader.ReaderSystemBars(
             showChrome = (showToolbar || showReaderSettings || showReaderContents || sidePanels.isVisible || readerDialogVisible),
             showSystemStatusBar = readerSettings.showSystemStatusBar,
@@ -1827,10 +1831,17 @@ class ChapterPage(
                 }
             }
         ) {
+            // Opaque full-width pager pages already carry the photo. Fade needs the photo
+            // beneath its translucent page; cutout gutters and the initial loading canvas do too.
+            val pagePaintsImage = customBackground && pagedMode && result != null && pagerVisibleItem != null &&
+                readerSettings.pageAnimation != ReaderPageAnimation.FADE &&
+                WindowInsets.displayCutout.getLeft(density, layoutDirection) == 0 &&
+                WindowInsets.displayCutout.getRight(density, layoutDirection) == 0
             ReaderShell(
                 background = readerBackgroundColor,
-                backgroundPainter = backgroundPainter,
-                backgroundImageAlpha = imageBackground.imageAlpha,
+                backgroundPainter = backgroundPainter.takeUnless { pagePaintsImage },
+                glowBackground = imageBackdrop.bitmap.takeIf { customBackground && !pagedMode },
+                imageSettings = imageBackground,
                 pagedGesturesEnabled = pagedMode && (pagingEnabled || pagedTurns.hasTurns),
                 verticalContentScrollable = pagerVisibleItem?.page?.isOversized == true,
                 bookmarkPullEnabled = !updatingBookmark && pagedMode && pagingEnabled && readerSettings.pagedBookmarkGesturesEnabled &&
@@ -2147,7 +2158,8 @@ class ChapterPage(
                             pageSpacing = if (fullPageBackground) 0.dp else readerSettings.horizontalPaddingDp.dp * 2,
                             key = { index -> currentPagedDisplayItems.getOrNull(index)?.key ?: index },
                             userScrollEnabled = pagingEnabled && !pagedTurns.hasTurns,
-                            beyondViewportPageCount = if (readerSettings.pageAnimation == ReaderPageAnimation.HORIZONTAL_SLIDE) 0 else 1,
+                            beyondViewportPageCount = if (customBackground && imageBackground.glowEnabled) 1
+                                else if (readerSettings.pageAnimation == ReaderPageAnimation.HORIZONTAL_SLIDE) 0 else 1,
                             flingBehavior = PagerDefaults.flingBehavior(
                                 state = horizontalPagerState,
                                 pagerSnapDistance = PagerSnapDistance.atMost(1),
@@ -2167,8 +2179,10 @@ class ChapterPage(
                                 }
                         ) { pageIndex ->
                             currentPagedDisplayItems.getOrNull(pageIndex)?.page?.let { page ->
-                                Box(
-                                    Modifier.fillMaxSize()
+                                com.breakyuna.esjzone.ui.reader.ReaderGlowSurface(
+                                    background = imageBackdrop.bitmap.takeIf { customBackground },
+                                    settings = imageBackground,
+                                    modifier = Modifier.fillMaxSize()
                                         .zIndex(if (coverAnimation) pageIndex.toFloat() else 0f)
                                         .graphicsLayer {
                                             val offset = horizontalPagerState.currentPage - pageIndex + horizontalPagerState.currentPageOffsetFraction
@@ -2184,14 +2198,14 @@ class ChapterPage(
                                                 else -> Unit
                                             }
                                         }
-                                        .readerBackdrop(readerBackgroundColor, backgroundPainter, imageBackground.imageAlpha)
-                                        .padding(
+                                        .readerBackdrop(readerBackgroundColor, backgroundPainter, imageBackground.transparency)
+                                ) {
+                                    Box(Modifier.fillMaxSize().padding(
                                             start = if (fullPageBackground) readerSettings.horizontalPaddingDp.dp else 0.dp,
                                             end = if (fullPageBackground) readerSettings.horizontalPaddingDp.dp else 0.dp,
                                             top = pageTopPadding,
                                             bottom = pageBottomPadding
-                                        )
-                                ) {
+                                        )) {
                                     val item = currentPagedDisplayItems[pageIndex]
                                     if (item.entry.requiresPassword) {
                                         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()),
@@ -2224,6 +2238,7 @@ class ChapterPage(
                                                 ?.let(::textOffsets)
                                         }
                                     )
+                                    }
                                 }
                             }
                         }
@@ -2283,7 +2298,7 @@ class ChapterPage(
                 }
             }
 
-            if (readerSettings.eyeProtectionEnabled) {
+            if (readerSettings.eyeProtectionEnabled && !customBackground) {
                 Box(Modifier.fillMaxSize().background(Color(0x22FFC878)))
             }
 
@@ -2485,7 +2500,7 @@ class ChapterPage(
                                 readerSettings.toolbarTools.distinct().take(ReaderTool.MAX_VISIBLE).forEach { tool ->
                                     val active = when (tool) {
                                         ReaderTool.BOOKMARK -> isBookmarked
-                                        ReaderTool.EYE_PROTECTION -> readerSettings.eyeProtectionEnabled
+                                        ReaderTool.EYE_PROTECTION -> readerSettings.eyeProtectionEnabled && !customBackground
                                         ReaderTool.DARK_MODE -> !appIsLight
                                         ReaderTool.BRIGHTNESS -> readerSettings.brightness >= 0f
                                         else -> false
@@ -2498,6 +2513,7 @@ class ChapterPage(
                                             selected = active,
                                             enabled = when (tool) {
                                                 ReaderTool.BOOKMARK -> !updatingBookmark && state is ChapterPageModel.State.Result && bookmarkStateUrl == bookmarkChapterUrl
+                                                ReaderTool.EYE_PROTECTION -> !customBackground
                                                 ReaderTool.COMMENTS -> commentsAvailable
                                                 ReaderTool.NOVEL_DETAIL -> detailUrl.isNotBlank()
                                                 else -> true

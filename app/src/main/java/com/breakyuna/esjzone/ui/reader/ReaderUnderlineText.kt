@@ -89,9 +89,11 @@ internal fun ReaderUnderlineText(
             if (start < end) TextRange(start, end) else null
         }
     }
-    val displayed = remember(text, highlights, color) {
-        if (highlights.isEmpty()) text else buildAnnotatedString {
+    val photoTextColor = LocalReaderPhotoText.current
+    val displayed = remember(text, highlights, color, photoTextColor) {
+        if (highlights.isEmpty() && photoTextColor == null) text else buildAnnotatedString {
             append(text)
+            photoTextColor?.let { addStyle(SpanStyle(color = it), 0, length) }
             highlights.forEach { range ->
                 val start = range.min.coerceIn(0, text.length)
                 val end = range.max.coerceIn(start, text.length)
@@ -119,7 +121,7 @@ internal fun ReaderUnderlineText(
     }
     Text(text = displayed, inlineContent = inlineContent, style = style, color = color,
         overflow = TextOverflow.Visible, onTextLayout = { layout = it; segment.layout = it; onLayout(it) },
-        modifier = modifier.onGloballyPositioned { segment.coordinates = it }
+        modifier = modifier.then(readerGlowTextModifier(layout)).onGloballyPositioned { segment.coordinates = it }
             .then(magnifierModifier).drawWithCache {
             val result = layout
             val lineOffset = 3.dp.toPx()

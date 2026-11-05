@@ -19,30 +19,64 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlin.math.roundToInt
 
-internal const val MAX_READER_IMAGE_BLUR = 50
+enum class ReaderGlowMode { SAME_HUE, BLACK_WHITE, CUSTOM }
 
 @Immutable
 data class ReaderImageBackground(
     val fileName: String = "",
-    val blur: Float = 20f,
-    val textColor: Long = 0xFF202020L,
-    val transparency: Float = 0f
+    val textColor: Long = 0xFFFFFFFFL,
+    val glowEnabled: Boolean = true,
+    val glowStrength: Float = 70f,
+    val blur: Float = 0f,
+    val transparency: Float = 0f,
+    val glowMode: ReaderGlowMode = ReaderGlowMode.SAME_HUE,
+    val lightTextGlowL: Float = 18f,
+    val darkTextGlowL: Float = 96f,
+    val glowChromaRetention: Float = 40f,
+    val outerGlowAlpha: Float = 0.9f,
+    val customGlowColor: Long? = null,
+    val autoClampLightness: Boolean = true
 ) {
-    val imageAlpha: Float
-        get() = 1f - (transparency.takeIf { it.isFinite() } ?: 0f).coerceIn(0f, 100f) / 100f
-
     fun sanitized() = copy(
+        lightTextGlowL = lightTextGlowL.takeIf { it.isFinite() }?.coerceIn(0f, 40f) ?: 18f,
+        darkTextGlowL = darkTextGlowL.takeIf { it.isFinite() }?.coerceIn(80f, 100f) ?: 96f,
+        glowChromaRetention = glowChromaRetention.takeIf { it.isFinite() }?.coerceIn(0f, 100f) ?: 40f,
+        outerGlowAlpha = if (outerGlowAlpha == 0.7f) 0.7f else 0.9f,
+        customGlowColor = customGlowColor?.let { (it and 0xFFFFFFL) or 0xFF000000L },
         fileName = fileName.takeIf { it.matches(Regex("[a-f0-9-]{36}\\.jpg")) }.orEmpty(),
-        blur = blur.takeIf { it.isFinite() }?.coerceIn(0f, MAX_READER_IMAGE_BLUR.toFloat()) ?: 20f,
-        textColor = (textColor and 0x00FFFFFFL) or 0xFF000000L,
-        transparency = transparency.takeIf { it.isFinite() }?.coerceIn(0f, 100f) ?: 0f
+        textColor = (textColor and 0xFFFFFFL) or 0xFF000000L,
+        blur = blur.takeIf { it.isFinite() }?.coerceIn(0f, 50f) ?: 0f,
+        transparency = transparency.takeIf { it.isFinite() }?.coerceIn(0f, 100f) ?: 0f,
+        glowStrength = glowStrength.takeIf { it.isFinite() }?.coerceIn(0f, 100f) ?: 70f
     )
 }
 
-/** Private, bounded copies keep photo-provider permissions out of the reading path. */
+/** Immutable private JPEG sources; decoded images are shared by preview and reader. */
 internal object ReaderImageBackgroundStore {
     private val renderMutex = Mutex()
-    private val rendered = LruCache<String, Bitmap>(2)
+    private val appearanceMutex = Mutex()
+    private data class AppearanceKey(val path: String, val size: Int, val blur: Int)
+    private val appearances = LruCache<AppearanceKey, Rendered>(2)
+    private data class RenderKey(val path: String, val size: Int)
+    private data class Rendered(val length: Long, val modified: Long, val bitmap: Bitmap)
+    private val rendered = LruCache<RenderKey, Rendered>(2)
+
+    fun cached(source: File, maxSize: Int = 1440): Bitmap? =
+        rendered.get(RenderKey(source.absolutePath, maxSize))?.bitmap
+
+    fun cachedAppearance(source: File, blur: Float, maxSize: Int = 1440): Bitmap? {
+        val strength = blur.roundToInt().coerceIn(0, 50)
+        if (strength == 0) return cached(source, maxSize)
+        return appearances.get(AppearanceKey(source.absolutePath, maxSize, strength))?.takeIf {
+            it.length == source.length() && it.modified == source.lastModified()
+        }?.bitmap
+    }
+
+    private fun publish(source: File, maxSize: Int, bitmap: Bitmap): Bitmap {
+        bitmap.prepareToDraw()
+        rendered.put(RenderKey(source.absolutePath, maxSize), Rendered(source.length(), source.lastModified(), bitmap))
+        return bitmap
+    }
 
     fun file(context: Context, background: ReaderImageBackground): File? =
         background.sanitized().fileName.takeIf { it.isNotBlank() }
@@ -105,17 +139,22 @@ internal object ReaderImageBackgroundStore {
         }
     }
 
-    /** Called on IO. The settings reference is published only after the copy is complete. */
-    fun persist(context: Context, source: File): File {
+    /** Called on IO before publishing settings; reuse the preview's prepared texture. */
+    fun persist(context: Context, source: File, preview: Bitmap): File {
         if (!source.isFile || source.length() == 0L) throw IOException("Background image is unavailable")
         val directory = File(context.filesDir, "reader_backgrounds").apply { mkdirs() }
-        if (source.parentFile == directory) return source
-        val target = File(directory, "${UUID.randomUUID()}.jpg")
+        val target = if (source.parentFile == directory) source else File(directory, "${UUID.randomUUID()}.jpg")
         try {
-            source.copyTo(target)
+            if (target != source) source.copyTo(target)
+            publish(target, 1440, preview)
+            // A newly copied photo gets a new path; retain its prepared reader texture too.
+            for ((key, value) in appearances.snapshot()) {
+                if (key.path == source.absolutePath) appearances.put(key.copy(path = target.absolutePath),
+                    Rendered(target.length(), target.lastModified(), value.bitmap))
+            }
             return target
         } catch (error: Exception) {
-            target.delete()
+            if (target != source) target.delete()
             throw error
         }
     }
@@ -124,37 +163,14 @@ internal object ReaderImageBackgroundStore {
         retained.parentFile?.listFiles()?.filter { it != retained }?.forEach { it.delete() }
     }
 
-    suspend fun render(source: File, blur: Float, maxSize: Int = 1440): Bitmap = withContext(Dispatchers.Default) {
+    suspend fun render(source: File, maxSize: Int = 1440): Bitmap = withContext(Dispatchers.IO) {
         renderMutex.withLock {
-            val strength = blur.roundToInt().coerceIn(0, MAX_READER_IMAGE_BLUR)
             val length = source.length()
             if (!source.isFile || length == 0L) throw IOException("Background image is unavailable")
-            val key = "${source.absolutePath}|${source.lastModified()}|$length|$strength|$maxSize"
-            rendered.get(key)?.let { return@withLock it }
-            val bitmap = decode(source, maxSize)
-            try {
-                if (strength == 0) {
-                    rendered.put(key, bitmap)
-                    return@withLock bitmap
-                }
-                val width = bitmap.width
-                val height = bitmap.height
-                val pixels = IntArray(width * height)
-                val temporary = IntArray(pixels.size)
-                bitmap.getPixels(pixels, 0, width, 0, 0, width, height)
-                val radius = (strength / 100f * 24f * maxOf(width, height) / 720f).roundToInt().coerceAtLeast(1)
-                val job = currentCoroutineContext()
-                repeat(3) {
-                    blurPass(pixels, temporary, width, height, 1, width, radius) { job.ensureActive() }
-                    blurPass(temporary, pixels, height, width, width, 1, radius) { job.ensureActive() }
-                }
-                val blurred = Bitmap.createBitmap(pixels, width, height, Bitmap.Config.ARGB_8888)
-                rendered.put(key, blurred)
-                blurred
-            } finally {
-                // Published images belong to Compose/the cache and must not be recycled here.
-                if (strength != 0) bitmap.recycle()
-            }
+            rendered.get(RenderKey(source.absolutePath, maxSize))?.takeIf {
+                it.length == length && it.modified == source.lastModified()
+            }?.let { it.bitmap.prepareToDraw(); return@withLock it.bitmap }
+            publish(source, maxSize, decode(source, maxSize))
         }
     }
 
@@ -166,6 +182,35 @@ internal object ReaderImageBackgroundStore {
             decoder.setTargetSize((info.size.width * scale).roundToInt().coerceAtLeast(1),
                 (info.size.height * scale).roundToInt().coerceAtLeast(1))
         }
+
+    suspend fun renderAppearance(source: File, blur: Float, maxSize: Int = 1440): Bitmap {
+        cachedAppearance(source, blur, maxSize)?.let { return it }
+        val original = render(source, maxSize)
+        val strength = blur.roundToInt().coerceIn(0, 50)
+        if (strength == 0) return original
+        return withContext(Dispatchers.Default) {
+            appearanceMutex.withLock {
+                cachedAppearance(source, strength.toFloat(), maxSize)?.let { return@withLock it }
+                val width = original.width
+                val height = original.height
+                val pixels = IntArray(width * height)
+                val temporary = IntArray(pixels.size)
+                original.getPixels(pixels, 0, width, 0, 0, width, height)
+                val radius = (strength / 100f * 24f * maxOf(width, height) / 720f).roundToInt().coerceAtLeast(1)
+                val job = currentCoroutineContext()
+                repeat(3) {
+                    blurPass(pixels, temporary, width, height, 1, width, radius) { job.ensureActive() }
+                    blurPass(temporary, pixels, height, width, width, 1, radius) { job.ensureActive() }
+                }
+                job.ensureActive()
+                val result = Bitmap.createBitmap(pixels, width, height, Bitmap.Config.ARGB_8888)
+                result.prepareToDraw()
+                appearances.put(AppearanceKey(source.absolutePath, maxSize, strength),
+                    Rendered(source.length(), source.lastModified(), result))
+                result
+            }
+        }
+    }
 
     /** Three separable box passes approximate a Gaussian blur on every supported Android version. */
     private inline fun blurPass(

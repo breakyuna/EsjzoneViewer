@@ -952,4 +952,20 @@
     <string name="reader_color_hue">Hue</string>
     <string name="reader_color_saturation">Saturation</string>
     <string name="reader_color_brightness">Brightness</string>
+    <string name="reader_glow_white">White</string>
+    <string name="reader_glow_black">Black</string>
+    <string name="reader_glow_enabled">Text enhancement (glow)</string>
+    <string name="reader_glow_strength">Enhancement strength</string>
+    <string name="reader_glow_reduced">Glow layers reduced to keep reading smooth</string>
+    <string name="reader_glow_advanced">Advanced glow settings</string>
+    <string name="reader_glow_mode">Glow mode</string>
+    <string name="reader_glow_same_hue">Same hue</string>
+    <string name="reader_glow_black_white">Black and white</string>
+    <string name="reader_glow_custom">Custom color</string>
+    <string name="reader_glow_light_l">Glow lightness for light text</string>
+    <string name="reader_glow_dark_l">Glow lightness for dark text</string>
+    <string name="reader_glow_chroma">Retained glow chroma</string>
+    <string name="reader_glow_outer_alpha">Outer two layers alpha</string>
+    <string name="reader_glow_custom_color">Custom glow color</string>
+    <string name="reader_glow_auto_clamp">Automatic lightness adjustment</string>
 </resources>

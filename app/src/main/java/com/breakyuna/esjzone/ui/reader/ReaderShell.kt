@@ -67,7 +67,8 @@ fun ReaderShell(
     bookmarkPullEnabled: Boolean = false,
     onBookmarkPull: () -> Unit = {},
     backgroundPainter: Painter? = null,
-    backgroundImageAlpha: Float = 1f,
+    glowBackground: android.graphics.Bitmap? = null,
+    imageSettings: ReaderImageBackground = ReaderImageBackground(),
     content: @Composable BoxScope.() -> Unit
 ) {
     val haptics by rememberUpdatedState(LocalHapticFeedback.current)
@@ -184,10 +185,11 @@ fun ReaderShell(
                 }
             }
     ) {
-        Box(
+        ReaderGlowSurface(
+            background = glowBackground, settings = imageSettings,
             modifier = Modifier.fillMaxSize()
                 .graphicsLayer { translationY = pullTranslation }
-                .readerBackdrop(background, backgroundPainter, backgroundImageAlpha),
+                .readerBackdrop(background, backgroundPainter, imageSettings.transparency),
             content = content
         )
     }

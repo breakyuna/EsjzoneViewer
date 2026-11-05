@@ -9,7 +9,6 @@ import com.breakyuna.esjzone.app.PresentationAccess
 import com.breakyuna.esjzone.ui.navigation.AppStateViewModel
 import com.breakyuna.esjzone.ui.reader.ReaderImageBackground
 import com.breakyuna.esjzone.ui.reader.ReaderImageBackgroundStore
-import com.breakyuna.esjzone.ui.reader.MAX_READER_IMAGE_BLUR
 import com.breakyuna.esjzone.util.AppLogger
 import java.io.File
 import kotlinx.coroutines.CancellationException
@@ -18,7 +17,6 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import kotlin.math.roundToInt
 
 internal class ReaderBackgroundPageModel(context: Context) :
     AppStateViewModel<ReaderBackgroundPageModel.State>(State()) {
@@ -27,19 +25,30 @@ internal class ReaderBackgroundPageModel(context: Context) :
         val draft: ReaderImageBackground = ReaderImageBackground(),
         val preview: Bitmap? = null,
         val previewBlur: Float? = null,
+        val previewSize: Int? = null,
+        val requestedSize: Int = 480,
         val loading: Boolean = true,
         val previewBusy: Boolean = false,
         val saving: Boolean = false,
         val saved: Boolean = false,
         val error: Int? = null
     ) {
-        val canApply: Boolean get() = source != null && preview != null && previewBlur == draft.blur &&
+        val canApply: Boolean get() = source != null && preview != null &&
+            previewBlur == draft.blur && previewSize == requestedSize &&
             !loading && !previewBusy && !saving
     }
 
     private val appContext = context.applicationContext
     private var previewJob: Job? = null
     private var saveJob: Job? = null
+    private var previewMaxSize = 480
+
+    fun setFullScreen(fullScreen: Boolean) {
+        val size = if (fullScreen) 1440 else 480
+        if (previewMaxSize == size) return
+        previewMaxSize = size
+        refreshPreview()
+    }
 
     private val initialLoad = viewModelScope.launch {
         try {
@@ -47,7 +56,7 @@ internal class ReaderBackgroundPageModel(context: Context) :
             val source = withContext(Dispatchers.IO) {
                 ReaderImageBackgroundStore.file(appContext, saved)?.takeIf { it.isFile }
             }
-            mutableState.value = State(source = source, draft = saved, loading = false)
+            mutableState.value = State(source = source, draft = saved, loading = false, requestedSize = previewMaxSize)
             refreshPreview()
         } catch (error: CancellationException) {
             throw error
@@ -66,7 +75,7 @@ internal class ReaderBackgroundPageModel(context: Context) :
             try {
                 val previousSource = state.value.source
                 val source = ReaderImageBackgroundStore.importImage(appContext, uri)
-                mutableState.value = state.value.copy(source = source, loading = false, preview = null, previewBlur = null)
+                mutableState.value = state.value.copy(source = source, loading = false, preview = null, previewBlur = null, previewSize = null)
                 refreshPreview()
                 withContext(NonCancellable + Dispatchers.IO) {
                     ReaderImageBackgroundStore.deleteDraft(appContext, previousSource)
@@ -81,38 +90,23 @@ internal class ReaderBackgroundPageModel(context: Context) :
         }
     }
 
-    fun setBlur(value: Float) {
+    fun updateAppearance(value: ReaderImageBackground) {
         if (state.value.loading || state.value.saving) return
-        val blur = value.roundToInt().coerceIn(0, MAX_READER_IMAGE_BLUR).toFloat()
-        if (blur == state.value.draft.blur) return
-        mutableState.value = state.value.copy(draft = state.value.draft.copy(blur = blur))
-        refreshPreview()
-    }
-
-    fun setTransparency(value: Float) {
-        if (state.value.loading || state.value.saving) return
-        val transparency = value.roundToInt().coerceIn(0, 100).toFloat()
-        if (transparency == state.value.draft.transparency) return
-        mutableState.value = state.value.copy(draft = state.value.draft.copy(transparency = transparency))
-    }
-
-    fun setTextColor(color: Long) {
-        if (state.value.loading || state.value.saving) return
-        mutableState.value = state.value.copy(draft = state.value.draft.copy(textColor = color).sanitized())
+        val previousBlur = state.value.draft.blur
+        mutableState.value = state.value.copy(draft = value.sanitized())
+        if (previousBlur != state.value.draft.blur) refreshPreview()
     }
 
     private fun refreshPreview() {
-        if (previewJob?.isActive == true) return
+        previewJob?.cancel()
         val source = state.value.source ?: return
-        mutableState.value = state.value.copy(previewBusy = true)
+        val blur = state.value.draft.blur
+        val size = previewMaxSize
+        mutableState.value = state.value.copy(previewBusy = true, requestedSize = size, previewBlur = null)
         previewJob = viewModelScope.launch {
             try {
-                do {
-                    val blur = state.value.draft.blur
-                    val bitmap = ReaderImageBackgroundStore.render(source, blur)
-                    mutableState.value = state.value.copy(preview = bitmap, previewBlur = blur)
-                } while (state.value.draft.blur != state.value.previewBlur)
-                mutableState.value = state.value.copy(previewBusy = false)
+                val bitmap = ReaderImageBackgroundStore.renderAppearance(source, blur, size)
+                mutableState.value = state.value.copy(preview = bitmap, previewBlur = blur, previewSize = size, previewBusy = false)
             } catch (error: CancellationException) {
                 throw error
             } catch (error: Exception) {
@@ -130,7 +124,9 @@ internal class ReaderBackgroundPageModel(context: Context) :
             try {
                 withContext(NonCancellable + Dispatchers.IO) {
                     val source = requireNotNull(selected.source)
-                    val target = ReaderImageBackgroundStore.persist(appContext, source)
+                    val original = ReaderImageBackgroundStore.render(source)
+                    ReaderImageBackgroundStore.renderAppearance(source, selected.draft.blur)
+                    val target = ReaderImageBackgroundStore.persist(appContext, source, original)
                     try {
                         PresentationAccess.readerSettings.saveImageBackground(selected.draft.copy(fileName = target.name))
                     } catch (error: Exception) {

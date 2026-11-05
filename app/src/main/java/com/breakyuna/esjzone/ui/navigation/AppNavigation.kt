@@ -665,6 +665,21 @@ fun AppNavigation() {
     }
 
     val appContext = LocalContext.current.applicationContext
+    val readerAppearance by PresentationAccess.readerSettings.settings.collectAsState()
+    val readerImageBackground by PresentationAccess.readerSettings.imageBackground.collectAsState()
+    // Warm the selected image while the user browses, before a reader entry needs its first frame.
+    LaunchedEffect(readerAppearance.background, readerImageBackground.fileName, readerImageBackground.blur) {
+        if (readerAppearance.background == com.breakyuna.esjzone.ui.reader.ReaderBackground.CUSTOM_IMAGE) {
+            val source = com.breakyuna.esjzone.ui.reader.ReaderImageBackgroundStore.file(appContext, readerImageBackground)
+            if (source != null) try {
+                com.breakyuna.esjzone.ui.reader.ReaderImageBackgroundStore.renderAppearance(source, readerImageBackground.blur)
+            } catch (error: kotlinx.coroutines.CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                com.breakyuna.esjzone.util.AppLogger.w("ReaderBackground", "Unable to preload reader background", error)
+            }
+        }
+    }
     val showAppUpdates = canShowAppUpdates(backStack.lastOrNull(), authorization) && !showStorageSetup
     LaunchedEffect(showAppUpdates) {
         if (showAppUpdates) ReleaseUpdateChecker.checkOnce(appContext)
