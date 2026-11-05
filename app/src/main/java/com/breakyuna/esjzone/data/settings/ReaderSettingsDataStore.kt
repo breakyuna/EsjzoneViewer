@@ -8,6 +8,7 @@ import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.floatPreferencesKey
+import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStoreFile
@@ -18,6 +19,7 @@ import com.breakyuna.esjzone.ui.reader.ReaderScript
 import com.breakyuna.esjzone.ui.reader.ReaderPageAnimation
 import com.breakyuna.esjzone.ui.reader.ReaderTool
 import com.breakyuna.esjzone.ui.reader.ReaderSettings
+import com.breakyuna.esjzone.ui.reader.ReaderImageBackground
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -55,6 +57,32 @@ class ReaderSettingsDataStore(
         .catch { error -> if (error is IOException) emit(emptyPreferences()) else throw error }
         .map { it.toReaderSettings() }
         .stateIn(scope, SharingStarted.Eagerly, ReaderSettings())
+
+    val imageBackground: StateFlow<ReaderImageBackground> = dataStore.data
+        .catch { error -> if (error is IOException) emit(emptyPreferences()) else throw error }
+        .map { it.toImageBackground() }
+        .stateIn(scope, SharingStarted.Eagerly, ReaderImageBackground())
+
+    suspend fun readImageBackground(): ReaderImageBackground = dataStore.data.first().toImageBackground()
+
+    /** Only these fields change, so edits made elsewhere in reading settings survive applying a photo. */
+    suspend fun saveImageBackground(background: ReaderImageBackground) {
+        val pending = synchronized(this) { pendingReaderSave }
+        pending?.join()
+        val value = background.sanitized()
+        dataStore.edit {
+            it[IMAGE_FILE] = value.fileName
+            it[IMAGE_BLUR] = value.blur
+            it[IMAGE_TEXT_COLOR] = value.textColor
+            it[BACKGROUND] = ReaderBackground.CUSTOM_IMAGE.name
+        }
+    }
+
+    private fun Preferences.toImageBackground() = ReaderImageBackground(
+        fileName = this[IMAGE_FILE].orEmpty(),
+        blur = this[IMAGE_BLUR] ?: 20f,
+        textColor = this[IMAGE_TEXT_COLOR] ?: 0xFF202020L
+    ).sanitized()
 
     suspend fun save(settings: ReaderSettings) {
         dataStore.edit { preferences ->
@@ -248,6 +276,9 @@ class ReaderSettingsDataStore(
         const val LEGACY_HORIZONTAL_PADDING = "horizontal_padding"
         const val LEGACY_SCRIPT = "script"
         val BACKGROUND = stringPreferencesKey("background")
+        val IMAGE_FILE = stringPreferencesKey("background_image_file")
+        val IMAGE_BLUR = floatPreferencesKey("background_image_blur")
+        val IMAGE_TEXT_COLOR = longPreferencesKey("background_image_text_color")
         val FONT = stringPreferencesKey("font")
         val FONT_SIZE = floatPreferencesKey("font_size")
         val LETTER_SPACING = floatPreferencesKey("letter_spacing")

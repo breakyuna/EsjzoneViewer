@@ -1,6 +1,7 @@
 package com.breakyuna.esjzone.ui.designsystem
 
 import androidx.compose.foundation.layout.Box
+import android.content.Context
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material.icons.Icons
@@ -297,7 +298,7 @@ private fun coverFallbackResource(state: CoverState): Int = when (state) {
 }
 
 /** Coil's HTTP errors are known request failures, unlike generic file/decoder IO errors. */
-private fun Throwable.imageFailure(): CoverFailure {
+internal fun Throwable.imageFailure(): CoverFailure {
     var current: Throwable? = this
     val seen = mutableSetOf<Throwable>()
     while (current != null && seen.add(current)) {
@@ -409,30 +410,32 @@ internal fun sharedMirrorImageRequest(model: Any?, allowNetwork: Boolean = true)
     val context = LocalContext.current
     val activeDomain = PresentationAccess.settings.domain.value
     return remember(model, context, activeDomain, allowNetwork) {
-        if (model is ImageRequest) {
-            if (allowNetwork) model else model.newBuilder()
-                .networkCachePolicy(CachePolicy.DISABLED).build()
-        }
-        else {
-            val rawUrl = model as? String
-            val parsed = rawUrl?.toHttpUrlOrNull()
-            val isMirrorImage = parsed?.host?.let(EsjzoneUrls::isEsjHost) == true
-            val requestData = if (isMirrorImage) EsjzoneUrls.resolve(rawUrl.orEmpty()) else model
-            ImageRequest.Builder(context)
-                .data(requestData)
-                .apply {
-                    if (isMirrorImage) {
-                        val key = EsjzoneUrls.canonicalCacheUrl(rawUrl.orEmpty())
-                        memoryCacheKey(key)
-                        diskCacheKey(key)
-                    }
-                }
-                .memoryCachePolicy(CachePolicy.ENABLED)
-                .diskCachePolicy(CachePolicy.ENABLED)
-                .networkCachePolicy(if (allowNetwork) CachePolicy.ENABLED else CachePolicy.DISABLED)
-                .build()
-        }
+        mirrorImageRequest(context, model, allowNetwork)
     }
+}
+
+internal fun mirrorImageRequest(context: Context, model: Any?, allowNetwork: Boolean): ImageRequest {
+    if (model is ImageRequest) {
+        return if (allowNetwork) model else model.newBuilder()
+            .networkCachePolicy(CachePolicy.DISABLED).build()
+    }
+    val rawUrl = model as? String
+    val parsed = rawUrl?.toHttpUrlOrNull()
+    val isMirrorImage = parsed?.host?.let(EsjzoneUrls::isEsjHost) == true
+    val requestData = if (isMirrorImage) EsjzoneUrls.resolve(rawUrl.orEmpty()) else model
+    return ImageRequest.Builder(context)
+        .data(requestData)
+        .apply {
+            if (isMirrorImage) {
+                val key = EsjzoneUrls.canonicalCacheUrl(rawUrl.orEmpty())
+                memoryCacheKey(key)
+                diskCacheKey(key)
+            }
+        }
+        .memoryCachePolicy(CachePolicy.ENABLED)
+        .diskCachePolicy(CachePolicy.ENABLED)
+        .networkCachePolicy(if (allowNetwork) CachePolicy.ENABLED else CachePolicy.DISABLED)
+        .build()
 }
 
 @Composable

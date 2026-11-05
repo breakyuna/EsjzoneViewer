@@ -14,10 +14,20 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.MenuBook
+import androidx.compose.material.icons.filled.Bookmark
+import androidx.compose.material.icons.filled.BookmarkBorder
+import androidx.compose.material.icons.filled.Brightness6
+import androidx.compose.material.icons.filled.DarkMode
+import androidx.compose.material.icons.filled.Forum
+import androidx.compose.material.icons.filled.List
 import androidx.compose.material.icons.filled.Menu
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.background
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.BrightnessLow
 import androidx.compose.material.icons.filled.BrightnessHigh
@@ -47,6 +57,17 @@ internal fun ReaderTool.label(): Int = when (this) {
     ReaderTool.EYE_PROTECTION -> R.string.reader_eye_protection
     ReaderTool.BRIGHTNESS -> R.string.reader_brightness
     ReaderTool.DARK_MODE -> R.string.reader_dark_mode
+}
+
+internal fun ReaderTool.icon(isBookmarked: Boolean = false): ImageVector = when (this) {
+    ReaderTool.CONTENTS -> Icons.Filled.List
+    ReaderTool.SETTINGS -> Icons.Filled.Settings
+    ReaderTool.BOOKMARK -> if (isBookmarked) Icons.Filled.Bookmark else Icons.Filled.BookmarkBorder
+    ReaderTool.COMMENTS -> Icons.Filled.Forum
+    ReaderTool.NOVEL_DETAIL -> Icons.AutoMirrored.Filled.MenuBook
+    ReaderTool.EYE_PROTECTION -> Icons.Filled.Visibility
+    ReaderTool.BRIGHTNESS -> Icons.Filled.Brightness6
+    ReaderTool.DARK_MODE -> Icons.Filled.DarkMode
 }
 
 @Composable
@@ -95,6 +116,12 @@ internal fun ReaderToolbarSettings(
                             val selection = if (checked) tools + tool else tools - tool
                             onChange(ordered.filter { it in selection })
                         }
+                    )
+                    Icon(
+                        tool.icon(),
+                        contentDescription = null,
+                        modifier = Modifier.padding(end = 8.dp).size(20.dp),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     Text(stringResource(tool.label()), modifier = Modifier.weight(1f),
                         style = MaterialTheme.typography.bodyMedium, maxLines = 1)

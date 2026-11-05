@@ -533,8 +533,6 @@
     <string name="reader_reset">Reset</string>
     <string name="reader_background">Background</string>
     <string name="reader_background_system">System</string>
-    <string name="reader_theme_switch_light">Switch app to light mode</string>
-    <string name="reader_theme_switch_dark">Switch app to dark mode</string>
     <string name="reader_background_paper">Paper</string>
     <string name="reader_background_sepia">Sepia</string>
     <string name="reader_background_dark">Dark</string>
@@ -938,4 +936,15 @@
     <string name="reader_boundary_failed">Chapter could not be loaded. Current text is retained.</string>
     <string name="reader_setting_decrease">Decrease value</string>
     <string name="reader_setting_increase">Increase value</string>
+    <string name="reader_background_image">Custom image</string>
+    <string name="reader_background_choose_image">Choose image</string>
+    <string name="reader_background_apply">Apply</string>
+    <string name="reader_background_blur">Blur</string>
+    <string name="reader_background_text_color">Text color</string>
+    <string name="reader_background_custom_color">Custom text color</string>
+    <string name="reader_background_color_value">Text color %1$s</string>
+    <string name="reader_background_preview_title">Light on the page</string>
+    <string name="reader_background_preview_text">An afternoon breeze slipped through the open window and gently turned the pages of a book. Outside, the trees swayed, scattering patches of sunlight across the paper.\n\nShe paused at the next line and heard familiar footsteps around the corner. The story was only beginning, and time seemed willing to slow down for a moment.</string>
+    <string name="reader_background_image_failed">Unable to read the image. Choose a valid image smaller than 32 MB and try again.</string>
+    <string name="reader_background_save_failed">Unable to save the background. Please try again.</string>
 </resources>

@@ -76,8 +76,8 @@ import androidx.compose.runtime.collectAsState
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.Lifecycle
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -88,6 +88,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.semantics.Role
 import com.breakyuna.esjzone.ui.navigation.LocalFloatingNavPadding
@@ -98,12 +99,19 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.breakyuna.esjzone.ui.designsystem.globalStringResource as stringResource
 import com.breakyuna.esjzone.R
+import com.breakyuna.esjzone.EsjzoneApplication
+import com.breakyuna.esjzone.app.CoverLoadingPolicy
+import com.breakyuna.esjzone.app.LocalCoverPage
 import com.breakyuna.esjzone.app.PresentationAccess
+import com.breakyuna.esjzone.database.BookshelfCoverStore
+import com.breakyuna.esjzone.database.BookshelfRepository
+import com.breakyuna.esjzone.database.NovelTitleRepository
 import com.breakyuna.esjzone.database.entity.LocalReadingActivity
 import com.breakyuna.esjzone.network.Authorization
 import com.breakyuna.esjzone.network.EsjzoneUrls
 import com.breakyuna.esjzone.network.LoadFailureKind
 import com.breakyuna.esjzone.network.LocalAuthorization
+import com.breakyuna.esjzone.network.cancellablePageRequest
 import com.breakyuna.esjzone.network.features.getNovelDetail
 import com.breakyuna.esjzone.network.loadFailureKind
 import com.breakyuna.esjzone.novellibrary.novel.Chapter
@@ -116,6 +124,9 @@ import com.breakyuna.esjzone.ui.component.AppNovelCover
 import com.breakyuna.esjzone.ui.designsystem.AppSpacing
 import com.breakyuna.esjzone.ui.designsystem.AppSyncStatusDot
 import com.breakyuna.esjzone.ui.designsystem.AppTypography
+import com.breakyuna.esjzone.ui.designsystem.AppLoadedImage
+import com.breakyuna.esjzone.ui.designsystem.imageFailure
+import com.breakyuna.esjzone.ui.designsystem.mirrorImageRequest
 import com.breakyuna.esjzone.ui.navigation.AppDestination
 import com.breakyuna.esjzone.ui.navigation.AppStateViewModel
 import com.breakyuna.esjzone.ui.navigation.ChapterStateHolder
@@ -127,6 +138,11 @@ import com.breakyuna.esjzone.ui.product.EmptyState
 import com.breakyuna.esjzone.ui.product.ErrorState
 import com.breakyuna.esjzone.ui.product.OfflineState
 import com.breakyuna.esjzone.util.AppLogger
+import coil3.request.CachePolicy
+import coil3.request.ErrorResult
+import coil3.request.SuccessResult
+import coil3.size.Precision
+import coil3.size.Scale
 import kotlin.math.roundToInt
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -592,7 +608,7 @@ private fun LocalHistoryContent(
                         LocalHistoryCard(
                             modifier = Modifier.animateItem(),
                             activity = activity,
-                            cover = model.coverFor(activity),
+                            model = model,
                             onOpen = {
                                 if (editing) {
                                     onToggleSelected(activity.activityId)
@@ -612,7 +628,6 @@ private fun LocalHistoryContent(
                                 }
                             },
                             onLongClick = { onSelect(activity.activityId) },
-                            onCoverNeeded = { model.loadCover(activity) },
                             editing = editing,
                             selected = activity.activityId in selected
                         )
@@ -626,15 +641,29 @@ private fun LocalHistoryContent(
 @Composable
 private fun LocalHistoryCard(
     activity: LocalReadingActivity,
-    cover: CoverSource,
+    model: LocalHistoryPageModel,
     onOpen: () -> Unit,
     onLongClick: () -> Unit,
-    onCoverNeeded: () -> Unit,
     editing: Boolean,
     selected: Boolean,
     modifier: Modifier = Modifier
 ) {
-    if (cover.url.isBlank()) LaunchedEffect(activity.activityId) { onCoverNeeded() }
+    val coverWidth = 72.dp
+    val coverHeight = 100.dp
+    val widthPx = with(LocalDensity.current) { coverWidth.roundToPx() }
+    val heightPx = with(LocalDensity.current) { coverHeight.roundToPx() }
+    val coverUrl = activity.novelCoverUrl
+    val policy by CoverLoadingPolicy.state.collectAsState()
+    val page = LocalCoverPage.current
+    val allowNetwork = page.isBlank() || policy.allowNetwork(page)
+    var cover by remember(model, activity.novelUrl, activity.novelId, coverUrl, widthPx, heightPx) {
+        mutableStateOf(LocalHistoryCover(CoverSource(state = CoverState.Resolving)))
+    }
+    LaunchedEffect(model, activity.novelUrl, activity.novelId, coverUrl, widthPx, heightPx, allowNetwork) {
+        if (cover.image == null) {
+            cover = model.loadCover(activity, widthPx, heightPx, allowNetwork)
+        }
+    }
     val progress = ((activity.bookProgress ?: fullBookProgress(activity.chapterIndex, activity.totalChapters, activity.chapterProgress)) * 100).roundToInt()
     val position = if (activity.chapterIndex >= 0 && activity.totalChapters > 0) {
         stringResource(R.string.history_local_position, activity.chapterIndex + 1, activity.totalChapters, progress)
@@ -660,12 +689,15 @@ private fun LocalHistoryCard(
             verticalAlignment = Alignment.Top,
             horizontalArrangement = Arrangement.spacedBy(AppSpacing.md)
         ) {
-            AppNovelCover(
-                coverUrl = cover.url,
-                coverState = cover.state,
-                title = validNovelTitle(activity.novelName, activity.novelId, activity.novelUrl, activity.chapterName),
-                modifier = Modifier.size(width = 72.dp, height = 100.dp)
-            )
+            key(cover.image) {
+                AppNovelCover(
+                    coverUrl = cover.source.url,
+                    coverState = cover.source.state,
+                    initialImage = cover.image,
+                    title = validNovelTitle(activity.novelName, activity.novelId, activity.novelUrl, activity.chapterName),
+                    modifier = Modifier.size(width = coverWidth, height = coverHeight)
+                )
+            }
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(AppSpacing.xs)) {
                 Text(validNovelTitle(activity.novelName, activity.novelId, activity.novelUrl, activity.chapterName).ifBlank { stringResource(R.string.download_unknown_novel) }, style = AppTypography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 Text(activity.chapterName, style = AppTypography.bodySmall, color = MaterialTheme.colorScheme.primary, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -965,11 +997,8 @@ class LocalHistoryPageModel(private val authorization: Authorization) : AppState
 
     private var observeStarted = false
     private var observeJob: Job? = null
-    private val coverLock = Any()
-    private val requestedCovers = mutableSetOf<String>()
-    private val coverFailureTimes = mutableMapOf<String, Long>()
     private val coverPermits = Semaphore(2)
-    private val resolvedCovers = mutableStateMapOf<String, CoverSource>()
+    private val detailCovers = mutableMapOf<String, Pair<Long, CoverSource>>()
 
     fun observe() {
         if (observeStarted) return
@@ -1021,59 +1050,100 @@ class LocalHistoryPageModel(private val authorization: Authorization) : AppState
         }
     }
 
-    fun coverFor(activity: LocalReadingActivity): CoverSource {
-        val stored = CoverSource.fromUrl(activity.novelCoverUrl, CoverState.Unknown)
-        if (stored.url.isNotBlank()) return stored
-        return resolvedCovers[coverKey(coverLookupUrl(activity))] ?: stored
+    internal suspend fun loadCover(
+        activity: LocalReadingActivity,
+        widthPx: Int,
+        heightPx: Int,
+        allowNetwork: Boolean
+    ): LocalHistoryCover {
+        suspend fun loadImage(url: String, network: Boolean) = PresentationAccess.imageLoader.execute(
+            mirrorImageRequest(EsjzoneApplication.instance, url, allowNetwork = network).newBuilder()
+                .size(widthPx, heightPx)
+                .scale(Scale.FILL)
+                .precision(Precision.INEXACT)
+                .diskCachePolicy(if (network) CachePolicy.ENABLED else CachePolicy.READ_ONLY)
+                .build()
+        )
+
+        val loadRemoteImage: suspend (String) -> LocalHistoryCover = { url ->
+            when (val result = loadImage(url, network = true)) {
+                is SuccessResult -> LocalHistoryCover(CoverSource(), AppLoadedImage(result.image))
+                is ErrorResult -> LocalHistoryCover(
+                    CoverSource(state = CoverState.Failed(result.throwable.imageFailure()))
+                )
+            }
+        }
+        val target = coverLookupUrl(activity)
+        return resolveLocalHistoryCover(
+            stored = EsjzoneUrls.coverOrEmpty(activity.novelCoverUrl),
+            shelf = {
+                readCoverStorage(target) {
+                    PresentationAccess.database.bookshelfDao()
+                        .findAnyWithCover(BookshelfRepository.keyFor(target))?.let { entry ->
+                            HistoryShelfCover(
+                                local = BookshelfCoverStore.localOrRemote(entry).takeIf { it.startsWith("file:") },
+                                remote = EsjzoneUrls.coverOrEmpty(entry.coverUrl)
+                            )
+                        }
+                }
+            },
+            downloadedFile = {
+                readCoverStorage(target) { PresentationAccess.downloads.findDownloadedCover(target)?.uriString }
+            },
+            downloadedUrl = {
+                readCoverStorage(target) { EsjzoneUrls.coverOrEmpty(PresentationAccess.downloads.manifest(target)?.coverUrl) }
+            },
+            cachedImage = { url ->
+                (loadImage(url, network = false) as? SuccessResult)?.image?.let(::AppLoadedImage)
+            },
+            remoteImage = if (allowNetwork) loadRemoteImage else null,
+            detail = { loadDetailCover(activity, target) }
+        )
     }
 
-    fun loadCover(activity: LocalReadingActivity) {
-        if (EsjzoneUrls.coverOrEmpty(activity.novelCoverUrl).isNotBlank()) return
-        val target = coverLookupUrl(activity)
-        val key = coverKey(target)
-        if (key.isBlank() || !synchronized(coverLock) {
-            val lastFailure = coverFailureTimes[key] ?: 0L
-            if (key in requestedCovers || System.currentTimeMillis() - lastFailure < 5 * 60_000L) {
-                false
-            } else requestedCovers.add(key)
-        }) return
-        viewModelScope.launch(Dispatchers.IO) {
-            withContext(Dispatchers.Main) {
-                resolvedCovers[key] = CoverSource(state = CoverState.Resolving)
-            }
-            try {
-                val detail = coverPermits.withPermit {
-                    PresentationAccess.client.getNovelDetail(authorization, FavoriteNovel(activity.novelName, target))
-                }
-                com.breakyuna.esjzone.database.NovelTitleRepository.repair(activity.novelId, target, detail.name)
-                val cover = EsjzoneUrls.coverOrEmpty(detail.coverUrl)
-                withContext(Dispatchers.Main) {
-                    resolvedCovers[key] = CoverSource.fromUrl(cover)
-                }
-                if (cover.isNotBlank()) {
-                    runCatching { PresentationAccess.database.localReadingActivityDao().updateCover(activity.activityId, cover) }
-                } else synchronized(coverLock) {
-                    requestedCovers.remove(key)
-                    coverFailureTimes[key] = System.currentTimeMillis()
-                }
-            } catch (e: CancellationException) {
-                synchronized(coverLock) { requestedCovers.remove(key) }
-                throw e
-            } catch (e: Exception) {
-                synchronized(coverLock) {
-                    requestedCovers.remove(key)
-                    coverFailureTimes[key] = System.currentTimeMillis()
-                }
-                withContext(Dispatchers.Main) {
-                    resolvedCovers[key] = CoverSource(state = CoverState.Failed(e.coverFailure()))
-                }
-                AppLogger.w("LocalHistoryPageModel", "Failed to recover local history cover", e)
-            }
+    private suspend fun <T> readCoverStorage(target: String, read: suspend () -> T?): T? {
+        if (target.isBlank()) return null
+        return try {
+            withContext(Dispatchers.IO) { read() }
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Exception) {
+            AppLogger.w("LocalHistoryPageModel", "Unable to read local cover metadata", error)
+            null
         }
     }
 
-    private fun coverLookupUrl(activity: LocalReadingActivity): String =
-        activity.novelUrl.trim().takeIf { it.isNotBlank() }?.let { EsjzoneUrls.resolve(it) }
-            ?: activity.novelId.trim().takeIf(String::isNotBlank)?.let { "/detail/$it.html" }.orEmpty()
-    private fun coverKey(url: String): String = EsjzoneUrls.canonicalPageKey(url).ifBlank { url.trim() }
+    private suspend fun loadDetailCover(activity: LocalReadingActivity, target: String): CoverSource {
+        if (target.isBlank()) return CoverSource()
+        val key = BookshelfRepository.keyFor(target)
+        return coverPermits.withPermit {
+            detailCovers[key]?.let { (time, source) ->
+                if (source.url.isNotBlank() || System.currentTimeMillis() - time < 5 * 60_000L) return@withPermit source
+            }
+            val source = try {
+                val detail = cancellablePageRequest {
+                    PresentationAccess.client.getNovelDetail(authorization, FavoriteNovel(activity.novelName, target))
+                }
+                val result = CoverSource.fromUrl(detail.coverUrl)
+                viewModelScope.launch(Dispatchers.IO) {
+                    if (result.url.isNotBlank()) readCoverStorage(target) {
+                        PresentationAccess.database.localReadingActivityDao()
+                            .updateCoverIfUnchanged(activity.activityId, activity.novelCoverUrl, result.url)
+                    }
+                    NovelTitleRepository.repair(activity.novelId, target, detail.name)
+                }
+                result
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                AppLogger.w("LocalHistoryPageModel", "Failed to recover local history cover", e)
+                CoverSource(state = CoverState.Failed(e.coverFailure()))
+            }
+            detailCovers[key] = System.currentTimeMillis() to source
+            source
+        }
+    }
+
+    private fun coverLookupUrl(activity: LocalReadingActivity): String = EsjzoneUrls.resolve(activity.novelUrl)
+        .ifBlank { activity.novelId.trim().takeIf(String::isNotBlank)?.let { "/detail/$it.html" }.orEmpty() }
 }

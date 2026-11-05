@@ -505,6 +505,7 @@ private fun LegacyRoute.restore(): AppDestination? = when (this) {
         token == com.breakyuna.esjzone.ui.page.OpenSourceLicensesPage.key -> com.breakyuna.esjzone.ui.page.OpenSourceLicensesPage
         token == "StorageLocationPage" -> SettingsPage
         token == SettingsPage.key || token.endsWith(".SettingsPage") -> SettingsPage
+        token == com.breakyuna.esjzone.ui.page.ReaderBackgroundPage.key -> com.breakyuna.esjzone.ui.page.ReaderBackgroundPage
         token == ReadingStatisticsPage.key || token.endsWith(".ReadingStatisticsPage") -> ReadingStatisticsPage
         token == ForumPage.key || token.endsWith(".ForumPage") -> ForumPage
         token == GuestbookPage.key || token.endsWith(".GuestbookPage") -> GuestbookPage

@@ -5,36 +5,44 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
-import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.interaction.DragInteraction
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Brightness4
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.outlined.Image
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.selected
 import com.breakyuna.esjzone.ui.designsystem.globalStringResource as stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import com.breakyuna.esjzone.R
-import com.breakyuna.esjzone.AppThemeMode
-import com.breakyuna.esjzone.app.PresentationAccess
 import com.breakyuna.esjzone.ui.designsystem.AppShapes
 import com.breakyuna.esjzone.ui.designsystem.AppSpacing
+import com.breakyuna.esjzone.ui.designsystem.AppTouchTarget
 import com.breakyuna.esjzone.ui.designsystem.GlobalText as Text
 import com.breakyuna.esjzone.ui.reader.*
 import kotlinx.coroutines.launch
@@ -46,19 +54,16 @@ internal fun ReaderSettingsSheet(
     settings: ReaderSettings,
     onSettingsChange: (ReaderSettings) -> Unit,
     onDismiss: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    customImageAvailable: Boolean? = false,
+    onConfigureImage: () -> Unit = {},
+    systemThemeSelected: Boolean = true,
+    onFollowSystemTheme: () -> Unit = {}
 ) {
     val tabPager = rememberPagerState(pageCount = { 3 })
     val scope = rememberCoroutineScope()
     var draft by remember(settings) { mutableStateOf(settings) }
     var confirmReset by remember { mutableStateOf(false) }
-    val themeMode by PresentationAccess.settings.themeMode
-    val systemDark = isSystemInDarkTheme()
-    val darkTheme = when (themeMode) {
-        AppThemeMode.SYSTEM -> systemDark
-        AppThemeMode.LIGHT -> false
-        AppThemeMode.DARK -> true
-    }
     fun commit(value: ReaderSettings) {
         draft = value
         onSettingsChange(value)
@@ -102,45 +107,28 @@ internal fun ReaderSettingsSheet(
                     if (tab == 0) {
                         ReaderAppearanceSection(stringResource(R.string.reader_background)) {
                             Row(
-                                Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                                horizontalArrangement = Arrangement.spacedBy(AppSpacing.sm),
+                                Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).selectableGroup(),
+                                horizontalArrangement = Arrangement.spacedBy(AppSpacing.xs),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                ReaderAppearanceChip(
-                                    selected = draft.background == ReaderBackground.SYSTEM && themeMode == AppThemeMode.SYSTEM,
-                                    onClick = {
-                                        PresentationAccess.settings.setThemeMode(AppThemeMode.SYSTEM)
-                                        commit(draft.copy(background = ReaderBackground.SYSTEM))
-                                    },
-                                    label = { Text(stringResource(R.string.reader_background_system)) }
-                                )
-                                ReaderAppearanceChip(
-                                    selected = draft.background == ReaderBackground.SYSTEM && themeMode != AppThemeMode.SYSTEM,
-                                    onClick = {
-                                        PresentationAccess.settings.setThemeMode(
-                                            if (darkTheme) AppThemeMode.LIGHT else AppThemeMode.DARK
-                                        )
-                                        commit(draft.copy(background = ReaderBackground.SYSTEM))
-                                    },
-                                    label = {
-                                        Text(stringResource(
-                                            if (darkTheme) R.string.reader_theme_switch_light else R.string.reader_theme_switch_dark
-                                        ))
-                                    },
-                                    leadingIcon = { Icon(Icons.Default.Brightness4, null, Modifier.size(18.dp)) }
-                                )
-                                ReaderBackground.entries.filterNot { it == ReaderBackground.SYSTEM }.forEach { background ->
-                                    ReaderAppearanceChip(
-                                        selected = draft.background == background,
-                                        onClick = { commit(draft.copy(background = background)) },
-                                        label = { Text(stringResource(background.label())) },
-                                        leadingIcon = {
-                                            Surface(
-                                                color = background.containerColor(),
-                                                border = BorderStroke(1.dp, background.contentColor().copy(alpha = 0.3f)),
-                                                shape = CircleShape
-                                            ) { Spacer(Modifier.size(18.dp)) }
-                                        }
+                                ReaderBackground.entries.forEach { background ->
+                                    ReaderBackgroundSwatch(
+                                        background = background,
+                                        selected = draft.background == background &&
+                                            (background != ReaderBackground.SYSTEM || systemThemeSelected) &&
+                                            (background != ReaderBackground.CUSTOM_IMAGE || customImageAvailable == true),
+                                        enabled = background != ReaderBackground.CUSTOM_IMAGE || customImageAvailable != null,
+                                        onClick = {
+                                            when {
+                                                background == ReaderBackground.CUSTOM_IMAGE && customImageAvailable == false ->
+                                                    onConfigureImage()
+                                                else -> {
+                                                    if (background == ReaderBackground.SYSTEM) onFollowSystemTheme()
+                                                    commit(draft.copy(background = background))
+                                                }
+                                            }
+                                        },
+                                        onLongClick = onConfigureImage.takeIf { background == ReaderBackground.CUSTOM_IMAGE }
                                     )
                                 }
                             }
@@ -186,15 +174,7 @@ internal fun ReaderSettingsSheet(
                                 ReaderPageAnimation.COVER to stringResource(R.string.reader_page_animation_cover)
                             ), tonal = true) { commit(draft.copy(pageAnimation = it)) }
                         }
-                        Surface(
-                            modifier = Modifier.fillMaxWidth(),
-                            shape = AppShapes.standard,
-                            color = MaterialTheme.colorScheme.surfaceContainerLow
-                        ) {
-                            Column(Modifier.padding(AppSpacing.md)) {
-                                ReaderLayoutSlider(draft, settings, ::commit) { draft = it }
-                            }
-                        }
+                        ReaderLayoutSlider(draft, settings, ::commit) { draft = it }
                     } else if (tab == 1) {
                         ReaderToggle(stringResource(R.string.reader_show_system_status), draft.showSystemStatusBar) { commit(draft.copy(showSystemStatusBar = it)) }
                         ReaderToggle(stringResource(R.string.reader_show_system_navigation), draft.showSystemNavigationBar) { commit(draft.copy(showSystemNavigationBar = it)) }
@@ -249,14 +229,12 @@ private fun ReaderAppearanceSection(title: String, content: @Composable ColumnSc
 private fun ReaderAppearanceChip(
     selected: Boolean,
     onClick: () -> Unit,
-    label: @Composable () -> Unit,
-    leadingIcon: (@Composable () -> Unit)? = null
+    label: @Composable () -> Unit
 ) {
     FilterChip(
         selected = selected,
         onClick = onClick,
         label = label,
-        leadingIcon = leadingIcon,
         shape = AppShapes.compact,
         border = null,
         colors = FilterChipDefaults.filterChipColors(
@@ -265,6 +243,48 @@ private fun ReaderAppearanceChip(
             selectedLabelColor = MaterialTheme.colorScheme.onSecondaryContainer
         )
     )
+}
+
+@Composable
+private fun ReaderBackgroundSwatch(
+    background: ReaderBackground,
+    selected: Boolean,
+    enabled: Boolean,
+    onClick: () -> Unit,
+    onLongClick: (() -> Unit)? = null
+) {
+    val label = stringResource(background.label())
+    val isSystem = background == ReaderBackground.SYSTEM
+    val fill = if (isSystem) {
+        if (isSystemInDarkTheme()) Color.Black else Color.White
+    } else background.containerColor()
+    val foreground = if (isSystem) {
+        if (fill == Color.Black) Color.White else Color.Black
+    } else background.contentColor()
+    Box(
+        modifier = Modifier.size(AppTouchTarget.minimum)
+            .clip(CircleShape)
+            .combinedClickable(enabled = enabled, role = Role.RadioButton, onClick = onClick, onLongClick = onLongClick)
+            .semantics { this.selected = selected }
+            .then(if (isSystem) Modifier else Modifier.semantics { contentDescription = label }),
+        contentAlignment = Alignment.Center
+    ) {
+        if (selected) {
+            Box(Modifier.size(46.dp).border(2.dp, MaterialTheme.colorScheme.primary, CircleShape))
+        }
+        Box(
+            modifier = Modifier.size(40.dp)
+                .background(fill, CircleShape)
+                .border(2.dp, foreground, CircleShape),
+            contentAlignment = Alignment.Center
+        ) {
+            if (isSystem) {
+                Text(label, color = foreground, style = MaterialTheme.typography.labelSmall, maxLines = 1)
+            } else if (background == ReaderBackground.CUSTOM_IMAGE) {
+                Icon(Icons.Outlined.Image, contentDescription = null, tint = foreground, modifier = Modifier.size(20.dp))
+            }
+        }
+    }
 }
 
 @Composable
@@ -280,15 +300,15 @@ private fun ReaderLayoutSlider(
         R.string.reader_page_spacing, R.string.reader_horizontal_padding
     )
     var index by androidx.compose.runtime.saveable.rememberSaveable { mutableIntStateOf(0) }
-    FlowRow(
-        modifier = Modifier.fillMaxWidth(),
+    Row(
+        modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
         horizontalArrangement = Arrangement.spacedBy(AppSpacing.xs)
     ) {
         labels.forEachIndexed { option, label ->
             ReaderAppearanceChip(
                 selected = index == option,
                 onClick = { index = option },
-                label = { Text(stringResource(label)) }
+                label = { Text(stringResource(label), maxLines = 1) }
             )
         }
     }
@@ -374,6 +394,7 @@ private fun ReaderBackground.label(): Int = when (this) {
     ReaderBackground.LAVENDER -> R.string.reader_background_lavender
     ReaderBackground.SLATE -> R.string.reader_background_slate
     ReaderBackground.OLED -> R.string.reader_background_oled
+    ReaderBackground.CUSTOM_IMAGE -> R.string.reader_background_image
 }
 
 @Composable

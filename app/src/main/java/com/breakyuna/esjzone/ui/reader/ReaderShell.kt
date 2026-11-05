@@ -25,6 +25,7 @@ import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.input.pointer.pointerInput
@@ -65,6 +66,7 @@ fun ReaderShell(
     verticalContentScrollable: Boolean = false,
     bookmarkPullEnabled: Boolean = false,
     onBookmarkPull: () -> Unit = {},
+    backgroundPainter: Painter? = null,
     content: @Composable BoxScope.() -> Unit
 ) {
     val haptics by rememberUpdatedState(LocalHapticFeedback.current)
@@ -184,7 +186,7 @@ fun ReaderShell(
         Box(
             modifier = Modifier.fillMaxSize()
                 .graphicsLayer { translationY = pullTranslation }
-                .background(background),
+                .readerBackdrop(background, backgroundPainter),
             content = content
         )
     }

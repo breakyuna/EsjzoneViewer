@@ -12,6 +12,8 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Switch
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Image
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -27,16 +29,23 @@ import com.breakyuna.esjzone.ui.reader.ReaderSettings
 import com.breakyuna.esjzone.ui.designsystem.AppShapes
 import com.breakyuna.esjzone.ui.designsystem.AppSpacing
 import com.breakyuna.esjzone.ui.designsystem.AppTypography
+import com.breakyuna.esjzone.ui.navigation.LocalBaseNavigator
 
 @Composable
 internal fun ReaderMoreSettingsContent(
     settings: ReaderSettings,
     onSettingsChange: (ReaderSettings) -> Unit
 ) {
+    val navigator = LocalBaseNavigator.current
     var draft by remember(settings) { mutableStateOf(settings) }
     fun commit(value: ReaderSettings) {
         draft = value
         onSettingsChange(value)
+    }
+    SettingsSection {
+        LinkRow(Icons.Outlined.Image, stringResource(R.string.reader_background_image)) {
+            navigator?.pushIfNotCurrent(ReaderBackgroundPage)
+        }
     }
     SettingsSection(title = stringResource(R.string.reader_more_controls)) {
         MoreReaderToggle(stringResource(R.string.reader_long_press_underline), draft.longPressUnderline) {

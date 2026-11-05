@@ -533,8 +533,6 @@
     <string name="reader_reset">恢复默认</string>
     <string name="reader_background">背景颜色</string>
     <string name="reader_background_system">系统</string>
-    <string name="reader_theme_switch_light">切换应用为浅色模式</string>
-    <string name="reader_theme_switch_dark">切换应用为深色模式</string>
     <string name="reader_background_paper">纸张</string>
     <string name="reader_background_sepia">护眼</string>
     <string name="reader_background_dark">深色</string>
@@ -939,4 +937,15 @@
     <string name="reader_boundary_failed">章节加载失败，当前正文已保留</string>
     <string name="reader_setting_decrease">减小数值</string>
     <string name="reader_setting_increase">增大数值</string>
+    <string name="reader_background_image">自定义图片</string>
+    <string name="reader_background_choose_image">选择图片</string>
+    <string name="reader_background_apply">应用</string>
+    <string name="reader_background_blur">模糊程度</string>
+    <string name="reader_background_text_color">文字颜色</string>
+    <string name="reader_background_custom_color">自定义文字颜色</string>
+    <string name="reader_background_color_value">文字颜色 %1$s</string>
+    <string name="reader_background_preview_title">光落在书页上</string>
+    <string name="reader_background_preview_text">午后的风穿过半开的窗，轻轻翻动桌上的书页。远处的树影随风摇晃，阳光在纸面留下细碎的光斑。\n\n她停在这一行，听见街角传来熟悉的脚步声。故事才刚刚开始，而时间似乎愿意在此刻走得慢一些。</string>
+    <string name="reader_background_image_failed">无法读取图片，请选择 32 MB 以内的有效图片后重试</string>
+    <string name="reader_background_save_failed">背景保存失败，请重试</string>
 </resources>

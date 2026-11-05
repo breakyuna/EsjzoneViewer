@@ -28,6 +28,7 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.unit.dp
 import coil3.Image
 import coil3.ImageLoader
+import coil3.asImage
 import coil3.memory.MemoryCache
 import coil3.request.ImageRequest
 import coil3.request.CachePolicy
@@ -39,9 +40,13 @@ import com.breakyuna.esjzone.ui.designsystem.AppCoverImage
 import com.breakyuna.esjzone.ui.designsystem.AppLoadedImage
 import com.breakyuna.esjzone.ui.designsystem.CachedCoverImage
 import com.breakyuna.esjzone.ui.page.rememberNovelDetailTransitionSettled
+import com.breakyuna.esjzone.ui.page.HistoryShelfCover
+import com.breakyuna.esjzone.ui.page.LocalHistoryCover
+import com.breakyuna.esjzone.ui.page.resolveLocalHistoryCover
 import com.breakyuna.esjzone.ui.component.AppNovelCover
 import com.breakyuna.esjzone.network.EsjzoneUrls
 import com.breakyuna.esjzone.novellibrary.novel.CoverFailure
+import com.breakyuna.esjzone.novellibrary.novel.CoverSource
 import com.breakyuna.esjzone.novellibrary.novel.CoverState
 import com.breakyuna.esjzone.ui.navigation.ContainerTransformDestination
 import com.breakyuna.esjzone.ui.navigation.ContainerTransformLayout
@@ -84,6 +89,79 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 class CachedCoverInstrumentedTest {
     @get:Rule val composeRule = createComposeRule()
+
+    @Test fun historyUsesDownloadedCoverWhenShelfThumbnailCannotDecode() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val loader = ImageLoader.Builder(context).build()
+        val broken = File.createTempFile("history-shelf-", ".png", context.cacheDir)
+        val downloaded = File.createTempFile("history-download-", ".png", context.cacheDir)
+        try {
+            broken.writeText("invalid image")
+            writeCover(downloaded, Color.BLUE)
+            val result = resolveLocalHistoryCover(
+                stored = "",
+                shelf = { HistoryShelfCover(broken.toURI().toString(), "") },
+                downloadedFile = { downloaded.toURI().toString() },
+                downloadedUrl = { error("A decoded download cover should skip the manifest") },
+                cachedImage = { model ->
+                    val request = ImageRequest.Builder(context).data(model).allowHardware(false)
+                        .networkCachePolicy(CachePolicy.DISABLED).build()
+                    (loader.execute(request) as? SuccessResult)?.image?.let(::AppLoadedImage)
+                },
+                detail = { error("A downloaded cover should skip detail lookup") }
+            )
+            assertEquals(Color.BLUE, requireNotNull(result.image).image.toBitmap().getPixel(0, 0))
+        } finally {
+            broken.delete()
+            downloaded.delete()
+            loader.shutdown()
+        }
+    }
+
+    @Test fun cachedHistoryCoverSkipsShelfAndDownloadStorage() = runBlocking {
+        val stored = "https://images.example.org/book.png"
+        val bitmap = Bitmap.createBitmap(1, 1, Bitmap.Config.ARGB_8888)
+        try {
+            val image = AppLoadedImage(bitmap.asImage())
+            val result = resolveLocalHistoryCover(
+                stored = stored,
+                shelf = { error("A cached history cover should skip the shelf lookup") },
+                downloadedFile = { error("A cached history cover should skip the download lookup") },
+                downloadedUrl = { error("A cached history cover should skip the manifest") },
+                cachedImage = { url -> image.takeIf { url == stored } },
+                remoteImage = { error("A cached history cover should skip the network") },
+                detail = { error("A cached history cover should skip detail lookup") }
+            )
+            assertSame(image, result.image)
+        } finally {
+            bitmap.recycle()
+        }
+    }
+
+    @Test fun historyUsesManifestCoverWhenOlderRemoteAddressesFail() = runBlocking {
+        val oldCover = "https://images.example.org/old.png"
+        val shelfCover = "https://images.example.org/shelf.png"
+        val manifestCover = "https://images.example.org/book.png"
+        val bitmap = Bitmap.createBitmap(1, 1, Bitmap.Config.ARGB_8888)
+        try {
+            val image = AppLoadedImage(bitmap.asImage())
+            val result = resolveLocalHistoryCover(
+                stored = oldCover,
+                shelf = { HistoryShelfCover(null, shelfCover) },
+                downloadedFile = { null },
+                downloadedUrl = { manifestCover },
+                cachedImage = { null },
+                remoteImage = { url ->
+                    if (url == manifestCover) LocalHistoryCover(CoverSource(), image)
+                    else LocalHistoryCover(CoverSource(state = CoverState.Failed(CoverFailure.NETWORK)))
+                },
+                detail = { error("A working manifest cover should skip detail lookup") }
+            )
+            assertSame(image, result.image)
+        } finally {
+            bitmap.recycle()
+        }
+    }
 
     @Test fun missingUnknownAndFailedSourcesKeepTheTransferredCover() {
         val context = ApplicationProvider.getApplicationContext<Context>()

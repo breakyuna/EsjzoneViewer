@@ -84,6 +84,13 @@ class NavigationRouteContractTest {
     }
 
     @Test
+    fun readerBackgroundRouteRestoresWithoutAnInMemoryRegistry() {
+        val navigator = com.breakyuna.esjzone.ui.navigation.AppNavigator(mutableListOf(), mutableMapOf())
+        assertEquals(com.breakyuna.esjzone.ui.page.ReaderBackgroundPage,
+            navigator.destination(LegacyRoute.Static("ReaderBackgroundPage")))
+    }
+
+    @Test
     fun featureRoutesAreStableValueObjects() {
         assertEquals(LegacyRoute.Search("keyword"), LegacyRoute.Search("keyword"))
         assertNotEquals(LegacyRoute.Search("keyword"), LegacyRoute.Search("other"))

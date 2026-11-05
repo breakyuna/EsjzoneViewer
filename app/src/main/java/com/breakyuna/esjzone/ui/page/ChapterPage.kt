@@ -54,11 +54,8 @@ import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Forum
-import androidx.compose.material.icons.filled.List
 import androidx.compose.material.icons.filled.ChevronLeft
 import androidx.compose.material.icons.filled.ChevronRight
-import androidx.compose.material.icons.automirrored.filled.MenuBook
 import androidx.compose.material.icons.automirrored.filled.Undo
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.CircularProgressIndicator
@@ -80,9 +77,6 @@ import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.BookmarkBorder
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Brightness6
-import androidx.compose.material.icons.filled.DarkMode
-import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material3.IconButtonDefaults
 import com.breakyuna.esjzone.ui.reader.ReaderPageTurnQueue
 import com.breakyuna.esjzone.ui.reader.animateReaderPageTurn
@@ -92,6 +86,8 @@ import com.breakyuna.esjzone.ui.reader.ReaderSidePanels
 import com.breakyuna.esjzone.ui.reader.rememberReaderSidePanelsState
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.breakyuna.esjzone.ui.reader.ReaderBackground
+import com.breakyuna.esjzone.ui.reader.rememberReaderImageBackdrop
+import com.breakyuna.esjzone.ui.reader.readerBackdrop
 import com.breakyuna.esjzone.ui.reader.ReaderBrightness
 import com.breakyuna.esjzone.ui.reader.ReaderKeepScreenOn
 import androidx.compose.runtime.Composable
@@ -282,7 +278,19 @@ class ChapterPage(
         }
         ReaderBrightness(window, readerSettings.brightness)
         ReaderKeepScreenOn(window, readerSettings.keepScreenOn)
-        val isLightBackground = readerSettings.background.containerColor().luminance() > 0.5f
+        var showReaderSettings by rememberSaveable {
+            mutableStateOf(false)
+        }
+        val imageBackground by PresentationAccess.readerSettings.imageBackground.collectAsState()
+        val customBackground = readerSettings.background == ReaderBackground.CUSTOM_IMAGE
+        val readerContentColor = if (customBackground) Color(imageBackground.textColor)
+            else readerSettings.background.contentColor()
+        val readerBackgroundColor = if (customBackground) {
+            if (readerContentColor.luminance() < 0.5f) Color.White else Color(0xFF121212)
+        } else readerSettings.background.containerColor()
+        val imageBackdrop = rememberReaderImageBackdrop(imageBackground, customBackground || showReaderSettings)
+        val backgroundPainter = imageBackdrop.painter.takeIf { customBackground }
+        val isLightBackground = readerBackgroundColor.luminance() > 0.5f
         val appThemeMode by PresentationAccess.settings.themeMode
         val systemDark = isSystemInDarkTheme()
         val appIsLight = when (appThemeMode) {
@@ -302,14 +310,10 @@ class ChapterPage(
             }
         }
 
-        var showReaderSettings by rememberSaveable {
-            mutableStateOf(false)
-        }
         var showReaderContents by rememberSaveable {
             mutableStateOf(false)
         }
         var showBrightness by rememberSaveable { mutableStateOf(false) }
-        var lightReaderBackground by rememberSaveable { mutableStateOf(ReaderBackground.SYSTEM) }
         var isBookmarked by rememberSaveable { mutableStateOf(false) }
         var bookmarkStateUrl by remember { mutableStateOf<String?>(null) }
         var updatingBookmark by remember { mutableStateOf(false) }
@@ -321,7 +325,6 @@ class ChapterPage(
             lineHeight = readerSettings.lineHeightSp.sp,
             letterSpacing = readerSettings.letterSpacingSp.sp
         )
-        val readerContentColor = readerSettings.background.contentColor()
 
         fun updateReaderSettings(settings: ReaderSettings) {
             readerSettings = settings
@@ -1813,7 +1816,8 @@ class ChapterPage(
             }
         ) {
             ReaderShell(
-                background = readerSettings.background.containerColor(),
+                background = readerBackgroundColor,
+                backgroundPainter = backgroundPainter,
                 pagedGesturesEnabled = pagedMode && (pagingEnabled || pagedTurns.hasTurns),
                 verticalContentScrollable = pagerVisibleItem?.page?.isOversized == true,
                 bookmarkPullEnabled = !updatingBookmark && pagedMode && pagingEnabled && readerSettings.pagedBookmarkGesturesEnabled &&
@@ -2119,14 +2123,15 @@ class ChapterPage(
                 }
                     } else {
                         val coverAnimation = readerSettings.pageAnimation == ReaderPageAnimation.COVER
+                        val fullPageBackground = coverAnimation || customBackground
                         HorizontalPager(
                             state = horizontalPagerState,
                             // Cover pages carry their margins inside the animated background.
                             // Other modes keep glyph overhang in the pager's outer margins.
                             contentPadding = androidx.compose.foundation.layout.PaddingValues(
-                                horizontal = if (coverAnimation) 0.dp else readerSettings.horizontalPaddingDp.dp
+                                horizontal = if (fullPageBackground) 0.dp else readerSettings.horizontalPaddingDp.dp
                             ),
-                            pageSpacing = if (coverAnimation) 0.dp else readerSettings.horizontalPaddingDp.dp * 2,
+                            pageSpacing = if (fullPageBackground) 0.dp else readerSettings.horizontalPaddingDp.dp * 2,
                             key = { index -> currentPagedDisplayItems.getOrNull(index)?.key ?: index },
                             userScrollEnabled = pagingEnabled && !pagedTurns.hasTurns,
                             beyondViewportPageCount = if (readerSettings.pageAnimation == ReaderPageAnimation.HORIZONTAL_SLIDE) 0 else 1,
@@ -2166,10 +2171,10 @@ class ChapterPage(
                                                 else -> Unit
                                             }
                                         }
-                                        .background(readerSettings.background.containerColor())
+                                        .readerBackdrop(readerBackgroundColor, backgroundPainter)
                                         .padding(
-                                            start = if (coverAnimation) readerSettings.horizontalPaddingDp.dp else 0.dp,
-                                            end = if (coverAnimation) readerSettings.horizontalPaddingDp.dp else 0.dp,
+                                            start = if (fullPageBackground) readerSettings.horizontalPaddingDp.dp else 0.dp,
+                                            end = if (fullPageBackground) readerSettings.horizontalPaddingDp.dp else 0.dp,
                                             top = pageTopPadding,
                                             bottom = pageBottomPadding
                                         )
@@ -2468,7 +2473,7 @@ class ChapterPage(
                                     val active = when (tool) {
                                         ReaderTool.BOOKMARK -> isBookmarked
                                         ReaderTool.EYE_PROTECTION -> readerSettings.eyeProtectionEnabled
-                                        ReaderTool.DARK_MODE -> !isLightBackground
+                                        ReaderTool.DARK_MODE -> !appIsLight
                                         ReaderTool.BRIGHTNESS -> readerSettings.brightness >= 0f
                                         else -> false
                                     }
@@ -2476,16 +2481,7 @@ class ChapterPage(
                                         ReaderToolButton(
                                             contentDescription = stringResource(if (tool == ReaderTool.BOOKMARK && isBookmarked)
                                                 R.string.reader_remove_bookmark else tool.label()),
-                                            icon = when (tool) {
-                                                ReaderTool.CONTENTS -> Icons.Filled.List
-                                                ReaderTool.SETTINGS -> Icons.Filled.Settings
-                                                ReaderTool.BOOKMARK -> if (isBookmarked) Icons.Filled.Bookmark else Icons.Filled.BookmarkBorder
-                                                ReaderTool.COMMENTS -> Icons.Filled.Forum
-                                                ReaderTool.NOVEL_DETAIL -> Icons.AutoMirrored.Filled.MenuBook
-                                                ReaderTool.EYE_PROTECTION -> Icons.Filled.Visibility
-                                                ReaderTool.BRIGHTNESS -> Icons.Filled.Brightness6
-                                                ReaderTool.DARK_MODE -> Icons.Filled.DarkMode
-                                            },
+                                            icon = tool.icon(isBookmarked),
                                             selected = active,
                                             enabled = when (tool) {
                                                 ReaderTool.BOOKMARK -> !updatingBookmark && state is ChapterPageModel.State.Result && bookmarkStateUrl == bookmarkChapterUrl
@@ -2511,13 +2507,11 @@ class ChapterPage(
                                                         showBrightness = true
                                                     }
                                                     ReaderTool.DARK_MODE -> {
-                                                        if (isLightBackground) {
-                                                            lightReaderBackground = readerSettings.background
-                                                            updateReaderSettings(readerSettings.copy(background = ReaderBackground.DARK))
-                                                        } else {
-                                                            val restored = if (lightReaderBackground == ReaderBackground.SYSTEM && !appIsLight)
-                                                                ReaderBackground.PAPER else lightReaderBackground
-                                                            updateReaderSettings(readerSettings.copy(background = restored))
+                                                        PresentationAccess.settings.setThemeMode(
+                                                            if (appIsLight) AppThemeMode.DARK else AppThemeMode.LIGHT
+                                                        )
+                                                        if (readerSettings.background != ReaderBackground.SYSTEM) {
+                                                            updateReaderSettings(readerSettings.copy(background = ReaderBackground.SYSTEM))
                                                         }
                                                     }
                                                 }
@@ -2627,6 +2621,15 @@ class ChapterPage(
             ReaderSettingsSheet(
                 visible = showReaderSettings,
                 settings = readerSettings,
+                customImageAvailable = imageBackdrop.available,
+                systemThemeSelected = appThemeMode == AppThemeMode.SYSTEM,
+                onFollowSystemTheme = {
+                    PresentationAccess.settings.setThemeMode(AppThemeMode.SYSTEM)
+                },
+                onConfigureImage = {
+                    showReaderSettings = false
+                    navigator?.pushIfNotCurrent(ReaderBackgroundPage)
+                },
                 onSettingsChange = { updated ->
                     if (updated.pageAnimation != readerSettings.pageAnimation ||
                         updated.font != readerSettings.font ||

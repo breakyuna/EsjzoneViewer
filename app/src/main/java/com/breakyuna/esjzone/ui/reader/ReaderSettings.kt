@@ -20,7 +20,8 @@ enum class ReaderBackground {
     MINT,
     LAVENDER,
     SLATE,
-    OLED;
+    OLED,
+    CUSTOM_IMAGE;
 
     @Composable
     fun containerColor(): Color = when (this) {
@@ -34,6 +35,7 @@ enum class ReaderBackground {
         LAVENDER -> Color(0xFFF1EFF8)
         SLATE -> Color(0xFF232C35)
         OLED -> Color.Black
+        CUSTOM_IMAGE -> Color(0xFFF5F5F5)
     }
 
     @Composable
@@ -46,6 +48,7 @@ enum class ReaderBackground {
         LAVENDER -> Color(0xFF353149)
         SLATE -> Color(0xFFE0E7EC)
         OLED -> Color(0xFFE5E5E5)
+        CUSTOM_IMAGE -> Color(0xFF202020)
     }
 }
 

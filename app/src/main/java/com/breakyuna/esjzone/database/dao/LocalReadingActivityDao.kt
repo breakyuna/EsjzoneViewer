@@ -80,9 +80,9 @@ interface LocalReadingActivityDao {
 
     @Query(
         "UPDATE local_reading_history SET novel_cover_url = :coverUrl " +
-            "WHERE activity_id = :activityId"
+            "WHERE activity_id = :activityId AND novel_cover_url = :previousCoverUrl"
     )
-    fun updateCover(activityId: String, coverUrl: String)
+    suspend fun updateCoverIfUnchanged(activityId: String, previousCoverUrl: String, coverUrl: String)
 
     @Query("SELECT * FROM local_reading_history WHERE " +
         "(:novelId != '' AND novel_id = :novelId) OR (:novelUrl != '' AND novel_url = :novelUrl) OR " +
