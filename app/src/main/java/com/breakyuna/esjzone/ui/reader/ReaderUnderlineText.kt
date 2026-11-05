@@ -119,7 +119,8 @@ internal fun ReaderUnderlineText(
             zoom = 1.8f, size = DpSize(112.dp, 48.dp), cornerRadius = 12.dp
         )
     }
-    Text(text = displayed, inlineContent = inlineContent, style = style, color = color,
+    val (glowText, glowStyle) = readerGlowTextAppearance(displayed, style)
+    Text(text = glowText, inlineContent = inlineContent, style = glowStyle, color = color,
         overflow = TextOverflow.Visible, onTextLayout = { layout = it; segment.layout = it; onLayout(it) },
         modifier = modifier.then(readerGlowTextModifier(layout)).onGloballyPositioned { segment.coordinates = it }
             .then(magnifierModifier).drawWithCache {

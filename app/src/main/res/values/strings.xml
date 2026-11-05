@@ -545,7 +545,7 @@
     <string name="reader_font_serif">衬线</string>
     <string name="reader_font_monospace">等宽</string>
     <string name="reader_font_sans_serif">无衬线</string>
-    <string name="reader_font_cursive">手写（拉丁）</string>
+    <string name="reader_font_cursive">拉丁</string>
     <string name="reader_font_size">字号</string>
     <string name="reader_letter_spacing">字间距</string>
     <string name="reader_line_spacing">行间距</string>
@@ -943,7 +943,7 @@
     <string name="reader_background_transparency">透明度</string>
     <string name="reader_background_blur">模糊度</string>
     <string name="reader_background_text_color">文字颜色</string>
-    <string name="reader_background_custom_color">自定义文字颜色</string>
+    <string name="reader_background_custom_color">自定义</string>
     <string name="reader_background_color_value">文字颜色 %1$s</string>
     <string name="reader_background_preview_title">光落在书页上</string>
     <string name="reader_background_preview_text">午后的风穿过半开的窗，轻轻翻动桌上的书页。远处的树影随风摇晃，阳光在纸面留下细碎的光斑。\n\n她停在这一行，听见街角传来熟悉的脚步声。故事才刚刚开始，而时间似乎愿意在此刻走得慢一些。</string>
@@ -958,7 +958,7 @@
     <string name="reader_glow_enabled">文字增强（辉光）</string>
     <string name="reader_glow_strength">增强强度</string>
     <string name="reader_glow_reduced">已降低辉光层数以保持流畅</string>
-    <string name="reader_glow_advanced">辉光高级设置</string>
+    <string name="reader_glow_advanced">高级设置</string>
     <string name="reader_glow_mode">光晕模式</string>
     <string name="reader_glow_same_hue">同色相</string>
     <string name="reader_glow_black_white">纯黑白</string>

@@ -291,7 +291,7 @@ fun NovelHero(
                             modifier = titleModifier,
                             style = AppTypography.titleLarge,
                             color = Color.White,
-                            maxLines = 3,
+                            maxLines = 2,
                             overflow = TextOverflow.Ellipsis
                         )
                         NovelMetadata(

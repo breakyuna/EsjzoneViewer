@@ -1,7 +1,10 @@
 package com.breakyuna.esjzone
 
 import android.graphics.Bitmap
+import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -22,6 +25,8 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.breakyuna.esjzone.ui.page.ReaderImageAppearanceControls
 import com.breakyuna.esjzone.ui.reader.*
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.launch
 import org.junit.Assert.*
 import org.junit.Rule
 import org.junit.Test
@@ -122,5 +127,71 @@ class ReaderTextGlowInstrumentedTest {
         }
         val pixels = composeRule.onNodeWithTag("small").captureToImage().toPixelMap()
         for (y in 0 until pixels.height) for (x in 0 until pixels.width) assertEquals(1f, pixels[x, y].red, 0.01f)
+    }
+
+    @Test fun longBodyKeepsPreparedGlowWhenScrollingBackAndForth() {
+        val white = Bitmap.createBitmap(120, 120, Bitmap.Config.ARGB_8888).apply {
+            eraseColor(android.graphics.Color.WHITE)
+        }
+        lateinit var scroll: ScrollState
+        lateinit var scope: CoroutineScope
+        composeRule.setContent {
+            scroll = rememberScrollState()
+            scope = rememberCoroutineScope()
+            ReaderGlowSurface(white, ReaderImageBackground(), Modifier.size(200.dp, 140.dp).testTag("scroll-glow")
+                .readerBackdrop(Color.White, remember { BitmapPainter(white.asImageBitmap()) })) {
+                Column(Modifier.fillMaxSize().verticalScroll(scroll)) {
+                    ReaderGlowBodyText(
+                        text = List(80) { "MMMMMMMM" }.joinToString("\n"),
+                        style = TextStyle(fontSize = 20.sp, lineHeight = 24.sp),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            }
+        }
+        fun darkPixelsNearBottom(): Int {
+            val pixels = composeRule.onNodeWithTag("scroll-glow").captureToImage().toPixelMap()
+            var count = 0
+            for (y in pixels.height * 2 / 3 until pixels.height) for (x in 0 until pixels.width) {
+                if (pixels[x, y].red < 0.8f) count++
+            }
+            return count
+        }
+        val distance = with(composeRule.density) { 60.dp.roundToPx() }
+        composeRule.waitUntil(5_000) { darkPixelsNearBottom() > 20 }
+        composeRule.runOnIdle { scope.launch { scroll.scrollTo(distance) } }
+        composeRule.waitUntil(5_000) { scroll.value == distance && darkPixelsNearBottom() > 20 }
+        composeRule.runOnIdle { scope.launch { scroll.scrollTo(0) } }
+        composeRule.waitUntil(5_000) { scroll.value == 0 && darkPixelsNearBottom() > 20 }
+        composeRule.runOnIdle { scope.launch { scroll.scrollTo(distance) } }
+        composeRule.waitUntil(5_000) { scroll.value == distance }
+        assertTrue("Prepared glow should remain visible while its text moves", darkPixelsNearBottom() > 20)
+    }
+
+    @Test fun changingOneParagraphKeepsTheOtherParagraphEnhanced() {
+        val white = Bitmap.createBitmap(120, 120, Bitmap.Config.ARGB_8888).apply {
+            eraseColor(android.graphics.Color.WHITE)
+        }
+        var second by mutableStateOf("MMMMMMMM")
+        composeRule.setContent {
+            ReaderGlowSurface(white, ReaderImageBackground(), Modifier.size(200.dp, 120.dp).testTag("paragraphs")
+                .readerBackdrop(Color.White, remember { BitmapPainter(white.asImageBitmap()) })) {
+                Column {
+                    ReaderGlowBodyText("MMMMMMMM", TextStyle(fontSize = 20.sp))
+                    ReaderGlowBodyText(second, TextStyle(fontSize = 20.sp))
+                }
+            }
+        }
+        fun firstParagraphDarkPixels(): Int {
+            val pixels = composeRule.onNodeWithTag("paragraphs").captureToImage().toPixelMap()
+            var count = 0
+            for (y in 0 until pixels.height / 3) for (x in 0 until pixels.width) {
+                if (pixels[x, y].red < 0.8f) count++
+            }
+            return count
+        }
+        composeRule.waitUntil(5_000) { firstParagraphDarkPixels() > 20 }
+        composeRule.runOnIdle { second = "A different paragraph with a new layout" }
+        assertTrue("Changing another paragraph should not remove this glow", firstParagraphDarkPixels() > 20)
     }
 }

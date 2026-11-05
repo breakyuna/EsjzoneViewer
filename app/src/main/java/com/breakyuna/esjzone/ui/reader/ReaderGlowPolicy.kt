@@ -3,6 +3,7 @@ package com.breakyuna.esjzone.ui.reader
 import kotlin.math.pow
 
 internal val readerGlowRadiiEm = listOf(0.07f, 0.17f, 0.30f, 0.40f)
+internal const val READER_GLOW_BASE_RADIUS_EM = 0.17f
 internal const val READER_GLOW_ALPHA = 0.9f
 
 internal fun readerPixelLuminance(pixel: Int): Double {
