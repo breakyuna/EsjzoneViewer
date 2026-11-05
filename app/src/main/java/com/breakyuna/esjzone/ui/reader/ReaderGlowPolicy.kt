@@ -1,6 +1,5 @@
 package com.breakyuna.esjzone.ui.reader
 
-import kotlin.math.floor
 import kotlin.math.pow
 
 internal val readerGlowRadiiEm = listOf(0.07f, 0.17f, 0.30f, 0.40f)
@@ -15,10 +14,6 @@ internal fun readerPixelLuminance(pixel: Int): Double {
 }
 
 internal fun readerContrast(a: Double, b: Double): Double = (maxOf(a, b) + 0.05) / (minOf(a, b) + 0.05)
-
-/** Lower fifth percentile: ignore a few worst pixels, rather than taking the best 95th percentile. */
-internal fun readerGlowRequired(samples: List<Double>): Boolean = samples.isNotEmpty() &&
-    samples.sorted()[floor((samples.size - 1) * 0.05).toInt()] < 4.5
 
 /** Two consecutive two-second windows below 45 fps, observed only during actual motion. */
 internal class ReaderGlowFrameTracker {

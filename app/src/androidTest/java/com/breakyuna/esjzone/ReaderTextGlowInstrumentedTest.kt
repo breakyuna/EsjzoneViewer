@@ -12,10 +12,15 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.performClick
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.test.platform.app.InstrumentationRegistry
+import com.breakyuna.esjzone.ui.page.ReaderImageAppearanceControls
 import com.breakyuna.esjzone.ui.reader.*
 import org.junit.Assert.*
 import org.junit.Rule
@@ -25,6 +30,16 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 class ReaderTextGlowInstrumentedTest {
     @get:Rule val composeRule = createComposeRule()
+
+    @Test fun advancedGlowBackButtonReturnsToAppearanceControls() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        composeRule.setContent {
+            ReaderImageAppearanceControls(ReaderImageBackground(), onChange = {})
+        }
+        composeRule.onNodeWithText(context.getString(R.string.reader_glow_advanced)).performClick()
+        composeRule.onNodeWithContentDescription(context.getString(R.string.reader_back)).performClick()
+        composeRule.onNodeWithText(context.getString(R.string.reader_glow_enabled)).assertExists()
+    }
 
     @Test fun oppositeGlowAppearsForBothTextColorsAndDisappearsAtZeroOrWhenDisabled() {
         val white = Bitmap.createBitmap(120, 120, Bitmap.Config.ARGB_8888).apply { eraseColor(android.graphics.Color.WHITE) }
@@ -64,7 +79,7 @@ class ReaderTextGlowInstrumentedTest {
         // Published bitmaps remain owned by Compose until the rule disposes its composition.
     }
 
-    @Test fun mixedBackgroundEnhancesOnlyThePoorContrastRegion() {
+    @Test fun mixedBackgroundEnhancesBothLightAndDarkRegions() {
         val background = Bitmap.createBitmap(240, 120, Bitmap.Config.ARGB_8888)
         for (y in 0 until 120) for (x in 0 until 240) {
             background.setPixel(x, y, if (x < 120) android.graphics.Color.BLACK else android.graphics.Color.WHITE)
@@ -80,18 +95,18 @@ class ReaderTextGlowInstrumentedTest {
         }
         val before = composeRule.onNodeWithTag("mixed").captureToImage().toPixelMap()
         composeRule.runOnIdle { enabled = true }
-        fun enhanced(): Boolean {
+        fun enhancedOnBothSides(): Boolean {
             val after = composeRule.onNodeWithTag("mixed").captureToImage().toPixelMap()
-            for (y in 0 until after.height) for (x in after.width * 3 / 4 until after.width) {
-                if (after[x, y].red < before[x, y].red - 0.05f) return true
+            var leftChanged = false
+            var rightChanged = false
+            for (y in 0 until after.height) for (x in 0 until after.width) {
+                if (kotlin.math.abs(after[x, y].red - before[x, y].red) > 0.05f) {
+                    if (x < after.width / 2) leftChanged = true else rightChanged = true
+                }
             }
-            return false
+            return leftChanged && rightChanged
         }
-        composeRule.waitUntil(5_000) { enhanced() }
-        val after = composeRule.onNodeWithTag("mixed").captureToImage().toPixelMap()
-        for (y in 0 until after.height) for (x in 0 until after.width / 4) {
-            assertEquals(before[x, y].red, after[x, y].red, 0.01f)
-        }
+        composeRule.waitUntil(5_000) { enhancedOnBothSides() }
     }
 
     @Test fun smallBodyAndControlsDoNotAcquireGlow() {

@@ -32,8 +32,6 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.sample
 import kotlinx.coroutines.withContext
-import kotlin.math.floor
-import kotlin.math.max
 import kotlin.math.roundToInt
 
 internal object ReaderGlowQuality {
@@ -141,7 +139,7 @@ internal fun ReaderGlowSurface(
                 layouts.clear()
             } else try {
                 frame = withContext(Dispatchers.Default) {
-                    renderGlow(background, settings, reduced, request, layouts)?.let { GlowFrame(request, it) }
+                    renderGlow(settings, reduced, request, layouts)?.let { GlowFrame(request, it) }
                 }
             } catch (error: CancellationException) { throw error }
             catch (error: Exception) {
@@ -183,16 +181,12 @@ internal fun ReaderGlowSurface(
     }
 }
 
-private suspend fun renderGlow(background: Bitmap, settings: ReaderImageBackground, reduced: Boolean,
+private suspend fun renderGlow(settings: ReaderImageBackground, reduced: Boolean,
     request: GlowRequest, layouts: MutableMap<GlowMaskKey, TextLayoutResult>): Bitmap? {
     val job = currentCoroutineContext()
     val activeLayouts = request.text.mapTo(HashSet()) { it.layout }
     layouts.keys.removeAll { it.layout !in activeLayouts }
-    val scale = max(request.size.width.toFloat() / background.width, request.size.height.toFloat() / background.height)
-    val cropX = (request.size.width - background.width * scale) / 2f
-    val cropY = (request.size.height - background.height * scale) / 2f
     val colors = readerGlowColors(settings)
-    val luminance = readerPixelLuminance(colors.text.toInt())
     val bitmap = Bitmap.createBitmap(request.size.width, request.size.height, Bitmap.Config.ARGB_8888)
     var published = false
     try {
@@ -208,45 +202,18 @@ private suspend fun renderGlow(background: Bitmap, settings: ReaderImageBackgrou
                 val top = text.origin.y + layout.getLineTop(line)
                 val bottom = text.origin.y + layout.getLineBottom(line)
                 if (bottom < 0 || top > request.size.height) continue
-                val cells = linkedMapOf<Pair<Float, Int>, MutableList<Pair<Int, androidx.compose.ui.geometry.Rect>>>()
                 for (offset in layout.getLineStart(line) until layout.getLineEnd(line, visibleEnd = true)) {
                     if (input.text[offset].isWhitespace() || input.text[offset].isLowSurrogate()) continue
                     // Inline ruby has its own body text registration; placeholders contain no glyphs.
                     if (input.placeholders.any { offset in it.start until it.end }) continue
                     val fontSp = glyphFontSp(input, offset)
                     if (!fontSp.isFinite() || fontSp < 13f) continue
-                    val fontPx = with(input.density) { fontSp.sp.toPx() }
                     val bounds = layout.getBoundingBox(offset)
                     if (bounds.width <= 0f) continue
-                    cells.getOrPut(fontSp to floor(bounds.left / (fontPx * 2f)).toInt()) { mutableListOf() }.add(offset to bounds)
-                }
-                for ((cell, bounds) in cells) {
-                    job.ensureActive()
-                    val samples = ArrayList<Double>()
-                    for ((_, glyph) in bounds) {
-                        for (y in 0..4) for (x in 0..4) {
-                            val sx = text.origin.x + glyph.left + glyph.width * (x + 0.5f) / 5f
-                            val sy = text.origin.y + glyph.top + glyph.height * (y + 0.5f) / 5f
-                            if (sx < 0 || sy < 0 || sx >= request.size.width || sy >= request.size.height) continue
-                            val px = ((sx - cropX) / scale).toInt().coerceIn(0, background.width - 1)
-                            val py = ((sy - cropY) / scale).toInt().coerceIn(0, background.height - 1)
-                            val pixel = background.getPixel(px, py)
-                            val opacity = 1f - settings.transparency / 100f
-                            val dimmed = (0xFF shl 24) or
-                                (((pixel shr 16 and 255) * opacity).roundToInt() shl 16) or
-                                (((pixel shr 8 and 255) * opacity).roundToInt() shl 8) or
-                                ((pixel and 255) * opacity).roundToInt()
-                            samples.add(readerContrast(luminance, readerPixelLuminance(dimmed)))
-                        }
-                    }
-                    if (readerGlowRequired(samples)) {
-                        val fontPx = with(input.density) { cell.first.sp.toPx() }
-                        for ((offset, _) in bounds) {
-                            val end = offset + if (input.text[offset].isHighSurrogate() && offset + 1 < input.text.length &&
-                                input.text[offset + 1].isLowSurrogate()) 2 else 1
-                            selected.add(GlowGlyph(offset, end, fontPx))
-                        }
-                    }
+                    val fontPx = with(input.density) { fontSp.sp.toPx() }
+                    val end = offset + if (input.text[offset].isHighSurrogate() && offset + 1 < input.text.length &&
+                        input.text[offset + 1].isLowSurrogate()) 2 else 1
+                    selected.add(GlowGlyph(offset, end, fontPx))
                 }
             }
             val radii = if (reduced) listOf(0.17f, 0.40f) else readerGlowRadiiEm

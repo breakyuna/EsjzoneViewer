@@ -27,13 +27,8 @@ class ReaderImageBackgroundTest {
         assertEquals(0f, invalid.transparency, 0f)
     }
 
-    @Test fun contrastDetectionRejectsPoorRegionsButIgnoresSparseOutliers() {
+    @Test fun contrastAndGlowParameters() {
         assertEquals(21.0, readerContrast(readerPixelLuminance(0xFFFFFFFF.toInt()), readerPixelLuminance(0xFF000000.toInt())), 0.0001)
-        assertFalse(readerGlowRequired(List(100) { 4.5 }))
-        assertTrue(readerGlowRequired(List(100) { 4.49 }))
-        assertFalse(readerGlowRequired(List(4) { 1.0 } + List(96) { 7.0 }))
-        assertTrue(readerGlowRequired(List(20) { 1.0 } + List(80) { 7.0 }))
-        assertFalse(readerGlowRequired(emptyList()))
         assertEquals(listOf(0.07f, 0.17f, 0.30f, 0.40f), readerGlowRadiiEm)
         assertEquals(0.9f, READER_GLOW_ALPHA, 0f)
     }

@@ -110,6 +110,7 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.structuralEqualityPolicy
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.unit.IntSize
@@ -242,6 +243,14 @@ class ChapterPage(
     override fun Content() {
         val navigator = LocalBaseNavigator.current
         val authorization = LocalAuthorization.current
+        val navigationSettled = com.breakyuna.esjzone.ui.navigation.LocalReaderNavigationSettled.current
+        var entryAnimationFinished by remember { mutableStateOf(false) }
+        LaunchedEffect(navigationSettled) {
+            if (!entryAnimationFinished && navigationSettled) {
+                withFrameNanos { }
+                entryAnimationFinished = true
+            }
+        }
 
         val underlineModel = rememberAppViewModel { ReaderUnderlinesModel() }
         val underlines by underlineModel.underlines.collectAsState()
@@ -364,7 +373,7 @@ class ChapterPage(
         var dismissedWenkuPrompt by remember { mutableStateOf<String?>(null) }
         val pendingWenkuVerification = (state as? ChapterPageModel.State.Result)?.verificationChapter
         val pendingWenkuResult = state as? ChapterPageModel.State.Result
-        if (pendingWenkuVerification != null &&
+        if (entryAnimationFinished && pendingWenkuVerification != null &&
             pendingWenkuVerification.url != dismissedWenkuPrompt && wenkuVerificationChapter == null) {
             AlertDialog(
                 onDismissRequest = { dismissedWenkuPrompt = pendingWenkuVerification.url },
@@ -558,6 +567,16 @@ class ChapterPage(
         val previousLoadThreshold = with(LocalDensity.current) { 240.dp.toPx().toInt() }
         val chapterActivationOffset = with(density) { 56.dp.toPx().roundToInt() }
         val result = state as? ChapterPageModel.State.Result
+        var initialScrollPrimed by remember { mutableStateOf(false) }
+        var entryContentRevealed by remember { mutableStateOf(false) }
+        var positionRestoreFailed by remember { mutableStateOf(false) }
+        var positionRestoreAttempt by remember { mutableIntStateOf(0) }
+        val requestedChapterLocked = result?.chapters?.any {
+            sameReaderChapter(it.chapter, requestedChapter.value) && it.requiresPassword
+        } == true
+        val resumePositioning = resumePending && !requestedChapterLocked
+        val windowLoadingAllowed = canLoadReaderWindow(entryContentRevealed, resumePending, requestedChapterLocked) &&
+            pendingSeekLocation == null
         var convertedText by remember { mutableStateOf<ReaderTextSnapshot?>(null) }
         val readerTextTransform: (String) -> String = remember(readerSettings.script, convertedText) {
             val script = readerSettings.script
@@ -687,6 +706,23 @@ class ChapterPage(
         )
         fun readerListIndex(bodyIndex: Int): Int = bodyIndex + readerBodyStartOffset
 
+        // Keep the body out of composition until its first measure has a target.
+        // requestScrollToItem does not need an existing LazyColumn layout.
+        LaunchedEffect(result?.chapters, restoreLookupPending, scriptReady, pagedMode) {
+            if (initialScrollPrimed || result == null || restoreLookupPending || !scriptReady) return@LaunchedEffect
+            val current = result.chapters.firstOrNull { sameReaderChapter(it.chapter, requestedChapter.value) }
+                ?: return@LaunchedEffect
+            if (!pagedMode && resumePending && resolvedResumeProgress != null) {
+                val chapterKey = chapterIdentity(current.chapter)
+                val start = displayItems.indexOfFirst { it.chapterKey == chapterKey }
+                if (start < 0) return@LaunchedEffect
+                val bodyIndex = com.breakyuna.esjzone.ui.reader.readerInitialBodyIndex(
+                    current.document, chapterKey, resolvedResumeProgress, resolvedResumeAnchor)
+                scrollState.requestScrollToItem(readerListIndex(start + bodyIndex))
+            }
+            initialScrollPrimed = true
+        }
+
         // Both prepending and trimming old chapters can move a paragraph beyond
         // LazyColumn's nearby key map. Rebase its key before the next measure.
         val previousScrollHead = remember(scrollState, pagedMode, requestedChapter.value.url) {
@@ -707,7 +743,7 @@ class ChapterPage(
         } else null
         SideEffect {
             previousScrollHead[0] = scrollHead
-            if (scrollWindowAnchor != null && !resumePending && pendingSeekLocation == null &&
+            if (scrollWindowAnchor != null && !resumePositioning && pendingSeekLocation == null &&
                 !isProgrammaticScroll && pendingBoundaryTurn == null) {
                 pendingScrollAnchor = scrollWindowAnchor
                 scrollState.requestScrollToItem(scrollWindowAnchor.index, scrollWindowAnchor.offset)
@@ -1097,8 +1133,8 @@ class ChapterPage(
                 )
             )
         }
-        LaunchedEffect(pagedMode, horizontalPagerState, displayItems, result, paginationReady) {
-            if (!pagedMode || !paginationReady || result == null || displayItems.isEmpty()) return@LaunchedEffect
+        LaunchedEffect(pagedMode, horizontalPagerState, displayItems, result, paginationReady, windowLoadingAllowed) {
+            if (!windowLoadingAllowed || !pagedMode || !paginationReady || result == null || displayItems.isEmpty()) return@LaunchedEffect
             snapshotFlow {
                 horizontalPagerState.currentPage.takeIf { page ->
                     horizontalPagerState.layoutInfo.visiblePagesInfo.any {
@@ -1388,8 +1424,9 @@ class ChapterPage(
         // Prime one previous chapter per requested chapter.  LazyColumn's
         // stable chapter keys preserve the current item's anchor when this
         // item is prepended, so this no longer needs manual height correction.
-        LaunchedEffect(state is ChapterPageModel.State.Result, requestedChapter.value.url) {
+        LaunchedEffect(state is ChapterPageModel.State.Result, requestedChapter.value.url, windowLoadingAllowed) {
             if (
+                windowLoadingAllowed &&
                 state is ChapterPageModel.State.Result &&
                 previousBootstrapFor != requestedChapter.value.url
             ) {
@@ -1456,8 +1493,8 @@ class ChapterPage(
             pendingUnderline = null
         }
 
-        LaunchedEffect(pendingSeekLocation, displayItems, paginationReady, scriptReady, readerBodyStartOffset) {
-            if (!paginationReady || !scriptReady) return@LaunchedEffect
+        LaunchedEffect(pendingSeekLocation, displayItems, paginationReady, scriptReady, readerBodyStartOffset, initialScrollPrimed, entryAnimationFinished, positionRestoreAttempt) {
+            if (!entryAnimationFinished || !initialScrollPrimed || !paginationReady || !scriptReady) return@LaunchedEffect
             val target = pendingSeekLocation ?: return@LaunchedEffect
             val targetKey = chapterIdentity(target.chapter)
             val startIndex = firstItemByChapter[targetKey] ?: return@LaunchedEffect
@@ -1493,52 +1530,75 @@ class ChapterPage(
             val targetIndex = startIndex + (sourceIndex ?: scaled.toInt())
             val targetItemKey = displayItems[targetIndex].key
 
-            isProgrammaticScroll = true
-            try {
+            positionRestoreFailed = false
+            suspend fun restoreParagraph(): Boolean {
                 if (pagedMode) horizontalPagerState.scrollToPage(targetIndex)
                 else scrollState.scrollToItem(readerListIndex(targetIndex))
-                val itemFraction = if (exactAnchor?.kind == "image") exactAnchor.fraction else if (contentPosition != null) {
-                    (contentPosition - (displayItems[targetIndex].ordinal - 1f)).coerceIn(0f, 1f)
-                } else scaled - scaled.toInt()
-                if (exactAnchor?.kind == "text" && !pagedMode) {
-                    val layout = kotlinx.coroutines.withTimeoutOrNull(1500L) {
-                        snapshotFlow { textLayouts[targetItemKey] }.first { it != null }
+                return snapshotFlow {
+                    if (pagedMode) horizontalPagerState.currentPage == targetIndex &&
+                        horizontalPagerState.layoutInfo.visiblePagesInfo.any { it.index == targetIndex && it.key == targetItemKey }
+                    else scrollState.layoutInfo.visibleItemsInfo.any {
+                        it.index == readerListIndex(targetIndex) && it.key == targetItemKey
                     }
-                    val block = displayItems[targetIndex].entry.document.blocks.getOrNull(exactAnchor.blockIndex)
-                    if (layout != null && block != null) {
-                        val offset = if (readerSettings.script == ReaderScript.ORIGINAL) exactAnchor.offset
-                            else textOffsets(block)?.toDisplay(exactAnchor.offset) ?: exactAnchor.offset
-                        val line = layout.getLineForOffset(offset.coerceIn(0, layout.layoutInput.text.length))
-                        scrollState.scrollToItem(readerListIndex(targetIndex), layout.getLineTop(line).roundToInt().coerceAtLeast(0))
+                }.first { it }
+            }
+            isProgrammaticScroll = true
+            var restored = false
+            try {
+                restored = com.breakyuna.esjzone.ui.reader.restoreReaderPosition(exact = {
+                    restoreParagraph()
+                    val itemFraction = if (exactAnchor?.kind == "image") exactAnchor.fraction else if (contentPosition != null) {
+                        (contentPosition - (displayItems[targetIndex].ordinal - 1f)).coerceIn(0f, 1f)
+                    } else scaled - scaled.toInt()
+                    if (exactAnchor?.kind == "text" && !pagedMode) {
+                        val layout = kotlinx.coroutines.withTimeoutOrNull(1500L) {
+                            snapshotFlow { textLayouts[targetItemKey] }.first { it != null }
+                        }
+                        val block = displayItems[targetIndex].entry.document.blocks.getOrNull(exactAnchor.blockIndex)
+                        if (layout != null && block != null) {
+                            val offset = if (readerSettings.script == ReaderScript.ORIGINAL) exactAnchor.offset
+                                else textOffsets(block)?.toDisplay(exactAnchor.offset) ?: exactAnchor.offset
+                            val line = layout.getLineForOffset(offset.coerceIn(0, layout.layoutInput.text.length))
+                            scrollState.scrollToItem(readerListIndex(targetIndex), layout.getLineTop(line).roundToInt().coerceAtLeast(0))
+                        }
+                    } else if (exactAnchor?.kind == "end" && !pagedMode) {
+                        val visible = scrollState.layoutInfo.visibleItemsInfo.firstOrNull { it.key == targetItemKey }
+                        if (visible != null) scrollState.scrollToItem(visible.index, visible.size)
+                    } else if (itemFraction > 0f && !pagedMode) {
+                        val itemSize = kotlinx.coroutines.withTimeoutOrNull(1000L) {
+                            snapshotFlow {
+                                scrollState.layoutInfo.visibleItemsInfo
+                                    .firstOrNull { it.key == targetItemKey }
+                                    ?.let { it.index to it.size }
+                            }.first { layout -> layout?.second?.let { it > 0 } == true }
+                        }
+                        if (itemSize != null) {
+                            scrollState.scrollToItem(
+                                itemSize.first,
+                                (itemSize.second * itemFraction)
+                                    .roundToInt()
+                                    .coerceAtLeast(0)
+                            )
+                        }
                     }
-                } else if (exactAnchor?.kind == "end" && !pagedMode) {
-                    val visible = scrollState.layoutInfo.visibleItemsInfo.firstOrNull { it.key == targetItemKey }
-                    if (visible != null) scrollState.scrollToItem(visible.index, visible.size)
-                } else if (itemFraction > 0f && !pagedMode) {
-                    val itemSize = kotlinx.coroutines.withTimeoutOrNull(1000L) {
-                        snapshotFlow {
-                            scrollState.layoutInfo.visibleItemsInfo
-                                .firstOrNull { it.key == targetItemKey }
-                                ?.let { it.index to it.size }
-                        }.first { layout -> layout?.second?.let { it > 0 } == true }
-                    }
-                    if (itemSize != null) {
-                        scrollState.scrollToItem(
-                            itemSize.first,
-                            (itemSize.second * itemFraction)
-                                .roundToInt()
-                                .coerceAtLeast(0)
-                        )
-                    }
-                }
+                    true
+                }, fallback = { restoreParagraph() })
+                // Keep the intermediate offset hidden through the final measure.
+                if (restored && resumePending) withFrameNanos { }
             } finally {
                 isProgrammaticScroll = false
+            }
+            if (!restored) {
+                AppLogger.w("ChapterPage", "Position restoration failed; retaining saved position for retry")
+                positionRestoreFailed = true
+                return@LaunchedEffect
             }
             pendingSeekLocation = null
             resumePending = false
         }
 
         fun openTargetChapter(target: Chapter) {
+            positionRestoreFailed = false
             pendingUnderline = null
             pendingBoundaryTurn = null
             requestedChapter.value = target
@@ -1623,7 +1683,30 @@ class ChapterPage(
         val reducedMotion = com.breakyuna.esjzone.ui.designsystem.rememberReaderReducedMotion()
         val readerDialogVisible = showBrightness || wenkuVerificationChapter != null ||
             (pendingWenkuVerification != null && pendingWenkuVerification.url != dismissedWenkuPrompt)
-        val readerInteractionEnabled = readerResumed && visiblePaginationReady && (!pagedMode || pagerLayoutReady) &&
+        val waitingForEntryPosition = restoreLookupPending ||
+            state is ChapterPageModel.State.Loading || state is ChapterPageModel.State.SecurityCheck ||
+            (result != null && (!initialScrollPrimed || !scriptReady || !paginationReady ||
+                (resumePending && !requestedChapterLocked) || pendingSeekLocation != null))
+        LaunchedEffect(entryAnimationFinished, waitingForEntryPosition, result, displayItems, pagedMode) {
+            if (entryContentRevealed || !entryAnimationFinished || waitingForEntryPosition) return@LaunchedEffect
+            if (result != null) {
+                val laidOut = kotlinx.coroutines.withTimeoutOrNull(2000L) {
+                    snapshotFlow {
+                        if (pagedMode) pagerLayoutReady else scrollState.layoutInfo.visibleItemsInfo.any {
+                            it.key.toString() in displayByKey
+                        }
+                    }.first { it }
+                }
+                if (laidOut != true) AppLogger.w("ChapterPage", "Initial layout confirmation timed out; revealing restored fallback")
+            }
+            // Include the final offset's measure/draw before removing the cover.
+            withFrameNanos { }
+            entryContentRevealed = true
+        }
+        // A password form must be usable without consuming the saved anchor. Hide
+        // the body again when unlocking starts its deferred exact restoration.
+        val entryCoverVisible = !entryContentRevealed || positionRestoreFailed || (result != null && resumePositioning)
+        val readerInteractionEnabled = !entryCoverVisible && readerResumed && visiblePaginationReady && (!pagedMode || pagerLayoutReady) &&
             state is ChapterPageModel.State.Result &&
             !showReaderSettings && !showReaderContents && !readerDialogVisible
         val pagingEnabled = readerInteractionEnabled && !sidePanels.isVisible
@@ -1638,7 +1721,7 @@ class ChapterPage(
             showSystemNavigationBar = readerSettings.showSystemNavigationBar
         )
 
-        val pagedInputEnabled = pagedMode && readerResumed && result != null &&
+        val pagedInputEnabled = !entryCoverVisible && pagedMode && readerResumed && result != null &&
             !showReaderSettings && !showReaderContents && !readerDialogVisible &&
             !isProgrammaticScroll && !resumePending && pendingSeekLocation == null
         val latestPagingEnabled by rememberUpdatedState(pagingEnabled)
@@ -1794,6 +1877,17 @@ class ChapterPage(
             .ifEmpty { result?.chapterOrder.orEmpty() }
             .ifEmpty { chapterOrder }
             .ifEmpty { result?.chapters?.map { it.chapter }.orEmpty() }
+        com.breakyuna.esjzone.ui.reader.ReaderEntryPresentation(
+            contentVisible = !entryCoverVisible,
+            background = readerBackgroundColor,
+            backgroundPainter = backgroundPainter,
+            transparency = imageBackground.transparency,
+            loadingDescription = readerLoadingDescription,
+            onRetryPosition = if (positionRestoreFailed) ({
+                positionRestoreFailed = false
+                positionRestoreAttempt++
+            }) else null
+        ) {
         ReaderSidePanels(
             state = sidePanels,
             gesturesEnabled = !pagedMode && readerInteractionEnabled && readerSettings.scrollSideGesturesEnabled,
@@ -1848,6 +1942,7 @@ class ChapterPage(
                     bookmarkStateUrl == bookmarkChapterUrl && pagerVisibleItem?.page?.isOversized == false,
                 onBookmarkPull = { toggleBookmark() },
                 onReadingAreaTap = { xFraction, _ ->
+                    if (entryCoverVisible) return@ReaderShell
                     if (progressPreview != null) {
                         dismissProgressPreview()
                     } else {
@@ -1861,7 +1956,11 @@ class ChapterPage(
                     }
                 }
             ) {
-                Box(modifier = Modifier.fillMaxSize()) {
+                Box(modifier = Modifier.fillMaxSize().onSizeChanged { size ->
+                    if (pagedMode && readerViewport == IntSize.Zero) readerViewport = size
+                }) {
+                    if (entryAnimationFinished && (entryContentRevealed || result == null ||
+                            (initialScrollPrimed && !restoreLookupPending && scriptReady))) {
                     if (!pagedMode || state !is ChapterPageModel.State.Result) {
                     LazyColumn(
                         state = scrollState,
@@ -2242,6 +2341,7 @@ class ChapterPage(
                                 }
                             }
                         }
+                    }
                     }
                     if (pagedMode && result != null) {
                         val atPreviousBoundary = horizontalPagerState.currentPage <= 1
@@ -2678,6 +2778,8 @@ class ChapterPage(
 
         }
 
+        }
+
         LaunchedEffect(chapterPageModel, restoreLookupPending) {
             if (!restoreLookupPending) chapterPageModel.getDetail(requestedChapter.value)
         }
@@ -2693,9 +2795,10 @@ class ChapterPage(
             loadedReaderChapterKeys,
             displayItems,
             pagedMode,
-            readerBodyStartOffset
+            readerBodyStartOffset,
+            windowLoadingAllowed
         ) {
-            if (pagedMode) return@LaunchedEffect
+            if (pagedMode || !windowLoadingAllowed) return@LaunchedEffect
             var previousSnapshot: ReaderScrollSnapshot? = null
             snapshotFlow {
                 val currentResult = state as? ChapterPageModel.State.Result

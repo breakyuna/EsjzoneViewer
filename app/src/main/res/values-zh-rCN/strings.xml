@@ -969,4 +969,5 @@
     <string name="reader_glow_outer_alpha">外两层透明度</string>
     <string name="reader_glow_custom_color">自定义光晕色</string>
     <string name="reader_glow_auto_clamp">自动夹明度</string>
+    <string name="reader_restore_position_failed">无法恢复阅读位置</string>
 </resources>

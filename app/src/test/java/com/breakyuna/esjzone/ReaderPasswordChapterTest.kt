@@ -16,6 +16,7 @@ import com.breakyuna.esjzone.ui.page.measuredBookLocation
 import com.breakyuna.esjzone.ui.page.replacePasswordChapter
 import com.breakyuna.esjzone.ui.page.resumeLocation
 import com.breakyuna.esjzone.ui.page.shouldCancelDeferredResume
+import com.breakyuna.esjzone.ui.page.canLoadReaderWindow
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -24,6 +25,14 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ReaderPasswordChapterTest {
+    @Test
+    fun passwordWaitAllowsCrossChapterLoadingWithoutReleasingHistoryProtection() {
+        assertTrue(canLoadReaderWindow(contentRevealed = true, resumePending = true, awaitingPassword = true))
+        assertFalse(canLoadReaderWindow(contentRevealed = false, resumePending = true, awaitingPassword = true))
+        assertFalse(canLoadReaderWindow(contentRevealed = true, resumePending = true, awaitingPassword = false))
+        assertTrue(canLoadReaderWindow(contentRevealed = true, resumePending = false, awaitingPassword = false))
+    }
+
     private val order = (1..3).map { Chapter("Chapter $it", "/forum/9001/$it.html", false) }
     private fun detail(text: String = "Unlocked body") = DetailedChapter(
         order[1].name, listOf(TextComponent(text)), order[0], order[2]

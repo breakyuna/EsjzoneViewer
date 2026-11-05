@@ -4,12 +4,49 @@ import com.breakyuna.esjzone.ui.reader.readerBodyListIndex
 import com.breakyuna.esjzone.ui.reader.readerItemForContentPosition
 import com.breakyuna.esjzone.ui.reader.ReaderScrollAnchor
 import com.breakyuna.esjzone.ui.reader.readerRebasedScrollAnchor
+import com.breakyuna.esjzone.ui.reader.readerInitialBodyIndex
+import com.breakyuna.esjzone.domain.reader.ReaderAnchor
+import com.breakyuna.esjzone.domain.reader.ReaderBlock
+import com.breakyuna.esjzone.domain.reader.ReaderChapterDocument
+import com.breakyuna.esjzone.domain.reader.ReaderChapterRef
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertNotEquals
 import org.junit.Test
 
 class ReaderContentPositionTest {
+    private val chapterKey = "/forum/1/2.html"
+    private val document = ReaderChapterDocument(ReaderChapterRef("Chapter", chapterKey),
+        (0 until 100).map { ReaderBlock.Text("Saved paragraph $it") }, contentFingerprint = "a".repeat(64))
+
+    @Test
+    fun firstBodyMeasureUsesExactParagraphEvenWhenLegacyProgressDisagrees() {
+        val anchor = ReaderAnchor(chapterKey, document.contentFingerprint, 72, 4)
+        assertEquals(73, readerInitialBodyIndex(document, chapterKey, 0.1f, anchor))
+        assertEquals(75, readerBodyListIndex(readerInitialBodyIndex(document, chapterKey, 0.1f, anchor), true, true))
+    }
+
+    @Test
+    fun changedContentOrWrongChapterFallsBackToProgressBeforeFirstMeasure() {
+        val anchor = ReaderAnchor(chapterKey, document.contentFingerprint, 72, 4)
+        assertEquals(50, readerInitialBodyIndex(document, chapterKey, 0.5f, anchor.copy(fingerprint = "b".repeat(64))))
+        assertEquals(50, readerInitialBodyIndex(document, chapterKey, 0.5f, anchor.copy(chapterKey = "other")))
+        assertEquals(50, readerInitialBodyIndex(document, chapterKey, 0.5f, anchor.copy(blockIndex = 1000)))
+    }
+
+    @Test
+    fun firstMeasureHandlesHeadingEndImagesEmptyBodyAndInvalidLegacyProgress() {
+        val anchor = ReaderAnchor(chapterKey, document.contentFingerprint, -1, kind = "heading")
+        assertEquals(0, readerInitialBodyIndex(document, chapterKey, 0.9f, anchor))
+        assertEquals(100, readerInitialBodyIndex(document, chapterKey, 0f, anchor.copy(kind = "end")))
+        val imageDocument = document.copy(blocks = listOf(ReaderBlock.Text("Text"), ReaderBlock.Image("image")))
+        assertEquals(2, readerInitialBodyIndex(imageDocument, chapterKey, 0f,
+            anchor.copy(blockIndex = 1, kind = "image", fraction = 0.4f)))
+        assertEquals(100, readerInitialBodyIndex(document, chapterKey, 1f, null))
+        assertEquals(0, readerInitialBodyIndex(document, chapterKey, Float.NaN, null))
+        assertEquals(0, readerInitialBodyIndex(document.copy(blocks = emptyList()), chapterKey, 1f, null))
+    }
+
     @Test
     fun modeSwitchKeepsTheSourceParagraphAcrossUnequalPageLengths() {
         val pages = listOf(-1f, 0.25f, 0.8f, 2f, 5f)

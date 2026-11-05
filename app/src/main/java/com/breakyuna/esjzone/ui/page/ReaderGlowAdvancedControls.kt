@@ -4,6 +4,8 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -34,6 +36,9 @@ internal fun ReaderGlowAdvancedControls(value: ReaderImageBackground, enabled: B
     }
     Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState())) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            IconButton(onClick = onDismiss) {
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.reader_back))
+            }
             Text(stringResource(R.string.reader_glow_advanced), Modifier.weight(1f), style = AppTypography.titleMedium)
             TextButton(onClick = onDismiss) { Text(stringResource(R.string.reader_background_apply)) }
         }

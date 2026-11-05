@@ -53,6 +53,10 @@ internal fun shouldCancelDeferredResume(
     userScrollInProgress: Boolean
 ): Boolean = userScrollInProgress && visibleChapterKey != null && visibleChapterKey != deferredChapterKey
 
+/** Waiting for a password protects history, but must not prevent skipping the gate. */
+internal fun canLoadReaderWindow(contentRevealed: Boolean, resumePending: Boolean, awaitingPassword: Boolean): Boolean =
+    contentRevealed && (!resumePending || awaitingPassword)
+
 /** A locked chapter has a location even though it has no body to anchor. */
 internal fun ReaderChapter.measuredBookLocation(
     chapterProgress: Float?,

@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -238,6 +239,9 @@ private fun readerRouteFromToken(token: String): ReaderRoute {
         )
     }
 }
+
+/** Actual Navigation 3 entry lifecycle, including disabled/interrupted animations. */
+internal val LocalReaderNavigationSettled = compositionLocalOf { true }
 
 /** Compose-only destination contract used by the transition adapter. */
 interface AppDestination {
@@ -760,7 +764,13 @@ fun AppNavigation() {
                             // LocalAuthorization's empty default value.
                             LoginScreen.Content()
                         } else {
-                            CompositionLocalProvider(LocalAuthorization provides session) {
+                            val transition = androidx.navigation3.ui.LocalNavAnimatedContentScope.current.transition
+                            CompositionLocalProvider(
+                                LocalAuthorization provides session,
+                                LocalReaderNavigationSettled provides (!transition.isRunning &&
+                                    transition.currentState == androidx.compose.animation.EnterExitState.Visible &&
+                                    transition.targetState == androidx.compose.animation.EnterExitState.Visible)
+                            ) {
                                 navigator.readerDestination(key.route).Content()
                             }
                         }
