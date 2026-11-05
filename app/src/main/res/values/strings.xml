@@ -940,7 +940,8 @@
     <string name="reader_background_image">自定义图片</string>
     <string name="reader_background_choose_image">选择图片</string>
     <string name="reader_background_apply">应用</string>
-    <string name="reader_background_blur">模糊程度</string>
+    <string name="reader_background_transparency">透明度</string>
+    <string name="reader_background_blur">模糊度</string>
     <string name="reader_background_text_color">文字颜色</string>
     <string name="reader_background_custom_color">自定义文字颜色</string>
     <string name="reader_background_color_value">文字颜色 %1$s</string>

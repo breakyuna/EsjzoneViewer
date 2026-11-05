@@ -67,6 +67,7 @@ fun ReaderShell(
     bookmarkPullEnabled: Boolean = false,
     onBookmarkPull: () -> Unit = {},
     backgroundPainter: Painter? = null,
+    backgroundImageAlpha: Float = 1f,
     content: @Composable BoxScope.() -> Unit
 ) {
     val haptics by rememberUpdatedState(LocalHapticFeedback.current)
@@ -186,7 +187,7 @@ fun ReaderShell(
         Box(
             modifier = Modifier.fillMaxSize()
                 .graphicsLayer { translationY = pullTranslation }
-                .readerBackdrop(background, backgroundPainter),
+                .readerBackdrop(background, backgroundPainter, backgroundImageAlpha),
             content = content
         )
     }

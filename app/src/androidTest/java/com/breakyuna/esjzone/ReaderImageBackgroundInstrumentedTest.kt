@@ -28,10 +28,11 @@ class ReaderImageBackgroundInstrumentedTest {
             val context = ApplicationProvider.getApplicationContext<Context>()
             val fileName = "reader-image-${UUID.randomUUID()}.preferences_pb"
             val original = ReaderSettings(fontSizeSp = 24f, horizontalPaddingDp = 28f)
-            val photo = ReaderImageBackground("${UUID.randomUUID()}.jpg", 63f, 0xFFF4ECD8L)
+            val photo = ReaderImageBackground("${UUID.randomUUID()}.jpg", 45f, 0xFFF4ECD8L, transparency = 37f)
             val firstJob = SupervisorJob()
             try {
                 val first = ReaderSettingsDataStore(context, CoroutineScope(firstJob + Dispatchers.IO), fileName)
+                assertEquals(0f, first.readImageBackground().transparency, 0f)
                 first.saveDebounced(original)
                 first.saveImageBackground(photo)
                 val applied = first.settings.first { it.background == ReaderBackground.CUSTOM_IMAGE }
@@ -75,7 +76,7 @@ class ReaderImageBackgroundInstrumentedTest {
             imported = copy
             original.delete()
             val clear = ReaderImageBackgroundStore.render(copy, 0f)
-            val blurred = ReaderImageBackgroundStore.render(copy, 100f)
+            val blurred = ReaderImageBackgroundStore.render(copy, 50f)
             assertEquals(clear.width, blurred.width)
             assertEquals(clear.height, blurred.height)
             assertEquals(160, clear.width)

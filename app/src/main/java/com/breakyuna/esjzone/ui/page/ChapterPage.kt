@@ -118,6 +118,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.changedToUp
@@ -295,12 +296,18 @@ class ChapterPage(
         val customBackground = effectiveReaderBackground == ReaderBackground.CUSTOM_IMAGE
         val readerContentColor = if (customBackground) Color(imageBackground.textColor)
             else effectiveReaderBackground.contentColor()
-        val readerBackgroundColor = if (customBackground) {
-            if (readerContentColor.luminance() < 0.5f) Color.White else Color(0xFF121212)
-        } else effectiveReaderBackground.containerColor()
         val imageBackdrop = rememberReaderImageBackdrop(imageBackground, customBackground || showReaderSettings)
         val backgroundPainter = imageBackdrop.painter.takeIf { customBackground }
-        val isLightBackground = readerBackgroundColor.luminance() > 0.5f
+        val readerBackgroundColor = when {
+            backgroundPainter != null -> Color.Black
+            customBackground -> if (readerContentColor.luminance() < 0.5f) Color.White else Color(0xFF121212)
+            else -> effectiveReaderBackground.containerColor()
+        }
+        val isLightBackground = if (backgroundPainter != null) {
+            // Keep the text-color proxy for image brightness while accounting for the black underlay.
+            readerContentColor.luminance() < 0.5f &&
+                Color.White.copy(alpha = imageBackground.imageAlpha).compositeOver(Color.Black).luminance() > 0.5f
+        } else readerBackgroundColor.luminance() > 0.5f
         val currentAppIsLight by rememberUpdatedState(appIsLight)
 
         DisposableEffect(window, view) {
@@ -1823,6 +1830,7 @@ class ChapterPage(
             ReaderShell(
                 background = readerBackgroundColor,
                 backgroundPainter = backgroundPainter,
+                backgroundImageAlpha = imageBackground.imageAlpha,
                 pagedGesturesEnabled = pagedMode && (pagingEnabled || pagedTurns.hasTurns),
                 verticalContentScrollable = pagerVisibleItem?.page?.isOversized == true,
                 bookmarkPullEnabled = !updatingBookmark && pagedMode && pagingEnabled && readerSettings.pagedBookmarkGesturesEnabled &&
@@ -2176,7 +2184,7 @@ class ChapterPage(
                                                 else -> Unit
                                             }
                                         }
-                                        .readerBackdrop(readerBackgroundColor, backgroundPainter)
+                                        .readerBackdrop(readerBackgroundColor, backgroundPainter, imageBackground.imageAlpha)
                                         .padding(
                                             start = if (fullPageBackground) readerSettings.horizontalPaddingDp.dp else 0.dp,
                                             end = if (fullPageBackground) readerSettings.horizontalPaddingDp.dp else 0.dp,

@@ -174,9 +174,9 @@ internal fun ReaderSettingsSheet(
                                 ReaderPageAnimation.COVER to stringResource(R.string.reader_page_animation_cover)
                             ), tonal = true) { commit(draft.copy(pageAnimation = it)) }
                         }
-                        ReaderToggle(stringResource(R.string.reader_first_line_indent), draft.firstLineIndent) { commit(draft.copy(firstLineIndent = it)) }
                         ReaderLayoutSlider(draft, settings, ::commit) { draft = it }
                     } else if (tab == 1) {
+                        ReaderToggle(stringResource(R.string.reader_first_line_indent), draft.firstLineIndent) { commit(draft.copy(firstLineIndent = it)) }
                         ReaderToggle(stringResource(R.string.reader_show_system_status), draft.showSystemStatusBar) { commit(draft.copy(showSystemStatusBar = it)) }
                         ReaderToggle(stringResource(R.string.reader_show_system_navigation), draft.showSystemNavigationBar) { commit(draft.copy(showSystemNavigationBar = it)) }
                         ReaderToggle(stringResource(R.string.reader_show_chapter_name), draft.showChapterName) { commit(draft.copy(showChapterName = it)) }

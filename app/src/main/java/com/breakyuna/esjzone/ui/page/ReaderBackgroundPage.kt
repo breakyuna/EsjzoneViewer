@@ -53,8 +53,8 @@ import com.breakyuna.esjzone.ui.navigation.AppDestination
 import com.breakyuna.esjzone.ui.navigation.LocalBaseNavigator
 import com.breakyuna.esjzone.ui.navigation.LocalFloatingNavSuppression
 import com.breakyuna.esjzone.ui.navigation.rememberAppViewModel
+import com.breakyuna.esjzone.ui.reader.MAX_READER_IMAGE_BLUR
 import java.util.Locale
-import kotlin.math.roundToInt
 
 object ReaderBackgroundPage : AppDestination {
     override val key = "ReaderBackgroundPage"
@@ -118,6 +118,9 @@ object ReaderBackgroundPage : AppDestination {
                     title = { Text(stringResource(R.string.reader_background_image), style = AppTypography.titleMedium) },
                     navigationIcon = { BackIconButton { if (!state.saving) navigator?.pop() } },
                     actions = {
+                        IconButton(onClick = chooseImage, enabled = !state.loading && !state.saving) {
+                            Icon(Icons.Outlined.Image, stringResource(R.string.reader_background_choose_image))
+                        }
                         TextButton(onClick = model::apply, enabled = state.canApply) {
                             Text(stringResource(R.string.reader_background_apply))
                         }
@@ -130,13 +133,15 @@ object ReaderBackgroundPage : AppDestination {
                 Box(
                     Modifier.fillMaxSize()
                         .clickable(enabled = state.preview != null) { controlsVisible = !controlsVisible }
-                        .background(if (foreground.luminance() < 0.5f) Color.White else Color(0xFF121212)),
+                        .background(if (state.preview != null) Color.Black
+                            else if (foreground.luminance() < 0.5f) Color.White else Color(0xFF121212)),
                     contentAlignment = Alignment.Center
                 ) {
                     val preview = state.preview
                     if (preview != null) {
                         Image(preview.asImageBitmap(), contentDescription = null,
-                            modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+                            modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop,
+                            alpha = state.draft.imageAlpha)
                         Column(
                             Modifier.fillMaxSize().padding(horizontal = settings.horizontalPaddingDp.dp, vertical = 24.dp),
                             verticalArrangement = Arrangement.spacedBy(settings.paragraphSpacingDp.dp)
@@ -157,7 +162,8 @@ object ReaderBackgroundPage : AppDestination {
                     if (state.loading || state.saving || state.previewBusy) {
                         CircularProgressIndicator(
                             modifier = Modifier.align(Alignment.TopEnd).padding(16.dp).size(24.dp),
-                            color = foreground, strokeWidth = 2.dp
+                            color = if (state.preview != null && state.draft.imageAlpha <= 0.5f) Color.White else foreground,
+                            strokeWidth = 2.dp
                         )
                     }
                 }
@@ -166,17 +172,31 @@ object ReaderBackgroundPage : AppDestination {
                         if (editColor) {
                             ReaderTextColorControls(state.draft.textColor, { editColor = false }, model::setTextColor)
                         } else {
+                        val transparencyLabel = stringResource(R.string.reader_background_transparency)
+                        val blurLabel = stringResource(R.string.reader_background_blur)
+                        val sliderEnabled = state.source != null && !state.loading && !state.saving
                         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                            Text(stringResource(R.string.reader_background_blur), style = AppTypography.labelLarge,
-                                modifier = Modifier.weight(1f))
-                            Text("${state.draft.blur.roundToInt()}%", style = AppTypography.labelLarge)
-                            TextButton(onClick = chooseImage, enabled = !state.loading && !state.saving) {
-                                Text(stringResource(R.string.reader_background_choose_image))
+                            Column(Modifier.width(IntrinsicSize.Max)) {
+                                Box(Modifier.height(48.dp), contentAlignment = Alignment.CenterStart) {
+                                    Text(transparencyLabel, style = AppTypography.labelLarge, maxLines = 1)
+                                }
+                                Box(Modifier.height(48.dp), contentAlignment = Alignment.CenterStart) {
+                                    Text(blurLabel, style = AppTypography.labelLarge, maxLines = 1)
+                                }
+                            }
+                            Spacer(Modifier.width(12.dp))
+                            Column(Modifier.weight(1f)) {
+                                BackgroundAdjustmentSlider(
+                                    label = transparencyLabel, value = state.draft.transparency,
+                                    enabled = sliderEnabled, onValueChange = model::setTransparency
+                                )
+                                BackgroundAdjustmentSlider(
+                                    label = blurLabel, value = state.draft.blur,
+                                    enabled = sliderEnabled, maxValue = MAX_READER_IMAGE_BLUR.toFloat(),
+                                    onValueChange = model::setBlur
+                                )
                             }
                         }
-                        Slider(value = state.draft.blur, onValueChange = model::setBlur, valueRange = 0f..100f,
-                            enabled = state.source != null && !state.loading && !state.saving,
-                            modifier = Modifier.semantics { contentDescription = context.getString(R.string.reader_background_blur) })
                         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                             Text(stringResource(R.string.reader_background_text_color), style = AppTypography.labelLarge,
                                 modifier = Modifier.weight(1f))
@@ -210,6 +230,24 @@ object ReaderBackgroundPage : AppDestination {
             }
         }
     }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun BackgroundAdjustmentSlider(
+    label: String, value: Float, enabled: Boolean, maxValue: Float = 100f, onValueChange: (Float) -> Unit
+) {
+    val trackColor = MaterialTheme.colorScheme.onSurface.copy(alpha = if (enabled) 0.16f else 0.08f)
+    val thumbColor = if (enabled) MaterialTheme.colorScheme.surface else MaterialTheme.colorScheme.surfaceVariant
+    Slider(
+        value = value, onValueChange = onValueChange, valueRange = 0f..maxValue, enabled = enabled,
+        modifier = Modifier.fillMaxWidth().height(48.dp).semantics { contentDescription = label },
+        thumb = {
+            Box(Modifier.size(28.dp).background(thumbColor, CircleShape)
+                .border(1.dp, MaterialTheme.colorScheme.outlineVariant, CircleShape))
+        },
+        track = { Box(Modifier.fillMaxWidth().height(4.dp).background(trackColor, CircleShape)) }
+    )
 }
 
 internal fun parseReaderTextColor(value: String): Long? = value.trim().removePrefix("#")

@@ -939,6 +939,7 @@
     <string name="reader_background_image">Custom image</string>
     <string name="reader_background_choose_image">Choose image</string>
     <string name="reader_background_apply">Apply</string>
+    <string name="reader_background_transparency">Transparency</string>
     <string name="reader_background_blur">Blur</string>
     <string name="reader_background_text_color">Text color</string>
     <string name="reader_background_custom_color">Custom text color</string>

@@ -19,16 +19,23 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlin.math.roundToInt
 
+internal const val MAX_READER_IMAGE_BLUR = 50
+
 @Immutable
 data class ReaderImageBackground(
     val fileName: String = "",
     val blur: Float = 20f,
-    val textColor: Long = 0xFF202020L
+    val textColor: Long = 0xFF202020L,
+    val transparency: Float = 0f
 ) {
+    val imageAlpha: Float
+        get() = 1f - (transparency.takeIf { it.isFinite() } ?: 0f).coerceIn(0f, 100f) / 100f
+
     fun sanitized() = copy(
         fileName = fileName.takeIf { it.matches(Regex("[a-f0-9-]{36}\\.jpg")) }.orEmpty(),
-        blur = blur.takeIf { it.isFinite() }?.coerceIn(0f, 100f) ?: 20f,
-        textColor = (textColor and 0x00FFFFFFL) or 0xFF000000L
+        blur = blur.takeIf { it.isFinite() }?.coerceIn(0f, MAX_READER_IMAGE_BLUR.toFloat()) ?: 20f,
+        textColor = (textColor and 0x00FFFFFFL) or 0xFF000000L,
+        transparency = transparency.takeIf { it.isFinite() }?.coerceIn(0f, 100f) ?: 0f
     )
 }
 
@@ -119,7 +126,7 @@ internal object ReaderImageBackgroundStore {
 
     suspend fun render(source: File, blur: Float, maxSize: Int = 1440): Bitmap = withContext(Dispatchers.Default) {
         renderMutex.withLock {
-            val strength = blur.roundToInt().coerceIn(0, 100)
+            val strength = blur.roundToInt().coerceIn(0, MAX_READER_IMAGE_BLUR)
             val length = source.length()
             if (!source.isFile || length == 0L) throw IOException("Background image is unavailable")
             val key = "${source.absolutePath}|${source.lastModified()}|$length|$strength|$maxSize"

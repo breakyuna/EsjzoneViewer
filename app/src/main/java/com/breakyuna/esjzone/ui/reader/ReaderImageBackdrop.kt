@@ -50,8 +50,10 @@ internal fun rememberReaderImageBackdrop(background: ReaderImageBackground, enab
     return result
 }
 
-internal fun Modifier.readerBackdrop(color: Color, painter: Painter?): Modifier = background(color)
+internal fun Modifier.readerBackdrop(color: Color, painter: Painter?, imageAlpha: Float = 1f): Modifier = background(color)
     .then(
         if (painter == null) Modifier
-        else Modifier.clipToBounds().paint(painter, sizeToIntrinsics = false, contentScale = ContentScale.Crop)
+        else Modifier.clipToBounds().paint(
+            painter, sizeToIntrinsics = false, contentScale = ContentScale.Crop, alpha = imageAlpha
+        )
     )

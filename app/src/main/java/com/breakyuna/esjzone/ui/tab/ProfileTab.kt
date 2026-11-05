@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.text.BasicText
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Bookmark
@@ -50,8 +51,18 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.LinearGradientShader
+import androidx.compose.ui.graphics.Shader
+import androidx.compose.ui.graphics.ShaderBrush
+import androidx.compose.ui.graphics.compositeOver
+import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -251,18 +262,31 @@ private fun ProfileActions(items: List<ProfileMenuItem>, onClick: (ProfileMenuIt
 
 @Composable
 private fun ProfileHero(profile: UserProfile?, domain: String, avatarCacheKey: String, loading: Boolean, onRetry: () -> Unit) {
-    Card(shape = AppShapes.prominent, colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
+    val surface = MaterialTheme.colorScheme.surface
+    val gradientStart = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.55f)
+    var heroHorizontalBounds by remember { mutableStateOf<Pair<Float, Float>?>(null) }
+    var experienceCenterX by remember { mutableStateOf<Float?>(null) }
+    val position = heroHorizontalBounds?.let { (left, width) ->
+        experienceCenterX?.let { if (width > 0f) ((it - left) / width).coerceIn(0f, 1f) else null }
+    } ?: 1f
+    val background = lerp(gradientStart, surface, position).compositeOver(surface)
+    val darkBackground = background.luminance() < 0.5f
+    val experienceBrush = remember(darkBackground) { experienceGradient(darkBackground) }
+    Card(shape = AppShapes.prominent, colors = CardDefaults.cardColors(containerColor = surface)) {
         Row(
             Modifier
                 .fillMaxWidth()
                 .background(
                     Brush.horizontalGradient(
                         listOf(
-                            MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.55f),
-                            MaterialTheme.colorScheme.surface
+                            gradientStart,
+                            surface
                         )
                     )
                 )
+                .onGloballyPositioned { coordinates ->
+                    heroHorizontalBounds = coordinates.positionInRoot().x to coordinates.size.width.toFloat()
+                }
                 .padding(AppSpacing.xl),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(AppSpacing.lg)
@@ -313,15 +337,14 @@ private fun ProfileHero(profile: UserProfile?, domain: String, avatarCacheKey: S
                             modifier = Modifier.weight(1f)
                         )
                         profile.exp?.let {
-                            Text(
+                            // Material Text supplies a solid LocalContentColor when color is unspecified.
+                            BasicText(
                                 text = stringResource(R.string.profile_experience, it),
+                                modifier = Modifier.onGloballyPositioned { coordinates ->
+                                    experienceCenterX = coordinates.positionInRoot().x + coordinates.size.width / 2f
+                                },
                                 style = AppTypography.bodySmall.copy(
-                                    brush = Brush.linearGradient(
-                                        0.0f to Color(0xFF29231C),
-                                        0.35f to Color(0xFF987331),
-                                        0.6f to Color(0xFFE8CA7E),
-                                        1.0f to Color(0xFF8A662B)
-                                    ),
+                                    brush = experienceBrush,
                                     fontWeight = FontWeight.SemiBold
                                 ),
                                 maxLines = 1
@@ -340,6 +363,28 @@ private fun ProfileHero(profile: UserProfile?, domain: String, avatarCacheKey: S
                 Text(domain, style = AppTypography.bodySmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f))
             }
         }
+    }
+}
+
+private fun experienceGradient(darkBackground: Boolean): Brush {
+    val colors = if (darkBackground) {
+        listOf(Color(0xFFFFF3C4), Color(0xFFF7D26A), Color(0xFFD9A441), Color(0xFFA8741F))
+    } else {
+        listOf(
+            Color(0xFF2A1C06), Color(0xFF7A5416), Color(0xFFC99A2E),
+            Color(0xFFE8C566), Color(0xFFB8862B), Color(0xFF8A6218)
+        )
+    }
+    val stops = if (darkBackground) listOf(0f, 0.35f, 0.68f, 1f)
+        else listOf(0f, 0.16f, 0.40f, 0.60f, 0.80f, 1f)
+    return object : ShaderBrush() {
+        // CSS 135 degrees, including for text bounds that are not square.
+        override fun createShader(size: Size): Shader = LinearGradientShader(
+            from = Offset((size.width - size.height) / 4f, (size.height - size.width) / 4f),
+            to = Offset((3f * size.width + size.height) / 4f, (3f * size.height + size.width) / 4f),
+            colors = colors,
+            colorStops = stops
+        )
     }
 }
 

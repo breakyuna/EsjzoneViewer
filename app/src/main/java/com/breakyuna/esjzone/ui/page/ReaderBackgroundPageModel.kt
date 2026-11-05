@@ -9,6 +9,7 @@ import com.breakyuna.esjzone.app.PresentationAccess
 import com.breakyuna.esjzone.ui.navigation.AppStateViewModel
 import com.breakyuna.esjzone.ui.reader.ReaderImageBackground
 import com.breakyuna.esjzone.ui.reader.ReaderImageBackgroundStore
+import com.breakyuna.esjzone.ui.reader.MAX_READER_IMAGE_BLUR
 import com.breakyuna.esjzone.util.AppLogger
 import java.io.File
 import kotlinx.coroutines.CancellationException
@@ -82,10 +83,17 @@ internal class ReaderBackgroundPageModel(context: Context) :
 
     fun setBlur(value: Float) {
         if (state.value.loading || state.value.saving) return
-        val blur = value.roundToInt().coerceIn(0, 100).toFloat()
+        val blur = value.roundToInt().coerceIn(0, MAX_READER_IMAGE_BLUR).toFloat()
         if (blur == state.value.draft.blur) return
         mutableState.value = state.value.copy(draft = state.value.draft.copy(blur = blur))
         refreshPreview()
+    }
+
+    fun setTransparency(value: Float) {
+        if (state.value.loading || state.value.saving) return
+        val transparency = value.roundToInt().coerceIn(0, 100).toFloat()
+        if (transparency == state.value.draft.transparency) return
+        mutableState.value = state.value.copy(draft = state.value.draft.copy(transparency = transparency))
     }
 
     fun setTextColor(color: Long) {
@@ -101,7 +109,7 @@ internal class ReaderBackgroundPageModel(context: Context) :
             try {
                 do {
                     val blur = state.value.draft.blur
-                    val bitmap = ReaderImageBackgroundStore.render(source, blur, maxSize = 720)
+                    val bitmap = ReaderImageBackgroundStore.render(source, blur)
                     mutableState.value = state.value.copy(preview = bitmap, previewBlur = blur)
                 } while (state.value.draft.blur != state.value.previewBlur)
                 mutableState.value = state.value.copy(previewBusy = false)

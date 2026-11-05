@@ -11,7 +11,8 @@ class ReaderImageBackgroundTest {
         assertEquals("", settings.fileName)
         assertEquals(20f, settings.blur)
         assertEquals(0xFF123456L, settings.textColor)
-        assertEquals(100f, ReaderImageBackground(blur = 150f).sanitized().blur)
+        assertEquals(49f, ReaderImageBackground(blur = 49f).sanitized().blur, 0f)
+        assertEquals(50f, ReaderImageBackground(blur = 150f).sanitized().blur, 0f)
     }
 
     @Test fun customTextColorsRequireSixHexDigitsAndRemainOpaque() {
@@ -20,5 +21,14 @@ class ReaderImageBackgroundTest {
         assertNull(parseReaderTextColor("#fff"))
         assertNull(parseReaderTextColor("#00112233"))
         assertNull(parseReaderTextColor("#zzzzzz"))
+    }
+
+    @Test fun backgroundTransparencyIsBoundedAndMapsToImageOpacity() {
+        assertEquals(1f, ReaderImageBackground().imageAlpha, 0f)
+        assertEquals(0.5f, ReaderImageBackground(transparency = 50f).imageAlpha, 0f)
+        assertEquals(0f, ReaderImageBackground(transparency = 100f).imageAlpha, 0f)
+        assertEquals(0f, ReaderImageBackground(transparency = Float.NaN).sanitized().transparency, 0f)
+        assertEquals(0f, ReaderImageBackground(transparency = -10f).sanitized().transparency, 0f)
+        assertEquals(100f, ReaderImageBackground(transparency = 150f).sanitized().transparency, 0f)
     }
 }

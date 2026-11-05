@@ -1,7 +1,11 @@
 package com.breakyuna.esjzone
 
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -12,6 +16,7 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.breakyuna.esjzone.ui.designsystem.globalStringResource
+import com.breakyuna.esjzone.ui.page.ReaderMoreSettingsContent
 import com.breakyuna.esjzone.ui.page.ReaderSettingsSheet
 import com.breakyuna.esjzone.ui.reader.ReaderBackground
 import com.breakyuna.esjzone.ui.reader.ReaderSettings
@@ -24,20 +29,38 @@ import org.junit.runner.RunWith
 class ReaderSettingsInstrumentedTest {
     @get:Rule val composeRule = createComposeRule()
 
-    @Test fun firstLineIndentCanBeEnabledAndDisabled() {
+    @Test fun firstLineIndentIsSharedBetweenReaderAndProfileSettings() {
         var settings by mutableStateOf(ReaderSettings())
+        var showReaderSettings by mutableStateOf(true)
         var label = ""
+        var moreLabel = ""
         composeRule.setContent {
             label = globalStringResource(R.string.reader_first_line_indent)
+            moreLabel = globalStringResource(R.string.reader_tab_controls)
             MaterialTheme {
-                ReaderSettingsSheet(visible = true, settings = settings,
-                    onSettingsChange = { settings = it }, onDismiss = {})
+                if (showReaderSettings) {
+                    ReaderSettingsSheet(visible = true, settings = settings,
+                        onSettingsChange = { settings = it }, onDismiss = {})
+                } else {
+                    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
+                        ReaderMoreSettingsContent(settings, onSettingsChange = { settings = it })
+                    }
+                }
             }
         }
-        composeRule.onNodeWithText(label).performScrollTo().performClick()
+        composeRule.onNodeWithText(moreLabel).performClick()
+        val readerToggle = composeRule.onNode(isToggleable() and hasAnySibling(hasText(label)))
+        readerToggle.performScrollTo().assertIsOff().performClick()
         composeRule.runOnIdle { assertEquals(true, settings.firstLineIndent) }
-        composeRule.onNodeWithText(label).performClick()
+        composeRule.runOnIdle { showReaderSettings = false }
+        val profileToggle = composeRule.onNode(
+            isToggleable() and hasAnySibling(hasText(label)), useUnmergedTree = true
+        )
+        profileToggle.performScrollTo().assertIsOn().performClick()
         composeRule.runOnIdle { assertEquals(false, settings.firstLineIndent) }
+        composeRule.runOnIdle { showReaderSettings = true }
+        composeRule.onNodeWithText(moreLabel).performClick()
+        composeRule.onNode(isToggleable() and hasAnySibling(hasText(label))).performScrollTo().assertIsOff()
     }
 
     @Test fun layoutParameterCanBeSelectedDirectlyAndAdjusted() {

@@ -73,6 +73,7 @@ class ReaderSettingsDataStore(
         dataStore.edit {
             it[IMAGE_FILE] = value.fileName
             it[IMAGE_BLUR] = value.blur
+            it[IMAGE_TRANSPARENCY] = value.transparency
             it[IMAGE_TEXT_COLOR] = value.textColor
             it[BACKGROUND] = ReaderBackground.CUSTOM_IMAGE.name
             it[THEME_BACKGROUND_IN_DARK] = false
@@ -82,7 +83,8 @@ class ReaderSettingsDataStore(
     private fun Preferences.toImageBackground() = ReaderImageBackground(
         fileName = this[IMAGE_FILE].orEmpty(),
         blur = this[IMAGE_BLUR] ?: 20f,
-        textColor = this[IMAGE_TEXT_COLOR] ?: 0xFF202020L
+        textColor = this[IMAGE_TEXT_COLOR] ?: 0xFF202020L,
+        transparency = this[IMAGE_TRANSPARENCY] ?: 0f
     ).sanitized()
 
     suspend fun save(settings: ReaderSettings) {
@@ -284,6 +286,7 @@ class ReaderSettingsDataStore(
         val BACKGROUND = stringPreferencesKey("background")
         val IMAGE_FILE = stringPreferencesKey("background_image_file")
         val IMAGE_BLUR = floatPreferencesKey("background_image_blur")
+        val IMAGE_TRANSPARENCY = floatPreferencesKey("background_image_transparency")
         val IMAGE_TEXT_COLOR = longPreferencesKey("background_image_text_color")
         val FONT = stringPreferencesKey("font")
         val FONT_SIZE = floatPreferencesKey("font_size")

@@ -89,6 +89,9 @@ internal fun ReaderMoreSettingsContent(
         }
     }
     SettingsSection(title = stringResource(R.string.reader_more_display)) {
+        MoreReaderToggle(stringResource(R.string.reader_first_line_indent), draft.firstLineIndent) {
+            commit(draft.copy(firstLineIndent = it))
+        }
         MoreReaderToggle(stringResource(R.string.reader_keep_screen_on), draft.keepScreenOn) {
             commit(draft.copy(keepScreenOn = it))
         }
