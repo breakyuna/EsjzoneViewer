@@ -15,7 +15,6 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlin.math.roundToInt
@@ -95,15 +94,17 @@ internal class ReaderBackgroundPageModel(context: Context) :
     }
 
     private fun refreshPreview() {
-        previewJob?.cancel()
+        if (previewJob?.isActive == true) return
         val source = state.value.source ?: return
-        val blur = state.value.draft.blur
         mutableState.value = state.value.copy(previewBusy = true)
         previewJob = viewModelScope.launch {
-            delay(120)
             try {
-                val bitmap = ReaderImageBackgroundStore.render(source, blur)
-                mutableState.value = state.value.copy(preview = bitmap, previewBlur = blur, previewBusy = false)
+                do {
+                    val blur = state.value.draft.blur
+                    val bitmap = ReaderImageBackgroundStore.render(source, blur, maxSize = 720)
+                    mutableState.value = state.value.copy(preview = bitmap, previewBlur = blur)
+                } while (state.value.draft.blur != state.value.previewBlur)
+                mutableState.value = state.value.copy(previewBusy = false)
             } catch (error: CancellationException) {
                 throw error
             } catch (error: Exception) {

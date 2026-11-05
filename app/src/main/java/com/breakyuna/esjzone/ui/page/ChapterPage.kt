@@ -18,6 +18,8 @@ import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
+import com.breakyuna.esjzone.ui.reader.effectiveBackground
+import com.breakyuna.esjzone.ui.reader.toggleDarkBackground
 import androidx.compose.foundation.background
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -282,15 +284,6 @@ class ChapterPage(
             mutableStateOf(false)
         }
         val imageBackground by PresentationAccess.readerSettings.imageBackground.collectAsState()
-        val customBackground = readerSettings.background == ReaderBackground.CUSTOM_IMAGE
-        val readerContentColor = if (customBackground) Color(imageBackground.textColor)
-            else readerSettings.background.contentColor()
-        val readerBackgroundColor = if (customBackground) {
-            if (readerContentColor.luminance() < 0.5f) Color.White else Color(0xFF121212)
-        } else readerSettings.background.containerColor()
-        val imageBackdrop = rememberReaderImageBackdrop(imageBackground, customBackground || showReaderSettings)
-        val backgroundPainter = imageBackdrop.painter.takeIf { customBackground }
-        val isLightBackground = readerBackgroundColor.luminance() > 0.5f
         val appThemeMode by PresentationAccess.settings.themeMode
         val systemDark = isSystemInDarkTheme()
         val appIsLight = when (appThemeMode) {
@@ -298,6 +291,16 @@ class ChapterPage(
             AppThemeMode.LIGHT -> true
             AppThemeMode.DARK -> false
         }
+        val effectiveReaderBackground = readerSettings.effectiveBackground(isDark = !appIsLight)
+        val customBackground = effectiveReaderBackground == ReaderBackground.CUSTOM_IMAGE
+        val readerContentColor = if (customBackground) Color(imageBackground.textColor)
+            else effectiveReaderBackground.contentColor()
+        val readerBackgroundColor = if (customBackground) {
+            if (readerContentColor.luminance() < 0.5f) Color.White else Color(0xFF121212)
+        } else effectiveReaderBackground.containerColor()
+        val imageBackdrop = rememberReaderImageBackdrop(imageBackground, customBackground || showReaderSettings)
+        val backgroundPainter = imageBackdrop.painter.takeIf { customBackground }
+        val isLightBackground = readerBackgroundColor.luminance() > 0.5f
         val currentAppIsLight by rememberUpdatedState(appIsLight)
 
         DisposableEffect(window, view) {
@@ -323,7 +326,8 @@ class ChapterPage(
             fontFamily = readerSettings.font.family(),
             fontSize = readerSettings.fontSizeSp.sp,
             lineHeight = readerSettings.lineHeightSp.sp,
-            letterSpacing = readerSettings.letterSpacingSp.sp
+            letterSpacing = readerSettings.letterSpacingSp.sp,
+        textIndent = androidx.compose.ui.text.style.TextIndent(firstLine = if (readerSettings.firstLineIndent) (readerSettings.fontSizeSp * 2).sp else 0.sp)
         )
 
         fun updateReaderSettings(settings: ReaderSettings) {
@@ -615,6 +619,7 @@ class ChapterPage(
         val layoutDirection = LocalLayoutDirection.current
         // Only layout settings invalidate pagination; toggling chrome never measures text again.
         val paginationSettings = ReaderSettings(
+            firstLineIndent = readerSettings.firstLineIndent,
             font = readerSettings.font,
             fontSizeSp = readerSettings.fontSizeSp,
             letterSpacingSp = readerSettings.letterSpacingSp,
@@ -2510,9 +2515,7 @@ class ChapterPage(
                                                         PresentationAccess.settings.setThemeMode(
                                                             if (appIsLight) AppThemeMode.DARK else AppThemeMode.LIGHT
                                                         )
-                                                        if (readerSettings.background != ReaderBackground.SYSTEM) {
-                                                            updateReaderSettings(readerSettings.copy(background = ReaderBackground.SYSTEM))
-                                                        }
+                                                        updateReaderSettings(readerSettings.toggleDarkBackground(enteringDark = appIsLight))
                                                     }
                                                 }
                                             }
@@ -2633,6 +2636,7 @@ class ChapterPage(
                 onSettingsChange = { updated ->
                     if (updated.pageAnimation != readerSettings.pageAnimation ||
                         updated.font != readerSettings.font ||
+                        updated.firstLineIndent != readerSettings.firstLineIndent ||
                         updated.fontSizeSp != readerSettings.fontSizeSp ||
                         updated.letterSpacingSp != readerSettings.letterSpacingSp ||
                         updated.lineSpacingSp != readerSettings.lineSpacingSp ||

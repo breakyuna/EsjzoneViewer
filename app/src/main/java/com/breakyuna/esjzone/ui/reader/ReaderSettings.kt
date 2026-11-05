@@ -105,6 +105,7 @@ enum class ReaderTool {
 @Immutable
 data class ReaderSettings(
     val background: ReaderBackground = ReaderBackground.SYSTEM,
+    val useThemeBackgroundInDarkMode: Boolean = false,
     val font: ReaderFont = ReaderFont.SYSTEM,
     val fontSizeSp: Float = 18f,
     val letterSpacingSp: Float = 0.3f,
@@ -116,6 +117,7 @@ data class ReaderSettings(
     val pageAnimation: ReaderPageAnimation = ReaderPageAnimation.VERTICAL_SCROLL,
     val volumeKeyPaging: Boolean = false,
     val longPressUnderline: Boolean = false,
+    val firstLineIndent: Boolean = false,
     val tapPagingEnabled: Boolean = true,
     val scrollSideGesturesEnabled: Boolean = true,
     val pagedBookmarkGesturesEnabled: Boolean = true,
@@ -135,3 +137,10 @@ data class ReaderSettings(
     val lineHeightSp: Float
         get() = fontSizeSp + lineSpacingSp
 }
+
+/** The selected palette/photo remains the source of truth across theme changes. */
+internal fun ReaderSettings.toggleDarkBackground(enteringDark: Boolean): ReaderSettings =
+    copy(useThemeBackgroundInDarkMode = enteringDark)
+
+internal fun ReaderSettings.effectiveBackground(isDark: Boolean): ReaderBackground =
+    if (isDark && useThemeBackgroundInDarkMode) ReaderBackground.SYSTEM else background

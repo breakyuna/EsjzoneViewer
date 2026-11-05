@@ -75,6 +75,7 @@ class ReaderSettingsDataStore(
             it[IMAGE_BLUR] = value.blur
             it[IMAGE_TEXT_COLOR] = value.textColor
             it[BACKGROUND] = ReaderBackground.CUSTOM_IMAGE.name
+            it[THEME_BACKGROUND_IN_DARK] = false
         }
     }
 
@@ -171,6 +172,7 @@ class ReaderSettingsDataStore(
         val defaults = ReaderSettings()
         return ReaderSettings(
             background = enumOrDefault(this[BACKGROUND], defaults.background),
+            useThemeBackgroundInDarkMode = this[THEME_BACKGROUND_IN_DARK] ?: false,
             font = enumOrDefault(this[FONT], defaults.font),
             fontSizeSp = this[FONT_SIZE].safeValue(defaults.fontSizeSp, 14f, 30f),
             letterSpacingSp = this[LETTER_SPACING].safeValue(defaults.letterSpacingSp, 0f, 2f),
@@ -182,6 +184,7 @@ class ReaderSettingsDataStore(
             pageAnimation = enumOrDefault(this[PAGE_ANIMATION], defaults.pageAnimation),
             volumeKeyPaging = this[VOLUME_KEY_PAGING] ?: defaults.volumeKeyPaging,
             longPressUnderline = this[LONG_PRESS_UNDERLINE] ?: defaults.longPressUnderline,
+            firstLineIndent = this[FIRST_LINE_INDENT] ?: defaults.firstLineIndent,
             tapPagingEnabled = this[TAP_PAGING] ?: defaults.tapPagingEnabled,
             scrollSideGesturesEnabled = this[SCROLL_SIDE_GESTURES] ?: defaults.scrollSideGesturesEnabled,
             pagedBookmarkGesturesEnabled = this[PAGED_BOOKMARK_GESTURES] ?: defaults.pagedBookmarkGesturesEnabled,
@@ -213,6 +216,7 @@ class ReaderSettingsDataStore(
 
     private fun ReaderSettings.writeTo(preferences: androidx.datastore.preferences.core.MutablePreferences) {
         preferences[BACKGROUND] = background.name
+        preferences[THEME_BACKGROUND_IN_DARK] = useThemeBackgroundInDarkMode
         preferences[FONT] = font.name
         preferences[FONT_SIZE] = fontSizeSp
         preferences[LETTER_SPACING] = letterSpacingSp
@@ -224,6 +228,7 @@ class ReaderSettingsDataStore(
         preferences[PAGE_ANIMATION] = pageAnimation.name
         preferences[VOLUME_KEY_PAGING] = volumeKeyPaging
         preferences[LONG_PRESS_UNDERLINE] = longPressUnderline
+        preferences[FIRST_LINE_INDENT] = firstLineIndent
         preferences[TAP_PAGING] = tapPagingEnabled
         preferences[SCROLL_SIDE_GESTURES] = scrollSideGesturesEnabled
         preferences[PAGED_BOOKMARK_GESTURES] = pagedBookmarkGesturesEnabled
@@ -275,6 +280,7 @@ class ReaderSettingsDataStore(
         const val LEGACY_PAGE_SPACING = "page_spacing"
         const val LEGACY_HORIZONTAL_PADDING = "horizontal_padding"
         const val LEGACY_SCRIPT = "script"
+        val THEME_BACKGROUND_IN_DARK = booleanPreferencesKey("theme_background_in_dark")
         val BACKGROUND = stringPreferencesKey("background")
         val IMAGE_FILE = stringPreferencesKey("background_image_file")
         val IMAGE_BLUR = floatPreferencesKey("background_image_blur")
@@ -288,6 +294,7 @@ class ReaderSettingsDataStore(
         val HORIZONTAL_PADDING = floatPreferencesKey("horizontal_padding")
         val SCRIPT = stringPreferencesKey("script")
         val PAGE_ANIMATION = stringPreferencesKey("page_animation")
+        val FIRST_LINE_INDENT = booleanPreferencesKey("first_line_indent")
         val LONG_PRESS_UNDERLINE = booleanPreferencesKey("long_press_underline")
         val TAP_PAGING = booleanPreferencesKey("tap_paging")
         val SCROLL_SIDE_GESTURES = booleanPreferencesKey("scroll_side_gestures")

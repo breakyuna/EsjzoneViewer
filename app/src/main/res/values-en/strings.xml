@@ -947,4 +947,8 @@
     <string name="reader_background_preview_text">An afternoon breeze slipped through the open window and gently turned the pages of a book. Outside, the trees swayed, scattering patches of sunlight across the paper.\n\nShe paused at the next line and heard familiar footsteps around the corner. The story was only beginning, and time seemed willing to slow down for a moment.</string>
     <string name="reader_background_image_failed">Unable to read the image. Choose a valid image smaller than 32 MB and try again.</string>
     <string name="reader_background_save_failed">Unable to save the background. Please try again.</string>
+    <string name="reader_first_line_indent">First-line indent (2 characters)</string>
+    <string name="reader_color_hue">Hue</string>
+    <string name="reader_color_saturation">Saturation</string>
+    <string name="reader_color_brightness">Brightness</string>
 </resources>

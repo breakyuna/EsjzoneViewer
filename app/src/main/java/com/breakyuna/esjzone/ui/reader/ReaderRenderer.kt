@@ -99,7 +99,8 @@ fun ReaderBlocks(
         fontFamily = settings.font.family(),
         fontSize = settings.fontSizeSp.sp,
         lineHeight = settings.lineHeightSp.sp,
-        letterSpacing = settings.letterSpacingSp.sp
+        letterSpacing = settings.letterSpacingSp.sp,
+        textIndent = androidx.compose.ui.text.style.TextIndent(firstLine = if (settings.firstLineIndent) (settings.fontSizeSp * 2).sp else 0.sp)
     )
 
     val content: @Composable () -> Unit = {

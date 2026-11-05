@@ -120,11 +120,11 @@ internal fun ReaderSettingsSheet(
                                         enabled = background != ReaderBackground.CUSTOM_IMAGE || customImageAvailable != null,
                                         onClick = {
                                             when {
-                                                background == ReaderBackground.CUSTOM_IMAGE && customImageAvailable == false ->
+                                                background == ReaderBackground.CUSTOM_IMAGE && (customImageAvailable == false || draft.background == ReaderBackground.CUSTOM_IMAGE) ->
                                                     onConfigureImage()
                                                 else -> {
                                                     if (background == ReaderBackground.SYSTEM) onFollowSystemTheme()
-                                                    commit(draft.copy(background = background))
+                                                    commit(draft.copy(background = background, useThemeBackgroundInDarkMode = false))
                                                 }
                                             }
                                         },
@@ -174,6 +174,7 @@ internal fun ReaderSettingsSheet(
                                 ReaderPageAnimation.COVER to stringResource(R.string.reader_page_animation_cover)
                             ), tonal = true) { commit(draft.copy(pageAnimation = it)) }
                         }
+                        ReaderToggle(stringResource(R.string.reader_first_line_indent), draft.firstLineIndent) { commit(draft.copy(firstLineIndent = it)) }
                         ReaderLayoutSlider(draft, settings, ::commit) { draft = it }
                     } else if (tab == 1) {
                         ReaderToggle(stringResource(R.string.reader_show_system_status), draft.showSystemStatusBar) { commit(draft.copy(showSystemStatusBar = it)) }

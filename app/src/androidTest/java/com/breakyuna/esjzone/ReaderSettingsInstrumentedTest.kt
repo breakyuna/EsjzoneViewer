@@ -24,6 +24,22 @@ import org.junit.runner.RunWith
 class ReaderSettingsInstrumentedTest {
     @get:Rule val composeRule = createComposeRule()
 
+    @Test fun firstLineIndentCanBeEnabledAndDisabled() {
+        var settings by mutableStateOf(ReaderSettings())
+        var label = ""
+        composeRule.setContent {
+            label = globalStringResource(R.string.reader_first_line_indent)
+            MaterialTheme {
+                ReaderSettingsSheet(visible = true, settings = settings,
+                    onSettingsChange = { settings = it }, onDismiss = {})
+            }
+        }
+        composeRule.onNodeWithText(label).performScrollTo().performClick()
+        composeRule.runOnIdle { assertEquals(true, settings.firstLineIndent) }
+        composeRule.onNodeWithText(label).performClick()
+        composeRule.runOnIdle { assertEquals(false, settings.firstLineIndent) }
+    }
+
     @Test fun layoutParameterCanBeSelectedDirectlyAndAdjusted() {
         val initial = ReaderSettings(horizontalPaddingDp = 24f)
         var settings by mutableStateOf(initial)

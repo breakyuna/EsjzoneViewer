@@ -316,7 +316,7 @@ private fun ProfileHero(profile: UserProfile?, domain: String, avatarCacheKey: S
                             Text(
                                 text = stringResource(R.string.profile_experience, it),
                                 style = AppTypography.bodySmall.copy(
-                                    brush = Brush.verticalGradient(
+                                    brush = Brush.linearGradient(
                                         0.0f to Color(0xFF29231C),
                                         0.35f to Color(0xFF987331),
                                         0.6f to Color(0xFFE8CA7E),

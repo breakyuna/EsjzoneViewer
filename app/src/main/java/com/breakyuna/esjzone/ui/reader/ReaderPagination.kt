@@ -132,7 +132,7 @@ internal fun paginateReaderChapter(
                 segmentText = text.subSequence(start, layout.getLineEnd(endLine - 1))
                 lineHeight = textMeasurer.measure(
                     text = segmentText,
-                    style = textStyle,
+                    style = if (start == 0) textStyle else textStyle.copy(textIndent = androidx.compose.ui.text.style.TextIndent.None),
                     placeholders = placeholders(segmentText, inline),
                     constraints = Constraints(maxWidth = widthPx)
                 ).size.height
@@ -222,7 +222,7 @@ internal fun ReaderPageContent(
                     is ReaderPageSegment.TextLine -> ReaderUnderlineText(
                         text = segment.text,
                         inlineContent = segment.inlineContent,
-                        style = textStyle,
+                        style = if (segment.startOffset == 0) textStyle else textStyle.copy(textIndent = androidx.compose.ui.text.style.TextIndent.None),
                         color = contentColor,
                         modifier = Modifier.padding(bottom = segment.bottomSpacing),
                         enabled = settings.longPressUnderline,
