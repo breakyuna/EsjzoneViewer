@@ -204,11 +204,11 @@ object BookshelfCoverStore {
 
     /** Resolve each visible cover off the UI thread; keep it stable across recompositions. */
     @Composable
-    fun rememberCover(entry: BookshelfEntry): CoverSource {
+    fun rememberCover(entry: BookshelfEntry, initialSource: CoverSource? = null): CoverSource {
         val metadata by BookshelfRepository.coverStates.collectAsState()
         val local = key(entry.scope, entry.bookKey, entry.coverUrl) {
             // Wait for the local lookup before requesting a remote cover.
-            produceState<String?>(initialValue = null) {
+            produceState<String?>(initialValue = initialSource?.takeUnless { it.state == CoverState.Resolving }?.url) {
                 changes.collect {
                     value = withContext(Dispatchers.IO) { localOrRemote(entry) }
                 }

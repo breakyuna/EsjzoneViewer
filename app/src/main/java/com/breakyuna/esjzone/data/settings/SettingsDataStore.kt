@@ -188,7 +188,7 @@ class SettingsDataStore(
 
     private data class SettingsValues(
         val themeMode: AppThemeMode = AppThemeMode.SYSTEM,
-        val palette: AppPalette = AppPalette.INK,
+        val palette: AppPalette = AppPalette.default,
         val adult: Boolean = true,
         val hideHomeRecommendations: Boolean = true,
         val domain: String = SettingsDefaults.DOMAINS.first(),

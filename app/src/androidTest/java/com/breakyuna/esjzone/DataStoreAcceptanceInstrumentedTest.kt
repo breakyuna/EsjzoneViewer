@@ -87,6 +87,7 @@ class DataStoreAcceptanceInstrumentedTest {
         val scope = newScope()
         try {
             val settings = SettingsDataStore(context, scope, fileName("settings-defaults"))
+            assertEquals(AppPalette.MONOCHROME, settings.palette.first())
             assertTrue(settings.adult.first())
             assertTrue(settings.hideHomeRecommendations.first())
             assertEquals("www.esjzone.cc", settings.domain.first())
@@ -106,6 +107,7 @@ class DataStoreAcceptanceInstrumentedTest {
         val firstScope = newScope()
         try {
             val first = SettingsDataStore(context, firstScope, fileName)
+            first.setPalette(AppPalette.INK)
             first.setAdult(false)
             first.setHideHomeRecommendations(false)
             first.setDomain("www.esjzone.one")
@@ -115,6 +117,7 @@ class DataStoreAcceptanceInstrumentedTest {
             first.setNovelListGridView(true)
             first.setNovelListAdultOnly(true)
             assertFalse(first.adult.first { !it })
+            assertEquals(AppPalette.INK, first.palette.first { it == AppPalette.INK })
             assertFalse(first.hideHomeRecommendations.first { !it })
             assertTrue(first.bookshelfListView.first { it })
             assertTrue(first.novelListGridView.first { it })
@@ -126,6 +129,7 @@ class DataStoreAcceptanceInstrumentedTest {
         val secondScope = newScope()
         try {
             val second = SettingsDataStore(context, secondScope, fileName)
+            assertEquals(AppPalette.INK, second.palette.first { it == AppPalette.INK })
             assertFalse(second.adult.first { !it })
             assertFalse(second.hideHomeRecommendations.first { !it })
             assertEquals("www.esjzone.one", second.domain.first())

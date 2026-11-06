@@ -121,6 +121,8 @@ import com.breakyuna.esjzone.database.entity.LocalReadingActivity
 import com.breakyuna.esjzone.network.LocalAuthorization
 import com.breakyuna.esjzone.network.LoadFailureKind
 import com.breakyuna.esjzone.novellibrary.novel.CoveredNovelImpl
+import com.breakyuna.esjzone.ui.component.BookshelfCoverMemory
+import com.breakyuna.esjzone.ui.component.rememberBookshelfCover
 import com.breakyuna.esjzone.ui.component.AppNovelCover
 import com.breakyuna.esjzone.ui.component.AppBookshelfRecentReads
 import com.breakyuna.esjzone.ui.designsystem.AppShapes
@@ -201,6 +203,7 @@ object FavoritePage : AppDestination {
         val fontScale = LocalConfiguration.current.fontScale.coerceAtLeast(1f)
         val listState = rememberLazyListState()
         val gridState = rememberLazyListState()
+        val coverMemory = remember(model) { BookshelfCoverMemory() }
         var gridColumns by remember { mutableStateOf(3) }
         var editing by rememberSaveable { mutableStateOf(false) }
         var activeFilter by rememberSaveable { mutableStateOf(BookshelfFilter.ALL) }
@@ -563,7 +566,11 @@ object FavoritePage : AppDestination {
                     AnimatedContent(
                         targetState = listView to shown,
                         contentKey = { (mode, books) -> mode to books.map { it.bookKey } },
-                        transitionSpec = { fadeIn(tween(AppMotion.standard)) togetherWith fadeOut(tween(AppMotion.standard)) },
+                        // Non-shared labels crossfade without retaining an opaque outgoing list.
+                        // Matched covers and titles keep their own motion in the shared overlay.
+                        transitionSpec = {
+                            fadeIn(tween(AppMotion.standard)) togetherWith fadeOut(tween(AppMotion.standard))
+                        },
                         label = "BookshelfLayout"
                     ) { (displayedListView, displayedBooks) ->
                         val layoutVisibility = this
@@ -696,6 +703,7 @@ object FavoritePage : AppDestination {
                                     if (!editing && recentReads.isNotEmpty()) {
                                         AppBookshelfRecentReads(
                                             books = recentReads,
+                                            coverMemory = coverMemory,
                                             modifier = Modifier.padding(bottom = AppSpacing.md),
                                             onBookClick = { entry ->
                                                 openBook(entry)
@@ -762,7 +770,7 @@ object FavoritePage : AppDestination {
                                                 }
                                                 Box(Modifier.weight(1f)) {
                                                     if (displayedListView) ShelfListItem(
-                                                        entry = entry, coverModifier = coverMorph, titleModifier = titleMorph, enabled = !deleting && !savingGroup,
+                                                        entry = entry, coverMemory = coverMemory, coverModifier = coverMorph, titleModifier = titleMorph, enabled = !deleting && !savingGroup,
                                                         editing = editing,
                                                         selected = entry.bookKey in selected,
                                                         onClick = {
@@ -773,6 +781,7 @@ object FavoritePage : AppDestination {
                                                         onLongClick = { selectBook(entry) }
                                                     ) else ShelfCard(
                                                         entry = entry,
+                                                        coverMemory = coverMemory,
                                                         coverModifier = coverMorph,
                                                         titleModifier = titleMorph,
                                                         readingActivity = readingIndex.activityFor(entry),
@@ -990,6 +999,7 @@ private fun BookshelfSyncStatusIndicator(
 @Composable
 private fun ShelfCard(
     entry: BookshelfEntry,
+    coverMemory: BookshelfCoverMemory,
     coverModifier: Modifier = Modifier,
     titleModifier: Modifier = Modifier,
     readingActivity: LocalReadingActivity?,
@@ -999,8 +1009,9 @@ private fun ShelfCard(
     onLongClick: () -> Unit,
     onClick: () -> Unit
 ) {
-    val cover = BookshelfCoverStore.rememberCover(entry)
-    val coverSource = rememberNovelCoverSource(entry.url, cover.url, cover.state)
+    val presentation = rememberBookshelfCover(entry, coverMemory)
+    val cover = presentation.source
+    val coverSource = rememberNovelCoverSource(entry.url, cover.url, cover.state, cachedImage = presentation.initialImage)
     val open = { if (editing) onClick() else coverSource.open(onClick) }
     val shape = AppShapes.cover
     Column(
@@ -1019,7 +1030,10 @@ private fun ShelfCard(
         ) {
             AppNovelCover(
                 coverUrl = cover.url,
-                onImageLoaded = coverSource.onImageLoaded,
+                onImageLoaded = {
+                    presentation.onImageLoaded(it)
+                    coverSource.onImageLoaded(it)
+                },
                 initialImage = coverSource.initialImage,
                 coverState = cover.state,
                 title = validNovelTitle(entry.title, entry.novelId, entry.url),
@@ -1085,6 +1099,7 @@ private fun BookshelfUpdateDot(modifier: Modifier = Modifier) {
 @Composable
 private fun ShelfListItem(
     entry: BookshelfEntry,
+    coverMemory: BookshelfCoverMemory,
     coverModifier: Modifier = Modifier,
     titleModifier: Modifier = Modifier,
     enabled: Boolean,
@@ -1093,8 +1108,9 @@ private fun ShelfListItem(
     onClick: () -> Unit,
     onLongClick: () -> Unit
 ) {
-    val cover = BookshelfCoverStore.rememberCover(entry)
-    val coverSource = rememberNovelCoverSource(entry.url, cover.url, cover.state)
+    val presentation = rememberBookshelfCover(entry, coverMemory)
+    val cover = presentation.source
+    val coverSource = rememberNovelCoverSource(entry.url, cover.url, cover.state, cachedImage = presentation.initialImage)
     val open = { if (editing) onClick() else coverSource.open(onClick) }
     val coverShape = AppShapes.cover
     Row(
@@ -1114,7 +1130,10 @@ private fun ShelfListItem(
         ) {
             AppNovelCover(
                 coverUrl = cover.url,
-                onImageLoaded = coverSource.onImageLoaded,
+                onImageLoaded = {
+                    presentation.onImageLoaded(it)
+                    coverSource.onImageLoaded(it)
+                },
                 initialImage = coverSource.initialImage,
                 title = validNovelTitle(entry.title, entry.novelId, entry.url),
                 modifier = Modifier.then(coverModifier).then(coverSource.modifier).fillMaxSize().clip(coverShape),

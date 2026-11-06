@@ -575,7 +575,10 @@ class CachedCoverInstrumentedTest {
 
     @Test fun carouselImageIsAvailableWithItsSeparateSharedElementTransition() = verifySourceImageHandoff(carousel = true)
 
-    private fun verifySourceImageHandoff(carousel: Boolean) {
+    @Test fun layoutCachedImageIsHandedOffWithoutAnotherLoadCallback() =
+        verifySourceImageHandoff(carousel = false, seedFromLayout = true)
+
+    private fun verifySourceImageHandoff(carousel: Boolean, seedFromLayout: Boolean = false) {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val loader = ImageLoader.Builder(context).build()
         val old = File.createTempFile("source-cover-", ".png", context.cacheDir)
@@ -600,8 +603,11 @@ class CachedCoverInstrumentedTest {
                     if (!opened) {
                         // Duplicate occurrences must hand off the clicked instance's image.
                         rememberNovelCoverSource(url, cached.data.toString(), enableSharedElement = false)
-                        val clicked = rememberNovelCoverSource(url, cached.data.toString(), enableSharedElement = false)
-                        SideEffect { clicked.onImageLoaded(image) }
+                        val clicked = rememberNovelCoverSource(
+                            url, cached.data.toString(), enableSharedElement = false,
+                            cachedImage = image.takeIf { seedFromLayout }
+                        )
+                        if (!seedFromLayout) SideEffect { clicked.onImageLoaded(image) }
                         Box(Modifier.size(40.dp).testTag("open-cover")
                             .clickable { clicked.open { opened = true } })
                     } else {

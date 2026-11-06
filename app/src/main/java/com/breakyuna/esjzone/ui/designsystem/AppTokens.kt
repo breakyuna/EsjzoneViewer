@@ -240,7 +240,7 @@ internal fun buildSemanticColors(
 }
 
 internal val LocalAppSemanticColors = staticCompositionLocalOf {
-    buildSemanticColors(lightColorScheme(), AppPalette.INK, darkTheme = false)
+    buildSemanticColors(lightColorScheme(), AppPalette.default, darkTheme = false)
 }
 
 @Composable

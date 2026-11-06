@@ -185,7 +185,7 @@ fun paletteSwatch(palette: AppPalette, darkTheme: Boolean): Pair<Color, Color> =
 @Composable
 fun AppTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
-    palette: AppPalette = AppPalette.INK,
+    palette: AppPalette = AppPalette.default,
     content: @Composable () -> Unit
 ) {
     val colorScheme = paletteColorScheme(palette, darkTheme)

@@ -49,20 +49,23 @@ internal fun rememberNovelCoverSource(
     url: String,
     coverUrl: String? = null,
     state: CoverState? = null,
-    enableSharedElement: Boolean = true
+    enableSharedElement: Boolean = true,
+    cachedImage: AppLoadedImage? = null
 ): NovelCoverSource {
     val identity = remember(url) { EsjzoneUrls.canonicalPageKey(url) }
     val token = rememberSaveable(identity) { UUID.randomUUID().toString() }
     val transitions = LocalNovelSharedCovers.current
     // Restore only the clicked occurrence, even while its local URL is resolving.
     // Keep this reference after the outgoing detail page releases the registry entry.
-    val initialImage = remember(identity, token) {
+    val restoredImage = remember(identity, token) {
         transitions?.sources?.get(identity)?.takeIf { it.token == token }?.image
     }
+    // Shelf layout handoffs must seed both the visible painter and the next detail entry.
+    val initialImage = restoredImage ?: cachedImage
     val image = remember(identity, coverUrl) { mutableStateOf(initialImage) }
     val modifier = if (enableSharedElement) Modifier.novelCoverSharedElement(token) else Modifier
     return NovelCoverSource(modifier, initialImage, onImageLoaded = { image.value = it }) { action ->
-        transitions?.sources?.set(identity, SharedCoverOrigin(token, coverUrl, state, image.value))
+        transitions?.sources?.set(identity, SharedCoverOrigin(token, coverUrl, state, image.value ?: initialImage))
         action()
     }
 }

@@ -93,7 +93,7 @@ object SettingsStateBoundary {
 
     private val _adult = mutableStateOf(true)
     private val _themeMode = mutableStateOf(AppThemeMode.SYSTEM)
-    private val _palette = mutableStateOf(AppPalette.INK)
+    private val _palette = mutableStateOf(AppPalette.default)
     private val _hideHomeRecommendations = mutableStateOf(true)
     private val _domain = mutableStateOf(SettingsDefaults.DOMAINS.first())
     private val _language = mutableStateOf(AppLanguage.SYSTEM)

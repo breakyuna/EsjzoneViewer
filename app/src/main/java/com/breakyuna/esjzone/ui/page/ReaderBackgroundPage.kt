@@ -15,6 +15,8 @@ import androidx.compose.ui.unit.Density
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.background
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Image
@@ -116,7 +118,8 @@ object ReaderBackgroundPage : AppDestination {
                         ReaderGlowSurface(preview, state.draft, Modifier.fillMaxSize()
                             .readerBackdrop(Color.Black, remember(preview) { BitmapPainter(preview.asImageBitmap()) }, state.draft.transparency)) {
                             Column(
-                                Modifier.fillMaxSize().padding(horizontal = settings.horizontalPaddingDp.dp)
+                                Modifier.fillMaxSize().verticalScroll(rememberScrollState())
+                                    .padding(horizontal = settings.horizontalPaddingDp.dp)
                                     .padding(top = 88.dp, bottom = 24.dp),
                                 verticalArrangement = Arrangement.spacedBy(settings.paragraphSpacingDp.dp)
                             ) {

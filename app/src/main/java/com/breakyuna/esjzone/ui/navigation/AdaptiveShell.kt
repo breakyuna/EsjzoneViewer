@@ -179,9 +179,7 @@ fun AdaptiveAppShell(
     // Compact navigation stays at tab roots. Wide landscape keeps the rail available
     // while each tab retains its child stack; edit modes can still suppress it.
     val keepWideRail = com.breakyuna.esjzone.ui.designsystem.appUsesWideLayout()
-    val showFloatingNavigation = selectedStack.lastOrNull() == tab.route && suppressedTabs[tab] != true
-
-    val floatingNavPadding = PaddingValues(0.dp)
+    val railOutsideStack = widthSizeClass != WindowWidthSizeClass.COMPACT && keepWideRail
 
     val isRootOfSecondaryTab = tab != defaultTabId && (selectedStack.size <= 1 || selectedStack.lastOrNull() == tab.route)
     BackHandler(enabled = isRootOfSecondaryTab) {
@@ -255,83 +253,84 @@ fun AdaptiveAppShell(
 
     CompositionLocalProvider(
         LocalAuthorization provides authorization,
-        LocalFloatingNavPadding provides if (showFloatingNavigation) floatingNavPadding else PaddingValues(0.dp)
+        LocalFloatingNavPadding provides PaddingValues(0.dp)
     ) {
-        when (widthSizeClass) {
-            WindowWidthSizeClass.COMPACT -> {
-                Column(
-                    modifier = modifier.windowInsetsPadding(
-                        shellSafeDrawing(top = !topInsetConsumed, bottom = false)
-                    )
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .weight(1f)
-                            .fillMaxWidth()
-                    ) {
-                        TabStacksDisplay(
-                            selected = tab,
-                            orderedTabs = orderedTabs,
-                            suppressionState = suppressedTabs,
-                            homeStack = homeStack,
-                            homeNavigator = homeNavigator,
-                            historyStack = historyStack,
-                            historyNavigator = historyNavigator,
-                            bookshelfStack = bookshelfStack,
-                            bookshelfNavigator = bookshelfNavigator,
-                            profileStack = profileStack,
-                            profileNavigator = profileNavigator,
-                            modifier = Modifier.fillMaxSize()
-                        )
-                    }
-                    if (showFloatingNavigation) {
-                        AppNavigationBar(
-                            selected = tab,
-                            onSelected = onTabSelected,
-                            tabs = orderedTabs,
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                    }
-                }
+        Row(
+            modifier = modifier.windowInsetsPadding(
+                shellSafeDrawing(top = !topInsetConsumed, bottom = widthSizeClass != WindowWidthSizeClass.COMPACT)
+            )
+        ) {
+            // A wide landscape rail intentionally remains available on child pages.
+            if (railOutsideStack && suppressedTabs[tab] != true) {
+                AppSideNavigationBar(
+                    selected = tab,
+                    onSelected = onTabSelected,
+                    tabs = orderedTabs,
+                    modifier = Modifier.fillMaxHeight()
+                )
             }
+            Box(Modifier.weight(1f).fillMaxHeight()) {
+                TabStacksDisplay(
+                    selected = tab,
+                    orderedTabs = orderedTabs,
+                    suppressionState = suppressedTabs,
+                    homeStack = homeStack,
+                    homeNavigator = homeNavigator,
+                    historyStack = historyStack,
+                    historyNavigator = historyNavigator,
+                    bookshelfStack = bookshelfStack,
+                    bookshelfNavigator = bookshelfNavigator,
+                    profileStack = profileStack,
+                    profileNavigator = profileNavigator,
+                    rootContent = { tabId, contentMotion, content ->
+                        TabRootLayout(
+                            showNavigation = !railOutsideStack && suppressedTabs[tabId] != true,
+                            sideNavigation = widthSizeClass != WindowWidthSizeClass.COMPACT,
+                            contentModifier = contentMotion,
+                            navigationVisible = tabId == tab,
+                            navigation = {
+                                if (widthSizeClass == WindowWidthSizeClass.COMPACT) {
+                                    AppNavigationBar(tab, onTabSelected, orderedTabs, Modifier.fillMaxWidth())
+                                } else {
+                                    AppSideNavigationBar(tab, onTabSelected, orderedTabs, Modifier.fillMaxHeight())
+                                }
+                            },
+                            content = content
+                        )
+                    },
+                    modifier = Modifier.fillMaxSize()
+                )
+            }
+        }
+    }
+}
 
-            WindowWidthSizeClass.MEDIUM,
-            WindowWidthSizeClass.EXPANDED -> {
-                Row(
-                    modifier = modifier.windowInsetsPadding(
-                        shellSafeDrawing(top = !topInsetConsumed, bottom = true)
-                    )
-                ) {
-                    if (showFloatingNavigation || (keepWideRail && suppressedTabs[tab] != true)) {
-                        AppSideNavigationBar(
-                            selected = tab,
-                            onSelected = onTabSelected,
-                            tabs = orderedTabs,
-                            modifier = Modifier.fillMaxHeight()
-                        )
-                    }
-                    Box(
-                        modifier = Modifier
-                            .weight(1f)
-                            .fillMaxHeight()
-                    ) {
-                        TabStacksDisplay(
-                            selected = tab,
-                            orderedTabs = orderedTabs,
-                            suppressionState = suppressedTabs,
-                            homeStack = homeStack,
-                            homeNavigator = homeNavigator,
-                            historyStack = historyStack,
-                            historyNavigator = historyNavigator,
-                            bookshelfStack = bookshelfStack,
-                            bookshelfNavigator = bookshelfNavigator,
-                            profileStack = profileStack,
-                            profileNavigator = profileNavigator,
-                            modifier = Modifier.fillMaxSize()
-                        )
-                    }
-                }
-            }
+/** Root chrome belongs to its NavDisplay entry, so push/pop never resize the host. */
+@Composable
+internal fun TabRootLayout(
+    showNavigation: Boolean,
+    sideNavigation: Boolean,
+    navigation: @Composable () -> Unit,
+    contentModifier: Modifier = Modifier,
+    navigationVisible: Boolean = true,
+    content: @Composable () -> Unit
+) {
+    val navigationContent: @Composable () -> Unit = {
+        // Retain the measured space on inactive roots, but draw only one navigation bar.
+        Box(Modifier.graphicsLayer { alpha = if (navigationVisible) 1f else 0f }
+            .then(if (!navigationVisible) Modifier.clearAndSetSemantics { } else Modifier)) {
+            navigation()
+        }
+    }
+    if (sideNavigation) {
+        Row(Modifier.fillMaxSize()) {
+            if (showNavigation) navigationContent()
+            com.breakyuna.esjzone.ui.designsystem.AppViewport(Modifier.weight(1f).fillMaxHeight().then(contentModifier), content)
+        }
+    } else {
+        Column(Modifier.fillMaxSize()) {
+            com.breakyuna.esjzone.ui.designsystem.AppViewport(Modifier.weight(1f).fillMaxWidth().then(contentModifier), content)
+            if (showNavigation) navigationContent()
         }
     }
 }
@@ -361,27 +360,46 @@ private fun TabStacksDisplay(
     bookshelfNavigator: AppNavigator,
     profileStack: MutableList<NavKey>,
     profileNavigator: AppNavigator,
+    rootContent: @Composable (AppTabId, Modifier, @Composable () -> Unit) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    TabSwitchLayers(selected, orderedTabs, modifier) { tabId, active, contentMotion ->
+        val (stack, navigator) = when (tabId) {
+            AppTabId.HOME -> homeStack to homeNavigator
+            AppTabId.HISTORY -> historyStack to historyNavigator
+            AppTabId.BOOKSHELF -> bookshelfStack to bookshelfNavigator
+            AppTabId.PROFILE -> profileStack to profileNavigator
+        }
+        TabStackDisplay(
+            tabId = tabId,
+            suppressionState = suppressionState,
+            stack = stack,
+            active = active,
+            navigator = navigator,
+            rootContent = rootContent,
+            contentMotion = contentMotion,
+            modifier = Modifier.fillMaxSize()
+        )
+    }
+}
+
+/** Keep stack owners mounted; tab motion affects page bodies, never their navigation chrome. */
+@Composable
+internal fun TabSwitchLayers(
+    selected: AppTabId,
+    orderedTabs: List<AppTabId>,
+    modifier: Modifier = Modifier,
+    content: @Composable (AppTabId, Boolean, Modifier) -> Unit
+) {
     val transition = updateTransition(targetState = selected, label = "TabSwitch")
-    // Keep all four NavDisplays mounted. Their saveable-state holders and
-    // entry ViewModel stores therefore survive a tab switch; only the
-    // selected display is placed above the others for input and rendering.
-    androidx.compose.foundation.layout.Box(modifier) {
+    Box(modifier) {
         AppTabId.entries.forEach { tabId ->
             key(tabId) {
-                val (stack, navigator) = when (tabId) {
-                    AppTabId.HOME -> homeStack to homeNavigator
-                    AppTabId.HISTORY -> historyStack to historyNavigator
-                    AppTabId.BOOKSHELF -> bookshelfStack to bookshelfNavigator
-                    AppTabId.PROFILE -> profileStack to profileNavigator
-                }
                 val active = selected == tabId
                 val alpha = transition.animateFloat(
                     transitionSpec = { tween(durationMillis = 300, easing = FastOutSlowInEasing) },
                     label = "${tabId.name}TabAlpha"
                 ) { targetTab -> if (targetTab == tabId) 1f else 0f }
-                // A short, directional drift follows the user's navigation order.
                 val horizontalOffset = transition.animateFloat(
                     transitionSpec = { tween(durationMillis = 300, easing = FastOutSlowInEasing) },
                     label = "${tabId.name}TabOffset"
@@ -392,23 +410,18 @@ private fun TabStacksDisplay(
                         else -> 16f
                     }
                 }
-                val zIndex = if (active) 1f else 0f
-                TabStackDisplay(
-                    tabId = tabId,
-                    suppressionState = suppressionState,
-                    stack = stack,
-                    active = active,
-                    navigator = navigator,
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .zIndex(zIndex)
-                        .graphicsLayer {
-                            this.alpha = alpha.value
-                            translationX = horizontalOffset.value.dp.toPx()
-                        }
+                Box(
+                    Modifier.fillMaxSize().zIndex(if (active) 1f else 0f)
+                        // Fully hidden stacks (including shared overlays) must not paint.
+                        .graphicsLayer { this.alpha = if (active || alpha.value > 0f) 1f else 0f }
                         .blockInactiveTabInput(active)
                         .then(if (!active) Modifier.clearAndSetSemantics { } else Modifier)
-                )
+                ) {
+                    content(tabId, active, Modifier.graphicsLayer {
+                        this.alpha = alpha.value
+                        translationX = horizontalOffset.value.dp.toPx()
+                    })
+                }
             }
         }
     }
@@ -430,6 +443,8 @@ private fun TabStackDisplay(
     stack: MutableList<NavKey>,
     active: Boolean,
     navigator: AppNavigator,
+    rootContent: @Composable (AppTabId, Modifier, @Composable () -> Unit) -> Unit,
+    contentMotion: Modifier,
     modifier: Modifier = Modifier
 ) {
     // Alpha alone does not disable hidden pages' lifecycle-bound back handlers.
@@ -480,31 +495,41 @@ private fun TabStackDisplay(
                         rememberViewModelStoreNavEntryDecorator()
                     ),
                     entryProvider = entryProvider {
-                        entry<AppNavKey.HomeTab>(metadata = ::containerTransformMetadata) { HomeTab.Content() }
-                        entry<AppNavKey.HistoryTab>(metadata = ::containerTransformMetadata) { HistoryTab.Content() }
-                        entry<AppNavKey.BookshelfTab>(metadata = ::containerTransformMetadata) { FavoriteTab.Content() }
-                        entry<AppNavKey.ProfileTab>(metadata = ::containerTransformMetadata) { ProfileTab.Content() }
+                        entry<AppNavKey.HomeTab>(metadata = ::containerTransformMetadata) {
+                            rootContent(tabId, contentMotion) { HomeTab.Content() }
+                        }
+                        entry<AppNavKey.HistoryTab>(metadata = ::containerTransformMetadata) {
+                            rootContent(tabId, contentMotion) { HistoryTab.Content() }
+                        }
+                        entry<AppNavKey.BookshelfTab>(metadata = ::containerTransformMetadata) {
+                            rootContent(tabId, contentMotion) { FavoriteTab.Content() }
+                        }
+                        entry<AppNavKey.ProfileTab>(metadata = ::containerTransformMetadata) {
+                            rootContent(tabId, contentMotion) { ProfileTab.Content() }
+                        }
                         entry<AppNavKey.Legacy>(metadata = ::containerTransformMetadata) { key ->
-                            val destination = navigator.destination(key.route)
-                            if (destination != null) {
-                                val containerTarget = ContainerTransformTarget.forKey(key, origin = tabId.route)
-                                if (containerTarget != null) {
-                                    ContainerTransformDestination(containerTarget) { destination.Content() }
+                            Box(Modifier.fillMaxSize().then(contentMotion)) {
+                                val destination = navigator.destination(key.route)
+                                if (destination != null) {
+                                    val containerTarget = ContainerTransformTarget.forKey(key, origin = tabId.route)
+                                    if (containerTarget != null) {
+                                        ContainerTransformDestination(containerTarget) { destination.Content() }
+                                    } else {
+                                        destination.Content()
+                                    }
                                 } else {
-                                    destination.Content()
-                                }
-                            } else {
-                                DiscoveryScaffold(
-                                    title = stringResource(R.string.load_failed_short),
-                                    onBack = { if (!navigator.pop()) Unit }
-                                ) { padding ->
-                                    EmptyState(
+                                    DiscoveryScaffold(
                                         title = stringResource(R.string.load_failed_short),
-                                        message = stringResource(R.string.community_empty_guidance),
-                                        modifier = Modifier.fillMaxSize().padding(padding),
-                                        actionLabel = stringResource(R.string.close),
-                                        onAction = { if (!navigator.pop()) Unit }
-                                    )
+                                        onBack = { if (!navigator.pop()) Unit }
+                                    ) { padding ->
+                                        EmptyState(
+                                            title = stringResource(R.string.load_failed_short),
+                                            message = stringResource(R.string.community_empty_guidance),
+                                            modifier = Modifier.fillMaxSize().padding(padding),
+                                            actionLabel = stringResource(R.string.close),
+                                            onAction = { if (!navigator.pop()) Unit }
+                                        )
+                                    }
                                 }
                             }
                         }

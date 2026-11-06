@@ -26,7 +26,6 @@ import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
 import com.breakyuna.esjzone.R
 import com.breakyuna.esjzone.database.entity.BookshelfEntry
-import com.breakyuna.esjzone.database.BookshelfCoverStore
 import com.breakyuna.esjzone.ui.designsystem.AppShapes
 import kotlin.math.roundToInt
 
@@ -41,10 +40,11 @@ private const val OVERLAP_FRACTION = 0.08f
  * The shelf below remains complete; these are shortcuts, not removed/reordered grid rows.
  */
 @Composable
-fun AppBookshelfRecentReads(
+internal fun AppBookshelfRecentReads(
     books: List<BookshelfEntry>,
     onBookClick: (BookshelfEntry) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    coverMemory: BookshelfCoverMemory? = null
 ) {
     if (books.isEmpty()) return
     val order = remember(books.size) { recentReadOrder.filter { it < books.size } }
@@ -75,11 +75,15 @@ fun AppBookshelfRecentReads(
                 val entry = books[rank]
                 key(entry.bookKey) {
                     val rankDescription = stringResource(R.string.bookshelf_recent_rank, rank + 1)
-                    val cover = BookshelfCoverStore.rememberCover(entry)
-                    val transition = rememberNovelCoverSource(entry.url, cover.url, cover.state)
+                    val presentation = rememberBookshelfCover(entry, coverMemory)
+                    val cover = presentation.source
+                    val transition = rememberNovelCoverSource(entry.url, cover.url, cover.state, cachedImage = presentation.initialImage)
                     AppNovelCover(
                         coverUrl = cover.url,
-                        onImageLoaded = transition.onImageLoaded,
+                        onImageLoaded = {
+                            presentation.onImageLoaded(it)
+                            transition.onImageLoaded(it)
+                        },
                         initialImage = transition.initialImage,
                         coverState = cover.state,
                         title = entry.title.ifBlank { stringResource(R.string.download_unknown_novel) },
