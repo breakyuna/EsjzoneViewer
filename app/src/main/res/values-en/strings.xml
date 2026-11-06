@@ -693,6 +693,7 @@
     <string name="reading_stats_less_than_minute">&lt;1 min</string>
     <string name="reading_stats_minutes">%1$d min</string>
     <string name="reading_stats_hours_minutes">%1$d h %2$d min</string>
+    <string name="reading_stats_overview_hours_minutes">%1$d h %2$d min</string>
     <string name="guestbook_sync_running">Syncing message board</string>
     <string name="guestbook_sync_success">Message board synced</string>
     <string name="guestbook_sync_failed">Message board sync failed</string>
@@ -862,6 +863,9 @@
     <string name="storage_location_failed">Unable to access the folder or migrate files. Check the folder authorization and whether it contains conflicting files.</string>
     <string name="storage_reindex">Reindex downloads</string>
     <string name="storage_reindex_done">Downloads reindexed</string>
+    <string name="storage_open_folder">Open shared folder</string>
+    <string name="storage_open_folder_unavailable">Choose a shared folder in Settings under Storage location first.</string>
+    <string name="storage_open_folder_failed">Unable to open the shared folder. Check storage access or your file manager.</string>
     <string name="storage_access_failed">Unable to access storage. Choose the folder again in Settings → Storage location.</string>
     <string name="settings_display_group">Display</string>
     <string name="settings_reading_group">Reading</string>
@@ -945,7 +949,7 @@
     <string name="reader_background_custom_color">Custom</string>
     <string name="reader_background_color_value">Text color %1$s</string>
     <string name="reader_background_preview_title">草枕</string>
-    <string name="reader_background_preview_text">山路を登りながら、こう考えた。\n\n智に働けば角が立つ。情に棹させば流される。意地を通せば窮屈だ。とかくに人の世は住みにくい。\n\n住みにくさが高じると、安い所へ引き越したくなる。どこへ越しても住みにくいと悟った時、詩が生れて、画が出来る。\n\n人の世を作ったものは神でもなければ鬼でもない。やはり向う三軒両隣りにちらちらするただの人である。ただの人が作った人の世が住みにくいからとて、越す国はあるまい。あれば人でなしの国へ行くばかりだ。人でなしの国は人の世よりもなお住みにくかろう。\n\n越す事のならぬ世が住みにくければ、住みにくい所をどれほどか、寛容て、束の間の命を、束の間でも住みよくせねばならぬ。ここに詩人という天職が出来て、ここに画家という使命が降る。あらゆる芸術の士は人の世を長閑にし、人の心を豊かにするが故に尊い。</string>
+    <string name="reader_background_preview_text">沿着山路攀登，我这样想着。\n\n只凭理智行事，难免锋芒毕露；顺着感情行事，便会随波逐流；一味坚持己见，又会处处受限。总之，人世间并不容易安居。\n\n越是觉得难以安居，就越想搬到舒适的地方去。等到领悟无论搬到哪里都难以安居时，诗便诞生了，画也随之出现。\n\n创造人世的既不是神，也不是鬼，而是住在街坊邻里、时常在眼前出现的普通人。即使普通人创造的人世难以安居，又能搬到哪里去呢？若真有去处，也只能去一个没有人的国度。可那样的国度，恐怕比人世更加难以安居。\n\n既然无法逃离这个难以安居的世界，就应当让这处境变得宽和一些，让短暂的生命哪怕片刻也能过得舒心。于是有了诗人的天职，也有了画家的使命。一切从事艺术的人都值得尊敬，因为他们让人世变得安宁，让人心变得丰盈。</string>
     <string name="reader_background_image_failed">Unable to read the image. Choose a valid image smaller than 32 MB and try again.</string>
     <string name="reader_background_save_failed">Unable to save the background. Please try again.</string>
     <string name="reader_first_line_indent">First-line indent (2 characters)</string>

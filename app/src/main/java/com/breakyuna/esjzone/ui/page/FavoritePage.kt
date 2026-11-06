@@ -73,6 +73,7 @@ import androidx.compose.animation.expandVertically
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.SharedTransitionLayout
+import androidx.compose.animation.SharedTransitionScope
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
@@ -100,7 +101,9 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.layout.calculateStartPadding
 import androidx.compose.ui.platform.LocalFocusManager
@@ -108,6 +111,8 @@ import androidx.compose.ui.platform.LocalLayoutDirection
 import com.breakyuna.esjzone.ui.designsystem.globalStringResource as stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import com.breakyuna.esjzone.ui.navigation.LocalFloatingNavPadding
 import com.breakyuna.esjzone.ui.navigation.LocalFloatingNavSuppression
@@ -561,6 +566,21 @@ object FavoritePage : AppDestination {
                 val adaptiveColumns = bookshelfColumnCount((maxWidth - startPadding - endPadding).value, AppSpacing.xl.value,
                     minCellWidth = if (wide) 140f * fontScale else 96f)
                 SideEffect { gridColumns = adaptiveColumns }
+                // Shared elements draw above their lazy parent, so clip the showcase to the
+                // shelf viewport when it is partially scrolled off screen.
+                val recentReadsClip = remember(constraints.maxWidth, constraints.maxHeight) {
+                    val viewport = Path().apply {
+                        addRect(Rect(0f, 0f, constraints.maxWidth.toFloat(), constraints.maxHeight.toFloat()))
+                    }
+                    object : SharedTransitionScope.OverlayClip {
+                        override fun getClipPath(
+                            sharedContentState: SharedTransitionScope.SharedContentState,
+                            bounds: Rect,
+                            layoutDirection: LayoutDirection,
+                            density: Density
+                        ): Path = viewport
+                    }
+                }
                 SharedTransitionLayout {
                     val layoutScope = this
                     AnimatedContent(
@@ -704,7 +724,16 @@ object FavoritePage : AppDestination {
                                         AppBookshelfRecentReads(
                                             books = recentReads,
                                             coverMemory = coverMemory,
-                                            modifier = Modifier.padding(bottom = AppSpacing.md),
+                                            // Both layouts show the same rail; render only one copy
+                                            // during the surrounding list's crossfade.
+                                            modifier = with(layoutScope) {
+                                                Modifier.sharedElement(
+                                                    rememberSharedContentState("bookshelf-recent-reads"),
+                                                    layoutVisibility,
+                                                    boundsTransform = { _, _ -> tween(AppMotion.standard) },
+                                                    clipInOverlayDuringTransition = recentReadsClip
+                                                )
+                                            }.padding(bottom = AppSpacing.md),
                                             onBookClick = { entry ->
                                                 openBook(entry)
                                             }

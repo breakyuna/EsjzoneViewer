@@ -12,6 +12,7 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -19,6 +20,7 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.width
@@ -48,7 +50,6 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconToggleButton
@@ -80,6 +81,10 @@ import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.graphics.Color
@@ -91,6 +96,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewModelScope
 import com.breakyuna.esjzone.R
@@ -334,47 +340,77 @@ private fun StatisticsLayout(modifier: Modifier, panels: List<@Composable () -> 
 @Composable
 private fun StatisticsOverview(summary: ReadingStatisticsSummary) {
     val colors = MaterialTheme.colorScheme
-    Column(verticalArrangement = Arrangement.spacedBy(AppSpacing.md)) {
-        Column(
-            Modifier.fillMaxWidth().clip(AppShapes.prominent)
-                .background(Brush.linearGradient(listOf(colors.primaryContainer, colors.surfaceContainerHigh)))
-                .padding(AppSpacing.xl),
-            verticalArrangement = Arrangement.spacedBy(AppSpacing.lg)
-        ) {
-            Column(verticalArrangement = Arrangement.spacedBy(AppSpacing.sm),
-                modifier = Modifier.semantics(mergeDescendants = true) {}) {
-                Text(stringResource(R.string.reading_stats_total), style = AppTypography.labelLarge,
-                    color = colors.onPrimaryContainer.copy(alpha = .7f))
-                Text(formatDuration(summary.totalMs), style = AppTypography.displayLarge,
-                    color = colors.onPrimaryContainer)
+    BoxWithConstraints(Modifier.fillMaxWidth()) {
+        val cardMinHeight = ((maxWidth - AppSpacing.md) / 2 * .54f).coerceIn(96.dp, 144.dp)
+        Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(AppSpacing.md)) {
+            Row(
+                Modifier.fillMaxWidth().height(IntrinsicSize.Min),
+                horizontalArrangement = Arrangement.spacedBy(AppSpacing.md)
+            ) {
+                OverviewStatCard(
+                    stringResource(R.string.reading_stats_today), formatOverviewDuration(summary.todayMs),
+                    cardMinHeight, Modifier.weight(1f).fillMaxHeight()
+                )
+                OverviewStatCard(
+                    stringResource(R.string.reading_stats_week), formatOverviewDuration(summary.weekMs),
+                    cardMinHeight, Modifier.weight(1f).fillMaxHeight()
+                )
             }
-            HorizontalDivider(color = colors.onPrimaryContainer.copy(alpha = .12f))
-            BoxWithConstraints(Modifier.fillMaxWidth()) {
-                val stacked = maxWidth / LocalConfiguration.current.fontScale < 260.dp
-                FlowRow(
-                    maxItemsInEachRow = if (stacked) 1 else 3,
-                    horizontalArrangement = Arrangement.spacedBy(AppSpacing.lg),
-                    verticalArrangement = Arrangement.spacedBy(AppSpacing.md)
-                ) {
-                    listOf(
-                        stringResource(R.string.reading_stats_today) to formatDuration(summary.todayMs),
-                        stringResource(R.string.reading_stats_week) to formatDuration(summary.weekMs),
-                        stringResource(R.string.reading_stats_streak) to stringResource(R.string.reading_stats_days, summary.streakDays)
-                    ).forEach { (label, value) ->
-                        Column(Modifier.weight(1f).semantics(mergeDescendants = true) {},
-                            verticalArrangement = Arrangement.spacedBy(AppSpacing.xs)) {
-                            Text(label, style = AppTypography.bodySmall,
-                                color = colors.onPrimaryContainer.copy(alpha = .7f))
-                            Text(value, style = AppTypography.labelLarge, color = colors.onPrimaryContainer)
-                        }
-                    }
-                }
+            Row(
+                Modifier.fillMaxWidth().height(IntrinsicSize.Min),
+                horizontalArrangement = Arrangement.spacedBy(AppSpacing.md)
+            ) {
+                OverviewStatCard(
+                    stringResource(R.string.reading_stats_total), formatOverviewDuration(summary.totalMs),
+                    cardMinHeight, Modifier.weight(1f).fillMaxHeight()
+                )
+                OverviewStatCard(
+                    stringResource(R.string.reading_stats_streak), stringResource(R.string.reading_stats_days, summary.streakDays),
+                    cardMinHeight, Modifier.weight(1f).fillMaxHeight(), accent = true
+                )
             }
             if (summary.totalMs == 0L) {
                 Text(stringResource(R.string.reading_stats_empty), style = AppTypography.bodySmall,
-                    color = colors.onPrimaryContainer.copy(alpha = .7f))
+                    color = colors.onSurfaceVariant, modifier = Modifier.padding(horizontal = AppSpacing.xs))
             }
         }
+    }
+}
+
+@Composable
+private fun OverviewStatCard(label: String, value: String, minHeight: Dp, modifier: Modifier = Modifier, accent: Boolean = false) {
+    val colors = MaterialTheme.colorScheme
+    val accentColor = if (colors.surface.luminance() < .5f) Color(0xFFFFB1C6) else Color(0xFFB03061)
+    val numberColor = if (accent) accentColor else colors.onSurface
+    val unitColor = if (accent) accentColor else colors.onSurfaceVariant
+    val styledValue = remember(value, numberColor, unitColor) {
+        buildAnnotatedString {
+            value.forEach { character ->
+                val isNumber = character.isDigit()
+                withStyle(SpanStyle(
+                    color = if (isNumber) numberColor else unitColor,
+                    fontWeight = if (isNumber) FontWeight.Bold else FontWeight.Normal
+                )) { append(character) }
+            }
+        }
+    }
+    Column(
+        modifier.heightIn(min = minHeight).clip(AppShapes.prominent).background(colors.surface)
+            .padding(AppSpacing.lg).semantics(mergeDescendants = true) {},
+        verticalArrangement = Arrangement.spacedBy(AppSpacing.md)
+    ) {
+        Text(label, style = AppTypography.bodyMedium, color = colors.onSurfaceVariant)
+        Text(styledValue, style = AppTypography.headlineSmall.copy(fontWeight = FontWeight.Normal))
+    }
+}
+
+@Composable
+private fun formatOverviewDuration(durationMs: Long): String {
+    val minutes = durationMs / 60_000L
+    return if (minutes >= 60L) {
+        stringResource(R.string.reading_stats_overview_hours_minutes, minutes / 60L, minutes % 60L)
+    } else {
+        formatDuration(durationMs)
     }
 }
 

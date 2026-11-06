@@ -1,5 +1,10 @@
 package com.breakyuna.esjzone.ui.page
 
+import android.content.ActivityNotFoundException
+import android.content.ClipData
+import android.content.Intent
+import android.net.Uri
+import android.provider.DocumentsContract
 import com.breakyuna.esjzone.ui.designsystem.wideListColumns
 import com.breakyuna.esjzone.ui.designsystem.PreserveAdaptiveListAnchor
 import com.breakyuna.esjzone.ui.designsystem.adaptiveItems
@@ -12,7 +17,6 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -28,15 +32,13 @@ import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.Done
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.FolderOpen
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.SelectAll
-import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -48,7 +50,6 @@ import androidx.compose.material3.PlainTooltip
 import androidx.compose.material3.TooltipBox
 import androidx.compose.material3.TooltipDefaults
 import androidx.compose.material3.rememberTooltipState
-import androidx.compose.material3.Switch
 import com.breakyuna.esjzone.ui.designsystem.GlobalText as Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -68,11 +69,13 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import com.breakyuna.esjzone.ui.designsystem.globalStringResource as stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.role
@@ -83,6 +86,7 @@ import com.breakyuna.esjzone.ui.designsystem.accountContentWidth
 import com.breakyuna.esjzone.R
 import com.breakyuna.esjzone.app.PresentationAccess
 import com.breakyuna.esjzone.offline.DownloadedNovelSummary
+import com.breakyuna.esjzone.storage.UserStorage
 import com.breakyuna.esjzone.novellibrary.novel.CoverState
 import com.breakyuna.esjzone.ui.component.AppNovelCover
 import com.breakyuna.esjzone.ui.designsystem.AppShapes
@@ -114,6 +118,8 @@ object DownloadPage : AppDestination {
     @Composable
     override fun Content() {
         val navigator = LocalBaseNavigator.current
+        val context = LocalContext.current
+        val scope = rememberCoroutineScope()
         val model = rememberAppViewModel { DownloadPageModel() }
         val state by model.state.collectAsState()
         val scanModel = rememberAppViewModel { StorageLocationModel() }
@@ -122,6 +128,8 @@ object DownloadPage : AppDestination {
         val activeLocation by PresentationAccess.storage.activeLocation.collectAsState()
         val migrationLocked by PresentationAccess.downloads.migrating.collectAsState()
         val snackbarHost = remember { SnackbarHostState() }
+        val folderUnavailable = stringResource(R.string.storage_open_folder_unavailable)
+        val folderOpenFailed = stringResource(R.string.storage_open_folder_failed)
         val scanResult = scanState.result?.let { stringResource(it) }
         LaunchedEffect(scanState.result) {
             if (scanState.result == R.string.storage_reindex_done) model.refresh()
@@ -131,12 +139,10 @@ object DownloadPage : AppDestination {
             }
         }
         val adult by PresentationAccess.settings.adult
-        val autoSave by PresentationAccess.settings.readerAutoSave
         var editing by rememberSaveable { mutableStateOf(false) }
         var selected by remember { mutableStateOf<Set<String>>(emptySet()) }
         var pendingDelete by remember { mutableStateOf<List<String>>(emptyList()) }
         var showDelete by remember { mutableStateOf(false) }
-        var showSettings by remember { mutableStateOf(false) }
 
         val titleChanges by com.breakyuna.esjzone.database.NovelTitleRepository.titleChanges.collectAsState()
         val downloadChanges by PresentationAccess.downloads.changes.collectAsState()
@@ -188,19 +194,45 @@ object DownloadPage : AppDestination {
                                             if (scanState.busy) {
                                                 CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.dp)
                                             } else {
-                                                Icon(Icons.Filled.FolderOpen, stringResource(R.string.storage_reindex))
+                                                Icon(Icons.Filled.Refresh, stringResource(R.string.storage_reindex))
                                             }
                                         }
                                     }
                                     IconButton(onClick = { editing = true }, enabled = entries.isNotEmpty() && !scanState.busy && !migrationLocked) { Icon(Icons.Filled.Edit, stringResource(R.string.download_edit)) }
-                                    Box {
-                                        IconButton(onClick = { showSettings = true }) { Icon(Icons.Filled.Settings, stringResource(R.string.download_settings)) }
-                                        DropdownMenu(expanded = showSettings, onDismissRequest = { showSettings = false }) {
-                                            DropdownMenuItem(
-                                                text = { Text(stringResource(R.string.download_auto_save), style = AppTypography.labelLarge) },
-                                                trailingIcon = { Switch(checked = autoSave, onCheckedChange = { model.setAutoSave(it) }) },
-                                                onClick = { model.setAutoSave(!autoSave) }
-                                            )
+                                    TooltipBox(
+                                        positionProvider = TooltipDefaults.rememberPlainTooltipPositionProvider(),
+                                        tooltip = { PlainTooltip { Text(stringResource(R.string.storage_open_folder)) } },
+                                        state = rememberTooltipState()
+                                    ) {
+                                        IconButton(onClick = {
+                                            // Use the committed root while a different destination is migrating.
+                                            val location = PresentationAccess.storage.activeLocation.value
+                                            val failure = if (location.isBlank() || location == UserStorage.PRIVATE_LOCATION) {
+                                                folderUnavailable
+                                            } else try {
+                                                val tree = Uri.parse(location)
+                                                val folder = DocumentsContract.buildDocumentUriUsingTree(
+                                                    tree, DocumentsContract.getTreeDocumentId(tree)
+                                                )
+                                                context.startActivity(Intent(Intent.ACTION_VIEW).apply {
+                                                    setDataAndType(folder, DocumentsContract.Document.MIME_TYPE_DIR)
+                                                    // Child-list and child-document URIs share the tree prefix,
+                                                    // not the root document URI used to open the folder.
+                                                    clipData = ClipData.newRawUri("shared-folder", tree)
+                                                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or
+                                                        Intent.FLAG_GRANT_PREFIX_URI_PERMISSION)
+                                                })
+                                                null
+                                            } catch (_: ActivityNotFoundException) {
+                                                folderOpenFailed
+                                            } catch (_: SecurityException) {
+                                                folderOpenFailed
+                                            } catch (_: IllegalArgumentException) {
+                                                folderOpenFailed
+                                            }
+                                            if (failure != null) scope.launch { snackbarHost.showSnackbar(failure) }
+                                        }) {
+                                            Icon(Icons.Filled.FolderOpen, stringResource(R.string.storage_open_folder))
                                         }
                                     }
                                 }
@@ -414,14 +446,6 @@ private class DownloadPageModel : AppStateViewModel<DownloadPageModel.State>(Sta
         viewModelScope.launch(Dispatchers.IO) {
             try { PresentationAccess.downloads.deleteAll(targets) } catch (e: CancellationException) { throw e } catch (e: Exception) { AppLogger.e("DownloadPageModel", "Failed to delete downloaded novels", e) }
             startRefresh(allowDeleting = true)
-        }
-    }
-
-    fun setAutoSave(enabled: Boolean) {
-        viewModelScope.launch(Dispatchers.IO) {
-            try {
-                PresentationAccess.settings.setReaderAutoSave(enabled)
-            } catch (e: CancellationException) { throw e } catch (e: Exception) { AppLogger.e("DownloadPageModel", "Failed to persist reader auto-save preference", e) }
         }
     }
 }

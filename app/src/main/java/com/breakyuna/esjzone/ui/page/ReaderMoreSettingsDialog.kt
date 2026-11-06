@@ -1,13 +1,14 @@
 package com.breakyuna.esjzone.ui.page
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.MaterialTheme
@@ -60,26 +61,31 @@ internal fun ReaderMoreSettingsContent(
         MoreReaderToggle(stringResource(R.string.reader_tap_paging), draft.tapPagingEnabled) {
             commit(draft.copy(tapPagingEnabled = it))
         }
-        Column(Modifier.fillMaxWidth().padding(horizontal = AppSpacing.md, vertical = AppSpacing.sm)) {
-            Text(stringResource(R.string.reader_left_tap_action), style = AppTypography.bodyMedium)
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(AppSpacing.sm)) {
-                FilterChip(
-                    selected = !draft.leftTapForward,
-                    onClick = { commit(draft.copy(leftTapForward = false)) },
-                    shape = AppShapes.compact,
-                    border = null,
-                    colors = FilterChipDefaults.filterChipColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
-                    label = { Text(stringResource(R.string.reader_left_tap_previous), style = AppTypography.labelMedium) }
-                )
-                FilterChip(
-                    selected = draft.leftTapForward,
-                    onClick = { commit(draft.copy(leftTapForward = true)) },
-                    shape = AppShapes.compact,
-                    border = null,
-                    colors = FilterChipDefaults.filterChipColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
-                    label = { Text(stringResource(R.string.reader_left_tap_next), style = AppTypography.labelMedium) }
-                )
-            }
+        Row(
+            modifier = Modifier.fillMaxWidth()
+                .padding(horizontal = AppSpacing.md, vertical = AppSpacing.sm)
+                .horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(AppSpacing.sm),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(stringResource(R.string.reader_left_tap_action), style = AppTypography.bodyMedium, maxLines = 1)
+            Spacer(Modifier.weight(1f))
+            FilterChip(
+                selected = !draft.leftTapForward,
+                onClick = { commit(draft.copy(leftTapForward = false)) },
+                shape = AppShapes.compact,
+                border = null,
+                colors = FilterChipDefaults.filterChipColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
+                label = { Text(stringResource(R.string.reader_left_tap_previous), style = AppTypography.labelMedium, maxLines = 1) }
+            )
+            FilterChip(
+                selected = draft.leftTapForward,
+                onClick = { commit(draft.copy(leftTapForward = true)) },
+                shape = AppShapes.compact,
+                border = null,
+                colors = FilterChipDefaults.filterChipColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
+                label = { Text(stringResource(R.string.reader_left_tap_next), style = AppTypography.labelMedium, maxLines = 1) }
+            )
         }
         MoreReaderToggle(stringResource(R.string.settings_volume_key_paging), draft.volumeKeyPaging) {
             commit(draft.copy(volumeKeyPaging = it))
