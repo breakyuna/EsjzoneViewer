@@ -243,6 +243,15 @@ private fun readerRouteFromToken(token: String): ReaderRoute {
 /** Actual Navigation 3 entry lifecycle, including disabled/interrupted animations. */
 internal val LocalReaderNavigationSettled = compositionLocalOf { true }
 
+@Composable
+internal fun ReaderDestinationContent(navigator: AppNavigator, route: ReaderRoute) {
+    // pop() clears the registry immediately, while NavDisplay still composes the
+    // outgoing entry for its exit animation. Keep its original reader until that
+    // entry leaves composition instead of restoring a fresh reader mid-transition.
+    val destination = remember(navigator, route) { navigator.readerDestination(route) }
+    destination.Content()
+}
+
 /** Compose-only destination contract used by the transition adapter. */
 interface AppDestination {
     val key: String
@@ -771,7 +780,7 @@ fun AppNavigation() {
                                     transition.currentState == androidx.compose.animation.EnterExitState.Visible &&
                                     transition.targetState == androidx.compose.animation.EnterExitState.Visible)
                             ) {
-                                navigator.readerDestination(key.route).Content()
+                                ReaderDestinationContent(navigator, key.route)
                             }
                         }
                     }

@@ -23,8 +23,10 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -151,23 +153,38 @@ object ReaderBackgroundPage : AppDestination {
                 snackbarHost = { SnackbarHost(snackbar) }
             ) { padding ->
                 Column(Modifier.fillMaxSize().padding(padding)) {
-                    Column(Modifier.weight(1f).fillMaxWidth().padding(horizontal = 24.dp, vertical = 8.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally) {
-                        BoxWithConstraints(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
-                            val width = minOf(maxWidth * 0.86f, maxHeight * aspect)
-                            if (state.preview != null) {
-                                previewContent(Modifier.width(width).aspectRatio(aspect).clickable { fullScreen = true })
-                            } else if (state.loading || state.previewBusy) {
-                                CircularProgressIndicator()
-                            } else {
-                                IconButton(onClick = chooseImage) {
-                                    Icon(Icons.Outlined.Image, stringResource(R.string.reader_background_choose_image))
+                    val shadowColor = Color.Black.copy(
+                        alpha = if (MaterialTheme.colorScheme.surface.luminance() > 0.5f) 0.08f else 0.32f
+                    )
+                    val topShadow = remember(shadowColor) {
+                        Brush.verticalGradient(listOf(shadowColor, Color.Transparent))
+                    }
+                    val bottomShadow = remember(shadowColor) {
+                        Brush.verticalGradient(listOf(Color.Transparent, shadowColor))
+                    }
+                    Box(Modifier.weight(1f).fillMaxWidth()) {
+                        Column(Modifier.fillMaxSize().padding(horizontal = 24.dp, vertical = 8.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally) {
+                            BoxWithConstraints(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
+                                val width = minOf(maxWidth * 0.86f, maxHeight * aspect)
+                                if (state.preview != null) {
+                                    previewContent(Modifier.width(width).aspectRatio(aspect).clickable { fullScreen = true })
+                                } else if (state.loading || state.previewBusy) {
+                                    CircularProgressIndicator()
+                                } else {
+                                    IconButton(onClick = chooseImage) {
+                                        Icon(Icons.Outlined.Image, stringResource(R.string.reader_background_choose_image))
+                                    }
                                 }
                             }
+                            OutlinedButton(onClick = chooseImage, enabled = !state.loading && !state.saving,
+                                modifier = Modifier.padding(top = 8.dp)) {
+                                Text(stringResource(R.string.reader_background_choose_image))
+                            }
                         }
-                        OutlinedButton(onClick = chooseImage, enabled = !state.loading && !state.saving,
-                            modifier = Modifier.padding(top = 8.dp)) {
-                            Text(stringResource(R.string.reader_background_choose_image))
+                        Box(Modifier.align(Alignment.TopCenter).fillMaxWidth().height(8.dp).background(topShadow))
+                        if (state.source != null) {
+                            Box(Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(8.dp).background(bottomShadow))
                         }
                     }
                     if (state.source != null) Surface(color = MaterialTheme.colorScheme.surfaceContainerLow) {
