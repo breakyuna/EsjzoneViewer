@@ -15,7 +15,6 @@
 <p align="center">
   <a href="https://github.com/breakyuna/EsjzoneViewer/releases">下载</a> ·
   <a href="#功能">功能</a> ·
-  <a href="#-后续计划-todo">后续计划</a> ·
   <a href="https://github.com/breakyuna/EsjzoneViewer/issues">反馈问题</a> ·
   <a href="#致谢">致谢</a>
 </p>
@@ -113,10 +112,6 @@
 ESJ Zone 的网络请求、登录认证、页面结构与 HTML 解析相关说明整理在 [`NETWORK/`](NETWORK/) 目录中。
 
 这些文档最初由 GPT Work 使用云浏览器分析页面 DOM、表单、内联脚本及可观察的请求行为，后续结合维护者抓包确认和客户端实现持续维护，也包含解析约束与本地存储说明。它们并非 ESJ Zone 官方 API 文档；推断或尚未验证的内容已标注，使用时请注意其验证状态。
-
-## 📌 后续计划 (TODO)
-
-- [ ] 扩展站外小说与章节的阅读适配，如成为小说家吧（syosetu）等来源。
 
 ## 🐛 反馈与贡献
 
