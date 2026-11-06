@@ -159,8 +159,8 @@ interface BookshelfDao {
         hasUpdate: Boolean
     ): Int
 
-    @Query("UPDATE bookshelf SET has_update = 0 WHERE latest_fingerprint = :fingerprint")
-    suspend fun clearUpdateForFingerprint(fingerprint: String): Int
+    @Query("UPDATE bookshelf SET has_update = 0 WHERE scope = :scope AND latest_fingerprint = :fingerprint")
+    suspend fun clearUpdateForFingerprint(scope: String, fingerprint: String): Int
 
     @Query("DELETE FROM bookshelf WHERE scope = :scope AND book_key = :bookKey AND operation_version = :version")
     suspend fun deleteIfVersion(scope: String, bookKey: String, version: Long): Int

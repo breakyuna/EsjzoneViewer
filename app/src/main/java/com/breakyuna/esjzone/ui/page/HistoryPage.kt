@@ -220,7 +220,7 @@ object HistoryPage : AppDestination {
             .distinctBy { it.url.ifBlank { it.name } }.filterByHistoryQuery(query)
         val cloudRowIds = cloudRows.filter { history ->
             val detail = cloudDetailLoader.details[cloudDetailLoader.key(history)]
-            history.vid.isNotBlank() && (PresentationAccess.settings.adult.value || detail?.isAdult == false)
+            history.vid.isNotBlank() && (PresentationAccess.settings.adult.value || (detail?.adultStatusKnown == true && !detail.isAdult))
         }.mapTo(linkedSetOf()) { it.vid }
 
         // This destination's ViewModels outlive recompositions. Start the one
@@ -763,9 +763,12 @@ private fun CloudHistoryContent(
                     adaptiveItems(rows, columns = columns, key = { "cloud-history:${detailLoader.key(it)}" }, contentType = { "history" }) { history ->
                         val key = detailLoader.key(history)
                         val detail = detailLoader.details[key]
-                        if (detail == null) {
-                            LaunchedEffect(key) { detailLoader.load(history) }
-                            if (PresentationAccess.settings.adult.value) {
+                        val adultAllowed = PresentationAccess.settings.adult.value
+                        LaunchedEffect(key, adultAllowed) {
+                            detailLoader.load(history, requireAdultStatus = !adultAllowed)
+                        }
+                        if (detail == null || (!adultAllowed && !detail.adultStatusKnown)) {
+                            if (adultAllowed) {
                                 // The history itself already supplies a usable title, chapter and destination.
                                 CloudHistoryCard(
                                     modifier = Modifier.animateItem(), history = history, coverUrl = "",
@@ -782,11 +785,11 @@ private fun CloudHistoryContent(
                                 ErrorState(
                                     title = stringResource(R.string.history_load_failed),
                                     message = stringResource(R.string.load_network_error),
-                                    onRetry = { detailLoader.retry(history) },
+                                    onRetry = { detailLoader.retry(history, requireAdultStatus = !adultAllowed) },
                                     modifier = Modifier.fillMaxWidth()
                                 )
                             } else CloudHistoryDetailLoading()
-                        } else if (PresentationAccess.settings.adult.value || !detail.isAdult) {
+                        } else if (adultAllowed || !detail.isAdult) {
                             val domain by PresentationAccess.settings.domain
                             val chapterUrl = history.chapter.url
                             val chapterList = detail.chapterList

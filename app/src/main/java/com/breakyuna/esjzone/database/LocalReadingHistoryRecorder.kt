@@ -20,11 +20,11 @@ object LocalReadingHistoryRecorder {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val writeMutex = Mutex()
 
-    fun upsert(activity: LocalReadingActivity): Job = scope.launch {
+    fun upsert(activity: LocalReadingActivity, bookshelfScope: String): Job = scope.launch {
         writeMutex.withLock {
             try {
                 EsjzoneApplication.instance.container.database.localReadingActivityDao().upsertLatest(activity)
-                BookshelfRepository.markLatestRead(activity.chapterUrl)
+                BookshelfRepository.markLatestRead(bookshelfScope, activity.chapterUrl)
             } catch (e: Exception) {
                 AppLogger.e(
                     "LocalReadingHistory",

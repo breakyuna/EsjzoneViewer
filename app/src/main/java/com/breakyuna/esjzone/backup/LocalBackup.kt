@@ -176,63 +176,66 @@ object LocalBackup {
                 (it.bookProgress == null || it.bookProgress.isFinite() && it.bookProgress in 0f..1f) })
             require(reading.all { it.bookKey.isNotBlank() && it.durationMs >= 0 && runCatching { java.time.LocalDate.parse(it.date) }.isSuccess })
             require(groups == null || (groups.names.all { it.isNotBlank() } && groups.members.values.all { it in groups.names }))
-            // Validate all incoming downloads before replacing any existing download directory.
-            if (BackupCategory.DOWNLOADS in selected && json["downloads"]?.asBoolean == true)
-                NovelDownloadStore.importBackup(File(staging, "downloads"), replaceExisting = true, checkActive = checkActive)
-            database.withTransaction {
-                checkActive()
-                // Only replace categories that were selected AND actually included in this archive.
-                val cache = database.cacheDao()
-                if (BackupCategory.UNDERLINES in selected && json.has("underlines"))
-                    cache.getReaderUnderlines().forEach { cache.deleteByKey(it.key) }
-                if (BackupCategory.BOOKMARKS in selected && json.has("bookmarks"))
-                    database.bookmarkDao().deleteAll(database.bookmarkDao().getAll())
-                if (BackupCategory.HISTORY in selected && json.has("history"))
-                    database.localReadingActivityDao().deleteAll()
-                if (BackupCategory.READING in selected && json.has("reading")) {
-                    database.readingStatDao().deleteAll()
-                    cache.getReadingTags().forEach { cache.deleteByKey(it.key) }
-                }
-                if (BackupCategory.SEARCH in selected && json.has("search"))
-                    database.searchHistoryDao().delete(*database.searchHistoryDao().getAll().toTypedArray())
-                if (groups != null) {
-                    val dao = database.bookshelfGroupDao()
-                    dao.ungroup(scope, dao.members(scope).map { it.bookKey })
-                    dao.groups(scope).forEach { dao.deleteGroup(scope, it.name) }
-                }
-                underlines.forEach { (key, incoming) ->
-                    val dao = database.cacheDao()
-                    val existing = ReaderUnderlines.decode(dao.findByKey(key)?.value)
-                    val merged = incoming.fold(existing) { rows, mark -> ReaderUnderlines.update(rows, mark, false) }
-                    dao.putAtomic(key, ReaderUnderlines.encode(merged))
-                }
-                bookmarks.forEach { row ->
-                    val old = database.bookmarkDao().findByChapterUrl(row.chapterUrl)
-                    if (old == null || row.createdAt > old.createdAt) database.bookmarkDao().insert(row)
-                }
-                history.sortedBy { it.lastReadAt }.forEach { row ->
-                    val dao = database.localReadingActivityDao()
-                    val old = dao.getLatestForIdentity(row.novelId, row.novelUrl)
-                    if (old == null || row.lastReadAt > old.lastReadAt) dao.upsertLatest(row)
-                }
-                reading.forEach(database.readingStatDao()::merge)
-                tags.entrySet().forEach { (key, value) ->
-                    if (database.cacheDao().findByKey(key) == null) database.cacheDao().putAtomic(key, value.asString)
-                }
-                search.forEach { row ->
-                    if (database.searchHistoryDao().findByKeyword(row.keyword) == null)
-                        database.searchHistoryDao().insertAll(row.copy(index = 0))
-                }
-                groups?.let { data ->
-                    val dao = database.bookshelfGroupDao()
-                    data.names.forEach { dao.add(BookshelfGroup(scope, it)) }
-                    val existing = dao.members(scope).map { it.bookKey }.toSet()
-                    data.members.filterKeys { it !in existing }.forEach { (key, name) ->
-                        dao.assign(BookshelfGroupMember(scope, key, name))
+            val restoreDatabase: suspend () -> Unit = {
+                database.withTransaction {
+                    checkActive()
+                    // Only replace categories that were selected AND actually included in this archive.
+                    val cache = database.cacheDao()
+                    if (BackupCategory.UNDERLINES in selected && json.has("underlines"))
+                        cache.getReaderUnderlines().forEach { cache.deleteByKey(it.key) }
+                    if (BackupCategory.BOOKMARKS in selected && json.has("bookmarks"))
+                        database.bookmarkDao().deleteAll(database.bookmarkDao().getAll())
+                    if (BackupCategory.HISTORY in selected && json.has("history"))
+                        database.localReadingActivityDao().deleteAll()
+                    if (BackupCategory.READING in selected && json.has("reading")) {
+                        database.readingStatDao().deleteAll()
+                        cache.getReadingTags().forEach { cache.deleteByKey(it.key) }
+                    }
+                    if (BackupCategory.SEARCH in selected && json.has("search"))
+                        database.searchHistoryDao().delete(*database.searchHistoryDao().getAll().toTypedArray())
+                    if (groups != null) {
+                        val dao = database.bookshelfGroupDao()
+                        dao.ungroup(scope, dao.members(scope).map { it.bookKey })
+                        dao.groups(scope).forEach { dao.deleteGroup(scope, it.name) }
+                    }
+                    underlines.forEach { (key, incoming) ->
+                        val dao = database.cacheDao()
+                        val existing = ReaderUnderlines.decode(dao.findByKey(key)?.value)
+                        val merged = incoming.fold(existing) { rows, mark -> ReaderUnderlines.update(rows, mark, false) }
+                        dao.putAtomic(key, ReaderUnderlines.encode(merged))
+                    }
+                    bookmarks.forEach { row ->
+                        val old = database.bookmarkDao().findByChapterUrl(row.chapterUrl)
+                        if (old == null || row.createdAt > old.createdAt) database.bookmarkDao().insert(row)
+                    }
+                    history.sortedBy { it.lastReadAt }.forEach { row ->
+                        val dao = database.localReadingActivityDao()
+                        val old = dao.getLatestForIdentity(row.novelId, row.novelUrl)
+                        if (old == null || row.lastReadAt > old.lastReadAt) dao.upsertLatest(row)
+                    }
+                    reading.forEach(database.readingStatDao()::merge)
+                    tags.entrySet().forEach { (key, value) ->
+                        if (database.cacheDao().findByKey(key) == null) database.cacheDao().putAtomic(key, value.asString)
+                    }
+                    search.forEach { row ->
+                        if (database.searchHistoryDao().findByKeyword(row.keyword) == null)
+                            database.searchHistoryDao().insertAll(row.copy(index = 0))
+                    }
+                    groups?.let { data ->
+                        val dao = database.bookshelfGroupDao()
+                        data.names.forEach { dao.add(BookshelfGroup(scope, it)) }
+                        val existing = dao.members(scope).map { it.bookKey }.toSet()
+                        data.members.filterKeys { it !in existing }.forEach { (key, name) ->
+                            dao.assign(BookshelfGroupMember(scope, key, name))
+                        }
                     }
                 }
             }
-            checkActive()
+            if (BackupCategory.DOWNLOADS in selected && json["downloads"]?.asBoolean == true) {
+                NovelDownloadStore.withRestoredBackup(File(staging, "downloads"), checkActive, restoreDatabase)
+            } else {
+                restoreDatabase()
+            }
             com.breakyuna.esjzone.database.NovelTitleRepository.requestRepair()
         } finally { staging.deleteRecursively() }
     }

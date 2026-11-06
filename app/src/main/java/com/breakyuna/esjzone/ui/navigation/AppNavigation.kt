@@ -314,7 +314,7 @@ class AppNavigator internal constructor(
     private val backStack: MutableList<NavKey>,
     private val registry: MutableMap<String, AppDestination>,
     private val rootNavigator: AppNavigator? = null,
-    private val setAuthorization: ((Authorization) -> Unit)? = null,
+    private val setAuthorization: ((Authorization?) -> Unit)? = null,
     private val readerRoutes: MutableMap<String, String> = mutableMapOf()
 ) {
     val items: List<AppDestination>
@@ -380,6 +380,7 @@ class AppNavigator internal constructor(
                 replaceTop(AppNavKey.Loading)
             }
             LoginScreen -> {
+                setAuthorization?.invoke(null)
                 register(destination)
                 replaceTop(AppNavKey.Login)
             }
@@ -404,6 +405,7 @@ class AppNavigator internal constructor(
         val oldKeys = backStack.toList()
         when (destination) {
             LoginScreen -> {
+                setAuthorization?.invoke(null)
                 register(destination)
                 backStack.clear()
                 backStack.add(AppNavKey.Login)

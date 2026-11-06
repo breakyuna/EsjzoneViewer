@@ -355,6 +355,8 @@ class NovelDownloadWorker(
                 if (unlockOnly) sendResultNotification(rawUrl, applicationContext.getString(
                     R.string.novel_download_unlock_completed_title, notificationTitle(resolvedNovelName ?: name)),
                     applicationContext.getString(R.string.novel_download_batch_unlock_failed))
+                else sendResultNotification(rawUrl, notificationTitle(resolvedNovelName ?: name),
+                    applicationContext.getString(R.string.novel_download_failed))
                 Result.failure()
             }
         }

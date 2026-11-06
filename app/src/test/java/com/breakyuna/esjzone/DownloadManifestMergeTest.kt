@@ -14,6 +14,19 @@ class DownloadManifestMergeTest {
         downloadedAt = 1, complete = false, catalogComplete = true)
 
     @Test
+    fun lateReaderMetadataCannotClearAVerifiedAdultFlag() {
+        val verified = manifest(listOf(record(1, true))).copy(isAdult = true, adultStatusKnown = true)
+        val readerOnly = manifest(listOf(record(1), record(2, true)))
+        val merged = mergeDownloadManifest(verified, readerOnly, false)
+        assertTrue(merged.isAdult)
+        assertTrue(merged.adultStatusKnown)
+        assertTrue(merged.chapters.all { it.downloaded })
+        val refreshed = mergeDownloadManifest(merged, verified.copy(isAdult = false), false)
+        assertFalse(refreshed.isAdult)
+        assertTrue(refreshed.adultStatusKnown)
+    }
+
+    @Test
     fun lateCompletionRebasesOnLatestCatalogAndPreservesOtherWrites() {
         val current = manifest(listOf(record(1, true), record(2), record(3, true)))
         val staleTask = manifest(listOf(record(1), record(2, true)))

@@ -22,6 +22,7 @@ import androidx.compose.runtime.key
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -48,6 +49,10 @@ import com.breakyuna.esjzone.ui.designsystem.AppTypography
 
 class MainScreen(val authorization: Authorization) : AppDestination {
 
+    private companion object {
+        val storageWarningDismissed = AtomicBoolean(false)
+    }
+
     override val key: String = "MainScreen"
 
     @Composable
@@ -55,6 +60,9 @@ class MainScreen(val authorization: Authorization) : AppDestination {
         val firstDraw = remember { AtomicBoolean(false) }
         LaunchedEffect(Unit) {
             AppLogger.i("Startup", "Main screen composition committed")
+        }
+        var storageWarningVisible by rememberSaveable {
+            mutableStateOf(!PresentationAccess.client.sessionPersistenceAvailable && !storageWarningDismissed.get())
         }
         val appNavigator = LocalAppNavigator.current
         val activeDomain = PresentationAccess.settings.domain.value
@@ -116,7 +124,20 @@ class MainScreen(val authorization: Authorization) : AppDestination {
                 val showSessionBanner = authorization.hasCredentials() &&
                     authorizationCheckResult == AuthorizationCheckResult.UNAUTHORIZED &&
                     !sessionPromptDismissed
-                if (showSessionBanner) {
+                if (storageWarningVisible) {
+                    Surface(modifier = Modifier.fillMaxWidth().statusBarsPadding(),
+                        color = MaterialTheme.colorScheme.errorContainer) {
+                        Row(modifier = Modifier.padding(horizontal = AppSpacing.lg, vertical = AppSpacing.sm),
+                            verticalAlignment = Alignment.CenterVertically) {
+                            Text(stringResource(R.string.session_storage_unavailable), modifier = Modifier.weight(1f),
+                                style = AppTypography.bodyMedium)
+                            TextButton(onClick = {
+                                storageWarningDismissed.set(true)
+                                storageWarningVisible = false
+                            }) { Text(stringResource(R.string.close)) }
+                        }
+                    }
+                } else if (showSessionBanner) {
                     SessionExpiredBanner(
                         mirrorSessionMissing = !PresentationAccess.client.hasSiteSession(activeDomain),
                         onRelogin = {
@@ -134,7 +155,7 @@ class MainScreen(val authorization: Authorization) : AppDestination {
                         modifier = Modifier.weight(1f),
                         // The banner owns the status-bar inset while it is
                         // visible; the shell owns it in every other state.
-                        topInsetConsumed = showSessionBanner
+                        topInsetConsumed = showSessionBanner || storageWarningVisible
                     )
                 }
             }

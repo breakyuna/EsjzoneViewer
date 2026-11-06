@@ -194,6 +194,7 @@ class MainActivity : ComponentActivity() {
         val novelUrl = intent?.getStringExtra(EXTRA_NOVEL_URL)
         if (!novelUrl.isNullOrBlank()) {
             setPendingNovelUrl(novelUrl)
+            intent?.removeExtra(EXTRA_NOVEL_URL)
         }
     }
 

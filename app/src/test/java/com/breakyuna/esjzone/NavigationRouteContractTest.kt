@@ -24,6 +24,20 @@ import org.junit.Test
 /** Pure JVM coverage for the value objects stored by Navigation 3. */
 class NavigationRouteContractTest {
     @Test
+    fun loginDestinationsClearTheRootAuthorizationGate() {
+        for (replaceAll in listOf(false, true)) {
+            var authorization: Authorization? = Authorization("fixture-key", "fixture-token", "www.esjzone.cc")
+            val stack = mutableListOf<NavKey>(AppNavKey.Main)
+            val navigator = com.breakyuna.esjzone.ui.navigation.AppNavigator(stack, mutableMapOf(),
+                setAuthorization = { authorization = it })
+            if (replaceAll) navigator.replaceAll(com.breakyuna.esjzone.ui.screen.LoginScreen)
+            else navigator.replace(com.breakyuna.esjzone.ui.screen.LoginScreen)
+            org.junit.Assert.assertNull(authorization)
+            assertEquals(listOf(AppNavKey.Login), stack)
+        }
+    }
+
+    @Test
     fun downloadedCatalogRestoresWithoutAnInMemoryRegistry() {
         val route = LegacyRoute.DownloadedNovel("https://www.esjzone.cc/detail/123.html")
         val restored = Json.decodeFromString(LegacyRoute.serializer(), Json.encodeToString(LegacyRoute.serializer(), route))

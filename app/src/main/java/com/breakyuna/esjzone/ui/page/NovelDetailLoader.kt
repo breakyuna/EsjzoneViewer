@@ -21,17 +21,25 @@ import com.breakyuna.esjzone.novellibrary.novel.Novel
 import com.breakyuna.esjzone.novellibrary.novel.DetailedNovel
 
 /** Shared, cancellable detail completion for lists that start with covered novels. */
-class NovelDetailLoader(private val authorization: Authorization) : AppStateViewModel<Unit>(Unit) {
+class NovelDetailLoader(
+    private val authorization: Authorization,
+    private val readDownloaded: (String) -> DetailedNovel? = { PresentationAccess.downloads.readDetailedNovel(it) },
+    private val fetchDetail: (Novel) -> DetailedNovel = { PresentationAccess.client.getNovelDetail(authorization, it) }
+) : AppStateViewModel<Unit>(Unit) {
     val details = mutableStateMapOf<String, DetailedNovel>()
     val failures = mutableStateMapOf<String, LoadFailureKind>()
     private val jobs = mutableMapOf<String, Job>()
     private val detailPermits = Semaphore(3)
+    private val adultStatusRequired = mutableSetOf<String>()
 
     fun key(novel: Novel): String = novel.url.trim().ifBlank { novel.name.trim() }
 
-    fun load(novel: Novel, retry: Boolean = false) {
+    fun load(novel: Novel, requireAdultStatus: Boolean, retry: Boolean = false) {
         val key = key(novel)
-        if (key.isBlank() || details.containsKey(key)) return
+        if (key.isBlank()) return
+        if (requireAdultStatus) adultStatusRequired.add(key) else adultStatusRequired.remove(key)
+        val available = details[key]
+        if (!retry && available != null && (!requireAdultStatus || available.adultStatusKnown)) return
         if (!retry && jobs[key]?.isActive == true) return
         jobs[key]?.cancel()
         failures.remove(key)
@@ -39,17 +47,25 @@ class NovelDetailLoader(private val authorization: Authorization) : AppStateView
             val thisJob = coroutineContext[Job]
             try {
                 if (!retry) {
-                    val cached = withContext(Dispatchers.IO) {
-                        runCatching { PresentationAccess.downloads.readDetailedNovel(novel.url) }.getOrNull()
+                    val cached = details[key] ?: withContext(Dispatchers.IO) {
+                        try {
+                            readDownloaded(novel.url)
+                        } catch (error: CancellationException) {
+                            throw error
+                        } catch (_: Exception) {
+                            null
+                        }
                     }
                     if (cached != null) {
+                        // Keep usable cover/catalog data even while a stricter filter needs verification.
                         details[key] = cached
-                        return@launch
+                        // Re-read the current requirement after IO: the setting can change mid-load.
+                        if (key !in adultStatusRequired || cached.adultStatusKnown) return@launch
                     }
                 }
                 val detail = detailPermits.withPermit {
                     withContext(Dispatchers.IO) {
-                        PresentationAccess.client.getNovelDetail(authorization, novel)
+                        fetchDetail(novel)
                     }
                 }
                 details[key] = detail
@@ -64,5 +80,5 @@ class NovelDetailLoader(private val authorization: Authorization) : AppStateView
         }
     }
 
-    fun retry(novel: Novel) = load(novel, retry = true)
+    fun retry(novel: Novel, requireAdultStatus: Boolean) = load(novel, requireAdultStatus, retry = true)
 }

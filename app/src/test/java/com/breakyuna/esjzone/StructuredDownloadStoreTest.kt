@@ -35,6 +35,71 @@ import org.junit.Test
 
 class StructuredDownloadStoreTest {
     @Test
+    fun failedDatabaseRestoreKeepsTheOriginalDownloadsAcrossARescan() = withStorage { root ->
+        val incoming = Files.createTempDirectory("restore-rollback-incoming-").toFile()
+        val backup = Files.createTempDirectory("restore-rollback-backup-").toFile()
+        val replacement = Chapter("Replacement", "/forum/9002/1.html", false)
+        val replacementUrl = "/detail/9002.html"
+        try {
+            NovelDownloadStore.initializeDirectory(incoming)
+            NovelDownloadStore.saveChapter("Replacement", replacementUrl, "", listOf(replacement), replacement,
+                DetailedChapter("Replacement", listOf(TextComponent("new body")), null, null), auth)
+            NovelDownloadStore.exportBackup(backup)
+            NovelDownloadStore.initializeDirectory(root)
+            save(1, listOf(chapter(1)))
+            try {
+                runBlocking {
+                    NovelDownloadStore.withRestoredBackup(backup, {}) {
+                        assertFalse(NovelDownloadStore.delete(replacementUrl))
+                        throw java.io.IOException("Fixture database commit failure")
+                    }
+                }
+                fail("The restore must fail")
+            } catch (_: java.io.IOException) { }
+            NovelDownloadStore.initializeDirectory(incoming)
+            NovelDownloadStore.initializeDirectory(root)
+            assertNotNull(NovelDownloadStore.readChapter(chapter(1).url, novelUrl))
+            assertNull(NovelDownloadStore.manifest(replacementUrl))
+        } finally {
+            incoming.deleteRecursively()
+            backup.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun missingChapterListRejectsTheArchiveBeforeReplacingDownloads() = withStorage { root ->
+        save(1, listOf(chapter(1)))
+        val backup = Files.createTempDirectory("invalid-restore-").toFile()
+        try {
+            NovelDownloadStore.exportBackup(backup)
+            val manifest = backup.walkTopDown().single { it.name == "manifest.json" }
+            val json = com.google.gson.JsonParser.parseString(manifest.readText()).asJsonObject
+            json.remove("chapters")
+            manifest.writeText(json.toString())
+            try {
+                NovelDownloadStore.importBackup(backup, replaceExisting = true)
+                fail("Missing chapter inventory must fail validation")
+            } catch (_: IllegalArgumentException) { }
+            NovelDownloadStore.initializeDirectory(root)
+            assertNotNull(NovelDownloadStore.readChapter(chapter(1).url, novelUrl))
+        } finally { backup.deleteRecursively() }
+    }
+
+    @Test
+    fun readerOnlyAndLegacyManifestsDoNotInventANonAdultClassification() = withStorage { root ->
+        NovelDownloadStore.saveChapterCatalog("Novel", novelUrl, "", listOf(chapter(1)))
+        save(1, listOf(chapter(1)))
+        val detail = requireNotNull(NovelDownloadStore.readDetailedNovel(novelUrl))
+        assertFalse(detail.adultStatusKnown)
+        val manifest = root.walkTopDown().single { it.name == "manifest.json" }
+        val json = com.google.gson.JsonParser.parseString(manifest.readText()).asJsonObject
+        json.remove("adultStatusKnown")
+        manifest.writeText(json.toString())
+        NovelDownloadStore.initializeDirectory(root)
+        assertFalse(requireNotNull(NovelDownloadStore.readDetailedNovel(novelUrl)).adultStatusKnown)
+    }
+
+    @Test
     fun selectedDownloadDoesNotDecodeOrRevalidateUnselectedChapterBodies() = withStorage { root ->
         val order = listOf(chapter(1), chapter(2))
         save(1, order)
@@ -142,7 +207,7 @@ class StructuredDownloadStoreTest {
     }
 
     @Test
-    fun replacementRestoreDiscardsDirectoryHintsAfterCompletionOrPartialCommit() = withStorage { root ->
+    fun replacementRestoreInvalidatesHintsAndRollsBackCancelledPublication() = withStorage { root ->
         val cache = File.createTempFile("restore-directory-index-", ".json")
         val incoming = Files.createTempDirectory("restore-incoming-").toFile()
         val backup = Files.createTempDirectory("restore-backup-").toFile()
@@ -168,9 +233,11 @@ class StructuredDownloadStoreTest {
                 assertTrue(cache.isFile)
                 try {
                     NovelDownloadStore.importBackup(backup, replaceExisting = true) {
-                        val committed = File(root, "${first.name}/manifest.json")
-                        if (cancelAfterCommit && committed.isFile &&
-                            Gson().fromJson(committed.readText(), DownloadedNovelManifest::class.java).url == first.url) {
+                        val committed = root.listFiles().orEmpty().filter { it.isDirectory && !it.name.endsWith(".tmp") }
+                            .map { File(it, "manifest.json") }.any { file ->
+                                file.isFile && Gson().fromJson(file.readText(), DownloadedNovelManifest::class.java).url == first.url
+                            }
+                        if (cancelAfterCommit && committed) {
                             throw kotlinx.coroutines.CancellationException("Cancelled after first book committed")
                         }
                     }
@@ -181,11 +248,15 @@ class StructuredDownloadStoreTest {
                 // Change roots to discard in-memory mappings, as a process restart does.
                 NovelDownloadStore.initializeDirectory(incoming)
                 NovelDownloadStore.initializeDirectory(root, cache)
-                assertEquals(first.url, NovelDownloadStore.manifest(first.url)?.url)
-                assertNull(NovelDownloadStore.manifest(novelUrl))
-                assertTrue(NovelDownloadStore.listDownloadedNovels().any { it.novelUrl == first.url })
-                if (first.url == otherUrl || !cancelAfterCommit) {
+                if (cancelAfterCommit) {
+                    assertNotNull(NovelDownloadStore.readChapter(chapter(1).url, novelUrl))
+                    assertNull(NovelDownloadStore.manifest(first.url))
+                    assertEquals(listOf(novelUrl), NovelDownloadStore.listDownloadedNovels().map { it.novelUrl })
+                } else {
+                    assertEquals(first.url, NovelDownloadStore.manifest(first.url)?.url)
+                    assertNull(NovelDownloadStore.manifest(novelUrl))
                     assertNotNull(NovelDownloadStore.readChapter(otherChapter.url, otherUrl))
+                    assertNotNull(NovelDownloadStore.readChapter(laterChapter.url, laterUrl))
                 }
             }
         } finally {

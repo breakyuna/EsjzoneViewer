@@ -34,6 +34,7 @@ internal class PersistentCookieJar(context: Context) : CookieJar {
      */
     private val preferences = context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
     private val securePreferences: SharedPreferences? = createSecurePreferences(context)
+    val sessionPersistenceAvailable: Boolean get() = securePreferences != null
     private val gson = Gson()
     private val lock = Any()
     private val cookies = mutableListOf<StoredCookie>()

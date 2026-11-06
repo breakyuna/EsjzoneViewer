@@ -59,7 +59,8 @@ class ChapterPageModel(
 
     override fun onCleared() {
         storageReaderLease.releaseReader()
-        com.breakyuna.esjzone.network.EsjzoneClient.closeWenkuBrowserSession()
+        // The process-wide wenku transport may be used by another reader/download.
+        // Its own idle timer releases the WebView after the last request.
         super.onCleared()
     }
 

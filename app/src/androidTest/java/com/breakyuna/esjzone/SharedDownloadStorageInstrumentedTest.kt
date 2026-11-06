@@ -39,6 +39,64 @@ class SharedDownloadStorageInstrumentedTest {
         })
     }
 
+    @Test fun failedRestoreCleanupCannotReselectRetiredCopiesAfterRestartOrMigration() = kotlinx.coroutines.runBlocking {
+        for (commit in listOf(true, false)) {
+            val incoming = File(context.cacheDir, "restore-incoming-${UUID.randomUUID()}").apply { mkdirs() }
+            val backup = File(context.cacheDir, "restore-backup-${UUID.randomUUID()}")
+            val migrated = File(context.cacheDir, "restore-migrated-${UUID.randomUUID()}").apply { mkdirs() }
+            val shared = StorageFile(StorageFile.fromTree(context, treeUri), "case-${UUID.randomUUID()}")
+                .apply { check(mkdirs()) }
+            val downloads = StorageFile(shared, "downloads")
+            val novelUrl = "https://www.esjzone.cc/detail/9001.html"
+            val chapter = Chapter("Chapter", "https://www.esjzone.cc/forum/9001/1.html", false)
+            fun save(text: String) = requireNotNull(NovelDownloadStore.saveChapter("Novel", novelUrl, "",
+                listOf(chapter), chapter, DetailedChapter("Chapter", listOf(TextComponent(text)), null, null),
+                Authorization("", "", "www.esjzone.cc")))
+            try {
+                NovelDownloadStore.initialize(context)
+                NovelDownloadStore.initializeDirectory(incoming)
+                save("restored body")
+                NovelDownloadStore.exportBackup(backup)
+                NovelDownloadStore.initialize(context, downloads)
+                save("original body")
+                configure(shared, "reject-book-delete", "delete")
+                if (commit) {
+                    NovelDownloadStore.importBackup(backup, replaceExisting = true)
+                } else {
+                    try {
+                        NovelDownloadStore.withRestoredBackup(backup, {}) {
+                            throw java.io.IOException("Fixture database failure")
+                        }
+                        fail("Database failure must abort the restore")
+                    } catch (_: java.io.IOException) { }
+                }
+                assertEquals(2, downloads.listFiles()!!.count { it.isDirectory && !it.name.endsWith(".tmp") })
+                // Lose all in-memory provider handles and discard directory hints.
+                NovelDownloadStore.restoreStorage(StorageFile(StorageFile.fromTree(context, treeUri),
+                    shared.name + "/downloads"))
+                NovelDownloadStore.reindex()
+                val expected = if (commit) "restored body" else "original body"
+                assertEquals(expected, NovelDownloadStore.readChapter(chapter.url)!!.content
+                    .filterIsInstance<TextComponent>().single().text)
+                assertEquals(1, NovelDownloadStore.listDownloadedNovels().size)
+                val migration = NovelDownloadStore.migrateStorage(StorageFile(migrated)) { }
+                assertEquals(1, migration.books.size)
+                assertEquals(expected, NovelDownloadStore.readChapter(chapter.url)!!.content
+                    .filterIsInstance<TextComponent>().single().text)
+            } finally {
+                configure(shared)
+                NovelDownloadStore.finishStorageMigration()
+                val container = EsjzoneApplication.instance.container
+                container.initializeDownloads()
+                NovelDownloadStore.restoreStorage(container.storage.downloads())
+                shared.deleteRecursively()
+                incoming.deleteRecursively()
+                backup.deleteRecursively()
+                migrated.deleteRecursively()
+            }
+        }
+    }
+
     @Test fun providerAccessFailuresAreReportedAsStorageErrorsForQueriesAndFileOperations() {
         val directory = StorageFile(StorageFile.fromTree(context, treeUri), "case-${UUID.randomUUID()}")
             .apply { check(mkdirs()) }

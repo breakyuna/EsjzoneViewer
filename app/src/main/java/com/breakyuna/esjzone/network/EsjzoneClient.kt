@@ -77,8 +77,20 @@ object EsjzoneClient {
     internal var persistentCookieJar: PersistentCookieJar? = null
         private set
 
+    val sessionPersistenceAvailable: Boolean
+        get() = persistentCookieJar?.sessionPersistenceAvailable == true
+
     private val refreshScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-    private val inFlightPages = ConcurrentHashMap<String, CompletableFuture<String>>()
+    private class InFlightPage {
+        val result = CompletableFuture<String>()
+        // Queue (30s) + HTTP (30s) + bounded postprocessing grace share one deadline.
+        private val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(65)
+        fun remainingNanos(): Long = (deadline - System.nanoTime()).coerceAtLeast(0L)
+        fun checkRemaining() {
+            if (remainingNanos() == 0L) throw SocketTimeoutException("Page request budget exhausted")
+        }
+    }
+    private val inFlightPages = ConcurrentHashMap<String, InFlightPage>()
     private val cacheEpoch = AtomicLong(0L)
     private val networkPermits = PageRequestGate()
 
@@ -258,13 +270,14 @@ object EsjzoneClient {
         replaceRequest: Boolean,
         background: Boolean = pageRequestCancellation.get()?.background == true
     ): String {
-        val owner = CompletableFuture<String>()
+        val flight = InFlightPage()
+        val owner = flight.result
         val requestKey = "$cacheKey|$requestEpoch|${writeToken.epoch}|${pageKind.name}|$cacheResponse|" +
             if (replaceRequest) writeToken.request.toString() else "shared"
-        val existing = if (coalesceRequests) inFlightPages.putIfAbsent(requestKey, owner) else null
+        val existing = if (coalesceRequests) inFlightPages.putIfAbsent(requestKey, flight) else null
         if (existing != null) {
             return try {
-                existing.get(35, TimeUnit.SECONDS)
+                existing.result.get(existing.remainingNanos(), TimeUnit.NANOSECONDS)
             } catch (error: TimeoutException) {
                 throw NetworkRequestException(
                     url,
@@ -292,7 +305,8 @@ object EsjzoneClient {
         val commitToken = if (replaceRequest) writeToken else PageCache.beginWrite(cacheKey)
         return try {
             val permitAcquired = try {
-                networkPermits.acquire(background, NETWORK_PERMIT_WAIT_SECONDS, TimeUnit.SECONDS)
+                networkPermits.acquire(background,
+                    minOf(TimeUnit.SECONDS.toNanos(NETWORK_PERMIT_WAIT_SECONDS), flight.remainingNanos()), TimeUnit.NANOSECONDS)
             } catch (error: InterruptedException) {
                 Thread.currentThread().interrupt()
                 throw NetworkRequestException(url, error)
@@ -307,7 +321,13 @@ object EsjzoneClient {
             val requestCookieJar = AuthorizationCookieJar(authorization, deferResponses = true)
             val responseData = try {
                 val response = try {
-                    val call = sharedHttpClient.newBuilder().cookieJar(requestCookieJar).build().newCall(
+                    flight.checkRemaining()
+                    val remainingMillis = TimeUnit.NANOSECONDS.toMillis(flight.remainingNanos())
+                    if (remainingMillis <= 0L) throw SocketTimeoutException("Page request budget exhausted")
+                    val configuredBudget = sharedHttpClient.callTimeoutMillis.takeIf { it > 0 }?.toLong()
+                        ?: remainingMillis
+                    val call = sharedHttpClient.newBuilder().cookieJar(requestCookieJar)
+                        .callTimeout(minOf(configuredBudget, remainingMillis), TimeUnit.MILLISECONDS).build().newCall(
                         Request.Builder()
                             .url(url)
                             .get()
@@ -337,6 +357,7 @@ object EsjzoneClient {
                 networkPermits.release(background)
             }
             if (cancellation?.isCancelled() == true) throw CancellationException("Page request cancelled")
+            flight.checkRemaining()
             val validation = PageResponsePolicy.validate(
                 statusCode = responseData.statusCode,
                 body = responseData.body,
@@ -350,6 +371,7 @@ object EsjzoneClient {
             }
             if (validation.trusted) {
                 validateBody?.invoke(responseData.body)
+                flight.checkRemaining()
                 requestCookieJar.commitDeferredResponses()
                 if (cacheResponse) {
                     if (requestEpoch != cacheEpoch.get()) {
@@ -382,17 +404,18 @@ object EsjzoneClient {
                 owner.completeExceptionally(error)
                 throw error
             }
+            flight.checkRemaining()
             val result = responseData.body
             owner.complete(result)
             result
         } catch (error: CancellationException) {
-            inFlightPages.remove(requestKey, owner)
+            inFlightPages.remove(requestKey, flight)
             owner.completeExceptionally(error)
             throw error
         } catch (error: Throwable) {
             if (pageRequestCancellation.get()?.isCancelled() == true) {
                 val cancelled = CancellationException("Page request cancelled")
-                inFlightPages.remove(requestKey, owner)
+                inFlightPages.remove(requestKey, flight)
                 owner.completeExceptionally(cancelled)
                 throw cancelled
             }
@@ -411,7 +434,7 @@ object EsjzoneClient {
                 throw java.lang.RuntimeException(error)
             }
         } finally {
-            inFlightPages.remove(requestKey, owner)
+            inFlightPages.remove(requestKey, flight)
         }
     }
 

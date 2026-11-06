@@ -73,7 +73,11 @@ internal object ReleaseUpdateChecker {
      * preference timestamp prevents the same release from prompting again on every app launch.
      */
     fun checkOnce(context: Context) {
-        initialize(context)
+        scope.launch { checkOnceOnIo(context.applicationContext) }
+    }
+
+    private fun checkOnceOnIo(context: Context) {
+        readPreferences(context)
         if (pending.value != null) return
         if (!_autoCheck.value) return
         val preferences = context.applicationContext.getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE)
@@ -84,6 +88,10 @@ internal object ReleaseUpdateChecker {
     }
 
     fun initialize(context: Context) {
+        scope.launch { readPreferences(context.applicationContext) }
+    }
+
+    private fun readPreferences(context: Context) {
         val preferences = context.applicationContext.getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE)
         _autoCheck.value = preferences.getBoolean(AUTO_CHECK_KEY, true)
     }

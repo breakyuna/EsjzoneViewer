@@ -1304,7 +1304,11 @@ class ChapterPage(
                 }
             }
         }
-        LaunchedEffect(localHistoryActivityId) {
+        // Capture the reading account before asynchronous writes can outlive this screen.
+        val readingBookshelfScope = remember(authorization) {
+            com.breakyuna.esjzone.database.BookshelfRepository.scopeFor(authorization)
+        }
+        LaunchedEffect(localHistoryActivityId, readingBookshelfScope) {
             snapshotFlow { if (resumePending) null else lastReadablePosition.value }
                 .filterNotNull()
                 .distinctUntilChanged()
@@ -1314,18 +1318,19 @@ class ChapterPage(
                         position.toLocalReadingActivity(
                             activityId = localHistoryActivityId,
                             startedAt = localHistoryStartedAt
-                        )
+                        ),
+                        bookshelfScope = readingBookshelfScope
                     )
                 }
         }
-        DisposableEffect(lifecycleOwner, localHistoryActivityId) {
+        DisposableEffect(lifecycleOwner, localHistoryActivityId, readingBookshelfScope) {
             val observer = LifecycleEventObserver { _, event ->
                 if ((event == Lifecycle.Event.ON_PAUSE || event == Lifecycle.Event.ON_STOP) && !resumePending) {
                     lastReadablePosition.value?.let { position ->
                         LocalReadingHistoryRecorder.upsert(position.toLocalReadingActivity(
                             activityId = localHistoryActivityId,
                             startedAt = localHistoryStartedAt
-                        ))
+                        ), bookshelfScope = readingBookshelfScope)
                     }
                 }
             }
@@ -1337,7 +1342,7 @@ class ChapterPage(
                         LocalReadingHistoryRecorder.upsert(position.toLocalReadingActivity(
                             activityId = localHistoryActivityId,
                             startedAt = localHistoryStartedAt
-                        ))
+                        ), bookshelfScope = readingBookshelfScope)
                     }
                 }
             }

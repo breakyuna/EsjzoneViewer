@@ -974,4 +974,5 @@
     <string name="reader_glow_custom_color">自定义光晕色</string>
     <string name="reader_glow_auto_clamp">自动夹明度</string>
     <string name="reader_restore_position_failed">无法恢复阅读位置</string>
+    <string name="session_storage_unavailable">安全存储不可用，本次登录无法保存，重启应用后需要重新登录。</string>
 </resources>

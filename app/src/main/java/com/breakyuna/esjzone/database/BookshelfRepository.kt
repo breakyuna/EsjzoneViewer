@@ -153,9 +153,9 @@ object BookshelfRepository {
             .orEmpty()
 
     /** Clears the dot only when the reader actually opens the known latest chapter. */
-    suspend fun markLatestRead(chapterUrl: String) {
+    suspend fun markLatestRead(scope: String, chapterUrl: String) {
         val fingerprint = EsjzoneUrls.canonicalPageKey(chapterUrl).ifBlank { chapterUrl.substringBefore('#') }
-        if (fingerprint.isNotBlank()) requireDao().clearUpdateForFingerprint(fingerprint)
+        if (scope.isNotBlank() && fingerprint.isNotBlank()) requireDao().clearUpdateForFingerprint(scope, fingerprint)
     }
 
     fun observe(authorization: Authorization): Flow<List<BookshelfEntry>> = combine(

@@ -93,7 +93,9 @@ data class DownloadedNovelManifest(
     val downloadedAt: Long,
     val complete: Boolean,
     val commonPassword: String? = null,
-    val catalogComplete: Boolean = false
+    val catalogComplete: Boolean = false,
+    /** Old or reader-only manifests do not prove that a false adult flag is trustworthy. */
+    val adultStatusKnown: Boolean = false
 ) {
     val pendingPasswordChapters: List<DownloadedChapterRecord>
         get() = chapters.filter { it.requiresPassword && !it.isSaved }
@@ -210,6 +212,7 @@ object NovelDownloadStore {
     private val mutableMigrating = kotlinx.coroutines.flow.MutableStateFlow(false)
     val migrating: kotlinx.coroutines.flow.StateFlow<Boolean> = mutableMigrating
     private var migrationCopyRunning = false
+    private var backupRestoreInProgress = false
     private var storageGeneration = 0L
     private var privatePasswords: android.content.SharedPreferences? = null
     private data class DownloadWriteGuard(val directoryPath: String, val generation: Long, val storage: Long)
@@ -220,7 +223,7 @@ object NovelDownloadStore {
     }
 
     private fun ensureWriteAllowed(guard: DownloadWriteGuard?) = synchronized(ioLock) {
-        if (mutableMigrating.value) throw StorageMigrationBusyException()
+        if (mutableMigrating.value || backupRestoreInProgress) throw StorageMigrationBusyException()
         if (guard != null && guard.directoryPath in deletingDirectories) {
             throw CancellationException("The novel is being removed")
         }
@@ -257,6 +260,7 @@ object NovelDownloadStore {
     }
 
     private fun initializeStorageDirectory(directory: StorageFile) = synchronized(ioLock) {
+        if (backupRestoreInProgress) throw StorageMigrationBusyException()
         check(deletingDirectories.isEmpty()) { "Download deletion is still running" }
         // A disconnected user-selected volume must not prevent opening Settings to repair access.
         if (!directory.isDocument && !directory.isDirectory && !directory.mkdirs()) {
@@ -304,7 +308,7 @@ object NovelDownloadStore {
         checkActive: () -> Unit
     ): StorageMigration {
         val source = synchronized(ioLock) {
-            check(!migrationCopyRunning && deletingDirectories.isEmpty())
+            check(!migrationCopyRunning && !backupRestoreInProgress && deletingDirectories.isEmpty())
             // Resolve legacy names before readers can build an index during the copy.
             ensureNovelDirectoryIndex(StorageTransferFailureReason.SOURCE_MANIFEST_INVALID)
             mutableMigrating.value = true
@@ -325,8 +329,9 @@ object NovelDownloadStore {
             val destinationDirectories = synchronized(ioLock) {
                 scanNovelDirectories(destination, StorageTransferFailureReason.TARGET_MANIFEST_CONFLICT)
             }
+            val retiredSources = source?.let(::readRetiredDirectories).orEmpty()
             val sources = source?.takeIf { it.exists() }?.entries().orEmpty()
-                .filter { it.directory && !isStagingDirectory(it.file.name) }.map { it.file }
+                .filter { it.directory && !isStagingDirectory(it.file.name) && it.file.name !in retiredSources }.map { it.file }
             val copyBuffer = ByteArray(64 * 1024)
             val comparisonBuffer by lazy { ByteArray(copyBuffer.size) }
             sources.forEach { directory ->
@@ -497,7 +502,7 @@ object NovelDownloadStore {
 
     internal fun setStorageMigrationPending(pending: Boolean) = synchronized(ioLock) {
         check(!migrationCopyRunning)
-        if (pending && deletingDirectories.isNotEmpty()) throw StorageMigrationBusyException()
+        if (pending && (deletingDirectories.isNotEmpty() || backupRestoreInProgress)) throw StorageMigrationBusyException()
         mutableMigrating.value = pending
     }
 
@@ -562,84 +567,181 @@ object NovelDownloadStore {
         }
     }
 
-    /** Merge snapshots by default; an explicit restore can replace the complete download category. */
-    fun importBackup(source: File, replaceExisting: Boolean = false, checkActive: () -> Unit = {}) =
-        importStorage(StorageFile(source), replaceExisting, checkActive)
+    /** Keep old downloads until the complete replacement and its database transaction succeed. */
+    fun importBackup(source: File, replaceExisting: Boolean = false, checkActive: () -> Unit = {}) {
+        val imported = beginBackupImport(StorageFile(source), replaceExisting, checkActive)
+        finishBackupImport(imported, committed = true)
+    }
 
-    private fun importStorage(source: StorageFile, replaceExisting: Boolean, checkActive: () -> Unit) = synchronized(ioLock) {
+    internal suspend fun withRestoredBackup(source: File, checkActive: () -> Unit,
+                                          restoreDatabase: suspend () -> Unit) {
+        val imported = beginBackupImport(StorageFile(source), replaceExisting = true, checkActive = checkActive)
+        var committed = false
+        try {
+            restoreDatabase()
+            committed = true
+        } finally {
+            // No suspension/cancellation point between the database result and cleanup/rollback.
+            finishBackupImport(imported, committed)
+        }
+    }
+
+    private class BackupImport(val previous: Map<String, StorageFile>, val replacing: Boolean) {
+        val staged = mutableListOf<StorageFile>()
+        val published = mutableListOf<StorageFile>()
+    }
+
+    private fun beginBackupImport(source: StorageFile, replaceExisting: Boolean,
+                                  checkActive: () -> Unit): BackupImport = synchronized(ioLock) {
         ensureWriteAllowed(null)
-        // Physical deletion runs outside ioLock. Reject before touching any restore target;
-        // holding ioLock for the import prevents another deletion from starting meanwhile.
         if (deletingDirectories.isNotEmpty()) throw StorageMigrationBusyException()
         checkActive()
         val root = checkNotNull(rootDirectory)
         prepareDownloadRoot(root)
         ensureNovelDirectoryIndex()
-        imageIndex.clear()
+        val imported = BackupImport(LinkedHashMap(novelDirectories), replaceExisting)
+        backupRestoreInProgress = true
+        // Retire in-flight write guards even if this restore later rolls back.
+        storageGeneration += 1L
+        if (replaceExisting) imported.previous.keys.forEach(::cancelActiveWork)
         try {
-            val incoming = source.listFiles().orEmpty().filter(StorageFile::isDirectory).map { directory ->
+            val directories = if (source.exists()) source.entries().filter { it.directory }.map { it.file } else emptyList()
+            val incoming = directories.map { directory ->
                 checkActive()
-                val manifest = requireNotNull(readManifest(directory))
-                require(manifest.version in 1..2 && manifest.url.isNotBlank())
-                manifest.chapters.forEach { record ->
-                    checkActive()
-                    val file = requireNotNull(resolveLocalFile(directory, record.fileName))
-                    require(!(record.downloaded || record.bodyAvailable) || file.isFile)
-                    if (file.isFile) {
-                        val chapter = requireNotNull(readJson(file, DownloadedChapterContent::class.java))
-                        require(chapter.schemaVersion in 0..2)
-                        if (chapter.schemaVersion == 2) requireNotNull(chapter.body).validate()
+                directory to requireNotNull(readManifest(directory)).also { manifest ->
+                    manifest.chapters.forEach { record ->
+                        checkActive()
+                        val file = requireNotNull(resolveLocalFile(directory, record.fileName))
+                        require(!(record.downloaded || record.bodyAvailable) || file.isFile)
+                        if (file.isFile) {
+                            val chapter = requireNotNull(readJson(file, DownloadedChapterContent::class.java))
+                            require(chapter.schemaVersion in 0..2)
+                            if (chapter.schemaVersion == 2) requireNotNull(chapter.body).validate()
+                        }
                     }
                 }
-                directory to manifest
             }
-            if (replaceExisting) {
-                checkActive()
-                storageGeneration += 1L
-                novelDirectories.values.toList().forEach { directory ->
-                    val existing = requireNotNull(readManifest(directory))
-                    check(delete(existing.url))
+            require(incoming.map { canonicalKey(it.second.url) }.distinct().size == incoming.size)
+            val prepared = incoming.filter { replaceExisting || canonicalKey(it.second.url) !in imported.previous }
+                .map { (directory, manifest) ->
+                    checkActive()
+                    val staging = StorageFile.createTempFile("restore-", ".tmp", root)
+                    imported.staged += staging
+                    check(staging.delete() && staging.mkdirs())
+                    directory.fileEntries(checkActive).forEach { entry ->
+                        val file = entry.file
+                        val output = StorageFile(staging, file.relativePathFrom(directory))
+                        check(output.parentFile?.mkdirs() == true)
+                        file.inputStream().use { input ->
+                            output.outputStream().use { input.copyWithCancellation(it, checkActive) }
+                        }
+                        check(output.length() == entry.size) { "Incomplete restored download" }
+                    }
+                    StorageFile(staging, MANIFEST_FILE).writeText(gson.toJson(manifest.copy(version = 2, commonPassword = null)))
+                    staging to manifest
                 }
-            }
-            incoming.forEach { (directory, manifest) ->
+            // Publish only after every book has been copied. Original directories remain intact.
+            val next = if (replaceExisting) linkedMapOf<String, StorageFile>() else LinkedHashMap(imported.previous)
+            prepared.forEach { (staging, manifest) ->
                 checkActive()
                 val key = canonicalKey(manifest.url)
-                val target = novelDirectories[key] ?: availableNovelDirectory(root, manifest.name, key)
-                if (!target.exists()) {
-                    val staging = StorageFile.createTempFile("restore-", ".tmp", root)
-                    check(staging.delete() && staging.mkdirs())
-                    try {
-                        directory.walkTopDown().drop(1).forEach { file ->
-                            checkActive()
-                            val output = StorageFile(staging, file.relativePathFrom(directory))
-                            if (file.isDirectory) check(output.isDirectory || output.mkdirs())
-                            else file.inputStream().use { input ->
-                                output.outputStream().use { input.copyWithCancellation(it, checkActive) }
-                            }
-                        }
-                        StorageFile(staging, MANIFEST_FILE).writeText(gson.toJson(manifest.copy(version = 2, commonPassword = null)))
-                        checkActive()
-                        check(staging.renameTo(target))
-                        novelDirectories[key] = target
-                    } finally {
-                        runCatching { check(staging.deleteRecursively()) }
-                            .onFailure { AppLogger.w("NovelDownloadStore", "Unable to remove restore staging directory", it) }
-                    }
-                }
+                val target = availableNovelDirectory(root, manifest.name, key)
+                writeRetiredDirectories(root, readRetiredDirectories(root) + target.name)
+                check(staging.renameTo(target))
+                imported.published += target
+                next[key] = target
             }
+            checkActive()
+            novelDirectories.clear()
+            novelDirectories.putAll(next)
+            invalidateBackupIndexes()
+            imported
+        } catch (error: Throwable) {
+            finishBackupImport(imported, committed = false)
+            throw error
+        }
+    }
+
+    private fun finishBackupImport(imported: BackupImport, committed: Boolean) = synchronized(ioLock) {
+        try {
+            val root = checkNotNull(rootDirectory)
+            if (committed) {
+                val obsolete = if (imported.replacing) imported.previous.values.map { it.name } else emptyList()
+                // This durable switch precedes deletion. A refused cleanup cannot change the selected copy.
+                writeRetiredDirectories(root,
+                    (readRetiredDirectories(root) + obsolete) - imported.published.map { it.name }.toSet())
+            } else {
+                novelDirectories.clear()
+                novelDirectories.putAll(imported.previous)
+                // Published directories were excluded before their first rename, so rollback needs no write.
+            }
+            val obsolete = if (committed && imported.replacing) imported.previous.values else
+                if (!committed) imported.published else emptyList()
+            (obsolete + imported.staged).forEach { directory ->
+                runCatching { check(!directory.exists() || directory.deleteRecursively()) }
+                    .onFailure { AppLogger.w("NovelDownloadStore", "Unable to remove restore working directory", it) }
+            }
+            // A failed pruning write is harmless: allocation also avoids still-reserved names.
+            runCatching {
+                val retained = readRetiredDirectories(root).filterTo(linkedSetOf()) { StorageFile(root, it).exists() }
+                writeRetiredDirectories(root, retained)
+            }.onFailure { AppLogger.w("NovelDownloadStore", "Unable to prune retired restore directories", it) }
         } finally {
-            // Earlier novels may already have committed when a later copy is cancelled.
-            // Restores can reuse a deleted book's folder for a different identity.
-            directoryIndexCache?.delete()
-            chapterIndex.clear()
-            chapterKeysByDirectory.clear()
-            chapterIndexLoaded = false
-            inventorySnapshot = null
-            metadataSnapshot = null
-            manifestCache.clear()
-            historyProgressCache.clear()
+            backupRestoreInProgress = false
+            invalidateBackupIndexes()
+            novelDirectoryIndexLoaded = false
             publishChange()
         }
+    }
+
+    private const val RETIRED_DIRECTORIES_FILE = ".restore-retired.json"
+
+    /** Durable exclusion, independent of the disposable directory-index cache and of directory order. */
+    private fun readRetiredDirectories(root: StorageFile): Set<String> {
+        val file = StorageFile(root, RETIRED_DIRECTORIES_FILE)
+        file.recoverReplacement()
+        if (!file.exists()) return emptySet()
+        val retired = file.inputStream().bufferedReader().use {
+            com.google.gson.JsonParser.parseReader(it).asJsonObject
+        }
+        require(retired.get("version")?.asInt == 1)
+        return requireNotNull(retired.getAsJsonArray("names")).mapTo(linkedSetOf()) { entry ->
+            val name = entry.asString
+            require(name.isNotBlank() && name != "." && name != ".." && '/' !in name && '\\' !in name)
+            name
+        }
+    }
+
+    private fun writeRetiredDirectories(root: StorageFile, names: Set<String>) {
+        val file = StorageFile(root, RETIRED_DIRECTORIES_FILE)
+        if (names.isEmpty()) {
+            file.recoverReplacement()
+            check(!file.exists() || file.delete())
+            return
+        }
+        val temporary = StorageFile.createTempFile("restore-", ".tmp", root)
+        try {
+            val retired = com.google.gson.JsonObject().apply {
+                addProperty("version", 1)
+                add("names", gson.toJsonTree(names))
+            }
+            temporary.writeText(retired.toString())
+            file.replaceWith(temporary)
+        } finally {
+            runCatching { temporary.delete() }
+        }
+    }
+
+    private fun invalidateBackupIndexes() {
+        directoryIndexCache?.delete()
+        imageIndex.clear()
+        chapterIndex.clear()
+        chapterKeysByDirectory.clear()
+        chapterIndexLoaded = false
+        inventorySnapshot = null
+        metadataSnapshot = null
+        manifestCache.clear()
+        historyProgressCache.clear()
     }
 
     fun manifest(novelUrl: String): DownloadedNovelManifest? = synchronized(ioLock) {
@@ -794,7 +896,7 @@ object NovelDownloadStore {
         cancelActiveWork(novelUrl)
         val directory: StorageFile
         synchronized(ioLock) {
-            if (mutableMigrating.value) return DeleteResult.BUSY_OR_FAILED
+            if (mutableMigrating.value || backupRestoreInProgress) return DeleteResult.BUSY_OR_FAILED
             if (novelDirectories[canonicalKey(novelUrl)]?.absolutePath in deletingDirectories) return DeleteResult.BUSY_OR_FAILED
             directory = directoryFor(novelUrl, create = false) ?: return DeleteResult.ALREADY_ABSENT
             if (!deletingDirectories.add(directory.absolutePath)) return DeleteResult.BUSY_OR_FAILED
@@ -1670,6 +1772,7 @@ object NovelDownloadStore {
             forumUrl = stored.forumUrl,
             tags = stored.tags,
             isAdult = stored.isAdult,
+            adultStatusKnown = stored.adultStatusKnown,
             isFavorite = false,
             description = NovelDescription(
                 stored.description.takeIf { it.isNotBlank() }
@@ -1775,7 +1878,8 @@ object NovelDownloadStore {
         downloadedAt = downloadedAt,
         complete = complete,
         commonPassword = commonPassword,
-        catalogComplete = true
+        catalogComplete = true,
+        adultStatusKnown = novel.adultStatusKnown
     )
 
     private fun manifestFromMetadata(
@@ -1808,7 +1912,8 @@ object NovelDownloadStore {
         downloadedAt = downloadedAt,
         complete = complete,
         commonPassword = commonPassword,
-        catalogComplete = catalogComplete
+        catalogComplete = catalogComplete,
+        adultStatusKnown = previous?.adultStatusKnown == true
     )
 
     private fun findChapter(chapterUrl: String, novelUrl: String?): ChapterMatch? {
@@ -1958,7 +2063,7 @@ object NovelDownloadStore {
 
     private fun directoryFor(novelUrl: String, create: Boolean, novelName: String = ""): StorageFile? = synchronized(ioLock) {
         val root = rootDirectory ?: return@synchronized null
-        if (create && mutableMigrating.value) return@synchronized null
+        if (create && (mutableMigrating.value || backupRestoreInProgress)) return@synchronized null
         ensureNovelDirectoryIndex()
         val key = canonicalKey(novelUrl)
         novelDirectories[key]?.takeIf { it.absolutePath in deletingDirectories }?.let { return@synchronized null }
@@ -1996,7 +2101,8 @@ object NovelDownloadStore {
     ): LinkedHashMap<String, StorageFile> {
         val directories = LinkedHashMap<String, StorageFile>()
         if (!root.exists()) return directories
-        root.entries().filter { it.directory && !isStagingDirectory(it.file.name) }.map { it.file }
+        val retired = readRetiredDirectories(root)
+        root.entries().filter { it.directory && !isStagingDirectory(it.file.name) && it.file.name !in retired }.map { it.file }
             .sortedBy(StorageFile::name).forEach { directory ->
                 val key = directoryHints[directory.name] ?: readManifest(directory, migrationFailureReason)
                     ?.url?.takeIf(String::isNotBlank)?.let(::canonicalKey) ?: return@forEach
@@ -2014,8 +2120,9 @@ object NovelDownloadStore {
         val root = rootDirectory ?: return
         val hints = if (migrationFailureReason == null) readDirectoryHints(root) else emptyMap()
         val directories = scanNovelDirectories(root, migrationFailureReason, hints)
+        val retired = readRetiredDirectories(root)
         novelDirectories.forEach { (key, directory) ->
-            if (key !in directories && directory.isDirectory) directories[key] = directory
+            if (key !in directories && directory.name !in retired && directory.isDirectory) directories[key] = directory
         }
         if (renameLegacyDirectories && !mutableMigrating.value) directories.entries.forEach { entry ->
             val directory = entry.value
@@ -2063,10 +2170,11 @@ object NovelDownloadStore {
 
     private fun availableNovelDirectory(root: StorageFile, name: String, key: String): StorageFile {
         val base = novelDirectoryName(name)
+        val retired = readRetiredDirectories(root)
         var candidate = StorageFile(root, base)
         val suffix = digest(key).take(8)
         var number = 1
-        while (candidate.exists()) {
+        while (candidate.name in retired || candidate.exists()) {
             candidate = StorageFile(root, "$base ($suffix${if (number == 1) "" else "-$number"})")
             number += 1
         }
@@ -2077,7 +2185,7 @@ object NovelDownloadStore {
         val cleaned = name.map { character ->
             if (character < ' ' || character == '\u007f' || character in "<>:\"/\\|?*") '_' else character
         }.joinToString("").trim().trim('.').ifBlank { "Untitled" }
-            .let { if (isStagingDirectory(it)) "${it}_" else it }
+            .let { if (isStagingDirectory(it) || it == RETIRED_DIRECTORIES_FILE) "${it}_" else it }
         // Leave room for a collision suffix within the usual filesystem component limit.
         var bytes = 0
         val shortened = buildString {
@@ -2102,9 +2210,18 @@ object NovelDownloadStore {
         val manifest = try {
             readJson(file, DownloadedNovelManifest::class.java, propagateErrors = migrationFailureReason != null)?.also {
                 if (it.version !in 1..2) throw IOException("Unsupported downloaded novel version")
-                if (migrationFailureReason != null) {
-                    require(it.url.isNotBlank())
-                    requireNotNull(it.chapters)
+                require(!it.url.isNullOrBlank()) { "Missing downloaded novel URL" }
+                requireNotNull(it.name) { "Missing downloaded novel title" }
+                requireNotNull(it.coverUrl)
+                requireNotNull(it.type)
+                requireNotNull(it.author)
+                requireNotNull(it.forumUrl)
+                requireNotNull(it.description)
+                requireNotNull(it.tags)
+                requireNotNull(it.chapters) { "Missing downloaded chapter list" }.forEach { record ->
+                    requireNotNull(record)
+                    require(!record.url.isNullOrBlank() && !record.fileName.isNullOrBlank())
+                    requireNotNull(record.name)
                 }
             }.also {
                 // An unrelated directory without a manifest can be ignored; a damaged manifest cannot.
