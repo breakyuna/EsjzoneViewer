@@ -9,6 +9,7 @@ import com.breakyuna.esjzone.app.cacheUserProfile
 
 import androidx.annotation.StringRes
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.rememberScrollState
@@ -1068,6 +1069,7 @@ private fun CommentAvatar(comment: Comment) {
         modifier = Modifier
             .size(48.dp)
             .clip(CircleShape)
+            .border(0.5.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f), CircleShape)
             .background(MaterialTheme.colorScheme.surfaceContainerHighest),
         contentAlignment = Alignment.Center
     ) {

@@ -41,7 +41,7 @@ class ReaderToolbarSettingsInstrumentedTest {
         assertEquals(originalTop, composeRule.onNodeWithText(darkLabel).fetchSemanticsNode().boundsInRoot.top)
     }
 
-    @Test fun longPressingHandleChangesStoredOrderAndVisibleOrder() {
+    @Test fun holdingHandleFor160MillisecondsChangesStoredOrderAndVisibleOrder() {
         var tools by mutableStateOf(listOf(ReaderTool.DARK_MODE, ReaderTool.CONTENTS))
         var order by mutableStateOf(ReaderTool.decodeOrder(null, tools))
         var darkLabel = ""
@@ -64,12 +64,36 @@ class ReaderToolbarSettingsInstrumentedTest {
             .fetchSemanticsNode().boundsInRoot.height
         composeRule.onAllNodesWithContentDescription(dragLabel)[0].performTouchInput {
             down(center)
-            advanceEventTime(600)
-            moveTo(center.copy(y = center.y + rowHeight), delayMillis = 200)
+            advanceEventTime(160)
+            moveTo(center.copy(y = center.y + rowHeight), delayMillis = 16)
             up()
         }
         composeRule.runOnIdle { assertEquals(listOf(ReaderTool.CONTENTS, ReaderTool.DARK_MODE), tools) }
         assertTrue(composeRule.onNodeWithText(contentsLabel).fetchSemanticsNode().boundsInRoot.top <
             composeRule.onNodeWithText(darkLabel).fetchSemanticsNode().boundsInRoot.top)
+    }
+
+    @Test fun movingHandleBeforeHoldTimeoutDoesNotChangeOrder() {
+        val tools = listOf(ReaderTool.DARK_MODE, ReaderTool.CONTENTS)
+        val order = ReaderTool.decodeOrder(null, tools)
+        var dragLabel = ""
+        var orderChanges = 0
+        composeRule.setContent {
+            dragLabel = globalStringResource(R.string.reader_tool_drag)
+            MaterialTheme {
+                Column {
+                    ReaderToolbarSettings(tools, order, { orderChanges++ }, {})
+                }
+            }
+        }
+        val handle = composeRule.onAllNodesWithContentDescription(dragLabel)[0]
+        val rowHeight = handle.fetchSemanticsNode().boundsInRoot.height
+        handle.performTouchInput {
+            down(center)
+            advanceEventTime(80)
+            moveTo(center.copy(y = center.y + rowHeight), delayMillis = 0)
+            up()
+        }
+        composeRule.runOnIdle { assertEquals(0, orderChanges) }
     }
 }

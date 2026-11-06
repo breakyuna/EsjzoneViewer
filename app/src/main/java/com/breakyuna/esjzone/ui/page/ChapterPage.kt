@@ -201,7 +201,6 @@ import com.breakyuna.esjzone.ui.reader.ReaderVolumeKeyDispatcher
 import com.breakyuna.esjzone.ui.designsystem.AppFeedback
 import com.breakyuna.esjzone.ui.designsystem.AppShapes
 import com.breakyuna.esjzone.ui.designsystem.AppSpacing
-import com.breakyuna.esjzone.ui.designsystem.rememberAppAdaptiveMetrics
 import com.breakyuna.esjzone.domain.reader.ReaderAnchor
 import com.breakyuna.esjzone.domain.reader.readerChapterProgress
 import com.breakyuna.esjzone.domain.reader.readerContentPosition
@@ -266,7 +265,6 @@ class ChapterPage(
         val textMeasurer = rememberTextMeasurer()
         val stableTopInset = WindowInsets.statusBarsIgnoringVisibility.union(WindowInsets.displayCutout).asPaddingValues().calculateTopPadding()
         val density = LocalDensity.current
-        val adaptiveMetrics = rememberAppAdaptiveMetrics()
         val wide = appUsesWideLayout()
         val scope = rememberCoroutineScope()
         val sidePanels = rememberReaderSidePanelsState()
@@ -1967,9 +1965,7 @@ class ChapterPage(
                         userScrollEnabled = !pagedMode,
                         modifier = Modifier
                             .fillMaxHeight()
-                            .then(if (wide) Modifier.widthIn(max = AppLayout.wideReaderMaxWidth) else Modifier)
                             .fillMaxWidth()
-                            .widthIn(max = adaptiveMetrics.contentMaxWidth)
                             .align(Alignment.Center)
                             .windowInsetsPadding(WindowInsets.displayCutout.only(WindowInsetsSides.Horizontal))
                             .padding(horizontal = readerSettings.horizontalPaddingDp.dp),

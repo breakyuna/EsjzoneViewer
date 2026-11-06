@@ -24,7 +24,10 @@ import androidx.compose.material.icons.filled.List
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Visibility
-import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.drag
+import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.foundation.background
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -35,6 +38,8 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.changedToUp
+import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.zIndex
 import androidx.compose.ui.Alignment
@@ -131,35 +136,46 @@ internal fun ReaderToolbarSettings(
                             Modifier.size(rowHeightDp)
                                 .semantics { contentDescription = dragLabel }
                                 .pointerInput(tool, rowHeight) {
-                                    detectDragGesturesAfterLongPress(
-                                        onDragStart = {
-                                            dragging = tool
-                                            dragStartIndex = ordered.indexOf(tool)
-                                            dragDistance = 0f
-                                        },
-                                        onDragEnd = {
-                                            commitOrder(ordered)
-                                            dragging = null
-                                            dragDistance = 0f
-                                        },
-                                        onDragCancel = {
-                                            ordered = savedOrder
-                                            dragging = null
-                                            dragDistance = 0f
-                                        },
-                                        onDrag = { change, amount ->
-                                            change.consume()
-                                            dragDistance += amount.y
-                                            val target = (dragStartIndex + dragDistance / rowHeight)
-                                                .roundToInt().coerceIn(0, ordered.lastIndex)
-                                            val current = ordered.indexOf(tool)
-                                            if (target != current) {
-                                                ordered = ordered.toMutableList().apply {
-                                                    add(target, removeAt(current))
-                                                }
+                                    awaitEachGesture {
+                                        val down = awaitFirstDown(requireUnconsumed = false)
+                                        // Release or another gesture consuming input before the hold
+                                        // finishes leaves the surrounding settings page scrollable.
+                                        val endedEarly = withTimeoutOrNull(150L) {
+                                            waitForUpOrCancellation()
+                                            true
+                                        } != null
+                                        if (endedEarly) return@awaitEachGesture
+                                        val pointer = currentEvent.changes.firstOrNull { it.id == down.id && it.pressed }
+                                            ?: currentEvent.changes.firstOrNull { it.pressed }
+                                            ?: return@awaitEachGesture
+
+                                        dragging = tool
+                                        dragStartIndex = ordered.indexOf(tool)
+                                        dragDistance = 0f
+                                        var completed = false
+                                        try {
+                                            if (drag(pointer.id) { change ->
+                                                    dragDistance += change.positionChange().y
+                                                    change.consume()
+                                                    val target = (dragStartIndex + dragDistance / rowHeight)
+                                                        .roundToInt().coerceIn(0, ordered.lastIndex)
+                                                    val current = ordered.indexOf(tool)
+                                                    if (target != current) {
+                                                        ordered = ordered.toMutableList().apply {
+                                                            add(target, removeAt(current))
+                                                        }
+                                                    }
+                                                }) {
+                                                currentEvent.changes.filter { it.changedToUp() }.forEach { it.consume() }
+                                                commitOrder(ordered)
+                                                completed = true
                                             }
+                                        } finally {
+                                            if (!completed) ordered = savedOrder
+                                            dragging = null
+                                            dragDistance = 0f
                                         }
-                                    )
+                                    }
                                 },
                             contentAlignment = Alignment.Center
                         ) {

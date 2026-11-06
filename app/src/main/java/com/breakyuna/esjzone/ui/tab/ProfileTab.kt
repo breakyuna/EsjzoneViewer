@@ -5,6 +5,7 @@ package com.breakyuna.esjzone.ui.tab
 import com.breakyuna.esjzone.ui.designsystem.appUsesWideLayout
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -305,6 +306,7 @@ private fun ProfileHero(profile: UserProfile?, domain: String, avatarCacheKey: S
                     cacheKey = avatarCacheKey,
                     contentDescription = profile.name,
                     modifier = Modifier.size(72.dp).clip(CircleShape)
+                        .border(0.5.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f), CircleShape)
                 )
             }
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(AppSpacing.xs)) {

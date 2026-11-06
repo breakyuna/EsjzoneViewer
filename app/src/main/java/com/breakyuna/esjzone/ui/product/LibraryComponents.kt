@@ -1,5 +1,6 @@
 package com.breakyuna.esjzone.ui.product
 
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -56,7 +57,8 @@ fun DownloadItem(
         colors = CardDefaults.cardColors(containerColor = appStateColors().containerRaised)
     ) {
         Row(Modifier.padding(AppSpacing.md), horizontalArrangement = Arrangement.spacedBy(AppSpacing.md), verticalAlignment = Alignment.Top) {
-            AppCoverImage(item.cover.model, item.cover.contentDescription, Modifier.size(width = 64.dp, height = 88.dp))
+            AppCoverImage(item.cover.model, item.cover.contentDescription, Modifier.size(width = 64.dp, height = 88.dp)
+                .border(0.5.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f)))
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(AppSpacing.xs)) {
                 Text(item.title, style = AppTypography.labelLarge, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 Text(item.chapterLabel, style = AppTypography.bodyMedium)
@@ -88,7 +90,8 @@ fun HistoryItem(item: HistoryItemModel, modifier: Modifier = Modifier, onClick: 
         colors = CardDefaults.cardColors(containerColor = appStateColors().containerRaised)
     ) {
         Row(Modifier.padding(AppSpacing.md), horizontalArrangement = Arrangement.spacedBy(AppSpacing.md), verticalAlignment = Alignment.Top) {
-            AppCoverImage(item.cover.model, item.cover.contentDescription, Modifier.size(width = 64.dp, height = 88.dp))
+            AppCoverImage(item.cover.model, item.cover.contentDescription, Modifier.size(width = 64.dp, height = 88.dp)
+                .border(0.5.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f)))
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(AppSpacing.xs)) {
                 Text(item.title, style = AppTypography.labelLarge, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 Text(item.chapterLabel, style = AppTypography.bodyMedium)

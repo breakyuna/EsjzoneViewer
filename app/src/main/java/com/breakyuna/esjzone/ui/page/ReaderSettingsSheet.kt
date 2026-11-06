@@ -195,11 +195,28 @@ internal fun ReaderSettingsSheet(
                         ReaderToggle(stringResource(R.string.reader_paged_bookmark_gestures), draft.pagedBookmarkGesturesEnabled) { commit(draft.copy(pagedBookmarkGesturesEnabled = it)) }
                         ReaderToggle(stringResource(R.string.reader_volume_paging), draft.volumeKeyPaging) { commit(draft.copy(volumeKeyPaging = it)) }
                         ReaderToggle(stringResource(R.string.reader_eye_protection), draft.eyeProtectionEnabled) { commit(draft.copy(eyeProtectionEnabled = it)) }
-                        Text(stringResource(R.string.reader_left_tap_action), style = MaterialTheme.typography.titleSmall)
-                        ReaderSettingChoices(draft.leftTapForward, listOf(
-                            false to stringResource(R.string.reader_left_tap_previous),
-                            true to stringResource(R.string.reader_left_tap_next)
-                        )) { commit(draft.copy(leftTapForward = it)) }
+                        Row(
+                            modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                            horizontalArrangement = Arrangement.spacedBy(AppSpacing.sm),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                stringResource(R.string.reader_left_tap_action),
+                                style = MaterialTheme.typography.titleSmall,
+                                maxLines = 1
+                            )
+                            Spacer(Modifier.weight(1f))
+                            listOf(
+                                false to stringResource(R.string.reader_left_tap_previous),
+                                true to stringResource(R.string.reader_left_tap_next)
+                            ).forEach { (value, label) ->
+                                FilterChip(
+                                    selected = draft.leftTapForward == value,
+                                    onClick = { commit(draft.copy(leftTapForward = value)) },
+                                    label = { Text(label, maxLines = 1) }
+                                )
+                            }
+                        }
                     } else {
                         ReaderToolbarSettings(
                             tools = draft.toolbarTools,
