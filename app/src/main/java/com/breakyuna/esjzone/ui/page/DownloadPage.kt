@@ -5,6 +5,7 @@ import android.content.ClipData
 import android.content.Intent
 import android.net.Uri
 import android.provider.DocumentsContract
+import android.util.AndroidRuntimeException
 import com.breakyuna.esjzone.ui.designsystem.wideListColumns
 import com.breakyuna.esjzone.ui.designsystem.PreserveAdaptiveListAnchor
 import com.breakyuna.esjzone.ui.designsystem.adaptiveItems
@@ -13,6 +14,7 @@ import com.breakyuna.esjzone.novellibrary.novel.validNovelTitle
 import androidx.lifecycle.viewModelScope
 
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.LocalActivity
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -119,6 +121,7 @@ object DownloadPage : AppDestination {
     override fun Content() {
         val navigator = LocalBaseNavigator.current
         val context = LocalContext.current
+        val activity = LocalActivity.current
         val scope = rememberCoroutineScope()
         val model = rememberAppViewModel { DownloadPageModel() }
         val state by model.state.collectAsState()
@@ -214,20 +217,24 @@ object DownloadPage : AppDestination {
                                                 val folder = DocumentsContract.buildDocumentUriUsingTree(
                                                     tree, DocumentsContract.getTreeDocumentId(tree)
                                                 )
-                                                context.startActivity(Intent(Intent.ACTION_VIEW).apply {
+                                                val intent = Intent(Intent.ACTION_VIEW).apply {
                                                     setDataAndType(folder, DocumentsContract.Document.MIME_TYPE_DIR)
                                                     // Child-list and child-document URIs share the tree prefix,
                                                     // not the root document URI used to open the folder.
                                                     clipData = ClipData.newRawUri("shared-folder", tree)
                                                     addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or
                                                         Intent.FLAG_GRANT_PREFIX_URI_PERMISSION)
-                                                })
+                                                    if (activity == null) addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                                }
+                                                (activity ?: context).startActivity(intent)
                                                 null
                                             } catch (_: ActivityNotFoundException) {
                                                 folderOpenFailed
                                             } catch (_: SecurityException) {
                                                 folderOpenFailed
                                             } catch (_: IllegalArgumentException) {
+                                                folderOpenFailed
+                                            } catch (_: AndroidRuntimeException) {
                                                 folderOpenFailed
                                             }
                                             if (failure != null) scope.launch { snackbarHost.showSnackbar(failure) }
