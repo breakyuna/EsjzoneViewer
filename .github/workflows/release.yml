@@ -4,15 +4,22 @@ on:
   push:
     tags:
       - 'v*.*.*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag (for example v0.2.5)'
+        required: true
+        type: string
 
 permissions:
   contents: read
 
 env:
   COMMIT_ID: ${{ github.sha }}
+  RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
 
 concurrency:
-  group: draft-release-${{ github.ref }}
+  group: draft-release-${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
   cancel-in-progress: false
 
 jobs:
@@ -54,7 +61,7 @@ jobs:
           code = property_value("app_version_index")
           if not re.fullmatch(r"(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)", version):
               raise SystemExit("app_version must be a numeric major.minor.patch version without v")
-          if os.environ["GITHUB_REF_NAME"] != f"v{version}":
+          if os.environ["RELEASE_TAG"] != f"v{version}":
               raise SystemExit("Tag must exactly match v + app_version; release stopped")
           if not re.fullmatch(r"[1-9][0-9]*", code) or int(code) > 2100000000:
               raise SystemExit("app_version_index must be a positive Android versionCode")
@@ -205,7 +212,7 @@ jobs:
 
           mkdir -p outputs
 
-          cp "$SIGNED_APK" "outputs/EsjzoneViewer-${GITHUB_REF_NAME}.apk"
+          cp "$SIGNED_APK" "outputs/EsjzoneViewer-${RELEASE_TAG}.apk"
 
       - name: Remove temporary signing key
         if: always()
@@ -215,7 +222,28 @@ jobs:
       - name: Generate SHA-256 checksum
         working-directory: outputs
         shell: bash
-        run: sha256sum "EsjzoneViewer-${GITHUB_REF_NAME}.apk" > SHA256SUMS.txt
+        run: sha256sum "EsjzoneViewer-${RELEASE_TAG}.apk" > SHA256SUMS.txt
+
+      - name: Create or verify tag for manual release
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          ref_path="repos/${GITHUB_REPOSITORY}/git/ref/tags/${RELEASE_TAG}"
+          if gh api "$ref_path" > /dev/null 2>&1; then
+            tagged_commit="$(gh api "repos/${GITHUB_REPOSITORY}/commits/${RELEASE_TAG}" --jq .sha)"
+            if [[ "$tagged_commit" != "$GITHUB_SHA" ]]; then
+              echo "::error::Tag already exists on another commit; refusing to move it."
+              exit 1
+            fi
+            echo "Existing tag points to the selected commit."
+          else
+            gh api --method POST "repos/${GITHUB_REPOSITORY}/git/refs" \
+              -f "ref=refs/tags/${RELEASE_TAG}" -f "sha=${GITHUB_SHA}" > /dev/null
+            echo "Created release tag for the selected commit."
+          fi
 
       - name: Create draft release with verified APK
         env:
@@ -224,10 +252,10 @@ jobs:
         shell: bash
         run: |
           # --verify-tag prevents accidental tag creation. Existing releases are never overwritten.
-          gh release create "$GITHUB_REF_NAME" \
-            "outputs/EsjzoneViewer-${GITHUB_REF_NAME}.apk" \
+          gh release create "$RELEASE_TAG" \
+            "outputs/EsjzoneViewer-${RELEASE_TAG}.apk" \
             outputs/SHA256SUMS.txt \
             --verify-tag \
             --draft \
-            --title "EsjzoneViewer ${GITHUB_REF_NAME}" \
+            --title "EsjzoneViewer ${RELEASE_TAG}" \
             --generate-notes
