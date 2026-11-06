@@ -614,7 +614,13 @@ class ChapterPage(
             AppLogger.i("ReaderTiming", "scriptMs=${(System.nanoTime() - started) / 1_000_000} chapters=${chapters.size}")
         }
         val pagedMode = readerSettings.pageAnimation != ReaderPageAnimation.VERTICAL_SCROLL
+        // Includes the status row and the navigation/cutout padding inside it.
         var readerStatusHeightPx by remember { mutableStateOf(0) }
+        val readerStatusInset = with(density) { readerStatusHeightPx.toDp() }
+        val (scrollStatusInset, scrollContentBottomPadding) = readerScrollBottomSpace(
+            ReaderLayout.contentBottomPadding,
+            readerStatusInset
+        )
         // Reserve bars according to reader settings, not temporary toolbar visibility.
         // Showing chrome must not change page boundaries or restore a different page.
         val pageTopPadding = if (pagedMode) {
@@ -622,8 +628,8 @@ class ChapterPage(
                 else WindowInsets.displayCutout.asPaddingValues().calculateTopPadding()
         } else ReaderLayout.contentTopPadding + stableTopInset
         val pageBottomPadding = if (pagedMode) {
-            ReaderLayout.pagedContentPadding + with(density) { readerStatusHeightPx.toDp() }
-        } else ReaderLayout.contentBottomPadding
+            ReaderLayout.pagedContentPadding + readerStatusInset
+        } else scrollContentBottomPadding
         var readerViewport by remember { mutableStateOf(IntSize.Zero) }
         val pageContentWidthPx = with(density) {
             (readerViewport.width - 2 * readerSettings.horizontalPaddingDp.dp.roundToPx()).coerceAtLeast(0)
@@ -1968,7 +1974,11 @@ class ChapterPage(
                             .fillMaxWidth()
                             .align(Alignment.Center)
                             .windowInsetsPadding(WindowInsets.displayCutout.only(WindowInsetsSides.Horizontal))
-                            .padding(horizontal = readerSettings.horizontalPaddingDp.dp),
+                            .padding(
+                                start = readerSettings.horizontalPaddingDp.dp,
+                                end = readerSettings.horizontalPaddingDp.dp,
+                                bottom = if (pagedMode) 0.dp else scrollStatusInset
+                            ),
                         verticalArrangement = Arrangement.spacedBy(0.dp),
                         contentPadding = androidx.compose.foundation.layout.PaddingValues(
                                 top = pageTopPadding,
