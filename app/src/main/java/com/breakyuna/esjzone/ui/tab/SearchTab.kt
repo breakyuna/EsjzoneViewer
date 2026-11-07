@@ -17,7 +17,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SuggestionChip
@@ -50,7 +49,7 @@ import androidx.compose.material3.Scaffold
 import com.breakyuna.esjzone.ui.discovery.DiscoveryEmptyState
 import com.breakyuna.esjzone.ui.discovery.DiscoveryLoadingState
 import com.breakyuna.esjzone.ui.discovery.DiscoverySearchTopBar
-import com.breakyuna.esjzone.ui.discovery.SearchTagDialog
+import com.breakyuna.esjzone.ui.discovery.buildSearchTagExpression
 import com.breakyuna.esjzone.ui.navigation.AppTab
 import com.breakyuna.esjzone.ui.navigation.AppTabOptions
 import com.breakyuna.esjzone.ui.navigation.LocalBaseNavigator
@@ -80,21 +79,24 @@ object SearchTab : AppTab {
         val historyModel = rememberAppViewModel { SearchHistoryModel() }
         val historyState by historyModel.state.collectAsStateWithLifecycle()
         var query by rememberSaveable { mutableStateOf("") }
+        var excluded by rememberSaveable { mutableStateOf("") }
+        var tagRowExpanded by rememberSaveable { mutableStateOf(false) }
         var activeKeyword by rememberSaveable { mutableStateOf<String?>(null) }
         var category by rememberSaveable { mutableIntStateOf(0) }
         var sort by rememberSaveable { mutableIntStateOf(1) }
-        var showTagSearch by rememberSaveable { mutableStateOf(false) }
 
-        fun submit(value: String) {
-            value.trim().takeIf { it.isNotBlank() }?.let {
-                query = it
-                if (activeKeyword == it) {
-                    searchModel.search(it, category, sort)
-                } else {
-                    activeKeyword = it
-                }
-                historyModel.save(it)
+        fun submit(value: String, exclusion: String = excluded) {
+            val expression = buildSearchTagExpression(value, exclusion)
+            if (!expression.canSearch) return
+            query = value.trim()
+            if (exclusion.isEmpty()) excluded = ""
+            val keyword = expression.query
+            if (activeKeyword == keyword) {
+                searchModel.search(keyword, category, sort)
+            } else {
+                activeKeyword = keyword
             }
+            historyModel.save(keyword)
         }
 
         Scaffold(
@@ -102,13 +104,16 @@ object SearchTab : AppTab {
                 DiscoverySearchTopBar(
                     query = query,
                     onQueryChange = { query = it },
+                    excluded = excluded,
+                    onExcludedChange = { excluded = it },
+                    tagRowExpanded = tagRowExpanded,
+                    onTagRowExpandedChange = { tagRowExpanded = it },
                     onSearch = { submit(query) },
                     onClear = {
                         query = ""
                         activeKeyword = null
                     },
-                    onBack = { navigator?.pop() },
-                    onTagSearch = { showTagSearch = true }
+                    onBack = { navigator?.pop() }
                 )
             },
             containerColor = MaterialTheme.colorScheme.background
@@ -138,21 +143,10 @@ object SearchTab : AppTab {
                 } ?: SearchHistoryList(
                     state = historyState,
                     onClear = historyModel::clear,
-                    onSelect = ::submit,
-                    modifier = Modifier.fillMaxSize(),
-                    onTagSearch = { showTagSearch = true }
+                    onSelect = { submit(it, exclusion = "") },
+                    modifier = Modifier.fillMaxSize()
                 )
             }
-        }
-        if (showTagSearch) {
-            SearchTagDialog(
-                currentQuery = query,
-                onDismiss = { showTagSearch = false },
-                onSearch = {
-                    showTagSearch = false
-                    submit(it)
-                }
-            )
         }
         LaunchedEffect(Unit) { historyModel.load() }
         LaunchedEffect(activeKeyword, category, sort) {
@@ -166,8 +160,7 @@ internal fun SearchHistoryList(
     state: SearchHistoryModel.State,
     onClear: () -> Unit,
     onSelect: (String) -> Unit,
-    modifier: Modifier,
-    onTagSearch: (() -> Unit)? = null
+    modifier: Modifier
 ) {
     if (state.loading) {
         DiscoveryLoadingState(modifier = modifier)
@@ -181,21 +174,6 @@ internal fun SearchHistoryList(
         contentPadding = PaddingValues(horizontal = AppSpacing.lg, vertical = 6.dp),
         verticalArrangement = Arrangement.spacedBy(AppSpacing.sm)
     ) {
-        if (onTagSearch != null) {
-            item(key = "tag-search", contentType = "action") {
-                SuggestionChip(
-                    onClick = onTagSearch,
-                    label = { Text(stringResource(R.string.search_tag_title)) },
-                    icon = { Icon(Icons.Filled.Tune, contentDescription = null) },
-                    shape = AppShapes.pill,
-                    colors = SuggestionChipDefaults.suggestionChipColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-                        labelColor = MaterialTheme.colorScheme.onSurface
-                    ),
-                    border = null
-                )
-            }
-        }
         item(key = "history-heading", contentType = "heading") {
             Row(
                 modifier = Modifier.fillMaxWidth(),
