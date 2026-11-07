@@ -46,4 +46,17 @@ class SearchTagExpressionTest {
         assertEquals("!TS+!校园+", formatExclusionInput("!TS+!校园 "))
         assertEquals("!!TS", formatExclusionInput("!!TS"))
     }
+
+    @Test
+    fun cursorFollowsPrefixesAndSeparatorsInsertedBeforeIt() {
+        assertEquals("!T+!S", formatExclusionInput("!T S"))
+        assertEquals(4, mapExclusionCursor("!T S", 3))
+        assertEquals(2, mapExclusionCursor("TS", 1))
+        assertEquals(1, mapExclusionCursor("TS", 0))
+        assertEquals(4, mapExclusionCursor("TS ", 3))
+        assertEquals(3, mapExclusionCursor("TS ", 2))
+        assertEquals(5, mapExclusionCursor("TS+校园", 3))
+        assertEquals("!TS+!校园".length, mapExclusionCursor("!TS+!校园", "!TS+!校园".length))
+        assertEquals(2, mapExclusionCursor("!TS", 2))
+    }
 }

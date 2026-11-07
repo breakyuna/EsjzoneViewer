@@ -8,6 +8,7 @@ internal data class SearchTagExpression(
 }
 
 private val searchTagSeparator = Regex("[\\p{javaWhitespace}+＋]+")
+private val searchTagPart = Regex("([^\\p{javaWhitespace}+＋]+)|([\\p{javaWhitespace}+＋]+)")
 
 private fun hasExcludePrefix(value: String): Boolean = value.startsWith('!') || value.startsWith('！')
 
@@ -32,6 +33,44 @@ internal fun formatExclusionInput(value: String): String {
         exclusionTagBody(token)?.let { "!$it" } ?: token
     }
     return if (trailingSeparator) "$formatted+" else formatted
+}
+
+/**
+ * Map a cursor in the raw exclusion text onto [formatExclusionInput].
+ * Prefixes and separators inserted before the cursor move it with them.
+ */
+internal fun mapExclusionCursor(raw: String, cursor: Int): Int {
+    val target = cursor.coerceIn(0, raw.length)
+    var formattedPos = 0
+    var rawPos = 0
+    var seenToken = false
+    for (match in searchTagPart.findAll(raw)) {
+        val token = match.groups[1]?.value
+        if (token != null) {
+            if (seenToken) formattedPos += 1
+            seenToken = true
+            if (target < rawPos) return formattedPos
+            if (target < rawPos + token.length) {
+                return formattedPos + renderedOffset(token, target - rawPos)
+            }
+            val body = exclusionTagBody(token)
+            formattedPos += if (body != null) 1 + body.length else token.length
+        } else {
+            val start = rawPos
+            val end = start + match.value.length
+            if (target <= start) return formattedPos
+            if (target < end || end == raw.length) return if (seenToken) formattedPos + 1 else 0
+        }
+        rawPos += match.value.length
+    }
+    return formattedPos
+}
+
+private fun renderedOffset(token: String, offset: Int): Int {
+    val body = exclusionTagBody(token) ?: return offset
+    val rawPrefix = if (hasExcludePrefix(token)) 1 else 0
+    if (offset == 0) return if (rawPrefix == 0) 1 else 0
+    return 1 + (offset - rawPrefix).coerceAtLeast(0).coerceAtMost(body.length)
 }
 
 /** Append exclusion tags without rewriting the existing search text. */

@@ -294,11 +294,10 @@ private fun ExclusionSearchField(
                 onValueChange(next.text)
             } else {
                 val formatted = formatExclusionInput(next.text)
-                val selection = when {
-                    formatted == next.text -> next.selection
-                    next.selection.end == next.text.length -> TextRange(formatted.length)
-                    else -> TextRange(next.selection.start.coerceIn(0, formatted.length))
-                }
+                val selection = TextRange(
+                    mapExclusionCursor(next.text, next.selection.start),
+                    mapExclusionCursor(next.text, next.selection.end)
+                )
                 field = TextFieldValue(formatted, selection)
                 if (formatted != value) onValueChange(formatted)
             }
