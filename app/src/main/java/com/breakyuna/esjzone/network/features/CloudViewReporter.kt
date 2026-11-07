@@ -174,8 +174,7 @@ internal class CloudViewReportStore(private val file: File?) {
         val chapterUrl: String? = null,
         val reported: Boolean? = null,
         val updatedAt: Long? = null,
-        val account: String? = null,
-        val generation: Int? = null
+        val account: String? = null
     ) {
         fun toRecord(): CloudViewRecord? {
             val accountScope = account?.trim().orEmpty()
@@ -193,7 +192,9 @@ internal class CloudViewReportStore(private val file: File?) {
                 reported = reported == true,
                 updatedAt = updatedAt ?: 0L,
                 account = accountScope,
-                generation = generation ?: 0
+                // Generations are process-local; persisted values cannot be compared
+                // with counters created after the app restarts.
+                generation = 0
             )
         }
     }
@@ -221,22 +222,51 @@ internal class CloudViewReporter(
     private val accountScope: (Authorization) -> String? = { HistoryDataCache.scopeFor(it) },
     private val scope: CoroutineScope
 ) {
+    private data class ViewScope(val account: String, val site: String, val novelKey: String)
+
     private val sendMutex = Mutex()
     private val scheduled = AtomicBoolean(false)
-    private val confirmations = ConcurrentHashMap<String, AtomicInteger>()
+    private val confirmations = ConcurrentHashMap<ViewScope, AtomicInteger>()
 
-    fun confirmation(authorization: Authorization): Int {
-        val account = accountScope(authorization)?.takeIf { it.isNotBlank() } ?: return 0
-        return confirmations[account]?.get() ?: 0
+    private fun viewScope(
+        authorization: Authorization,
+        novelId: String,
+        novelUrl: String,
+        chapterUrl: String
+    ): ViewScope? {
+        val account = accountScope(authorization)?.takeIf { it.isNotBlank() } ?: return null
+        val site = authorization.domain.trim()
+        val resolved = chapterViewUrl(site, chapterUrl) ?: return null
+        val novelKey = cloudViewNovelKey(novelId, novelUrl, resolved)
+        if (novelKey.isBlank()) return null
+        return ViewScope(account, site, novelKey)
     }
 
-    fun fetchIsCurrent(authorization: Authorization, fetchGeneration: Int?): Boolean =
-        cloudViewFetchIsCurrent(fetchGeneration, confirmation(authorization))
+    fun confirmation(authorization: Authorization, novelId: String, novelUrl: String, chapterUrl: String): Int {
+        val key = viewScope(authorization, novelId, novelUrl, chapterUrl) ?: return 0
+        return confirmations[key]?.get() ?: 0
+    }
+
+    fun fetchIsCurrent(
+        authorization: Authorization,
+        novelId: String,
+        novelUrl: String,
+        chapterUrl: String,
+        fetchGeneration: Int?
+    ): Boolean {
+        val key = viewScope(authorization, novelId, novelUrl, chapterUrl) ?: return false
+        return cloudViewFetchIsCurrent(fetchGeneration, confirmations[key]?.get() ?: 0)
+    }
 
     /** Counts a real chapter-page response, including a prefetch the reader has not opened. */
-    fun observeNetworkFetch(authorization: Authorization): Int {
-        val account = accountScope(authorization)?.takeIf { it.isNotBlank() } ?: return 0
-        return confirmations.computeIfAbsent(account) { AtomicInteger() }.incrementAndGet()
+    fun observeNetworkFetch(
+        authorization: Authorization,
+        novelId: String,
+        novelUrl: String,
+        chapterUrl: String
+    ): Int? {
+        val key = viewScope(authorization, novelId, novelUrl, chapterUrl) ?: return null
+        return confirmations.computeIfAbsent(key) { AtomicInteger() }.incrementAndGet()
     }
 
     fun noteLocal(authorization: Authorization, novelId: String, novelUrl: String, chapterUrl: String) {
@@ -273,11 +303,13 @@ internal class CloudViewReporter(
         val chapterKey = EsjzoneUrls.canonicalPageKey(resolved)
         if (chapterKey.isBlank()) return false
         val existing = store.find(account, site, novelKey)
+        val key = ViewScope(account, site, novelKey)
+        val current = confirmations[key]?.get() ?: 0
         if (reported && existing?.reported == true && existing.chapterKey == chapterKey &&
-            existing.generation == confirmation(authorization) && existing.generation != 0) {
+            existing.generation == current && existing.generation != 0) {
             return false
         }
-        val generation = confirmations.computeIfAbsent(account) { AtomicInteger() }.incrementAndGet()
+        val generation = confirmations.computeIfAbsent(key) { AtomicInteger() }.incrementAndGet()
         return store.merge(CloudViewRecord(
             site = site,
             novelKey = novelKey,
@@ -306,7 +338,7 @@ internal class CloudViewReporter(
         val chapterKey = EsjzoneUrls.canonicalPageKey(resolved)
         val record = store.find(account, site, novelKey) ?: return false
         if (!record.reported || record.chapterKey != chapterKey) return false
-        val current = confirmation(authorization)
+        val current = confirmations[ViewScope(account, site, novelKey)]?.get() ?: 0
         return current == 0 || record.generation == current
     }
 
@@ -411,13 +443,20 @@ object CloudViewReports {
         reporter?.noteFetched(authorization, novelId, novelUrl, chapterUrl)
     }
 
-    fun confirmation(authorization: Authorization): Int = reporter?.confirmation(authorization) ?: 0
+    fun fetchIsCurrent(
+        authorization: Authorization,
+        novelId: String,
+        novelUrl: String,
+        chapterUrl: String,
+        fetchGeneration: Int?
+    ): Boolean = reporter?.fetchIsCurrent(authorization, novelId, novelUrl, chapterUrl, fetchGeneration) ?: false
 
-    fun fetchIsCurrent(authorization: Authorization, fetchGeneration: Int?): Boolean =
-        reporter?.fetchIsCurrent(authorization, fetchGeneration) ?: false
-
-    fun observeNetworkFetch(authorization: Authorization): Int =
-        reporter?.observeNetworkFetch(authorization) ?: 0
+    fun observeNetworkFetch(
+        authorization: Authorization,
+        novelId: String,
+        novelUrl: String,
+        chapterUrl: String
+    ): Int? = reporter?.observeNetworkFetch(authorization, novelId, novelUrl, chapterUrl)
 
     fun flush(authorization: Authorization) {
         reporter?.flush(authorization)

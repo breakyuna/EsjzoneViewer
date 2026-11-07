@@ -669,7 +669,9 @@ class ChapterPageModel(
         if (!detail.servedFromNetwork) return
         val key = chapterKey(chapter)
         if (key.isBlank()) return
-        val generation = CloudViewReports.observeNetworkFetch(authorization)
+        val generation = CloudViewReports.observeNetworkFetch(
+            authorization, novelId, novelUrl, chapter.url
+        ) ?: return
         synchronized(lock) { freshNetworkFetches[key] = generation }
         viewModelScope.launch(Dispatchers.Main.immediate) {
             networkFetchGeneration.value += 1

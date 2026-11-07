@@ -1244,7 +1244,9 @@ class ChapterPage(
             val bookId = novelId.ifBlank { entry.chapter.novelId() }
             val bookUrl = novelUrl.ifBlank { localHistoryPosition.value.novelUrl }
             val fetchedGeneration = chapterPageModel.takeFreshNetworkFetch(entry.chapter)
-            if (CloudViewReports.fetchIsCurrent(authorization, fetchedGeneration)) {
+            if (CloudViewReports.fetchIsCurrent(
+                    authorization, bookId, bookUrl, entry.chapter.url, fetchedGeneration
+                )) {
                 CloudViewReports.noteFetched(
                     authorization, bookId, bookUrl, entry.chapter.url
                 )

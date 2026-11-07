@@ -140,16 +140,18 @@ class CloudViewReporterTest {
     fun confirmationAdvancesOnlyWhenTheConfirmedChapterChanges() = runBlocking {
         val reporter = reporter(this, mutableListOf())
         val other = Authorization("other-key", "other-token", "www.esjzone.cc")
-        assertFalse(reporter.fetchIsCurrent(authorization, null))
-        assertTrue(reporter.fetchIsCurrent(authorization, 0))
+        assertFalse(reporter.fetchIsCurrent(authorization, "12", "/detail/12.html", "/forum/12/1.html", null))
+        assertTrue(reporter.fetchIsCurrent(authorization, "12", "/detail/12.html", "/forum/12/1.html", 0))
         reporter.noteFetched(authorization, "12", "/detail/12.html", "/forum/12/1.html")
-        assertEquals(1, reporter.confirmation(authorization))
-        assertFalse(reporter.fetchIsCurrent(authorization, 0))
+        assertEquals(1, reporter.confirmation(authorization, "12", "/detail/12.html", "/forum/12/1.html"))
+        assertFalse(reporter.fetchIsCurrent(authorization, "12", "/detail/12.html", "/forum/12/1.html", 0))
         reporter.noteFetched(authorization, "12", "/detail/12.html", "/forum/12/1.html")
-        assertEquals(1, reporter.confirmation(authorization))
+        assertEquals(1, reporter.confirmation(authorization, "12", "/detail/12.html", "/forum/12/1.html"))
+        reporter.observeNetworkFetch(authorization, "34", "/detail/34.html", "/forum/34/8.html")
+        assertTrue(reporter.fetchIsCurrent(authorization, "12", "/detail/12.html", "/forum/12/1.html", 1))
         reporter.noteLocal(authorization, "12", "/detail/12.html", "/forum/12/2.html")
-        assertEquals(2, reporter.confirmation(authorization))
-        assertEquals(0, reporter.confirmation(other))
+        assertEquals(2, reporter.confirmation(authorization, "12", "/detail/12.html", "/forum/12/1.html"))
+        assertEquals(0, reporter.confirmation(other, "12", "/detail/12.html", "/forum/12/1.html"))
         assertFalse(cloudViewFetchIsCurrent(null, 0))
         assertTrue(cloudViewFetchIsCurrent(2, 2))
     }
@@ -162,7 +164,35 @@ class CloudViewReporterTest {
         reporter.noteLocal(authorization, "12", "/detail/12.html", "/forum/12/1.html")
         awaitChildren()
         assertTrue(requested.isEmpty())
-        reporter.observeNetworkFetch(authorization)
+        reporter.observeNetworkFetch(authorization, "34", "/detail/34.html", "/forum/34/8.html")
+        assertNull(reporter.observeNetworkFetch(
+            authorization, "12", "/detail/12.html", "https://www.wenku8.net/novel/1/12/2.htm"
+        ))
+        reporter.noteLocal(authorization, "12", "/detail/12.html", "/forum/12/1.html")
+        awaitChildren()
+        assertTrue(requested.isEmpty())
+        reporter.observeNetworkFetch(authorization, "12", "/detail/12.html", "/forum/12/2.html")
+        reporter.noteLocal(authorization, "12", "/detail/12.html", "/forum/12/1.html")
+        awaitChildren()
+        assertEquals(listOf("https://www.esjzone.cc/forum/12/1.html"), requested)
+    }
+
+    @Test
+    fun restoredGenerationDoesNotMaskANewerFetchAfterRestart() = runBlocking {
+        val file = File.createTempFile("cloud-view-restart", ".json")
+        file.deleteOnExit()
+        val account = HistoryDataCache.scopeFor(authorization)!!
+        CloudViewReportStore(file).merge(CloudViewRecord(
+            "www.esjzone.cc", "id:12", "12", "/detail/12.html", "/forum/12/1.html",
+            "https://www.esjzone.cc/forum/12/1.html", true, 100L, account, 1
+        ))
+        val requested = mutableListOf<String>()
+        val reporter = CloudViewReporter(
+            store = CloudViewReportStore(file),
+            touch = { _, url, _ -> requested += url; true },
+            scope = this
+        )
+        reporter.observeNetworkFetch(authorization, "12", "/detail/12.html", "/forum/12/2.html")
         reporter.noteLocal(authorization, "12", "/detail/12.html", "/forum/12/1.html")
         awaitChildren()
         assertEquals(listOf("https://www.esjzone.cc/forum/12/1.html"), requested)
