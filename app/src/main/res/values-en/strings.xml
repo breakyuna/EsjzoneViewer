@@ -558,6 +558,16 @@
     <string name="reader_script_original">Original</string>
     <string name="reader_script_simplified">Simplified</string>
     <string name="reader_script_traditional">Traditional</string>
+    <string name="reader_name_replace">Name replacement</string>
+    <string name="reader_name_replace_manage">Manage rules</string>
+    <string name="reader_name_replace_empty">No name replacement rules</string>
+    <string name="reader_name_replace_empty_target">(empty)</string>
+    <string name="reader_name_replace_add">Add rule</string>
+    <string name="reader_name_replace_edit">Edit rule</string>
+    <string name="reader_name_replace_delete">Delete rule</string>
+    <string name="reader_name_replace_source">Original name</string>
+    <string name="reader_name_replace_target">Replacement name</string>
+    <string name="reader_name_replace_save">Save</string>
     <string name="reader_contents">Contents</string>
     <string name="reader_contents_empty">No chapters available</string>
     <string name="reader_back">Back</string>

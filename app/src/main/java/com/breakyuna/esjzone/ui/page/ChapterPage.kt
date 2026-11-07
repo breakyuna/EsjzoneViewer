@@ -183,6 +183,8 @@ import com.breakyuna.esjzone.ui.reader.ReaderScript
 import com.breakyuna.esjzone.ui.reader.ReaderScriptConverter
 import com.breakyuna.esjzone.ui.reader.ReaderScriptSnapshot
 import com.breakyuna.esjzone.ui.reader.ReaderSettings
+import com.breakyuna.esjzone.ui.reader.ReaderNameReplace
+import com.breakyuna.esjzone.ui.reader.ReaderNameReplaceSettings
 import com.breakyuna.esjzone.ui.reader.ReaderChapterHeading
 import com.breakyuna.esjzone.ui.reader.ReaderUnderlineSelection
 import com.breakyuna.esjzone.ui.reader.ReaderBlocks
@@ -279,6 +281,10 @@ class ChapterPage(
         var readerSettings by remember(storedReaderSettings) {
             mutableStateOf(storedReaderSettings)
         }
+        val storedNameReplaceSettings by PresentationAccess.readerSettings.nameReplaceSettings.collectAsState()
+        var nameReplaceSettings by remember(storedNameReplaceSettings) {
+            mutableStateOf(storedNameReplaceSettings)
+        }
 
         val view = LocalView.current
         val window = remember(view) {
@@ -349,6 +355,11 @@ class ChapterPage(
         fun updateReaderSettings(settings: ReaderSettings) {
             readerSettings = settings
             PresentationAccess.readerSettings.saveDebounced(settings)
+        }
+
+        fun updateNameReplaceSettings(settings: ReaderNameReplaceSettings) {
+            nameReplaceSettings = settings
+            scope.launch { PresentationAccess.readerSettings.saveNameReplaceSettings(settings) }
         }
 
         val requestedChapter = rememberSaveable {
@@ -579,14 +590,17 @@ class ChapterPage(
         val windowLoadingAllowed = canLoadReaderWindow(entryContentRevealed, resumePending, requestedChapterLocked) &&
             pendingSeekLocation == null
         var convertedText by remember { mutableStateOf<ReaderTextSnapshot?>(null) }
-        val readerTextTransform: (String) -> String = remember(readerSettings.script, convertedText) {
+        val readerTextTransform: (String) -> String = remember(
+            readerSettings.script, convertedText, nameReplaceSettings
+        ) {
             val script = readerSettings.script
             val snapshot = convertedText?.takeIf {
                 it.script == script
             }?.values
             val transform: (String) -> String = { text ->
-                if (script == ReaderScript.ORIGINAL) text
+                val scripted = if (script == ReaderScript.ORIGINAL) text
                 else snapshot?.get(text) ?: text
+                ReaderNameReplace.apply(scripted, nameReplaceSettings)
             }
             transform
         }
@@ -2812,6 +2826,8 @@ class ChapterPage(
                     updateReaderSettings(updated)
                 },
                 onDismiss = { showReaderSettings = false },
+                nameReplaceSettings = nameReplaceSettings,
+                onNameReplaceChange = { updateNameReplaceSettings(it) },
                 modifier = Modifier.align(Alignment.BottomCenter)
                     .padding(bottom = with(density) { readerToolbarHeightPx.toDp() })
             )

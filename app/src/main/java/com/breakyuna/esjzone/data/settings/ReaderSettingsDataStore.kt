@@ -20,6 +20,10 @@ import com.breakyuna.esjzone.ui.reader.ReaderPageAnimation
 import com.breakyuna.esjzone.ui.reader.ReaderTool
 import com.breakyuna.esjzone.ui.reader.ReaderSettings
 import com.breakyuna.esjzone.ui.reader.ReaderImageBackground
+import com.breakyuna.esjzone.ui.reader.ReaderNameReplaceRule
+import com.breakyuna.esjzone.ui.reader.ReaderNameReplaceSettings
+import com.google.gson.Gson
+import com.google.gson.reflect.TypeToken
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -52,6 +56,7 @@ class ReaderSettingsDataStore(
 
     private val migrationMutex = Mutex()
     private var pendingReaderSave: Job? = null
+    private val gson = Gson()
 
     val settings: StateFlow<ReaderSettings> = dataStore.data
         .catch { error -> if (error is IOException) emit(emptyPreferences()) else throw error }
@@ -63,7 +68,26 @@ class ReaderSettingsDataStore(
         .map { it.toImageBackground() }
         .stateIn(scope, SharingStarted.Eagerly, ReaderImageBackground())
 
+    val nameReplaceSettings: StateFlow<ReaderNameReplaceSettings> = dataStore.data
+        .catch { error -> if (error is IOException) emit(emptyPreferences()) else throw error }
+        .map { it.toNameReplaceSettings() }
+        .stateIn(scope, SharingStarted.Eagerly, ReaderNameReplaceSettings())
+
     suspend fun readImageBackground(): ReaderImageBackground = dataStore.data.first().toImageBackground()
+
+    suspend fun saveNameReplaceSettings(settings: ReaderNameReplaceSettings) {
+        val normalized = settings.copy(
+            rules = settings.rules
+                .filter { it.source.isNotBlank() }
+                .distinctBy { it.id }
+        )
+        dataStore.edit {
+            it[NAME_REPLACE_ENABLED] = normalized.enabled
+            it[NAME_REPLACE_RULES] = gson.toJson(normalized.rules.map { rule ->
+                NameReplaceRuleJson(rule.id, rule.source, rule.target, rule.enabled)
+            })
+        }
+    }
 
     /** Only these fields change, so edits made elsewhere in reading settings survive applying a photo. */
     suspend fun saveImageBackground(background: ReaderImageBackground) {
@@ -105,6 +129,35 @@ class ReaderSettingsDataStore(
         blur = this[IMAGE_BLUR] ?: 0f,
         transparency = this[IMAGE_TRANSPARENCY] ?: 0f
     ).sanitized()
+
+    private fun Preferences.toNameReplaceSettings(): ReaderNameReplaceSettings {
+        val rules = runCatching<List<NameReplaceRuleJson?>> {
+            val raw = this[NAME_REPLACE_RULES] ?: return@runCatching emptyList()
+            val type = object : TypeToken<List<NameReplaceRuleJson?>>() {}.type
+            gson.fromJson(raw, type)
+        }.getOrNull().orEmpty().mapNotNull { entry ->
+            val rule = entry ?: return@mapNotNull null
+            val source = rule.source ?: return@mapNotNull null
+            if (source.isBlank()) return@mapNotNull null
+            ReaderNameReplaceRule(
+                id = rule.id?.takeIf { it.isNotBlank() } ?: java.util.UUID.randomUUID().toString(),
+                source = source,
+                target = rule.target.orEmpty(),
+                enabled = rule.enabled ?: true
+            )
+        }
+        return ReaderNameReplaceSettings(
+            enabled = this[NAME_REPLACE_ENABLED] ?: false,
+            rules = rules
+        )
+    }
+
+    private data class NameReplaceRuleJson(
+        val id: String? = null,
+        val source: String? = null,
+        val target: String? = null,
+        val enabled: Boolean? = null
+    )
 
     suspend fun save(settings: ReaderSettings) {
         dataStore.edit { preferences ->
@@ -342,6 +395,8 @@ class ReaderSettingsDataStore(
         val SHOW_SYSTEM_NAVIGATION_BAR = booleanPreferencesKey("show_system_navigation_bar")
         val SHOW_CHAPTER_NAME = booleanPreferencesKey("show_chapter_name")
         val SHOW_TIME_BATTERY = booleanPreferencesKey("show_time_battery")
+        val NAME_REPLACE_ENABLED = booleanPreferencesKey("name_replace_enabled")
+        val NAME_REPLACE_RULES = stringPreferencesKey("name_replace_rules")
         val MIGRATION_COMPLETE = androidx.datastore.preferences.core.booleanPreferencesKey(
             "legacy_reader_settings_migration_complete"
         )

@@ -108,3 +108,6 @@
 # Persistent list batches are decoded by Gson after process restarts.
 -keep class com.breakyuna.esjzone.network.ListPageCache$Snapshot { *; }
 -keep class com.breakyuna.esjzone.network.ListPageCache$Page { *; }
+
+# Reader name replacement rules persist their JSON field names.
+-keep class com.breakyuna.esjzone.data.settings.ReaderSettingsDataStore$NameReplaceRuleJson { *; }
