@@ -98,6 +98,7 @@ object SettingsStateBoundary {
     private val _domain = mutableStateOf(SettingsDefaults.DOMAINS.first())
     private val _language = mutableStateOf(AppLanguage.SYSTEM)
     private val _readerAutoSave = mutableStateOf(true)
+    private val _updateWebsiteHistory = mutableStateOf(true)
     private val _downloadConcurrency = mutableStateOf(SettingsDefaults.DEFAULT_DOWNLOAD_CONCURRENCY)
     private val _novelListGridView = mutableStateOf(false)
     private val _novelListAdultOnly = mutableStateOf(false)
@@ -117,6 +118,7 @@ object SettingsStateBoundary {
             _domain.value = repository.domain.value
             _language.value = repository.language.value
             _readerAutoSave.value = repository.readerAutoSave.value
+            _updateWebsiteHistory.value = repository.updateWebsiteHistory.value
             _downloadConcurrency.value = repository.downloadConcurrency.value
             _novelListGridView.value = repository.novelListGridView.value
             _novelListAdultOnly.value = repository.novelListAdultOnly.value
@@ -129,6 +131,7 @@ object SettingsStateBoundary {
             scope.launch { repository.domain.collect { _domain.value = it } }
             scope.launch { repository.language.collect { _language.value = it } }
             scope.launch { repository.readerAutoSave.collect { _readerAutoSave.value = it } }
+            scope.launch { repository.updateWebsiteHistory.collect { _updateWebsiteHistory.value = it } }
             scope.launch { repository.downloadConcurrency.collect { _downloadConcurrency.value = it } }
             scope.launch { repository.novelListGridView.collect { _novelListGridView.value = it } }
             scope.launch { repository.novelListAdultOnly.collect { _novelListAdultOnly.value = it } }
@@ -148,6 +151,7 @@ object SettingsStateBoundary {
     val language: State<AppLanguage> get() { repository(); return _language }
     val languageFlow: StateFlow<AppLanguage> get() = repository().language
     val readerAutoSave: State<Boolean> get() { repository(); return _readerAutoSave }
+    val updateWebsiteHistory: State<Boolean> get() { repository(); return _updateWebsiteHistory }
     val readingStatisticsIncognitoFlow: StateFlow<Boolean> get() = repository().readingStatisticsIncognito
     fun setReadingStatisticsIncognito(value: Boolean) = repository().setReadingStatisticsIncognito(value)
     val readerAutoSaveFlow: StateFlow<Boolean> get() = repository().readerAutoSave
@@ -176,6 +180,7 @@ object SettingsStateBoundary {
     fun setDomain(value: String) = repository().setDomain(value)
     fun setLanguage(value: AppLanguage) = repository().setLanguage(value)
     fun setReaderAutoSave(value: Boolean) = repository().setReaderAutoSave(value)
+    fun setUpdateWebsiteHistory(value: Boolean) = repository().setUpdateWebsiteHistory(value)
     fun setDownloadConcurrency(value: Int) = repository().setDownloadConcurrency(value)
     fun setBookshelfListView(value: Boolean) = repository().setBookshelfListView(value)
     fun setNovelListGridView(value: Boolean) = repository().setNovelListGridView(value)

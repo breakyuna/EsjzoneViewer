@@ -41,6 +41,7 @@ interface SettingsRepository {
     val language: StateFlow<AppLanguage>
     val readingStatisticsIncognito: StateFlow<Boolean>
     val readerAutoSave: StateFlow<Boolean>
+    val updateWebsiteHistory: StateFlow<Boolean>
     val downloadConcurrency: StateFlow<Int>
     val bookshelfListView: StateFlow<Boolean>
     val novelListGridView: StateFlow<Boolean>
@@ -55,6 +56,7 @@ interface SettingsRepository {
     fun setLanguage(value: AppLanguage)
     fun setReadingStatisticsIncognito(value: Boolean)
     fun setReaderAutoSave(value: Boolean)
+    fun setUpdateWebsiteHistory(value: Boolean)
     fun setDownloadConcurrency(value: Int)
     fun setBookshelfListView(value: Boolean)
     fun setNovelListGridView(value: Boolean)

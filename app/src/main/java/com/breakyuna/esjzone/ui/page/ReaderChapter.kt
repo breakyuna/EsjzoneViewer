@@ -16,7 +16,9 @@ data class ReaderChapter(
     val fallbackPrevious: Chapter? = null,
     val fallbackNext: Chapter? = null,
     val isOffline: Boolean = false,
-    val requiresPassword: Boolean = false
+    val requiresPassword: Boolean = false,
+    val servedFromDownload: Boolean = false,
+    val servedFromNetwork: Boolean = false
 ) {
     companion object {
         fun passwordRequired(chapter: Chapter): ReaderChapter = ReaderChapter(
@@ -94,6 +96,10 @@ internal fun MutableList<ReaderChapter>.replacePasswordChapter(chapter: Chapter,
     val index = indexOfFirst { chapterIdentity(it.chapter) == chapterIdentity(chapter) && it.requiresPassword }
     if (index < 0) return false
     val original = this[index].chapter
-    this[index] = ReaderChapter(original, detail.toReaderDocument(original), detail.previous, detail.next)
+    this[index] = ReaderChapter(
+        original, detail.toReaderDocument(original), detail.previous, detail.next,
+        servedFromDownload = detail.servedFromDownload,
+        servedFromNetwork = detail.servedFromNetwork
+    )
     return true
 }
