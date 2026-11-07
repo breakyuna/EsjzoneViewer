@@ -15,7 +15,7 @@ internal fun buildSearchTagExpression(
     excluded: String
 ): SearchTagExpression {
     fun tokens(value: String): List<String> = value
-        .split { it.isWhitespace() || it == '+' || it == '＋' }
+        .split(Regex("[\\p{javaWhitespace}+＋]+"))
         .filter { it.isNotEmpty() }
 
     fun hasExcludePrefix(value: String): Boolean = value.startsWith('!') || value.startsWith('！')
