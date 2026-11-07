@@ -195,3 +195,14 @@ git diff --check
 | `connectedDebugAndroidTest` | Android Instrumentation 测试通过 |
 
 静态验证通过不能代表 JVM 单元测试、Android Lint 或 APK 构建通过；本地测试与 Lint 通过也不代表 APK 构建通过。未执行的项目标注“未验证”，已启动但未完成的检查不得报告为通过。
+
+
+## Code Review Rules
+
+### Review Language
+
+- 所有 GitHub Pull Request 代码审查评论必须使用简体中文。
+- 问题标题、问题描述、风险分析和修复建议均使用简体中文。
+- 保留代码标识符、文件路径、API 名称和技术术语的原始形式。
+- 保留 P0、P1、P2 等问题优先级标记。
+- 不要为了翻译而改变技术含义或降低审查严格程度。
