@@ -127,13 +127,30 @@ internal class CloudViewReportStore(private val file: File?) {
     }
 
     /** Marks the report done only if that chapter is still the novel's current record. */
-    fun markReported(record: CloudViewRecord) = synchronized(lock) {
+    fun markReported(record: CloudViewRecord): Boolean = synchronized(lock) {
         val index = records.indexOfFirst { sameCloudView(it, record) }
-        if (index < 0) return
+        if (index < 0) return false
         val current = records[index]
-        if (current.chapterKey != record.chapterKey) return
+        if (current.chapterKey != record.chapterKey) return false
         records[index] = current.copy(reported = true)
         persist()
+        true
+    }
+
+    /**
+     * A stale chapter request has already reached the site. Put the newer chapter
+     * back in the queue when this attempt is no longer the novel's current record.
+     */
+    fun reopenSuperseding(attempt: CloudViewRecord): Boolean = synchronized(lock) {
+        val index = records.indexOfFirst { sameCloudView(it, attempt) }
+        if (index < 0) return false
+        val current = records[index]
+        if (current.chapterKey == attempt.chapterKey) return false
+        if (current.reported) {
+            records[index] = current.copy(reported = false)
+            persist()
+        }
+        true
     }
 
     private fun load() {
@@ -197,7 +214,7 @@ internal class CloudViewReportStore(private val file: File?) {
 
 internal class CloudViewReporter(
     private val store: CloudViewReportStore,
-    private val touch: (Authorization, String) -> Boolean,
+    private val touch: (Authorization, String, () -> Boolean) -> Boolean,
     private val latestActivity: (novelId: String, novelUrl: String) -> LocalReadingActivity? = { _, _ -> null },
     private val enabled: () -> Boolean = { true },
     private val now: () -> Long = System::currentTimeMillis,
@@ -321,25 +338,35 @@ internal class CloudViewReporter(
             record to shouldRequestCloudView(record, latestActivity(record.novelId, record.novelUrl))
         }
         current.filter { !it.second }.forEach { store.remove(it.first) }
+        var superseded = false
         for (next in current.filter { it.second }.map { it.first }) {
-            if (!enabled()) return
+            if (!enabled()) break
             val latest = store.pending(account, site).firstOrNull {
-                it.novelKey == next.novelKey && it.chapterKey == next.chapterKey
+                it.novelKey == next.novelKey && it.chapterKey == next.chapterKey &&
+                    it.generation == next.generation
             } ?: continue
             val url = chapterViewUrl(site, latest.chapterUrl) ?: run {
                 store.remove(latest)
                 continue
             }
             val reported = try {
-                touch(authorization, url)
+                touch(authorization, url) {
+                    val pending = store.find(account, site, latest.novelKey)
+                    pending != null && !pending.reported &&
+                        pending.chapterKey == latest.chapterKey &&
+                        pending.generation == latest.generation
+                }
             } catch (error: CancellationException) {
                 throw error
             } catch (error: Exception) {
                 AppLogger.w("CloudView", "Chapter view request failed", error)
                 false
             }
-            if (reported) store.markReported(latest)
+            if (reported && !store.markReported(latest) && store.reopenSuperseding(latest)) {
+                superseded = true
+            }
         }
+        if (superseded) schedule(authorization)
     }
 }
 
@@ -357,8 +384,8 @@ object CloudViewReports {
 
     private fun create(directory: File) = CloudViewReporter(
             store = CloudViewReportStore(File(directory, "cloud_view_reports.json")),
-            touch = { authorization, url ->
-                val reported = EsjzoneClient.touchChapterView(authorization, url)
+            touch = { authorization, url, stillCurrent ->
+                val reported = EsjzoneClient.touchChapterView(authorization, url, stillCurrent)
                 if (reported) HistoryDataCache.clearSnapshot(authorization)
                 reported
             },

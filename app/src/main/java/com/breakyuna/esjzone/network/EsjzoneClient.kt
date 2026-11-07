@@ -509,7 +509,11 @@ object EsjzoneClient {
      * Requests one chapter page so the site can record it as the last viewed chapter.
      * The response is discarded and is not written into the page cache or downloads.
      */
-    internal fun touchChapterView(authorization: Authorization, url: String): Boolean {
+    internal fun touchChapterView(
+        authorization: Authorization,
+        url: String,
+        stillCurrent: () -> Boolean = { true }
+    ): Boolean {
         if (!authorization.hasCredentials()) return false
         val parsed = url.toHttpUrlOrNull() ?: return false
         if (!parsed.host.equals(authorization.domain, ignoreCase = true)) return false
@@ -525,6 +529,7 @@ object EsjzoneClient {
         }
         if (!permitAcquired) return false
         return try {
+            if (!stillCurrent()) return false
             val call = sharedHttpClient.newBuilder().cookieJar(requestCookieJar).build().newCall(
                 Request.Builder().url(parsed).get().headers(headers).build()
             )

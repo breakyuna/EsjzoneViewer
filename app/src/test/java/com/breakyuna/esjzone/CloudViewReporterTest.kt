@@ -85,7 +85,7 @@ class CloudViewReporterTest {
         var clock = 100L
         val reporter = CloudViewReporter(
             store = CloudViewReportStore(null),
-            touch = { _, url -> requested += url; true },
+            touch = { _, url, _ -> requested += url; true },
             latestActivity = { _, _ ->
                 activity(chapterUrl = "/forum/12/9.html", lastReadAt = 500L)
             },
@@ -107,7 +107,7 @@ class CloudViewReporterTest {
         var enabled = false
         val reporter = CloudViewReporter(
             store = CloudViewReportStore(null),
-            touch = { _, url -> requested += url; true },
+            touch = { _, url, _ -> requested += url; true },
             enabled = { enabled },
             scope = this
         )
@@ -169,6 +169,52 @@ class CloudViewReporterTest {
     }
 
     @Test
+    fun newerChapterConfirmedBeforeTheRequestCancelsTheStaleReport() = runBlocking {
+        val requested = mutableListOf<String>()
+        lateinit var reporter: CloudViewReporter
+        reporter = CloudViewReporter(
+            store = CloudViewReportStore(null),
+            touch = touch@{ _, url, stillCurrent ->
+                reporter.noteFetched(authorization, "12", "/detail/12.html", "/forum/12/4.html")
+                if (!stillCurrent()) return@touch false
+                requested += url
+                true
+            },
+            scope = this
+        )
+        reporter.noteLocal(authorization, "12", "/detail/12.html", "/forum/12/1.html")
+        awaitChildren()
+        assertTrue(requested.isEmpty())
+    }
+
+    @Test
+    fun staleReportRequestsTheChapterConfirmedWhileItWasInFlight() = runBlocking {
+        val requested = mutableListOf<String>()
+        lateinit var reporter: CloudViewReporter
+        reporter = CloudViewReporter(
+            store = CloudViewReportStore(null),
+            touch = touch@{ _, url, stillCurrent ->
+                if (!stillCurrent()) return@touch false
+                requested += url
+                if (url.endsWith("/forum/12/1.html")) {
+                    reporter.noteFetched(authorization, "12", "/detail/12.html", "/forum/12/4.html")
+                }
+                true
+            },
+            scope = this
+        )
+        reporter.noteLocal(authorization, "12", "/detail/12.html", "/forum/12/1.html")
+        awaitChildren()
+        assertEquals(
+            listOf(
+                "https://www.esjzone.cc/forum/12/1.html",
+                "https://www.esjzone.cc/forum/12/4.html"
+            ),
+            requested
+        )
+    }
+
+    @Test
     fun savedReportWithoutAnAccountIsDropped() {
         val file = File.createTempFile("cloud-view", ".json")
         file.deleteOnExit()
@@ -201,7 +247,7 @@ class CloudViewReporterTest {
         accept: (String) -> Boolean = { true }
     ) = CloudViewReporter(
         store = CloudViewReportStore(null),
-        touch = { _, url ->
+        touch = { _, url, _ ->
             requested += url
             accept(url)
         },
@@ -224,6 +270,8 @@ class CloudViewReporterTest {
     )
 
     private suspend fun awaitChildren() {
-        coroutineContext.job.children.toList().forEach { it.join() }
+        while (coroutineContext.job.children.any()) {
+            coroutineContext.job.children.toList().forEach { it.join() }
+        }
     }
 }
