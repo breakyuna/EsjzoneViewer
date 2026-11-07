@@ -58,7 +58,7 @@ import com.breakyuna.esjzone.ui.discovery.DiscoveryFilterOption
 import com.breakyuna.esjzone.ui.discovery.DiscoveryNovelCard
 import com.breakyuna.esjzone.ui.discovery.DiscoveryOfflineBanner
 import com.breakyuna.esjzone.ui.discovery.DiscoverySearchTopBar
-import com.breakyuna.esjzone.ui.discovery.SearchTagDialog
+import com.breakyuna.esjzone.ui.discovery.buildSearchTagExpression
 import com.breakyuna.esjzone.ui.navigation.AppDestination
 import com.breakyuna.esjzone.ui.navigation.AppStateViewModel
 import com.breakyuna.esjzone.ui.navigation.LocalBaseNavigator
@@ -98,19 +98,20 @@ class SearchPage(private val keyword: String) : AppDestination {
         val model = rememberAppViewModel { SearchPageModel(authorization) }
         val state by model.state.collectAsState()
         var query by rememberSaveable { mutableStateOf(keyword.trim()) }
+        var excluded by rememberSaveable { mutableStateOf("") }
+        var tagRowExpanded by rememberSaveable { mutableStateOf(false) }
         var activeQuery by rememberSaveable { mutableStateOf(keyword.trim()) }
         var category by rememberSaveable { mutableIntStateOf(0) }
         var sort by rememberSaveable { mutableIntStateOf(1) }
-        var showTagSearch by rememberSaveable { mutableStateOf(false) }
 
         fun submit(value: String) {
-            value.trim().takeIf { it.isNotBlank() }?.let {
-                query = it
-                if (activeQuery == it) {
-                    model.search(it, category, sort)
-                } else {
-                    activeQuery = it
-                }
+            val expression = buildSearchTagExpression(value, excluded)
+            if (!expression.canSearch) return
+            query = value.trim()
+            if (activeQuery == expression.query) {
+                model.search(expression.query, category, sort)
+            } else {
+                activeQuery = expression.query
             }
         }
 
@@ -119,10 +120,13 @@ class SearchPage(private val keyword: String) : AppDestination {
                 DiscoverySearchTopBar(
                     query = query,
                     onQueryChange = { query = it },
+                    excluded = excluded,
+                    onExcludedChange = { excluded = it },
+                    tagRowExpanded = tagRowExpanded,
+                    onTagRowExpandedChange = { tagRowExpanded = it },
                     onSearch = { submit(query) },
                     onClear = { query = "" },
-                    onBack = { navigator?.pop() },
-                    onTagSearch = { showTagSearch = true }
+                    onBack = { navigator?.pop() }
                 )
             },
             containerColor = MaterialTheme.colorScheme.background
@@ -149,17 +153,6 @@ class SearchPage(private val keyword: String) : AppDestination {
                     modifier = Modifier.fillMaxSize()
                 )
             }
-        }
-
-        if (showTagSearch) {
-            SearchTagDialog(
-                currentQuery = query,
-                onDismiss = { showTagSearch = false },
-                onSearch = {
-                    showTagSearch = false
-                    submit(it)
-                }
-            )
         }
 
         LaunchedEffect(activeQuery, category, sort) {

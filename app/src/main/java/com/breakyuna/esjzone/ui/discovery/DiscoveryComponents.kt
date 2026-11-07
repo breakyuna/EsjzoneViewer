@@ -1,6 +1,12 @@
 package com.breakyuna.esjzone.ui.discovery
 
 import com.breakyuna.esjzone.ui.designsystem.wideContentWidth
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -28,7 +34,7 @@ import androidx.compose.material.icons.filled.AutoStories
 import androidx.compose.material.icons.filled.Category
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.Tune
+import androidx.compose.material.icons.outlined.AddCircle
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DropdownMenu
@@ -46,12 +52,17 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
@@ -59,17 +70,23 @@ import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.breakyuna.esjzone.ui.designsystem.globalStringResource as stringResource
 import com.breakyuna.esjzone.R
 import com.breakyuna.esjzone.novellibrary.novel.CategoryNovel
 import com.breakyuna.esjzone.novellibrary.novel.CoveredNovel
+import com.breakyuna.esjzone.ui.designsystem.AppMotion
 import com.breakyuna.esjzone.ui.designsystem.AppShapes
 import com.breakyuna.esjzone.ui.designsystem.AppSpacing
 import com.breakyuna.esjzone.ui.designsystem.AppTypography
@@ -134,19 +151,25 @@ fun DiscoveryScaffold(
 fun DiscoverySearchTopBar(
     query: String,
     onQueryChange: (String) -> Unit,
+    excluded: String,
+    onExcludedChange: (String) -> Unit,
+    tagRowExpanded: Boolean,
+    onTagRowExpandedChange: (Boolean) -> Unit,
     onSearch: () -> Unit,
     onClear: () -> Unit,
     onBack: () -> Unit,
-    onTagSearch: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val keyboardController = LocalSoftwareKeyboardController.current
     val focusManager = LocalFocusManager.current
+    val canSearch = remember(query, excluded) {
+        buildSearchTagExpression(query, excluded).canSearch
+    }
     Surface(
         color = MaterialTheme.colorScheme.background,
         modifier = modifier.fillMaxWidth()
     ) {
-        Row(
+        Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .wideContentWidth()
@@ -156,32 +179,155 @@ fun DiscoverySearchTopBar(
                     end = AppSpacing.md,
                     top = AppSpacing.sm,
                     bottom = AppSpacing.xs
-                ),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(AppSpacing.xs)
-        ) {
-            IconButton(onClick = onBack) {
-                Icon(
-                    imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                    contentDescription = stringResource(R.string.reader_back)
                 )
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(AppSpacing.xs)
+            ) {
+                IconButton(onClick = onBack) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                        contentDescription = stringResource(R.string.reader_back)
+                    )
+                }
+                DiscoverySearchField(
+                    value = query,
+                    onValueChange = onQueryChange,
+                    onSearch = onSearch,
+                    onClear = onClear,
+                    searchEnabled = canSearch,
+                    modifier = Modifier.weight(1f)
+                )
+                IconButton(
+                    onClick = {
+                        if (tagRowExpanded) {
+                            keyboardController?.hide()
+                            focusManager.clearFocus()
+                        }
+                        onTagRowExpandedChange(!tagRowExpanded)
+                    },
+                    modifier = Modifier.testTag("search-tag-toggle")
+                ) {
+                    Icon(
+                        imageVector = Icons.Outlined.AddCircle,
+                        contentDescription = stringResource(R.string.search_tag_exclude),
+                        tint = if (tagRowExpanded || excluded.isNotBlank()) {
+                            MaterialTheme.colorScheme.primary
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        }
+                    )
+                }
             }
-            DiscoverySearchField(
-                value = query,
-                onValueChange = onQueryChange,
-                onSearch = onSearch,
-                onClear = onClear,
-                modifier = Modifier.weight(1f)
-            )
-            IconButton(onClick = {
-                keyboardController?.hide()
-                focusManager.clearFocus()
-                onTagSearch()
-            }) {
-                Icon(Icons.Filled.Tune, contentDescription = stringResource(R.string.search_tag_title))
+            AnimatedVisibility(
+                visible = tagRowExpanded,
+                enter = expandVertically(AppMotion.standardSpec()) + fadeIn(tween(AppMotion.quick)),
+                exit = shrinkVertically(AppMotion.standardSpec()) + fadeOut(tween(AppMotion.quick))
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = AppSpacing.xs),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(AppSpacing.xs)
+                ) {
+                    SearchBarSideInset(Icons.AutoMirrored.Filled.ArrowBack)
+                    ExclusionSearchField(
+                        value = excluded,
+                        onValueChange = onExcludedChange,
+                        onSearch = onSearch,
+                        modifier = Modifier.weight(1f)
+                    )
+                    SearchBarSideInset(Icons.Outlined.AddCircle)
+                }
             }
         }
     }
+}
+
+@Composable
+private fun SearchBarSideInset(icon: ImageVector) {
+    Box(
+        modifier = Modifier
+            .alpha(0f)
+            .focusProperties { canFocus = false }
+            .clearAndSetSemantics {}
+    ) {
+        IconButton(onClick = {}, modifier = Modifier.focusProperties { canFocus = false }) {
+            Icon(icon, contentDescription = null)
+        }
+    }
+}
+
+@Composable
+private fun ExclusionSearchField(
+    value: String,
+    onValueChange: (String) -> Unit,
+    onSearch: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    var field by remember {
+        mutableStateOf(TextFieldValue(value, TextRange(value.length)))
+    }
+    LaunchedEffect(value) {
+        if (value != field.text) field = TextFieldValue(value, TextRange(value.length))
+    }
+    val invalid = remember(value) { buildSearchTagExpression("", value).invalidExcluded }
+    val focusRequester = remember { FocusRequester() }
+    val keyboardController = LocalSoftwareKeyboardController.current
+    val focusManager = LocalFocusManager.current
+    LaunchedEffect(Unit) { focusRequester.requestFocus() }
+    val submit = {
+        if (!invalid) {
+            keyboardController?.hide()
+            focusManager.clearFocus()
+            onSearch()
+        }
+    }
+    OutlinedTextField(
+        value = field,
+        onValueChange = { next ->
+            if (next.composition != null) {
+                field = next
+                onValueChange(next.text)
+            } else {
+                val formatted = formatExclusionInput(next.text)
+                val selection = when {
+                    formatted == next.text -> next.selection
+                    next.selection.end == next.text.length -> TextRange(formatted.length)
+                    else -> TextRange(next.selection.start.coerceIn(0, formatted.length))
+                }
+                field = TextFieldValue(formatted, selection)
+                if (formatted != value) onValueChange(formatted)
+            }
+        },
+        modifier = modifier
+            .fillMaxWidth()
+            .focusRequester(focusRequester)
+            .testTag("search-tag-exclude"),
+        singleLine = true,
+        isError = invalid,
+        placeholder = { Text(stringResource(R.string.search_tag_exclude)) },
+        supportingText = if (invalid) {
+            { Text(stringResource(R.string.search_tag_exclude_error)) }
+        } else {
+            null
+        },
+        trailingIcon = if (value.isNotEmpty()) {
+            {
+                IconButton(onClick = { onValueChange("") }) {
+                    Icon(Icons.Filled.Clear, contentDescription = stringResource(R.string.clear))
+                }
+            }
+        } else {
+            null
+        },
+        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+        keyboardActions = KeyboardActions(onSearch = { submit() }),
+        shape = AppShapes.standard
+    )
 }
 
 @Composable
@@ -369,13 +515,14 @@ fun DiscoverySearchField(
     onClear: () -> Unit,
     modifier: Modifier = Modifier,
     placeholder: String = com.breakyuna.esjzone.ui.designsystem.globalStringResource(R.string.search_placeholder),
-    leadingIcon: @Composable (() -> Unit)? = null
+    leadingIcon: @Composable (() -> Unit)? = null,
+    searchEnabled: Boolean = value.isNotBlank()
 ) {
     val accessibilityLabel = stringResource(R.string.search_placeholder)
     val keyboardController = LocalSoftwareKeyboardController.current
     val focusManager = LocalFocusManager.current
     val submitSearch = {
-        if (value.isNotBlank()) {
+        if (searchEnabled) {
             keyboardController?.hide()
             focusManager.clearFocus()
             onSearch()
@@ -409,7 +556,11 @@ fun DiscoverySearchField(
                         )
                     }
                 }
-                IconButton(onClick = submitSearch, enabled = value.isNotBlank()) {
+                IconButton(
+                    onClick = submitSearch,
+                    enabled = searchEnabled,
+                    modifier = Modifier.testTag("search-submit")
+                ) {
                     Icon(
                         imageVector = Icons.Filled.Search,
                         contentDescription = stringResource(R.string.search_action),
