@@ -128,7 +128,7 @@ app/src/main/java/com/breakyuna/esjzone/
 
 ### 本地数据与下载
 
-`GeneralDatabase` 的实体包括：`Cache`（会话 Cookie、站点、主题和成人内容显示选项）、`SearchHistory`（搜索关键词）、`Bookmark`（章节书签）、`LocalReadingActivity`（设备本地阅读位置）和 `BookshelfEntry`（本地优先书架及同步意图）。本地阅读历史不上传；书架以本地状态和删除意图为准，远端同步失败时保留本地数据与待处理状态。
+`GeneralDatabase` 的实体包括：`Cache`（会话 Cookie、站点、主题和成人内容显示选项）、`SearchHistory`（搜索关键词）、`Bookmark`（章节书签）、`LocalReadingActivity`（设备本地阅读位置）和 `BookshelfEntry`（本地优先书架及同步意图）。本地阅读历史不上传；书架以本地状态和删除意图为准，远端同步失败时保留本地数据与待处理状态。已登录且开启更新网站观看记录时，阅读本机章节会另请求该章节页面，让站点观看记录停在最后请求的一章；这不上传本地阅读记录本身。
 
 数据库访问应使用 IO 调度器。新增缓存键时要同时考虑首次安装、旧数据缺失和非法值恢复；应用设置的权威来源是 DataStore，旧 Room 设置仅用于一次性迁移。离线下载任务必须使用入队时保存的站点域名和自己的请求基址，不得改写 `SettingsRepository.domain` 或其他前台设置状态；下载文件、导出和数据库书架数据的生命周期分别管理。
 

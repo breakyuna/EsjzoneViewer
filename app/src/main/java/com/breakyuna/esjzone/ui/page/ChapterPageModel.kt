@@ -581,7 +581,11 @@ class ChapterPageModel(
         } ?: return null
         val loaded = System.nanoTime()
         val offline = synchronized(lock) { offlineChapterKeys.remove(chapterKey(chapter)) }
-        val entry = ReaderChapter(chapter, detail.toReaderDocument(chapter), detail.previous, detail.next, offline)
+        val entry = ReaderChapter(
+            chapter, detail.toReaderDocument(chapter), detail.previous, detail.next, offline,
+            servedFromDownload = detail.servedFromDownload,
+            servedFromNetwork = detail.servedFromNetwork
+        )
         AppLogger.i("ReaderTiming", "detailMs=${(loaded - started) / 1_000_000} documentMs=${(System.nanoTime() - loaded) / 1_000_000}")
         return entry
     }

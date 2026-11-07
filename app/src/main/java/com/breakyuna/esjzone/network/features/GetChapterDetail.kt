@@ -106,7 +106,7 @@ fun EsjzoneClient.getChapterDetail(
 
     val detail = validatedDetail(responseBody)
     val reference = StructuredChapterCache.write(cacheKey, responseBody, detail)
-    return detail.copy(sourceCacheReference = reference)
+    return detail.copy(sourceCacheReference = reference, servedFromNetwork = true)
 }
 
 private fun parseChapterResponse(html: String, chapter: Chapter, url: String): DetailedChapter {
@@ -134,7 +134,9 @@ fun EsjzoneClient.unlockPasswordProtectedChapter(
         allowStaleOnError = false
     )
     val document = Jsoup.parse(page, targetUrl)
-    if (!document.isPasswordProtectedChapter()) return document.toDetailedChapter(chapter, targetUrl)
+    if (!document.isPasswordProtectedChapter()) {
+        return document.toDetailedChapter(chapter, targetUrl).copy(servedFromNetwork = true)
+    }
 
     val token = requestAuthToken(authorization, targetUrl)
         .takeIf { it.isNotBlank() }
@@ -169,7 +171,7 @@ fun EsjzoneClient.unlockPasswordProtectedChapter(
     }
     // A previously cached password gate must not keep masking the new ESJ cookie grant.
     invalidatePage(authorization, targetUrl)
-    return document.toDetailedChapter(chapter, targetUrl)
+    return document.toDetailedChapter(chapter, targetUrl).copy(servedFromNetwork = true)
 }
 
 internal fun isPasswordProtectedChapterHtml(html: String, baseUrl: String = ""): Boolean =

@@ -489,6 +489,56 @@ object EsjzoneClient {
             }
         }.distinct()
 
+    /**
+     * Requests one chapter page so the site can record it as the last viewed chapter.
+     * The response is discarded and is not written into the page cache or downloads.
+     */
+    internal fun touchChapterView(authorization: Authorization, url: String): Boolean {
+        if (!authorization.hasCredentials()) return false
+        val parsed = url.toHttpUrlOrNull() ?: return false
+        if (!parsed.host.equals(authorization.domain, ignoreCase = true)) return false
+        if (resolveChapterSource(url, EsjzoneUrls.baseForDomain(authorization.domain)) != ChapterSource.ESJ_ZONE) {
+            return false
+        }
+        val requestCookieJar = AuthorizationCookieJar(authorization, deferResponses = true)
+        val permitAcquired = try {
+            networkPermits.acquire(true, 20, TimeUnit.SECONDS)
+        } catch (error: InterruptedException) {
+            Thread.currentThread().interrupt()
+            return false
+        }
+        if (!permitAcquired) return false
+        return try {
+            val call = sharedHttpClient.newBuilder().cookieJar(requestCookieJar).build().newCall(
+                Request.Builder().url(parsed).get().headers(headers).build()
+            )
+            val trusted = call.execute().use { response ->
+                val body = response.body?.readTextBounded().orEmpty()
+                PageResponsePolicy.validate(
+                    statusCode = response.code,
+                    body = body,
+                    requestedUrl = url,
+                    finalUrl = response.request.url.toString(),
+                    contentType = response.header("Content-Type"),
+                    kind = PageKind.CHAPTER
+                ).trusted
+            }
+            if (trusted) {
+                requestCookieJar.commitDeferredResponses()
+                PageCache.remove(pageCacheKey(
+                    authorization,
+                    EsjzoneUrls.resolve("/my/view", EsjzoneUrls.baseForDomain(authorization.domain))
+                ))
+            }
+            trusted
+        } catch (error: Exception) {
+            com.breakyuna.esjzone.util.AppLogger.w("CloudView", "Chapter view request failed", error)
+            false
+        } finally {
+            networkPermits.release(true)
+        }
+    }
+
     /** Invalidates one account-scoped page after a successful remote write. */
     internal fun invalidatePage(authorization: Authorization, url: String) {
         val cacheKey = pageCacheKey(authorization, url)

@@ -35,6 +35,7 @@ import com.breakyuna.esjzone.domain.repository.SessionRepository
 import com.breakyuna.esjzone.domain.repository.SettingsRepository
 import com.breakyuna.esjzone.network.EsjzoneClient
 import com.breakyuna.esjzone.network.features.HomeDataCache
+import com.breakyuna.esjzone.network.features.CloudViewReports
 import com.breakyuna.esjzone.network.features.HistoryDataCache
 import com.breakyuna.esjzone.offline.NovelDownloadStore
 import com.breakyuna.esjzone.storage.UserStorage
@@ -174,6 +175,7 @@ class AppContainer(
     }
 
     suspend fun initializeAsync() = withContext(Dispatchers.IO) {
+        CloudViewReports.initialize(appContext.filesDir)
         AppLogger.i("Startup", "Opening database and cleaning obsolete reader data")
         database.cacheDao().deleteObsoleteReaderUnderlines()
         AppLogger.i("Startup", "Database ready")
