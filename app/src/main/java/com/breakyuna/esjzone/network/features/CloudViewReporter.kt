@@ -18,7 +18,9 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import java.io.File
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 import kotlin.coroutines.cancellation.CancellationException
 
 /**
@@ -34,8 +36,17 @@ internal data class CloudViewRecord(
     val chapterKey: String,
     val chapterUrl: String,
     val reported: Boolean,
-    val updatedAt: Long
+    val updatedAt: Long,
+    val account: String = "",
+    val generation: Int = 0
 )
+
+internal fun sameCloudView(left: CloudViewRecord, right: CloudViewRecord): Boolean =
+    left.account == right.account && left.site == right.site && left.novelKey == right.novelKey
+
+/** A fetch still represents the site record only when nothing newer was confirmed afterwards. */
+internal fun cloudViewFetchIsCurrent(fetchGeneration: Int?, confirmation: Int): Boolean =
+    fetchGeneration != null && fetchGeneration == confirmation
 
 internal fun cloudViewNovelKey(novelId: String, novelUrl: String, chapterUrl: String): String {
     val id = novelId.trim().ifBlank {
@@ -58,10 +69,16 @@ internal fun chapterViewUrl(site: String, chapterUrl: String): String? {
     return resolved
 }
 
-internal fun mergeCloudViewRecord(records: List<CloudViewRecord>, next: CloudViewRecord): List<CloudViewRecord> {
-    val existing = records.firstOrNull { it.site == next.site && it.novelKey == next.novelKey }
-    if (existing?.reported == true && existing.chapterKey == next.chapterKey && !next.reported) return records
-    return records.filterNot { it.site == next.site && it.novelKey == next.novelKey } + next
+internal fun mergeCloudViewRecord(
+    records: List<CloudViewRecord>,
+    next: CloudViewRecord,
+    replaceReported: Boolean = false
+): List<CloudViewRecord> {
+    val existing = records.firstOrNull { sameCloudView(it, next) }
+    if (!replaceReported && existing?.reported == true && existing.chapterKey == next.chapterKey && !next.reported) {
+        return records
+    }
+    return records.filterNot { sameCloudView(it, next) } + next
 }
 
 /**
@@ -88,8 +105,8 @@ internal class CloudViewReportStore(private val file: File?) {
     fun snapshot(): List<CloudViewRecord> = synchronized(lock) { records.toList() }
 
     /** Returns false when the chapter was already reported and nothing changed. */
-    fun merge(next: CloudViewRecord): Boolean = synchronized(lock) {
-        val updated = mergeCloudViewRecord(records, next)
+    fun merge(next: CloudViewRecord, replaceReported: Boolean = false): Boolean = synchronized(lock) {
+        val updated = mergeCloudViewRecord(records, next, replaceReported)
         if (updated == records) return false
         records.clear()
         records += updated
@@ -97,17 +114,21 @@ internal class CloudViewReportStore(private val file: File?) {
         true
     }
 
-    fun pending(site: String): List<CloudViewRecord> = synchronized(lock) {
-        records.filter { it.site == site && !it.reported }
+    fun find(account: String, site: String, novelKey: String): CloudViewRecord? = synchronized(lock) {
+        records.firstOrNull { it.account == account && it.site == site && it.novelKey == novelKey }
+    }
+
+    fun pending(account: String, site: String): List<CloudViewRecord> = synchronized(lock) {
+        records.filter { it.account == account && it.site == site && !it.reported }
     }
 
     fun remove(record: CloudViewRecord) = synchronized(lock) {
-        if (records.removeAll { it.site == record.site && it.novelKey == record.novelKey }) persist()
+        if (records.removeAll { sameCloudView(it, record) }) persist()
     }
 
     /** Marks the report done only if that chapter is still the novel's current record. */
     fun markReported(record: CloudViewRecord) = synchronized(lock) {
-        val index = records.indexOfFirst { it.site == record.site && it.novelKey == record.novelKey }
+        val index = records.indexOfFirst { sameCloudView(it, record) }
         if (index < 0) return
         val current = records[index]
         if (current.chapterKey != record.chapterKey) return
@@ -118,13 +139,46 @@ internal class CloudViewReportStore(private val file: File?) {
     private fun load() {
         val stored = file?.takeIf { it.isFile } ?: return
         val decoded = runCatching {
-            gson.fromJson(stored.readText(), Array<CloudViewRecord>::class.java)?.toList().orEmpty()
+            gson.fromJson(stored.readText(), Array<StoredCloudView>::class.java)?.toList().orEmpty()
         }.getOrElse {
             AppLogger.w("CloudView", "Unable to read saved chapter view reports", it)
             emptyList()
         }
         records.clear()
-        records += decoded.filter { it.site.isNotBlank() && it.novelKey.isNotBlank() && it.chapterKey.isNotBlank() }
+        records += decoded.mapNotNull { it.toRecord() }
+    }
+
+    private data class StoredCloudView(
+        val site: String? = null,
+        val novelKey: String? = null,
+        val novelId: String? = null,
+        val novelUrl: String? = null,
+        val chapterKey: String? = null,
+        val chapterUrl: String? = null,
+        val reported: Boolean? = null,
+        val updatedAt: Long? = null,
+        val account: String? = null,
+        val generation: Int? = null
+    ) {
+        fun toRecord(): CloudViewRecord? {
+            val accountScope = account?.trim().orEmpty()
+            val siteName = site?.trim().orEmpty()
+            val novel = novelKey?.trim().orEmpty()
+            val chapter = chapterKey?.trim().orEmpty()
+            if (accountScope.isBlank() || siteName.isBlank() || novel.isBlank() || chapter.isBlank()) return null
+            return CloudViewRecord(
+                site = siteName,
+                novelKey = novel,
+                novelId = novelId.orEmpty(),
+                novelUrl = novelUrl.orEmpty(),
+                chapterKey = chapter,
+                chapterUrl = chapterUrl.orEmpty(),
+                reported = reported == true,
+                updatedAt = updatedAt ?: 0L,
+                account = accountScope,
+                generation = generation ?: 0
+            )
+        }
     }
 
     private fun persist() {
@@ -147,13 +201,30 @@ internal class CloudViewReporter(
     private val latestActivity: (novelId: String, novelUrl: String) -> LocalReadingActivity? = { _, _ -> null },
     private val enabled: () -> Boolean = { true },
     private val now: () -> Long = System::currentTimeMillis,
+    private val accountScope: (Authorization) -> String? = { HistoryDataCache.scopeFor(it) },
     private val scope: CoroutineScope
 ) {
     private val sendMutex = Mutex()
     private val scheduled = AtomicBoolean(false)
+    private val confirmations = ConcurrentHashMap<String, AtomicInteger>()
+
+    fun confirmation(authorization: Authorization): Int {
+        val account = accountScope(authorization)?.takeIf { it.isNotBlank() } ?: return 0
+        return confirmations[account]?.get() ?: 0
+    }
+
+    fun fetchIsCurrent(authorization: Authorization, fetchGeneration: Int?): Boolean =
+        cloudViewFetchIsCurrent(fetchGeneration, confirmation(authorization))
+
+    /** Counts a real chapter-page response, including a prefetch the reader has not opened. */
+    fun observeNetworkFetch(authorization: Authorization): Int {
+        val account = accountScope(authorization)?.takeIf { it.isNotBlank() } ?: return 0
+        return confirmations.computeIfAbsent(account) { AtomicInteger() }.incrementAndGet()
+    }
 
     fun noteLocal(authorization: Authorization, novelId: String, novelUrl: String, chapterUrl: String) {
-        if (!remember(authorization, novelId, novelUrl, chapterUrl, reported = false)) return
+        if (coversCurrentChapter(authorization, novelId, novelUrl, chapterUrl)) return
+        if (!remember(authorization, novelId, novelUrl, chapterUrl, reported = false, replaceReported = true)) return
         schedule(authorization)
     }
 
@@ -173,15 +244,23 @@ internal class CloudViewReporter(
         novelUrl: String,
         chapterUrl: String,
         reported: Boolean,
-        requireEnabled: Boolean = true
+        requireEnabled: Boolean = true,
+        replaceReported: Boolean = false
     ): Boolean {
         if ((requireEnabled && !enabled()) || !authorization.hasCredentials()) return false
+        val account = accountScope(authorization)?.takeIf { it.isNotBlank() } ?: return false
         val site = authorization.domain.trim()
         val resolved = chapterViewUrl(site, chapterUrl) ?: return false
         val novelKey = cloudViewNovelKey(novelId, novelUrl, resolved)
         if (novelKey.isBlank()) return false
         val chapterKey = EsjzoneUrls.canonicalPageKey(resolved)
         if (chapterKey.isBlank()) return false
+        val existing = store.find(account, site, novelKey)
+        if (reported && existing?.reported == true && existing.chapterKey == chapterKey &&
+            existing.generation == confirmation(authorization) && existing.generation != 0) {
+            return false
+        }
+        val generation = confirmations.computeIfAbsent(account) { AtomicInteger() }.incrementAndGet()
         return store.merge(CloudViewRecord(
             site = site,
             novelKey = novelKey,
@@ -190,8 +269,28 @@ internal class CloudViewReporter(
             chapterKey = chapterKey,
             chapterUrl = resolved,
             reported = reported,
-            updatedAt = now()
-        ))
+            updatedAt = now(),
+            account = account,
+            generation = generation
+        ), replaceReported)
+    }
+
+    private fun coversCurrentChapter(
+        authorization: Authorization,
+        novelId: String,
+        novelUrl: String,
+        chapterUrl: String
+    ): Boolean {
+        val account = accountScope(authorization)?.takeIf { it.isNotBlank() } ?: return false
+        val site = authorization.domain.trim()
+        val resolved = chapterViewUrl(site, chapterUrl) ?: return false
+        val novelKey = cloudViewNovelKey(novelId, novelUrl, resolved)
+        if (novelKey.isBlank()) return false
+        val chapterKey = EsjzoneUrls.canonicalPageKey(resolved)
+        val record = store.find(account, site, novelKey) ?: return false
+        if (!record.reported || record.chapterKey != chapterKey) return false
+        val current = confirmation(authorization)
+        return current == 0 || record.generation == current
     }
 
     private fun schedule(authorization: Authorization) {
@@ -213,9 +312,10 @@ internal class CloudViewReporter(
     }
 
     private fun sendPending(authorization: Authorization) {
+        val account = accountScope(authorization)?.takeIf { it.isNotBlank() } ?: return
         val site = authorization.domain.trim()
         if (!enabled() || !authorization.hasCredentials() || site.isBlank()) return
-        val pending = store.pending(site)
+        val pending = store.pending(account, site)
         if (pending.isEmpty()) return
         val current = pending.map { record ->
             record to shouldRequestCloudView(record, latestActivity(record.novelId, record.novelUrl))
@@ -223,7 +323,7 @@ internal class CloudViewReporter(
         current.filter { !it.second }.forEach { store.remove(it.first) }
         for (next in current.filter { it.second }.map { it.first }) {
             if (!enabled()) return
-            val latest = store.pending(site).firstOrNull {
+            val latest = store.pending(account, site).firstOrNull {
                 it.novelKey == next.novelKey && it.chapterKey == next.chapterKey
             } ?: continue
             val url = chapterViewUrl(site, latest.chapterUrl) ?: run {
@@ -283,6 +383,14 @@ object CloudViewReports {
     fun noteFetched(authorization: Authorization, novelId: String, novelUrl: String, chapterUrl: String) {
         reporter?.noteFetched(authorization, novelId, novelUrl, chapterUrl)
     }
+
+    fun confirmation(authorization: Authorization): Int = reporter?.confirmation(authorization) ?: 0
+
+    fun fetchIsCurrent(authorization: Authorization, fetchGeneration: Int?): Boolean =
+        reporter?.fetchIsCurrent(authorization, fetchGeneration) ?: false
+
+    fun observeNetworkFetch(authorization: Authorization): Int =
+        reporter?.observeNetworkFetch(authorization) ?: 0
 
     fun flush(authorization: Authorization) {
         reporter?.flush(authorization)

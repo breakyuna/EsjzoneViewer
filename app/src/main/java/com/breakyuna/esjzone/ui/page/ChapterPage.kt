@@ -1235,23 +1235,21 @@ class ChapterPage(
 
         LaunchedEffect(
             activeChapterKey,
-            activeChapter?.servedFromDownload,
-            activeChapter?.servedFromNetwork,
-            authorization
+            authorization,
+            chapterPageModel.networkFetchGeneration.value
         ) {
             val entry = activeChapter ?: return@LaunchedEffect
-            if (entry.requiresPassword || (!entry.servedFromDownload && !entry.servedFromNetwork)) {
-                return@LaunchedEffect
-            }
+            if (entry.requiresPassword) return@LaunchedEffect
             delay(750)
             val bookId = novelId.ifBlank { entry.chapter.novelId() }
             val bookUrl = novelUrl.ifBlank { localHistoryPosition.value.novelUrl }
-            if (entry.servedFromDownload) {
-                CloudViewReports.noteLocal(
+            val fetchedGeneration = chapterPageModel.takeFreshNetworkFetch(entry.chapter)
+            if (CloudViewReports.fetchIsCurrent(authorization, fetchedGeneration)) {
+                CloudViewReports.noteFetched(
                     authorization, bookId, bookUrl, entry.chapter.url
                 )
             } else {
-                CloudViewReports.noteFetched(
+                CloudViewReports.noteLocal(
                     authorization, bookId, bookUrl, entry.chapter.url
                 )
             }
