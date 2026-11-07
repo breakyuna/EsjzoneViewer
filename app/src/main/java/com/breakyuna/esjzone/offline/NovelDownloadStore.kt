@@ -1747,7 +1747,8 @@ object NovelDownloadStore {
             sourceUrl = stored.baseUrl ?: stored.url,
             body = stored.body,
             imageLocations = locations,
-            downloadedSourceRevision = snapshot.revision.takeIf { fullyLocal && original.schemaVersion == 2 }
+            downloadedSourceRevision = snapshot.revision.takeIf { fullyLocal && original.schemaVersion == 2 },
+            servedFromDownload = true
         )
     }
 

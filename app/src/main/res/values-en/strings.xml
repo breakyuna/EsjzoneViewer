@@ -871,6 +871,7 @@
     <string name="storage_access_failed">Unable to access storage. Choose the folder again in Settings → Storage location.</string>
     <string name="settings_display_group">Display</string>
     <string name="settings_reading_group">Reading</string>
+    <string name="settings_update_website_history">Update website reading history</string>
     <string name="settings_data_group">Data</string>
     <string name="settings_system_group">System</string>
     <string name="settings_theme">Theme</string>

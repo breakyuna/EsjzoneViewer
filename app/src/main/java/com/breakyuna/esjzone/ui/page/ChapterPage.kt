@@ -168,6 +168,7 @@ import com.breakyuna.esjzone.database.ReadingStatisticsSession
 import com.breakyuna.esjzone.database.readingStatisticsBookKey
 import com.breakyuna.esjzone.database.entity.LocalReadingActivity
 import com.breakyuna.esjzone.network.EsjzoneUrls
+import com.breakyuna.esjzone.network.features.CloudViewReports
 import com.breakyuna.esjzone.network.LocalAuthorization
 import com.breakyuna.esjzone.novellibrary.novel.Chapter
 import com.breakyuna.esjzone.novellibrary.novel.FavoriteNovel
@@ -1229,6 +1230,28 @@ class ChapterPage(
             while (true) {
                 delay(30_000L)
                 statisticsSession.checkpoint()
+            }
+        }
+
+        LaunchedEffect(
+            activeChapterKey,
+            authorization,
+            chapterPageModel.networkFetchGeneration.value
+        ) {
+            val entry = activeChapter ?: return@LaunchedEffect
+            if (entry.requiresPassword) return@LaunchedEffect
+            delay(750)
+            val bookId = novelId.ifBlank { entry.chapter.novelId() }
+            val bookUrl = novelUrl.ifBlank { localHistoryPosition.value.novelUrl }
+            val fetchedGeneration = chapterPageModel.takeFreshNetworkFetch(entry.chapter)
+            if (CloudViewReports.fetchIsCurrent(authorization, fetchedGeneration)) {
+                CloudViewReports.noteFetched(
+                    authorization, bookId, bookUrl, entry.chapter.url
+                )
+            } else {
+                CloudViewReports.noteLocal(
+                    authorization, bookId, bookUrl, entry.chapter.url
+                )
             }
         }
 

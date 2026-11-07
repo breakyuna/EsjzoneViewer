@@ -22,6 +22,7 @@ import com.breakyuna.esjzone.network.EsjzoneUrls
 import com.breakyuna.esjzone.network.LoadFailureKind
 import com.breakyuna.esjzone.network.cancellablePageRequest
 import com.breakyuna.esjzone.network.loadFailureKind
+import com.breakyuna.esjzone.network.features.CloudViewReports
 import com.breakyuna.esjzone.network.features.getChapterDetail
 import com.breakyuna.esjzone.network.features.unlockPasswordProtectedChapter
 import com.breakyuna.esjzone.network.features.ChapterPasswordRejectedException
@@ -103,6 +104,8 @@ class ChapterPageModel(
     private val lock = Any()
     private val loadedChapters = mutableListOf<ReaderChapter>()
     private val prefetchedDetails = mutableMapOf<String, DetailedChapter>()
+    private val freshNetworkFetches = mutableMapOf<String, Int>()
+    val networkFetchGeneration = mutableStateOf(0)
     private val offlineChapterKeys = mutableSetOf<String>()
     private val prefetchJobs = mutableMapOf<String, Job>()
     private val passwordJobs = mutableMapOf<String, Job>()
@@ -327,6 +330,7 @@ class ChapterPageModel(
                     loadedChapters.replacePasswordChapter(target, detail)
                 }
                 if (replaced) {
+                    recordNetworkFetch(target, detail)
                     queueChapterPersistence(target, detail)
                     publish(currentSession)
                     prefetchNext(target)
@@ -581,7 +585,11 @@ class ChapterPageModel(
         } ?: return null
         val loaded = System.nanoTime()
         val offline = synchronized(lock) { offlineChapterKeys.remove(chapterKey(chapter)) }
-        val entry = ReaderChapter(chapter, detail.toReaderDocument(chapter), detail.previous, detail.next, offline)
+        val entry = ReaderChapter(
+            chapter, detail.toReaderDocument(chapter), detail.previous, detail.next, offline,
+            servedFromDownload = detail.servedFromDownload,
+            servedFromNetwork = detail.servedFromNetwork
+        )
         AppLogger.i("ReaderTiming", "detailMs=${(loaded - started) / 1_000_000} documentMs=${(System.nanoTime() - loaded) / 1_000_000}")
         return entry
     }
@@ -651,8 +659,27 @@ class ChapterPageModel(
             )
             throw e
         }
+        recordNetworkFetch(chapter, detail)
         queueChapterPersistence(chapter, detail)
         return detail
+    }
+
+    /** Remembers a chapter page that was actually requested, separately from later activation. */
+    private fun recordNetworkFetch(chapter: Chapter, detail: DetailedChapter) {
+        if (!detail.servedFromNetwork) return
+        val key = chapterKey(chapter)
+        if (key.isBlank()) return
+        val generation = CloudViewReports.observeNetworkFetch(authorization)
+        synchronized(lock) { freshNetworkFetches[key] = generation }
+        viewModelScope.launch(Dispatchers.Main.immediate) {
+            networkFetchGeneration.value += 1
+        }
+    }
+
+    fun takeFreshNetworkFetch(chapter: Chapter): Int? {
+        val key = chapterKey(chapter)
+        if (key.isBlank()) return null
+        return synchronized(lock) { freshNetworkFetches.remove(key) }
     }
 
     private fun queueChapterCatalogPersistence() {
@@ -744,6 +771,7 @@ class ChapterPageModel(
                     )
                     null
                 }
+                if (detail != null) recordNetworkFetch(chapter, detail)
                 synchronized(lock) {
                     if (detail != null) prefetchedDetails[key] = detail
                     prefetchJobs.remove(key)

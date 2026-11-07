@@ -135,6 +135,7 @@ import com.breakyuna.esjzone.ui.designsystem.accountContentWidth
 import com.breakyuna.esjzone.R
 import com.breakyuna.esjzone.app.PresentationAccess
 import com.breakyuna.esjzone.network.LocalAuthorization
+import com.breakyuna.esjzone.network.features.CloudViewReports
 import com.breakyuna.esjzone.network.hasCredentials
 import com.breakyuna.esjzone.database.BookshelfRepository
 import com.breakyuna.esjzone.data.settings.SettingsDefaults
@@ -522,6 +523,16 @@ object SettingsPage : AppDestination {
 
                     }
                     if (displayedSection == "READING") {
+                        val updateWebsiteHistory by PresentationAccess.settings.updateWebsiteHistory
+                        SettingsSection {
+                            SettingsToggleRow(
+                                stringResource(R.string.settings_update_website_history),
+                                updateWebsiteHistory
+                            ) { enabled ->
+                                PresentationAccess.settings.setUpdateWebsiteHistory(enabled)
+                                if (enabled) CloudViewReports.flush(authorization)
+                            }
+                        }
                         ReaderMoreSettingsContent(readerSettings, PresentationAccess.readerSettings::saveDebounced)
                     }
                     if (displayedSection == "DOWNLOAD") {

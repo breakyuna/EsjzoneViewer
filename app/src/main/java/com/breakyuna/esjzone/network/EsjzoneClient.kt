@@ -83,6 +83,7 @@ object EsjzoneClient {
     private val refreshScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private class InFlightPage {
         val result = CompletableFuture<String>()
+        @Volatile var fromNetwork: Boolean = false
         // Queue (30s) + HTTP (30s) + bounded postprocessing grace share one deadline.
         private val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(65)
         fun remainingNanos(): Long = (deadline - System.nanoTime()).coerceAtLeast(0L)
@@ -176,7 +177,8 @@ object EsjzoneClient {
         coalesceRequests: Boolean = true,
         cacheResponse: Boolean = true,
         awaitFresh: Boolean = false,
-        validateBody: ((String) -> Unit)? = null
+        validateBody: ((String) -> Unit)? = null,
+        onNetworkResult: ((Boolean) -> Unit)? = null
     ): String {
         val cacheKey = pageCacheKey(authorization, url)
         if (forceRefresh) CacheAnalysis.lookup(CacheLayer.PAGE, fresh = false, forced = true)
@@ -203,6 +205,7 @@ object EsjzoneClient {
                     }
                     CacheDiagnostics.record(CacheEventType.HIT, CacheLayer.PAGE, CacheEventReason.FRESH, cacheKey)
                     CacheAnalysis.lookup(CacheLayer.PAGE, fresh = true)
+                    onNetworkResult?.invoke(false)
                     return it
                 }
                 // A previous app version could have cached an HTML block/challenge page.
@@ -235,11 +238,13 @@ object EsjzoneClient {
                         requestEpoch,
                         pageKind,
                         allowStaleOnError,
-                        coalesceRequests, writeToken, cacheResponse, validateBody, forceRefresh || !coalesceRequests, background = true
+                        coalesceRequests, writeToken, cacheResponse, validateBody, forceRefresh || !coalesceRequests, background = true,
+                        onNetworkResult = null
                     )
                 }
             }
             CacheDiagnostics.record(CacheEventType.HIT, CacheLayer.PAGE, CacheEventReason.STALE, cacheKey)
+            onNetworkResult?.invoke(false)
             return stalePage
         }
 
@@ -251,7 +256,8 @@ object EsjzoneClient {
             requestEpoch,
             pageKind,
             allowStaleOnError,
-            coalesceRequests, writeToken, cacheResponse, validateBody, forceRefresh || !coalesceRequests
+            coalesceRequests, writeToken, cacheResponse, validateBody, forceRefresh || !coalesceRequests,
+            onNetworkResult = onNetworkResult
         )
     }
 
@@ -268,7 +274,8 @@ object EsjzoneClient {
         cacheResponse: Boolean,
         validateBody: ((String) -> Unit)?,
         replaceRequest: Boolean,
-        background: Boolean = pageRequestCancellation.get()?.background == true
+        background: Boolean = pageRequestCancellation.get()?.background == true,
+        onNetworkResult: ((Boolean) -> Unit)? = null
     ): String {
         val flight = InFlightPage()
         val owner = flight.result
@@ -277,7 +284,9 @@ object EsjzoneClient {
         val existing = if (coalesceRequests) inFlightPages.putIfAbsent(requestKey, flight) else null
         if (existing != null) {
             return try {
-                existing.result.get(existing.remainingNanos(), TimeUnit.NANOSECONDS)
+                existing.result.get(existing.remainingNanos(), TimeUnit.NANOSECONDS).also {
+                    onNetworkResult?.invoke(existing.fromNetwork)
+                }
             } catch (error: TimeoutException) {
                 throw NetworkRequestException(
                     url,
@@ -291,7 +300,8 @@ object EsjzoneClient {
                     // false network failure to every remaining waiter.
                     return fetchPageCoalesced(
                         authorization, url, cacheKey, stalePage, requestEpoch, pageKind, allowStaleOnError,
-                        coalesceRequests, writeToken, cacheResponse, validateBody, replaceRequest, background
+                        coalesceRequests, writeToken, cacheResponse, validateBody, replaceRequest, background,
+                        onNetworkResult
                     )
                 }
                 if (cause is Exception) throw cause
@@ -393,7 +403,9 @@ object EsjzoneClient {
                 }
                 if (fallback != null) {
                     CacheDiagnostics.record(CacheEventType.HIT, CacheLayer.PAGE, CacheEventReason.STALE, cacheKey)
+                    flight.fromNetwork = false
                     owner.complete(fallback)
+                    onNetworkResult?.invoke(false)
                     return fallback
                 }
                 val error = UntrustedPageException(
@@ -406,7 +418,9 @@ object EsjzoneClient {
             }
             flight.checkRemaining()
             val result = responseData.body
+            flight.fromNetwork = true
             owner.complete(result)
+            onNetworkResult?.invoke(true)
             result
         } catch (error: CancellationException) {
             inFlightPages.remove(requestKey, flight)
@@ -426,7 +440,9 @@ object EsjzoneClient {
             } else null
             if (result != null) {
                 CacheDiagnostics.record(CacheEventType.HIT, CacheLayer.PAGE, CacheEventReason.STALE, cacheKey)
+                flight.fromNetwork = false
                 owner.complete(result)
+                onNetworkResult?.invoke(false)
                 result
             } else {
                 owner.completeExceptionally(error)
@@ -488,6 +504,61 @@ object EsjzoneClient {
                 pageCacheKey(authorization, url)
             }
         }.distinct()
+
+    /**
+     * Requests one chapter page so the site can record it as the last viewed chapter.
+     * The response is discarded and is not written into the page cache or downloads.
+     */
+    internal fun touchChapterView(
+        authorization: Authorization,
+        url: String,
+        stillCurrent: () -> Boolean = { true }
+    ): Boolean {
+        if (!authorization.hasCredentials()) return false
+        val parsed = url.toHttpUrlOrNull() ?: return false
+        if (!parsed.host.equals(authorization.domain, ignoreCase = true)) return false
+        if (resolveChapterSource(url, EsjzoneUrls.baseForDomain(authorization.domain)) != ChapterSource.ESJ_ZONE) {
+            return false
+        }
+        val requestCookieJar = AuthorizationCookieJar(authorization, deferResponses = true)
+        val permitAcquired = try {
+            networkPermits.acquire(true, 20, TimeUnit.SECONDS)
+        } catch (error: InterruptedException) {
+            Thread.currentThread().interrupt()
+            return false
+        }
+        if (!permitAcquired) return false
+        return try {
+            if (!stillCurrent()) return false
+            val call = sharedHttpClient.newBuilder().cookieJar(requestCookieJar).build().newCall(
+                Request.Builder().url(parsed).get().headers(headers).build()
+            )
+            val trusted = call.execute().use { response ->
+                val body = response.body?.readTextBounded().orEmpty()
+                PageResponsePolicy.validate(
+                    statusCode = response.code,
+                    body = body,
+                    requestedUrl = url,
+                    finalUrl = response.request.url.toString(),
+                    contentType = response.header("Content-Type"),
+                    kind = PageKind.CHAPTER
+                ).trusted
+            }
+            if (trusted) {
+                requestCookieJar.commitDeferredResponses()
+                PageCache.remove(pageCacheKey(
+                    authorization,
+                    EsjzoneUrls.resolve("/my/view", EsjzoneUrls.baseForDomain(authorization.domain))
+                ))
+            }
+            trusted
+        } catch (error: Exception) {
+            com.breakyuna.esjzone.util.AppLogger.w("CloudView", "Chapter view request failed", error)
+            false
+        } finally {
+            networkPermits.release(true)
+        }
+    }
 
     /** Invalidates one account-scoped page after a successful remote write. */
     internal fun invalidatePage(authorization: Authorization, url: String) {

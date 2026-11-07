@@ -66,5 +66,9 @@ data class DetailedChapter(
     val imageLocations: Map<String, String> = emptyMap(),
     @Transient val sourceCacheReference: String? = null,
     /** A validated local snapshot; any store publication invalidates this revision. */
-    @Transient val downloadedSourceRevision: Long? = null
+    @Transient val downloadedSourceRevision: Long? = null,
+    /** This read used a saved chapter body and did not request the chapter page. */
+    @Transient val servedFromDownload: Boolean = false,
+    /** This read requested the chapter page, which is what the site records. */
+    @Transient val servedFromNetwork: Boolean = false
 ) : Serializable

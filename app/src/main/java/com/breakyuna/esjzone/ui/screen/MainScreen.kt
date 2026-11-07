@@ -29,6 +29,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawWithContent
 import java.util.concurrent.atomic.AtomicBoolean
 import com.breakyuna.esjzone.util.AppLogger
+import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.breakyuna.esjzone.ui.designsystem.globalStringResource as stringResource
 import androidx.compose.ui.unit.dp
@@ -41,6 +42,7 @@ import com.breakyuna.esjzone.network.Authorization
 import com.breakyuna.esjzone.network.hasCredentials
 import com.breakyuna.esjzone.network.LocalAuthorization
 import com.breakyuna.esjzone.network.features.AuthorizationCheckResult
+import com.breakyuna.esjzone.network.features.CloudViewReports
 import com.breakyuna.esjzone.network.features.checkAuthorization
 import com.breakyuna.esjzone.ui.navigation.LocalAppNavigator
 import com.breakyuna.esjzone.ui.navigation.AdaptiveAppShell
@@ -73,6 +75,11 @@ class MainScreen(val authorization: Authorization) : AppDestination {
         }
         var sessionPromptDismissed by remember(authorization) {
             mutableStateOf(false)
+        }
+
+        LifecycleResumeEffect(authorization) {
+            CloudViewReports.flush(authorization)
+            onPauseOrDispose { }
         }
 
         LaunchedEffect(authorization, activeDomain, loginSessionRevision) {
