@@ -75,6 +75,8 @@ import com.breakyuna.esjzone.ui.page.SearchPage
 import com.breakyuna.esjzone.ui.page.SettingsPage
 import com.breakyuna.esjzone.ui.page.ReadingStatisticsPage
 import com.breakyuna.esjzone.ui.tab.CategoryBrowserPage
+import com.breakyuna.esjzone.ui.tab.HomeTab
+import com.breakyuna.esjzone.ui.tab.ProfileTab
 import com.breakyuna.esjzone.ui.tab.SearchTab
 import com.breakyuna.esjzone.ui.screen.LoadingScreen
 import com.breakyuna.esjzone.ui.screen.SessionLoadingContent
@@ -165,7 +167,8 @@ sealed interface LegacyRoute {
 @Serializable
 data class ReaderRoute(
     val novelId: String,
-    val chapterIdentity: String
+    val chapterIdentity: String,
+    val keepRequestedChapterOnRestore: Boolean = false
 )
 
 internal fun encodeRouteTokenPart(value: String): String = Uri.encode(value)
@@ -465,17 +468,24 @@ class AppNavigator internal constructor(
     internal fun readerDestination(route: ReaderRoute): AppDestination =
         registry.getOrPut(readerToken(route)) {
             val latest = readerRoutes[readerToken(route)]?.let(::readerRouteFromToken)
-            (latest ?: route).restore(restoreLatestHistory = latest == null)
+            (latest ?: route).restore(
+                restoreLatestHistory = latest == null && !route.keepRequestedChapterOnRestore
+            )
         }
 
     private fun openReader(destination: AppDestination) {
         register(destination)
-        val route = readerRouteFromToken(destination.key)
+        val route = readerRouteFromToken(destination.key).copy(
+            keepRequestedChapterOnRestore = (destination as? ChapterPage)?.keepRequestedChapterOnRestore == true
+        )
+        val entry = AppNavKey.Reader(route)
         if (backStack.lastOrNull() !is AppNavKey.Reader) {
-            backStack.add(AppNavKey.Reader(route))
+            backStack.add(entry)
         } else {
             val previous = backStack[backStack.lastIndex]
-            backStack[backStack.lastIndex] = AppNavKey.Reader(route)
+            // A different restore policy can create a new entry with the same chapter token.
+            if (previous != entry) readerRoutes.remove(readerToken(route))
+            backStack[backStack.lastIndex] = entry
             cleanupKey(previous)
         }
     }
@@ -493,7 +503,7 @@ class AppNavigator internal constructor(
 private fun readerToken(route: ReaderRoute): String =
     "ChapterPage:${route.novelId}:${route.chapterIdentity}"
 
-private fun ReaderRoute.restore(restoreLatestHistory: Boolean = true): AppDestination = ChapterPage(
+private fun ReaderRoute.restore(restoreLatestHistory: Boolean): AppDestination = ChapterPage(
     novelId = novelId,
     chapter = Chapter(name = "", url = chapterIdentity, isHistory = true),
     history = ChapterStateHolder(),
@@ -502,12 +512,16 @@ private fun ReaderRoute.restore(restoreLatestHistory: Boolean = true): AppDestin
         ?.let { EsjzoneUrls.resolve("/detail/$it.html") }
         .orEmpty(),
     novelCoverUrl = "",
-    // A saved latest route is authoritative; use history only for its matching position.
+    // An explicit chapter is authoritative; use history only for its matching position.
     resumeChapterProgress = if (restoreLatestHistory) null else 0f,
-    restoreFromLocalHistory = restoreLatestHistory
+    restoreFromLocalHistory = restoreLatestHistory,
+    keepRequestedChapterOnRestore = !restoreLatestHistory
 )
 
-private fun LegacyRoute.restore(): AppDestination? = when (this) {
+internal fun forumLinkDestination(url: okhttp3.HttpUrl): AppDestination? =
+    forumLinkRoute(url)?.restore()
+
+internal fun LegacyRoute.restore(): AppDestination? = when (this) {
     is LegacyRoute.Static -> when {
         token == BookmarksPage.key || token.endsWith(".BookmarksPage") -> BookmarksPage
         token == DownloadPage.key || token.endsWith(".DownloadPage") -> DownloadPage
@@ -522,6 +536,8 @@ private fun LegacyRoute.restore(): AppDestination? = when (this) {
         token == SettingsPage.key || token.endsWith(".SettingsPage") -> SettingsPage
         token == com.breakyuna.esjzone.ui.page.ReaderBackgroundPage.key -> com.breakyuna.esjzone.ui.page.ReaderBackgroundPage
         token == ReadingStatisticsPage.key || token.endsWith(".ReadingStatisticsPage") -> ReadingStatisticsPage
+        token == HomeTab.key -> HomeTab
+        token == ProfileTab.key -> ProfileTab
         token == ForumPage.key || token.endsWith(".ForumPage") -> ForumPage
         token == GuestbookPage.key || token.endsWith(".GuestbookPage") -> GuestbookPage
         token == SearchTab.key || token.endsWith(".SearchTab") -> SearchTab
@@ -548,7 +564,7 @@ private fun LegacyRoute.restore(): AppDestination? = when (this) {
     )
     is LegacyRoute.ForumBoard -> ForumBoardPage(
         ForumThread(
-            categoryId = "",
+            categoryId = identity.trim('/').split('/').getOrNull(1).orEmpty(),
             id = identity.substringAfterLast('/'),
             title = "",
             topicCount = null,

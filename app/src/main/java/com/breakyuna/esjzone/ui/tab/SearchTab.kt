@@ -17,6 +17,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SuggestionChip
@@ -49,6 +50,7 @@ import androidx.compose.material3.Scaffold
 import com.breakyuna.esjzone.ui.discovery.DiscoveryEmptyState
 import com.breakyuna.esjzone.ui.discovery.DiscoveryLoadingState
 import com.breakyuna.esjzone.ui.discovery.DiscoverySearchTopBar
+import com.breakyuna.esjzone.ui.discovery.SearchTagDialog
 import com.breakyuna.esjzone.ui.navigation.AppTab
 import com.breakyuna.esjzone.ui.navigation.AppTabOptions
 import com.breakyuna.esjzone.ui.navigation.LocalBaseNavigator
@@ -81,6 +83,7 @@ object SearchTab : AppTab {
         var activeKeyword by rememberSaveable { mutableStateOf<String?>(null) }
         var category by rememberSaveable { mutableIntStateOf(0) }
         var sort by rememberSaveable { mutableIntStateOf(1) }
+        var showTagSearch by rememberSaveable { mutableStateOf(false) }
 
         fun submit(value: String) {
             value.trim().takeIf { it.isNotBlank() }?.let {
@@ -104,7 +107,8 @@ object SearchTab : AppTab {
                         query = ""
                         activeKeyword = null
                     },
-                    onBack = { navigator?.pop() }
+                    onBack = { navigator?.pop() },
+                    onTagSearch = { showTagSearch = true }
                 )
             },
             containerColor = MaterialTheme.colorScheme.background
@@ -135,9 +139,20 @@ object SearchTab : AppTab {
                     state = historyState,
                     onClear = historyModel::clear,
                     onSelect = ::submit,
-                    modifier = Modifier.fillMaxSize()
+                    modifier = Modifier.fillMaxSize(),
+                    onTagSearch = { showTagSearch = true }
                 )
             }
+        }
+        if (showTagSearch) {
+            SearchTagDialog(
+                currentQuery = query,
+                onDismiss = { showTagSearch = false },
+                onSearch = {
+                    showTagSearch = false
+                    submit(it)
+                }
+            )
         }
         LaunchedEffect(Unit) { historyModel.load() }
         LaunchedEffect(activeKeyword, category, sort) {
@@ -151,7 +166,8 @@ internal fun SearchHistoryList(
     state: SearchHistoryModel.State,
     onClear: () -> Unit,
     onSelect: (String) -> Unit,
-    modifier: Modifier
+    modifier: Modifier,
+    onTagSearch: (() -> Unit)? = null
 ) {
     if (state.loading) {
         DiscoveryLoadingState(modifier = modifier)
@@ -165,6 +181,21 @@ internal fun SearchHistoryList(
         contentPadding = PaddingValues(horizontal = AppSpacing.lg, vertical = 6.dp),
         verticalArrangement = Arrangement.spacedBy(AppSpacing.sm)
     ) {
+        if (onTagSearch != null) {
+            item(key = "tag-search", contentType = "action") {
+                SuggestionChip(
+                    onClick = onTagSearch,
+                    label = { Text(stringResource(R.string.search_tag_title)) },
+                    icon = { Icon(Icons.Filled.Tune, contentDescription = null) },
+                    shape = AppShapes.pill,
+                    colors = SuggestionChipDefaults.suggestionChipColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                        labelColor = MaterialTheme.colorScheme.onSurface
+                    ),
+                    border = null
+                )
+            }
+        }
         item(key = "history-heading", contentType = "heading") {
             Row(
                 modifier = Modifier.fillMaxWidth(),

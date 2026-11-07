@@ -1,6 +1,7 @@
 package com.breakyuna.esjzone
 
 import com.breakyuna.esjzone.network.EsjzoneUrls
+import okhttp3.HttpUrl.Companion.toHttpUrl
 import org.jsoup.Jsoup
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -8,6 +9,14 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class EsjzoneUrlsTest {
+
+    @Test
+    fun upgradesCleartextWebViewLinksWithoutChangingTheirTarget() {
+        assertEquals(
+            "https://example.test/read?chapter=2#part",
+            EsjzoneUrls.normalizeHttpUrl("http://example.test:80/read?chapter=2#part")
+        )
+    }
 
     @Test
     fun coverOrEmpty_recognizesSitePlaceholderVariants() {
@@ -127,6 +136,16 @@ class EsjzoneUrlsTest {
             "https://www.esjzone.cc/tags/A%23B%3F%2FC%20D",
             EsjzoneUrls.tagsUrl("A#B?/C D")
         )
+    }
+
+    @Test
+    fun compoundSearchKeepsItsExpressionOnFirstAndLaterPages() {
+        for (expression in listOf("!TS 后宫", "后宫+校园 !TS", "!TS")) {
+            val first = EsjzoneUrls.tagsUrl(expression, category = 0, sort = 1).toHttpUrl()
+            val later = EsjzoneUrls.tagsUrl(expression, category = 0, sort = 4, page = 2).toHttpUrl()
+            assertEquals(listOf("tags", expression), first.pathSegments)
+            assertEquals(listOf("tags-04", expression, "2.html"), later.pathSegments)
+        }
     }
 
     @Test

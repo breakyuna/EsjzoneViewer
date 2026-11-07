@@ -47,6 +47,15 @@
     <string name="search_result">Search Result</string>
     <string name="search_placeholder">Type the keyword to search</string>
     <string name="search_action">Search</string>
+    <string name="search_tag_title">Combine tags</string>
+    <string name="search_tag_help">Separate tags with spaces or +. Excluded tags automatically get !.</string>
+    <string name="search_tag_include">Include tags</string>
+    <string name="search_tag_include_hint">For example: harem school</string>
+    <string name="search_tag_exclude">Exclude tags</string>
+    <string name="search_tag_exclude_hint">For example: TS</string>
+    <string name="search_tag_include_error">Enter tags starting with ! in the exclude field</string>
+    <string name="search_tag_exclude_error">Enter a tag to exclude</string>
+    <string name="search_tag_preview">Search query</string>
     <string name="search_local_history">Local search history</string>
     <string name="search_clear_history">Clear history</string>
     <string name="search_history_privacy">Stored on this device; separate from reading history</string>

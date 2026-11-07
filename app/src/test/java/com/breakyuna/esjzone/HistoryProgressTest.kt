@@ -1,15 +1,60 @@
 package com.breakyuna.esjzone
 
+import androidx.navigation3.runtime.NavKey
+import com.breakyuna.esjzone.ui.navigation.AppNavKey
+import com.breakyuna.esjzone.ui.navigation.AppNavigator
 import com.breakyuna.esjzone.ui.page.fullBookProgress
 import com.breakyuna.esjzone.ui.page.cloudHistoryChapterIndex
 import com.breakyuna.esjzone.ui.page.cloudHistoryBookProgress
+import com.breakyuna.esjzone.ui.page.cloudHistoryDestination
+import com.breakyuna.esjzone.ui.page.ChapterPage
+import com.breakyuna.esjzone.ui.page.NovelPage
 import com.breakyuna.esjzone.novellibrary.novel.Chapter
+import com.breakyuna.esjzone.novellibrary.novel.HistoryNovel
+import kotlinx.serialization.json.Json
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /** Pure boundary coverage for the local history book-progress projection. */
 class HistoryProgressTest {
+    @Test
+    fun cloudHistoryOpensTheRecordedChapterDirectly() {
+        val chapter = Chapter("Cloud chapter", "/forum/9001/9201.html", true)
+        val history = HistoryNovel("Book", "/detail/9001.html", "different-view-id", chapter)
+
+        val destination = cloudHistoryDestination(history)
+        assertTrue(destination is ChapterPage)
+        assertEquals("ChapterPage:9001:/forum/9001/9201.html", destination.key)
+
+        val withCatalog = cloudHistoryDestination(history, "cover", listOf(chapter))
+        assertTrue(withCatalog is ChapterPage)
+        assertEquals(destination.key, withCatalog.key)
+    }
+
+    @Test
+    fun cloudChapterRemainsAuthoritativeWhenRecreatedBeforeLoading() {
+        val chapter = Chapter("Cloud chapter", "/forum/9001/9201.html", true)
+        val history = HistoryNovel("Book", "/detail/9001.html", "view", chapter)
+        val stack = mutableListOf<NavKey>(AppNavKey.Main)
+        AppNavigator(stack, mutableMapOf()).push(cloudHistoryDestination(history))
+        val serializer = AppNavKey.Reader.serializer()
+        val saved = Json.encodeToString(serializer, stack.last() as AppNavKey.Reader)
+        val restoredEntry = Json.decodeFromString(serializer, saved)
+        val navigator = AppNavigator(mutableListOf(AppNavKey.Main, restoredEntry), mutableMapOf())
+        val restored = navigator.readerDestination(restoredEntry.route) as ChapterPage
+        assertEquals("ChapterPage:9001:/forum/9001/9201.html", restored.key)
+        assertFalse(restored.restoreFromLocalHistory)
+    }
+
+    @Test
+    fun cloudHistoryWithoutAChapterCanStillOpenTheBook() {
+        val history = HistoryNovel("Book", "/detail/9001.html", "view", Chapter("", "", true))
+        assertTrue(cloudHistoryDestination(history) is NovelPage)
+    }
+
     @Test
     fun cloudHistoryDoesNotReportCompletionWhilePositionIsUnknown() {
         assertNull(cloudHistoryBookProgress(null, 10))

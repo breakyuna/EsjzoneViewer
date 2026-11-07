@@ -373,7 +373,10 @@ class CommunityParserTest {
                 """
                 <div class="single-post-meta"><a href="/my/profile?uid=7">Alice</a> 2026-08-30 12:34</div>
                 <h2>Actual title</h2>
-                <div class="forum-content"><p>Hello</p><p>World</p></div>
+                <div class="forum-content">
+                  <p><a href="409387.html"><strong>Hello</strong></a></p>
+                  <p><a href="#myQA">World</a> <a href="javascript:alert(1)">Invalid</a></p>
+                </div>
                 """.trimIndent(),
                 "https://www.esjzone.cc/forum/1585405223/335631.html"
             ),
@@ -383,7 +386,16 @@ class CommunityParserTest {
         assertEquals("Actual title", post.title)
         assertEquals("Alice", post.author)
         assertEquals("2026-08-30 12:34", post.createdAt)
-        assertEquals("Hello\nWorld", post.contentText)
+        assertEquals("Hello\nWorld Invalid", post.contentText)
+        val markup = Jsoup.parseBodyFragment(post.contentHtml)
+        assertEquals(
+            listOf(
+                "https://www.esjzone.cc/forum/1585405223/409387.html",
+                "https://www.esjzone.cc/forum/1585405223/335631.html#myQA"
+            ),
+            markup.select("a[href]").eachAttr("href")
+        )
+        assertEquals("Hello", markup.selectFirst("a strong")?.text())
     }
 
     @Test

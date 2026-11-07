@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Canvas
@@ -124,6 +125,17 @@ private class GlowSink {
 private val LocalGlowSink = staticCompositionLocalOf<GlowSink?> { null }
 private val LocalGlowConfig = staticCompositionLocalOf<GlowConfig?> { null }
 internal val LocalReaderPhotoText = staticCompositionLocalOf<Color?> { null }
+
+/** Keep cached glow inside the same viewport as the vertically scrolling body. */
+@Composable
+internal fun ReaderScrollGlowSurface(
+    background: Bitmap?,
+    settings: ReaderImageBackground,
+    modifier: Modifier = Modifier,
+    content: @Composable BoxScope.() -> Unit
+) {
+    ReaderGlowSurface(background, settings, modifier.clipToBounds(), content)
+}
 
 /** Keep one of the existing layers on the text while the other layers are prepared. */
 @Composable

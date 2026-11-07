@@ -2,13 +2,17 @@ package com.breakyuna.esjzone
 
 import android.graphics.Bitmap
 import androidx.compose.foundation.ScrollState
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.painter.BitmapPainter
 import androidx.compose.ui.graphics.toPixelMap
 import androidx.compose.ui.platform.testTag
@@ -166,6 +170,64 @@ class ReaderTextGlowInstrumentedTest {
         composeRule.runOnIdle { scope.launch { scroll.scrollTo(distance) } }
         composeRule.waitUntil(5_000) { scroll.value == distance }
         assertTrue("Prepared glow should remain visible while its text moves", darkPixelsNearBottom() > 20)
+    }
+
+    @Test fun scrollingGlowDoesNotCoverTheReservedStatusArea() {
+        val background = Bitmap.createBitmap(120, 120, Bitmap.Config.ARGB_8888).apply {
+            eraseColor(android.graphics.Color.WHITE)
+        }
+        var statusInset by mutableStateOf(60.dp)
+        lateinit var listState: androidx.compose.foundation.lazy.LazyListState
+        lateinit var scope: CoroutineScope
+        composeRule.setContent {
+            listState = rememberLazyListState()
+            scope = rememberCoroutineScope()
+            Box(Modifier.size(200.dp, 160.dp).background(Color.White).testTag("reader-with-status")) {
+                ReaderScrollGlowSurface(
+                    background = background,
+                    settings = ReaderImageBackground(glowEnabled = true, glowStrength = 100f),
+                    modifier = Modifier.fillMaxSize().padding(bottom = statusInset)
+                ) {
+                    LazyColumn(state = listState, modifier = Modifier.fillMaxSize()) {
+                        item {
+                            ReaderGlowBodyText(
+                                text = List(8) { "MMMMMMMM" }.joinToString("\n"),
+                                style = TextStyle(fontSize = 24.sp, lineHeight = 28.sp),
+                                // Hide the foreground text so visible pixels prove cached glow tiles were drawn.
+                                modifier = Modifier.fillMaxWidth().graphicsLayer { alpha = 0f }
+                            )
+                        }
+                    }
+                }
+            }
+        }
+        fun darkPixels(fromY: Int, toY: Int): Int {
+            val pixels = composeRule.onNodeWithTag("reader-with-status").captureToImage().toPixelMap()
+            var count = 0
+            for (y in fromY.coerceAtLeast(0) until toY.coerceAtMost(pixels.height)) {
+                for (x in 0 until pixels.width) if (pixels[x, y].red < 0.9f) count++
+            }
+            return count
+        }
+        fun assertStatusAreaClear(viewportHeight: androidx.compose.ui.unit.Dp) {
+            val firstStatusPixel = with(composeRule.density) { (viewportHeight + 2.dp).roundToPx() }
+            val screenHeight = with(composeRule.density) { 160.dp.roundToPx() }
+            assertEquals("Cached glow leaked into the status area", 0, darkPixels(firstStatusPixel, screenHeight))
+        }
+        val viewportHeight = with(composeRule.density) { 100.dp.roundToPx() }
+        composeRule.waitUntil(10_000) { darkPixels(0, viewportHeight) > 20 }
+        assertStatusAreaClear(100.dp)
+
+        val scrollOffset = with(composeRule.density) { 45.dp.roundToPx() }
+        composeRule.runOnIdle { scope.launch { listState.scrollToItem(0, scrollOffset) } }
+        composeRule.waitUntil(5_000) { listState.firstVisibleItemScrollOffset == scrollOffset }
+        assertTrue("Glow should remain visible after scrolling", darkPixels(0, viewportHeight) > 20)
+        assertStatusAreaClear(100.dp)
+
+        composeRule.runOnIdle { statusInset = 32.dp }
+        val expandedViewportHeight = with(composeRule.density) { 128.dp.roundToPx() }
+        composeRule.waitUntil(5_000) { darkPixels(viewportHeight, expandedViewportHeight) > 20 }
+        assertStatusAreaClear(128.dp)
     }
 
     @Test fun changingOneParagraphKeepsTheOtherParagraphEnhanced() {

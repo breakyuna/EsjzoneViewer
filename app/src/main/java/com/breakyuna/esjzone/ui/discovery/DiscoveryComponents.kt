@@ -28,6 +28,7 @@ import androidx.compose.material.icons.filled.AutoStories
 import androidx.compose.material.icons.filled.Category
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DropdownMenu
@@ -136,8 +137,11 @@ fun DiscoverySearchTopBar(
     onSearch: () -> Unit,
     onClear: () -> Unit,
     onBack: () -> Unit,
+    onTagSearch: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val keyboardController = LocalSoftwareKeyboardController.current
+    val focusManager = LocalFocusManager.current
     Surface(
         color = MaterialTheme.colorScheme.background,
         modifier = modifier.fillMaxWidth()
@@ -169,6 +173,13 @@ fun DiscoverySearchTopBar(
                 onClear = onClear,
                 modifier = Modifier.weight(1f)
             )
+            IconButton(onClick = {
+                keyboardController?.hide()
+                focusManager.clearFocus()
+                onTagSearch()
+            }) {
+                Icon(Icons.Filled.Tune, contentDescription = stringResource(R.string.search_tag_title))
+            }
         }
     }
 }

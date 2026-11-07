@@ -90,6 +90,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.breakyuna.esjzone.ui.reader.ReaderBackground
 import com.breakyuna.esjzone.ui.reader.rememberReaderImageBackdrop
 import com.breakyuna.esjzone.ui.reader.readerBackdrop
+import com.breakyuna.esjzone.ui.reader.ReaderScrollGlowSurface
 import com.breakyuna.esjzone.ui.reader.ReaderBrightness
 import com.breakyuna.esjzone.ui.reader.ReaderKeepScreenOn
 import androidx.compose.runtime.Composable
@@ -225,9 +226,10 @@ class ChapterPage(
     private val novelUrl: String = "",
     private val novelCoverUrl: String = "",
     private val resumeChapterProgress: Float? = null,
-    private val restoreFromLocalHistory: Boolean = false,
+    internal val restoreFromLocalHistory: Boolean = false,
     private val searchHit: com.breakyuna.esjzone.domain.reader.ReaderSearchHit? = null,
-    private val chapterOrderComplete: Boolean = true
+    private val chapterOrderComplete: Boolean = true,
+    internal val keepRequestedChapterOnRestore: Boolean = false
 ) : AppDestination {
 
     override val isReaderDestination: Boolean = true
@@ -1943,7 +1945,6 @@ class ChapterPage(
             ReaderShell(
                 background = readerBackgroundColor,
                 backgroundPainter = backgroundPainter.takeUnless { pagePaintsImage },
-                glowBackground = imageBackdrop.bitmap.takeIf { customBackground && !pagedMode },
                 imageSettings = imageBackground,
                 pagedGesturesEnabled = pagedMode && (pagingEnabled || pagedTurns.hasTurns),
                 verticalContentScrollable = pagerVisibleItem?.page?.isOversized == true,
@@ -1971,19 +1972,21 @@ class ChapterPage(
                     if (entryAnimationFinished && (entryContentRevealed || result == null ||
                             (initialScrollPrimed && !restoreLookupPending && scriptReady))) {
                     if (!pagedMode || state !is ChapterPageModel.State.Result) {
-                    LazyColumn(
-                        state = scrollState,
-                        userScrollEnabled = !pagedMode,
+                    ReaderScrollGlowSurface(
+                        background = imageBackdrop.bitmap.takeIf { customBackground && !pagedMode },
+                        settings = imageBackground,
                         modifier = Modifier
                             .fillMaxHeight()
                             .fillMaxWidth()
                             .align(Alignment.Center)
                             .windowInsetsPadding(WindowInsets.displayCutout.only(WindowInsetsSides.Horizontal))
-                            .padding(
-                                start = readerSettings.horizontalPaddingDp.dp,
-                                end = readerSettings.horizontalPaddingDp.dp,
-                                bottom = if (pagedMode) 0.dp else scrollStatusInset
-                            ),
+                            .padding(bottom = if (pagedMode) 0.dp else scrollStatusInset)
+                    ) {
+                    LazyColumn(
+                        state = scrollState,
+                        userScrollEnabled = !pagedMode,
+                        modifier = Modifier.fillMaxSize()
+                            .padding(horizontal = readerSettings.horizontalPaddingDp.dp),
                         verticalArrangement = Arrangement.spacedBy(0.dp),
                         contentPadding = androidx.compose.foundation.layout.PaddingValues(
                                 top = pageTopPadding,
@@ -2255,6 +2258,7 @@ class ChapterPage(
                         }
                     }
                 }
+                    }
                     } else {
                         val coverAnimation = readerSettings.pageAnimation == ReaderPageAnimation.COVER
                         val fullPageBackground = coverAnimation || customBackground

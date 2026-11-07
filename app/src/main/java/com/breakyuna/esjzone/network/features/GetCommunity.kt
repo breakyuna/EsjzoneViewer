@@ -40,6 +40,7 @@ import okhttp3.Request
 import org.jsoup.Jsoup
 import org.jsoup.nodes.Document
 import org.jsoup.nodes.Element
+import org.jsoup.safety.Safelist
 
 private val CATEGORY_URL = Regex("(?:https?://[^/]+)?/forum/([0-9]+)/?(?:[?#].*)?$")
 private val THREAD_URL = Regex("(?:https?://[^/]+)?/forum/([0-9]+)/([0-9]+)/?(?:[?#].*)?$")
@@ -794,6 +795,10 @@ internal fun parseForumTopicRows(table: Element, fallbackBoardId: String): List<
         )
     }.distinctBy { it.url }
 
+private val forumPostMarkup = Safelist.basic()
+    .addTags("div", "h1", "h2", "h3", "h4", "h5", "h6")
+    .removeProtocols("a", "href", "ftp", "mailto")
+
 internal fun parseForumPost(document: Document, topic: ForumTopic): ForumPost {
     val content = document.selectFirst(".forum-content")
     val meta = document.selectFirst(".single-post-meta")
@@ -803,16 +808,19 @@ internal fun parseForumPost(document: Document, topic: ForumTopic): ForumPost {
     val title = document.selectFirst("h2")?.text()?.trim()
         ?.takeIf { it.isNotBlank() } ?: topic.title
     val contentText = forumContentText(content)
+    val postUrl = EsjzoneUrls.resolve(topic.url).substringBefore('#')
     return ForumPost(
         boardId = topic.boardId,
         id = topic.id,
         title = title,
         author = author,
         createdAt = createdAt,
-        contentHtml = content?.html().orEmpty(),
+        contentHtml = content?.let { body ->
+            Jsoup.clean(body.html(), document.location().ifBlank { postUrl }, forumPostMarkup)
+        }.orEmpty(),
         contentText = contentText,
         comments = parseComments(document, topic.id),
-        url = EsjzoneUrls.resolve(topic.url).substringBefore('#')
+        url = postUrl
     )
 }
 

@@ -47,6 +47,15 @@
     <string name="search_result">搜索结果</string>
     <string name="search_placeholder">输入关键词搜索</string>
     <string name="search_action">搜索</string>
+    <string name="search_tag_title">组合标签</string>
+    <string name="search_tag_help">多个标签用空格或 + 分隔；排除项会自动添加 !。</string>
+    <string name="search_tag_include">包含标签</string>
+    <string name="search_tag_include_hint">例如：后宫 校园</string>
+    <string name="search_tag_exclude">排除标签</string>
+    <string name="search_tag_exclude_hint">例如：TS</string>
+    <string name="search_tag_include_error">以 ! 开头的标签请填写在排除栏</string>
+    <string name="search_tag_exclude_error">请输入要排除的标签名称</string>
+    <string name="search_tag_preview">搜索词</string>
     <string name="search_local_history">本地搜索记录</string>
     <string name="search_clear_history">清空历史</string>
     <string name="search_history_privacy">搜索历史存储于设备沙盒，与阅读历史彼此独立</string>

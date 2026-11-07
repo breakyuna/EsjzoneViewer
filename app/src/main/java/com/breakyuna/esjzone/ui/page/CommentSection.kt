@@ -422,7 +422,8 @@ internal fun CommentSectionContent(
     model: CommentPageModel,
     modifier: Modifier = Modifier,
     showHeader: Boolean = true,
-    scrollState: androidx.compose.foundation.ScrollState? = null
+    scrollState: androidx.compose.foundation.ScrollState? = null,
+    onLinkClick: (String) -> Unit = rememberCommunityLinkOpener()
 ) {
     val state by model.state.collectAsState()
     val lastCreatedCommentId by model.lastCreatedCommentId
@@ -467,6 +468,7 @@ internal fun CommentSectionContent(
                 modifier = modifier,
                 onReply = ::selectReply,
                 scrollState = scrollState,
+                onLinkClick = onLinkClick,
             )
         }
 
@@ -479,6 +481,7 @@ internal fun CommentSectionContent(
                 modifier = modifier,
                 onReply = ::selectReply,
                 scrollState = scrollState,
+                onLinkClick = onLinkClick,
             )
         }
     }
@@ -571,7 +574,8 @@ private fun CommentSection(
     showHeader: Boolean,
     modifier: Modifier,
     onReply: (Comment) -> Unit,
-    scrollState: androidx.compose.foundation.ScrollState? = null
+    scrollState: androidx.compose.foundation.ScrollState? = null,
+    onLinkClick: (String) -> Unit
 ) {
     val pages = remember(comments) { comments.chunked(COMMENT_PAGE_SIZE) }
     // LoadingSkeleton owns animated Float state. Keep pagination in an explicit
@@ -638,6 +642,8 @@ private fun CommentSection(
                 key(commentRenderKey(comment, index)) {
                     CommentCard(
                         comment = comment,
+                        pageUrl = pageUrl,
+                        onLinkClick = onLinkClick,
                         onReply = if (!comment.replyToken.isNullOrBlank()) {
                             { onReply(comment) }
                         } else {
@@ -918,7 +924,15 @@ private fun CommentPager(
 }
 
 @Composable
-private fun CommentCard(comment: Comment, onReply: (() -> Unit)?) {
+private fun CommentCard(
+    comment: Comment,
+    pageUrl: String,
+    onLinkClick: (String) -> Unit,
+    onReply: (() -> Unit)?
+) {
+    val linkedText = rememberCommunityLinkedText(
+        comment.contentText, comment.contentHtml, pageUrl, onLinkClick
+    )
     Surface(
         modifier = Modifier
             .fillMaxWidth()
@@ -981,6 +995,7 @@ private fun CommentCard(comment: Comment, onReply: (() -> Unit)?) {
                 ?.trim()
                 ?.takeIf { it.isNotBlank() }
                 ?.let { quotedText ->
+                    val linkedQuote = rememberCommunityLinkedText(quotedText, onLinkClick = onLinkClick)
                     Surface(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -1016,7 +1031,7 @@ private fun CommentCard(comment: Comment, onReply: (() -> Unit)?) {
                                     modifier = Modifier.size(18.dp)
                                 )
                                 Text(
-                                    text = quotedText,
+                                    text = linkedQuote,
                                     style = AppTypography.bodyMedium,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     maxLines = 3,
@@ -1029,7 +1044,7 @@ private fun CommentCard(comment: Comment, onReply: (() -> Unit)?) {
                 }
 
             Text(
-                text = comment.contentText,
+                text = linkedText,
                 style = AppTypography.bodyLarge,
                 color = MaterialTheme.colorScheme.onSurface,
                 modifier = Modifier.padding(top = 16.dp)

@@ -67,7 +67,6 @@ fun ReaderShell(
     bookmarkPullEnabled: Boolean = false,
     onBookmarkPull: () -> Unit = {},
     backgroundPainter: Painter? = null,
-    glowBackground: android.graphics.Bitmap? = null,
     imageSettings: ReaderImageBackground = ReaderImageBackground(),
     content: @Composable BoxScope.() -> Unit
 ) {
@@ -185,8 +184,7 @@ fun ReaderShell(
                 }
             }
     ) {
-        ReaderGlowSurface(
-            background = glowBackground, settings = imageSettings,
+        Box(
             modifier = Modifier.fillMaxSize()
                 .graphicsLayer { translationY = pullTranslation }
                 .readerBackdrop(background, backgroundPainter, imageSettings.transparency),

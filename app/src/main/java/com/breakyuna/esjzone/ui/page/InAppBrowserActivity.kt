@@ -42,6 +42,7 @@ import androidx.core.view.WindowCompat
 import com.breakyuna.esjzone.R
 import com.breakyuna.esjzone.AppThemeMode
 import com.breakyuna.esjzone.app.PresentationAccess
+import com.breakyuna.esjzone.network.EsjzoneUrls
 import com.breakyuna.esjzone.ui.designsystem.AppTheme
 import com.breakyuna.esjzone.ui.designsystem.LocalGlobalScript
 import com.breakyuna.esjzone.ui.reader.ReaderScript
@@ -57,6 +58,7 @@ class InAppBrowserActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val initialUrl = intent.getStringExtra(EXTRA_URL)?.takeIf(::isWebUrl)
+        val keepInApp = intent.getBooleanExtra(EXTRA_KEEP_IN_APP, false)
         if (initialUrl == null) {
             finish()
             return
@@ -129,7 +131,7 @@ class InAppBrowserActivity : ComponentActivity() {
                                 request: WebResourceRequest,
                                 error: WebResourceError
                             ) {
-                                if (request.isForMainFrame && request.url.scheme == "http") {
+                                if (!keepInApp && request.isForMainFrame && request.url.scheme == "http") {
                                     openSystemBrowser(request.url.toString())
                                     finish()
                                 }
@@ -226,13 +228,15 @@ class InAppBrowserActivity : ComponentActivity() {
 
     companion object {
         private const val EXTRA_URL = "browser_url"
+        private const val EXTRA_KEEP_IN_APP = "keep_in_app"
 
-        fun open(context: Context, url: String) {
-            val target = url.trim()
+        fun open(context: Context, url: String, keepInApp: Boolean = false) {
+            val target = if (keepInApp) EsjzoneUrls.normalizeHttpUrl(url) ?: return else url.trim()
             if (!isWebUrl(target)) return
             context.startActivity(
                 Intent(context, InAppBrowserActivity::class.java)
                     .putExtra(EXTRA_URL, target)
+                    .putExtra(EXTRA_KEEP_IN_APP, keepInApp)
                     .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             )
         }

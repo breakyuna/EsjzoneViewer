@@ -58,6 +58,7 @@ import com.breakyuna.esjzone.ui.discovery.DiscoveryFilterOption
 import com.breakyuna.esjzone.ui.discovery.DiscoveryNovelCard
 import com.breakyuna.esjzone.ui.discovery.DiscoveryOfflineBanner
 import com.breakyuna.esjzone.ui.discovery.DiscoverySearchTopBar
+import com.breakyuna.esjzone.ui.discovery.SearchTagDialog
 import com.breakyuna.esjzone.ui.navigation.AppDestination
 import com.breakyuna.esjzone.ui.navigation.AppStateViewModel
 import com.breakyuna.esjzone.ui.navigation.LocalBaseNavigator
@@ -100,24 +101,28 @@ class SearchPage(private val keyword: String) : AppDestination {
         var activeQuery by rememberSaveable { mutableStateOf(keyword.trim()) }
         var category by rememberSaveable { mutableIntStateOf(0) }
         var sort by rememberSaveable { mutableIntStateOf(1) }
+        var showTagSearch by rememberSaveable { mutableStateOf(false) }
+
+        fun submit(value: String) {
+            value.trim().takeIf { it.isNotBlank() }?.let {
+                query = it
+                if (activeQuery == it) {
+                    model.search(it, category, sort)
+                } else {
+                    activeQuery = it
+                }
+            }
+        }
 
         Scaffold(
             topBar = {
                 DiscoverySearchTopBar(
                     query = query,
                     onQueryChange = { query = it },
-                    onSearch = {
-                        val trimmed = query.trim()
-                        if (trimmed.isNotBlank()) {
-                            if (activeQuery == trimmed) {
-                                model.search(trimmed, category, sort)
-                            } else {
-                                activeQuery = trimmed
-                            }
-                        }
-                    },
+                    onSearch = { submit(query) },
                     onClear = { query = "" },
-                    onBack = { navigator?.pop() }
+                    onBack = { navigator?.pop() },
+                    onTagSearch = { showTagSearch = true }
                 )
             },
             containerColor = MaterialTheme.colorScheme.background
@@ -144,6 +149,17 @@ class SearchPage(private val keyword: String) : AppDestination {
                     modifier = Modifier.fillMaxSize()
                 )
             }
+        }
+
+        if (showTagSearch) {
+            SearchTagDialog(
+                currentQuery = query,
+                onDismiss = { showTagSearch = false },
+                onSearch = {
+                    showTagSearch = false
+                    submit(it)
+                }
+            )
         }
 
         LaunchedEffect(activeQuery, category, sort) {

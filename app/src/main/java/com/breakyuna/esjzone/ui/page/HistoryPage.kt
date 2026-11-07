@@ -161,7 +161,7 @@ internal fun rememberLocalHistoryPresentationState(
 ): State<LocalHistoryPageModel.State> =
     source.collectAsStateWithLifecycle(minActiveState = Lifecycle.State.RESUMED)
 
-/** Local and cloud history are deliberately separate sources and gestures. */
+/** Local and cloud history remain separate sources. */
 object HistoryPage : AppDestination {
     private fun readResolve(): Any = HistoryPage
 
@@ -778,7 +778,7 @@ private fun CloudHistoryContent(
                                     onOpen = {
                                         if (editing) {
                                             if (history.vid.isNotBlank()) onToggleSelected(history.vid)
-                                        } else navigator?.pushIfNotCurrent(NovelPage(history, history = ChapterStateHolder(history.chapter)))
+                                        } else navigator?.pushIfNotCurrent(cloudHistoryDestination(history))
                                     }
                                 )
                             } else if (detailLoader.failures[key] != null) {
@@ -811,7 +811,18 @@ private fun CloudHistoryContent(
                                 onOpen = {
                                     if (editing) {
                                         if (history.vid.isNotBlank()) onToggleSelected(history.vid)
-                                    } else navigator?.pushIfNotCurrent(NovelPage(history, history = ChapterStateHolder(history.chapter)))
+                                    } else {
+                                        val chapterOrder = detail.chapterList.orderedChapters
+                                            .takeIf { chapters ->
+                                                chapterIndex.value?.let { index -> chapters.getOrNull(index) }?.let {
+                                                    chapterIdentity(it) == chapterIdentity(history.chapter)
+                                                } == true
+                                            }
+                                            .orEmpty()
+                                        navigator?.pushIfNotCurrent(
+                                            cloudHistoryDestination(history, detail.coverUrl, chapterOrder)
+                                        )
+                                    }
                                 }
                             )
                         }
@@ -820,6 +831,34 @@ private fun CloudHistoryContent(
             }
         }
     }
+}
+
+/** The cloud record identifies a chapter, while any within-chapter position is local. */
+internal fun cloudHistoryDestination(
+    history: HistoryNovel,
+    coverUrl: String = "",
+    chapterOrder: List<Chapter> = emptyList()
+): AppDestination {
+    if (history.chapter.url.isBlank()) {
+        return NovelPage(history, history = ChapterStateHolder(history.chapter))
+    }
+    val chapter = history.chapter.copy(
+        url = EsjzoneUrls.resolve(history.chapter.url).ifBlank { history.chapter.url }
+    )
+    val novelUrl = EsjzoneUrls.resolve(history.url).ifBlank { history.url }
+    val novelId = chapter.novelId()
+    return ChapterPage(
+        novelId = novelId,
+        chapter = chapter,
+        history = ChapterStateHolder(chapter),
+        chapterOrder = chapterOrder,
+        novelName = validNovelTitle(history.name, novelId, novelUrl, chapter.name),
+        novelUrl = novelUrl,
+        novelCoverUrl = coverUrl,
+        resumeChapterProgress = 0f,
+        chapterOrderComplete = chapterOrder.isNotEmpty(),
+        keepRequestedChapterOnRestore = true
+    )
 }
 
 internal fun cloudHistoryChapterIndex(chapters: List<Chapter>, chapterUrl: String): Int {
@@ -843,8 +882,9 @@ private fun CloudHistoryCard(
     onOpen: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val coverSource = rememberNovelCoverSource(history.url, coverUrl)
-    val open = { if (editing) onOpen() else coverSource.open(onOpen) }
+    val opensDetail = history.chapter.url.isBlank()
+    val coverSource = rememberNovelCoverSource(history.url, coverUrl, enableSharedElement = opensDetail)
+    val open = { if (editing || !opensDetail) onOpen() else coverSource.open(onOpen) }
     val progress = cloudHistoryBookProgress(chapterIndex, totalChapters)
     val position = if (progress != null && chapterIndex != null) {
         stringResource(R.string.history_local_position, chapterIndex + 1, totalChapters, (progress * 100).roundToInt())

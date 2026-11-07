@@ -346,6 +346,7 @@ class ForumPostPage(private val topic: ForumTopic) : AppDestination {
         }
         val state by model.state.collectAsState()
         val commentsState by commentsModel.state.collectAsState()
+        val openLink = rememberCommunityLinkOpener()
         val postScrollState = rememberScrollState()
         val metrics = rememberAppAdaptiveMetrics()
         var showSyncStatusMenu by remember { mutableStateOf(false) }
@@ -438,12 +439,13 @@ class ForumPostPage(private val topic: ForumTopic) : AppDestination {
                             .align(Alignment.CenterHorizontally)
                             .verticalScroll(postScrollState)
                     ) {
-                        ForumPostCard(snapshot.data)
+                        ForumPostCard(snapshot.data, openLink)
                         CommentSectionContent(
                             model = commentsModel,
                             showHeader = true,
                             modifier = Modifier.fillMaxWidth(),
-                            scrollState = postScrollState
+                            scrollState = postScrollState,
+                            onLinkClick = openLink
                         )
                     }
                     CommentComposerHost(model = commentsModel)
@@ -847,7 +849,12 @@ private fun ForumTopicCard(topic: ForumTopic, onClick: () -> Unit) {
 }
 
 @Composable
-private fun ForumPostCard(post: ForumPost) {
+private fun ForumPostCard(post: ForumPost, onLinkClick: (String) -> Unit) {
+    val hasHtmlLinks = hasCommunityHtmlLink(post.contentHtml)
+    val linkedBody = if (hasHtmlLinks) {
+        rememberCommunityLinkedText(post.contentText, post.contentHtml, post.url, onLinkClick)
+    } else null
+    val bodyStyle = AppTypography.bodyLarge.copy(lineHeight = 27.sp, letterSpacing = 0.1.sp)
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -868,7 +875,7 @@ private fun ForumPostCard(post: ForumPost) {
                 modifier = Modifier.padding(top = AppSpacing.sm)
             )
         }
-        if (post.contentText.isNotBlank()) {
+        if (linkedBody != null || post.contentText.isNotBlank()) {
             HorizontalDivider(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -881,20 +888,17 @@ private fun ForumPostCard(post: ForumPost) {
                     .padding(top = AppSpacing.lg),
                 verticalArrangement = Arrangement.spacedBy(AppSpacing.md)
             ) {
-                post.contentText
-                    .lineSequence()
-                    .map { it.trim() }
-                    .filter { it.isNotBlank() }
-                    .forEach { paragraph ->
-                        Text(
-                            text = paragraph,
-                            style = AppTypography.bodyLarge.copy(
-                                lineHeight = 27.sp,
-                                letterSpacing = 0.1.sp
-                            ),
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                    }
+                if (linkedBody != null) {
+                    Text(text = linkedBody, style = bodyStyle, color = MaterialTheme.colorScheme.onSurface)
+                } else {
+                    post.contentText.lineSequence()
+                        .map { it.trim() }
+                        .filter { it.isNotBlank() }
+                        .forEach { paragraph ->
+                            val linked = rememberCommunityLinkedText(paragraph, onLinkClick = onLinkClick)
+                            Text(text = linked, style = bodyStyle, color = MaterialTheme.colorScheme.onSurface)
+                        }
+                }
             }
         }
     }

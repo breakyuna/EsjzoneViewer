@@ -75,7 +75,7 @@ object EsjzoneUrls {
         } else rawUrl
     }
 
-    private fun normalizeHttpUrl(rawUrl: String): String? {
+    internal fun normalizeHttpUrl(rawUrl: String): String? {
         val parsed = rawUrl.toHttpUrlOrNull() ?: return null
         if (parsed.username.isNotEmpty() || parsed.password.isNotEmpty()) return null
         return when (parsed.scheme.lowercase()) {
