@@ -2,12 +2,31 @@ package com.breakyuna.esjzone
 
 import com.breakyuna.esjzone.ui.page.experienceSupportsSubmission
 import com.breakyuna.esjzone.network.features.localCommentSubmission
+import com.breakyuna.esjzone.network.features.parseComments
+import org.jsoup.Jsoup
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class CommentExperienceEvidenceTest {
+    @Test
+    fun serverBadgeIsPreservedIndependentlyOfDomIdAndLoadedCount() {
+        val comments = parseComments(Jsoup.parse("""
+            <section class="comments-section">
+              <div class="comment" id="comment-900001">
+                <span class="comment-floor">#160288</span><div class="comment-text">Earlier</div>
+              </div>
+              <div class="comment" id="comment-900002">
+                <span class="comment-floor">#160289</span><div class="comment-text">Later</div>
+              </div>
+            </section>
+        """.trimIndent()), "456")
+        assertEquals(listOf("900001", "900002"), comments.map { it.id })
+        assertEquals(listOf("#160288", "#160289"), comments.map { it.floor })
+    }
+
     @Test
     fun onlyAnIncreaseFromTwoAvailableSnapshotsConfirmsAnUncertainSubmission() {
         assertTrue(experienceSupportsSubmission(7264, 7368))
@@ -28,7 +47,7 @@ class CommentExperienceEvidenceTest {
             authorAvatarUrl = null,
             createdCommentId = "123"
         ).createdComment
-        val comments = List(15) { previous.copy(id = "${123 + it}") }
+        val comments = List(15) { previous.copy(id = "${160275 + it}", floor = "#${160275 + it}") }
 
         val result = localCommentSubmission(
             parentId = "456",
@@ -50,7 +69,8 @@ class CommentExperienceEvidenceTest {
         assertEquals("Current reader", result.createdComment.authorName)
         assertEquals("/avatar.png", result.createdComment.authorAvatarUrl)
         assertEquals("2026-10-03 14:05:06", result.createdComment.createdAt)
-        assertEquals("#16", result.createdComment.floor)
+        assertNull(result.createdComment.floor)
+        assertEquals("#160289", result.comments[result.comments.lastIndex - 1].floor)
         assertEquals(2, result.createdComment.pageGroup)
     }
 
@@ -67,6 +87,7 @@ class CommentExperienceEvidenceTest {
             requestSentAt = "2026-10-03 14:05:06"
         )
         assertEquals("789", result.createdComment.id)
+        assertNull(result.createdComment.floor)
         assertEquals("2026-10-03 14:05:06", result.createdComment.createdAt)
         assertEquals(listOf(result.createdComment), result.comments)
     }

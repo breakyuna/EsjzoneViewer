@@ -57,6 +57,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -276,9 +277,17 @@ private fun ExclusionSearchField(
     }
     val invalid = remember(value) { buildSearchTagExpression("", value).invalidExcluded }
     val focusRequester = remember { FocusRequester() }
+    // Focus once when the user expands the row. The saved flag survives returning
+    // from another navigation entry, so re-entry never reopens the keyboard.
+    var autoFocused by rememberSaveable { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        if (!autoFocused) {
+            autoFocused = true
+            focusRequester.requestFocus()
+        }
+    }
     val keyboardController = LocalSoftwareKeyboardController.current
     val focusManager = LocalFocusManager.current
-    LaunchedEffect(Unit) { focusRequester.requestFocus() }
     val submit = {
         if (!invalid) {
             keyboardController?.hide()
