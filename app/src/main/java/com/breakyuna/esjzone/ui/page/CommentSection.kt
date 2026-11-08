@@ -591,12 +591,15 @@ private fun CommentSection(
 
     var handledCreatedCommentId by rememberSaveable(pageUrl) { mutableStateOf<String?>(null) }
     LaunchedEffect(comments, lastCreatedCommentId) {
+        val createdIndex = comments.indexOfFirst { it.id == lastCreatedCommentId }
         selectedPageIndex = restoredCommentPageIndex(
-            selectedPageIndex, pages.size,
-            comments.indexOfFirst { it.id == lastCreatedCommentId },
+            selectedPageIndex, pages.size, createdIndex,
             lastCreatedCommentId != null && lastCreatedCommentId != handledCreatedCommentId
         )
-        handledCreatedCommentId = lastCreatedCommentId
+        // Keep waiting until the delivered reply is actually in the list.
+        if (createdCommentHandled(lastCreatedCommentId, createdIndex)) {
+            handledCreatedCommentId = lastCreatedCommentId
+        }
     }
 
     // Retain the last displayed page with this entry; re-entry is not a page turn.
@@ -1617,3 +1620,7 @@ internal fun restoredCommentPageIndex(
 } else {
     selectedPage.coerceIn(0, (pageCount - 1).coerceAtLeast(0))
 }
+
+/** A delivered reply counts as located only once it is present in the loaded list. */
+internal fun createdCommentHandled(createdCommentId: String?, createdIndex: Int): Boolean =
+    createdCommentId == null || createdIndex >= 0
