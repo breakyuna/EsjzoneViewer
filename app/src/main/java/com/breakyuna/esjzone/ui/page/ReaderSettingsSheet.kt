@@ -58,12 +58,18 @@ internal fun ReaderSettingsSheet(
     customImageAvailable: Boolean? = false,
     onConfigureImage: () -> Unit = {},
     systemThemeSelected: Boolean = true,
-    onFollowSystemTheme: () -> Unit = {}
+    onFollowSystemTheme: () -> Unit = {},
+    nameReplaceSettings: ReaderNameReplaceSettings = ReaderNameReplaceSettings(),
+    onNameReplaceChange: (ReaderNameReplaceSettings) -> Unit = {}
 ) {
     val tabPager = rememberPagerState(pageCount = { 3 })
     val scope = rememberCoroutineScope()
     var draft by remember(settings) { mutableStateOf(settings) }
     var confirmReset by remember { mutableStateOf(false) }
+    var showNameReplaceRules by remember { mutableStateOf(false) }
+    LaunchedEffect(visible) {
+        if (!visible) showNameReplaceRules = false
+    }
     fun commit(value: ReaderSettings) {
         draft = value
         onSettingsChange(value)
@@ -189,6 +195,19 @@ internal fun ReaderSettingsSheet(
                         ReaderToggle(stringResource(R.string.reader_keep_screen_on), draft.keepScreenOn) { commit(draft.copy(keepScreenOn = it)) }
                         ReaderToggle(stringResource(R.string.settings_auto_resume_reading), draft.autoResumeLastReading) { commit(draft.copy(autoResumeLastReading = it)) }
                         HorizontalDivider(Modifier.padding(vertical = 8.dp))
+                        ReaderToggle(stringResource(R.string.reader_name_replace), nameReplaceSettings.enabled) {
+                            onNameReplaceChange(nameReplaceSettings.copy(enabled = it))
+                        }
+                        Row(
+                            modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Spacer(Modifier.weight(1f))
+                            TextButton(onClick = { showNameReplaceRules = true }) {
+                                Text(stringResource(R.string.reader_name_replace_manage))
+                            }
+                        }
+                        HorizontalDivider(Modifier.padding(vertical = 8.dp))
                         ReaderToggle(stringResource(R.string.reader_long_press_underline), draft.longPressUnderline) { commit(draft.copy(longPressUnderline = it)) }
                         ReaderToggle(stringResource(R.string.reader_tap_paging), draft.tapPagingEnabled) { commit(draft.copy(tapPagingEnabled = it)) }
                         ReaderToggle(stringResource(R.string.reader_scroll_side_gestures), draft.scrollSideGesturesEnabled) { commit(draft.copy(scrollSideGesturesEnabled = it)) }
@@ -231,6 +250,14 @@ internal fun ReaderSettingsSheet(
                 }
             }
         }
+    }
+
+    if (showNameReplaceRules) {
+        ReaderNameReplaceDialog(
+            settings = nameReplaceSettings,
+            onChange = onNameReplaceChange,
+            onDismiss = { showNameReplaceRules = false }
+        )
     }
 
     if (confirmReset) AlertDialog(onDismissRequest = { confirmReset = false }, title = { Text(stringResource(R.string.reader_reset)) }, text = { Text(stringResource(R.string.reader_reset_confirmation)) }, confirmButton = { TextButton(onClick = { commit(ReaderSettings()); confirmReset = false }) { Text(stringResource(R.string.reader_reset)) } }, dismissButton = { TextButton(onClick = { confirmReset = false }) { Text(stringResource(R.string.cancel)) } })

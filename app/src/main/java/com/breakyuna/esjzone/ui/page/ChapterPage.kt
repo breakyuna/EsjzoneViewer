@@ -183,6 +183,8 @@ import com.breakyuna.esjzone.ui.reader.ReaderScript
 import com.breakyuna.esjzone.ui.reader.ReaderScriptConverter
 import com.breakyuna.esjzone.ui.reader.ReaderScriptSnapshot
 import com.breakyuna.esjzone.ui.reader.ReaderSettings
+import com.breakyuna.esjzone.ui.reader.ReaderNameReplace
+import com.breakyuna.esjzone.ui.reader.ReaderNameReplaceSettings
 import com.breakyuna.esjzone.ui.reader.ReaderChapterHeading
 import com.breakyuna.esjzone.ui.reader.ReaderUnderlineSelection
 import com.breakyuna.esjzone.ui.reader.ReaderBlocks
@@ -279,6 +281,10 @@ class ChapterPage(
         var readerSettings by remember(storedReaderSettings) {
             mutableStateOf(storedReaderSettings)
         }
+        val storedNameReplaceSettings by PresentationAccess.readerSettings.nameReplaceSettings.collectAsState()
+        var nameReplaceSettings by remember(storedNameReplaceSettings) {
+            mutableStateOf(storedNameReplaceSettings)
+        }
 
         val view = LocalView.current
         val window = remember(view) {
@@ -349,6 +355,11 @@ class ChapterPage(
         fun updateReaderSettings(settings: ReaderSettings) {
             readerSettings = settings
             PresentationAccess.readerSettings.saveDebounced(settings)
+        }
+
+        fun updateNameReplaceSettings(settings: ReaderNameReplaceSettings) {
+            nameReplaceSettings = settings
+            scope.launch { PresentationAccess.readerSettings.saveNameReplaceSettings(settings) }
         }
 
         val requestedChapter = rememberSaveable {
@@ -579,14 +590,17 @@ class ChapterPage(
         val windowLoadingAllowed = canLoadReaderWindow(entryContentRevealed, resumePending, requestedChapterLocked) &&
             pendingSeekLocation == null
         var convertedText by remember { mutableStateOf<ReaderTextSnapshot?>(null) }
-        val readerTextTransform: (String) -> String = remember(readerSettings.script, convertedText) {
+        val readerTextTransform: (String) -> String = remember(
+            readerSettings.script, convertedText, nameReplaceSettings
+        ) {
             val script = readerSettings.script
             val snapshot = convertedText?.takeIf {
                 it.script == script
             }?.values
             val transform: (String) -> String = { text ->
-                if (script == ReaderScript.ORIGINAL) text
+                val scripted = if (script == ReaderScript.ORIGINAL) text
                 else snapshot?.get(text) ?: text
+                ReaderNameReplace.apply(scripted, nameReplaceSettings)
             }
             transform
         }
@@ -660,7 +674,7 @@ class ChapterPage(
         )
         val paginationLayoutKey = listOf(pageContentWidthPx, pageContentHeightPx,
             paginationSettings, readerTextStyle, headingStyle, density, layoutDirection,
-            fontResolver, readerSettings.script)
+            fontResolver, readerSettings.script, nameReplaceSettings)
         val textLayouts = remember(paginationLayoutKey) {
             androidx.compose.runtime.mutableStateMapOf<String, androidx.compose.ui.text.TextLayoutResult>()
         }
@@ -916,10 +930,22 @@ class ChapterPage(
         fun searchHighlights(item: ReaderDisplayItem): List<com.breakyuna.esjzone.domain.reader.ReaderHighlight> =
             searchHit?.takeIf { it.anchor.matches(item.chapterKey, item.entry.document) }?.highlights.orEmpty()
 
+        val identityOffsets = readerSettings.script == ReaderScript.ORIGINAL &&
+            !ReaderNameReplace.isActive(nameReplaceSettings)
+        val nameTextOffsets = remember(readerSettings.script, convertedText, nameReplaceSettings) {
+            HashMap<ReaderBlock, com.breakyuna.esjzone.domain.reader.ReaderTextOffsets>()
+        }
         fun textOffsets(block: ReaderBlock): com.breakyuna.esjzone.domain.reader.ReaderTextOffsets? =
-            if (readerSettings.script == ReaderScript.ORIGINAL) {
+            if (identityOffsets) {
                 com.breakyuna.esjzone.domain.reader.ReaderTextOffsets.identity(block.sourceText())
-            } else if (scriptReady) convertedText?.blockMappings?.get(block) else null
+            } else if (!scriptReady) null
+            else if (ReaderNameReplace.isActive(nameReplaceSettings)) {
+                nameTextOffsets.getOrPut(block) {
+                    ReaderNameReplace.blockMapping(block, nameReplaceSettings) { part ->
+                        ReaderScriptConverter.blockMapping(part, readerSettings.script)
+                    }
+                }
+            } else convertedText?.blockMappings?.get(block)
 
         fun anchorFor(item: ReaderDisplayItem, pixelOffset: Int = 0, itemSize: Int = 1): ReaderAnchor? {
             val document = item.entry.document
@@ -940,12 +966,12 @@ class ChapterPage(
                 val layout = textLayouts[item.key] ?: return null
                 layout.getLineStart(layout.getLineForVerticalPosition((-pixelOffset).coerceAtLeast(0).toFloat()))
             }
-            val sourceOffset = if (readerSettings.script == ReaderScript.ORIGINAL) displayOffset
+            val sourceOffset = if (identityOffsets) displayOffset
                 else textOffsets(block)?.toSource(displayOffset) ?: return null
             return ReaderAnchor(item.chapterKey, document.contentFingerprint, blockIndex, sourceOffset)
         }
         val measuredAnchorState = remember(displayByKey, activeChapter, scrollState, pagedMode,
-            horizontalPagerState, textLayouts, scriptReady, readerSettings.script, convertedText) {
+            horizontalPagerState, textLayouts, scriptReady, readerSettings.script, convertedText, nameReplaceSettings) {
             derivedStateOf(structuralEqualityPolicy()) {
                 if (pagedMode) pagerVisibleItem?.let { anchorFor(it) } else activeChapterItem?.let { visible ->
                     displayByKey[visible.key.toString()]?.let { anchorFor(it, visible.offset, visible.size) }
@@ -1546,7 +1572,7 @@ class ChapterPage(
                     "end" -> chapterItems.lastIndex
                     else -> if (!pagedMode) anchor.blockIndex + 1 else {
                         val block = displayItems[startIndex].entry.document.blocks[anchor.blockIndex]
-                        val offsets = if (readerSettings.script == ReaderScript.ORIGINAL) null else textOffsets(block)
+                        val offsets = if (identityOffsets) null else textOffsets(block)
                         chapterItems.indexOfLast { item ->
                             item.page?.let { page ->
                                 val blockIndex = page.contentPosition.toInt()
@@ -1592,7 +1618,7 @@ class ChapterPage(
                         }
                         val block = displayItems[targetIndex].entry.document.blocks.getOrNull(exactAnchor.blockIndex)
                         if (layout != null && block != null) {
-                            val offset = if (readerSettings.script == ReaderScript.ORIGINAL) exactAnchor.offset
+                            val offset = if (identityOffsets) exactAnchor.offset
                                 else textOffsets(block)?.toDisplay(exactAnchor.offset) ?: exactAnchor.offset
                             val line = layout.getLineForOffset(offset.coerceIn(0, layout.layoutInput.text.length))
                             scrollState.scrollToItem(readerListIndex(targetIndex), layout.getLineTop(line).roundToInt().coerceAtLeast(0))
@@ -2812,6 +2838,8 @@ class ChapterPage(
                     updateReaderSettings(updated)
                 },
                 onDismiss = { showReaderSettings = false },
+                nameReplaceSettings = nameReplaceSettings,
+                onNameReplaceChange = { updateNameReplaceSettings(it) },
                 modifier = Modifier.align(Alignment.BottomCenter)
                     .padding(bottom = with(density) { readerToolbarHeightPx.toDp() })
             )

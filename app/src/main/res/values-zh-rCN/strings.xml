@@ -558,6 +558,16 @@
     <string name="reader_script_original">原文</string>
     <string name="reader_script_simplified">简体</string>
     <string name="reader_script_traditional">繁體</string>
+    <string name="reader_name_replace">人名替换</string>
+    <string name="reader_name_replace_manage">管理规则</string>
+    <string name="reader_name_replace_empty">暂无人名替换规则</string>
+    <string name="reader_name_replace_empty_target">（留空）</string>
+    <string name="reader_name_replace_add">添加规则</string>
+    <string name="reader_name_replace_edit">编辑规则</string>
+    <string name="reader_name_replace_delete">删除规则</string>
+    <string name="reader_name_replace_source">原文名</string>
+    <string name="reader_name_replace_target">替换名</string>
+    <string name="reader_name_replace_save">保存</string>
     <string name="reader_contents">目录</string>
     <string name="reader_contents_empty">暂无章节</string>
     <string name="reader_back">返回</string>
