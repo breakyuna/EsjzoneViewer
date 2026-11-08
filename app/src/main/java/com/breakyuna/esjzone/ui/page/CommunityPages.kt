@@ -912,7 +912,8 @@ private class ForumPageModel(
     fun retry() = load(forceRefresh = true)
 
     fun load(forceRefresh: Boolean = false) {
-        if (!forceRefresh && loadStarted) return
+        if (!forceRefresh && (loadStarted || mutableState.value is CommunityState.Result ||
+                mutableState.value is CommunityState.Empty)) return
         loadStarted = true
         mutableState.value = CommunityState.Loading
         viewModelScope.launch(Dispatchers.IO) {
@@ -943,7 +944,8 @@ private class ForumCategoryPageModel(
     fun retry() = load(forceRefresh = true)
 
     fun load(forceRefresh: Boolean = false) {
-        if (!forceRefresh && loadStarted) return
+        if (!forceRefresh && (loadStarted || mutableState.value is CommunityState.Result ||
+                mutableState.value is CommunityState.Empty)) return
         loadStarted = true
         mutableState.value = CommunityState.Loading
         viewModelScope.launch(Dispatchers.IO) {
@@ -979,12 +981,11 @@ private class ForumBoardPageModel(
     private var loadStarted = false
 
     fun retry() {
-        loadStarted = false
-        load()
+        load(forceRefresh = true)
     }
 
-    fun load() {
-        if (loadStarted) return
+    fun load(forceRefresh: Boolean = false) {
+        if (!forceRefresh && (loadStarted || mutableState.value is CommunityState.Result)) return
         loadStarted = true
         mutableState.value = CommunityState.Loading
         viewModelScope.launch(Dispatchers.IO) {
@@ -1021,7 +1022,8 @@ private class ForumPostPageModel(
     fun retry() = load(forceRefresh = true)
 
     fun load(forceRefresh: Boolean = false) {
-        if (!forceRefresh && loadStarted) return
+        if (!forceRefresh && (loadStarted || mutableState.value is CommunityState.Result ||
+                mutableState.value is CommunityState.Empty)) return
         loadStarted = true
         val generation = ++loadGeneration
         loadJob?.cancel()

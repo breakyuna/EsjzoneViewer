@@ -589,17 +589,22 @@ private fun CommentSection(
         (pages.size - 1).coerceAtLeast(0)
     )
 
+    var handledCreatedCommentId by rememberSaveable(pageUrl) { mutableStateOf<String?>(null) }
     LaunchedEffect(comments, lastCreatedCommentId) {
-        selectedPageIndex = if (lastCreatedCommentId == null) {
-            selectedPageIndex.coerceIn(0, (pages.size - 1).coerceAtLeast(0))
-        } else {
-            val createdIndex = comments.indexOfFirst { it.id == lastCreatedCommentId }
-            if (createdIndex >= 0) createdIndex / COMMENT_PAGE_SIZE else safePageIndex
-        }
+        selectedPageIndex = restoredCommentPageIndex(
+            selectedPageIndex, pages.size,
+            comments.indexOfFirst { it.id == lastCreatedCommentId },
+            lastCreatedCommentId != null && lastCreatedCommentId != handledCreatedCommentId
+        )
+        handledCreatedCommentId = lastCreatedCommentId
     }
 
+    // Retain the last displayed page with this entry; re-entry is not a page turn.
+    var lastDisplayedPage by rememberSaveable(pageUrl) { mutableIntStateOf(safePageIndex) }
     LaunchedEffect(safePageIndex) {
-        if (scrollState != null && scrollState.value != 0) {
+        val pageChanged = lastDisplayedPage != safePageIndex
+        lastDisplayedPage = safePageIndex
+        if (pageChanged && scrollState != null && scrollState.value != 0) {
             scrollState.animateScrollTo(0)
         }
     }
@@ -1600,3 +1605,15 @@ internal fun experienceSupportsSubmission(baseline: Int?, current: Int?): Boolea
 
 private fun <T> List<T>.toCommunityState(isSyncSuccess: Boolean = false): CommunityState<List<T>> =
     if (isEmpty()) CommunityState.Empty(isSyncSuccess = isSyncSuccess) else CommunityState.Result(this, isSyncSuccess = isSyncSuccess)
+
+/** Re-entry keeps the selected page; only a newly delivered reply selects its page. */
+internal fun restoredCommentPageIndex(
+    selectedPage: Int,
+    pageCount: Int,
+    createdIndex: Int,
+    newlyCreated: Boolean
+): Int = if (newlyCreated && createdIndex >= 0) {
+    createdIndex / COMMENT_PAGE_SIZE
+} else {
+    selectedPage.coerceIn(0, (pageCount - 1).coerceAtLeast(0))
+}

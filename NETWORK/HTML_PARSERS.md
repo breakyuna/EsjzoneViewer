@@ -286,7 +286,7 @@ ESJ 与 wenku8 的成功解析结果另写结构化临时缓存，复用原页�
 - 用户名：优先读取 `.comment-header .comment-title` 的文本（包含带个人主页链接和无链接的纯文本用户名），缺失时读取原有用户链接文本。仅用户名为空时由界面显示“匿名用户”；无链接不代表无用户名。
 - 用户 URL：通常 /my/profile?uid={uid} 或 /my/profile.html?uid={uid}。
 - 用户头像：优先读取 .comment-author-ava .lazyload-author-ava 的 data-src、data-original 等懒加载属性；懒加载完成后再读取 style 中的 background-image，兼容旧模板的 img/[data-avatar]。
-- 楼层：.comment-floor。
+- 编号徽标：`.comment-floor` 原样展示；字段虽名为 `floor`，不能按当前加载评论数量计算。用户报告的服务器徽标为 `#160288`、`#160289`，并非当前主题内的顺序楼层。DOM 评论 ID 单独从 `.comment` 的 `id` 读取，不能假设两者必然相同。本地追加回复尚未取得服务器徽标时将 `floor` 设为空，隐藏徽标；经验值确认只证明投递，不提供编号。
 - 日期：排除 .comment-floor 后的 .comment-meta，或 time[datetime]/[data-time]；不能把 #楼层当作日期。
 - 内容：.comment-text 的 HTML 或纯文本。
 - 评论正文与引用中的裸网址可识别 `http://`、`https://` 和 `www.` 前缀。反引号、省略号和 Unicode 空格分隔链接与正文。评论中的 HTML 链接按原页面 URL 解析相对地址。

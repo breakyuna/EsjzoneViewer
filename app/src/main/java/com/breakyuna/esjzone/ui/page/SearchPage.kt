@@ -19,7 +19,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -174,7 +174,9 @@ fun DiscoverySearchResults(
     navigator: com.breakyuna.esjzone.ui.navigation.AppNavigator?,
     modifier: Modifier = Modifier
 ) {
-    val listState = rememberLazyListState()
+    val listState = rememberSaveable(keyword, category, sort, saver = LazyListState.Saver) {
+        LazyListState()
+    }
     val columns = wideListColumns(maxWidth = 1280f)
     if (state is SearchPageModel.State.Result) {
         PreserveAdaptiveListAnchor(
