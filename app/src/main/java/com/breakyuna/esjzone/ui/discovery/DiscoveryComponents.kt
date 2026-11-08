@@ -163,16 +163,6 @@ fun DiscoverySearchTopBar(
 ) {
     val keyboardController = LocalSoftwareKeyboardController.current
     val focusManager = LocalFocusManager.current
-    val focusRequester = remember { FocusRequester() }
-    // Focus once when the user expands the row. The saved flag survives returning
-    // from another navigation entry, so re-entry never reopens the keyboard.
-    var autoFocused by rememberSaveable { mutableStateOf(false) }
-    LaunchedEffect(Unit) {
-        if (!autoFocused) {
-            autoFocused = true
-            focusRequester.requestFocus()
-        }
-    }
     val canSearch = remember(query, excluded) {
         buildSearchTagExpression(query, excluded).canSearch
     }
@@ -286,6 +276,16 @@ private fun ExclusionSearchField(
         if (value != field.text) field = TextFieldValue(value, TextRange(value.length))
     }
     val invalid = remember(value) { buildSearchTagExpression("", value).invalidExcluded }
+    val focusRequester = remember { FocusRequester() }
+    // Focus once when the user expands the row. The saved flag survives returning
+    // from another navigation entry, so re-entry never reopens the keyboard.
+    var autoFocused by rememberSaveable { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        if (!autoFocused) {
+            autoFocused = true
+            focusRequester.requestFocus()
+        }
+    }
     val keyboardController = LocalSoftwareKeyboardController.current
     val focusManager = LocalFocusManager.current
     val submit = {
