@@ -1,6 +1,8 @@
 package com.breakyuna.esjzone.ui.reader
 
 import androidx.compose.runtime.Immutable
+import com.breakyuna.esjzone.domain.reader.ReaderBlock
+import com.breakyuna.esjzone.domain.reader.ReaderTextOffsets
 import java.util.UUID
 
 @Immutable
@@ -17,31 +19,57 @@ data class ReaderNameReplaceSettings(
     val rules: List<ReaderNameReplaceRule> = emptyList()
 )
 
-/**
- * Display-only literal replacement. Rules match case-sensitively, never as
- * regular expressions, and longer sources win when several rules share a
- * prefix. Replacing a name can change the rendered length, so underline and
- * search offsets may shift when source and target differ in length.
- */
+/** Display-only, case-sensitive literal replacement; longer sources win. */
 object ReaderNameReplace {
-    fun apply(text: String, settings: ReaderNameReplaceSettings): String {
-        if (!settings.enabled || settings.rules.isEmpty() || text.isEmpty()) return text
-        val rules = settings.rules
-            .filter { it.enabled && it.source.isNotBlank() }
+    fun isActive(settings: ReaderNameReplaceSettings): Boolean =
+        settings.enabled && settings.rules.any { it.enabled && it.source.isNotBlank() }
+
+    private inline fun scan(
+        text: String,
+        settings: ReaderNameReplaceSettings,
+        append: (start: Int, end: Int, target: String) -> Unit
+    ) {
+        val rules = settings.rules.filter { it.enabled && it.source.isNotBlank() }
             .sortedByDescending { it.source.length }
-        if (rules.isEmpty()) return text
-        val result = StringBuilder(text.length)
         var index = 0
         while (index < text.length) {
             val match = rules.firstOrNull { text.startsWith(it.source, index) }
-            if (match == null) {
-                result.append(text[index])
-                index++
-            } else {
-                result.append(match.target)
-                index += match.source.length
+            val end = index + (match?.source?.length ?: 1)
+            append(index, end, match?.target ?: text.substring(index, end))
+            index = end
+        }
+    }
+
+    fun apply(text: String, settings: ReaderNameReplaceSettings): String {
+        if (!isActive(settings) || text.isEmpty()) return text
+        return buildString(text.length) {
+            scan(text, settings) { _, _, target -> append(target) }
+        }
+    }
+
+    fun mapping(offsets: ReaderTextOffsets, settings: ReaderNameReplaceSettings): ReaderTextOffsets {
+        if (!isActive(settings) || offsets.text.isEmpty()) return offsets
+        val starts = ArrayList<Int>()
+        val ends = ArrayList<Int>()
+        val text = buildString(offsets.text.length) {
+            scan(offsets.text, settings) { start, end, target ->
+                append(target)
+                repeat(target.length) {
+                    starts.add(offsets.sourceStarts[start])
+                    ends.add(offsets.sourceEnds[end - 1])
+                }
             }
         }
-        return result.toString()
+        return ReaderTextOffsets(text, starts.toIntArray(), ends.toIntArray(), offsets.sourceLength)
+    }
+
+    fun blockMapping(
+        block: ReaderBlock,
+        settings: ReaderNameReplaceSettings,
+        base: (ReaderBlock) -> ReaderTextOffsets
+    ): ReaderTextOffsets = when (block) {
+        is ReaderBlock.Paragraph -> ReaderTextOffsets.join(block.parts.map { mapping(base(it), settings) })
+        is ReaderBlock.Text -> mapping(base(block), settings)
+        else -> base(block)
     }
 }

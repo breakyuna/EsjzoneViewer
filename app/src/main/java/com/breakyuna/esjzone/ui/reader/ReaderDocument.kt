@@ -85,6 +85,8 @@ internal fun ReaderBlock.Text.toAnnotatedReaderText(
         } to emptyMap()
     }
 
+    if (displayed.isEmpty()) return AnnotatedString("") to emptyMap()
+
     val key = "reader-ruby-${value.hashCode()}-${rubyValue.reading.hashCode()}"
     val effectiveStyle = baseStyle.merge(span)
     val displayedReading = textTransform(rubyValue.reading)
