@@ -102,7 +102,9 @@ data class ReaderBookmark(
     val novelId: String,
     val novelName: String,
     val chapterName: String,
-    val createdAt: Long
+    val createdAt: Long,
+    val anchor: String? = null,
+    val excerpt: String? = null
 )
 
 @Immutable

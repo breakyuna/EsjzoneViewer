@@ -58,12 +58,13 @@ internal fun ReaderContentsSheet(
     underlines: Map<String, List<ReaderUnderline>>,
     onChapterSelected: (Chapter) -> Unit,
     onUnderlineSelected: (Chapter, ReaderUnderline) -> Unit,
+    onBookmarkSelected: (Chapter, Bookmark) -> Unit,
     onDismiss: () -> Unit,
     novelUrl: String = ""
 ) {
     AppSideSheet(visible = visible, edge = AppSideSheetEdge.START, onDismissRequest = onDismiss) {
         ReaderContentsContent(chapters, currentChapter, novelId, bookmarks, underlines,
-            onChapterSelected, onUnderlineSelected, onDismiss, novelUrl)
+            onChapterSelected, onUnderlineSelected, onDismiss, novelUrl, onBookmarkSelected)
     }
 }
 
@@ -78,7 +79,8 @@ internal fun ReaderContentsContent(
     onChapterSelected: (Chapter) -> Unit,
     onUnderlineSelected: (Chapter, ReaderUnderline) -> Unit,
     onDismiss: () -> Unit,
-    novelUrl: String = ""
+    novelUrl: String = "",
+    onBookmarkSelected: (Chapter, Bookmark) -> Unit = { chapter, _ -> onChapterSelected(chapter) }
 ) {
     val pager = rememberPagerState { 3 }
     val scope = rememberCoroutineScope()
@@ -94,15 +96,15 @@ internal fun ReaderContentsContent(
         value = withContext(Dispatchers.Default) { filterReaderCatalog(chapters, query) }
     }
 
-    val bookBookmarks by produceState<List<Chapter>>(emptyList(), chapters, bookmarks, novelId) {
+    val bookBookmarks by produceState<List<Pair<Chapter, Bookmark>>>(emptyList(), chapters, bookmarks, novelId) {
         value = withContext(Dispatchers.Default) {
             val catalog = chapters.associateBy(::chapterIdentity)
             bookmarks.filter { (novelId.isNotBlank() && it.novelId == novelId) ||
                 chapterIdentity(Chapter(it.chapterName, it.chapterUrl, true)) in catalog }
                 .map { row ->
                     val chapter = Chapter(row.chapterName, row.chapterUrl, true)
-                    catalog[chapterIdentity(chapter)] ?: chapter
-                }.distinctBy(::chapterIdentity)
+                    (catalog[chapterIdentity(chapter)] ?: chapter) to row
+                }.distinctBy { chapterIdentity(it.first) }
         }
     }
     val bookUnderlines by produceState<List<Pair<Chapter, ReaderUnderline>>>(emptyList(), chapters, currentChapter, underlines) {
@@ -166,11 +168,18 @@ internal fun ReaderContentsContent(
                     modifier = Modifier.fillMaxSize().semantics { contentDescription = description }
                 ) {
                     when (page) {
-                        0, 1 -> items(if (page == 0) filteredChapters else bookBookmarks, key = ::chapterIdentity) { chapter ->
+                        0 -> items(filteredChapters, key = ::chapterIdentity) { chapter ->
                             ReaderContentsRow(chapter.name, quote = savedChapters[NovelDownloadStore.chapterKey(chapter.url)]?.let {
                                 stringResource(if (it) R.string.local_downloaded else R.string.local_text_saved)
                             }, selected = chapterIdentity(chapter) == currentKey,
                                 onClick = { onChapterSelected(chapter) })
+                        }
+                        1 -> items(bookBookmarks, key = { chapterIdentity(it.first) }) { (chapter, bookmark) ->
+                            ReaderContentsRow(chapter.name, quote = bookmark.excerpt?.takeIf { it.isNotBlank() }
+                                ?: savedChapters[NovelDownloadStore.chapterKey(chapter.url)]?.let {
+                                    stringResource(if (it) R.string.local_downloaded else R.string.local_text_saved)
+                                }, selected = chapterIdentity(chapter) == currentKey,
+                                onClick = { onBookmarkSelected(chapter, bookmark) })
                         }
                         else -> items(bookUnderlines, key = { (chapter, mark) ->
                             "${chapterIdentity(chapter)}:${mark.blockIndex}:${mark.signature}:${mark.start}:${mark.end}"

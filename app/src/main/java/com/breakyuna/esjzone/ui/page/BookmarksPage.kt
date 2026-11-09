@@ -60,6 +60,7 @@ import com.breakyuna.esjzone.R
 import com.breakyuna.esjzone.app.PresentationAccess
 import com.breakyuna.esjzone.database.BookmarkCoverStore
 import com.breakyuna.esjzone.database.entity.Bookmark as LocalBookmark
+import com.breakyuna.esjzone.domain.reader.ReaderAnchor
 import com.breakyuna.esjzone.novellibrary.novel.Chapter
 import com.breakyuna.esjzone.novellibrary.novel.CoverSource
 import com.breakyuna.esjzone.novellibrary.novel.CoverState
@@ -88,7 +89,7 @@ import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-/** Device-only chapter bookmarks; opening one delegates to the reader shell. */
+/** Device-only bookmarks; opening one restores its saved paragraph in the reader. */
 object BookmarksPage : AppDestination {
     private fun readResolve(): Any = BookmarksPage
     override val key: String = "BookmarksPage"
@@ -201,7 +202,8 @@ object BookmarksPage : AppDestination {
                                                 history = ChapterStateHolder(chapter),
                                                 novelName = validNovelTitle(bookmark.novelName, bookmark.novelId, bookmark.chapterUrl, bookmark.chapterName),
                                                 novelUrl = "/detail/$cleanId.html",
-                                                novelCoverUrl = model.coverFor(bookmark).url
+                                                novelCoverUrl = model.coverFor(bookmark).url,
+                                                bookmarkAnchor = ReaderAnchor.decode(bookmark.anchor)
                                             )
                                         )
                                     }
@@ -283,7 +285,11 @@ private fun BookmarkCard(
         )
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(AppSpacing.xs)) {
             Text(validNovelTitle(bookmark.novelName, bookmark.novelId, bookmark.chapterUrl, bookmark.chapterName).ifBlank { stringResource(R.string.download_unknown_novel) }, style = AppTypography.labelLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text(bookmark.chapterName, style = AppTypography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            val excerpt = bookmark.excerpt?.takeIf { it.isNotBlank() }
+            Text(bookmark.chapterName, style = AppTypography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = if (excerpt == null) 2 else 1, overflow = TextOverflow.Ellipsis)
+            if (excerpt != null) Text(excerpt, style = AppTypography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
         }
         if (editing) {
             Icon(

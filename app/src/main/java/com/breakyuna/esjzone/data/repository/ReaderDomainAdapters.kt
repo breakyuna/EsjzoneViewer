@@ -91,9 +91,9 @@ private fun ReadingProgress.toEntity() = LocalReadingActivity(
 )
 
 private fun Bookmark.toDomain() = ReaderBookmark(
-    chapterUrl, novelId, novelName, chapterName, createdAt
+    chapterUrl, novelId, novelName, chapterName, createdAt, anchor, excerpt
 )
 
 private fun ReaderBookmark.toEntity() = Bookmark(
-    chapterUrl, novelId, novelName, chapterName, createdAt
+    chapterUrl, novelId, novelName, chapterName, createdAt, anchor, excerpt
 )
