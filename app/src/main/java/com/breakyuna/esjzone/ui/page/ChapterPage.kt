@@ -129,6 +129,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.core.view.WindowCompat
@@ -265,6 +266,7 @@ class ChapterPage(
         val textMeasurer = rememberTextMeasurer()
         val stableTopInset = WindowInsets.statusBarsIgnoringVisibility.union(WindowInsets.displayCutout).asPaddingValues().calculateTopPadding()
         val density = LocalDensity.current
+        val layoutDirection = LocalLayoutDirection.current
         val wide = appUsesWideLayout()
         val scope = rememberCoroutineScope()
         val sidePanels = rememberReaderSidePanelsState()

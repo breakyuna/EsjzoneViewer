@@ -42,6 +42,7 @@ class DownloadedNovelPage(private val url: String) : AppDestination {
 
     override val key: String get() = navKey.route.token()
 
+    @OptIn(ExperimentalMaterial3Api::class)
     @Composable
     override fun Content(navigator: AppNavigator) {
         val authorization = LocalAuthorization.current
