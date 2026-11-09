@@ -50,9 +50,9 @@ import com.breakyuna.esjzone.ui.discovery.DiscoveryEmptyState
 import com.breakyuna.esjzone.ui.discovery.DiscoveryLoadingState
 import com.breakyuna.esjzone.ui.discovery.DiscoverySearchTopBar
 import com.breakyuna.esjzone.ui.discovery.buildSearchTagExpression
+import com.breakyuna.esjzone.ui.navigation.AppNavigator
 import com.breakyuna.esjzone.ui.navigation.AppTab
 import com.breakyuna.esjzone.ui.navigation.AppTabOptions
-import com.breakyuna.esjzone.ui.navigation.LocalBaseNavigator
 import com.breakyuna.esjzone.ui.navigation.rememberAppViewModel
 import com.breakyuna.esjzone.ui.page.DiscoverySearchResults
 import com.breakyuna.esjzone.ui.page.SearchPageModel
@@ -71,8 +71,7 @@ object SearchTab : AppTab {
         )
 
     @Composable
-    override fun Content() {
-        val navigator = LocalBaseNavigator.current
+    override fun Content(navigator: AppNavigator) {
         val authorization = LocalAuthorization.current
         val searchModel = rememberAppViewModel { SearchPageModel(authorization) }
         val searchState by searchModel.state.collectAsStateWithLifecycle()
@@ -113,7 +112,7 @@ object SearchTab : AppTab {
                         query = ""
                         activeKeyword = null
                     },
-                    onBack = { navigator?.pop() }
+                    onBack = { navigator.pop() }
                 )
             },
             containerColor = MaterialTheme.colorScheme.background

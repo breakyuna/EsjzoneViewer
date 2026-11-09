@@ -4,7 +4,10 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.style.TextIndent
+import androidx.compose.ui.unit.sp
 
 enum class ReaderScript {
     ORIGINAL,
@@ -117,7 +120,7 @@ data class ReaderSettings(
     val pageAnimation: ReaderPageAnimation = ReaderPageAnimation.VERTICAL_SCROLL,
     val volumeKeyPaging: Boolean = false,
     val longPressUnderline: Boolean = false,
-    val firstLineIndent: Boolean = false,
+    val firstLineIndentChars: Int = 0,
     val tapPagingEnabled: Boolean = true,
     val scrollSideGesturesEnabled: Boolean = true,
     val pagedBookmarkGesturesEnabled: Boolean = true,
@@ -137,6 +140,15 @@ data class ReaderSettings(
     val lineHeightSp: Float
         get() = fontSizeSp + lineSpacingSp
 }
+
+@Composable
+internal fun readerBodyTextStyle(settings: ReaderSettings): TextStyle = MaterialTheme.typography.bodyLarge.copy(
+    fontFamily = settings.font.family(),
+    fontSize = settings.fontSizeSp.sp,
+    lineHeight = settings.lineHeightSp.sp,
+    letterSpacing = settings.letterSpacingSp.sp,
+    textIndent = TextIndent(firstLine = (settings.fontSizeSp * settings.firstLineIndentChars).sp)
+)
 
 /** The selected palette/photo remains the source of truth across theme changes. */
 internal fun ReaderSettings.toggleDarkBackground(enteringDark: Boolean): ReaderSettings =

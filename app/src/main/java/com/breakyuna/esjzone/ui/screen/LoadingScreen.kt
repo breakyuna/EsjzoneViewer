@@ -21,8 +21,9 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.platform.testTag
 import com.breakyuna.esjzone.ui.designsystem.globalStringResource as stringResource
 import androidx.compose.ui.unit.dp
+import com.breakyuna.esjzone.ui.navigation.AppNavKey
+import com.breakyuna.esjzone.ui.navigation.AppNavigator
 import com.breakyuna.esjzone.ui.navigation.AppDestination
-import com.breakyuna.esjzone.ui.navigation.LocalAppNavigator
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -37,9 +38,10 @@ class LoadingScreen : AppDestination {
 
     override val key: String = "LoadingScreen"
 
+    override val navKey = AppNavKey.Loading
+
     @Composable
-    override fun Content() {
-        val navigator = LocalAppNavigator.current ?: error("Navigation 3 root is not provided")
+    override fun Content(navigator: AppNavigator) {
 
         SessionLoadingContent()
 

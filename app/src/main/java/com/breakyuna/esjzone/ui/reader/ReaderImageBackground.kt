@@ -7,6 +7,8 @@ import android.graphics.ImageDecoder
 import android.net.Uri
 import android.util.LruCache
 import androidx.compose.runtime.Immutable
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.unit.IntSize
 import java.io.File
 import java.io.IOException
 import java.util.UUID
@@ -35,7 +37,9 @@ data class ReaderImageBackground(
     val glowChromaRetention: Float = 40f,
     val outerGlowAlpha: Float = 0.9f,
     val customGlowColor: Long? = null,
-    val autoClampLightness: Boolean = true
+    val autoClampLightness: Boolean = true,
+    val cropX: Float = 0.5f,
+    val cropY: Float = 0.5f
 ) {
     fun sanitized() = copy(
         lightTextGlowL = lightTextGlowL.takeIf { it.isFinite() }?.coerceIn(0f, 40f) ?: 18f,
@@ -47,12 +51,27 @@ data class ReaderImageBackground(
         textColor = (textColor and 0xFFFFFFL) or 0xFF000000L,
         blur = blur.takeIf { it.isFinite() }?.coerceIn(0f, 50f) ?: 0f,
         transparency = transparency.takeIf { it.isFinite() }?.coerceIn(0f, 100f) ?: 0f,
-        glowStrength = glowStrength.takeIf { it.isFinite() }?.coerceIn(0f, 100f) ?: 70f
+        glowStrength = glowStrength.takeIf { it.isFinite() }?.coerceIn(0f, 100f) ?: 70f,
+        cropX = cropX.takeIf { it.isFinite() }?.coerceIn(0f, 1f) ?: 0.5f,
+        cropY = cropY.takeIf { it.isFinite() }?.coerceIn(0f, 1f) ?: 0.5f
     )
+
+    internal fun pan(delta: Offset, viewport: IntSize, image: IntSize): ReaderImageBackground {
+        if (viewport.width <= 0 || viewport.height <= 0) return this
+        val scale = maxOf(viewport.width.toFloat() / image.width, viewport.height.toFloat() / image.height)
+        val overflowX = image.width * scale - viewport.width
+        val overflowY = image.height * scale - viewport.height
+        return copy(
+            cropX = if (overflowX >= 1f) (cropX - delta.x / overflowX).coerceIn(0f, 1f) else cropX,
+            cropY = if (overflowY >= 1f) (cropY - delta.y / overflowY).coerceIn(0f, 1f) else cropY
+        )
+    }
 }
 
 /** Immutable private JPEG sources; decoded images are shared by preview and reader. */
 internal object ReaderImageBackgroundStore {
+    // Coordinate the active JPEG and its DataStore reference across apply, export and restore.
+    internal val savedPhotoMutex = Mutex()
     private val renderMutex = Mutex()
     private val appearanceMutex = Mutex()
     private data class AppearanceKey(val path: String, val size: Int, val blur: Int)
@@ -159,8 +178,9 @@ internal object ReaderImageBackgroundStore {
         }
     }
 
-    fun removeUnused(retained: File) {
-        retained.parentFile?.listFiles()?.filter { it != retained }?.forEach { it.delete() }
+    fun removeUnused(context: Context, retained: File?) {
+        File(context.filesDir, "reader_backgrounds").listFiles()
+            ?.filter { it != retained }?.forEach { it.delete() }
     }
 
     suspend fun render(source: File, maxSize: Int = 1440): Bitmap = withContext(Dispatchers.IO) {

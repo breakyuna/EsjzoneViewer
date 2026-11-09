@@ -69,8 +69,8 @@ import com.breakyuna.esjzone.ui.designsystem.AppShapes
 import com.breakyuna.esjzone.ui.designsystem.AppSpacing
 import com.breakyuna.esjzone.ui.designsystem.AppTypography
 import com.breakyuna.esjzone.ui.designsystem.accountContentWidth
+import com.breakyuna.esjzone.ui.navigation.AppNavigator
 import com.breakyuna.esjzone.ui.navigation.AppDestination
-import com.breakyuna.esjzone.ui.navigation.LocalBaseNavigator
 import com.breakyuna.esjzone.util.AppLogger
 import com.breakyuna.esjzone.util.LogEntry
 import com.breakyuna.esjzone.util.LogLevel
@@ -85,8 +85,7 @@ object LogsPage : AppDestination {
 
     @OptIn(ExperimentalMaterial3Api::class)
     @Composable
-    override fun Content() {
-        val navigator = LocalBaseNavigator.current
+    override fun Content(navigator: AppNavigator) {
         val context = LocalContext.current
         val copiedToast = stringResource(R.string.logs_copied_toast)
         val clearedToast = stringResource(R.string.logs_cleared_toast)
@@ -109,7 +108,7 @@ object LogsPage : AppDestination {
             topBar = {
                 TopAppBar(
                     title = { Text(stringResource(R.string.system_logs), style = AppTypography.titleMedium) },
-                    navigationIcon = { BackIconButton { navigator?.pop() } },
+                    navigationIcon = { BackIconButton { navigator.pop() } },
                     actions = {
                         if (crashReport != null) IconButton(onClick = { crashDialog = true }) { Icon(Icons.Filled.BugReport, stringResource(R.string.logs_crash_report_btn), tint = logCrashErrorColor()) }
                         IconButton(onClick = { copyText(context, AppLogger.exportLogsText()); Toast.makeText(context, copiedToast, Toast.LENGTH_SHORT).show() }) { Icon(Icons.Filled.ContentCopy, stringResource(R.string.logs_copy_all)) }

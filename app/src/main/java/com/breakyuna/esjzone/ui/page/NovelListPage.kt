@@ -78,9 +78,12 @@ import com.breakyuna.esjzone.ui.component.AppNovelCover
 import com.breakyuna.esjzone.ui.designsystem.AppShapes
 import com.breakyuna.esjzone.ui.designsystem.AppSpacing
 import com.breakyuna.esjzone.ui.designsystem.AppTypography
+import com.breakyuna.esjzone.ui.navigation.AppNavKey
+import com.breakyuna.esjzone.ui.navigation.LegacyRoute
+import com.breakyuna.esjzone.ui.navigation.token
+import com.breakyuna.esjzone.ui.navigation.AppNavigator
 import com.breakyuna.esjzone.ui.navigation.AppDestination
 import com.breakyuna.esjzone.ui.navigation.AppStateViewModel
-import com.breakyuna.esjzone.ui.navigation.LocalBaseNavigator
 import com.breakyuna.esjzone.ui.navigation.rememberAppViewModel
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -111,11 +114,12 @@ class NovelListPage(
     private val initializedSortType: Int,
     private val initializedAdultOnly: Boolean
 ) : AppDestination {
-    override val key: String = "NovelListPage:$initializedNovelType:$initializedSortType:$initializedAdultOnly"
+    override val navKey = AppNavKey.Legacy(LegacyRoute.NovelList(initializedNovelType, initializedSortType, initializedAdultOnly))
+
+    override val key: String get() = navKey.route.token()
 
     @Composable
-    override fun Content() {
-        val navigator = LocalBaseNavigator.current
+    override fun Content(navigator: AppNavigator) {
         val authorization = LocalAuthorization.current
         val settings = PresentationAccess.settings
         val rememberedGridView by settings.novelListGridViewFlow.collectAsState()
@@ -136,7 +140,7 @@ class NovelListPage(
 
         DiscoveryScaffold(
             title = stringResource(R.string.novel_list),
-            onBack = { navigator?.pop() },
+            onBack = { navigator.pop() },
             actions = {
                 IconButton(onClick = {
                     gridView = !gridView
@@ -218,7 +222,7 @@ private fun NovelListResult(
     onAdultOnlyChange: (Boolean) -> Unit,
     onFilterChanged: () -> Unit,
     gridView: Boolean,
-    navigator: com.breakyuna.esjzone.ui.navigation.AppNavigator?,
+    navigator: com.breakyuna.esjzone.ui.navigation.AppNavigator,
     modifier: Modifier
 ) {
     val listState = rememberLazyListState()
@@ -332,7 +336,7 @@ private fun NovelListResult(
                             Box(modifier = Modifier.weight(1f)) {
                                 NovelListGridCard(
                                     novel = novel,
-                                    onClick = { navigator?.pushIfNotCurrent(NovelPage(novel)) }
+                                    onClick = { navigator.pushIfNotCurrent(NovelPage(novel)) }
                                 )
                             }
                         }
@@ -348,7 +352,7 @@ private fun NovelListResult(
                 ) { novel ->
                     DiscoveryNovelCard(
                         novel = novel,
-                        onClick = { navigator?.pushIfNotCurrent(NovelPage(novel)) }
+                        onClick = { navigator.pushIfNotCurrent(NovelPage(novel)) }
                     )
                 }
             }

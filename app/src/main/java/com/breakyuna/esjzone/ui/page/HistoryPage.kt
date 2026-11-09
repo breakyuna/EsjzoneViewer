@@ -59,6 +59,7 @@ import com.breakyuna.esjzone.ui.designsystem.GlobalText as Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
+import com.breakyuna.esjzone.ui.navigation.AppNavigator
 import com.breakyuna.esjzone.ui.navigation.rememberNovelCoverSource
 import com.breakyuna.esjzone.ui.designsystem.AppSelectionReveal
 import com.breakyuna.esjzone.ui.designsystem.AppAnimatedTitle
@@ -130,7 +131,6 @@ import com.breakyuna.esjzone.ui.designsystem.mirrorImageRequest
 import com.breakyuna.esjzone.ui.navigation.AppDestination
 import com.breakyuna.esjzone.ui.navigation.AppStateViewModel
 import com.breakyuna.esjzone.ui.navigation.ChapterStateHolder
-import com.breakyuna.esjzone.ui.navigation.LocalBaseNavigator
 import com.breakyuna.esjzone.ui.navigation.rememberAppViewModel
 import com.breakyuna.esjzone.ui.designsystem.AppShapes
 import com.breakyuna.esjzone.ui.designsystem.AppShimmerPlaceholder
@@ -169,12 +169,11 @@ object HistoryPage : AppDestination {
 
     @OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class)
     @Composable
-    override fun Content() = Content(showBack = true)
+    override fun Content(navigator: AppNavigator) = Content(navigator, showBack = true)
 
     @OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class)
     @Composable
-    fun Content(showBack: Boolean) {
-        val navigator = LocalBaseNavigator.current
+    fun Content(navigator: AppNavigator, showBack: Boolean) {
         val authorization = LocalAuthorization.current
         val localModel = rememberAppViewModel { LocalHistoryPageModel(authorization) }
         val cloudModel = rememberAppViewModel { HistoryPageModel(authorization) }
@@ -282,7 +281,7 @@ object HistoryPage : AppDestination {
                             )
                         }
                     },
-                    navigationIcon = { if (showBack) BackIconButton { navigator?.pop() } },
+                    navigationIcon = { if (showBack) BackIconButton { navigator.pop() } },
                     actions = {
                         AnimatedContent(
                             targetState = if (selectedPage == 0) localEditing else cloudEditing,
@@ -566,7 +565,7 @@ private fun LocalHistoryContent(
     state: LocalHistoryPageModel.State,
     query: String,
     model: LocalHistoryPageModel,
-    navigator: com.breakyuna.esjzone.ui.navigation.AppNavigator?,
+    navigator: com.breakyuna.esjzone.ui.navigation.AppNavigator,
     editing: Boolean,
     selected: Set<String>,
     onToggleSelected: (String) -> Unit,
@@ -616,7 +615,7 @@ private fun LocalHistoryContent(
                                     val chapterUrl = EsjzoneUrls.resolve(activity.chapterUrl).ifBlank { activity.chapterUrl }
                                     val novelUrl = EsjzoneUrls.resolve(activity.novelUrl).ifBlank { activity.novelUrl }
                                     val chapter = Chapter(activity.chapterName, chapterUrl, true)
-                                    navigator?.pushIfNotCurrent(ChapterPage(
+                                    navigator.pushIfNotCurrent(ChapterPage(
                                         novelId = activity.novelId.ifBlank { chapter.novelId() },
                                         chapter = chapter,
                                         history = ChapterStateHolder(chapter),
@@ -718,7 +717,7 @@ private fun CloudHistoryContent(
     query: String,
     model: HistoryPageModel,
     detailLoader: NovelDetailLoader,
-    navigator: com.breakyuna.esjzone.ui.navigation.AppNavigator?,
+    navigator: com.breakyuna.esjzone.ui.navigation.AppNavigator,
     editing: Boolean,
     selected: Set<String>,
     onToggleSelected: (String) -> Unit,
@@ -778,7 +777,7 @@ private fun CloudHistoryContent(
                                     onOpen = {
                                         if (editing) {
                                             if (history.vid.isNotBlank()) onToggleSelected(history.vid)
-                                        } else navigator?.pushIfNotCurrent(cloudHistoryDestination(history))
+                                        } else navigator.pushIfNotCurrent(cloudHistoryDestination(history))
                                     }
                                 )
                             } else if (detailLoader.failures[key] != null) {
@@ -819,7 +818,7 @@ private fun CloudHistoryContent(
                                                 } == true
                                             }
                                             .orEmpty()
-                                        navigator?.pushIfNotCurrent(
+                                        navigator.pushIfNotCurrent(
                                             cloudHistoryDestination(history, detail.coverUrl, chapterOrder)
                                         )
                                     }

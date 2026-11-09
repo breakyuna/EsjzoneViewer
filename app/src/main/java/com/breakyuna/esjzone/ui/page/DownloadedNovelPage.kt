@@ -1,5 +1,9 @@
 package com.breakyuna.esjzone.ui.page
 
+import com.breakyuna.esjzone.ui.navigation.AppNavKey
+import com.breakyuna.esjzone.ui.navigation.LegacyRoute
+import com.breakyuna.esjzone.ui.navigation.token
+import com.breakyuna.esjzone.ui.navigation.AppNavigator
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -34,12 +38,12 @@ import kotlinx.coroutines.flow.combine
 
 /** A local catalog: opening it never requests a detail page. */
 class DownloadedNovelPage(private val url: String) : AppDestination {
-    override val key = "DownloadedNovelPage:$url"
+    override val navKey = AppNavKey.Legacy(LegacyRoute.DownloadedNovel(url))
 
-    @OptIn(ExperimentalMaterial3Api::class)
+    override val key: String get() = navKey.route.token()
+
     @Composable
-    override fun Content() {
-        val navigator = LocalBaseNavigator.current
+    override fun Content(navigator: AppNavigator) {
         val authorization = LocalAuthorization.current
         val model = rememberAppViewModel { DownloadedNovelModel(url) }
         val state by model.state.collectAsStateWithLifecycle()
@@ -54,7 +58,7 @@ class DownloadedNovelPage(private val url: String) : AppDestination {
         fun open(record: DownloadedChapterRecord) {
             val book = manifest ?: return
             val chapter = Chapter(record.name, record.url, true)
-            navigator?.pushIfNotCurrent(ChapterPage(
+            navigator.pushIfNotCurrent(ChapterPage(
                 novelId = novelTitleId("", book.url), chapter = chapter, history = ChapterStateHolder(chapter),
                 chapterOrder = records.filterNot { it.localOnly }.map { Chapter(it.name, it.url, true) },
                 chapterOrderComplete = book.catalogComplete || book.complete,
@@ -66,7 +70,7 @@ class DownloadedNovelPage(private val url: String) : AppDestination {
         }
         Scaffold(topBar = { TopAppBar(
             title = { Text(manifest?.name.orEmpty().ifBlank { stringResource(R.string.downloads) }, maxLines = 1) },
-            navigationIcon = { BackIconButton { navigator?.pop() } }
+            navigationIcon = { BackIconButton { navigator.pop() } }
         ) }) { padding ->
             LazyColumn(Modifier.fillMaxSize().padding(padding).wideContentWidth(),
                 contentPadding = PaddingValues(16.dp)) {

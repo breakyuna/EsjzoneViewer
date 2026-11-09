@@ -14,6 +14,7 @@ on:
       - 'screenshots/docs/**'
       - '.github/ISSUE_TEMPLATE/**'
       - '.github/*.md'
+  pull_request:
   workflow_dispatch:
 
 permissions:
@@ -62,7 +63,7 @@ jobs:
         run: ./gradlew testDebugUnitTest lintDebug --build-cache --parallel
 
   release-build:
-    if: ${{ github.event_name != 'push' || !contains(github.event.head_commit.message, '[skip android build]') }}
+    if: ${{ github.event_name != 'pull_request' && (github.event_name != 'push' || !contains(github.event.head_commit.message, '[skip android build]')) }}
     name: Build complete release APK
     runs-on: ubuntu-24.04
 
@@ -112,6 +113,7 @@ jobs:
           retention-days: 1
 
   sign-and-publish:
+    if: ${{ github.event_name != 'pull_request' }}
     name: Sign and publish verified APK
     needs: [quality, release-build]
     runs-on: ubuntu-24.04

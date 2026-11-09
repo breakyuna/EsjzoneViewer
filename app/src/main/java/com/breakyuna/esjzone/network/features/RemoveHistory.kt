@@ -4,7 +4,6 @@ import com.breakyuna.esjzone.network.Authorization
 import com.breakyuna.esjzone.network.EsjzoneClient
 import com.breakyuna.esjzone.network.EsjzoneUrls
 import com.breakyuna.esjzone.network.readTextBounded
-import com.google.gson.JsonParser
 import okhttp3.FormBody
 import okhttp3.Request
 
@@ -52,9 +51,4 @@ fun EsjzoneClient.removeHistories(authorization: Authorization, viewIds: Set<Str
     return deleted
 }
 
-internal fun isHistoryDeleteSuccess(body: String): Boolean = runCatching {
-    val root = JsonParser.parseString(body)
-    if (!root.isJsonObject) return@runCatching false
-    val status = root.asJsonObject.get("status")
-    status != null && status.isJsonPrimitive && status.asJsonPrimitive.isNumber && status.asString == "200"
-}.getOrDefault(false)
+internal fun isHistoryDeleteSuccess(body: String): Boolean = hasSuccessfulEsjActionStatus(body)

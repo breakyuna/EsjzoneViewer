@@ -30,23 +30,20 @@ import com.breakyuna.esjzone.ui.reader.ReaderSettings
 import com.breakyuna.esjzone.ui.designsystem.AppShapes
 import com.breakyuna.esjzone.ui.designsystem.AppSpacing
 import com.breakyuna.esjzone.ui.designsystem.AppTypography
-import com.breakyuna.esjzone.ui.navigation.LocalBaseNavigator
 
 @Composable
 internal fun ReaderMoreSettingsContent(
     settings: ReaderSettings,
-    onSettingsChange: (ReaderSettings) -> Unit
+    onSettingsChange: (ReaderSettings) -> Unit,
+    onConfigureImage: () -> Unit = {}
 ) {
-    val navigator = LocalBaseNavigator.current
     var draft by remember(settings) { mutableStateOf(settings) }
     fun commit(value: ReaderSettings) {
         draft = value
         onSettingsChange(value)
     }
     SettingsSection {
-        LinkRow(Icons.Outlined.Image, stringResource(R.string.reader_background_image)) {
-            navigator?.pushIfNotCurrent(ReaderBackgroundPage)
-        }
+        LinkRow(Icons.Outlined.Image, stringResource(R.string.reader_background_image), onClick = onConfigureImage)
     }
     SettingsSection(title = stringResource(R.string.reader_more_controls)) {
         MoreReaderToggle(stringResource(R.string.reader_long_press_underline), draft.longPressUnderline) {
@@ -95,9 +92,7 @@ internal fun ReaderMoreSettingsContent(
         }
     }
     SettingsSection(title = stringResource(R.string.reader_more_display)) {
-        MoreReaderToggle(stringResource(R.string.reader_first_line_indent), draft.firstLineIndent) {
-            commit(draft.copy(firstLineIndent = it))
-        }
+        ReaderIndentSetting(draft.firstLineIndentChars) { commit(draft.copy(firstLineIndentChars = it)) }
         MoreReaderToggle(stringResource(R.string.reader_keep_screen_on), draft.keepScreenOn) {
             commit(draft.copy(keepScreenOn = it))
         }
@@ -117,6 +112,16 @@ internal fun ReaderMoreSettingsContent(
             commit(draft.copy(showTimeBattery = it))
         }
     }
+}
+
+@Composable
+internal fun ReaderIndentSetting(chars: Int, onSelect: (Int) -> Unit) {
+    ChoiceSettingRow(
+        title = stringResource(R.string.reader_first_line_indent),
+        options = (0..2).map { stringResource(R.string.reader_indent_chars, it) },
+        selectedIndex = chars,
+        onSelect = onSelect
+    )
 }
 
 @Composable

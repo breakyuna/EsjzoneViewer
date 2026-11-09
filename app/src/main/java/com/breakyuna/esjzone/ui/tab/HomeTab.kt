@@ -76,9 +76,9 @@ import com.breakyuna.esjzone.ui.designsystem.AppTypography
 import com.breakyuna.esjzone.ui.discovery.DiscoveryErrorState
 import com.breakyuna.esjzone.ui.discovery.DiscoveryOfflineBanner
 import com.breakyuna.esjzone.ui.discovery.DiscoveryScaffold
+import com.breakyuna.esjzone.ui.navigation.AppNavigator
 import com.breakyuna.esjzone.ui.navigation.AppTab
 import com.breakyuna.esjzone.ui.navigation.AppTabOptions
-import com.breakyuna.esjzone.ui.navigation.LocalBaseNavigator
 import com.breakyuna.esjzone.ui.navigation.LocalFloatingNavPadding
 import com.breakyuna.esjzone.ui.navigation.rememberAppViewModel
 import com.breakyuna.esjzone.ui.page.ForumPage
@@ -102,9 +102,8 @@ object HomeTab : AppTab {
 
     @Composable
     @OptIn(ExperimentalMaterial3Api::class)
-    override fun Content() {
+    override fun Content(navigator: AppNavigator) {
         val homeColumns = homeGridColumnCount()
-        val navigator = LocalBaseNavigator.current
         val authorization = LocalAuthorization.current
         val model = rememberAppViewModel { HomeTabModel(authorization) }
         val state by model.state.collectAsStateWithLifecycle(minActiveState = Lifecycle.State.CREATED)
@@ -130,12 +129,12 @@ object HomeTab : AppTab {
         val listState = rememberLazyListState()
 
         val onNovelClick: (CoveredNovel) -> Unit = remember(navigator) {
-            { novel -> navigator?.pushIfNotCurrent(NovelPage(novel)) }
+            { novel -> navigator.pushIfNotCurrent(NovelPage(novel)) }
         }
-        val onForum: () -> Unit = { navigator?.pushIfNotCurrent(ForumPage) }
-        val onGuestbook: () -> Unit = { navigator?.pushIfNotCurrent(GuestbookPage) }
+        val onForum: () -> Unit = { navigator.pushIfNotCurrent(ForumPage) }
+        val onGuestbook: () -> Unit = { navigator.pushIfNotCurrent(GuestbookPage) }
         val onWaterCooler: () -> Unit = {
-            navigator?.pushIfNotCurrent(
+            navigator.pushIfNotCurrent(
                 ForumPostPage(
                     ForumTopic(
                         boardId = EsjzoneUrls.WATER_COOLER_BOARD_ID,
@@ -410,7 +409,7 @@ object HomeTab : AppTab {
                         style = AppTypography.titleLarge
                     )
                     HomeSearchBar(
-                        onClick = { navigator?.pushIfNotCurrent(SearchTab) },
+                        onClick = { navigator.pushIfNotCurrent(SearchTab) },
                         modifier = Modifier.weight(1f)
                     )
                 }
@@ -508,7 +507,7 @@ object HomeTab : AppTab {
                                 enrichmentEnabled = popularEnrichmentEnabled,
                                 onVisible = model::loadVisiblePopular,
                                 onNovelClick = { novel, page ->
-                                    navigator?.pushIfNotCurrent(NovelPage(novel), homeCarouselPage = page)
+                                    navigator.pushIfNotCurrent(NovelPage(novel), homeCarouselPage = page)
                                 }
                             )
                             homeActionsItem(onForum, onGuestbook, onWaterCooler)
@@ -528,7 +527,7 @@ object HomeTab : AppTab {
                                 title = translatedTitle,
                                 rows = translatedRows,
                                 showDivider = true,
-                                onMore = { navigator?.pushIfNotCurrent(NovelListPage(1, 1, false)) },
+                                onMore = { navigator.pushIfNotCurrent(NovelListPage(1, 1, false)) },
                                 onNovelClick = onNovelClick,
                                 browseMoreLabel = browseMoreLabel,
                                 emptyTitle = emptyCollectionTitle,
@@ -538,7 +537,7 @@ object HomeTab : AppTab {
                                 title = originalTitle,
                                 rows = originalRows,
                                 showDivider = true,
-                                onMore = { navigator?.pushIfNotCurrent(NovelListPage(2, 1, false)) },
+                                onMore = { navigator.pushIfNotCurrent(NovelListPage(2, 1, false)) },
                                 onNovelClick = onNovelClick,
                                 browseMoreLabel = browseMoreLabel,
                                 emptyTitle = emptyCollectionTitle,
@@ -549,7 +548,7 @@ object HomeTab : AppTab {
                                     title = translatedAdultTitle,
                                     rows = translatedAdultRows,
                                     showDivider = true,
-                                    onMore = { navigator?.pushIfNotCurrent(NovelListPage(1, 1, true)) },
+                                    onMore = { navigator.pushIfNotCurrent(NovelListPage(1, 1, true)) },
                                     onNovelClick = onNovelClick,
                                     browseMoreLabel = browseMoreLabel,
                                     emptyTitle = emptyCollectionTitle,
@@ -559,7 +558,7 @@ object HomeTab : AppTab {
                                     title = originalAdultTitle,
                                     rows = originalAdultRows,
                                     showDivider = true,
-                                    onMore = { navigator?.pushIfNotCurrent(NovelListPage(2, 1, true)) },
+                                    onMore = { navigator.pushIfNotCurrent(NovelListPage(2, 1, true)) },
                                     onNovelClick = onNovelClick,
                                     browseMoreLabel = browseMoreLabel,
                                     emptyTitle = emptyCollectionTitle,

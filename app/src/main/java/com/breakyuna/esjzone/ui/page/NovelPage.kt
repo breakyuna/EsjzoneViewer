@@ -182,7 +182,9 @@ import com.breakyuna.esjzone.ui.product.ErrorState
 import com.breakyuna.esjzone.ui.product.OfflineState
 import com.breakyuna.esjzone.ui.navigation.BooleanStateHolder
 import com.breakyuna.esjzone.ui.navigation.ChapterStateHolder
-import com.breakyuna.esjzone.ui.navigation.LocalBaseNavigator
+import com.breakyuna.esjzone.ui.navigation.AppNavKey
+import com.breakyuna.esjzone.ui.navigation.LegacyRoute
+import com.breakyuna.esjzone.ui.navigation.token
 import com.breakyuna.esjzone.ui.navigation.AppNavigator
 import com.breakyuna.esjzone.util.AppLogger
 import kotlinx.coroutines.CancellationException
@@ -203,13 +205,13 @@ class NovelPage(
     private val favorite: BooleanStateHolder = BooleanStateHolder()
 ) : AppDestination {
 
-    override val key: String =
-        "NovelPage:" + EsjzoneUrls.canonicalPageKey(novel.url).ifBlank { novel.name.trim() }
+    override val navKey = AppNavKey.Legacy(LegacyRoute.Novel(EsjzoneUrls.canonicalPageKey(novel.url).ifBlank { novel.name.trim() }))
+
+    override val key: String get() = navKey.route.token()
 
     @Composable
-    override fun Content() {
+    override fun Content(navigator: AppNavigator) {
         val sourceCover = rememberSharedCoverOrigin(novel.url, releaseOnDispose = true)
-        val navigator = LocalBaseNavigator.current
         val authorization = LocalAuthorization.current
         val context = LocalContext.current
         val screenModel = rememberAppViewModel { NovelPageModel(authorization, novel) }
@@ -341,7 +343,7 @@ class NovelPage(
                 RebuiltDetailTopBar(
                     title = detailed?.name?.takeIf(String::isNotBlank) ?: novel.name,
                     showTitle = heroScrolledAway && state !is NovelPageModel.State.Error,
-                    onBack = { navigator?.pop() },
+                    onBack = { navigator.pop() },
                     onOpenExternal = {
                         openSystemBrowser(
                             context,
@@ -620,7 +622,7 @@ private fun novelDetailItems(
     onGroupToggle: (String) -> Unit,
     visibleRows: List<com.breakyuna.esjzone.novellibrary.component.VisibleChapterRow>,
     commentModel: CommentPageModel,
-    navigator: AppNavigator?,
+    navigator: AppNavigator,
     context: Context,
     downloaded: DownloadedNovelManifest?,
     onDownloadedChange: (DownloadedNovelManifest?) -> Unit
@@ -666,7 +668,7 @@ private fun novelDetailItems(
                 openExternal(context, EsjzoneUrls.resolve(chapter.url))
             } else {
                 historyState.value = chapter
-                navigator?.pushIfNotCurrent(
+                navigator.pushIfNotCurrent(
                     ChapterPage(
                         novelId = detailed.id(),
                         chapter = chapter,
@@ -686,7 +688,7 @@ private fun novelDetailItems(
             item(key = "detail-tags", contentType = "novel-tags") {
                 RebuiltNovelTags(
                     tags = detailed.tags,
-                    onTagClick = { tag -> navigator?.pushIfNotCurrent(SearchPage(tag)) }
+                    onTagClick = { tag -> navigator.pushIfNotCurrent(SearchPage(tag)) }
                 )
             }
         }
@@ -707,7 +709,7 @@ private fun novelDetailItems(
                                 if (chapter.isExternal) {
                                     openExternal(context, EsjzoneUrls.resolve(chapter.url))
                                 } else {
-                                    navigator?.pushIfNotCurrent(
+                                    navigator.pushIfNotCurrent(
                                         ChapterPage(
                                             novelId = detailed.id(),
                                             chapter = chapter,
@@ -1031,6 +1033,7 @@ private fun novelDetailItems(
                 Spacer(modifier = Modifier.height(AppSpacing.sm))
                 CommentSectionContent(
                     model = commentModel,
+                    onLinkClick = rememberCommunityLinkOpener(navigator),
                     showHeader = false,
                     modifier = Modifier.fillMaxWidth()
                 )

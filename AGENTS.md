@@ -78,7 +78,7 @@ gh run watch --exit-status --interval 30
 - 最低 Android 版本：API 29；编译 SDK：37；目标 SDK：37。
 - Java/Kotlin 编译目标：17。
 
-应用通过 OkHttp 访问可选的 Esjzone 站点，使用 Jsoup CSS 选择器解析 HTML 页面，使用 Room 保存本地状态，使用 Coil 加载和缓存图片。页面导航基于 AndroidX Navigation 3，当前仍通过 `LocalAppNavigator` 和 `LocalBaseNavigator` 向迁移中的页面提供导航控制器；导航状态集中在 `ui/navigation/`。
+应用通过 OkHttp 访问可选的 Esjzone 站点，使用 Jsoup CSS 选择器解析 HTML 页面，使用 Room 保存本地状态，使用 Coil 加载和缓存图片。页面导航基于 AndroidX Navigation 3。根宿主和标签页宿主通过参数将对应的 `AppNavigator` 传给页面，带参数的目的地直接创建可序列化的 `AppNavKey`。阅读器进入根栈，其他页面进入发起导航的栈。路由和返回栈管理集中在 `ui/navigation/`，已有保存路由继续支持恢复。
 
 ### 目录职责
 

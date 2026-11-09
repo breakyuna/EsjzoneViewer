@@ -105,10 +105,11 @@ import com.breakyuna.esjzone.network.features.submitForumComment
 import com.breakyuna.esjzone.novellibrary.novel.COMMENT_PAGE_SIZE
 import com.breakyuna.esjzone.novellibrary.novel.Comment
 import com.breakyuna.esjzone.novellibrary.user.UserProfile
-import com.breakyuna.esjzone.ui.navigation.LocalBaseNavigator
+import com.breakyuna.esjzone.ui.navigation.AppNavigator
 import com.breakyuna.esjzone.ui.designsystem.AppAvatarImage
 import com.breakyuna.esjzone.ui.designsystem.AppShapes
 import com.breakyuna.esjzone.ui.designsystem.AppElevation
+import com.breakyuna.esjzone.ui.designsystem.AppLayout
 import com.breakyuna.esjzone.ui.designsystem.AppSpacing
 import com.breakyuna.esjzone.ui.designsystem.AppSyncStatusDot
 import com.breakyuna.esjzone.ui.designsystem.AppTouchTarget
@@ -348,6 +349,7 @@ internal fun <T> CommunityStateContent(
 /** Hosts the same comments UI for chapter pages, the guestbook, and novel details. */
 @Composable
 internal fun CommentListPage(
+    navigator: AppNavigator,
     title: String,
     model: CommentPageModel,
     titleIndicator: (@Composable () -> Unit)? = null,
@@ -355,7 +357,6 @@ internal fun CommentListPage(
     refreshing: Boolean = false,
     onBack: (() -> Unit)? = null
 ) {
-    val navigator = LocalBaseNavigator.current
     val state by model.state.collectAsState()
 
     Column(
@@ -365,7 +366,7 @@ internal fun CommentListPage(
     ) {
         CommunityTopBar(
             title = title,
-            onBack = { if (onBack != null) onBack() else navigator?.pop() },
+            onBack = { if (onBack != null) onBack() else navigator.pop() },
             titleIndicator = titleIndicator
         )
         PullToRefreshBox(
@@ -375,6 +376,7 @@ internal fun CommentListPage(
         ) {
         CommentSectionHost(
             model = model,
+            onLinkClick = rememberCommunityLinkOpener(navigator),
             showHeader = false,
             modifier = Modifier
                 .fillMaxSize()
@@ -386,13 +388,14 @@ internal fun CommentListPage(
 @Composable
 internal fun CommentSectionHost(
     model: CommentPageModel,
+    onLinkClick: (String) -> Unit,
     modifier: Modifier = Modifier,
     showHeader: Boolean = true
 ) {
     val scrollState = rememberScrollState()
     Column(
         modifier = modifier
-            .widthIn(max = 960.dp)
+            .widthIn(max = AppLayout.contentMaxWidth)
     ) {
         Box(
             modifier = Modifier
@@ -405,7 +408,8 @@ internal fun CommentSectionHost(
                 model = model,
                 showHeader = showHeader,
                 modifier = Modifier.fillMaxWidth(),
-                scrollState = scrollState
+                scrollState = scrollState,
+                onLinkClick = onLinkClick
             )
         }
         CommentComposerHost(model = model)
@@ -423,7 +427,7 @@ internal fun CommentSectionContent(
     modifier: Modifier = Modifier,
     showHeader: Boolean = true,
     scrollState: androidx.compose.foundation.ScrollState? = null,
-    onLinkClick: (String) -> Unit = rememberCommunityLinkOpener()
+    onLinkClick: (String) -> Unit
 ) {
     val state by model.state.collectAsState()
     val lastCreatedCommentId by model.lastCreatedCommentId
@@ -663,7 +667,7 @@ private fun CommentSection(
             pager()
         }
 
-        Spacer(modifier = Modifier.height(12.dp))
+        Spacer(modifier = Modifier.height(AppSpacing.md))
     }
 }
 
@@ -717,7 +721,7 @@ private fun CommentComposer(
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(32.dp)
-                            .padding(start = 10.dp, end = 2.dp),
+                            .padding(start = AppSpacing.sm, end = AppSpacing.xxs),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Icon(
@@ -725,7 +729,7 @@ private fun CommentComposer(
                             contentDescription = null,
                             modifier = Modifier.size(16.dp)
                         )
-                        Spacer(modifier = Modifier.width(6.dp))
+                        Spacer(modifier = Modifier.width(AppSpacing.sm))
                         Text(
                             text = stringResource(id = R.string.comment_replying_to, replyAuthor),
                             style = AppTypography.labelMedium,
@@ -746,14 +750,14 @@ private fun CommentComposer(
                         }
                     }
                 }
-                Spacer(modifier = Modifier.height(6.dp))
+                Spacer(modifier = Modifier.height(AppSpacing.sm))
             }
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .heightIn(min = AppTouchTarget.minimum),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                horizontalArrangement = Arrangement.spacedBy(AppSpacing.sm)
             ) {
                 BasicTextField(
                     value = draft,
@@ -803,7 +807,7 @@ private fun CommentComposer(
                         (error == null || error == CommentSubmitError.EMPTY || canRetryAfterRefresh),
                     modifier = Modifier.size(AppTouchTarget.minimum),
                     shape = AppShapes.pill,
-                    contentPadding = PaddingValues(0.dp),
+                    contentPadding = PaddingValues(AppSpacing.zero),
                     colors = ButtonDefaults.buttonColors(
                         containerColor = MaterialTheme.colorScheme.primary,
                         contentColor = MaterialTheme.colorScheme.onPrimary
@@ -828,7 +832,7 @@ private fun CommentComposer(
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(top = 6.dp)
+                        .padding(top = AppSpacing.sm)
                 ) {
                     Text(
                         text = err.message(context = LocalContext.current),
@@ -840,7 +844,7 @@ private fun CommentComposer(
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(top = 4.dp),
+                                .padding(top = AppSpacing.xs),
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.SpaceBetween
                         ) {
@@ -850,12 +854,12 @@ private fun CommentComposer(
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier
                                     .weight(1f)
-                                    .padding(end = 8.dp)
+                                    .padding(end = AppSpacing.sm)
                             )
                             TextButton(
                                 onClick = onRefresh,
                                 enabled = !isSubmitting,
-                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp)
+                                contentPadding = PaddingValues(horizontal = AppSpacing.md, vertical = AppSpacing.xs)
                             ) {
                                 Text(
                                     text = stringResource(id = R.string.comment_action_refresh),
@@ -894,7 +898,7 @@ private fun CommentPager(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(AppSpacing.xxs)) {
                 FilledTonalIconButton(onClick = onFirst, enabled = page > 1) {
                     Icon(Icons.Filled.FirstPage, contentDescription = stringResource(R.string.comment_first_page))
                 }
@@ -916,7 +920,7 @@ private fun CommentPager(
                     modifier = Modifier.padding(horizontal = AppSpacing.md, vertical = AppSpacing.xs)
                 )
             }
-            Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(AppSpacing.xxs)) {
                 FilledTonalIconButton(onClick = onNext, enabled = page < totalPages) {
                     Icon(
                         Icons.AutoMirrored.Filled.ArrowForward,
@@ -957,7 +961,7 @@ private fun CommentCard(
                 verticalAlignment = Alignment.Top
             ) {
                 CommentAvatar(comment)
-                Spacer(modifier = Modifier.width(12.dp))
+                Spacer(modifier = Modifier.width(AppSpacing.md))
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
                         text = comment.authorName
@@ -976,7 +980,7 @@ private fun CommentCard(
                             ?: stringResource(id = R.string.comment_time_unknown),
                         style = AppTypography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(top = 2.dp),
+                        modifier = Modifier.padding(top = AppSpacing.xxs),
                         maxLines = 1,
                         overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
                     )
@@ -993,7 +997,7 @@ private fun CommentCard(
                             Text(
                                 text = floor,
                                 style = AppTypography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
-                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
+                                modifier = Modifier.padding(horizontal = AppSpacing.sm, vertical = AppSpacing.xs)
                             )
                         }
                     }
@@ -1007,7 +1011,7 @@ private fun CommentCard(
                     Surface(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(top = 16.dp),
+                            .padding(top = AppSpacing.lg),
                         color = MaterialTheme.colorScheme.surfaceContainer,
                         contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
                         shape = AppShapes.standard
@@ -1028,8 +1032,8 @@ private fun CommentCard(
                             )
                             Column(
                                 modifier = Modifier.padding(
-                                    horizontal = 12.dp,
-                                    vertical = 10.dp
+                                    horizontal = AppSpacing.md,
+                                    vertical = AppSpacing.sm
                                 )
                             ) {
                                 Icon(
@@ -1044,7 +1048,7 @@ private fun CommentCard(
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     maxLines = 3,
                                     overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
-                                    modifier = Modifier.padding(top = 2.dp)
+                                    modifier = Modifier.padding(top = AppSpacing.xxs)
                                 )
                             }
                         }
@@ -1055,7 +1059,7 @@ private fun CommentCard(
                 text = linkedText,
                 style = AppTypography.bodyLarge,
                 color = MaterialTheme.colorScheme.onSurface,
-                modifier = Modifier.padding(top = 16.dp)
+                modifier = Modifier.padding(top = AppSpacing.lg)
             )
 
             if (onReply != null) {
@@ -1092,7 +1096,7 @@ private fun CommentAvatar(comment: Comment) {
         modifier = Modifier
             .size(48.dp)
             .clip(CircleShape)
-            .border(0.5.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f), CircleShape)
+            .border(AppLayout.hairline, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f), CircleShape)
             .background(MaterialTheme.colorScheme.surfaceContainerHighest),
         contentAlignment = Alignment.Center
     ) {

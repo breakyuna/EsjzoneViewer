@@ -70,6 +70,9 @@ interface BookshelfDao {
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insertIfAbsent(entry: BookshelfEntry): Long
 
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertAllIfAbsent(entries: List<BookshelfEntry>)
+
     @Query(
         "UPDATE bookshelf SET sync_state = :state, visible = :visible, " +
             "retry_count = :retryCount, last_error = :lastError " +

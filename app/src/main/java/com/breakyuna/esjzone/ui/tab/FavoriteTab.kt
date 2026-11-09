@@ -5,6 +5,7 @@ import androidx.compose.material.icons.filled.AutoStories
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.vector.rememberVectorPainter
 import com.breakyuna.esjzone.ui.designsystem.globalStringResource as stringResource
+import com.breakyuna.esjzone.ui.navigation.AppNavigator
 import com.breakyuna.esjzone.ui.navigation.AppTab
 import com.breakyuna.esjzone.ui.navigation.AppTabOptions
 import com.breakyuna.esjzone.R
@@ -23,7 +24,7 @@ object FavoriteTab : AppTab {
         )
 
     @Composable
-    override fun Content() {
-        FavoritePage.Content(showBack = false)
+    override fun Content(navigator: AppNavigator) {
+        FavoritePage.Content(navigator, showBack = false)
     }
 }

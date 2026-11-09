@@ -187,7 +187,7 @@ internal fun ReaderSettingsSheet(
                         }
                         ReaderLayoutSlider(draft, settings, ::commit) { draft = it }
                     } else if (tab == 1) {
-                        ReaderToggle(stringResource(R.string.reader_first_line_indent), draft.firstLineIndent) { commit(draft.copy(firstLineIndent = it)) }
+                        ReaderIndentSetting(draft.firstLineIndentChars) { commit(draft.copy(firstLineIndentChars = it)) }
                         ReaderToggle(stringResource(R.string.reader_show_system_status), draft.showSystemStatusBar) { commit(draft.copy(showSystemStatusBar = it)) }
                         ReaderToggle(stringResource(R.string.reader_show_system_navigation), draft.showSystemNavigationBar) { commit(draft.copy(showSystemNavigationBar = it)) }
                         ReaderToggle(stringResource(R.string.reader_show_chapter_name), draft.showChapterName) { commit(draft.copy(showChapterName = it)) }

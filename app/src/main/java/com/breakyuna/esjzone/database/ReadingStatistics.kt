@@ -6,7 +6,8 @@ import com.breakyuna.esjzone.database.entity.ReadingStat
 import com.breakyuna.esjzone.database.dao.put
 import com.breakyuna.esjzone.novellibrary.novel.DetailedNovel
 import com.breakyuna.esjzone.network.EsjzoneUrls
-import com.google.gson.Gson
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
 import kotlinx.coroutines.CancellationException
 import com.breakyuna.esjzone.util.AppLogger
 import java.time.Instant
@@ -107,7 +108,7 @@ object ReadingStatisticsRecorder {
                 if (!isEnabled()) return@withLock
                 try {
                     EsjzoneApplication.instance.container.database.cacheDao()
-                        .put(TAGS_KEY_PREFIX + bookKey, Gson().toJson(tags))
+                        .put(TAGS_KEY_PREFIX + bookKey, Json.encodeToString(tags))
                 } catch (error: CancellationException) {
                     throw error
                 } catch (error: Exception) {

@@ -2,6 +2,7 @@
 
 package com.breakyuna.esjzone.ui.page
 
+import com.breakyuna.esjzone.ui.navigation.AppNavigator
 import android.content.Context
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -60,8 +61,7 @@ object OpenSourceLicensesPage : AppDestination {
     private fun readResolve(): Any = OpenSourceLicensesPage
 
     @Composable
-    override fun Content() {
-        val navigator = LocalBaseNavigator.current
+    override fun Content(navigator: AppNavigator) {
         val context = LocalContext.current
         val model = rememberAppViewModel { OpenSourceLicensesModel(context) }
         val licenses by model.state.collectAsStateWithLifecycle()
@@ -69,7 +69,7 @@ object OpenSourceLicensesPage : AppDestination {
         Scaffold(topBar = {
             TopAppBar(title = { Text(stringResource(R.string.open_source_licenses), style = AppTypography.titleMedium) },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background), navigationIcon = {
-                IconButton(onClick = { navigator?.pop() }) {
+                IconButton(onClick = { navigator.pop() }) {
                     Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.reading_stats_back))
                 }
             })

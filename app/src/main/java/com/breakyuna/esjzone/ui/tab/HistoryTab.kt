@@ -19,7 +19,6 @@ import com.breakyuna.esjzone.R
 import com.breakyuna.esjzone.database.entity.LocalReadingActivity
 import com.breakyuna.esjzone.novellibrary.novel.validNovelTitle
 import com.breakyuna.esjzone.novellibrary.novel.Chapter
-import com.breakyuna.esjzone.ui.navigation.LocalBaseNavigator
 import com.breakyuna.esjzone.ui.navigation.ChapterStateHolder
 import com.breakyuna.esjzone.network.EsjzoneUrls
 import com.breakyuna.esjzone.ui.page.ChapterPage
@@ -56,11 +55,10 @@ object HistoryTab : AppTab {
         )
 
     @Composable
-    override fun Content() {
-        val navigator = LocalBaseNavigator.current
+    override fun Content(navigator: AppNavigator) {
         val request = openLastReadingRequest.intValue
 
-        HistoryPage.Content(showBack = false)
+        HistoryPage.Content(navigator, showBack = false)
 
         LaunchedEffect(request) {
             if (!claimOpenLastReadingRequest(request)) return@LaunchedEffect
@@ -84,7 +82,7 @@ object HistoryTab : AppTab {
     }
 
     internal fun openLocalActivity(
-        navigator: AppNavigator?,
+        navigator: AppNavigator,
         activity: LocalReadingActivity
     ) {
         val chapterUrl = EsjzoneUrls.resolve(activity.chapterUrl).ifBlank { activity.chapterUrl }
@@ -94,7 +92,7 @@ object HistoryTab : AppTab {
             chapterUrl,
             true
         )
-        navigator?.pushIfNotCurrent(
+        navigator.pushIfNotCurrent(
             ChapterPage(
                 novelId = activity.novelId.ifBlank { chapter.novelId() },
                 chapter = chapter,

@@ -124,6 +124,12 @@ class SettingsDataStore(
     override fun setReadingStatisticsIncognito(value: Boolean) = write { it[READING_STATISTICS_INCOGNITO] = value }
     override fun setReaderAutoSave(value: Boolean) = write { it[READER_AUTO_SAVE] = value }
     override fun setUpdateWebsiteHistory(value: Boolean) = write { it[UPDATE_WEBSITE_HISTORY] = value }
+    internal suspend fun readUpdateWebsiteHistory(): Boolean =
+        dataStore.data.first()[UPDATE_WEBSITE_HISTORY] ?: defaults.updateWebsiteHistory
+
+    internal suspend fun restoreUpdateWebsiteHistory(value: Boolean) {
+        dataStore.edit { it[UPDATE_WEBSITE_HISTORY] = value }
+    }
     override fun setDownloadConcurrency(value: Int) = write {
         it[DOWNLOAD_CONCURRENCY] = value.coerceIn(
             SettingsDefaults.MIN_DOWNLOAD_CONCURRENCY,

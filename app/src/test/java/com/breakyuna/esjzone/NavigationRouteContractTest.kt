@@ -105,6 +105,18 @@ class NavigationRouteContractTest {
     }
 
     @Test
+    fun navigationUsesTypedSearchArgumentsAndReturnsToAnExistingEntry() {
+        val stack = mutableListOf<NavKey>(AppNavKey.HomeTab)
+        val navigator = com.breakyuna.esjzone.ui.navigation.AppNavigator(stack, mutableMapOf())
+        val search = com.breakyuna.esjzone.ui.page.SearchPage("title:subtitle")
+        assertTrue(navigator.pushIfNotCurrent(search))
+        assertEquals(AppNavKey.Legacy(LegacyRoute.Search("title:subtitle")), stack.last())
+        navigator.push(com.breakyuna.esjzone.ui.page.ReaderBackgroundPage)
+        assertFalse(navigator.pushIfNotCurrent(search))
+        assertEquals(listOf(AppNavKey.HomeTab, search.navKey), stack)
+    }
+
+    @Test
     fun featureRoutesAreStableValueObjects() {
         assertEquals(LegacyRoute.Search("keyword"), LegacyRoute.Search("keyword"))
         assertNotEquals(LegacyRoute.Search("keyword"), LegacyRoute.Search("other"))

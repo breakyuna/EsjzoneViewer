@@ -139,9 +139,8 @@ import com.breakyuna.esjzone.network.features.CloudViewReports
 import com.breakyuna.esjzone.network.hasCredentials
 import com.breakyuna.esjzone.database.BookshelfRepository
 import com.breakyuna.esjzone.data.settings.SettingsDefaults
+import com.breakyuna.esjzone.ui.navigation.AppNavigator
 import com.breakyuna.esjzone.ui.navigation.AppDestination
-import com.breakyuna.esjzone.ui.navigation.LocalAppNavigator
-import com.breakyuna.esjzone.ui.navigation.LocalBaseNavigator
 import com.breakyuna.esjzone.ui.navigation.rememberAppViewModel
 import com.breakyuna.esjzone.ui.screen.LoginScreen
 import com.breakyuna.esjzone.ui.screen.MainScreen
@@ -158,9 +157,8 @@ object SettingsPage : AppDestination {
 
     @OptIn(ExperimentalMaterial3Api::class)
     @Composable
-    override fun Content() {
-        val rootNavigator = LocalAppNavigator.current
-        val navigator = LocalBaseNavigator.current
+    override fun Content(navigator: AppNavigator) {
+        val rootNavigator = navigator.root
         val authorization = LocalAuthorization.current
         val context = LocalContext.current
         val uriHandler = LocalUriHandler.current
@@ -220,14 +218,14 @@ object SettingsPage : AppDestination {
             if (section == "STORAGE" || section == "DOWNLOAD") model.refreshCacheStats()
             onPauseOrDispose { }
         }
-        LaunchedEffect(state.logoutCompleted) { if (state.logoutCompleted) rootNavigator?.replaceAll(LoginScreen) }
+        LaunchedEffect(state.logoutCompleted) { if (state.logoutCompleted) rootNavigator.replaceAll(LoginScreen) }
 
         Scaffold(
             snackbarHost = { SnackbarHost(snackbarHost) },
             topBar = {
                 TopAppBar(
                     title = { Text(pageTitle, style = AppTypography.titleMedium) },
-                    navigationIcon = { BackIconButton { if (section == "MAIN") navigator?.pop() else section = "MAIN" } },
+                    navigationIcon = { BackIconButton { if (section == "MAIN") navigator.pop() else section = "MAIN" } },
                     colors = TopAppBarDefaults.topAppBarColors(
                         containerColor = MaterialTheme.colorScheme.background
                     )
@@ -343,7 +341,7 @@ object SettingsPage : AppDestination {
                                             if (PresentationAccess.client.hasSiteSession(candidate)) {
                                                 BookshelfRepository.scheduleSync(session)
                                             }
-                                            rootNavigator?.replaceAll(MainScreen(session))
+                                            rootNavigator.replaceAll(MainScreen(session))
                                         } else {
                                             siteUnavailable = true
                                         }
@@ -367,13 +365,13 @@ object SettingsPage : AppDestination {
                         if (state.autoBackupFailed) Text(stringResource(R.string.backup_failed),
                             color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(AppSpacing.md))
                         LinkRow(Icons.Filled.Backup, stringResource(R.string.settings_backup)) {
-                            navigator?.pushIfNotCurrent(LocalBackupPage)
+                            navigator.pushIfNotCurrent(LocalBackupPage)
                         }
                         LinkRow(Icons.Filled.Download, stringResource(R.string.download_settings)) { section = "DOWNLOAD" }
                         LinkRow(Icons.Filled.Storage, stringResource(R.string.settings_storage_analysis)) { section = "STORAGE" }
                     }
                     SettingsSection(title = stringResource(R.string.settings_system_group)) {
-                        LinkRow(Icons.Filled.BugReport, stringResource(R.string.system_logs)) { navigator?.pushIfNotCurrent(LogsPage) }
+                        LinkRow(Icons.Filled.BugReport, stringResource(R.string.system_logs)) { navigator.pushIfNotCurrent(LogsPage) }
                         LinkRow(Icons.Filled.Info, stringResource(R.string.about)) { section = "ABOUT" }
                     }
                     Surface(
@@ -533,7 +531,9 @@ object SettingsPage : AppDestination {
                                 if (enabled) CloudViewReports.flush(authorization)
                             }
                         }
-                        ReaderMoreSettingsContent(readerSettings, PresentationAccess.readerSettings::saveDebounced)
+                        ReaderMoreSettingsContent(readerSettings, PresentationAccess.readerSettings::saveDebounced) {
+                            navigator.pushIfNotCurrent(ReaderBackgroundPage)
+                        }
                     }
                     if (displayedSection == "DOWNLOAD") {
                         SettingsSection {
@@ -547,7 +547,7 @@ object SettingsPage : AppDestination {
                                     else -> stringResource(R.string.download_total_summary, downloads.novelCount, formatBytes(downloads.bytes))
                                 }
                             ) {
-                                navigator?.pushIfNotCurrent(DownloadPage)
+                                navigator.pushIfNotCurrent(DownloadPage)
                             }
                             if (state.downloadStatsError) {
                                 TextButton(onClick = model::refreshCacheStats) { Text(stringResource(R.string.retry)) }
@@ -637,7 +637,7 @@ object SettingsPage : AppDestination {
                     if (displayedSection == "STORAGE" && BuildConfig.DEBUG) {
                         SettingsSection {
                             LinkRow(Icons.Filled.Storage, stringResource(R.string.cache_records)) {
-                                navigator?.pushIfNotCurrent(CacheRecordsPage)
+                                navigator.pushIfNotCurrent(CacheRecordsPage)
                             }
                         }
                     }
@@ -692,7 +692,7 @@ object SettingsPage : AppDestination {
                                     }
                             }
                             LinkRow(Icons.Filled.Description, stringResource(R.string.open_source_licenses)) {
-                                navigator?.pushIfNotCurrent(OpenSourceLicensesPage)
+                                navigator.pushIfNotCurrent(OpenSourceLicensesPage)
                             }
                         }
                         SettingsSection {

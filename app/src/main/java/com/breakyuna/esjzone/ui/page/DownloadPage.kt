@@ -94,8 +94,8 @@ import com.breakyuna.esjzone.ui.component.AppNovelCover
 import com.breakyuna.esjzone.ui.designsystem.AppShapes
 import com.breakyuna.esjzone.ui.designsystem.AppSpacing
 import com.breakyuna.esjzone.ui.designsystem.AppTypography
+import com.breakyuna.esjzone.ui.navigation.AppNavigator
 import com.breakyuna.esjzone.ui.navigation.AppDestination
-import com.breakyuna.esjzone.ui.navigation.LocalBaseNavigator
 import com.breakyuna.esjzone.ui.navigation.AppStateViewModel
 import com.breakyuna.esjzone.ui.navigation.rememberAppViewModel
 import com.breakyuna.esjzone.ui.product.EmptyState
@@ -118,8 +118,7 @@ object DownloadPage : AppDestination {
 
     @OptIn(ExperimentalMaterial3Api::class)
     @Composable
-    override fun Content() {
-        val navigator = LocalBaseNavigator.current
+    override fun Content(navigator: AppNavigator) {
         val context = LocalContext.current
         val activity = LocalActivity.current
         val scope = rememberCoroutineScope()
@@ -169,7 +168,7 @@ object DownloadPage : AppDestination {
             topBar = {
                 TopAppBar(
                     title = { AppAnimatedTitle(if (editing) "${stringResource(R.string.download_edit)} (${selected.size})" else stringResource(R.string.downloads), style = AppTypography.titleLarge) },
-                    navigationIcon = { BackIconButton { if (editing) { editing = false; selected = emptySet() } else navigator?.pop() } },
+                    navigationIcon = { BackIconButton { if (editing) { editing = false; selected = emptySet() } else navigator.pop() } },
                     actions = {
                         AnimatedContent(
                             targetState = editing,
@@ -277,7 +276,7 @@ object DownloadPage : AppDestination {
                             deleting = deleting || migrationLocked,
                             onToggle = { url -> selected = if (url in selected) selected - url else selected + url },
                             onDelete = { requestDelete(listOf(it)) },
-                            onOpen = { navigator?.pushIfNotCurrent(DownloadedNovelPage(it)) },
+                            onOpen = { navigator.pushIfNotCurrent(DownloadedNovelPage(it)) },
                             modifier = Modifier.fillMaxSize().accountContentWidth()
                         )
                     }

@@ -32,6 +32,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.breakyuna.esjzone.ui.designsystem.AppSpacing
 import com.breakyuna.esjzone.R
 import com.breakyuna.esjzone.novellibrary.component.ChapterItem
 import com.breakyuna.esjzone.novellibrary.component.ChapterListItem
@@ -80,7 +81,7 @@ fun ChapterListHeader(
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .padding(bottom = 8.dp),
+            .padding(bottom = AppSpacing.sm),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Icon(
@@ -89,7 +90,7 @@ fun ChapterListHeader(
             tint = MaterialTheme.colorScheme.primary,
             modifier = Modifier.size(20.dp)
         )
-        Spacer(modifier = Modifier.width(8.dp))
+        Spacer(modifier = Modifier.width(AppSpacing.sm))
         Text(
             text = stringResource(R.string.novel_chapterlist),
             style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
@@ -100,7 +101,7 @@ fun ChapterListHeader(
                 text = stringResource(R.string.novel_chapter_count, it),
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(start = 8.dp)
+                modifier = Modifier.padding(start = AppSpacing.sm)
             )
         }
     }
@@ -163,7 +164,7 @@ private fun ChapterDetailRow(
         modifier = Modifier
             .fillMaxWidth()
             .heightIn(min = 48.dp)
-            .padding(start = (depth * 14).dp, top = 2.dp, bottom = 2.dp)
+            .padding(start = AppSpacing.md * depth, top = AppSpacing.xxs, bottom = AppSpacing.xxs)
             .clickable {
                 onChapterOpen(chapter)
             },
@@ -182,9 +183,9 @@ private fun ChapterDetailRow(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 12.dp, vertical = 11.dp),
+                .padding(horizontal = AppSpacing.md, vertical = AppSpacing.md),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(10.dp)
+            horizontalArrangement = Arrangement.spacedBy(AppSpacing.sm)
         ) {
             if (current) {
                 Icon(
@@ -236,7 +237,7 @@ private fun ChapterGroupRow(
     Surface(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(start = (depth * 14).dp, top = 4.dp, bottom = 4.dp)
+            .padding(start = AppSpacing.md * depth, top = AppSpacing.xs, bottom = AppSpacing.xs)
             .clip(AppShapes.standard)
             .clickable(onClick = onToggle),
         shape = AppShapes.standard,
@@ -245,9 +246,9 @@ private fun ChapterGroupRow(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 14.dp, vertical = 13.dp),
+                .padding(horizontal = AppSpacing.md, vertical = AppSpacing.md),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(9.dp)
+            horizontalArrangement = Arrangement.spacedBy(AppSpacing.sm)
         ) {
             Icon(
                 imageVector = Icons.Filled.Folder,

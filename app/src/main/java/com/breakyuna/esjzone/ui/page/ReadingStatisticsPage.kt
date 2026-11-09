@@ -121,9 +121,9 @@ import com.breakyuna.esjzone.ui.designsystem.appSemanticColors
 import com.breakyuna.esjzone.ui.designsystem.AppLoadingState
 import com.breakyuna.esjzone.ui.designsystem.AppErrorState
 import com.breakyuna.esjzone.ui.designsystem.accountContentWidth
+import com.breakyuna.esjzone.ui.navigation.AppNavigator
 import com.breakyuna.esjzone.ui.navigation.AppDestination
 import com.breakyuna.esjzone.ui.navigation.AppStateViewModel
-import com.breakyuna.esjzone.ui.navigation.LocalBaseNavigator
 import com.breakyuna.esjzone.ui.navigation.rememberAppViewModel
 import com.breakyuna.esjzone.util.AppLogger
 import java.time.LocalDate
@@ -136,15 +136,15 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.catch
-import com.google.gson.JsonParser
+import kotlinx.serialization.decodeFromString
+import kotlinx.serialization.json.Json
 
 object ReadingStatisticsPage : AppDestination {
     override val key: String = "ReadingStatisticsPage"
 
     @OptIn(ExperimentalMaterial3Api::class)
     @Composable
-    override fun Content() {
-        val navigator = LocalBaseNavigator.current
+    override fun Content(navigator: AppNavigator) {
         val model = rememberAppViewModel { ReadingStatisticsPageModel() }
         val authorization = LocalAuthorization.current
         val coverModel = rememberAppViewModel { LocalHistoryPageModel(authorization) }
@@ -183,7 +183,7 @@ object ReadingStatisticsPage : AppDestination {
                 title = { Text(stringResource(R.string.reading_stats_title), style = AppTypography.titleMedium) },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background),
                 navigationIcon = {
-                    IconButton(onClick = { navigator?.pop() }) {
+                    IconButton(onClick = { navigator.pop() }) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.reading_stats_back))
                     }
                 },
@@ -1037,7 +1037,7 @@ private class ReadingStatisticsPageModel : AppStateViewModel<ReadingStatisticsPa
                 ) { rows, cachedTags, activities ->
                     val tags = cachedTags.associate { entry ->
                         entry.key.removePrefix(ReadingStatisticsRecorder.TAGS_KEY_PREFIX) to runCatching {
-                            JsonParser.parseString(entry.value).asJsonArray.map { it.asString }
+                            Json.decodeFromString<List<String>>(entry.value)
                         }.getOrDefault(emptyList())
                     }
                     State.Ready(ReadingStatisticsSummary(rows, LocalDate.now(), tags), statisticsActivitiesByBook(activities))

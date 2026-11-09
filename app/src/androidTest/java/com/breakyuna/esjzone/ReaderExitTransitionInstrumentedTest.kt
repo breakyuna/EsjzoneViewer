@@ -27,6 +27,7 @@ import androidx.navigation3.ui.NavDisplay
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.breakyuna.esjzone.ui.navigation.AppDestination
 import com.breakyuna.esjzone.ui.navigation.AppNavKey
+import com.breakyuna.esjzone.ui.navigation.ReaderRoute
 import com.breakyuna.esjzone.ui.navigation.AppNavigator
 import com.breakyuna.esjzone.ui.navigation.LocalReaderNavigationSettled
 import com.breakyuna.esjzone.ui.navigation.ReaderDestinationContent
@@ -117,10 +118,10 @@ class ReaderExitTransitionInstrumentedTest {
         private val onComposition: (Boolean) -> Unit
     ) : AppDestination {
         override val key = "ChapterPage:123:/forum/123/chapter.html"
-        override val isReaderDestination = true
+        override val navKey = AppNavKey.Reader(ReaderRoute("123", "/forum/123/chapter.html"))
 
         @Composable
-        override fun Content() {
+        override fun Content(navigator: AppNavigator) {
             val settled = LocalReaderNavigationSettled.current
             SideEffect { onComposition(settled) }
             ReaderEntryPresentation(ready, Color.White, null, 0f, "Loading") {

@@ -20,6 +20,8 @@ import androidx.lifecycle.ViewModelStore
 import androidx.lifecycle.ViewModelStoreOwner
 import androidx.lifecycle.viewmodel.compose.LocalViewModelStoreOwner
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import com.breakyuna.esjzone.ui.navigation.AppNavKey
+import com.breakyuna.esjzone.ui.navigation.AppNavigator
 import com.breakyuna.esjzone.network.Authorization
 import com.breakyuna.esjzone.network.LocalAuthorization
 import com.breakyuna.esjzone.novellibrary.data.HomeData
@@ -72,13 +74,14 @@ class HomeFeedLayoutInstrumentedTest {
                 })
                 model.getHomeData()
             }
+            val navigator = AppNavigator(mutableListOf(AppNavKey.HomeTab), mutableMapOf())
             composeRule.setContent {
                 CompositionLocalProvider(
                     LocalViewModelStoreOwner provides owner,
                     LocalAuthorization provides authorization
                 ) {
                     AppTheme {
-                        Box(Modifier.size(360.dp, 480.dp)) { HomeTab.Content() }
+                        Box(Modifier.size(360.dp, 480.dp)) { HomeTab.Content(navigator) }
                     }
                 }
             }
@@ -124,12 +127,13 @@ class HomeFeedLayoutInstrumentedTest {
                 }
                 ViewModelProvider(owner, factory)[HomeTabModel::class.java].getHomeData()
             }
+            val navigator = AppNavigator(mutableListOf(AppNavKey.HomeTab), mutableMapOf())
             composeRule.setContent {
                 CompositionLocalProvider(
                     LocalViewModelStoreOwner provides owner,
                     LocalAuthorization provides authorization
                 ) {
-                    AppTheme { HomeTab.Content() }
+                    AppTheme { HomeTab.Content(navigator) }
                 }
             }
             composeRule.onNodeWithTag("home-feed").assertIsDisplayed()

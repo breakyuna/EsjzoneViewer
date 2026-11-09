@@ -33,6 +33,8 @@ import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.breakyuna.esjzone.ui.designsystem.globalStringResource as stringResource
 import androidx.compose.ui.unit.dp
+import com.breakyuna.esjzone.ui.navigation.AppNavKey
+import com.breakyuna.esjzone.ui.navigation.AppNavigator
 import com.breakyuna.esjzone.ui.navigation.AppDestination
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -44,7 +46,6 @@ import com.breakyuna.esjzone.network.LocalAuthorization
 import com.breakyuna.esjzone.network.features.AuthorizationCheckResult
 import com.breakyuna.esjzone.network.features.CloudViewReports
 import com.breakyuna.esjzone.network.features.checkAuthorization
-import com.breakyuna.esjzone.ui.navigation.LocalAppNavigator
 import com.breakyuna.esjzone.ui.navigation.AdaptiveAppShell
 import com.breakyuna.esjzone.ui.designsystem.AppSpacing
 import com.breakyuna.esjzone.ui.designsystem.AppTypography
@@ -57,8 +58,10 @@ class MainScreen(val authorization: Authorization) : AppDestination {
 
     override val key: String = "MainScreen"
 
+    override val navKey = AppNavKey.Main
+
     @Composable
-    override fun Content() {
+    override fun Content(navigator: AppNavigator) {
         val firstDraw = remember { AtomicBoolean(false) }
         LaunchedEffect(Unit) {
             AppLogger.i("Startup", "Main screen composition committed")
@@ -66,7 +69,6 @@ class MainScreen(val authorization: Authorization) : AppDestination {
         var storageWarningVisible by rememberSaveable {
             mutableStateOf(!PresentationAccess.client.sessionPersistenceAvailable && !storageWarningDismissed.get())
         }
-        val appNavigator = LocalAppNavigator.current
         val activeDomain = PresentationAccess.settings.domain.value
         val loginSessionChanges by PresentationAccess.client.loginSessionChanges.collectAsStateWithLifecycle()
         val loginSessionRevision = loginSessionChanges[activeDomain] ?: 0L
@@ -147,18 +149,14 @@ class MainScreen(val authorization: Authorization) : AppDestination {
                 } else if (showSessionBanner) {
                     SessionExpiredBanner(
                         mirrorSessionMissing = !PresentationAccess.client.hasSiteSession(activeDomain),
-                        onRelogin = {
-                            appNavigator?.replace(LoginScreen) ?: run {
-                                sessionPromptDismissed = true
-                            }
-                        },
+                        onRelogin = { navigator.replace(LoginScreen) },
                         onContinueOffline = { sessionPromptDismissed = true }
                     )
                 }
                 key(authorization.domain) {
                     AdaptiveAppShell(
                         authorization = authorization,
-                        rootNavigator = appNavigator ?: error("Navigation 3 root is not provided"),
+                        rootNavigator = navigator,
                         modifier = Modifier.weight(1f),
                         // The banner owns the status-bar inset while it is
                         // visible; the shell owns it in every other state.

@@ -4,10 +4,13 @@ import android.content.Context
 import android.content.SharedPreferences
 import androidx.datastore.core.DataStore
 import androidx.datastore.core.handlers.ReplaceFileCorruptionHandler
+import androidx.datastore.preferences.core.MutablePreferences
 import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.mutablePreferencesOf
 import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.floatPreferencesKey
+import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
@@ -23,6 +26,8 @@ import com.breakyuna.esjzone.ui.reader.ReaderImageBackground
 import com.breakyuna.esjzone.ui.reader.ReaderNameReplaceRule
 import com.breakyuna.esjzone.ui.reader.ReaderNameReplaceSettings
 import com.google.gson.Gson
+import com.google.gson.JsonObject
+import com.google.gson.JsonPrimitive
 import com.google.gson.reflect.TypeToken
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -46,7 +51,8 @@ class ReaderSettingsDataStore(
     context: Context,
     private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.IO),
     /** Allows isolated stores in tests; the production default is stable for migration compatibility. */
-    private val dataStoreFileName: String = FILE_NAME
+    private val dataStoreFileName: String = FILE_NAME,
+    private val appSettings: SettingsDataStore? = null
 ) {
     private val dataStore: DataStore<Preferences> = PreferenceDataStoreFactory.create(
         corruptionHandler = ReplaceFileCorruptionHandler { emptyPreferences() },
@@ -89,6 +95,65 @@ class ReaderSettingsDataStore(
         }
     }
 
+    /** Archive only reader preferences, using stable key names instead of reflective field names. */
+    internal suspend fun backupSnapshot(): Pair<JsonObject, ReaderImageBackground> {
+        synchronized(this) { pendingReaderSave }?.join()
+        val preferences = dataStore.data.first()
+        val json = JsonObject()
+        for (key in BACKUP_STRING_KEYS) preferences[key]?.let { json.addProperty(key.name, it) }
+        json.addProperty(FIRST_LINE_INDENT_CHARS.name, preferences.readIndentChars())
+        for (key in BACKUP_FLOAT_KEYS) preferences[key]?.let { json.addProperty(key.name, it) }
+        for (key in BACKUP_LONG_KEYS) preferences[key]?.let { json.addProperty(key.name, it) }
+        for (key in BACKUP_BOOLEAN_KEYS) preferences[key]?.let { json.addProperty(key.name, it) }
+        appSettings?.readUpdateWebsiteHistory()?.let { json.addProperty(WEBSITE_HISTORY.name, it) }
+        return json to preferences.toImageBackground()
+    }
+
+    internal fun decodeBackup(json: JsonObject): Preferences = mutablePreferencesOf().apply {
+        fun <T> read(keys: List<Preferences.Key<T>>, decode: (JsonPrimitive) -> T) {
+            keys.forEach { key -> json[key.name]?.let { this[key] = decode(it.asJsonPrimitive) } }
+        }
+        read(BACKUP_STRING_KEYS) { require(it.isString); it.asString }
+        read(BACKUP_FLOAT_KEYS) { require(it.isNumber); it.asFloat.also { number -> require(number.isFinite()) } }
+        read(BACKUP_LONG_KEYS) { require(it.isNumber); it.asString.toLong() }
+        read(BACKUP_BOOLEAN_KEYS + WEBSITE_HISTORY) { require(it.isBoolean); it.asBoolean }
+        read(listOf(FIRST_LINE_INDENT_CHARS)) { require(it.isNumber); it.asString.toInt().coerceIn(0, 2) }
+        if (!contains(FIRST_LINE_INDENT_CHARS)) {
+            // Early v3 ZIP archives used the same boolean key as the old DataStore.
+            read(listOf(LEGACY_FIRST_LINE_INDENT)) { require(it.isBoolean); it.asBoolean }
+        }
+    }
+
+    internal suspend fun restoreBackup(backup: Preferences, photoName: String?) {
+        synchronized(this) { pendingReaderSave }?.join()
+        dataStore.edit { preferences ->
+            fun <T> replace(keys: List<Preferences.Key<T>>) {
+                keys.forEach { key ->
+                    val value = backup[key]
+                    if (value == null) preferences.remove(key) else preferences[key] = value
+                }
+            }
+            replace(BACKUP_STRING_KEYS)
+            replace(BACKUP_FLOAT_KEYS)
+            replace(BACKUP_LONG_KEYS)
+            replace(BACKUP_BOOLEAN_KEYS)
+            preferences[FIRST_LINE_INDENT_CHARS] = backup.readIndentChars()
+            preferences.remove(LEGACY_FIRST_LINE_INDENT)
+            if (photoName != null) {
+                preferences[IMAGE_FILE] = photoName
+            } else {
+                preferences.remove(IMAGE_FILE)
+                if (preferences[BACKGROUND] == ReaderBackground.CUSTOM_IMAGE.name) {
+                    preferences[BACKGROUND] = ReaderBackground.SYSTEM.name
+                }
+            }
+        }
+    }
+
+    internal suspend fun restoreWebsiteHistorySetting(backup: Preferences) {
+        backup[WEBSITE_HISTORY]?.let { appSettings?.restoreUpdateWebsiteHistory(it) }
+    }
+
     /** Only these fields change, so edits made elsewhere in reading settings survive applying a photo. */
     suspend fun saveImageBackground(background: ReaderImageBackground) {
         val pending = synchronized(this) { pendingReaderSave }
@@ -98,6 +163,8 @@ class ReaderSettingsDataStore(
             it[IMAGE_FILE] = value.fileName
             it[IMAGE_BLUR] = value.blur
             it[IMAGE_TRANSPARENCY] = value.transparency
+            it[IMAGE_CROP_X] = value.cropX
+            it[IMAGE_CROP_Y] = value.cropY
             it[IMAGE_GLOW_MODE] = value.glowMode.name
             it[IMAGE_GLOW_LIGHT_L] = value.lightTextGlowL
             it[IMAGE_GLOW_DARK_L] = value.darkTextGlowL
@@ -127,7 +194,9 @@ class ReaderSettingsDataStore(
         glowEnabled = this[IMAGE_GLOW_ENABLED] ?: true,
         glowStrength = this[IMAGE_GLOW_STRENGTH] ?: 70f,
         blur = this[IMAGE_BLUR] ?: 0f,
-        transparency = this[IMAGE_TRANSPARENCY] ?: 0f
+        transparency = this[IMAGE_TRANSPARENCY] ?: 0f,
+        cropX = this[IMAGE_CROP_X] ?: 0.5f,
+        cropY = this[IMAGE_CROP_Y] ?: 0.5f
     ).sanitized()
 
     private fun Preferences.toNameReplaceSettings(): ReaderNameReplaceSettings {
@@ -194,6 +263,12 @@ class ReaderSettingsDataStore(
     suspend fun migrateFromLegacy(context: Context) {
         migrationMutex.withLock {
             val current = runCatching { dataStore.data.first() }.getOrElse { emptyPreferences() }
+            if (current.contains(LEGACY_FIRST_LINE_INDENT)) {
+                dataStore.edit { preferences ->
+                    preferences[FIRST_LINE_INDENT_CHARS] = preferences.readIndentChars()
+                    preferences.remove(LEGACY_FIRST_LINE_INDENT)
+                }
+            }
             if (current[MIGRATION_COMPLETE] == true) return
             val hasCurrentSettings = listOf(
                 BACKGROUND,
@@ -212,6 +287,8 @@ class ReaderSettingsDataStore(
                 SCROLL_SIDE_GESTURES,
                 PAGED_BOOKMARK_GESTURES,
                 TOOLBAR_TOOLS,
+                FIRST_LINE_INDENT_CHARS,
+                LEGACY_FIRST_LINE_INDENT,
                 BRIGHTNESS,
                 KEEP_SCREEN_ON
             ).any { current.contains(it) }
@@ -258,7 +335,7 @@ class ReaderSettingsDataStore(
             pageAnimation = enumOrDefault(this[PAGE_ANIMATION], defaults.pageAnimation),
             volumeKeyPaging = this[VOLUME_KEY_PAGING] ?: defaults.volumeKeyPaging,
             longPressUnderline = this[LONG_PRESS_UNDERLINE] ?: defaults.longPressUnderline,
-            firstLineIndent = this[FIRST_LINE_INDENT] ?: defaults.firstLineIndent,
+            firstLineIndentChars = readIndentChars(),
             tapPagingEnabled = this[TAP_PAGING] ?: defaults.tapPagingEnabled,
             scrollSideGesturesEnabled = this[SCROLL_SIDE_GESTURES] ?: defaults.scrollSideGesturesEnabled,
             pagedBookmarkGesturesEnabled = this[PAGED_BOOKMARK_GESTURES] ?: defaults.pagedBookmarkGesturesEnabled,
@@ -276,7 +353,11 @@ class ReaderSettingsDataStore(
         )
     }
 
+    private fun Preferences.readIndentChars(): Int =
+        this[FIRST_LINE_INDENT_CHARS]?.coerceIn(0, 2) ?: if (this[LEGACY_FIRST_LINE_INDENT] == true) 2 else 0
+
     private fun ReaderSettings.sanitized() = copy(
+        firstLineIndentChars = firstLineIndentChars.coerceIn(0, 2),
         toolbarTools = toolbarTools.distinct().take(ReaderTool.MAX_VISIBLE),
         toolbarOrder = (toolbarOrder + ReaderTool.entries).distinct(),
         brightness = brightness.safeBrightness(),
@@ -288,7 +369,7 @@ class ReaderSettingsDataStore(
         horizontalPaddingDp = horizontalPaddingDp.safeValue(20f, 12f, 48f)
     )
 
-    private fun ReaderSettings.writeTo(preferences: androidx.datastore.preferences.core.MutablePreferences) {
+    private fun ReaderSettings.writeTo(preferences: MutablePreferences) {
         preferences[BACKGROUND] = background.name
         preferences[THEME_BACKGROUND_IN_DARK] = useThemeBackgroundInDarkMode
         preferences[FONT] = font.name
@@ -302,7 +383,8 @@ class ReaderSettingsDataStore(
         preferences[PAGE_ANIMATION] = pageAnimation.name
         preferences[VOLUME_KEY_PAGING] = volumeKeyPaging
         preferences[LONG_PRESS_UNDERLINE] = longPressUnderline
-        preferences[FIRST_LINE_INDENT] = firstLineIndent
+        preferences[FIRST_LINE_INDENT_CHARS] = firstLineIndentChars
+        preferences.remove(LEGACY_FIRST_LINE_INDENT)
         preferences[TAP_PAGING] = tapPagingEnabled
         preferences[SCROLL_SIDE_GESTURES] = scrollSideGesturesEnabled
         preferences[PAGED_BOOKMARK_GESTURES] = pagedBookmarkGesturesEnabled
@@ -368,6 +450,8 @@ class ReaderSettingsDataStore(
         val IMAGE_FILE = stringPreferencesKey("background_image_file")
         val IMAGE_BLUR = floatPreferencesKey("background_image_blur")
         val IMAGE_TRANSPARENCY = floatPreferencesKey("background_image_transparency")
+        val IMAGE_CROP_X = floatPreferencesKey("background_image_crop_x")
+        val IMAGE_CROP_Y = floatPreferencesKey("background_image_crop_y")
         val IMAGE_TEXT_COLOR = longPreferencesKey("background_image_text_color")
         val FONT = stringPreferencesKey("font")
         val FONT_SIZE = floatPreferencesKey("font_size")
@@ -378,7 +462,8 @@ class ReaderSettingsDataStore(
         val HORIZONTAL_PADDING = floatPreferencesKey("horizontal_padding")
         val SCRIPT = stringPreferencesKey("script")
         val PAGE_ANIMATION = stringPreferencesKey("page_animation")
-        val FIRST_LINE_INDENT = booleanPreferencesKey("first_line_indent")
+        val FIRST_LINE_INDENT_CHARS = intPreferencesKey("first_line_indent_chars")
+        val LEGACY_FIRST_LINE_INDENT = booleanPreferencesKey("first_line_indent")
         val LONG_PRESS_UNDERLINE = booleanPreferencesKey("long_press_underline")
         val TAP_PAGING = booleanPreferencesKey("tap_paging")
         val SCROLL_SIDE_GESTURES = booleanPreferencesKey("scroll_side_gestures")
@@ -397,8 +482,23 @@ class ReaderSettingsDataStore(
         val SHOW_TIME_BATTERY = booleanPreferencesKey("show_time_battery")
         val NAME_REPLACE_ENABLED = booleanPreferencesKey("name_replace_enabled")
         val NAME_REPLACE_RULES = stringPreferencesKey("name_replace_rules")
-        val MIGRATION_COMPLETE = androidx.datastore.preferences.core.booleanPreferencesKey(
-            "legacy_reader_settings_migration_complete"
+        val MIGRATION_COMPLETE = booleanPreferencesKey("legacy_reader_settings_migration_complete")
+        val WEBSITE_HISTORY = booleanPreferencesKey("update_website_history")
+
+        val BACKUP_STRING_KEYS = listOf(
+            BACKGROUND, FONT, SCRIPT, PAGE_ANIMATION, TOOLBAR_ORDER, TOOLBAR_TOOLS, IMAGE_GLOW_MODE, NAME_REPLACE_RULES
+        )
+        val BACKUP_FLOAT_KEYS = listOf(
+            FONT_SIZE, LETTER_SPACING, LINE_SPACING, PARAGRAPH_SPACING, PAGE_SPACING, HORIZONTAL_PADDING,
+            BRIGHTNESS, IMAGE_GLOW_LIGHT_L, IMAGE_GLOW_DARK_L, IMAGE_GLOW_CHROMA, IMAGE_GLOW_OUTER_ALPHA,
+            IMAGE_GLOW_STRENGTH, IMAGE_BLUR, IMAGE_TRANSPARENCY, IMAGE_CROP_X, IMAGE_CROP_Y
+        )
+        val BACKUP_LONG_KEYS = listOf(IMAGE_GLOW_CUSTOM_COLOR, IMAGE_TEXT_COLOR)
+        val BACKUP_BOOLEAN_KEYS = listOf(
+            THEME_BACKGROUND_IN_DARK, LONG_PRESS_UNDERLINE, TAP_PAGING, SCROLL_SIDE_GESTURES,
+            PAGED_BOOKMARK_GESTURES, KEEP_SCREEN_ON, VOLUME_KEY_PAGING, AUTO_RESUME_LAST_READING, LEFT_TAP_FORWARD,
+            EYE_PROTECTION, SHOW_SYSTEM_STATUS_BAR, SHOW_SYSTEM_NAVIGATION_BAR, SHOW_CHAPTER_NAME,
+            SHOW_TIME_BATTERY, IMAGE_GLOW_AUTO_CLAMP, IMAGE_GLOW_ENABLED, NAME_REPLACE_ENABLED
         )
     }
 }

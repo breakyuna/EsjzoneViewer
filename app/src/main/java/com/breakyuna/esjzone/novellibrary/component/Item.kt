@@ -38,6 +38,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.breakyuna.esjzone.ui.designsystem.AppSpacing
 import com.breakyuna.esjzone.novellibrary.novel.Chapter
 
 interface Item {
@@ -75,7 +76,7 @@ class TextItem(private val component: TextComponent) : Item {
                 fontWeight = FontWeight.SemiBold
             ),
             color = MaterialTheme.colorScheme.primary,
-            modifier = Modifier.padding(horizontal = 4.dp, vertical = 8.dp)
+            modifier = Modifier.padding(horizontal = AppSpacing.xs, vertical = AppSpacing.sm)
         )
     }
 
@@ -101,12 +102,12 @@ class ChapterItem(val chapter: Chapter) : Item {
             color = if (isCurrent) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.25f),
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(vertical = 3.dp)
+                .padding(vertical = AppSpacing.xs)
         ) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 14.dp, vertical = 12.dp),
+                    .padding(horizontal = AppSpacing.md, vertical = AppSpacing.md),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
@@ -121,7 +122,7 @@ class ChapterItem(val chapter: Chapter) : Item {
                             tint = MaterialTheme.colorScheme.primary,
                             modifier = Modifier.size(16.dp)
                         )
-                        Spacer(modifier = Modifier.width(8.dp))
+                        Spacer(modifier = Modifier.width(AppSpacing.sm))
                     }
                     Text(
                         text = chapter.name,
@@ -166,7 +167,7 @@ class ChapterListItem(
         Card(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(vertical = 4.dp),
+                .padding(vertical = AppSpacing.xs),
             shape = RoundedCornerShape(14.dp),
             colors = CardDefaults.cardColors(
                 containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
@@ -183,7 +184,7 @@ class ChapterListItem(
                         .fillMaxWidth()
                         .clip(RoundedCornerShape(14.dp))
                         .clickable { expanded = !expanded }
-                        .padding(horizontal = 14.dp, vertical = 12.dp),
+                        .padding(horizontal = AppSpacing.md, vertical = AppSpacing.md),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Icon(
@@ -192,7 +193,7 @@ class ChapterListItem(
                         tint = MaterialTheme.colorScheme.primary,
                         modifier = Modifier.size(18.dp)
                     )
-                    Spacer(modifier = Modifier.width(8.dp))
+                    Spacer(modifier = Modifier.width(AppSpacing.sm))
 
                     val (str, inlines) = name.toInlineAnnotatedString(
                         textMeasurer,
@@ -224,7 +225,7 @@ class ChapterListItem(
                 // Avoid animating the height of potentially hundreds of chapter rows.
                 if (expanded) {
                     Column(
-                        modifier = Modifier.padding(start = 12.dp, end = 12.dp, bottom = 10.dp)
+                        modifier = Modifier.padding(start = AppSpacing.md, end = AppSpacing.md, bottom = AppSpacing.sm)
                     ) {
                         for (item in children) {
                             item.Render(

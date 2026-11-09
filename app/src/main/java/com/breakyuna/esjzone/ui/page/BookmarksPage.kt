@@ -68,10 +68,10 @@ import com.breakyuna.esjzone.novellibrary.novel.coverFailure
 import com.breakyuna.esjzone.ui.component.AppNovelCover
 import com.breakyuna.esjzone.ui.designsystem.AppSpacing
 import com.breakyuna.esjzone.ui.designsystem.AppTypography
+import com.breakyuna.esjzone.ui.navigation.AppNavigator
 import com.breakyuna.esjzone.ui.navigation.AppDestination
 import com.breakyuna.esjzone.ui.navigation.AppStateViewModel
 import com.breakyuna.esjzone.ui.navigation.ChapterStateHolder
-import com.breakyuna.esjzone.ui.navigation.LocalBaseNavigator
 import com.breakyuna.esjzone.ui.navigation.rememberAppViewModel
 import com.breakyuna.esjzone.ui.product.EmptyState
 import com.breakyuna.esjzone.ui.product.ErrorState
@@ -95,9 +95,8 @@ object BookmarksPage : AppDestination {
 
     @OptIn(ExperimentalMaterial3Api::class)
     @Composable
-    override fun Content() {
+    override fun Content(navigator: AppNavigator) {
         val columns = wideListColumns()
-        val navigator = LocalBaseNavigator.current
         val model = rememberAppViewModel { BookmarksPageModel() }
         val state by model.state.collectAsState()
         var editing by remember { mutableStateOf(false) }
@@ -127,7 +126,7 @@ object BookmarksPage : AppDestination {
             topBar = {
                 TopAppBar(
                     title = { Text(stringResource(R.string.bookmarks), style = AppTypography.titleLarge) },
-                    navigationIcon = { BackIconButton { if (editing) exitEditing() else navigator?.pop() } },
+                    navigationIcon = { BackIconButton { if (editing) exitEditing() else navigator.pop() } },
                     actions = {
                         if (editing) {
                             IconButton(
@@ -195,7 +194,7 @@ object BookmarksPage : AppDestination {
                                     } else {
                                         val chapter = Chapter(bookmark.chapterName, bookmark.chapterUrl, false)
                                         val cleanId = BookmarkCoverStore.cleanNovelId(bookmark.novelId, bookmark.chapterUrl)
-                                        navigator?.pushIfNotCurrent(
+                                        navigator.pushIfNotCurrent(
                                             ChapterPage(
                                                 novelId = cleanId,
                                                 chapter = chapter,

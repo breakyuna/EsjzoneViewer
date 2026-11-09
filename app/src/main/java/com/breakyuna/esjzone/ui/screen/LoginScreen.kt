@@ -48,8 +48,9 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
+import com.breakyuna.esjzone.ui.navigation.AppNavKey
+import com.breakyuna.esjzone.ui.navigation.AppNavigator
 import com.breakyuna.esjzone.ui.navigation.AppDestination
-import com.breakyuna.esjzone.ui.navigation.LocalAppNavigator
 import com.breakyuna.esjzone.R
 import com.breakyuna.esjzone.database.BookshelfRepository
 import com.breakyuna.esjzone.network.features.loginMirrors
@@ -67,10 +68,11 @@ import com.breakyuna.esjzone.ui.navigation.AppExitBackHandler
 object LoginScreen : AppDestination {
     private fun readResolve(): Any = LoginScreen
 
+    override val navKey = AppNavKey.Login
+
     @Composable
-    override fun Content() {
+    override fun Content(navigator: AppNavigator) {
         AppExitBackHandler()
-        val navigator = LocalAppNavigator.current ?: error("Navigation 3 root is not provided")
         val scope = rememberCoroutineScope()
         val currentDomain by PresentationAccess.settings.domain
         var email by remember { mutableStateOf("") }

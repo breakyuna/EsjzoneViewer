@@ -43,11 +43,11 @@ import com.breakyuna.esjzone.ui.discovery.DiscoveryErrorState
 import com.breakyuna.esjzone.ui.discovery.DiscoveryOfflineBanner
 import com.breakyuna.esjzone.ui.discovery.DiscoveryScaffold
 import com.breakyuna.esjzone.ui.discovery.DiscoveryLoadingState
+import com.breakyuna.esjzone.ui.navigation.AppNavigator
 import com.breakyuna.esjzone.ui.navigation.AppDestination
 import com.breakyuna.esjzone.ui.navigation.AppStateViewModel
 import com.breakyuna.esjzone.ui.navigation.AppTab
 import com.breakyuna.esjzone.ui.navigation.AppTabOptions
-import com.breakyuna.esjzone.ui.navigation.LocalBaseNavigator
 import com.breakyuna.esjzone.ui.navigation.rememberAppViewModel
 import com.breakyuna.esjzone.ui.page.CategoryPage
 import kotlinx.coroutines.CancellationException
@@ -60,15 +60,15 @@ class CategoryBrowserPage : AppDestination {
     override val key: String = "CategoryBrowserPage"
 
     @Composable
-    override fun Content() {
-        val navigator = LocalBaseNavigator.current
+    override fun Content(navigator: AppNavigator) {
         val authorization = LocalAuthorization.current
         val model = rememberAppViewModel { CategoryModel(authorization) }
         DiscoveryScaffold(
             title = stringResource(R.string.categories),
-            onBack = { navigator?.pop() }
+            onBack = { navigator.pop() }
         ) { padding ->
             CategoryBrowserContent(
+                navigator = navigator,
                 model = model,
                 modifier = Modifier.fillMaxSize().padding(padding)
             )
@@ -88,20 +88,19 @@ object CategoryTab : AppTab {
         )
 
     @Composable
-    override fun Content() {
+    override fun Content(navigator: AppNavigator) {
         val authorization = LocalAuthorization.current
         val model = rememberAppViewModel { CategoryModel(authorization) }
         DiscoveryScaffold(
             title = stringResource(R.string.categories)
         ) { padding ->
-            CategoryBrowserContent(model, Modifier.fillMaxSize().padding(padding))
+            CategoryBrowserContent(navigator, model, Modifier.fillMaxSize().padding(padding))
         }
     }
 }
 
 @Composable
-private fun CategoryBrowserContent(model: CategoryModel, modifier: Modifier) {
-    val navigator = LocalBaseNavigator.current
+private fun CategoryBrowserContent(navigator: AppNavigator, model: CategoryModel, modifier: Modifier) {
     val state by model.state.collectAsStateWithLifecycle()
     val adult by PresentationAccess.settings.adult
 
@@ -158,7 +157,7 @@ private fun CategoryBrowserContent(model: CategoryModel, modifier: Modifier) {
                             title = category.name,
                             isAdult = category.isAdult,
                             index = index,
-                            onClick = { navigator?.pushIfNotCurrent(CategoryPage(category)) }
+                            onClick = { navigator.pushIfNotCurrent(CategoryPage(category)) }
                         )
                     }
                 }

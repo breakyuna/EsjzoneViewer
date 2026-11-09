@@ -1,6 +1,9 @@
 package com.breakyuna.esjzone
 
 import android.content.Context
+import android.content.ContextWrapper
+import android.graphics.Bitmap
+import androidx.datastore.preferences.preferencesDataStoreFile
 import android.net.Uri
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
@@ -9,9 +12,13 @@ import com.breakyuna.esjzone.domain.reader.ReaderUnderline
 import com.breakyuna.esjzone.domain.reader.ReaderUnderlines
 import com.breakyuna.esjzone.backup.BackupCategory
 import com.breakyuna.esjzone.backup.LocalBackup
+import com.breakyuna.esjzone.data.settings.ReaderSettingsDataStore
+import com.breakyuna.esjzone.data.settings.SettingsDataStore
 import com.breakyuna.esjzone.database.GeneralDatabase
 import com.breakyuna.esjzone.database.entity.Bookmark
+import com.breakyuna.esjzone.database.entity.BookshelfEntry
 import com.breakyuna.esjzone.database.entity.BookshelfGroup
+import com.breakyuna.esjzone.database.entity.BookshelfSyncState
 import com.breakyuna.esjzone.database.entity.BookshelfGroupMember
 import com.breakyuna.esjzone.database.entity.ReadingStat
 import com.breakyuna.esjzone.network.Authorization
@@ -19,7 +26,22 @@ import com.breakyuna.esjzone.novellibrary.component.TextComponent
 import com.breakyuna.esjzone.novellibrary.novel.Chapter
 import com.breakyuna.esjzone.novellibrary.novel.DetailedChapter
 import com.breakyuna.esjzone.offline.NovelDownloadStore
+import com.breakyuna.esjzone.ui.reader.ReaderBackground
+import com.breakyuna.esjzone.ui.reader.ReaderImageBackground
+import com.breakyuna.esjzone.ui.reader.ReaderImageBackgroundStore
+import com.breakyuna.esjzone.ui.reader.ReaderNameReplaceRule
+import com.breakyuna.esjzone.ui.reader.ReaderNameReplaceSettings
+import com.breakyuna.esjzone.ui.reader.ReaderSettings
 import java.io.File
+import java.nio.file.Files
+import java.util.UUID
+import java.util.zip.ZipFile
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.*
 import org.junit.Test
@@ -189,5 +211,96 @@ class LocalBackupInstrumentedTest {
             assertTrue(target.bookmarkDao().getAll().isEmpty())
             assertEquals(listOf(stat), target.readingStatDao().getAll())
         } finally { source.close(); target.close(); file.delete() }
+    }
+
+    @Test fun bookshelfRestoreMergesVisibleBooksIntoCurrentAccountWithoutReplayingSync() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val database = Room.inMemoryDatabaseBuilder(context, GeneralDatabase::class.java).build()
+        val file = File.createTempFile("bookshelf-backup-", ".zip", context.cacheDir)
+        try {
+            val saved = BookshelfEntry("source", "/detail/1.html", novelId = "1",
+                url = "/detail/1.html", title = "Saved", author = "Author", coverUrl = "https://example.com/cover.jpg",
+                isAdult = true, addedAt = 42L, syncState = BookshelfSyncState.PENDING_ADD, operationVersion = 5L)
+            val removed = saved.copy(bookKey = "/detail/2.html", url = "/detail/2.html",
+                visible = false, syncState = BookshelfSyncState.PENDING_REMOVE)
+            val existing = saved.copy(scope = "target", title = "Existing",
+                bookKey = "/detail/3.html", url = "/detail/3.html")
+            val pendingRemoval = removed.copy(scope = "target", bookKey = "/detail/4.html", url = "/detail/4.html")
+            val dao = database.bookshelfDao()
+            dao.upsertAll(listOf(saved, removed, existing, pendingRemoval,
+                existing.copy(scope = "source", title = "Old title"),
+                pendingRemoval.copy(scope = "source", visible = true, syncState = BookshelfSyncState.SYNCED)))
+            val selected = setOf(BackupCategory.BOOKSHELF)
+            LocalBackup.export(context, Uri.fromFile(file), database, "source", selected)
+            ZipFile(file).use { zip ->
+                val json = zip.getInputStream(zip.getEntry("backup.json")).reader().use { it.readText() }
+                assertFalse(json.contains("source"))
+                assertFalse(json.contains("operationVersion"))
+                assertFalse(json.contains("/detail/2.html"))
+            }
+            repeat(2) { LocalBackup.restore(context, Uri.fromFile(file), database, "target", selected) }
+            val restored = saved.copy(scope = "target", syncState = BookshelfSyncState.SYNCED, operationVersion = 0)
+            assertEquals(setOf(restored, existing, pendingRemoval), dao.getAll("target").toSet())
+            assertEquals(saved, dao.find("source", saved.bookKey))
+        } finally { database.close(); file.delete() }
+    }
+
+    @Test fun readerSettingsRoundTripWithPhotoAndKeepOtherAppPreferences() = runBlocking {
+        val base = ApplicationProvider.getApplicationContext<Context>()
+        val files = Files.createTempDirectory(base.cacheDir.toPath(), "backup-reader-").toFile()
+        val context = object : ContextWrapper(base) {
+            override fun getFilesDir(): File = files
+        }
+        val database = Room.inMemoryDatabaseBuilder(context, GeneralDatabase::class.java).build()
+        val readerFile = "reader-backup-${UUID.randomUUID()}.preferences_pb"
+        val appFile = "app-backup-${UUID.randomUUID()}.preferences_pb"
+        val job = SupervisorJob()
+        val scope = CoroutineScope(job + Dispatchers.IO)
+        val file = File(files, "reader.zip")
+        try {
+            val app = SettingsDataStore(context, scope, appFile)
+            val reader = ReaderSettingsDataStore(context, scope, readerFile, app)
+            val appearance = ReaderImageBackground(fileName = "${UUID.randomUUID()}.jpg",
+                cropX = 0.25f, cropY = 0.75f, blur = 20f, transparency = 40f, glowEnabled = false)
+            val source = requireNotNull(ReaderImageBackgroundStore.file(context, appearance))
+            source.parentFile?.mkdirs()
+            val bitmap = Bitmap.createBitmap(24, 48, Bitmap.Config.ARGB_8888)
+            try {
+                source.outputStream().use { assertTrue(bitmap.compress(Bitmap.CompressFormat.JPEG, 90, it)) }
+            } finally { bitmap.recycle() }
+            val bytes = source.readBytes()
+            val settings = ReaderSettings(fontSizeSp = 24f, firstLineIndentChars = 1)
+            val names = ReaderNameReplaceSettings(true, listOf(ReaderNameReplaceRule(source = "Before", target = "After")))
+            reader.save(settings)
+            reader.saveImageBackground(appearance)
+            reader.saveNameReplaceSettings(names)
+            app.restoreUpdateWebsiteHistory(false)
+            val selected = setOf(BackupCategory.READER_SETTINGS)
+            LocalBackup.export(context, Uri.fromFile(file), database, "source", selected, reader)
+
+            source.delete()
+            reader.save(ReaderSettings())
+            reader.saveNameReplaceSettings(ReaderNameReplaceSettings())
+            app.restoreUpdateWebsiteHistory(true)
+            app.setAdult(false)
+            withTimeout(5_000) { app.adult.first { !it } }
+
+            LocalBackup.restore(context, Uri.fromFile(file), database, "target", selected, reader)
+            val restoredPhoto = reader.readImageBackground()
+            assertNotEquals(appearance.fileName, restoredPhoto.fileName)
+            assertEquals(appearance.copy(fileName = restoredPhoto.fileName), restoredPhoto)
+            assertArrayEquals(bytes, requireNotNull(ReaderImageBackgroundStore.file(context, restoredPhoto)).readBytes())
+            assertEquals(settings.copy(background = ReaderBackground.CUSTOM_IMAGE),
+                withTimeout(5_000) { reader.settings.first { it.fontSizeSp == 24f } })
+            assertEquals(names, withTimeout(5_000) { reader.nameReplaceSettings.first { it.enabled } })
+            assertFalse(app.readUpdateWebsiteHistory())
+            assertFalse(app.adult.value)
+        } finally {
+            job.cancelAndJoin()
+            base.preferencesDataStoreFile(readerFile).delete()
+            base.preferencesDataStoreFile(appFile).delete()
+            database.close()
+            files.deleteRecursively()
+        }
     }
 }

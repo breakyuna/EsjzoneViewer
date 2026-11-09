@@ -34,9 +34,11 @@ class ReaderSettingsInstrumentedTest {
         var showReaderSettings by mutableStateOf(true)
         var label = ""
         var moreLabel = ""
+        var options = emptyList<String>()
         composeRule.setContent {
             label = globalStringResource(R.string.reader_first_line_indent)
             moreLabel = globalStringResource(R.string.reader_tab_controls)
+            options = (0..2).map { globalStringResource(R.string.reader_indent_chars, it) }
             MaterialTheme {
                 if (showReaderSettings) {
                     ReaderSettingsSheet(visible = true, settings = settings,
@@ -49,18 +51,21 @@ class ReaderSettingsInstrumentedTest {
             }
         }
         composeRule.onNodeWithText(moreLabel).performClick()
-        val readerToggle = composeRule.onNode(isToggleable() and hasAnySibling(hasText(label)))
-        readerToggle.performScrollTo().assertIsOff().performClick()
-        composeRule.runOnIdle { assertEquals(true, settings.firstLineIndent) }
+        composeRule.onNodeWithText(label).performScrollTo().performClick()
+        composeRule.onNodeWithText(options[1]).performClick()
+        composeRule.runOnIdle { assertEquals(1, settings.firstLineIndentChars) }
+
         composeRule.runOnIdle { showReaderSettings = false }
-        val profileToggle = composeRule.onNode(
-            isToggleable() and hasAnySibling(hasText(label)), useUnmergedTree = true
-        )
-        profileToggle.performScrollTo().assertIsOn().performClick()
-        composeRule.runOnIdle { assertEquals(false, settings.firstLineIndent) }
+        composeRule.onNodeWithText(label).performScrollTo().performClick()
+        composeRule.onAllNodesWithText(options[1]).filter(isSelected()).assertCountEquals(1)
+        composeRule.onNodeWithText(options[2]).performClick()
+        composeRule.runOnIdle { assertEquals(2, settings.firstLineIndentChars) }
+
         composeRule.runOnIdle { showReaderSettings = true }
         composeRule.onNodeWithText(moreLabel).performClick()
-        composeRule.onNode(isToggleable() and hasAnySibling(hasText(label))).performScrollTo().assertIsOff()
+        composeRule.onNodeWithText(label).performScrollTo().performClick()
+        composeRule.onNodeWithText(options[0]).performClick()
+        composeRule.runOnIdle { assertEquals(0, settings.firstLineIndentChars) }
     }
 
     @Test fun layoutParameterCanBeSelectedDirectlyAndAdjusted() {

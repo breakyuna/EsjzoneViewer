@@ -61,8 +61,8 @@ import com.breakyuna.esjzone.ui.designsystem.AppSpacing
 import com.breakyuna.esjzone.ui.designsystem.AppTypography
 import com.breakyuna.esjzone.ui.designsystem.accountContentWidth
 import com.breakyuna.esjzone.ui.designsystem.globalStringResource as stringResource
+import com.breakyuna.esjzone.ui.navigation.AppNavigator
 import com.breakyuna.esjzone.ui.navigation.AppDestination
-import com.breakyuna.esjzone.ui.navigation.LocalBaseNavigator
 import com.breakyuna.esjzone.ui.navigation.rememberAppViewModel
 import java.time.Instant
 import java.time.ZoneId
@@ -75,8 +75,7 @@ object CacheRecordsPage : AppDestination {
 
     @OptIn(ExperimentalMaterial3Api::class)
     @Composable
-    override fun Content() {
-        val navigator = LocalBaseNavigator.current
+    override fun Content(navigator: AppNavigator) {
         val context = LocalContext.current.applicationContext
         val model = rememberAppViewModel { CacheRecordsPageModel() }
         val operation by model.state.collectAsStateWithLifecycle()
@@ -96,7 +95,7 @@ object CacheRecordsPage : AppDestination {
         Scaffold(topBar = {
             TopAppBar(
                 title = { Text(stringResource(R.string.cache_records), style = AppTypography.titleMedium) },
-                navigationIcon = { BackIconButton { navigator?.pop() } },
+                navigationIcon = { BackIconButton { navigator.pop() } },
                 actions = {
                     IconButton(onClick = { export.launch("cache-analysis-${System.currentTimeMillis()}.json") },
                         enabled = !operation.busy) {

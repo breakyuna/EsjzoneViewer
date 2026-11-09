@@ -23,7 +23,7 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.breakyuna.esjzone.network.EsjzoneUrls
 import com.breakyuna.esjzone.network.LocalAuthorization
 import com.breakyuna.esjzone.network.cancellablePageRequest
-import com.breakyuna.esjzone.ui.navigation.LocalBaseNavigator
+import com.breakyuna.esjzone.ui.navigation.AppNavigator
 import com.breakyuna.esjzone.ui.navigation.forumContentLinkPath
 import com.breakyuna.esjzone.ui.navigation.forumLinkDestination
 import com.breakyuna.esjzone.ui.navigation.resolveForumContentLink
@@ -108,8 +108,7 @@ internal fun buildCommunityLinkedText(
 }
 
 @Composable
-internal fun rememberCommunityLinkOpener(): (String) -> Unit {
-    val navigator = LocalBaseNavigator.current
+internal fun rememberCommunityLinkOpener(navigator: AppNavigator): (String) -> Unit {
     val context = LocalContext.current
     val authorization = LocalAuthorization.current
     val lifecycle = LocalLifecycleOwner.current.lifecycle
@@ -128,7 +127,7 @@ internal fun rememberCommunityLinkOpener(): (String) -> Unit {
         if (pending != url) return@LaunchedEffect
         pending = null
         if (!lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) return@LaunchedEffect
-        if (navigator != null && destination != null) navigator.pushIfNotCurrent(destination)
+        if (destination != null) navigator.pushIfNotCurrent(destination)
         else InAppBrowserActivity.open(context, url.toString(), keepInApp = true)
     }
 
@@ -136,12 +135,12 @@ internal fun rememberCommunityLinkOpener(): (String) -> Unit {
         val opener: (String) -> Unit = { href ->
             val url = href.toHttpUrlOrNull()
             if (url != null && url.username.isEmpty() && url.password.isEmpty()) {
-                if (navigator != null && forumContentLinkPath(url) != null) {
+                if (forumContentLinkPath(url) != null) {
                     pending = url
                 } else {
                     pending = null
                     val destination = forumLinkDestination(url)
-                    if (navigator != null && destination != null) navigator.pushIfNotCurrent(destination)
+                    if (destination != null) navigator.pushIfNotCurrent(destination)
                     else InAppBrowserActivity.open(context, url.toString(), keepInApp = true)
                 }
             }

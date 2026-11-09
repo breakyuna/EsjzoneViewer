@@ -13,8 +13,11 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.*
@@ -29,6 +32,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -40,8 +44,8 @@ import com.breakyuna.esjzone.ui.designsystem.AppTypography
 import com.breakyuna.esjzone.ui.designsystem.accountContentWidth
 import com.breakyuna.esjzone.ui.designsystem.GlobalText as Text
 import com.breakyuna.esjzone.ui.designsystem.globalStringResource as stringResource
+import com.breakyuna.esjzone.ui.navigation.AppNavigator
 import com.breakyuna.esjzone.ui.navigation.AppDestination
-import com.breakyuna.esjzone.ui.navigation.LocalBaseNavigator
 import com.breakyuna.esjzone.ui.navigation.LocalFloatingNavSuppression
 import com.breakyuna.esjzone.ui.navigation.rememberAppViewModel
 import com.breakyuna.esjzone.ui.reader.ReaderGlowSurface
@@ -55,8 +59,7 @@ object ReaderBackgroundPage : AppDestination {
 
     @OptIn(ExperimentalMaterial3Api::class)
     @Composable
-    override fun Content() {
-        val navigator = LocalBaseNavigator.current
+    override fun Content(navigator: AppNavigator) {
         val suppressNavigation = LocalFloatingNavSuppression.current
         DisposableEffect(suppressNavigation) {
             suppressNavigation(true)
@@ -77,7 +80,7 @@ object ReaderBackgroundPage : AppDestination {
                 model.dismissError()
             }
         }
-        LaunchedEffect(state.saved) { if (state.saved) navigator?.pop() }
+        LaunchedEffect(state.saved) { if (state.saved) navigator.pop() }
         BackHandler(state.saving) { }
         var fullScreen by rememberSaveable { mutableStateOf(false) }
         BackHandler(fullScreen) { fullScreen = false }
@@ -102,7 +105,9 @@ object ReaderBackgroundPage : AppDestination {
                 }
             }
         }
-        val foreground = remember(state.draft) { Color(com.breakyuna.esjzone.ui.reader.readerGlowColors(state.draft).text) }
+        // Panning changes the backdrop only. Keep the already rendered text glow.
+        val glowAppearance = state.draft.copy(cropX = 0.5f, cropY = 0.5f)
+        val foreground = remember(glowAppearance) { Color(com.breakyuna.esjzone.ui.reader.readerGlowColors(glowAppearance).text) }
         val chooseImage = { picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }
         val windowSize = LocalWindowInfo.current.containerSize
         val density = LocalDensity.current
@@ -110,15 +115,26 @@ object ReaderBackgroundPage : AppDestination {
         val aspect = if (windowSize.height > 0) windowSize.width.toFloat() / windowSize.height else 0.5f
         val previewContent: @Composable (Modifier) -> Unit = { modifier ->
             BoxWithConstraints(modifier.clipToBounds().background(Color.Black)) {
+                val preview = state.preview
+                val panVertically = preview != null &&
+                    preview.height.toLong() * constraints.maxWidth > preview.width.toLong() * constraints.maxHeight
                 // Scale the complete reader layout together with the photo in the miniature.
                 val scale = (maxWidth / screenWidth).coerceAtLeast(0.01f)
                 CompositionLocalProvider(LocalDensity provides Density(density.density * scale, density.fontScale)) {
-                    val preview = state.preview
                     if (preview != null) {
-                        ReaderGlowSurface(preview, state.draft, Modifier.fillMaxSize()
-                            .readerBackdrop(Color.Black, remember(preview) { BitmapPainter(preview.asImageBitmap()) }, state.draft.transparency)) {
+                        val pan = Modifier.pointerInput(model, panVertically) {
+                            if (panVertically) {
+                                detectVerticalDragGestures { _, delta -> model.panPreview(Offset(0f, delta), size) }
+                            } else {
+                                detectHorizontalDragGestures { _, delta -> model.panPreview(Offset(delta, 0f), size) }
+                            }
+                        }
+                        val painter = remember(preview) { BitmapPainter(preview.asImageBitmap()) }
+                        ReaderGlowSurface(preview, glowAppearance, Modifier.fillMaxSize().then(pan)
+                            .readerBackdrop(Color.Black, painter, state.draft)) {
                             Column(
-                                Modifier.fillMaxSize().verticalScroll(rememberScrollState())
+                                Modifier.fillMaxSize()
+                                    .verticalScroll(rememberScrollState(), enabled = !panVertically)
                                     .padding(horizontal = settings.horizontalPaddingDp.dp)
                                     .padding(top = 88.dp, bottom = 24.dp),
                                 verticalArrangement = Arrangement.spacedBy(settings.paragraphSpacingDp.dp)
@@ -145,7 +161,7 @@ object ReaderBackgroundPage : AppDestination {
                 topBar = {
                     TopAppBar(
                         title = { Text(stringResource(R.string.reader_background_image), style = AppTypography.titleMedium) },
-                        navigationIcon = { BackIconButton { if (!state.saving) navigator?.pop() } },
+                        navigationIcon = { BackIconButton { if (!state.saving) navigator.pop() } },
                         actions = {
                             TextButton(onClick = model::apply, enabled = state.canApply) {
                                 Text(stringResource(R.string.reader_background_apply))
@@ -179,6 +195,10 @@ object ReaderBackgroundPage : AppDestination {
                                         Icon(Icons.Outlined.Image, stringResource(R.string.reader_background_choose_image))
                                     }
                                 }
+                            }
+                            if (state.preview != null) {
+                                Text(stringResource(R.string.reader_background_drag_preview),
+                                    style = AppTypography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
                             OutlinedButton(onClick = chooseImage, enabled = !state.loading && !state.saving,
                                 modifier = Modifier.padding(top = 8.dp)) {

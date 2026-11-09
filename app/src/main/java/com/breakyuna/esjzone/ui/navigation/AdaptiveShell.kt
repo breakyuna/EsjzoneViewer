@@ -458,7 +458,6 @@ private fun TabStackDisplay(
     }
     CompositionLocalProvider(
         com.breakyuna.esjzone.app.LocalCoverPage provides tabId.name,
-        LocalBaseNavigator provides navigator,
         LocalFloatingNavSuppression provides suppressNavigation,
         LocalLifecycleOwner provides lifecycleOwner,
         LocalNavigationEventDispatcherOwner provides dispatcherOwner
@@ -496,16 +495,16 @@ private fun TabStackDisplay(
                     ),
                     entryProvider = entryProvider {
                         entry<AppNavKey.HomeTab>(metadata = ::containerTransformMetadata) {
-                            rootContent(tabId, contentMotion) { HomeTab.Content() }
+                            rootContent(tabId, contentMotion) { HomeTab.Content(navigator) }
                         }
                         entry<AppNavKey.HistoryTab>(metadata = ::containerTransformMetadata) {
-                            rootContent(tabId, contentMotion) { HistoryTab.Content() }
+                            rootContent(tabId, contentMotion) { HistoryTab.Content(navigator) }
                         }
                         entry<AppNavKey.BookshelfTab>(metadata = ::containerTransformMetadata) {
-                            rootContent(tabId, contentMotion) { FavoriteTab.Content() }
+                            rootContent(tabId, contentMotion) { FavoriteTab.Content(navigator) }
                         }
                         entry<AppNavKey.ProfileTab>(metadata = ::containerTransformMetadata) {
-                            rootContent(tabId, contentMotion) { ProfileTab.Content() }
+                            rootContent(tabId, contentMotion) { ProfileTab.Content(navigator) }
                         }
                         entry<AppNavKey.Legacy>(metadata = ::containerTransformMetadata) { key ->
                             Box(Modifier.fillMaxSize().then(contentMotion)) {
@@ -513,9 +512,9 @@ private fun TabStackDisplay(
                                 if (destination != null) {
                                     val containerTarget = ContainerTransformTarget.forKey(key, origin = tabId.route)
                                     if (containerTarget != null) {
-                                        ContainerTransformDestination(containerTarget) { destination.Content() }
+                                        ContainerTransformDestination(containerTarget) { destination.Content(navigator) }
                                     } else {
-                                        destination.Content()
+                                        destination.Content(navigator)
                                     }
                                 } else {
                                     DiscoveryScaffold(

@@ -144,6 +144,10 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
+import com.breakyuna.esjzone.ui.navigation.AppNavKey
+import com.breakyuna.esjzone.ui.navigation.ReaderRoute
+import com.breakyuna.esjzone.ui.navigation.readerToken
+import com.breakyuna.esjzone.ui.navigation.AppNavigator
 import com.breakyuna.esjzone.ui.navigation.rememberAppViewModel
 import com.breakyuna.esjzone.ui.navigation.AppDestination
 import kotlinx.coroutines.CancellationException
@@ -168,7 +172,6 @@ import com.breakyuna.esjzone.database.ReadingStatisticsSession
 import com.breakyuna.esjzone.database.readingStatisticsBookKey
 import com.breakyuna.esjzone.database.entity.LocalReadingActivity
 import com.breakyuna.esjzone.network.EsjzoneUrls
-import com.breakyuna.esjzone.network.features.CloudViewReports
 import com.breakyuna.esjzone.network.LocalAuthorization
 import com.breakyuna.esjzone.novellibrary.novel.Chapter
 import com.breakyuna.esjzone.novellibrary.novel.FavoriteNovel
@@ -177,26 +180,20 @@ import com.breakyuna.esjzone.domain.reader.ReaderUnderline
 import com.breakyuna.esjzone.domain.reader.ReaderUnderlines
 import com.breakyuna.esjzone.ui.reader.renderedReaderText
 import com.breakyuna.esjzone.ui.reader.ReaderPageAnimation
-import com.breakyuna.esjzone.ui.navigation.LocalBaseNavigator
 import com.breakyuna.esjzone.ui.navigation.ChapterStateHolder
 import com.breakyuna.esjzone.ui.reader.ReaderScript
 import com.breakyuna.esjzone.ui.reader.ReaderScriptConverter
 import com.breakyuna.esjzone.ui.reader.ReaderScriptSnapshot
 import com.breakyuna.esjzone.ui.reader.ReaderSettings
+import com.breakyuna.esjzone.ui.reader.readerBodyTextStyle
 import com.breakyuna.esjzone.ui.reader.ReaderNameReplace
 import com.breakyuna.esjzone.ui.reader.ReaderNameReplaceSettings
 import com.breakyuna.esjzone.ui.reader.ReaderChapterHeading
 import com.breakyuna.esjzone.ui.reader.ReaderUnderlineSelection
 import com.breakyuna.esjzone.ui.reader.ReaderBlocks
-import com.breakyuna.esjzone.ui.reader.ReaderPage
 import com.breakyuna.esjzone.ui.reader.ReaderBoundaryTurn
 import com.breakyuna.esjzone.ui.reader.resolveReaderBoundaryPage
 import com.breakyuna.esjzone.ui.reader.ReaderPageContent
-import androidx.compose.ui.platform.LocalLayoutDirection
-import androidx.compose.ui.platform.LocalFontFamilyResolver
-import androidx.compose.ui.text.TextMeasurer
-import kotlinx.coroutines.ensureActive
-import com.breakyuna.esjzone.ui.reader.paginateReaderChapter
 import com.breakyuna.esjzone.ui.reader.ReaderShell
 import com.breakyuna.esjzone.ui.reader.ReaderScrollAnchor
 import com.breakyuna.esjzone.ui.reader.readerRebasedScrollAnchor
@@ -232,22 +229,19 @@ class ChapterPage(
     internal val restoreFromLocalHistory: Boolean = false,
     private val searchHit: com.breakyuna.esjzone.domain.reader.ReaderSearchHit? = null,
     private val chapterOrderComplete: Boolean = true,
-    internal val keepRequestedChapterOnRestore: Boolean = false
+    private val keepRequestedChapterOnRestore: Boolean = false
 ) : AppDestination {
 
-    override val isReaderDestination: Boolean = true
+    override val navKey = AppNavKey.Reader(
+        ReaderRoute(novelId.trim().ifBlank { chapter.novelId() }, chapterIdentity(chapter), keepRequestedChapterOnRestore)
+    )
 
-    override val key: String =
-        "ChapterPage:" +
-            novelId.trim().ifBlank { chapter.novelId() } +
-            ":" +
-            chapterIdentity(chapter)
+    override val key: String get() = readerToken(navKey.route)
 
     @Composable
-    override fun Content() {
-        val navigator = LocalBaseNavigator.current
+    override fun Content(navigator: AppNavigator) {
         val authorization = LocalAuthorization.current
-        val openReaderLink = rememberCommunityLinkOpener()
+        val openReaderLink = rememberCommunityLinkOpener(navigator)
         val navigationSettled = com.breakyuna.esjzone.ui.navigation.LocalReaderNavigationSettled.current
         var entryAnimationFinished by remember { mutableStateOf(false) }
         LaunchedEffect(navigationSettled) {
@@ -345,13 +339,7 @@ class ChapterPage(
         var updatingBookmark by remember { mutableStateOf(false) }
         var pendingBookmarkDesired by remember { mutableStateOf<Boolean?>(null) }
 
-        val readerTextStyle = MaterialTheme.typography.bodyLarge.copy(
-            fontFamily = readerSettings.font.family(),
-            fontSize = readerSettings.fontSizeSp.sp,
-            lineHeight = readerSettings.lineHeightSp.sp,
-            letterSpacing = readerSettings.letterSpacingSp.sp,
-        textIndent = androidx.compose.ui.text.style.TextIndent(firstLine = if (readerSettings.firstLineIndent) (readerSettings.fontSizeSp * 2).sp else 0.sp)
-        )
+        val readerTextStyle = readerBodyTextStyle(readerSettings)
 
         fun updateReaderSettings(settings: ReaderSettings) {
             readerSettings = settings
@@ -517,21 +505,10 @@ class ChapterPage(
             // after continuous reading. Resolve history before starting either load.
             requestedChapter.value = chapter
             try {
-                val saved = withContext(Dispatchers.IO) {
-                    PresentationAccess.database.localReadingActivityDao()
-                        .getLatestForIdentity(novelId, novelUrl)
-                }
-                if (saved != null) {
-                    val savedKey = chapterIdentity(Chapter(saved.chapterName, saved.chapterUrl, true))
-                    val initialKey = chapterIdentity(chapter)
-                    if (restoreFromLocalHistory && savedKey.isNotBlank() && savedKey != initialKey) {
-                        val target = Chapter(saved.chapterName, saved.chapterUrl, true)
-                        requestedChapter.value = target
-                    }
-                    if (restoreFromLocalHistory || savedKey == initialKey) {
-                        resolvedResumeProgress = saved.chapterProgress
-                        resolvedResumeAnchor = ReaderAnchor.decode(saved.anchor)
-                    }
+                lookupChapterResume(novelId, novelUrl, chapter, restoreFromLocalHistory)?.let { saved ->
+                    requestedChapter.value = saved.chapter
+                    resolvedResumeProgress = saved.progress
+                    resolvedResumeAnchor = saved.anchor
                 }
             } catch (error: CancellationException) {
                 throw error
@@ -565,14 +542,14 @@ class ChapterPage(
             }
         }
 
-        BackHandler(enabled = navigator != null) {
+        BackHandler {
             when {
                 sidePanels.isVisible -> sidePanels.close()
                 showBrightness -> showBrightness = false
                 showReaderSettings -> showReaderSettings = false
                 showReaderContents -> showReaderContents = false
                 progressPreview != null -> dismissProgressPreview()
-                else -> navigator?.pop()
+                else -> navigator.pop()
             }
         }
 
@@ -649,60 +626,22 @@ class ChapterPage(
             ReaderLayout.pagedContentPadding + readerStatusInset
         } else scrollContentBottomPadding
         var readerViewport by remember { mutableStateOf(IntSize.Zero) }
-        val pageContentWidthPx = with(density) {
-            (readerViewport.width - 2 * readerSettings.horizontalPaddingDp.dp.roundToPx()).coerceAtLeast(0)
-        }
-        val pageContentHeightPx = with(density) {
-            (readerViewport.height - pageTopPadding.roundToPx() - pageBottomPadding.roundToPx()).coerceAtLeast(0)
-        }
-        val headingStyle = MaterialTheme.typography.headlineSmall.copy(
-            fontWeight = FontWeight.Bold,
-            fontFamily = readerSettings.font.family(),
-            fontSize = (readerSettings.fontSizeSp + 6f).sp,
-            lineHeight = (readerSettings.lineHeightSp + 6f).sp,
-            letterSpacing = readerSettings.letterSpacingSp.sp
+        val pagination = chapterPagination(
+            result?.chapters, readerViewport, pageTopPadding, pageBottomPadding,
+            readerSettings, readerTextStyle, nameReplaceSettings
         )
-        val fontResolver = LocalFontFamilyResolver.current
-        val layoutDirection = LocalLayoutDirection.current
-        // Only layout settings invalidate pagination; toggling chrome never measures text again.
-        val paginationSettings = ReaderSettings(
-            firstLineIndent = readerSettings.firstLineIndent,
-            font = readerSettings.font,
-            fontSizeSp = readerSettings.fontSizeSp,
-            letterSpacingSp = readerSettings.letterSpacingSp,
-            lineSpacingSp = readerSettings.lineSpacingSp,
-            paragraphSpacingDp = readerSettings.paragraphSpacingDp
-        )
-        val paginationLayoutKey = listOf(pageContentWidthPx, pageContentHeightPx,
-            paginationSettings, readerTextStyle, headingStyle, density, layoutDirection,
-            fontResolver, readerSettings.script, nameReplaceSettings)
-        val textLayouts = remember(paginationLayoutKey) {
+        val textLayouts = remember(pagination.layoutKey) {
             androidx.compose.runtime.mutableStateMapOf<String, androidx.compose.ui.text.TextLayoutResult>()
         }
-        val paginationKey = paginationLayoutKey + listOf(result?.chapters)
         var paginationSnapshot by remember { mutableStateOf<ReaderPaginationSnapshot?>(null) }
         val scriptReady = readerSettings.script == ReaderScript.ORIGINAL ||
             (convertedText?.script == readerSettings.script && convertedText?.chapters == result?.chapters)
-        val paginationReady = !pagedMode || (scriptReady && paginationSnapshot?.key == paginationKey)
+        val paginationReady = !pagedMode || (scriptReady && paginationSnapshot?.key == pagination.key)
         val pagedDisplayItems = remember(paginationSnapshot, result?.chapters) {
-            // Keep a password page's stable key until its replacement body is paginated.
-            // Removing it early would move Pager to an adjacent chapter during verification.
-            val loadedKeys = result?.chapters.orEmpty().map { chapterIdentity(it.chapter) }.toSet()
-            paginationSnapshot?.items.orEmpty().filter { it.chapterKey in loadedKeys }
+            paginationSnapshot?.itemsFor(result?.chapters.orEmpty()).orEmpty()
         }
         val displayItems = if (pagedMode) pagedDisplayItems else {
-            remember(result?.chapters) {
-                result?.chapters.orEmpty().flatMap { entry ->
-                    val chapterKey = chapterIdentity(entry.chapter)
-                    val blocks = entry.document.blocks
-                    val count = blocks.size + 1
-                    listOf(ReaderDisplayItem(chapterKey, chapterKey, entry, 0, count, emptyList())) +
-                        blocks.mapIndexed { index, block ->
-                            ReaderDisplayItem("$chapterKey|block:$index", chapterKey, entry,
-                                index + 1, count, listOf(block))
-                        }
-                }
-            }
+            remember(result?.chapters) { scrollChapterItems(result?.chapters.orEmpty()) }
         }
         val pageTurnInProgressForBoundary = remember { mutableStateOf(false) }
         val pagedTurns = remember { ReaderPageTurnQueue() }
@@ -871,7 +810,7 @@ class ChapterPage(
             (convertedText?.script == readerSettings.script && visiblePageEntry != null &&
                 convertedText?.chapters?.contains(visiblePageEntry) == true)
         val visiblePaginationReady = !pagedMode || (visibleScriptReady &&
-            paginationSnapshot?.hasReadablePage(paginationLayoutKey, visiblePageEntry, result?.chapters.orEmpty()) == true)
+            paginationSnapshot?.hasReadablePage(pagination.layoutKey, visiblePageEntry, result?.chapters.orEmpty()) == true)
         val firstContentStarted = remember(chapterPageModel, requestedChapter.value.url) { System.nanoTime() }
         // Read layout state only in the one-shot observer, using the latest content.
         val isContentLaidOut by rememberUpdatedState {
@@ -1080,39 +1019,14 @@ class ChapterPage(
         }
         val currentBookLocation = measuredBookLocation ?: retainedBookLocation
         val latestBookLocation by rememberUpdatedState(currentBookLocation)
-        LaunchedEffect(pagedMode, paginationKey, scriptReady) {
-            if (!pagedMode || !scriptReady || pageContentWidthPx <= 0 || pageContentHeightPx <= 0) return@LaunchedEffect
-            val started = System.nanoTime()
-            val cached = paginationSnapshot?.takeIf { it.layoutKey == paginationLayoutKey }?.pages.orEmpty()
-            val entries = result?.chapters.orEmpty()
-            val snapshot = withContext(Dispatchers.Default) {
-                // A private measurer/cache belongs to this worker, rather than sharing the UI measurer.
-                val measurer = TextMeasurer(fontResolver, density, layoutDirection, cacheSize = 0)
-                val pages = entries.associateWith { entry ->
-                    ensureActive()
-                    if (entry.requiresPassword) listOf(ReaderPage(emptyList(), -1f, isOversized = true))
-                    else cached[entry] ?: paginateReaderChapter(
-                        entry.chapter.name, entry.document.blocks, paginationSettings,
-                        readerTextStyle, headingStyle, measurer, density,
-                        pageContentWidthPx, pageContentHeightPx, readerTextTransform
-                    )
-                }
-                val items = entries.flatMap { entry ->
-                    val chapterKey = chapterIdentity(entry.chapter)
-                    val chapterPages = pages.getValue(entry)
-                    chapterPages.mapIndexed { index, page ->
-                        ReaderDisplayItem("$chapterKey|page:$index", chapterKey, entry,
-                            index, chapterPages.size, emptyList(), page)
-                    }
-                }
-                ReaderPaginationSnapshot(paginationKey, paginationLayoutKey, pages, items)
-            }
-            if (paginationSnapshot?.layoutKey != paginationLayoutKey &&
+        LaunchedEffect(pagedMode, pagination.key, scriptReady) {
+            if (!pagedMode || !scriptReady || !pagination.canMeasure) return@LaunchedEffect
+            val snapshot = pagination.measure(paginationSnapshot, readerTextTransform)
+            if (paginationSnapshot?.layoutKey != pagination.layoutKey &&
                 !resumePending && pendingSeekLocation == null) {
                 pendingSeekLocation = latestBookLocation
             }
             paginationSnapshot = snapshot
-            AppLogger.i("ReaderTiming", "paginationMs=${(System.nanoTime() - started) / 1_000_000} chapters=${entries.size} pages=${snapshot.items.size}")
         }
         // Keep the last measured chapter as the UI/history anchor while a
         // list update briefly leaves no matching visible item.
@@ -1122,7 +1036,7 @@ class ChapterPage(
         LaunchedEffect(currentReadingChapter, activeChapter?.chapter, resumePending, pendingSeekLocation, isProgrammaticScroll) {
             if (activeChapter != null && sameReaderChapter(activeChapter.chapter, currentReadingChapter) &&
                 !resumePending && pendingSeekLocation == null && !isProgrammaticScroll) {
-                navigator?.updateReaderRoute(novelId.ifBlank { currentReadingChapter.novelId() },
+                navigator.updateReaderRoute(novelId.ifBlank { currentReadingChapter.novelId() },
                     chapterIdentity(currentReadingChapter))
             }
         }
@@ -1260,28 +1174,8 @@ class ChapterPage(
             }
         }
 
-        LaunchedEffect(
-            activeChapterKey,
-            authorization,
-            chapterPageModel.networkFetchGeneration.value
-        ) {
-            val entry = activeChapter ?: return@LaunchedEffect
-            if (entry.requiresPassword) return@LaunchedEffect
-            delay(750)
-            val bookId = novelId.ifBlank { entry.chapter.novelId() }
-            val bookUrl = novelUrl.ifBlank { localHistoryPosition.value.novelUrl }
-            val fetchedGeneration = chapterPageModel.takeFreshNetworkFetch(entry.chapter)
-            if (CloudViewReports.fetchIsCurrent(
-                    authorization, bookId, bookUrl, entry.chapter.url, fetchedGeneration
-                )) {
-                CloudViewReports.noteFetched(
-                    authorization, bookId, bookUrl, entry.chapter.url
-                )
-            } else {
-                CloudViewReports.noteLocal(
-                    authorization, bookId, bookUrl, entry.chapter.url
-                )
-            }
+        ChapterViewReportEffect(activeChapterKey, activeChapter, authorization, novelId, chapterPageModel) {
+            novelUrl.ifBlank { localHistoryPosition.value.novelUrl }
         }
 
         // A history-origin reader suppresses position writes until restoration
@@ -1556,98 +1450,21 @@ class ChapterPage(
             pendingUnderline = null
         }
 
-        LaunchedEffect(pendingSeekLocation, displayItems, paginationReady, scriptReady, readerBodyStartOffset, initialScrollPrimed, entryAnimationFinished, positionRestoreAttempt) {
+        LaunchedEffect(pendingSeekLocation, displayItems, paginationReady, scriptReady, readerBodyStartOffset,
+            initialScrollPrimed, entryAnimationFinished, positionRestoreAttempt) {
             if (!entryAnimationFinished || !initialScrollPrimed || !paginationReady || !scriptReady) return@LaunchedEffect
             val target = pendingSeekLocation ?: return@LaunchedEffect
-            val targetKey = chapterIdentity(target.chapter)
-            val startIndex = firstItemByChapter[targetKey] ?: return@LaunchedEffect
-            val itemCount = displayItems[startIndex].itemCount
-            val scaled = (target.chapterProgress.coerceIn(0f, 1f) * itemCount)
-                .coerceAtMost(itemCount - 0.001f)
-            val contentPosition = target.contentPosition
-            val chapterItems = displayItems.subList(startIndex, startIndex + itemCount)
-            val exactAnchor = target.anchor?.takeIf { it.matches(targetKey, displayItems[startIndex].entry.document) }
-            val exactIndex = exactAnchor?.let { anchor ->
-                when (anchor.kind) {
-                    "heading" -> 0
-                    "end" -> chapterItems.lastIndex
-                    else -> if (!pagedMode) anchor.blockIndex + 1 else {
-                        val block = displayItems[startIndex].entry.document.blocks[anchor.blockIndex]
-                        val offsets = if (identityOffsets) null else textOffsets(block)
-                        chapterItems.indexOfLast { item ->
-                            item.page?.let { page ->
-                                val blockIndex = page.contentPosition.toInt()
-                                val startOffset = (page.segments.firstOrNull() as? com.breakyuna.esjzone.ui.reader.ReaderPageSegment.TextLine)?.startOffset ?: 0
-                                blockIndex < anchor.blockIndex || blockIndex == anchor.blockIndex &&
-                                    (offsets?.toSource(startOffset) ?: startOffset) <= anchor.offset
-                            } == true
-                        }.coerceAtLeast(0)
-                    }
-                }
-            }
-            val sourceIndex = exactIndex ?: contentPosition?.let { position ->
-                com.breakyuna.esjzone.ui.reader.readerItemForContentPosition(
-                    chapterItems.map { it.page?.contentPosition ?: (it.ordinal - 1f) }, position
-                )
-            }
-            val targetIndex = startIndex + (sourceIndex ?: scaled.toInt())
-            val targetItemKey = displayItems[targetIndex].key
-
+            val startIndex = firstItemByChapter[chapterIdentity(target.chapter)] ?: return@LaunchedEffect
             positionRestoreFailed = false
-            suspend fun restoreParagraph(): Boolean {
-                if (pagedMode) horizontalPagerState.scrollToPage(targetIndex)
-                else scrollState.scrollToItem(readerListIndex(targetIndex))
-                return snapshotFlow {
-                    if (pagedMode) horizontalPagerState.currentPage == targetIndex &&
-                        horizontalPagerState.layoutInfo.visiblePagesInfo.any { it.index == targetIndex && it.key == targetItemKey }
-                    else scrollState.layoutInfo.visibleItemsInfo.any {
-                        it.index == readerListIndex(targetIndex) && it.key == targetItemKey
-                    }
-                }.first { it }
-            }
             isProgrammaticScroll = true
-            var restored = false
-            try {
-                restored = com.breakyuna.esjzone.ui.reader.restoreReaderPosition(exact = {
-                    restoreParagraph()
-                    val itemFraction = if (exactAnchor?.kind == "image") exactAnchor.fraction else if (contentPosition != null) {
-                        (contentPosition - (displayItems[targetIndex].ordinal - 1f)).coerceIn(0f, 1f)
-                    } else scaled - scaled.toInt()
-                    if (exactAnchor?.kind == "text" && !pagedMode) {
-                        val layout = kotlinx.coroutines.withTimeoutOrNull(1500L) {
-                            snapshotFlow { textLayouts[targetItemKey] }.first { it != null }
-                        }
-                        val block = displayItems[targetIndex].entry.document.blocks.getOrNull(exactAnchor.blockIndex)
-                        if (layout != null && block != null) {
-                            val offset = if (identityOffsets) exactAnchor.offset
-                                else textOffsets(block)?.toDisplay(exactAnchor.offset) ?: exactAnchor.offset
-                            val line = layout.getLineForOffset(offset.coerceIn(0, layout.layoutInput.text.length))
-                            scrollState.scrollToItem(readerListIndex(targetIndex), layout.getLineTop(line).roundToInt().coerceAtLeast(0))
-                        }
-                    } else if (exactAnchor?.kind == "end" && !pagedMode) {
-                        val visible = scrollState.layoutInfo.visibleItemsInfo.firstOrNull { it.key == targetItemKey }
-                        if (visible != null) scrollState.scrollToItem(visible.index, visible.size)
-                    } else if (itemFraction > 0f && !pagedMode) {
-                        val itemSize = kotlinx.coroutines.withTimeoutOrNull(1000L) {
-                            snapshotFlow {
-                                scrollState.layoutInfo.visibleItemsInfo
-                                    .firstOrNull { it.key == targetItemKey }
-                                    ?.let { it.index to it.size }
-                            }.first { layout -> layout?.second?.let { it > 0 } == true }
-                        }
-                        if (itemSize != null) {
-                            scrollState.scrollToItem(
-                                itemSize.first,
-                                (itemSize.second * itemFraction)
-                                    .roundToInt()
-                                    .coerceAtLeast(0)
-                            )
-                        }
-                    }
-                    true
-                }, fallback = { restoreParagraph() })
-                // Keep the intermediate offset hidden through the final measure.
-                if (restored && resumePending) withFrameNanos { }
+            val restored = try {
+                restoreChapterPosition(
+                    target, startIndex, displayItems, pagedMode, scrollState, horizontalPagerState,
+                    readerBodyStartOffset, textLayouts, identityOffsets, ::textOffsets
+                ).also {
+                    // Keep the intermediate offset hidden through the final measure.
+                    if (it && resumePending) withFrameNanos { }
+                }
             } finally {
                 isProgrammaticScroll = false
             }
@@ -1727,7 +1544,7 @@ class ChapterPage(
                 if (it.index == scrollState.firstVisibleItemIndex)
                     scrollState.firstVisibleItemScrollOffset else 0
             } ?: 0
-            val pushed = navigator?.pushIfNotCurrent(
+            val pushed = navigator.pushIfNotCurrent(
                 ChapterCommentsPage(
                     chapterName = target.name,
                     chapterUrl = target.url
@@ -1835,7 +1652,7 @@ class ChapterPage(
         }
 
         LaunchedEffect(pagedInputEnabled, requestedChapter.value.url, readerSettings.pageAnimation,
-            readerViewport, paginationSettings) {
+            readerViewport, pagination.settings) {
             if (!pagedInputEnabled) {
                 pagedTurns.clear()
                 return@LaunchedEffect
@@ -1945,6 +1762,8 @@ class ChapterPage(
             background = readerBackgroundColor,
             backgroundPainter = backgroundPainter,
             transparency = imageBackground.transparency,
+            cropX = imageBackground.cropX,
+            cropY = imageBackground.cropY,
             loadingDescription = readerLoadingDescription,
             onRetryPosition = if (positionRestoreFailed) ({
                 positionRestoreFailed = false
@@ -1984,7 +1803,7 @@ class ChapterPage(
                     val commentModel = viewModel<CommentPageModel>(key = "reader-comments:${chapterIdentity(target)}") {
                         CommentPageModel(authorization, target.url)
                     }
-                    CommentListPage(title = target.name, model = commentModel, onBack = sidePanels::close)
+                    CommentListPage(navigator, title = target.name, model = commentModel, onBack = sidePanels::close)
                 }
             }
         ) {
@@ -2366,7 +2185,7 @@ class ChapterPage(
                                                 else -> Unit
                                             }
                                         }
-                                        .readerBackdrop(readerBackgroundColor, backgroundPainter, imageBackground.transparency)
+                                        .readerBackdrop(readerBackgroundColor, backgroundPainter, imageBackground)
                                 ) {
                                     Box(Modifier.fillMaxSize().padding(
                                             start = if (fullPageBackground) readerSettings.horizontalPaddingDp.dp else 0.dp,
@@ -2391,7 +2210,7 @@ class ChapterPage(
                                     } else ReaderPageContent(
                                         page, readerSettings, readerTextStyle,
                                         readerContentColor, readerTextTransform,
-                                        with(density) { pageContentHeightPx.toDp() },
+                                        with(density) { pagination.heightPx.toDp() },
                                         underlines = underlines[currentPagedDisplayItems.getOrNull(pageIndex)?.chapterKey].orEmpty(),
                                         onUnderline = { mark, remove ->
                                             currentPagedDisplayItems.getOrNull(pageIndex)?.let { item ->
@@ -2696,7 +2515,7 @@ class ChapterPage(
                                                     ReaderTool.SETTINGS -> openReaderSettings()
                                                     ReaderTool.BOOKMARK -> toggleBookmark()
                                                     ReaderTool.COMMENTS -> openReaderComments()
-                                                    ReaderTool.NOVEL_DETAIL -> navigator?.pushIfNotCurrent(
+                                                    ReaderTool.NOVEL_DETAIL -> navigator.pushIfNotCurrent(
                                                         NovelPage(FavoriteNovel(resolvedNovelName, detailUrl), history)
                                                     )
                                                     ReaderTool.EYE_PROTECTION -> updateReaderSettings(readerSettings.copy(eyeProtectionEnabled = !readerSettings.eyeProtectionEnabled))
@@ -2753,7 +2572,7 @@ class ChapterPage(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         IconButton(
-                            onClick = { navigator?.pop() },
+                            onClick = { navigator.pop() },
                             modifier = Modifier.size(48.dp)
                         ) {
                             Icon(
@@ -2808,43 +2627,23 @@ class ChapterPage(
                 },
                 onDismiss = { showReaderContents = false }
             )
-            ReaderBrightnessSheet(
-                visible = showBrightness,
-                brightness = readerSettings.brightness,
-                onChange = { updateReaderSettings(readerSettings.copy(brightness = it)) },
-                onDismiss = { showBrightness = false },
-                modifier = Modifier.align(Alignment.BottomCenter)
-                    .padding(bottom = with(density) { readerToolbarHeightPx.toDp() })
-            )
-            ReaderSettingsSheet(
-                visible = showReaderSettings,
+            ChapterSettingsPanels(
+                showBrightness = showBrightness,
+                showSettings = showReaderSettings,
                 settings = readerSettings,
                 customImageAvailable = imageBackdrop.available,
                 systemThemeSelected = appThemeMode == AppThemeMode.SYSTEM,
-                onFollowSystemTheme = {
-                    PresentationAccess.settings.setThemeMode(AppThemeMode.SYSTEM)
-                },
+                onFollowSystemTheme = { PresentationAccess.settings.setThemeMode(AppThemeMode.SYSTEM) },
                 onConfigureImage = {
                     showReaderSettings = false
-                    navigator?.pushIfNotCurrent(ReaderBackgroundPage)
+                    navigator.pushIfNotCurrent(ReaderBackgroundPage)
                 },
-                onSettingsChange = { updated ->
-                    if (updated.pageAnimation != readerSettings.pageAnimation ||
-                        updated.font != readerSettings.font ||
-                        updated.firstLineIndent != readerSettings.firstLineIndent ||
-                        updated.fontSizeSp != readerSettings.fontSizeSp ||
-                        updated.letterSpacingSp != readerSettings.letterSpacingSp ||
-                        updated.lineSpacingSp != readerSettings.lineSpacingSp ||
-                        updated.paragraphSpacingDp != readerSettings.paragraphSpacingDp ||
-                        updated.horizontalPaddingDp != readerSettings.horizontalPaddingDp ||
-                        updated.script != readerSettings.script) {
-                        pendingSeekLocation = currentBookLocation
-                    }
-                    updateReaderSettings(updated)
-                },
-                onDismiss = { showReaderSettings = false },
+                onReflow = { pendingSeekLocation = currentBookLocation },
+                onSettingsChange = ::updateReaderSettings,
+                onDismissSettings = { showReaderSettings = false },
+                onDismissBrightness = { showBrightness = false },
                 nameReplaceSettings = nameReplaceSettings,
-                onNameReplaceChange = { updateNameReplaceSettings(it) },
+                onNameReplaceChange = ::updateNameReplaceSettings,
                 modifier = Modifier.align(Alignment.BottomCenter)
                     .padding(bottom = with(density) { readerToolbarHeightPx.toDp() })
             )
@@ -2938,26 +2737,6 @@ class ChapterPage(
     }
 
 }
-
-internal data class ReaderPaginationSnapshot(
-    val key: List<Any?>,
-    val layoutKey: List<Any?>,
-    val pages: Map<ReaderChapter, List<ReaderPage>>,
-    val items: List<ReaderDisplayItem>
-) {
-    fun hasReadablePage(currentLayoutKey: List<Any?>, entry: ReaderChapter?, loaded: List<ReaderChapter>): Boolean =
-        layoutKey == currentLayoutKey && entry != null && entry in loaded && !pages[entry].isNullOrEmpty()
-}
-
-internal data class ReaderDisplayItem(
-    val key: String,
-    val chapterKey: String,
-    val entry: ReaderChapter,
-    val ordinal: Int,
-    val itemCount: Int,
-    val blocks: List<ReaderBlock>,
-    val page: ReaderPage? = null
-)
 
 internal data class ReaderBookLocation(
     val chapter: Chapter,

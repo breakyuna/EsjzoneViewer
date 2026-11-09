@@ -4,6 +4,8 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.net.Uri
 import androidx.lifecycle.viewModelScope
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.unit.IntSize
 import com.breakyuna.esjzone.R
 import com.breakyuna.esjzone.app.PresentationAccess
 import com.breakyuna.esjzone.ui.navigation.AppStateViewModel
@@ -16,6 +18,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 
 internal class ReaderBackgroundPageModel(context: Context) :
@@ -75,7 +78,10 @@ internal class ReaderBackgroundPageModel(context: Context) :
             try {
                 val previousSource = state.value.source
                 val source = ReaderImageBackgroundStore.importImage(appContext, uri)
-                mutableState.value = state.value.copy(source = source, loading = false, preview = null, previewBlur = null, previewSize = null)
+                mutableState.value = state.value.copy(
+                    source = source, loading = false, preview = null, previewBlur = null, previewSize = null,
+                    draft = state.value.draft.copy(cropX = 0.5f, cropY = 0.5f)
+                )
                 refreshPreview()
                 withContext(NonCancellable + Dispatchers.IO) {
                     ReaderImageBackgroundStore.deleteDraft(appContext, previousSource)
@@ -95,6 +101,14 @@ internal class ReaderBackgroundPageModel(context: Context) :
         val previousBlur = state.value.draft.blur
         mutableState.value = state.value.copy(draft = value.sanitized())
         if (previousBlur != state.value.draft.blur) refreshPreview()
+    }
+
+    fun panPreview(delta: Offset, viewport: IntSize) {
+        val current = state.value
+        val photo = current.preview ?: return
+        if (current.loading || current.saving) return
+        val draft = current.draft.pan(delta, viewport, IntSize(photo.width, photo.height))
+        mutableState.value = current.copy(draft = draft)
     }
 
     private fun refreshPreview() {
@@ -123,18 +137,20 @@ internal class ReaderBackgroundPageModel(context: Context) :
         saveJob = viewModelScope.launch {
             try {
                 withContext(NonCancellable + Dispatchers.IO) {
-                    val source = requireNotNull(selected.source)
-                    val original = ReaderImageBackgroundStore.render(source)
-                    ReaderImageBackgroundStore.renderAppearance(source, selected.draft.blur)
-                    val target = ReaderImageBackgroundStore.persist(appContext, source, original)
-                    try {
-                        PresentationAccess.readerSettings.saveImageBackground(selected.draft.copy(fileName = target.name))
-                    } catch (error: Exception) {
-                        if (target != source) target.delete()
-                        throw error
+                    ReaderImageBackgroundStore.savedPhotoMutex.withLock {
+                        val source = requireNotNull(selected.source)
+                        val original = ReaderImageBackgroundStore.render(source)
+                        ReaderImageBackgroundStore.renderAppearance(source, selected.draft.blur)
+                        val target = ReaderImageBackgroundStore.persist(appContext, source, original)
+                        try {
+                            PresentationAccess.readerSettings.saveImageBackground(selected.draft.copy(fileName = target.name))
+                        } catch (error: Exception) {
+                            if (target != source) target.delete()
+                            throw error
+                        }
+                        ReaderImageBackgroundStore.removeUnused(appContext, target)
+                        ReaderImageBackgroundStore.deleteDraft(appContext, source)
                     }
-                    ReaderImageBackgroundStore.removeUnused(target)
-                    ReaderImageBackgroundStore.deleteDraft(appContext, source)
                 }
                 mutableState.value = state.value.copy(saving = false, saved = true)
             } catch (error: CancellationException) {

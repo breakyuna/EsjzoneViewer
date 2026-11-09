@@ -187,7 +187,7 @@ fun ReaderShell(
         Box(
             modifier = Modifier.fillMaxSize()
                 .graphicsLayer { translationY = pullTranslation }
-                .readerBackdrop(background, backgroundPainter, imageSettings.transparency),
+                .readerBackdrop(background, backgroundPainter, imageSettings),
             content = content
         )
     }

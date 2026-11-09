@@ -57,10 +57,13 @@ import com.breakyuna.esjzone.ui.designsystem.globalStringResource as stringResou
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.breakyuna.esjzone.ui.navigation.AppNavKey
+import com.breakyuna.esjzone.ui.navigation.LegacyRoute
+import com.breakyuna.esjzone.ui.navigation.token
+import com.breakyuna.esjzone.ui.navigation.AppNavigator
 import com.breakyuna.esjzone.ui.navigation.AppStateViewModel
 import com.breakyuna.esjzone.ui.navigation.rememberAppViewModel
 import com.breakyuna.esjzone.ui.navigation.AppDestination
-import com.breakyuna.esjzone.ui.navigation.encodeRouteTokenPart
 import com.breakyuna.esjzone.R
 import com.breakyuna.esjzone.network.Authorization
 import com.breakyuna.esjzone.network.EsjzoneUrls
@@ -92,7 +95,6 @@ import com.breakyuna.esjzone.ui.product.EmptyState
 import com.breakyuna.esjzone.ui.product.ErrorState
 import com.breakyuna.esjzone.ui.product.LoadingSkeleton
 import com.breakyuna.esjzone.ui.product.OfflineState
-import com.breakyuna.esjzone.ui.navigation.LocalBaseNavigator
 import com.breakyuna.esjzone.util.AppLogger
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -105,8 +107,7 @@ object ForumPage : AppDestination {
     private fun readResolve(): Any = ForumPage
 
     @Composable
-    override fun Content() {
-        val navigator = LocalBaseNavigator.current
+    override fun Content(navigator: AppNavigator) {
         val authorization = LocalAuthorization.current
         val model = rememberAppViewModel { ForumPageModel(authorization) }
         val state by model.state.collectAsState()
@@ -119,7 +120,7 @@ object ForumPage : AppDestination {
         ) {
             CommunityTopBar(
                 title = stringResource(id = R.string.forum),
-                onBack = { navigator?.pop() }
+                onBack = { navigator.pop() }
             )
 
             PullToRefreshBox(
@@ -164,7 +165,7 @@ object ForumPage : AppDestination {
                                 contentType = { _, _ -> "forum-category" }
                             ) { _, category ->
                                 ForumCategoryCard(category = category) {
-                                    navigator?.pushIfNotCurrent(ForumCategoryPage(category))
+                                    navigator.pushIfNotCurrent(ForumCategoryPage(category))
                                 }
                             }
                             item(key = "group-spacer-$groupName", contentType = "spacer") {
@@ -181,14 +182,17 @@ object ForumPage : AppDestination {
 }
 
 class ForumCategoryPage(private val category: ForumCategory) : AppDestination {
-    override val key: String =
-        "ForumCategoryPage:" + category.id.ifBlank { category.url.trim() } + ":" +
-            encodeRouteTokenPart(EsjzoneUrls.canonicalPageKey(category.url).ifBlank { category.url.trim() }) +
-            if (category.name.isNotBlank()) ":" + encodeRouteTokenPart(category.name.trim()) else ""
+    override val navKey = AppNavKey.Legacy(
+        LegacyRoute.ForumCategory(
+            category.id, EsjzoneUrls.canonicalPageKey(category.url).ifBlank { category.url.trim() }
+                .ifBlank { "/forum/${category.id}/" }, category.name.trim()
+        )
+    )
+
+    override val key: String get() = navKey.route.token()
 
     @Composable
-    override fun Content() {
-        val navigator = LocalBaseNavigator.current
+    override fun Content(navigator: AppNavigator) {
         val authorization = LocalAuthorization.current
         val model = rememberAppViewModel { ForumCategoryPageModel(authorization, category) }
         val state by model.state.collectAsState()
@@ -199,7 +203,7 @@ class ForumCategoryPage(private val category: ForumCategory) : AppDestination {
                 .fillMaxSize()
                 .background(MaterialTheme.colorScheme.background)
         ) {
-            CommunityTopBar(title = category.name, onBack = { navigator?.pop() })
+            CommunityTopBar(title = category.name, onBack = { navigator.pop() })
             PullToRefreshBox(
                 isRefreshing = state is CommunityState.Loading,
                 onRefresh = model::retry,
@@ -226,7 +230,7 @@ class ForumCategoryPage(private val category: ForumCategory) : AppDestination {
                             ForumThreadCard(thread) {
                                 // A board can be either a novel forum or a nested
                                 // topic board; ForumBoardPage detects the template.
-                                navigator?.pushIfNotCurrent(
+                                navigator.pushIfNotCurrent(
                                     ForumBoardPage(thread)
                                 )
                             }
@@ -244,13 +248,16 @@ class ForumCategoryPage(private val category: ForumCategory) : AppDestination {
 }
 
 class ForumBoardPage(private val thread: ForumThread) : AppDestination {
-    override val key: String =
-        "ForumBoardPage:" + EsjzoneUrls.canonicalPageKey(thread.url)
-            .ifBlank { thread.id }
+    override val navKey = AppNavKey.Legacy(
+        LegacyRoute.ForumBoard(
+            EsjzoneUrls.canonicalPageKey(thread.url).ifBlank { thread.id }
+        )
+    )
+
+    override val key: String get() = navKey.route.token()
 
     @Composable
-    override fun Content() {
-        val navigator = LocalBaseNavigator.current
+    override fun Content(navigator: AppNavigator) {
         val authorization = LocalAuthorization.current
         val model = rememberAppViewModel { ForumBoardPageModel(authorization, thread) }
         val state by model.state.collectAsState()
@@ -261,7 +268,7 @@ class ForumBoardPage(private val thread: ForumThread) : AppDestination {
         LaunchedEffect(esjNovelBoard?.detailUrl) {
             val board = esjNovelBoard ?: return@LaunchedEffect
             if (thread.categoryId !in ESJ_FORUM_CATEGORY_IDS) return@LaunchedEffect
-            navigator?.replace(
+            navigator.replace(
                 NovelPage(
                     CategoryNovel(
                         name = thread.title,
@@ -277,7 +284,7 @@ class ForumBoardPage(private val thread: ForumThread) : AppDestination {
                 .fillMaxSize()
                 .background(MaterialTheme.colorScheme.background)
         ) {
-            CommunityTopBar(title = thread.title, onBack = { navigator?.pop() })
+            CommunityTopBar(title = thread.title, onBack = { navigator.pop() })
             PullToRefreshBox(
                 isRefreshing = state is CommunityState.Loading,
                 onRefresh = model::retry,
@@ -300,7 +307,7 @@ class ForumBoardPage(private val thread: ForumThread) : AppDestination {
                                     board = board,
                                     thread = thread,
                                     onOpenNovel = {
-                                        navigator?.pushIfNotCurrent(
+                                        navigator.pushIfNotCurrent(
                                             NovelPage(
                                                 CategoryNovel(
                                                     name = thread.title,
@@ -311,7 +318,7 @@ class ForumBoardPage(private val thread: ForumThread) : AppDestination {
                                         )
                                     },
                                     onTopicClick = { topic ->
-                                        navigator?.pushIfNotCurrent(ForumPostPage(topic))
+                                        navigator.pushIfNotCurrent(ForumPostPage(topic))
                                     }
                                 )
                             }
@@ -319,7 +326,7 @@ class ForumBoardPage(private val thread: ForumThread) : AppDestination {
 
                         is ForumBoardResult.Topics -> {
                             ForumTopicsContent(board.items) { topic ->
-                                navigator?.pushIfNotCurrent(ForumPostPage(topic))
+                                navigator.pushIfNotCurrent(ForumPostPage(topic))
                             }
                         }
                     }
@@ -332,13 +339,16 @@ class ForumBoardPage(private val thread: ForumThread) : AppDestination {
 }
 
 class ForumPostPage(private val topic: ForumTopic) : AppDestination {
-    override val key: String =
-        "ForumPostPage:" + EsjzoneUrls.canonicalPageKey(topic.url)
-            .ifBlank { "${topic.boardId}-${topic.id}" }
+    override val navKey = AppNavKey.Legacy(
+        LegacyRoute.ForumPost(
+            EsjzoneUrls.canonicalPageKey(topic.url).ifBlank { "${topic.boardId}-${topic.id}" }
+        )
+    )
+
+    override val key: String get() = navKey.route.token()
 
     @Composable
-    override fun Content() {
-        val navigator = LocalBaseNavigator.current
+    override fun Content(navigator: AppNavigator) {
         val authorization = LocalAuthorization.current
         val model = rememberAppViewModel { ForumPostPageModel(authorization, topic) }
         val commentsModel = rememberAppViewModel {
@@ -346,7 +356,7 @@ class ForumPostPage(private val topic: ForumTopic) : AppDestination {
         }
         val state by model.state.collectAsState()
         val commentsState by commentsModel.state.collectAsState()
-        val openLink = rememberCommunityLinkOpener()
+        val openLink = rememberCommunityLinkOpener(navigator)
         val postScrollState = rememberScrollState()
         val metrics = rememberAppAdaptiveMetrics()
         var showSyncStatusMenu by remember { mutableStateOf(false) }
@@ -392,7 +402,7 @@ class ForumPostPage(private val topic: ForumTopic) : AppDestination {
         ) {
             CommunityTopBar(
                 title = displayTitle,
-                onBack = { navigator?.pop() },
+                onBack = { navigator.pop() },
                 titleIndicator = {
                     CommunitySyncStatusIndicator(
                         syncing = syncRunning,
@@ -466,7 +476,7 @@ object GuestbookPage : AppDestination {
     override val key: String = "GuestbookPage"
 
     @Composable
-    override fun Content() {
+    override fun Content(navigator: AppNavigator) {
         val authorization = LocalAuthorization.current
         // Resolve the page once while this NavEntry is alive. The explicit relative route avoids
         // a partially restored domain value producing a different ViewModel identity mid-compose.
@@ -481,6 +491,7 @@ object GuestbookPage : AppDestination {
         LaunchedEffect(model) { model.load(forceRefresh = false) }
 
         CommentListPage(
+            navigator = navigator,
             title = stringResource(id = R.string.guestbook),
             model = model,
             titleIndicator = {
@@ -505,17 +516,21 @@ class ChapterCommentsPage(
     private val chapterName: String,
     private val chapterUrl: String
 ) : AppDestination {
-    override val key: String =
-        "ChapterCommentsPage:" + EsjzoneUrls.canonicalPageKey(chapterUrl)
-            .ifBlank { chapterName.trim() }
+    override val navKey = AppNavKey.Legacy(
+        LegacyRoute.ChapterComments(
+            EsjzoneUrls.canonicalPageKey(chapterUrl).ifBlank { chapterName.trim() }
+        )
+    )
+
+    override val key: String get() = navKey.route.token()
 
     @Composable
-    override fun Content() {
+    override fun Content(navigator: AppNavigator) {
         val authorization = LocalAuthorization.current
         val model = rememberAppViewModel {
             CommentPageModel(authorization, chapterUrl)
         }
-        CommentListPage(title = chapterName, model = model)
+        CommentListPage(navigator, title = chapterName, model = model)
     }
 }
 

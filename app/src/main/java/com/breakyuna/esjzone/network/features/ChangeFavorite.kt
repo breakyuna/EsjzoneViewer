@@ -6,7 +6,6 @@ import com.breakyuna.esjzone.network.EsjzoneClient
 import com.breakyuna.esjzone.network.EsjzoneUrls
 import com.breakyuna.esjzone.database.entity.BookshelfEntry
 import com.breakyuna.esjzone.novellibrary.novel.Novel
-import com.google.gson.JsonParser
 import okhttp3.Request
 import okhttp3.RequestBody
 
@@ -42,13 +41,7 @@ fun EsjzoneClient.toggleFavorite(authorization: Authorization, novel: Novel): Bo
 }
 
 /** The response is JSON even though the site labels it text/html. */
-internal fun isFavoriteToggleSuccess(body: String): Boolean = runCatching {
-    val root = JsonParser.parseString(body)
-    if (!root.isJsonObject) return@runCatching false
-    val status = root.asJsonObject.get("status")
-    status != null && status.isJsonPrimitive && status.asJsonPrimitive.isNumber &&
-        status.asString == "200"
-}.getOrDefault(false)
+internal fun isFavoriteToggleSuccess(body: String): Boolean = hasSuccessfulEsjActionStatus(body)
 
 /** Overload used by the shelf while retaining the stable URL from its row. */
 fun EsjzoneClient.toggleFavorite(authorization: Authorization, entry: BookshelfEntry): Boolean =

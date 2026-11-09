@@ -54,6 +54,8 @@ class ReaderImageBackgroundInstrumentedTest {
             assertEquals(0xFF202020L, image.textColor)
             assertEquals(50f, image.blur, 0f)
             assertEquals(90f, image.transparency, 0f)
+            assertEquals(0.5f, image.cropX, 0f)
+            assertEquals(0.5f, image.cropY, 0f)
             assertTrue(image.glowEnabled)
             assertEquals(70f, image.glowStrength, 0f)
             assertEquals(ReaderBackground.CUSTOM_IMAGE, current.settings.first { it.background == ReaderBackground.CUSTOM_IMAGE }.background)

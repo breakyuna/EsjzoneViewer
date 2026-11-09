@@ -915,6 +915,9 @@
     <string name="backup_archives">Saved automatic backups:</string>
     <string name="backup_archive_actions">Backup actions</string>
     <string name="backup_import_done">Backup imported successfully</string>
+    <string name="backup_local_bookshelf">Local bookshelf</string>
+    <string name="backup_bookshelf_merge_confirm">Import missing books into the local bookshelf for the current account?</string>
+    <string name="backup_merge_overwrite_confirm">Importing will merge the local bookshelf and replace other selected categories present in the backup. Continue?</string>
     <string name="backup_overwrite_confirm">Importing will replace the selected data below. Categories absent from the backup will be kept. Continue?</string>
     <string name="storage_transfer_title">Background migration</string>
     <string name="storage_transfer_started">Migration started in the background. You can continue using the app.</string>
@@ -961,10 +964,12 @@
     <string name="reader_background_text_color">Text color</string>
     <string name="reader_background_custom_color">Custom</string>
     <string name="reader_background_color_value">Text color %1$s</string>
+    <string name="reader_background_drag_preview">Drag the preview to adjust framing</string>
     <string name="reader_background_preview_title">草枕</string>
     <string name="reader_background_preview_text">沿着山路攀登，我这样想着。\n\n只凭理智行事，难免锋芒毕露；顺着感情行事，便会随波逐流；一味坚持己见，又会处处受限。总之，人世间并不容易安居。\n\n越是觉得难以安居，就越想搬到舒适的地方去。等到领悟无论搬到哪里都难以安居时，诗便诞生了，画也随之出现。\n\n创造人世的既不是神，也不是鬼，而是住在街坊邻里、时常在眼前出现的普通人。即使普通人创造的人世难以安居，又能搬到哪里去呢？若真有去处，也只能去一个没有人的国度。可那样的国度，恐怕比人世更加难以安居。\n\n既然无法逃离这个难以安居的世界，就应当让这处境变得宽和一些，让短暂的生命哪怕片刻也能过得舒心。于是有了诗人的天职，也有了画家的使命。一切从事艺术的人都值得尊敬，因为他们让人世变得安宁，让人心变得丰盈。</string>
     <string name="reader_background_image_failed">Unable to read the image. Choose a valid image smaller than 32 MB and try again.</string>
     <string name="reader_background_save_failed">Unable to save the background. Please try again.</string>
+    <string name="reader_indent_chars">%1$d chars</string>
     <string name="reader_first_line_indent">First-line indent (2 characters)</string>
     <string name="reader_color_hue">Hue</string>
     <string name="reader_color_saturation">Saturation</string>

@@ -65,6 +65,7 @@ import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Surface
 import com.breakyuna.esjzone.ui.designsystem.GlobalText as Text
 import androidx.compose.material3.TextButton
+import com.breakyuna.esjzone.ui.navigation.AppNavigator
 import com.breakyuna.esjzone.ui.navigation.rememberNovelCoverSource
 import com.breakyuna.esjzone.ui.designsystem.AppSelectionReveal
 import com.breakyuna.esjzone.ui.designsystem.AppAnimatedTitle
@@ -138,7 +139,6 @@ import com.breakyuna.esjzone.ui.designsystem.appSemanticColors
 import com.breakyuna.esjzone.ui.navigation.AppDestination
 import com.breakyuna.esjzone.ui.navigation.BooleanStateHolder
 import com.breakyuna.esjzone.ui.navigation.ContainerTransformTarget
-import com.breakyuna.esjzone.ui.navigation.LocalBaseNavigator
 import com.breakyuna.esjzone.ui.navigation.containerTransformSource
 import com.breakyuna.esjzone.ui.navigation.rememberAppViewModel
 import com.breakyuna.esjzone.ui.product.EmptyState
@@ -165,11 +165,10 @@ object FavoritePage : AppDestination {
     override val key: String = "FavoritePage"
 
     @Composable
-    override fun Content() = Content(showBack = true)
+    override fun Content(navigator: AppNavigator) = Content(navigator, showBack = true)
 
     @Composable
-    fun Content(showBack: Boolean) {
-        val navigator = LocalBaseNavigator.current
+    fun Content(navigator: AppNavigator, showBack: Boolean) {
         val focusManager = LocalFocusManager.current
         val authorization = LocalAuthorization.current
         val model = rememberAppViewModel { FavoritePageModel(authorization) }
@@ -317,7 +316,7 @@ object FavoritePage : AppDestination {
             // Release any focus-pinned lazy item before beginning a page transition.
             focusManager.clearFocus(force = true)
             snackbar.currentSnackbarData?.dismiss()
-            navigator?.pushIfNotCurrent(NovelPage(entry.asCoveredNovel(), favorite = BooleanStateHolder(true)))
+            navigator.pushIfNotCurrent(NovelPage(entry.asCoveredNovel(), favorite = BooleanStateHolder(true)))
         }
 
         fun requestDelete() {
@@ -348,7 +347,7 @@ object FavoritePage : AppDestination {
                     withDismissAction = true,
                     duration = SnackbarDuration.Long
                 ) == SnackbarResult.ActionPerformed) {
-                navigator?.pushIfNotCurrent(SettingsPage)
+                navigator.pushIfNotCurrent(SettingsPage)
             }
         }
         LaunchedEffect(loginSessionRevision) {
@@ -486,7 +485,7 @@ object FavoritePage : AppDestination {
                     deleting = deleting || savingGroup,
                     onBack = {
                         snackbar.currentSnackbarData?.dismiss()
-                        if (editing) exitEdit() else navigator?.pop()
+                        if (editing) exitEdit() else navigator.pop()
                     },
                     onSyncStatusMenuChange = { showSyncStatusMenu = it },
                     listView = listView,
@@ -505,7 +504,7 @@ object FavoritePage : AppDestination {
                         target.requestScrollToItem(targetIndex, if (targetIndex == 0) current.firstVisibleItemScrollOffset else 0)
                         settings.setBookshelfListView(!listView)
                     },
-                    onStatistics = { navigator?.pushIfNotCurrent(ReadingStatisticsPage) },
+                    onStatistics = { navigator.pushIfNotCurrent(ReadingStatisticsPage) },
                     onDone = ::exitEdit,
                     onSelectAll = { selected = if (selected == visibleKeys) emptySet() else visibleKeys }
                 )

@@ -59,9 +59,12 @@ import com.breakyuna.esjzone.ui.discovery.DiscoveryNovelCard
 import com.breakyuna.esjzone.ui.discovery.DiscoveryOfflineBanner
 import com.breakyuna.esjzone.ui.discovery.DiscoverySearchTopBar
 import com.breakyuna.esjzone.ui.discovery.buildSearchTagExpression
+import com.breakyuna.esjzone.ui.navigation.AppNavKey
+import com.breakyuna.esjzone.ui.navigation.LegacyRoute
+import com.breakyuna.esjzone.ui.navigation.token
+import com.breakyuna.esjzone.ui.navigation.AppNavigator
 import com.breakyuna.esjzone.ui.navigation.AppDestination
 import com.breakyuna.esjzone.ui.navigation.AppStateViewModel
-import com.breakyuna.esjzone.ui.navigation.LocalBaseNavigator
 import com.breakyuna.esjzone.ui.navigation.rememberAppViewModel
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -89,11 +92,12 @@ private fun searchSortResource(type: Int): Int = when (type) {
 }
 
 class SearchPage(private val keyword: String) : AppDestination {
-    override val key: String = "SearchPage:${keyword.trim()}"
+    override val navKey = AppNavKey.Legacy(LegacyRoute.Search(keyword.trim()))
+
+    override val key: String get() = navKey.route.token()
 
     @Composable
-    override fun Content() {
-        val navigator = LocalBaseNavigator.current
+    override fun Content(navigator: AppNavigator) {
         val authorization = LocalAuthorization.current
         val model = rememberAppViewModel { SearchPageModel(authorization) }
         val state by model.state.collectAsState()
@@ -126,7 +130,7 @@ class SearchPage(private val keyword: String) : AppDestination {
                     onTagRowExpandedChange = { tagRowExpanded = it },
                     onSearch = { submit(query) },
                     onClear = { query = "" },
-                    onBack = { navigator?.pop() }
+                    onBack = { navigator.pop() }
                 )
             },
             containerColor = MaterialTheme.colorScheme.background
@@ -171,7 +175,7 @@ fun DiscoverySearchResults(
     onCategoryChange: (Int) -> Unit,
     onSortChange: (Int) -> Unit,
     onRetry: () -> Unit,
-    navigator: com.breakyuna.esjzone.ui.navigation.AppNavigator?,
+    navigator: com.breakyuna.esjzone.ui.navigation.AppNavigator,
     modifier: Modifier = Modifier
 ) {
     val listState = rememberSaveable(keyword, category, sort, saver = LazyListState.Saver) {
@@ -236,7 +240,7 @@ fun DiscoverySearchResults(
                     DiscoveryNovelCard(
                         modifier = Modifier.animateItem(),
                         novel = novel,
-                        onClick = { navigator?.pushIfNotCurrent(NovelPage(novel)) }
+                        onClick = { navigator.pushIfNotCurrent(NovelPage(novel)) }
                     )
                 }
                 item(key = "search-pagination", contentType = "pagination") {

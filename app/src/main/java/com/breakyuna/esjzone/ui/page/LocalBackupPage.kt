@@ -1,6 +1,7 @@
 @file:OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 package com.breakyuna.esjzone.ui.page
 
+import com.breakyuna.esjzone.ui.navigation.AppNavigator
 import android.content.Context
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -144,8 +145,10 @@ class LocalBackupModel : AppStateViewModel<LocalBackupModel.Status>(Status()) {
             try {
                 PresentationAccess.storage.operationMutex.withLock {
                     val document = archive?.uri ?: requireNotNull(uri)
-                    if (restore) LocalBackup.restore(context, document, PresentationAccess.database, scope, categories)
-                    else LocalBackup.export(context, document, PresentationAccess.database, scope, categories)
+                    val database = PresentationAccess.database
+                    val readerSettings = PresentationAccess.readerSettings
+                    if (restore) LocalBackup.restore(context, document, database, scope, categories, readerSettings)
+                    else LocalBackup.export(context, document, database, scope, categories, readerSettings)
                 }
                 mutableState.value = state.value.copy(busy = false,
                     result = if (restore) R.string.backup_import_done else R.string.backup_done)
@@ -161,9 +164,8 @@ object LocalBackupPage : AppDestination {
     private fun readResolve(): Any = LocalBackupPage
     override val key = "LocalBackupPage"
     @Composable
-    override fun Content() {
+    override fun Content(navigator: AppNavigator) {
         val context = LocalContext.current.applicationContext
-        val navigator = LocalBaseNavigator.current
         val authorization = LocalAuthorization.current
         val scope = BookshelfRepository.scopeFor(authorization)
         val model = rememberAppViewModel { LocalBackupModel() }
@@ -198,8 +200,13 @@ object LocalBackupPage : AppDestination {
         var pendingNames by rememberSaveable { mutableStateOf(emptyList<String>()) }
         var pendingScope by rememberSaveable { mutableStateOf("") }
         var confirmImport by rememberSaveable { mutableStateOf(false) }
-        val selectedLabels = BackupCategory.entries.filter { it.name in selectedNames }
-            .map { backupCategoryLabel(it) }.joinToString("、")
+        val selectedCategories = BackupCategory.entries.filter { it.name in selectedNames }
+        val selectedLabels = selectedCategories.map { backupCategoryLabel(it) }.joinToString("、")
+        val importMessage = stringResource(when {
+            selectedCategories == listOf(BackupCategory.BOOKSHELF) -> R.string.backup_bookshelf_merge_confirm
+            BackupCategory.BOOKSHELF in selectedCategories -> R.string.backup_merge_overwrite_confirm
+            else -> R.string.backup_overwrite_confirm
+        }) + "\n\n" + selectedLabels
         val create = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { uri ->
             if (uri != null) model.run(context, uri, pendingScope, pendingNames.map { BackupCategory.valueOf(it) }.toSet(), false)
         }
@@ -208,7 +215,7 @@ object LocalBackupPage : AppDestination {
         }
         Scaffold(snackbarHost = { SnackbarHost(snackbarHost) }, topBar = { TopAppBar(title = { Text(stringResource(R.string.settings_backup), style = AppTypography.titleMedium) },
             colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background), navigationIcon = {
-            IconButton(enabled = !state.busy, onClick = { navigator?.pop() }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.reading_stats_back)) }
+            IconButton(enabled = !state.busy, onClick = { navigator.pop() }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.reading_stats_back)) }
         }) }) { padding ->
             Column(Modifier.fillMaxSize().padding(padding).accountContentWidth().verticalScroll(rememberScrollState())
                 .padding(start = AppSpacing.lg, end = AppSpacing.lg, top = AppSpacing.sm, bottom = AppSpacing.xl),
@@ -321,8 +328,7 @@ object LocalBackupPage : AppDestination {
             dismissButton = { TextButton(onClick = { deleteArchive = null }) { Text(stringResource(android.R.string.cancel)) } })
         if (restoreArchive != null) AlertDialog(onDismissRequest = { restoreArchive = null },
             title = { Text(stringResource(R.string.backup_import)) },
-            text = { Text(stringResource(R.string.backup_overwrite_confirm) + "\n\n" +
-                selectedLabels) },
+            text = { Text(importMessage) },
             confirmButton = { TextButton(onClick = {
                 val path = restoreArchive
                 restoreArchive = null
@@ -333,8 +339,7 @@ object LocalBackupPage : AppDestination {
             dismissButton = { TextButton(onClick = { restoreArchive = null }) { Text(stringResource(android.R.string.cancel)) } })
         if (confirmImport) AlertDialog(onDismissRequest = { confirmImport = false },
             title = { Text(stringResource(R.string.backup_import)) },
-            text = { Text(stringResource(R.string.backup_overwrite_confirm) + "\n\n" +
-                selectedLabels) },
+            text = { Text(importMessage) },
             confirmButton = { TextButton(onClick = {
                 confirmImport = false; pendingNames = selectedNames; pendingScope = scope
                 openBackup.launch(arrayOf("application/zip", "application/octet-stream"))
@@ -352,6 +357,8 @@ private fun backupCategoryLabel(category: BackupCategory): String = stringResour
     BackupCategory.HISTORY -> R.string.backup_history
     BackupCategory.SEARCH -> R.string.backup_search
     BackupCategory.GROUPS -> R.string.shelf_groups
+    BackupCategory.BOOKSHELF -> R.string.backup_local_bookshelf
+    BackupCategory.READER_SETTINGS -> R.string.reader_settings
 })
 
 @Composable

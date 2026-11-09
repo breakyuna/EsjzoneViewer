@@ -34,13 +34,17 @@ internal fun ReaderEntryPresentation(
     transparency: Float,
     loadingDescription: String,
     onRetryPosition: (() -> Unit)? = null,
+    cropX: Float = 0.5f,
+    cropY: Float = 0.5f,
     content: @Composable () -> Unit
 ) {
     // Freeze the first frame's backdrop too: asynchronous image loading must
     // not replace the loading canvas halfway through the navigation animation.
     val initialBackground = remember { background }
     val initialPainter = remember { backgroundPainter }
-    val initialTransparency = remember { transparency }
+    val initialAppearance = remember {
+        ReaderImageBackground(transparency = transparency, cropX = cropX, cropY = cropY)
+    }
     Box(Modifier.fillMaxSize()) {
         Box(Modifier.fillMaxSize()
             .graphicsLayer { alpha = if (contentVisible) 1f else 0f }
@@ -48,7 +52,7 @@ internal fun ReaderEntryPresentation(
         ) { content() }
         if (!contentVisible) {
             Box(Modifier.fillMaxSize()
-                .readerBackdrop(initialBackground, initialPainter, initialTransparency)
+                .readerBackdrop(initialBackground, initialPainter, initialAppearance)
                 .testTag("reader-entry-loading"), contentAlignment = Alignment.Center
             ) {
                 // A sibling blocker lets the foreground retry button receive its

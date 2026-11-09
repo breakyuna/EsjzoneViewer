@@ -133,7 +133,7 @@ class AutoBackupWorker(context: Context, parameters: WorkerParameters) : Corouti
                 val temporary = StorageFile.createTempFile("pending-", ".zip.part", directory)
                 publishing = temporary
                 LocalBackup.export(applicationContext, temporary.uri, container.database,
-                    bookshelfScope, categories)
+                    bookshelfScope, categories, container.readerSettingsDataStore)
                 ensureActive()
                 if (backup.backupScope() != bookshelfScope || backup.backupCategories() != categories) {
                     return@withLock Result.success()

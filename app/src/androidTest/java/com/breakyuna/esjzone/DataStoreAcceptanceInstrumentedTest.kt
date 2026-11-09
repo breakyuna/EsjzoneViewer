@@ -1,6 +1,11 @@
 package com.breakyuna.esjzone
 
 import android.content.Context
+import androidx.datastore.preferences.core.PreferenceDataStoreFactory
+import androidx.datastore.preferences.core.booleanPreferencesKey
+import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.intPreferencesKey
+import androidx.datastore.preferences.preferencesDataStoreFile
 import androidx.test.core.app.ApplicationProvider
 import com.breakyuna.esjzone.data.settings.ReaderSettingsDataStore
 import com.breakyuna.esjzone.data.settings.SettingsDataStore
@@ -11,6 +16,8 @@ import com.breakyuna.esjzone.ui.reader.ReaderSettings
 import com.breakyuna.esjzone.ui.reader.ReaderTool
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.first
@@ -263,6 +270,47 @@ class DataStoreAcceptanceInstrumentedTest {
         } finally {
             scope.cancel()
             legacy.edit().clear().commit()
+        }
+    }
+
+    @Test
+    fun booleanIndentMigratesAndAnExistingOneCharacterSettingWins() = runBlocking {
+        val oldKey = booleanPreferencesKey("first_line_indent")
+        val newKey = intPreferencesKey("first_line_indent_chars")
+        val migratedKey = booleanPreferencesKey("legacy_reader_settings_migration_complete")
+        for ((old, existing, expected) in listOf(Triple(false, null, 0), Triple(true, null, 2), Triple(true, 1, 1))) {
+            val name = fileName("reader-indent")
+            val file = context.preferencesDataStoreFile(name)
+            val legacyScope = newScope()
+            try {
+                val store = PreferenceDataStoreFactory.create(scope = legacyScope, produceFile = { file })
+                store.edit {
+                    it[oldKey] = old
+                    it[migratedKey] = true
+                    existing?.let { chars -> it[newKey] = chars }
+                }
+            } finally {
+                requireNotNull(legacyScope.coroutineContext[Job]).cancelAndJoin()
+            }
+            val readerScope = newScope()
+            try {
+                val reader = ReaderSettingsDataStore(context, readerScope, name)
+                reader.migrateFromLegacy(context)
+                val (snapshot, _) = reader.backupSnapshot()
+                assertEquals(expected, snapshot.get("first_line_indent_chars").asInt)
+            } finally {
+                requireNotNull(readerScope.coroutineContext[Job]).cancelAndJoin()
+            }
+            val verifyScope = newScope()
+            try {
+                val store = PreferenceDataStoreFactory.create(scope = verifyScope, produceFile = { file })
+                val persisted = store.data.first()
+                assertFalse(persisted.contains(oldKey))
+                assertEquals(expected, persisted[newKey])
+            } finally {
+                requireNotNull(verifyScope.coroutineContext[Job]).cancelAndJoin()
+                file.delete()
+            }
         }
     }
 

@@ -39,9 +39,12 @@ import com.breakyuna.esjzone.ui.discovery.DiscoveryErrorState
 import com.breakyuna.esjzone.ui.discovery.DiscoveryLoadingState
 import com.breakyuna.esjzone.ui.discovery.DiscoveryOfflineBanner
 import com.breakyuna.esjzone.ui.discovery.DiscoveryScaffold
+import com.breakyuna.esjzone.ui.navigation.AppNavKey
+import com.breakyuna.esjzone.ui.navigation.LegacyRoute
+import com.breakyuna.esjzone.ui.navigation.token
+import com.breakyuna.esjzone.ui.navigation.AppNavigator
 import com.breakyuna.esjzone.ui.navigation.AppDestination
 import com.breakyuna.esjzone.ui.navigation.AppStateViewModel
-import com.breakyuna.esjzone.ui.navigation.LocalBaseNavigator
 import com.breakyuna.esjzone.ui.navigation.rememberAppViewModel
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -50,19 +53,18 @@ import kotlinx.coroutines.launch
 
 /** Novel names in a category are already available from the list endpoint. */
 class CategoryPage(private val category: Category) : AppDestination {
-    override val key: String =
-        "CategoryPage:" + category.url.trim().ifBlank { category.name.trim() } +
-            if (category.name.isNotBlank()) ":" + category.name.trim() else ""
+    override val navKey = AppNavKey.Legacy(LegacyRoute.Category(category.url.trim().ifBlank { category.name.trim() }, category.name.trim()))
+
+    override val key: String get() = navKey.route.token()
 
     @Composable
-    override fun Content() {
+    override fun Content(navigator: AppNavigator) {
         val columns = wideListColumns(maxWidth = 1280f)
-        val navigator = LocalBaseNavigator.current
         val authorization = LocalAuthorization.current
         val model = rememberAppViewModel { CategoryPageModel(authorization, category) }
         DiscoveryScaffold(
             title = category.name,
-            onBack = { navigator?.pop() }
+            onBack = { navigator.pop() }
         ) { padding ->
             val state by model.state.collectAsState()
             PullToRefreshBox(
@@ -114,7 +116,7 @@ class CategoryPage(private val category: Category) : AppDestination {
                             ) { novel ->
                                 DiscoveryCategoryNovelCard(
                                     novel = novel,
-                                    onClick = { navigator?.pushIfNotCurrent(NovelPage(novel)) }
+                                    onClick = { navigator.pushIfNotCurrent(NovelPage(novel)) }
                                 )
                             }
                         }

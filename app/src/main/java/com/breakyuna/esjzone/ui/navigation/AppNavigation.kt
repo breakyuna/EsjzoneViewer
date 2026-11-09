@@ -171,10 +171,9 @@ data class ReaderRoute(
     val keepRequestedChapterOnRestore: Boolean = false
 )
 
-internal fun encodeRouteTokenPart(value: String): String = Uri.encode(value)
-internal fun decodeRouteTokenPart(value: String): String = Uri.decode(value)
+private fun encodeRouteTokenPart(value: String): String = Uri.encode(value)
 
-private fun LegacyRoute.token(): String = when (this) {
+internal fun LegacyRoute.token(): String = when (this) {
     is LegacyRoute.Static -> token
     is LegacyRoute.Search -> "SearchPage:$keyword"
     is LegacyRoute.DownloadedNovel -> "DownloadedNovelPage:$url"
@@ -186,48 +185,6 @@ private fun LegacyRoute.token(): String = when (this) {
         name.takeIf(String::isNotBlank)?.let { ":${encodeRouteTokenPart(it)}" }.orEmpty()
     is LegacyRoute.ForumBoard -> "ForumBoardPage:$identity"
     is LegacyRoute.ForumPost -> "ForumPostPage:$identity"
-}
-
-private fun routeFromToken(token: String): LegacyRoute {
-    val kind = token.substringBefore(':')
-    val argument = token.substringAfter(':', missingDelimiterValue = "")
-    return when (kind) {
-        "SearchPage" -> LegacyRoute.Search(argument)
-        "DownloadedNovelPage" -> LegacyRoute.DownloadedNovel(argument)
-        "NovelPage" -> LegacyRoute.Novel(argument)
-        "CategoryPage" -> {
-            val parts = argument.split(':', limit = 2)
-            LegacyRoute.Category(
-                identity = parts.getOrNull(0).orEmpty(),
-                name = parts.getOrNull(1).orEmpty()
-            )
-        }
-        "NovelListPage" -> {
-            val parts = argument.split(':')
-            LegacyRoute.NovelList(
-                novelType = parts.getOrNull(0)?.toIntOrNull() ?: 0,
-                sortType = parts.getOrNull(1)?.toIntOrNull() ?: 1,
-                adultOnly = parts.getOrNull(2)?.toBooleanStrictOrNull() ?: false
-            )
-        }
-        "ChapterCommentsPage" -> LegacyRoute.ChapterComments(argument)
-        "ForumCategoryPage" -> {
-            val parts = argument.split(':', limit = 3)
-            val id = parts.getOrNull(0).orEmpty()
-            val url = decodeRouteTokenPart(parts.getOrNull(1).orEmpty()).ifBlank {
-                "/forum/${parts.getOrNull(0).orEmpty()}/"
-            }
-            val name = decodeRouteTokenPart(parts.getOrNull(2).orEmpty())
-            LegacyRoute.ForumCategory(
-                id = id,
-                url = url,
-                name = name
-            )
-        }
-        "ForumBoardPage" -> LegacyRoute.ForumBoard(argument)
-        "ForumPostPage" -> LegacyRoute.ForumPost(argument)
-        else -> LegacyRoute.Static(token)
-    }
 }
 
 private fun readerRouteFromToken(token: String): ReaderRoute {
@@ -252,7 +209,7 @@ internal fun ReaderDestinationContent(navigator: AppNavigator, route: ReaderRout
     // outgoing entry for its exit animation. Keep its original reader until that
     // entry leaves composition instead of restoring a fresh reader mid-transition.
     val destination = remember(navigator, route) { navigator.readerDestination(route) }
-    destination.Content()
+    destination.Content(navigator)
 }
 
 /** Compose-only destination contract used by the transition adapter. */
@@ -260,12 +217,12 @@ interface AppDestination {
     val key: String
         get() = this::class.qualifiedName ?: this::class.simpleName.orEmpty()
 
-    /** Reader is a root-level shell boundary, not a tab child destination. */
-    val isReaderDestination: Boolean
-        get() = false
+    /** Serializable key installed in the root or active tab NavBackStack. */
+    val navKey: AppNavKey
+        get() = AppNavKey.Legacy(LegacyRoute.Static(key))
 
     @Composable
-    fun Content()
+    fun Content(navigator: AppNavigator)
 }
 
 /** Tab metadata consumed by the adaptive shell. */
@@ -335,16 +292,17 @@ class AppNavigator internal constructor(
     val lastItem: AppDestination?
         get() = items.lastOrNull()
 
-    private val root: AppNavigator
+    internal val root: AppNavigator
         get() = rootNavigator ?: this
 
     fun push(destination: AppDestination, homeCarouselPage: Int? = null) {
-        if (destination.isReaderDestination) {
-            root.openReader(destination)
+        val key = destination.navKey
+        if (key is AppNavKey.Reader) {
+            root.openReader(destination, key)
             return
         }
         register(destination)
-        backStack.add(AppNavKey.Legacy(routeFromToken(destination.key), homeCarouselPage))
+        backStack.add(if (key is AppNavKey.Legacy) key.copy(homeCarouselPage = homeCarouselPage) else key)
     }
 
     /** Save the latest chapter separately so the live reader entry keeps its ViewModel. */
@@ -353,11 +311,12 @@ class AppNavigator internal constructor(
     }
 
     fun pushIfNotCurrent(destination: AppDestination, homeCarouselPage: Int? = null): Boolean {
+        val target = (destination.navKey as? AppNavKey.Legacy)?.route
         val existingIndex = backStack.indexOfLast { key ->
-            key is AppNavKey.Legacy && key.route.token() == destination.key
+            key is AppNavKey.Legacy && key.route == target
         }
-        if (existingIndex == backStack.lastIndex) return false
         if (existingIndex >= 0) {
+            if (existingIndex == backStack.lastIndex) return false
             val removedList = mutableListOf<NavKey>()
             while (backStack.lastIndex > existingIndex) {
                 backStack.removeLastOrNull()?.let { removedList.add(it) }
@@ -394,11 +353,12 @@ class AppNavigator internal constructor(
                 com.breakyuna.esjzone.util.AppLogger.i("Startup", "Main destination installed in root back stack")
             }
             else -> {
-                if (destination.isReaderDestination) {
-                    root.openReader(destination)
+                val key = destination.navKey
+                if (key is AppNavKey.Reader) {
+                    root.openReader(destination, key)
                 } else {
                     register(destination)
-                    replaceTop(AppNavKey.Legacy(routeFromToken(destination.key)))
+                    replaceTop(key)
                 }
             }
         }
@@ -422,7 +382,7 @@ class AppNavigator internal constructor(
             else -> {
                 register(destination)
                 backStack.clear()
-                backStack.add(AppNavKey.Legacy(routeFromToken(destination.key)))
+                backStack.add(destination.navKey)
             }
         }
         oldKeys.forEach { cleanupKey(it) }
@@ -473,12 +433,9 @@ class AppNavigator internal constructor(
             )
         }
 
-    private fun openReader(destination: AppDestination) {
+    private fun openReader(destination: AppDestination, entry: AppNavKey.Reader) {
         register(destination)
-        val route = readerRouteFromToken(destination.key).copy(
-            keepRequestedChapterOnRestore = (destination as? ChapterPage)?.keepRequestedChapterOnRestore == true
-        )
-        val entry = AppNavKey.Reader(route)
+        val route = entry.route
         if (backStack.lastOrNull() !is AppNavKey.Reader) {
             backStack.add(entry)
         } else {
@@ -500,7 +457,7 @@ class AppNavigator internal constructor(
     }
 }
 
-private fun readerToken(route: ReaderRoute): String =
+internal fun readerToken(route: ReaderRoute): String =
     "ChapterPage:${route.novelId}:${route.chapterIdentity}"
 
 private fun ReaderRoute.restore(restoreLatestHistory: Boolean): AppDestination = ChapterPage(
@@ -731,8 +688,6 @@ fun AppNavigation() {
     }
 
     CompositionLocalProvider(
-        LocalAppNavigator provides navigator,
-        LocalBaseNavigator provides navigator,
         // Root-level entries (especially Reader) must see the same session as
         // Main. Reader itself is guarded below when no persisted session exists.
         LocalAuthorization provides (authorization ?: Authorization("", ""))
@@ -763,10 +718,10 @@ fun AppNavigation() {
                 predictivePopTransitionSpec = predictivePopTransition,
                 entryProvider = entryProvider {
                     entry<AppNavKey.Loading> {
-                        LoadingScreen().Content()
+                        LoadingScreen().Content(navigator)
                     }
                     entry<AppNavKey.Login> {
-                        LoginScreen.Content()
+                        LoginScreen.Content(navigator)
                     }
                     entry<AppNavKey.Main> {
                         val session = authorization
@@ -775,10 +730,10 @@ fun AppNavigation() {
                             // in-memory authorization state. Re-enter the
                             // same Loading gate so the persisted session is
                             // checked instead of rendering a dead spinner.
-                            LoadingScreen().Content()
+                            LoadingScreen().Content(navigator)
                         } else {
                             CompositionLocalProvider(LocalAuthorization provides session) {
-                                MainScreen(session).Content()
+                                MainScreen(session).Content(navigator)
                             }
                         }
                     }
@@ -789,7 +744,7 @@ fun AppNavigation() {
                         if (session == null) {
                             // A stale restored Reader must never run against
                             // LocalAuthorization's empty default value.
-                            LoginScreen.Content()
+                            LoginScreen.Content(navigator)
                         } else {
                             val transition = androidx.navigation3.ui.LocalNavAnimatedContentScope.current.transition
                             CompositionLocalProvider(
@@ -803,7 +758,7 @@ fun AppNavigation() {
                         }
                     }
                     entry<AppNavKey.Legacy> { key ->
-                        navigator.destination(key.route)?.Content()
+                        navigator.destination(key.route)?.Content(navigator)
                     }
                 }
             )

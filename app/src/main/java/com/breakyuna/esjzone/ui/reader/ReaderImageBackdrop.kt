@@ -7,6 +7,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.BiasAbsoluteAlignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.paint
@@ -56,11 +57,15 @@ internal fun rememberReaderImageBackdrop(background: ReaderImageBackground, enab
     return result
 }
 
-internal fun Modifier.readerBackdrop(color: Color, painter: Painter?, transparency: Float = 0f): Modifier = background(color)
-    .then(
-        if (painter == null) Modifier
-        else Modifier.clipToBounds().paint(
-            painter, sizeToIntrinsics = false, contentScale = ContentScale.Crop,
-            alpha = 1f - transparency.coerceIn(0f, 100f) / 100f
-        )
+internal fun Modifier.readerBackdrop(
+    color: Color,
+    painter: Painter?,
+    settings: ReaderImageBackground
+): Modifier = background(color).then(
+    if (painter == null) Modifier
+    else Modifier.clipToBounds().paint(
+        painter, sizeToIntrinsics = false, contentScale = ContentScale.Crop,
+        alignment = BiasAbsoluteAlignment(settings.cropX * 2f - 1f, settings.cropY * 2f - 1f),
+        alpha = 1f - settings.transparency.coerceIn(0f, 100f) / 100f
     )
+)

@@ -80,6 +80,7 @@ import com.breakyuna.esjzone.app.profileCachePrefix
 import com.breakyuna.esjzone.novellibrary.user.UserProfile
 import com.breakyuna.esjzone.network.EsjzoneUrls
 import com.breakyuna.esjzone.network.LocalAuthorization
+import com.breakyuna.esjzone.ui.navigation.AppNavigator
 import com.breakyuna.esjzone.ui.navigation.LocalFloatingNavPadding
 import com.breakyuna.esjzone.network.features.getUserProfile
 import com.breakyuna.esjzone.ui.designsystem.AccountIconBadge
@@ -91,7 +92,6 @@ import com.breakyuna.esjzone.ui.designsystem.AppSpacing
 import com.breakyuna.esjzone.ui.designsystem.AppTypography
 import com.breakyuna.esjzone.ui.navigation.AppTab
 import com.breakyuna.esjzone.ui.navigation.AppTabOptions
-import com.breakyuna.esjzone.ui.navigation.LocalBaseNavigator
 import com.breakyuna.esjzone.ui.page.BookmarksPage
 import com.breakyuna.esjzone.ui.page.DownloadPage
 import com.breakyuna.esjzone.ui.page.SettingsPage
@@ -117,8 +117,7 @@ object ProfileTab : AppTab {
 
     @OptIn(ExperimentalMaterial3Api::class)
     @Composable
-    override fun Content() {
-        val navigator = LocalBaseNavigator.current
+    override fun Content(navigator: AppNavigator) {
         val authorization = LocalAuthorization.current
         val domain = authorization.domain.ifBlank { PresentationAccess.settings.domain.value }
         val loginSessionChanges by PresentationAccess.client.loginSessionChanges.collectAsStateWithLifecycle()
@@ -217,7 +216,7 @@ object ProfileTab : AppTab {
                                 Text(stringResource(R.string.profile_tools), style = AppTypography.labelMedium,
                                     modifier = Modifier.semantics { heading() },
                                     color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                ProfileActions(menuItems) { navigator?.pushIfNotCurrent(it.destination) }
+                                ProfileActions(menuItems) { navigator.pushIfNotCurrent(it.destination) }
                             }
                         }
                     }
@@ -229,7 +228,7 @@ object ProfileTab : AppTab {
                             color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                     item(key = "profile-actions") {
-                        ProfileActions(menuItems) { navigator?.pushIfNotCurrent(it.destination) }
+                        ProfileActions(menuItems) { navigator.pushIfNotCurrent(it.destination) }
                     }
                 }
             }

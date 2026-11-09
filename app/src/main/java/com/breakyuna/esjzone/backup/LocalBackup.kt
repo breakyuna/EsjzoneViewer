@@ -3,34 +3,69 @@ package com.breakyuna.esjzone.backup
 import android.content.Context
 import android.net.Uri
 import androidx.room.withTransaction
+import com.breakyuna.esjzone.data.settings.ReaderSettingsDataStore
 import com.breakyuna.esjzone.database.GeneralDatabase
 import com.breakyuna.esjzone.database.entity.*
-import com.breakyuna.esjzone.offline.NovelDownloadStore
 import com.breakyuna.esjzone.domain.reader.ReaderUnderlines
+import com.breakyuna.esjzone.offline.NovelDownloadStore
+import com.breakyuna.esjzone.ui.reader.ReaderImageBackgroundStore
+import com.breakyuna.esjzone.util.copyWithCancellation
 import com.google.gson.Gson
 import com.google.gson.JsonObject
 import com.google.gson.JsonParser
+import com.google.gson.annotations.SerializedName
 import java.io.File
 import java.util.zip.Deflater
 import java.util.zip.ZipEntry
 import java.util.zip.ZipInputStream
 import java.util.zip.ZipOutputStream
-import com.breakyuna.esjzone.util.copyWithCancellation
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
-import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 
-enum class BackupCategory { UNDERLINES, BOOKMARKS, DOWNLOADS, READING, HISTORY, SEARCH, GROUPS }
+enum class BackupCategory {
+    UNDERLINES, BOOKMARKS, DOWNLOADS, READING, HISTORY, SEARCH, GROUPS, BOOKSHELF, READER_SETTINGS
+}
 
 data class BackupGroups(val names: List<String>, val members: Map<String, String>)
+
+private data class BackupShelfBook(
+    @SerializedName("bookKey") val bookKey: String,
+    @SerializedName("novelId") val novelId: String,
+    @SerializedName("url") val url: String,
+    @SerializedName("title") val title: String,
+    @SerializedName("author") val author: String,
+    @SerializedName("coverUrl") val coverUrl: String,
+    @SerializedName("isAdult") val isAdult: Boolean,
+    @SerializedName("addedAt") val addedAt: Long
+) {
+    constructor(row: BookshelfEntry) : this(
+        row.bookKey, row.novelId, row.url, row.title, row.author, row.coverUrl, row.isAdult, row.addedAt
+    )
+
+    fun toEntry(scope: String) = BookshelfEntry(
+        scope = scope, bookKey = bookKey, novelId = novelId, url = url, title = title, author = author,
+        coverUrl = coverUrl, isAdult = isAdult, addedAt = addedAt
+    )
+}
 
 /** Versioned, explicit allowlist: never serializes the database or account settings wholesale. */
 object LocalBackup {
     private val gson = Gson()
+    private const val BACKGROUND_PHOTO = "reader-background.jpg"
+    private const val MAX_BACKGROUND_BYTES = 32L * 1024 * 1024
 
-    suspend fun export(context: Context, uri: Uri, database: GeneralDatabase, scope: String,
-                       selected: Set<BackupCategory>) = withContext(Dispatchers.IO) {
+    suspend fun export(
+        context: Context,
+        uri: Uri,
+        database: GeneralDatabase,
+        scope: String,
+        selected: Set<BackupCategory>,
+        readerSettings: ReaderSettingsDataStore? = null
+    ) = withContext(Dispatchers.IO) {
         val transferContext = currentCoroutineContext()
         val checkActive = { transferContext.ensureActive() }
         checkActive()
@@ -39,7 +74,8 @@ object LocalBackup {
         try {
             val json = JsonObject().apply {
                 addProperty("format", "esjzone-local-backup")
-                addProperty("version", 2)
+                val hasNewCategories = BackupCategory.BOOKSHELF in selected || BackupCategory.READER_SETTINGS in selected
+                addProperty("version", if (hasNewCategories) 3 else 2)
             }
             database.withTransaction {
                 checkActive()
@@ -52,6 +88,10 @@ object LocalBackup {
                     json.add("readingTags", gson.toJsonTree(database.cacheDao().getReadingTags().associate { it.key to it.value }))
                 }
                 if (BackupCategory.SEARCH in selected) json.add("search", gson.toJsonTree(database.searchHistoryDao().getAll()))
+                if (BackupCategory.BOOKSHELF in selected) {
+                    val books = database.bookshelfDao().getAll(scope).filter { it.visible }.map(::BackupShelfBook)
+                    json.add("bookshelf", gson.toJsonTree(books))
+                }
                 if (BackupCategory.GROUPS in selected) {
                     val dao = database.bookshelfGroupDao()
                     json.add("groups", gson.toJsonTree(BackupGroups(dao.groups(scope).map { it.name },
@@ -61,6 +101,20 @@ object LocalBackup {
             if (BackupCategory.DOWNLOADS in selected) {
                 json.addProperty("downloads", true)
             }
+            val photo = File(staging, BACKGROUND_PHOTO)
+            if (BackupCategory.READER_SETTINGS in selected) {
+                ReaderImageBackgroundStore.savedPhotoMutex.withLock {
+                    val (settings, appearance) = requireNotNull(readerSettings).backupSnapshot()
+                    val source = ReaderImageBackgroundStore.file(context, appearance)
+                    if (source != null && source.isFile && source.length() > 0L) {
+                        source.inputStream().buffered().use { input ->
+                            photo.outputStream().buffered().use { input.copyWithCancellation(it, checkActive) }
+                        }
+                        settings.addProperty("hasBackgroundPhoto", true)
+                    }
+                    json.add("readerSettings", settings)
+                }
+            }
             File(staging, "backup.json").writeText(gson.toJson(json))
             ZipOutputStream(checkNotNull(context.contentResolver.openOutputStream(uri, "wt"))
                 .buffered(64 * 1024)).use { zip ->
@@ -68,6 +122,7 @@ object LocalBackup {
                     appendZipFile(zip, file, file.relativeTo(staging).invariantSeparatorsPath, checkActive)
                 }
                 appendFile(File(staging, "backup.json"))
+                if (photo.isFile) appendFile(photo)
                 if (BackupCategory.DOWNLOADS in selected) {
                     NovelDownloadStore.exportBackup(File(staging, "downloads"), checkActive) { snapshot ->
                         try {
@@ -93,8 +148,14 @@ object LocalBackup {
         }
     }
 
-    suspend fun restore(context: Context, uri: Uri, database: GeneralDatabase, scope: String,
-                        selected: Set<BackupCategory>) = withContext(Dispatchers.IO) {
+    suspend fun restore(
+        context: Context,
+        uri: Uri,
+        database: GeneralDatabase,
+        scope: String,
+        selected: Set<BackupCategory>,
+        readerSettings: ReaderSettingsDataStore? = null
+    ) = withContext(Dispatchers.IO) {
         val transferContext = currentCoroutineContext()
         val checkActive = { transferContext.ensureActive() }
         checkActive()
@@ -110,8 +171,10 @@ object LocalBackup {
                     val entry = zip.nextEntry ?: break
                     val target = safeEntry(staging, entry.name)
                     require(seen.add(entry.name) && seen.size <= 200_000)
-                    if (entry.name.startsWith("downloads/") && BackupCategory.DOWNLOADS !in selected) {
-                        // closeEntry alone drains a skipped large chapter without cancellation points.
+                    if ((entry.name.startsWith("downloads/") && BackupCategory.DOWNLOADS !in selected) ||
+                        (entry.name == BACKGROUND_PHOTO && BackupCategory.READER_SETTINGS !in selected)
+                    ) {
+                        // Drain skipped data with cancellation points.
                         val buffer = ByteArray(64 * 1024)
                         while (true) {
                             checkActive()
@@ -121,6 +184,7 @@ object LocalBackup {
                         continue
                     }
                     if (!entry.isDirectory) {
+                        var entryBytes = 0L
                         target.parentFile?.mkdirs()
                         target.outputStream().buffered().use { output ->
                             val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
@@ -131,6 +195,10 @@ object LocalBackup {
                                 if (count < 0) break
                                 extracted += count
                                 require(extracted <= limit)
+                                if (entry.name == BACKGROUND_PHOTO) {
+                                    entryBytes += count
+                                    require(entryBytes <= MAX_BACKGROUND_BYTES)
+                                }
                                 output.write(buffer, 0, count)
                             }
                         }
@@ -140,7 +208,7 @@ object LocalBackup {
             }
             checkActive()
             val json = JsonParser.parseString(File(staging, "backup.json").readText()).asJsonObject
-            require(json["format"]?.asString == "esjzone-local-backup" && json["version"]?.asInt in 1..2)
+            require(json["format"]?.asString == "esjzone-local-backup" && json["version"]?.asInt in 1..3)
             require(selected.any { category -> json.has(when (category) {
                 BackupCategory.UNDERLINES -> "underlines"
                 BackupCategory.BOOKMARKS -> "bookmarks"
@@ -149,6 +217,8 @@ object LocalBackup {
                 BackupCategory.HISTORY -> "history"
                 BackupCategory.SEARCH -> "search"
                 BackupCategory.GROUPS -> "groups"
+                BackupCategory.BOOKSHELF -> "bookshelf"
+                BackupCategory.READER_SETTINGS -> "readerSettings"
             }) })
             val underlines = if (BackupCategory.UNDERLINES in selected && json.has("underlines"))
                 json.getAsJsonObject("underlines").entrySet().associate { (key, value) ->
@@ -170,6 +240,20 @@ object LocalBackup {
                 gson.fromJson(json["search"], Array<SearchHistory>::class.java).toList() else emptyList()
             val groups = if (BackupCategory.GROUPS in selected && json.has("groups"))
                 gson.fromJson(json["groups"], BackupGroups::class.java) else null
+            val bookshelf = if (BackupCategory.BOOKSHELF in selected && json.has("bookshelf"))
+                gson.fromJson(json["bookshelf"], Array<BackupShelfBook>::class.java).map { it.toEntry(scope) }
+                else emptyList()
+            require(bookshelf.all { it.bookKey.isNotBlank() && it.url.isNotBlank() })
+            val savedSettings = if (BackupCategory.READER_SETTINGS in selected && json.has("readerSettings"))
+                json.getAsJsonObject("readerSettings") else null
+            val readerStore = if (savedSettings != null) requireNotNull(readerSettings) else null
+            val readerPreferences = savedSettings?.let { requireNotNull(readerStore).decodeBackup(it) }
+            val photo = File(staging, BACKGROUND_PHOTO)
+            val decodedPhoto = if (savedSettings?.get("hasBackgroundPhoto")?.asBoolean == true) {
+                require(photo.isFile)
+                ReaderImageBackgroundStore.render(photo)
+            } else null
+
             require(bookmarks.all { it.chapterUrl.isNotBlank() })
             require(history.all { it.activityId.isNotBlank() && it.chapterProgress in 0f..1f && it.durationMs >= 0 &&
                 (it.anchor == null || com.breakyuna.esjzone.domain.reader.ReaderAnchor.decode(it.anchor) != null) &&
@@ -221,6 +305,7 @@ object LocalBackup {
                         if (database.searchHistoryDao().findByKeyword(row.keyword) == null)
                             database.searchHistoryDao().insertAll(row.copy(index = 0))
                     }
+                    if (bookshelf.isNotEmpty()) database.bookshelfDao().insertAllIfAbsent(bookshelf)
                     groups?.let { data ->
                         val dao = database.bookshelfGroupDao()
                         data.names.forEach { dao.add(BookshelfGroup(scope, it)) }
@@ -236,12 +321,27 @@ object LocalBackup {
             } else {
                 restoreDatabase()
             }
+            if (readerPreferences != null && readerStore != null) {
+                ReaderImageBackgroundStore.savedPhotoMutex.withLock {
+                    withContext(NonCancellable) {
+                        val target = decodedPhoto?.let { ReaderImageBackgroundStore.persist(context, photo, it) }
+                        try {
+                            readerStore.restoreBackup(readerPreferences, target?.name)
+                        } catch (error: Exception) {
+                            target?.delete()
+                            throw error
+                        }
+                        ReaderImageBackgroundStore.removeUnused(context, target)
+                        readerStore.restoreWebsiteHistorySetting(readerPreferences)
+                    }
+                }
+            }
             com.breakyuna.esjzone.database.NovelTitleRepository.requestRepair()
         } finally { staging.deleteRecursively() }
     }
 
     internal fun safeEntry(root: File, name: String): File {
-        require(name == "backup.json" || name.startsWith("downloads/"))
+        require(name == "backup.json" || name == BACKGROUND_PHOTO || name.startsWith("downloads/"))
         require('\\' !in name && name.split('/').none { it == ".." || it == "." })
         val target = File(root, name).canonicalFile
         require(target.path.startsWith(root.canonicalPath + File.separator))

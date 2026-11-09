@@ -1,5 +1,7 @@
 package com.breakyuna.esjzone
 
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.unit.IntSize
 import com.breakyuna.esjzone.ui.reader.*
 import org.junit.Assert.*
 import org.junit.Test
@@ -25,6 +27,22 @@ class ReaderImageBackgroundTest {
         val invalid = ReaderImageBackground(blur = Float.NaN, transparency = Float.POSITIVE_INFINITY).sanitized()
         assertEquals(0f, invalid.blur, 0f)
         assertEquals(0f, invalid.transparency, 0f)
+    }
+
+    @Test fun cropTracksDraggingOnlyWhereThePhotoOverflowsAndStopsAtTheEdges() {
+        val centered = ReaderImageBackground()
+        val viewport = IntSize(100, 200)
+        val wide = IntSize(200, 200)
+        val tall = IntSize(100, 300)
+        val horizontal = centered.pan(Offset(25f, 80f), viewport, wide)
+        assertEquals(0.25f, horizontal.cropX, 0f)
+        assertEquals(0.5f, horizontal.cropY, 0f)
+        val vertical = centered.pan(Offset(80f, -25f), viewport, tall)
+        assertEquals(0.5f, vertical.cropX, 0f)
+        assertEquals(0.75f, vertical.cropY, 0f)
+        assertEquals(0f, horizontal.pan(Offset(200f, 0f), viewport, wide).cropX, 0f)
+        assertEquals(1f, vertical.pan(Offset(0f, -200f), viewport, tall).cropY, 0f)
+        assertEquals(centered, centered.pan(Offset(80f, 80f), viewport, viewport))
     }
 
     @Test fun contrastAndGlowParameters() {
