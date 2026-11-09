@@ -55,6 +55,15 @@ private data class BackupShelfBook(
 /** Versioned, explicit allowlist: never serializes the database or account settings wholesale. */
 object LocalBackup {
     private val gson = Gson()
+
+    /** Older archives lack positions; an unreadable position falls back to the chapter start. */
+    internal fun decodeBookmarks(element: com.google.gson.JsonElement): List<Bookmark> =
+        gson.fromJson(element, Array<Bookmark>::class.java).map { row ->
+            val anchor = row.anchor?.takeIf { com.breakyuna.esjzone.domain.reader.ReaderAnchor.decode(it) != null }
+            val excerpt = row.excerpt?.takeIf { anchor != null && it.isNotBlank() }
+            if (anchor == row.anchor && excerpt == row.excerpt) row else row.copy(anchor = anchor, excerpt = excerpt)
+        }
+
     private const val BACKGROUND_PHOTO = "reader-background.jpg"
     private const val MAX_BACKGROUND_BYTES = 32L * 1024 * 1024
 
@@ -226,7 +235,7 @@ object LocalBackup {
                     key to ReaderUnderlines.decode(value.asString)
                 } else emptyMap()
             val bookmarks = if (BackupCategory.BOOKMARKS in selected && json.has("bookmarks"))
-                gson.fromJson(json["bookmarks"], Array<Bookmark>::class.java).toList() else emptyList()
+                decodeBookmarks(json["bookmarks"]) else emptyList()
             val history = if (BackupCategory.HISTORY in selected && json.has("history"))
                 gson.fromJson(json["history"], Array<LocalReadingActivity>::class.java).toList() else emptyList()
             val reading = if (BackupCategory.READING in selected && json.has("reading"))

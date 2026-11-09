@@ -19,7 +19,7 @@ import com.breakyuna.esjzone.database.entity.ReadingStat
 
 @Database(
     entities = [Cache::class, SearchHistory::class, Bookmark::class, LocalReadingActivity::class, BookshelfEntry::class, ReadingStat::class, com.breakyuna.esjzone.database.entity.BookshelfGroup::class, com.breakyuna.esjzone.database.entity.BookshelfGroupMember::class],
-    version = 11,
+    version = 12,
     exportSchema = true
 )
 abstract class GeneralDatabase : RoomDatabase() {
@@ -39,6 +39,14 @@ abstract class GeneralDatabase : RoomDatabase() {
     abstract fun bookshelfGroupDao(): com.breakyuna.esjzone.database.dao.BookshelfGroupDao
 
     companion object {
+        val MIGRATION_11_12: Migration = object : Migration(11, 12) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                // Existing chapter-only bookmarks keep NULL and open at the chapter start.
+                database.execSQL("ALTER TABLE bookmarks ADD COLUMN content_anchor TEXT DEFAULT NULL")
+                database.execSQL("ALTER TABLE bookmarks ADD COLUMN excerpt TEXT DEFAULT NULL")
+            }
+        }
+
         val MIGRATION_10_11: Migration = object : Migration(10, 11) {
             override fun migrate(database: SupportSQLiteDatabase) {
                 database.execSQL("ALTER TABLE local_reading_history ADD COLUMN content_anchor TEXT DEFAULT NULL")

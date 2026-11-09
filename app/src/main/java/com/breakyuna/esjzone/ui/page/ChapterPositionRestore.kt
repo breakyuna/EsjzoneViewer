@@ -9,6 +9,7 @@ import com.breakyuna.esjzone.domain.reader.ReaderAnchor
 import com.breakyuna.esjzone.domain.reader.ReaderBlock
 import com.breakyuna.esjzone.domain.reader.ReaderTextOffsets
 import com.breakyuna.esjzone.novellibrary.novel.Chapter
+import com.breakyuna.esjzone.ui.reader.ReaderPage
 import com.breakyuna.esjzone.ui.reader.ReaderPageSegment
 import com.breakyuna.esjzone.ui.reader.readerItemForContentPosition
 import com.breakyuna.esjzone.ui.reader.restoreReaderPosition
@@ -64,14 +65,7 @@ internal suspend fun restoreChapterPosition(
             else -> if (!pagedMode) anchor.blockIndex + 1 else {
                 val block = displayItems[startIndex].entry.document.blocks[anchor.blockIndex]
                 val offsets = if (identityOffsets) null else textOffsets(block)
-                chapterItems.indexOfLast { item ->
-                    item.page?.let { page ->
-                        val blockIndex = page.contentPosition.toInt()
-                        val startOffset = (page.segments.firstOrNull() as? ReaderPageSegment.TextLine)?.startOffset ?: 0
-                        blockIndex < anchor.blockIndex || blockIndex == anchor.blockIndex &&
-                            (offsets?.toSource(startOffset) ?: startOffset) <= anchor.offset
-                    } == true
-                }.coerceAtLeast(0)
+                readerPageIndexForAnchor(chapterItems.map { it.page }, anchor) { offsets?.toSource(it) ?: it }
             }
         }
     }
@@ -135,3 +129,16 @@ internal suspend fun restoreChapterPosition(
         true
     }, fallback = { restoreParagraph() })
 }
+
+/** Paged mode: the last page starting at or before the anchor; page offsets are display text. */
+internal fun readerPageIndexForAnchor(
+    pages: List<ReaderPage?>,
+    anchor: ReaderAnchor,
+    toSource: (Int) -> Int
+): Int = pages.indexOfLast { candidate ->
+    candidate?.let { page ->
+        val blockIndex = page.contentPosition.toInt()
+        val startOffset = (page.segments.firstOrNull() as? ReaderPageSegment.TextLine)?.startOffset ?: 0
+        blockIndex < anchor.blockIndex || blockIndex == anchor.blockIndex && toSource(startOffset) <= anchor.offset
+    } == true
+}.coerceAtLeast(0)

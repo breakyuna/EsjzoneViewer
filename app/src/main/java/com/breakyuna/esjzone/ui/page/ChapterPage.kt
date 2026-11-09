@@ -204,6 +204,7 @@ import com.breakyuna.esjzone.ui.designsystem.AppFeedback
 import com.breakyuna.esjzone.ui.designsystem.AppShapes
 import com.breakyuna.esjzone.ui.designsystem.AppSpacing
 import com.breakyuna.esjzone.domain.reader.ReaderAnchor
+import com.breakyuna.esjzone.domain.reader.ReaderBookmarkPosition
 import com.breakyuna.esjzone.domain.reader.readerChapterProgress
 import com.breakyuna.esjzone.domain.reader.readerContentPosition
 import com.breakyuna.esjzone.domain.reader.sourceText
@@ -230,7 +231,9 @@ class ChapterPage(
     internal val restoreFromLocalHistory: Boolean = false,
     private val searchHit: com.breakyuna.esjzone.domain.reader.ReaderSearchHit? = null,
     private val chapterOrderComplete: Boolean = true,
-    private val keepRequestedChapterOnRestore: Boolean = false
+    private val keepRequestedChapterOnRestore: Boolean = false,
+    /** Saved bookmark paragraph; opens like a resume, without consulting local history. */
+    private val bookmarkAnchor: ReaderAnchor? = null
 ) : AppDestination {
 
     override val navKey = AppNavKey.Reader(
@@ -493,15 +496,19 @@ class ChapterPage(
         var progressReturnLocation by remember { mutableStateOf<ReaderBookLocation?>(null) }
         var pendingSeekLocation by remember { mutableStateOf<ReaderBookLocation?>(null) }
         var pendingUnderline by remember { mutableStateOf<Pair<Chapter, ReaderUnderline>?>(null) }
-        var resolvedResumeProgress by remember(chapter.url) { mutableStateOf(resumeChapterProgress ?: searchHit?.let { 0f }) }
-        var resolvedResumeAnchor by remember(chapter.url) { mutableStateOf(searchHit?.anchor) }
-        var restoreLookupPending by remember(chapter.url) { mutableStateOf(searchHit == null && (restoreFromLocalHistory || resumeChapterProgress != null)) }
+        var pendingBookmark by remember { mutableStateOf<Pair<Chapter, ReaderAnchor>?>(null) }
+        // The bookmark row is keyed by chapter URL, so bind its anchor to this chapter's identity.
+        val initialBookmarkAnchor = remember(chapter.url) { bookmarkAnchor?.copy(chapterKey = chapterIdentity(chapter)) }
+        val fixedResume = searchHit != null || initialBookmarkAnchor != null
+        var resolvedResumeProgress by remember(chapter.url) { mutableStateOf(resumeChapterProgress ?: if (fixedResume) 0f else null) }
+        var resolvedResumeAnchor by remember(chapter.url) { mutableStateOf(initialBookmarkAnchor ?: searchHit?.anchor) }
+        var restoreLookupPending by remember(chapter.url) { mutableStateOf(!fixedResume && (restoreFromLocalHistory || resumeChapterProgress != null)) }
         // Do not save the initial zero position before the stored location is restored.
         var resumePending by remember(chapter.url, resumeChapterProgress, restoreFromLocalHistory) {
-            mutableStateOf(searchHit != null || resumeChapterProgress != null || restoreFromLocalHistory)
+            mutableStateOf(fixedResume || resumeChapterProgress != null || restoreFromLocalHistory)
         }
         LaunchedEffect(restoreFromLocalHistory, novelId, chapter.url, resumeChapterProgress) {
-            if (searchHit != null || (!restoreFromLocalHistory && resumeChapterProgress == null)) return@LaunchedEffect
+            if (fixedResume || (!restoreFromLocalHistory && resumeChapterProgress == null)) return@LaunchedEffect
             val started = System.nanoTime()
             // The restored route may be newer than the entry's saved requestedChapter
             // after continuous reading. Resolve history before starting either load.
@@ -1198,6 +1205,14 @@ class ChapterPage(
                 bookmarkStateUrl != bookmarkChapterUrl || desired == isBookmarked) return
             val coverSource = novelCoverUrl.ifBlank { localHistoryPosition.value.novelCoverUrl }
             val currentNovelUrl = novelUrl.ifBlank { localHistoryPosition.value.novelUrl }
+            // Pin the paragraph at the top of the viewport or page; missing layout keeps a chapter-only bookmark.
+            val bookmarkDocument = activeChapter?.takeIf { sameReaderChapter(it.chapter, target) && !it.requiresPassword }?.document
+            val positionAnchor = if (desired && bookmarkDocument != null) {
+                measuredAnchor?.takeIf { it.chapterKey == chapterIdentity(target) }
+            } else null
+            val positionExcerpt = positionAnchor?.let { anchor ->
+                ReaderBookmarkPosition.excerpt(requireNotNull(bookmarkDocument), anchor, ::textOffsets)
+            }
             // Acquire on the UI thread before launching, including callers from gestures.
             updatingBookmark = true
             pendingBookmarkDesired = desired
@@ -1214,7 +1229,9 @@ class ChapterPage(
                                     chapterUrl = bookmarkChapterUrl,
                                     novelId = finalNovelId,
                                     novelName = resolvedNovelName,
-                                    chapterName = target.name
+                                    chapterName = target.name,
+                                    anchor = ReaderAnchor.encode(positionAnchor),
+                                    excerpt = positionExcerpt
                                 )
                             )
                         }
@@ -1310,6 +1327,7 @@ class ChapterPage(
 
         fun seekTo(location: ReaderBookLocation) {
             pendingUnderline = null
+            pendingBookmark = null
             pendingBoundaryTurn = null
             pendingSeekLocation = location
             val current = currentReadingChapter
@@ -1410,7 +1428,11 @@ class ChapterPage(
                 sameReaderChapter(it.chapter, requestedChapter.value)
             } ?: return@LaunchedEffect
             // A password gate must not consume the saved anchor or enable history writes.
-            pendingSeekLocation = current.resumeLocation(restored, resolvedResumeAnchor)
+            pendingSeekLocation = current.resumeLocation(restored, resolvedResumeAnchor)?.let { location ->
+                // A changed body keeps the bookmarked paragraph index instead of the chapter start.
+                if (initialBookmarkAnchor == null) location else location.copy(contentPosition =
+                    ReaderBookmarkPosition.fallbackContentPosition(current.document, chapterIdentity(current.chapter), resolvedResumeAnchor))
+            }
             deferredResumeChapterKey = if (current.requiresPassword) chapterIdentity(current.chapter) else null
         }
 
@@ -1452,6 +1474,23 @@ class ChapterPage(
             pendingUnderline = null
         }
 
+        LaunchedEffect(pendingBookmark, result?.chapters, scriptReady, bookChapterOrder, progressTextIndex) {
+            val (target, saved) = pendingBookmark ?: return@LaunchedEffect
+            if (!scriptReady) return@LaunchedEffect
+            val entry = result?.chapters?.firstOrNull { sameReaderChapter(it.chapter, target) }
+                ?: return@LaunchedEffect
+            pendingBookmark = null
+            if (entry.requiresPassword) return@LaunchedEffect
+            val targetKey = chapterIdentity(entry.chapter)
+            val exact = saved.copy(chapterKey = targetKey).takeIf { it.matches(targetKey, entry.document) }
+            val chapterProgress = readerChapterProgress(entry.document, saved)
+            val location = readerBookLocationFor(entry.chapter, chapterProgress, bookChapterOrder,
+                bookChapterIndices, progressTextIndex)
+                ?: ReaderBookLocation(entry.chapter, -1, chapterProgress, bookChapterOrder.size)
+            pendingSeekLocation = location.copy(anchor = exact,
+                contentPosition = ReaderBookmarkPosition.fallbackContentPosition(entry.document, targetKey, saved.copy(chapterKey = targetKey)))
+        }
+
         LaunchedEffect(pendingSeekLocation, displayItems, paginationReady, scriptReady, readerBodyStartOffset,
             initialScrollPrimed, entryAnimationFinished, positionRestoreAttempt) {
             if (!entryAnimationFinished || !initialScrollPrimed || !paginationReady || !scriptReady) return@LaunchedEffect
@@ -1482,6 +1521,7 @@ class ChapterPage(
         fun openTargetChapter(target: Chapter) {
             positionRestoreFailed = false
             pendingUnderline = null
+            pendingBookmark = null
             pendingBoundaryTurn = null
             requestedChapter.value = target
             pendingSeekLocation = null
@@ -1503,6 +1543,13 @@ class ChapterPage(
             dismissProgressPreview()
             openTargetChapter(target)
             pendingUnderline = target to mark
+        }
+
+        fun openBookmark(target: Chapter, bookmark: com.breakyuna.esjzone.database.entity.Bookmark) {
+            dismissProgressPreview()
+            openTargetChapter(target)
+            // Chapter-only bookmarks keep opening at the chapter start.
+            ReaderAnchor.decode(bookmark.anchor)?.let { pendingBookmark = target to it.copy(chapterKey = chapterIdentity(target)) }
         }
 
         var pageTurnInProgress by pageTurnInProgressForBoundary
@@ -1791,6 +1838,10 @@ class ChapterPage(
                     onUnderlineSelected = { target, mark ->
                         sidePanels.close()
                         openUnderline(target, mark)
+                    },
+                    onBookmarkSelected = { target, bookmark ->
+                        sidePanels.close()
+                        openBookmark(target, bookmark)
                     },
                     onChapterSelected = { selected ->
                         sidePanels.close()
@@ -2621,6 +2672,10 @@ class ChapterPage(
                 onUnderlineSelected = { target, mark ->
                     showReaderContents = false
                     openUnderline(target, mark)
+                },
+                onBookmarkSelected = { target, bookmark ->
+                    showReaderContents = false
+                    openBookmark(target, bookmark)
                 },
                 onChapterSelected = { selectedChapter ->
                     showReaderContents = false

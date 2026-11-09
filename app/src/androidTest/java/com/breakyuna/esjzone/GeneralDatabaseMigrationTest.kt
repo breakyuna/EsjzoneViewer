@@ -42,7 +42,8 @@ class GeneralDatabaseMigrationTest {
             GeneralDatabase.MIGRATION_7_8,
             GeneralDatabase.MIGRATION_8_9,
             GeneralDatabase.MIGRATION_9_10,
-            GeneralDatabase.MIGRATION_10_11
+            GeneralDatabase.MIGRATION_10_11,
+            GeneralDatabase.MIGRATION_11_12
         )
         try {
             val sqlite = database.openHelper.writableDatabase
@@ -74,7 +75,8 @@ class GeneralDatabaseMigrationTest {
             GeneralDatabase.MIGRATION_7_8,
             GeneralDatabase.MIGRATION_8_9,
             GeneralDatabase.MIGRATION_9_10,
-            GeneralDatabase.MIGRATION_10_11
+            GeneralDatabase.MIGRATION_10_11,
+            GeneralDatabase.MIGRATION_11_12
         )
         try {
             val sqlite = database.openHelper.writableDatabase
@@ -108,7 +110,8 @@ class GeneralDatabaseMigrationTest {
             GeneralDatabase.MIGRATION_7_8,
             GeneralDatabase.MIGRATION_8_9,
             GeneralDatabase.MIGRATION_9_10,
-            GeneralDatabase.MIGRATION_10_11
+            GeneralDatabase.MIGRATION_10_11,
+            GeneralDatabase.MIGRATION_11_12
         )
         try {
             val sqlite = database.openHelper.writableDatabase
@@ -142,7 +145,8 @@ class GeneralDatabaseMigrationTest {
             GeneralDatabase.MIGRATION_7_8,
             GeneralDatabase.MIGRATION_8_9,
             GeneralDatabase.MIGRATION_9_10,
-            GeneralDatabase.MIGRATION_10_11
+            GeneralDatabase.MIGRATION_10_11,
+            GeneralDatabase.MIGRATION_11_12
         )
         try {
             val sqlite = database.openHelper.writableDatabase
@@ -248,7 +252,8 @@ class GeneralDatabaseMigrationTest {
             GeneralDatabase.MIGRATION_7_8,
             GeneralDatabase.MIGRATION_8_9,
             GeneralDatabase.MIGRATION_9_10,
-            GeneralDatabase.MIGRATION_10_11
+            GeneralDatabase.MIGRATION_10_11,
+            GeneralDatabase.MIGRATION_11_12
         )
         try {
             val sqlite = database.openHelper.writableDatabase
@@ -311,7 +316,8 @@ class GeneralDatabaseMigrationTest {
             GeneralDatabase.MIGRATION_7_8,
             GeneralDatabase.MIGRATION_8_9,
             GeneralDatabase.MIGRATION_9_10,
-            GeneralDatabase.MIGRATION_10_11
+            GeneralDatabase.MIGRATION_10_11,
+            GeneralDatabase.MIGRATION_11_12
         )
         try {
             val sqlite = database.openHelper.writableDatabase
@@ -376,7 +382,8 @@ class GeneralDatabaseMigrationTest {
             GeneralDatabase.MIGRATION_7_8,
             GeneralDatabase.MIGRATION_8_9,
             GeneralDatabase.MIGRATION_9_10,
-            GeneralDatabase.MIGRATION_10_11
+            GeneralDatabase.MIGRATION_10_11,
+            GeneralDatabase.MIGRATION_11_12
         )
         try {
             val sqlite = database.openHelper.writableDatabase
@@ -448,7 +455,7 @@ class GeneralDatabaseMigrationTest {
                 GeneralDatabase.MIGRATION_9_10).forEach { it.migrate(sqlite) }
             insertReadingRow(sqlite, "old-position", 200L, 100L)
         }
-        val database = openWithMigrations(name, GeneralDatabase.MIGRATION_10_11)
+        val database = openWithMigrations(name, GeneralDatabase.MIGRATION_10_11, GeneralDatabase.MIGRATION_11_12)
         try {
             val sqlite = database.openHelper.writableDatabase
             sqlite.query("SELECT chapter_progress, content_anchor, book_progress FROM local_reading_history WHERE activity_id = 'old-position'").use { cursor ->
@@ -463,6 +470,43 @@ class GeneralDatabaseMigrationTest {
             database.localReadingActivityDao().upsertLatest(row.copy(anchor = anchor, bookProgress = 0.25f))
             assertEquals(anchor, database.localReadingActivityDao().getLatest()!!.anchor)
             assertEquals(0.25f, database.localReadingActivityDao().getLatest()!!.bookProgress!!, 0f)
+        } finally {
+            database.close()
+            ApplicationProvider.getApplicationContext<android.content.Context>().deleteDatabase(name)
+        }
+    }
+
+    @Test
+    fun migration11To12KeepsChapterBookmarksAndAddsNullableParagraphPosition() {
+        val name = "general-migration-v11-${System.nanoTime()}"
+        createFixtureDatabase(name, 11) { sqlite ->
+            createVersion1Schema(sqlite)
+            listOf(GeneralDatabase.MIGRATION_1_2, GeneralDatabase.MIGRATION_2_3,
+                GeneralDatabase.MIGRATION_3_4, GeneralDatabase.MIGRATION_4_5,
+                GeneralDatabase.MIGRATION_5_6, GeneralDatabase.MIGRATION_6_7,
+                GeneralDatabase.MIGRATION_7_8, GeneralDatabase.MIGRATION_8_9,
+                GeneralDatabase.MIGRATION_9_10, GeneralDatabase.MIGRATION_10_11).forEach { it.migrate(sqlite) }
+            insertBookmark(sqlite)
+        }
+        val database = openWithMigrations(name, GeneralDatabase.MIGRATION_11_12)
+        try {
+            val sqlite = database.openHelper.writableDatabase
+            assertBookmarkPreserved(sqlite)
+            sqlite.query("SELECT content_anchor, excerpt FROM bookmarks WHERE chapter_url = ?",
+                arrayOf("https://example.test/chapter/bookmark")).use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                assertTrue(cursor.isNull(0))
+                assertTrue(cursor.isNull(1))
+            }
+            val dao = database.bookmarkDao()
+            val legacy = dao.findByChapterUrl("https://example.test/chapter/bookmark")!!
+            assertEquals(null, com.breakyuna.esjzone.domain.reader.ReaderAnchor.decode(legacy.anchor))
+            val anchor = com.breakyuna.esjzone.domain.reader.ReaderAnchor.encode(
+                com.breakyuna.esjzone.domain.reader.ReaderAnchor("/forum/1/1.html", "a".repeat(64), 3, 12))
+            dao.insert(legacy.copy(anchor = anchor, excerpt = "Paragraph excerpt"))
+            val saved = dao.findByChapterUrl(legacy.chapterUrl)!!
+            assertEquals(anchor, saved.anchor)
+            assertEquals("Paragraph excerpt", saved.excerpt)
         } finally {
             database.close()
             ApplicationProvider.getApplicationContext<android.content.Context>().deleteDatabase(name)
