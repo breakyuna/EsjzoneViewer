@@ -162,6 +162,8 @@ internal fun analyseParagraph(paragraph: Element): List<Component> {
                 newStyles.add(LineThroughTextStyle)
             } else if (node.nameIs("span")) {
                 newStyles.addAll(analyseStyles(node.attr("style").replace(" ", "")))
+            } else if (node.nameIs("a")) {
+                node.attr("href").trim().takeIf { it.isNotEmpty() }?.let { newStyles.add(LinkTextStyle(it)) }
             }
 
             for (child in node.childNodes()) {
@@ -276,6 +278,8 @@ private fun analyseText(node: Node, styles: List<TextStyle>): List<TextComponent
             newStyles.add(LineThroughTextStyle)
         } else if (node.nameIs("span")) {
             newStyles.addAll(analyseStyles(node.attr("style").replace(" ", "")))
+        } else if (node.nameIs("a")) {
+            node.attr("href").trim().takeIf { it.isNotEmpty() }?.let { newStyles.add(LinkTextStyle(it)) }
         }
 
         node.childNodes().map { analyseText(it, newStyles) }.forEach { list.addAll(it) }
@@ -447,6 +451,9 @@ interface TextStyle {
     }
 
 }
+
+/** Retains the source href for reader link extraction without changing text styling. */
+data class LinkTextStyle(val href: String) : TextStyle, Serializable
 
 object BoldTextStyle : TextStyle {
 

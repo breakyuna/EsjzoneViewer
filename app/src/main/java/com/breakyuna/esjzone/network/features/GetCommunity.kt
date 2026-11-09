@@ -387,9 +387,12 @@ internal fun localCommentSubmission(
         authorId = null,
         authorName = authorName,
         authorUrl = null,
-        // The server badge is opaque DOM text, not the count of loaded comments.
-        // Delivery confirmation does not tell us that badge, even if an id is known.
-        floor = null,
+        // This is a local estimate until a subsequent refresh retrieves the server badge.
+        floor = previousComments.lastOrNull()?.floor?.trim()
+            ?.takeIf { it.matches(Regex("#[0-9]+")) }
+            ?.substring(1)?.toLongOrNull()
+            ?.takeIf { it < Long.MAX_VALUE }
+            ?.let { "#${it + 1}" },
         createdAt = requestSentAt,
         contentHtml = content,
         contentText = content,

@@ -50,6 +50,8 @@ import com.breakyuna.esjzone.R
 import com.breakyuna.esjzone.domain.reader.sourceText
 import com.breakyuna.esjzone.domain.reader.ReaderBlock
 import com.breakyuna.esjzone.domain.reader.ReaderChapterDocument
+import com.breakyuna.esjzone.domain.reader.ReaderLink
+import com.breakyuna.esjzone.domain.reader.ReaderTextOffsets
 import com.breakyuna.esjzone.ui.designsystem.AppImageViewer
 import com.breakyuna.esjzone.ui.designsystem.AppReaderImage
 import com.breakyuna.esjzone.ui.designsystem.AppShapes
@@ -67,11 +69,13 @@ fun ReaderRenderer(
     textMeasurer: TextMeasurer,
     density: Density,
     contentColor: Color,
-    textTransform: (String) -> String = { it }
+    textTransform: (String) -> String = { it },
+    onLinkClick: (String) -> Unit = {}
 ) {
     Column(modifier = Modifier.fillMaxWidth()) {
         ReaderChapterHeading(chapterName, settings, contentColor, textTransform)
-        ReaderBlocks(document.blocks, settings, textMeasurer, density, contentColor, textTransform)
+        ReaderBlocks(document.blocks, settings, textMeasurer, density, contentColor, textTransform,
+            links = document.links, onLinkClick = onLinkClick)
     }
 }
 
@@ -93,7 +97,9 @@ fun ReaderBlocks(
     highlights: List<com.breakyuna.esjzone.domain.reader.ReaderHighlight> = emptyList(),
     textOffsets: (ReaderBlock) -> com.breakyuna.esjzone.domain.reader.ReaderTextOffsets = {
         com.breakyuna.esjzone.domain.reader.ReaderTextOffsets.identity(it.sourceText())
-    }
+    },
+    links: Map<Int, List<ReaderLink>> = emptyMap(),
+    onLinkClick: (String) -> Unit = {}
 ) {
     val textStyle = MaterialTheme.typography.bodyLarge.copy(
         fontFamily = settings.font.family(),
@@ -120,6 +126,9 @@ fun ReaderBlocks(
                         underlines = underlines,
                         onUnderline = onUnderline,
                         onLayout = { onTextLayout(blockStartIndex + index, it) },
+                        links = links[blockStartIndex + index].orEmpty(),
+                        linkOffsets = if (links[blockStartIndex + index].isNullOrEmpty()) null else textOffsets(block),
+                        onLinkClick = onLinkClick,
                         highlights = highlights.filter { it.blockIndex == blockStartIndex + index }.map {
                             val offsets = textOffsets(block)
                             androidx.compose.ui.text.TextRange(offsets.toDisplay(it.start), offsets.toDisplay(it.end))
@@ -138,6 +147,9 @@ fun ReaderBlocks(
                         underlines = underlines,
                         onUnderline = onUnderline,
                         onLayout = { onTextLayout(blockStartIndex + index, it) },
+                        links = links[blockStartIndex + index].orEmpty(),
+                        linkOffsets = if (links[blockStartIndex + index].isNullOrEmpty()) null else textOffsets(block),
+                        onLinkClick = onLinkClick,
                         highlights = highlights.filter { it.blockIndex == blockStartIndex + index }.map {
                             val offsets = textOffsets(block)
                             androidx.compose.ui.text.TextRange(offsets.toDisplay(it.start), offsets.toDisplay(it.end))
@@ -176,7 +188,10 @@ private fun ReaderParagraphBlock(
     underlines: List<ReaderUnderline>,
     onUnderline: (ReaderUnderline, Boolean) -> Unit,
     onLayout: (androidx.compose.ui.text.TextLayoutResult?) -> Unit,
-    highlights: List<androidx.compose.ui.text.TextRange>
+    highlights: List<androidx.compose.ui.text.TextRange>,
+    links: List<ReaderLink>,
+    linkOffsets: ReaderTextOffsets?,
+    onLinkClick: (String) -> Unit
 ) {
     val (paragraph, inlineContent) = remember(block, textStyle, textTransform, density) {
         val inlines = linkedMapOf<String, InlineTextContent>()
@@ -206,7 +221,10 @@ private fun ReaderParagraphBlock(
         underlines = underlines,
         onUnderline = onUnderline,
         onLayout = onLayout,
-        highlights = highlights
+        highlights = highlights,
+        links = links,
+        linkOffsets = linkOffsets,
+        onLinkClick = onLinkClick
     )
 }
 
@@ -224,7 +242,10 @@ private fun ReaderTextBlock(
     underlines: List<ReaderUnderline>,
     onUnderline: (ReaderUnderline, Boolean) -> Unit,
     onLayout: (androidx.compose.ui.text.TextLayoutResult?) -> Unit,
-    highlights: List<androidx.compose.ui.text.TextRange>
+    highlights: List<androidx.compose.ui.text.TextRange>,
+    links: List<ReaderLink>,
+    linkOffsets: ReaderTextOffsets?,
+    onLinkClick: (String) -> Unit
 ) {
     val (text, inlineContent) = remember(block, textStyle, textTransform, density) {
         block.toAnnotatedReaderText(
@@ -246,7 +267,10 @@ private fun ReaderTextBlock(
         underlines = underlines,
         onUnderline = onUnderline,
         onLayout = onLayout,
-        highlights = highlights
+        highlights = highlights,
+        links = links,
+        linkOffsets = linkOffsets,
+        onLinkClick = onLinkClick
     )
 }
 

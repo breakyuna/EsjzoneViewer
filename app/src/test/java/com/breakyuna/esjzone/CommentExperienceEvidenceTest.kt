@@ -69,7 +69,7 @@ class CommentExperienceEvidenceTest {
         assertEquals("Current reader", result.createdComment.authorName)
         assertEquals("/avatar.png", result.createdComment.authorAvatarUrl)
         assertEquals("2026-10-03 14:05:06", result.createdComment.createdAt)
-        assertNull(result.createdComment.floor)
+        assertEquals("#160290", result.createdComment.floor)
         assertEquals("#160289", result.comments[result.comments.lastIndex - 1].floor)
         assertEquals(2, result.createdComment.pageGroup)
     }

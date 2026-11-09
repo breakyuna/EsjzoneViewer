@@ -32,16 +32,19 @@ import com.breakyuna.esjzone.novellibrary.novel.DetailedChapter
  * persistence contracts stay in their existing layers; Reader UI consumes the
  * stable domain AST below this seam.
  */
-fun DetailedChapter.toReaderDocument(chapter: Chapter): ReaderChapterDocument =
-    ReaderChapterDocument(
+fun DetailedChapter.toReaderDocument(chapter: Chapter): ReaderChapterDocument {
+    val blocks = body?.readerBlocks { imageLocations[it] ?: it } ?: content.flatMap(Component::toReaderBlocks)
+    return ReaderChapterDocument(
         chapter = ReaderChapterRef(chapter.name, chapter.url),
-        blocks = body?.readerBlocks { imageLocations[it] ?: it } ?: content.flatMap(Component::toReaderBlocks),
+        blocks = blocks,
         previous = previous?.let { ReaderChapterRef(it.name, it.url) },
         next = next?.let { ReaderChapterRef(it.name, it.url) },
         contentHtml = null,
         sourceUrl = sourceUrl,
-        contentFingerprint = body?.fingerprint.orEmpty()
+        contentFingerprint = body?.fingerprint.orEmpty(),
+        links = readerChapterLinks(blocks, contentHtml, sourceUrl?.takeIf(String::isNotBlank) ?: chapter.url)
     )
+}
 
 private data class RubyMeasureKey(
     val text: String,

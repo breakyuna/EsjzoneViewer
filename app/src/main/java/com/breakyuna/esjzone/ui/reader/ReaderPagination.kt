@@ -33,6 +33,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.breakyuna.esjzone.domain.reader.ReaderBlock
+import com.breakyuna.esjzone.domain.reader.ReaderLink
 import com.breakyuna.esjzone.R
 import com.breakyuna.esjzone.ui.designsystem.globalStringResource as stringResource
 
@@ -204,7 +205,9 @@ internal fun ReaderPageContent(
     underlines: List<ReaderUnderline> = emptyList(),
     onUnderline: (ReaderUnderline, Boolean) -> Unit = { _, _ -> },
     highlights: List<com.breakyuna.esjzone.domain.reader.ReaderHighlight> = emptyList(),
-    textOffsets: (Int) -> com.breakyuna.esjzone.domain.reader.ReaderTextOffsets? = { null }
+    textOffsets: (Int) -> com.breakyuna.esjzone.domain.reader.ReaderTextOffsets? = { null },
+    links: Map<Int, List<ReaderLink>> = emptyMap(),
+    onLinkClick: (String) -> Unit = {}
 ) {
     val content: @Composable () -> Unit = {
         // Ordinary pages keep their unclipped margins. A title or single line
@@ -232,6 +235,9 @@ internal fun ReaderPageContent(
                         underlines = underlines,
                         onUnderline = onUnderline,
                         showMagnifier = false,
+                        links = links[segment.blockIndex].orEmpty(),
+                        linkOffsets = if (links[segment.blockIndex].isNullOrEmpty()) null else textOffsets(segment.blockIndex),
+                        onLinkClick = onLinkClick,
                         highlights = highlights.filter { it.blockIndex == segment.blockIndex }.mapNotNull { range ->
                             textOffsets(segment.blockIndex)?.let { offsets ->
                                 androidx.compose.ui.text.TextRange(

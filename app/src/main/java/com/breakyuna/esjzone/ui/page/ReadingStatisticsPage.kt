@@ -64,6 +64,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -90,6 +91,7 @@ import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import com.breakyuna.esjzone.ui.designsystem.globalStringResource as stringResource
 import androidx.compose.ui.semantics.contentDescription
@@ -101,10 +103,17 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewModelScope
 import com.breakyuna.esjzone.R
 import com.breakyuna.esjzone.app.PresentationAccess
+import com.breakyuna.esjzone.app.CoverLoadingPolicy
+import com.breakyuna.esjzone.app.LocalCoverPage
 import com.breakyuna.esjzone.database.ReadingTagTotal
 import com.breakyuna.esjzone.database.ReadingBookTotal
 import com.breakyuna.esjzone.database.ReadingStatisticsRecorder
 import com.breakyuna.esjzone.database.ReadingStatisticsSummary
+import com.breakyuna.esjzone.database.entity.LocalReadingActivity
+import com.breakyuna.esjzone.network.LocalAuthorization
+import com.breakyuna.esjzone.novellibrary.novel.CoverSource
+import com.breakyuna.esjzone.novellibrary.novel.CoverState
+import com.breakyuna.esjzone.ui.component.AppNovelCover
 import com.breakyuna.esjzone.ui.designsystem.AppSpacing
 import com.breakyuna.esjzone.ui.designsystem.AppShapes
 import com.breakyuna.esjzone.ui.designsystem.AppTypography
@@ -124,7 +133,9 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.catch
 import com.google.gson.JsonParser
 
 object ReadingStatisticsPage : AppDestination {
@@ -135,6 +146,11 @@ object ReadingStatisticsPage : AppDestination {
     override fun Content() {
         val navigator = LocalBaseNavigator.current
         val model = rememberAppViewModel { ReadingStatisticsPageModel() }
+        val authorization = LocalAuthorization.current
+        val coverModel = rememberAppViewModel { LocalHistoryPageModel(authorization) }
+        val coverPolicy by CoverLoadingPolicy.state.collectAsState()
+        val coverPage = LocalCoverPage.current
+        val allowCoverNetwork = coverPage.isBlank() || coverPolicy.allowNetwork(coverPage)
         val state by model.state.collectAsState()
         val incognito by PresentationAccess.settings.readingStatisticsIncognitoFlow.collectAsState()
         var selectedDate by remember { mutableStateOf(LocalDate.now()) }
@@ -275,7 +291,10 @@ object ReadingStatisticsPage : AppDestination {
                                         StatisticsEmptyState(stringResource(R.string.reading_stats_no_books))
                                     } else {
                                         topBooks.forEachIndexed { index, book ->
-                                            BookRank(index + 1, book, topBooks.first().durationMs)
+                                            key(book.bookKey) {
+                                                BookRank(index + 1, book, topBooks.first().durationMs,
+                                                    current.activitiesByBook[book.bookKey], coverModel, allowCoverNetwork)
+                                            }
                                         }
                                     }
                                 }
@@ -899,15 +918,49 @@ private fun TrendChart(summary: ReadingStatisticsSummary, days: Int, lineChart: 
 }
 
 @Composable
-private fun BookRank(rank: Int, book: ReadingBookTotal, maximumDuration: Long) {
+private fun BookRank(
+    rank: Int,
+    book: ReadingBookTotal,
+    maximumDuration: Long,
+    activity: LocalReadingActivity?,
+    coverModel: LocalHistoryPageModel,
+    allowCoverNetwork: Boolean
+) {
     val colors = MaterialTheme.colorScheme
     val leading = rank == 1
     val fraction = (book.durationMs.toDouble() / maximumDuration.coerceAtLeast(1L)).toFloat().coerceIn(0f, 1f)
+    val coverWidth = 56.dp
+    val coverHeight = 76.dp
+    val density = LocalDensity.current
+    val widthPx = with(density) { coverWidth.roundToPx() }
+    val heightPx = with(density) { coverHeight.roundToPx() }
+    var cover by remember(book.bookKey) {
+        mutableStateOf(LocalHistoryCover(CoverSource(state = CoverState.Resolving)))
+    }
+    LaunchedEffect(book.bookKey, activity?.activityId, activity?.novelId, activity?.novelUrl,
+        activity?.novelCoverUrl, widthPx, heightPx, allowCoverNetwork) {
+        try {
+            val resolved = withContext(Dispatchers.IO) {
+                val source = activity ?: statisticsCoverFallbackActivity(book.bookKey, book.bookName)
+                if (source == null) LocalHistoryCover(CoverSource(state = CoverState.Missing))
+                else coverModel.loadCover(source, widthPx, heightPx, allowCoverNetwork,
+                    saveDetailToHistory = activity != null)
+            }
+            // A temporary lookup failure must not replace an already displayed cover.
+            if (resolved.image != null || cover.image == null) cover = resolved
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Exception) {
+            AppLogger.w("ReadingStatistics", "Failed to load a ranking cover", error)
+            if (cover.image == null) cover = LocalHistoryCover(CoverSource(state = CoverState.Missing))
+        }
+    }
+    val title = book.bookName.ifBlank { stringResource(R.string.download_unknown_novel) }
     Row(
         Modifier.fillMaxWidth()
-            .padding(vertical = AppSpacing.md).semantics(mergeDescendants = true) {},
-        horizontalArrangement = Arrangement.spacedBy(AppSpacing.md),
-        verticalAlignment = Alignment.Top
+            .padding(vertical = AppSpacing.xs).semantics(mergeDescendants = true) {},
+        horizontalArrangement = Arrangement.spacedBy(AppSpacing.sm),
+        verticalAlignment = Alignment.CenterVertically
     ) {
         Box(
             Modifier.size(28.dp),
@@ -916,8 +969,18 @@ private fun BookRank(rank: Int, book: ReadingBookTotal, maximumDuration: Long) {
             Text(rank.toString().padStart(2, '0'), style = AppTypography.labelLarge,
                 color = if (leading) colors.primary else colors.onSurfaceVariant)
         }
+        key(cover.image) {
+            AppNovelCover(
+                coverUrl = cover.source.url,
+                coverState = cover.source.state,
+                initialImage = cover.image,
+                title = title,
+                modifier = Modifier.size(width = coverWidth, height = coverHeight),
+                elevated = false
+            )
+        }
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(AppSpacing.sm)) {
-            Text(book.bookName.ifBlank { stringResource(R.string.download_unknown_novel) }, style = AppTypography.labelLarge, maxLines = 2, overflow = TextOverflow.Ellipsis,
+            Text(title, style = AppTypography.labelLarge, maxLines = 2, overflow = TextOverflow.Ellipsis,
                 color = colors.onSurface)
             Text(formatDuration(book.durationMs), style = AppTypography.bodySmall,
                 color = colors.onSurfaceVariant)
@@ -945,7 +1008,10 @@ private class ReadingStatisticsPageModel : AppStateViewModel<ReadingStatisticsPa
     sealed interface State {
         data object Loading : State
         data object Error : State
-        data class Ready(val summary: ReadingStatisticsSummary) : State {
+        data class Ready(
+            val summary: ReadingStatisticsSummary,
+            val activitiesByBook: Map<String, LocalReadingActivity>
+        ) : State {
             val rankings = listOf(7, 30, null).associateWith(summary::topBooks)
             val tagRankings = listOf(7, 30, null).associateWith { summary.tagDistribution(it) }
             val allTagRankings = listOf(7, 30, null).associateWith { summary.tagDistribution(it, groupSmallTags = false) }
@@ -962,14 +1028,19 @@ private class ReadingStatisticsPageModel : AppStateViewModel<ReadingStatisticsPa
             try {
                 combine(
                     PresentationAccess.database.readingStatDao().observeAll(),
-                    PresentationAccess.database.cacheDao().observeReadingTags()
-                ) { rows, cachedTags ->
+                    PresentationAccess.database.cacheDao().observeReadingTags(),
+                    PresentationAccess.database.localReadingActivityDao().observeAll().catch { error ->
+                        if (error is CancellationException) throw error
+                        AppLogger.w("ReadingStatistics", "Unable to observe local history for covers", error)
+                        emit(emptyList())
+                    }
+                ) { rows, cachedTags, activities ->
                     val tags = cachedTags.associate { entry ->
                         entry.key.removePrefix(ReadingStatisticsRecorder.TAGS_KEY_PREFIX) to runCatching {
                             JsonParser.parseString(entry.value).asJsonArray.map { it.asString }
                         }.getOrDefault(emptyList())
                     }
-                    State.Ready(ReadingStatisticsSummary(rows, LocalDate.now(), tags))
+                    State.Ready(ReadingStatisticsSummary(rows, LocalDate.now(), tags), statisticsActivitiesByBook(activities))
                 }.collect { mutableState.value = it }
             } catch (error: CancellationException) {
                 throw error

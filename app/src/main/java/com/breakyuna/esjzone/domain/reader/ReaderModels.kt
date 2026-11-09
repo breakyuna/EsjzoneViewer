@@ -27,6 +27,10 @@ data class ReaderRuby(
     val reading: String
 )
 
+/** Link range in the original UTF-16 text of one reader block. */
+@Immutable
+data class ReaderLink(val start: Int, val end: Int, val url: String)
+
 /** The renderer can map this AST to any UI toolkit without reparsing HTML. */
 @Immutable
 sealed interface ReaderBlock {
@@ -55,7 +59,8 @@ data class ReaderChapterDocument(
     val next: ReaderChapterRef? = null,
     val contentHtml: String? = null,
     val sourceUrl: String? = null,
-    val contentFingerprint: String = ""
+    val contentFingerprint: String = "",
+    val links: Map<Int, List<ReaderLink>> = emptyMap()
 ) {
     /** Derived once per immutable document, without allocating paragraph strings. */
     internal val textPrefixLengths: IntArray by lazy {

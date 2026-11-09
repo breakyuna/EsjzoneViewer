@@ -1097,7 +1097,8 @@ class LocalHistoryPageModel(private val authorization: Authorization) : AppState
         activity: LocalReadingActivity,
         widthPx: Int,
         heightPx: Int,
-        allowNetwork: Boolean
+        allowNetwork: Boolean,
+        saveDetailToHistory: Boolean = true
     ): LocalHistoryCover {
         suspend fun loadImage(url: String, network: Boolean) = PresentationAccess.imageLoader.execute(
             mirrorImageRequest(EsjzoneApplication.instance, url, allowNetwork = network).newBuilder()
@@ -1140,7 +1141,7 @@ class LocalHistoryPageModel(private val authorization: Authorization) : AppState
                 (loadImage(url, network = false) as? SuccessResult)?.image?.let(::AppLoadedImage)
             },
             remoteImage = if (allowNetwork) loadRemoteImage else null,
-            detail = { loadDetailCover(activity, target) }
+            detail = { loadDetailCover(activity, target, saveDetailToHistory) }
         )
     }
 
@@ -1156,11 +1157,15 @@ class LocalHistoryPageModel(private val authorization: Authorization) : AppState
         }
     }
 
-    private suspend fun loadDetailCover(activity: LocalReadingActivity, target: String): CoverSource {
+    private suspend fun loadDetailCover(
+        activity: LocalReadingActivity,
+        target: String,
+        saveDetailToHistory: Boolean
+    ): CoverSource {
         if (target.isBlank()) return CoverSource()
         val key = BookshelfRepository.keyFor(target)
         return coverPermits.withPermit {
-            detailCovers[key]?.let { (time, source) ->
+            synchronized(detailCovers) { detailCovers[key] }?.let { (time, source) ->
                 if (source.url.isNotBlank() || System.currentTimeMillis() - time < 5 * 60_000L) return@withPermit source
             }
             val source = try {
@@ -1168,12 +1173,14 @@ class LocalHistoryPageModel(private val authorization: Authorization) : AppState
                     PresentationAccess.client.getNovelDetail(authorization, FavoriteNovel(activity.novelName, target))
                 }
                 val result = CoverSource.fromUrl(detail.coverUrl)
-                viewModelScope.launch(Dispatchers.IO) {
-                    if (result.url.isNotBlank()) readCoverStorage(target) {
-                        PresentationAccess.database.localReadingActivityDao()
-                            .updateCoverIfUnchanged(activity.activityId, activity.novelCoverUrl, result.url)
+                if (saveDetailToHistory) {
+                    viewModelScope.launch(Dispatchers.IO) {
+                        if (result.url.isNotBlank()) readCoverStorage(target) {
+                            PresentationAccess.database.localReadingActivityDao()
+                                .updateCoverIfUnchanged(activity.activityId, activity.novelCoverUrl, result.url)
+                        }
+                        NovelTitleRepository.repair(activity.novelId, target, detail.name)
                     }
-                    NovelTitleRepository.repair(activity.novelId, target, detail.name)
                 }
                 result
             } catch (e: CancellationException) {
@@ -1182,7 +1189,7 @@ class LocalHistoryPageModel(private val authorization: Authorization) : AppState
                 AppLogger.w("LocalHistoryPageModel", "Failed to recover local history cover", e)
                 CoverSource(state = CoverState.Failed(e.coverFailure()))
             }
-            detailCovers[key] = System.currentTimeMillis() to source
+            synchronized(detailCovers) { detailCovers[key] = System.currentTimeMillis() to source }
             source
         }
     }

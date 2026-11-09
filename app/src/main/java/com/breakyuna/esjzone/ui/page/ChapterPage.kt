@@ -247,6 +247,7 @@ class ChapterPage(
     override fun Content() {
         val navigator = LocalBaseNavigator.current
         val authorization = LocalAuthorization.current
+        val openReaderLink = rememberCommunityLinkOpener()
         val navigationSettled = com.breakyuna.esjzone.ui.navigation.LocalReaderNavigationSettled.current
         var entryAnimationFinished by remember { mutableStateOf(false) }
         LaunchedEffect(navigationSettled) {
@@ -2264,7 +2265,9 @@ class ChapterPage(
                                             else if (textLayouts[item.key] != layout) textLayouts[item.key] = layout
                                         },
                                         highlights = searchHighlights(item),
-                                        textOffsets = { textOffsets(it) ?: com.breakyuna.esjzone.domain.reader.ReaderTextOffsets.identity(it.sourceText()) })
+                                        textOffsets = { textOffsets(it) ?: com.breakyuna.esjzone.domain.reader.ReaderTextOffsets.identity(it.sourceText()) },
+                                        links = item.entry.document.links,
+                                        onLinkClick = openReaderLink)
                                 }
                             }
 
@@ -2401,7 +2404,9 @@ class ChapterPage(
                                         textOffsets = { blockIndex ->
                                             currentPagedDisplayItems.getOrNull(pageIndex)?.entry?.document?.blocks?.getOrNull(blockIndex)
                                                 ?.let(::textOffsets)
-                                        }
+                                        },
+                                        links = item.entry.document.links,
+                                        onLinkClick = openReaderLink
                                     )
                                     }
                                 }

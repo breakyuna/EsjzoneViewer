@@ -1,5 +1,9 @@
+@file:OptIn(androidx.compose.ui.text.ExperimentalTextApi::class)
+
 package com.breakyuna.esjzone.ui.reader
 
+import com.breakyuna.esjzone.domain.reader.ReaderLink
+import com.breakyuna.esjzone.domain.reader.ReaderTextOffsets
 import com.breakyuna.esjzone.domain.reader.ReaderUnderline
 
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
@@ -39,6 +43,7 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.*
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 
 /** Long press anchors one character; dragging selects through the character under the finger. */
@@ -57,7 +62,10 @@ internal fun ReaderUnderlineText(
     onUnderline: (ReaderUnderline, Boolean) -> Unit,
     onLayout: (TextLayoutResult?) -> Unit = {},
     highlights: List<TextRange> = emptyList(),
-    showMagnifier: Boolean = true
+    showMagnifier: Boolean = true,
+    links: List<ReaderLink> = emptyList(),
+    linkOffsets: ReaderTextOffsets? = null,
+    onLinkClick: (String) -> Unit = {}
 ) {
     var layout by remember { mutableStateOf<TextLayoutResult?>(null) }
     val sharedSelection = LocalReaderUnderlineSelection.current
@@ -119,7 +127,16 @@ internal fun ReaderUnderlineText(
             zoom = 1.8f, size = DpSize(112.dp, 48.dp), cornerRadius = 12.dp
         )
     }
-    val (glowText, glowStyle) = readerGlowTextAppearance(displayed, style)
+    val currentLinkClick by rememberUpdatedState(onLinkClick)
+    val linkListener = remember {
+        LinkInteractionListener { link ->
+            if (link is LinkAnnotation.Url) currentLinkClick(link.url)
+        }
+    }
+    val linked = remember(displayed, links, linkOffsets, offset, linkListener) {
+        addReaderLinks(displayed, links, linkOffsets, offset, linkListener)
+    }
+    val (glowText, glowStyle) = readerGlowTextAppearance(linked, style)
     Text(text = glowText, inlineContent = inlineContent, style = glowStyle, color = color,
         overflow = TextOverflow.Visible, onTextLayout = { layout = it; segment.layout = it; onLayout(it) },
         modifier = modifier.then(readerGlowTextModifier(layout)).onGloballyPositioned { segment.coordinates = it }
@@ -251,6 +268,25 @@ internal fun ReaderUnderlineText(
             }
         }
     }
+}
+
+/** Map original ranges to displayed characters, then clip them to a paginated segment. */
+internal fun addReaderLinks(
+    text: AnnotatedString,
+    links: List<ReaderLink>,
+    offsets: ReaderTextOffsets?,
+    segmentStart: Int,
+    listener: LinkInteractionListener
+): AnnotatedString {
+    if (links.isEmpty() || offsets == null) return text
+    val styles = TextLinkStyles(style = SpanStyle(textDecoration = TextDecoration.Underline))
+    return AnnotatedString.Builder(text).apply {
+        links.forEach { link ->
+            val start = (offsets.toDisplay(link.start) - segmentStart).coerceIn(0, text.length)
+            val end = (offsets.toDisplay(link.end) - segmentStart).coerceIn(0, text.length)
+            if (start < end) addLink(LinkAnnotation.Url(link.url, styles, listener), start, end)
+        }
+    }.toAnnotatedString()
 }
 
 /** A page owns one lens outside its split text nodes and converts the active glyph to its canvas. */
