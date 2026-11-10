@@ -64,6 +64,8 @@ internal fun ReaderUnderlineText(
     onLayout: (TextLayoutResult?) -> Unit = {},
     highlights: List<TextRange> = emptyList(),
     showMagnifier: Boolean = true,
+    /** Horizontal margin beside the text; non-null draws the bookmark ribbon at the first line. */
+    bookmarkMargin: androidx.compose.ui.unit.Dp? = null,
     links: List<ReaderLink> = emptyList(),
     linkOffsets: ReaderTextOffsets? = null,
     onLinkClick: (String) -> Unit = {},
@@ -216,6 +218,9 @@ internal fun ReaderUnderlineText(
                 drawContent()
                 drawPath(savedUnderline, Color.Red, style = stroke)
                 drawPath(previewUnderline, Color.Red, style = stroke)
+                if (bookmarkMargin != null && result != null) with(ReaderBookmarkMarker) {
+                    drawFirstLineMarker(result, bookmarkMargin.toPx())
+                }
             }
         }.pointerInput(text, blockIndex, signature, offset, enabled) {
             // Only consume a completed tap on a saved mark, leaving ordinary reader taps alone.
