@@ -45,6 +45,14 @@ import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.SelectAll
 import androidx.compose.material.icons.filled.Sort
 import androidx.compose.material.icons.filled.ViewList
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -212,6 +220,13 @@ object FavoritePage : AppDestination {
         var editing by rememberSaveable { mutableStateOf(false) }
         var activeFilter by rememberSaveable { mutableStateOf(BookshelfFilter.ALL) }
         var activeSort by rememberSaveable { mutableStateOf(BookshelfSort.Order.RECENT_READ) }
+        var searchOpen by rememberSaveable { mutableStateOf(false) }
+        var query by rememberSaveable { mutableStateOf("") }
+        var focusSearch by remember { mutableStateOf(false) }
+        val searchFocus = remember { FocusRequester() }
+        val searchIndex by model.searchIndex.collectAsStateWithLifecycle()
+        val searchTerms = remember(query) { BookshelfSearch.terms(query) }
+        val searching = searchOpen && searchTerms.isNotEmpty()
         val settings = PresentationAccess.settings
         val listView by settings.bookshelfListViewFlow.collectAsStateWithLifecycle()
         var selected by rememberSaveable(stateSaver = listSaver<Set<String>, String>(
@@ -270,12 +285,16 @@ object FavoritePage : AppDestination {
                 )
             }
         }
-        val shown = remember(sortedVisible, downloaded, activeFilter) {
+        val filtered = remember(sortedVisible, downloaded, activeFilter) {
             when (activeFilter) {
                 BookshelfFilter.ALL -> sortedVisible
                 BookshelfFilter.DOWNLOADED -> sortedVisible.filter { it.bookKey in downloaded }
                 BookshelfFilter.UPDATES -> sortedVisible.filter { it.hasUpdate }
             }
+        }
+        // Search narrows the current group/filter/sort result locally; batch actions use this list.
+        val shown = remember(filtered, searching, searchTerms, searchIndex) {
+            if (searching) BookshelfSearch.filter(filtered, searchTerms, searchIndex) else filtered
         }
         val visibleKeys = remember(shown) { shown.mapTo(LinkedHashSet()) { it.bookKey } }
         val syncing = syncState is FavoritePageModel.State.Syncing
@@ -327,6 +346,12 @@ object FavoritePage : AppDestination {
         fun selectBook(entry: BookshelfEntry) {
             selected = if (editing) selected + entry.bookKey else setOf(entry.bookKey)
             editing = true
+        }
+
+        fun closeSearch() {
+            focusManager.clearFocus(force = true)
+            searchOpen = false
+            query = ""
         }
 
         fun exitEdit() {
@@ -458,6 +483,8 @@ object FavoritePage : AppDestination {
                 onMove = { name, create -> model.moveToGroup(selected, name, create) }
             )
         }
+        // Registered first so an active selection is exited before the search closes.
+        BackHandler(enabled = searchOpen && !editing && !showDeleteDialog && groupDialog == null) { closeSearch() }
         BackHandler(enabled = editing && !showDeleteDialog && groupDialog == null) { exitEdit() }
 
         Scaffold(
@@ -506,7 +533,14 @@ object FavoritePage : AppDestination {
                     },
                     onStatistics = { navigator.pushIfNotCurrent(ReadingStatisticsPage) },
                     onDone = ::exitEdit,
-                    onSelectAll = { selected = if (selected == visibleKeys) emptySet() else visibleKeys }
+                    onSelectAll = { selected = bookshelfSelectAll(selected, visibleKeys) },
+                    searchOpen = searchOpen,
+                    onToggleSearch = {
+                        if (searchOpen) closeSearch() else {
+                            searchOpen = true
+                            focusSearch = true
+                        }
+                    }
                 )
             },
             bottomBar = {
@@ -549,10 +583,45 @@ object FavoritePage : AppDestination {
             // Use one lazy axis. Dynamic full-span headers and per-item spans in a
             // LazyGrid can place pinned items twice during navigation/lookahead.
             // Each visible row owns its covers; the 2-1-3-4 showcase stays in the header.
+            Column(Modifier.fillMaxSize().wideContentWidth().padding(top = padding.calculateTopPadding())) {
+            if (searchOpen) {
+                OutlinedTextField(
+                    value = query,
+                    onValueChange = { query = it },
+                    enabled = !editing,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(
+                            start = AppSpacing.lg + navPadding.calculateStartPadding(layoutDirection),
+                            end = AppSpacing.lg,
+                            top = AppSpacing.sm
+                        )
+                        .focusRequester(searchFocus),
+                    singleLine = true,
+                    placeholder = { Text(stringResource(R.string.bookshelf_search_placeholder)) },
+                    leadingIcon = { Icon(Icons.Filled.Search, null) },
+                    trailingIcon = {
+                        if (query.isNotEmpty() && !editing) {
+                            IconButton(onClick = { query = ""; searchFocus.requestFocus() }) {
+                                Icon(Icons.Filled.Close, stringResource(R.string.clear))
+                            }
+                        }
+                    },
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                    keyboardActions = KeyboardActions(onSearch = { focusManager.clearFocus() })
+                )
+                // Focus only when opened by the user, not when restored after rotation.
+                LaunchedEffect(Unit) {
+                    if (focusSearch) {
+                        focusSearch = false
+                        searchFocus.requestFocus()
+                    }
+                }
+            }
             PullToRefreshBox(
                 isRefreshing = syncing,
                 onRefresh = { if (!syncing && !editing) model.sync() },
-                modifier = Modifier.fillMaxSize().wideContentWidth().padding(top = padding.calculateTopPadding())
+                modifier = Modifier.fillMaxWidth().weight(1f)
             ) {
             BoxWithConstraints(Modifier.fillMaxSize()) {
                 // Show the header and books together once both local snapshots are ready.
@@ -719,7 +788,7 @@ object FavoritePage : AppDestination {
                                             }
                                         }
                                     }
-                                    if (!editing && recentReads.isNotEmpty()) {
+                                    if (!editing && !searching && recentReads.isNotEmpty()) {
                                         AppBookshelfRecentReads(
                                             books = recentReads,
                                             coverMemory = coverMemory,
@@ -749,7 +818,10 @@ object FavoritePage : AppDestination {
                                             onRetry = { if (!syncing) model.sync() },
                                             modifier = Modifier.fillMaxWidth().padding(vertical = AppSpacing.xxxl)
                                         )
-                                    } else EmptyState(
+                                    } else if (searching) EmptyState(
+                                        title = stringResource(R.string.bookshelf_search_empty),
+                                        modifier = Modifier.fillMaxWidth().padding(vertical = AppSpacing.xxxl)
+                                    ) else EmptyState(
                                         title = stringResource(
                                             when {
                                                 activeFilter != BookshelfFilter.ALL -> R.string.bookshelf_empty_filtered
@@ -837,6 +909,7 @@ object FavoritePage : AppDestination {
                 }
             }
             }
+            }
         }
 
         if (showLegacyRecoveryDialog) {
@@ -895,7 +968,9 @@ private fun BookshelfTopBar(
     onSyncStatusMenuChange: (Boolean) -> Unit,
     onStatistics: () -> Unit,
     onDone: () -> Unit,
-    onSelectAll: () -> Unit
+    onSelectAll: () -> Unit,
+    searchOpen: Boolean,
+    onToggleSearch: () -> Unit
 ) {
     Surface(color = MaterialTheme.colorScheme.background) {
         Row(
@@ -946,6 +1021,12 @@ private fun BookshelfTopBar(
                         }
                         IconButton(onClick = onDone, enabled = !deleting) { Icon(Icons.Filled.Done, stringResource(R.string.bookshelf_edit_done)) }
                     } else {
+                        IconButton(onClick = onToggleSearch) {
+                            Icon(
+                                if (searchOpen) Icons.Filled.Close else Icons.Filled.Search,
+                                stringResource(if (searchOpen) R.string.close else R.string.bookshelf_search)
+                            )
+                        }
                         IconButton(onClick = onToggleView) {
                             Icon(if (listView) Icons.Filled.GridView else Icons.Filled.ViewList, "切换书架展示方式")
                         }

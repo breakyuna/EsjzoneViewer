@@ -98,6 +98,12 @@ class FavoritePageModel(private val authorization: Authorization) :
     val entries: StateFlow<List<BookshelfEntry>?> = BookshelfRepository.observe(authorization)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
+    /** Normalized title/author keys, built off the main thread from local rows only. */
+    internal val searchIndex: StateFlow<Map<String, BookshelfSearch.Key>> = entries
+        .map { BookshelfSearch.index(it.orEmpty()) }
+        .flowOn(Dispatchers.Default)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
+
     /** Latest local activity for the showcase, grid progress labels, and reactive ordering. */
     data class ReadingIndex(
         val novelIds: Set<String> = emptySet(),
