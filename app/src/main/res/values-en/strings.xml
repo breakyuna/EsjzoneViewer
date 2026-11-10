@@ -107,6 +107,9 @@
     <string name="bookshelf_empty_hint">Favorite a novel to keep its shelf entry on this device.</string>
     <string name="bookshelf_empty_filtered">No visible books</string>
     <string name="bookshelf_empty_filtered_hint">Books hidden by your content preference are still stored locally.</string>
+    <string name="bookshelf_search">Search bookshelf</string>
+    <string name="bookshelf_search_placeholder">Search by title or author</string>
+    <string name="bookshelf_search_empty">No books match this search</string>
     <string name="sync_bookshelf">Sync bookshelf</string>
     <string name="delete_bookshelf">Remove from bookshelf</string>
     <string name="bookshelf_edit">Edit bookshelf</string>

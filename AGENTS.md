@@ -111,7 +111,7 @@ app/src/main/java/com/breakyuna/esjzone/
 
 - `HomeTab`：主页数据、推荐和最新更新，也提供分类入口及右上角关键词搜索和搜索历史入口。
 - `HistoryTab`：观看记录；单击浏览历史，双击直接继续最近一次阅读。
-- `FavoriteTab`：本地优先书架，支持云端补充、按最近阅读排序、编辑与批量删除。
+- `FavoriteTab`：本地优先书架，支持云端补充、按最近阅读排序、按书名或作者本地搜索、编辑与批量删除。
 - `ProfileTab`：用户信息、设置和关于页面入口。
 
 具体作品通过 `NovelPage` 展示详情，章节通过 `ChapterPage` 获取并解析后阅读。
