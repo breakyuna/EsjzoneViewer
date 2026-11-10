@@ -99,7 +99,8 @@ fun ReaderBlocks(
         com.breakyuna.esjzone.domain.reader.ReaderTextOffsets.identity(it.sourceText())
     },
     links: Map<Int, List<ReaderLink>> = emptyMap(),
-    onLinkClick: (String) -> Unit = {}
+    onLinkClick: (String) -> Unit = {},
+    bookmarkedBlock: Int? = null
 ) {
     val textStyle = readerBodyTextStyle(settings)
 
@@ -116,6 +117,8 @@ fun ReaderBlocks(
                         contentColor = contentColor,
                         paragraphSpacingDp = settings.paragraphSpacingDp,
                         enabled = settings.longPressUnderline,
+                        bookmarkMargin = if (ReaderBookmarkMarker.showsOn(blockStartIndex + index, 0, bookmarkedBlock))
+                            settings.horizontalPaddingDp.dp else null,
                         blockIndex = blockStartIndex + index,
                         underlines = underlines,
                         onUnderline = onUnderline,
@@ -137,6 +140,8 @@ fun ReaderBlocks(
                         contentColor = contentColor,
                         paragraphSpacingDp = settings.paragraphSpacingDp,
                         enabled = settings.longPressUnderline,
+                        bookmarkMargin = if (ReaderBookmarkMarker.showsOn(blockStartIndex + index, 0, bookmarkedBlock))
+                            settings.horizontalPaddingDp.dp else null,
                         blockIndex = blockStartIndex + index,
                         underlines = underlines,
                         onUnderline = onUnderline,
@@ -178,6 +183,7 @@ private fun ReaderParagraphBlock(
     contentColor: Color,
     paragraphSpacingDp: Float,
     enabled: Boolean,
+    bookmarkMargin: androidx.compose.ui.unit.Dp?,
     blockIndex: Int,
     underlines: List<ReaderUnderline>,
     onUnderline: (ReaderUnderline, Boolean) -> Unit,
@@ -210,6 +216,7 @@ private fun ReaderParagraphBlock(
         color = contentColor,
         modifier = Modifier.padding(bottom = paragraphSpacingDp.dp),
         enabled = enabled,
+        bookmarkMargin = bookmarkMargin,
         blockIndex = blockIndex,
         signature = remember(block, paragraph) { ReaderUnderlines.signature(block, paragraph.text) },
         underlines = underlines,
@@ -232,6 +239,7 @@ private fun ReaderTextBlock(
     contentColor: Color,
     paragraphSpacingDp: Float,
     enabled: Boolean,
+    bookmarkMargin: androidx.compose.ui.unit.Dp?,
     blockIndex: Int,
     underlines: List<ReaderUnderline>,
     onUnderline: (ReaderUnderline, Boolean) -> Unit,
@@ -256,6 +264,7 @@ private fun ReaderTextBlock(
         color = contentColor,
         modifier = Modifier.padding(bottom = paragraphSpacingDp.dp),
         enabled = enabled,
+        bookmarkMargin = bookmarkMargin,
         blockIndex = blockIndex,
         signature = remember(block, text) { ReaderUnderlines.signature(block, text.text) },
         underlines = underlines,

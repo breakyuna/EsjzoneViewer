@@ -207,7 +207,8 @@ internal fun ReaderPageContent(
     highlights: List<com.breakyuna.esjzone.domain.reader.ReaderHighlight> = emptyList(),
     textOffsets: (Int) -> com.breakyuna.esjzone.domain.reader.ReaderTextOffsets? = { null },
     links: Map<Int, List<ReaderLink>> = emptyMap(),
-    onLinkClick: (String) -> Unit = {}
+    onLinkClick: (String) -> Unit = {},
+    bookmarkedBlock: Int? = null
 ) {
     val content: @Composable () -> Unit = {
         // Ordinary pages keep their unclipped margins. A title or single line
@@ -235,6 +236,8 @@ internal fun ReaderPageContent(
                         underlines = underlines,
                         onUnderline = onUnderline,
                         showMagnifier = false,
+                        bookmarkMargin = if (ReaderBookmarkMarker.showsOn(segment.blockIndex, segment.startOffset, bookmarkedBlock))
+                            settings.horizontalPaddingDp.dp else null,
                         links = links[segment.blockIndex].orEmpty(),
                         linkOffsets = if (links[segment.blockIndex].isNullOrEmpty()) null else textOffsets(segment.blockIndex),
                         onLinkClick = onLinkClick,

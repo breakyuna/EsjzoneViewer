@@ -566,6 +566,16 @@ class ChapterPage(
         val previousLoadThreshold = with(LocalDensity.current) { 240.dp.toPx().toInt() }
         val chapterActivationOffset = with(density) { 56.dp.toPx().roundToInt() }
         val result = state as? ChapterPageModel.State.Result
+        // Bookmark rows are observed, so adding or removing one redraws its marker at once.
+        val bookmarkedParagraphs = remember(readerBookmarks, result?.chapters) {
+            val anchors = readerBookmarks.associate { it.chapterUrl to it.anchor }
+            result?.chapters.orEmpty().filter { !it.requiresPassword }.mapNotNull { entry ->
+                val url = EsjzoneUrls.canonicalPageKey(entry.chapter.url).ifBlank { entry.chapter.url.trim() }
+                val key = chapterIdentity(entry.chapter)
+                com.breakyuna.esjzone.ui.reader.ReaderBookmarkMarker.paragraph(entry.document, key,
+                    ReaderAnchor.decode(anchors[url]))?.let { key to it }
+            }.toMap()
+        }
         var initialScrollPrimed by remember { mutableStateOf(false) }
         var entryContentRevealed by remember { mutableStateOf(false) }
         var positionRestoreFailed by remember { mutableStateOf(false) }
@@ -2126,6 +2136,7 @@ class ChapterPage(
                                         blockStartIndex = item.ordinal - 1,
                                         underlineSelection = underlineSelection,
                                         chapterKey = item.chapterKey,
+                                        bookmarkedBlock = bookmarkedParagraphs[item.chapterKey],
                                         underlines = underlines[item.chapterKey].orEmpty(),
                                         onUnderline = { mark, remove ->
                                             underlineModel.update(item.chapterKey, mark, remove) { blockIndex ->
@@ -2264,6 +2275,7 @@ class ChapterPage(
                                         page, readerSettings, readerTextStyle,
                                         readerContentColor, readerTextTransform,
                                         with(density) { pagination.heightPx.toDp() },
+                                        bookmarkedBlock = bookmarkedParagraphs[item.chapterKey],
                                         underlines = underlines[currentPagedDisplayItems.getOrNull(pageIndex)?.chapterKey].orEmpty(),
                                         onUnderline = { mark, remove ->
                                             currentPagedDisplayItems.getOrNull(pageIndex)?.let { item ->
