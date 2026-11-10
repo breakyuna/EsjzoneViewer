@@ -133,6 +133,22 @@ class ReaderUnderlineOffsetsTest {
             sourceSignature, ReaderUnderlines.signature(block, ""), gone))
     }
 
+    @Test fun selectionFromFirstVisibleCharacterSkipsNameRemovedAtParagraphStart() {
+        val text = ReaderBlock.Text("可莉来了")
+        val signature = ReaderUnderlines.sourceSignature(text)
+        val mapped = display(settings(ReaderNameReplaceRule(source = "可莉", target = "")), text)
+        assertEquals("来了", mapped.text)
+        val selected = ReaderUnderlines.toSource(ReaderUnderline(0, ReaderUnderlines.signature(text, mapped.text), 0, 1)) {
+            signature to mapped
+        }
+        assertEquals(ReaderUnderlineRange(0, signature, 2, 3), selected.ranges().single())
+        val migrated = ReaderUnderlines.migrateToSource(listOf(ReaderUnderline(0,
+            ReaderUnderlines.signature(text, mapped.text), 0, 1)), listOf(text)) { listOf(mapped) }
+        assertEquals(ReaderUnderline(0, signature, 2, 3), migrated.single())
+        // Anchors keep their paragraph-start meaning.
+        assertEquals(0, mapped.toSource(0))
+    }
+
     @Test fun legacyRangeDrawsOnlyOnItsExactRendering() {
         val mapped = display(settings(longer))
         val rendered = ReaderUnderlines.signature(block, mapped.text)

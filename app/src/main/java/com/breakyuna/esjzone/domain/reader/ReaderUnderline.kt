@@ -49,7 +49,7 @@ object ReaderUnderlines {
     fun toSource(mark: ReaderUnderline, resolve: (ReaderUnderlineRange) -> Pair<String, ReaderTextOffsets>?): ReaderUnderline {
         val ranges = mark.ranges().map { range ->
             val (source, offsets) = resolve(range) ?: return@map range
-            val start = offsets.toSource(range.start)
+            val start = offsets.toSourceStart(range.start)
             val end = offsets.toSourceEnd(range.end)
             if (start < end) ReaderUnderlineRange(range.blockIndex, source, start, end) else range
         }
@@ -72,7 +72,7 @@ object ReaderUnderlines {
                 val rendering = renderings(block).firstOrNull {
                     range.end <= it.text.length && signature(block, it.text) == range.signature
                 } ?: return@map range
-                val start = rendering.toSource(range.start)
+                val start = rendering.toSourceStart(range.start)
                 val end = rendering.toSourceEnd(range.end)
                 if (start >= end) return@map range
                 changed = true
