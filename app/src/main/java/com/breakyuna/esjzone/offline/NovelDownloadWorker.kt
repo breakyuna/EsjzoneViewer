@@ -1,6 +1,7 @@
 package com.breakyuna.esjzone.offline
 
 import com.breakyuna.esjzone.novellibrary.novel.validNovelTitle
+import com.breakyuna.esjzone.novellibrary.novel.novelTitleId
 
 import android.annotation.SuppressLint
 import android.Manifest
@@ -300,11 +301,13 @@ class NovelDownloadWorker(
             val authorization = EsjzoneClient.restoreAuthorization(host)
                 ?: Authorization("", "", host)
             if (unlockOnly) {
-                val result = kotlinx.coroutines.withContext(Dispatchers.IO) {
-                    NovelDownloadStore.unlockChaptersWithCommonPassword(
-                        authorization, rawUrl, requireNotNull(selectedChapterUrls), actualBaseUrl,
-                        onProgress = ::publishProgress
-                    )
+                val result = preservingSiteView(authorization, novelTitleId("", resolvedUrl), resolvedUrl) {
+                    kotlinx.coroutines.withContext(Dispatchers.IO) {
+                        NovelDownloadStore.unlockChaptersWithCommonPassword(
+                            authorization, rawUrl, requireNotNull(selectedChapterUrls), actualBaseUrl,
+                            onProgress = ::publishProgress
+                        )
+                    }
                 }
                 val message = when {
                     result.failedCount == 0 -> applicationContext.getString(
@@ -326,9 +329,11 @@ class NovelDownloadWorker(
                 baseUrl = actualBaseUrl
             )
             resolvedNovelName = validNovelTitle(detail.name, detail.id(), detail.url)
-            val manifest = NovelDownloadStore.download(authorization, detail, actualBaseUrl, concurrency,
-                selectedChapterUrls) { next ->
-                publishProgress(next)
+            val manifest = preservingSiteView(authorization, novelTitleId("", detail.url), detail.url) {
+                NovelDownloadStore.download(authorization, detail, actualBaseUrl, concurrency,
+                    selectedChapterUrls) { next ->
+                    publishProgress(next)
+                }
             }
             val selectedKeys = selectedChapterUrls?.map(NovelDownloadStore::chapterKey)?.toSet()
             val pendingPasswordCount = manifest.pendingPasswordChapters.count { record ->
@@ -361,6 +366,21 @@ class NovelDownloadWorker(
             }
         }
     }
+
+    /**
+     * Chapter requests made for a download carry the account cookies, so the site
+     * records each of them as the novel's latest view. Put the real reading
+     * position back afterwards, also when the download fails or is paused. The
+     * reporter is created here when WorkManager resumed the job without the app UI.
+     */
+    private suspend fun <T> preservingSiteView(
+        authorization: Authorization,
+        novelId: String,
+        novelUrl: String,
+        block: suspend () -> T
+    ): T = com.breakyuna.esjzone.network.features.CloudViewReports.preservingSiteView(
+        applicationContext.filesDir, authorization, novelId, novelUrl, block
+    )
 
     @SuppressLint("MissingPermission")
     private fun publishProgress(progress: DownloadProgress) {
