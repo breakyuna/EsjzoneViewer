@@ -149,6 +149,64 @@ class ReaderUnderlineOffsetsTest {
         assertEquals(0, mapped.toSource(0))
     }
 
+    /** Selecting [visible] on displayed text and migrating the same legacy range both save [expected] of the original. */
+    private fun assertRemovedNamesExcluded(block: ReaderBlock, removed: List<String>, visible: String, expected: IntRange) {
+        val signature = ReaderUnderlines.sourceSignature(block)
+        val mapped = display(settings(*removed.map { ReaderNameReplaceRule(source = it, target = "") }.toTypedArray()), block)
+        val start = mapped.text.indexOf(visible)
+        assertTrue("$visible not displayed in ${mapped.text}", start >= 0)
+        val legacy = ReaderUnderline(0, ReaderUnderlines.signature(block, mapped.text), start, start + visible.length)
+        val saved = ReaderUnderline(0, signature, expected.first, expected.last + 1)
+        assertEquals(saved, ReaderUnderlines.toSource(legacy) { signature to mapped })
+        assertEquals(listOf(saved), ReaderUnderlines.migrateToSource(listOf(legacy), listOf(block)) { listOf(mapped) })
+        // Drawn back symmetrically: exactly the selection with rules on, only the chosen original text with them off.
+        val range = ReaderUnderlines.displayRange(saved.ranges().single(), signature,
+            ReaderUnderlines.signature(block, mapped.text), mapped)!!
+        assertEquals(visible, mapped.text.substring(range.first, range.last + 1))
+    }
+
+    @Test fun removedNamesAtEveryPositionStayOutsideSelectionsAndMigrations() {
+        val start = ReaderBlock.Text("可莉来了")
+        assertRemovedNamesExcluded(start, listOf("可莉"), "来", 2..2)
+        assertRemovedNamesExcluded(start, listOf("可莉"), "来了", 2..3)
+        val end = ReaderBlock.Text("来了可莉")
+        assertRemovedNamesExcluded(end, listOf("可莉"), "了", 1..1)
+        assertRemovedNamesExcluded(end, listOf("可莉"), "来了", 0..1)
+        val middle = ReaderBlock.Text("甲可莉乙")
+        assertRemovedNamesExcluded(middle, listOf("可莉"), "甲", 0..0)
+        assertRemovedNamesExcluded(middle, listOf("可莉"), "乙", 3..3)
+        // A selection spanning the hidden name keeps it, as the user dragged across it.
+        assertRemovedNamesExcluded(middle, listOf("可莉"), "甲乙", 0..3)
+        val consecutive = ReaderBlock.Text("可莉琴来了琴可莉")
+        assertRemovedNamesExcluded(consecutive, listOf("可莉", "琴"), "来", 3..3)
+        assertRemovedNamesExcluded(consecutive, listOf("可莉", "琴"), "了", 4..4)
+        assertRemovedNamesExcluded(consecutive, listOf("可莉", "琴"), "来了", 3..4)
+        // Removed text at the start of a later inline part of one paragraph.
+        val parts = ReaderBlock.Paragraph(listOf(ReaderBlock.Text("甲"), ReaderBlock.Text("可莉乙")))
+        assertRemovedNamesExcluded(parts, listOf("可莉"), "乙", 3..3)
+    }
+
+    @Test fun removedNameOnlyRangesAndWholeRemovedParagraphsAreKeptButHidden() {
+        val block = ReaderBlock.Text("甲可莉乙")
+        val signature = ReaderUnderlines.sourceSignature(block)
+        val mapped = display(settings(removed), block)
+        assertNull(ReaderUnderlines.displayRange(ReaderUnderlineRange(0, signature, 1, 3), signature,
+            ReaderUnderlines.signature(block, mapped.text), mapped))
+        // Nothing is displayed for a fully removed paragraph, so no legacy range can match or be lost.
+        val whole = ReaderBlock.Text("可莉")
+        val gone = display(settings(removed), whole)
+        assertEquals("", gone.text)
+        assertEquals(0, gone.toSourceStart(0))
+        assertEquals(0, gone.toSourceEnd(1))
+        val legacy = listOf(ReaderUnderline(0, ReaderUnderlines.signature(whole, "其他"), 0, 1))
+        assertSame(legacy, ReaderUnderlines.migrateToSource(legacy, listOf(whole)) { listOf(gone) })
+        val original = ReaderUnderline(0, ReaderUnderlines.sourceSignature(whole), 0, 2)
+        assertNull(ReaderUnderlines.displayRange(original.ranges().single(), original.signature,
+            ReaderUnderlines.signature(whole, ""), gone))
+        assertEquals(0 until 2, ReaderUnderlines.displayRange(original.ranges().single(), original.signature,
+            original.signature, ReaderTextOffsets.identity("可莉")))
+    }
+
     @Test fun legacyRangeDrawsOnlyOnItsExactRendering() {
         val mapped = display(settings(longer))
         val rendered = ReaderUnderlines.signature(block, mapped.text)
