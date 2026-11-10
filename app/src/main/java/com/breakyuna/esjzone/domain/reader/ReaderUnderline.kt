@@ -3,7 +3,12 @@ package com.breakyuna.esjzone.domain.reader
 import com.google.gson.Gson
 import java.security.MessageDigest
 
-/** Each range uses full rendered-block offsets, before page splitting. */
+/**
+ * Offsets cover a whole block, before page splitting. The signature names the
+ * coordinate space: [ReaderUnderlines.sourceSignature] means original-text
+ * offsets that survive script conversion and name replacement; any other
+ * signature is a legacy range in the rendered text it was hashed from.
+ */
 data class ReaderUnderlineRange(val blockIndex: Int, val signature: String, val start: Int, val end: Int)
 
 data class ReaderUnderline(val blockIndex: Int, val signature: String, val start: Int, val end: Int,
@@ -19,6 +24,69 @@ object ReaderUnderlines {
     private val blankLine = Regex("\\r?\\n[\\t\\x0B\\f\\p{Zs}]*\\r?\\n")
     fun signature(block: ReaderBlock, renderedText: String): String = MessageDigest.getInstance("SHA-256")
         .digest("$block\u0000$renderedText".toByteArray(Charsets.UTF_8)).joinToString("") { "%02x".format(it) }
+    /** Equals the legacy signature of an untransformed block, whose offsets were already original. */
+    fun sourceSignature(block: ReaderBlock): String = signature(block, block.sourceText())
+
+    /**
+     * Display offsets for one saved range, or null when it belongs to another text.
+     * [offsets] maps the displayed block; legacy ranges match only the exact rendering.
+     */
+    fun displayRange(range: ReaderUnderlineRange, sourceSignature: String, renderedSignature: String,
+        offsets: ReaderTextOffsets?): IntRange? {
+        val (start, end) = when (range.signature) {
+            sourceSignature -> offsets?.let { it.toDisplay(range.start) to it.toDisplayEnd(range.end) }
+                ?: if (sourceSignature == renderedSignature) range.start to range.end else return null
+            renderedSignature -> range.start to range.end
+            else -> return null
+        }
+        return if (start < end) start until end else null
+    }
+
+    /**
+     * Converts a selection made on displayed text. A boundary inside a replaced
+     * name expands to the whole original span; unresolved ranges stay legacy.
+     */
+    fun toSource(mark: ReaderUnderline, resolve: (ReaderUnderlineRange) -> Pair<String, ReaderTextOffsets>?): ReaderUnderline {
+        val ranges = mark.ranges().map { range ->
+            val (source, offsets) = resolve(range) ?: return@map range
+            val start = offsets.toSource(range.start)
+            val end = offsets.toSourceEnd(range.end)
+            if (start < end) ReaderUnderlineRange(range.blockIndex, source, start, end) else range
+        }
+        return fromRanges(ranges, mark.quote)
+    }
+
+    /**
+     * Re-anchors legacy rendered-text ranges. [renderings] lists displayed
+     * mappings the range may have been saved in; a range whose signature
+     * matches none of them is kept untouched so it can migrate later.
+     */
+    fun migrateToSource(rows: List<ReaderUnderline>, blocks: List<ReaderBlock>,
+        renderings: (ReaderBlock) -> List<ReaderTextOffsets>): List<ReaderUnderline> {
+        var changed = false
+        val migrated = rows.map { mark ->
+            val ranges = mark.ranges().map { range ->
+                val block = blocks.getOrNull(range.blockIndex) ?: return@map range
+                val source = sourceSignature(block)
+                if (range.signature == source) return@map range
+                val rendering = renderings(block).firstOrNull {
+                    range.end <= it.text.length && signature(block, it.text) == range.signature
+                } ?: return@map range
+                val start = rendering.toSource(range.start)
+                val end = rendering.toSourceEnd(range.end)
+                if (start >= end) return@map range
+                changed = true
+                ReaderUnderlineRange(range.blockIndex, source, start, end)
+            }
+            fromRanges(ranges, mark.quote)
+        }
+        return if (changed) migrated.distinct() else rows
+    }
+
+    /** True when any range still uses rendered-text offsets. */
+    fun hasLegacyRanges(rows: List<ReaderUnderline>, blocks: List<ReaderBlock>): Boolean = rows.any { mark ->
+        mark.ranges().any { range -> blocks.getOrNull(range.blockIndex)?.let { sourceSignature(it) != range.signature } == true }
+    }
     fun decode(value: String?): List<ReaderUnderline> {
         if (value == null) return emptyList()
         require(value.isNotBlank()) { "Invalid underline data" }
@@ -86,8 +154,9 @@ object ReaderUnderlines {
             ranges.drop(1).takeIf { it.isNotEmpty() })
     }
 
+    /** [quoteText] returns the displayed text of one saved range. */
     fun update(rows: List<ReaderUnderline>, selection: ReaderUnderline, remove: Boolean,
-        renderedText: (Int) -> String? = { null }): List<ReaderUnderline> {
+        quoteText: (ReaderUnderlineRange) -> String? = { null }): List<ReaderUnderline> {
         val overlapping = rows.filter { overlaps(it, selection) }
         if (remove) return rows - overlapping.toSet()
         val sources = selection.ranges().associate { it.blockIndex to it.signature }.toMutableMap()
@@ -104,9 +173,7 @@ object ReaderUnderlines {
         val ranges = marks.flatMap { it.ranges() }.groupBy { it.blockIndex to it.signature }.values.map { group ->
             group.first().copy(start = group.minOf { it.start }, end = group.maxOf { it.end })
         }.sortedWith(compareBy({ it.blockIndex }, { it.start }))
-        val quotes = ranges.map { range ->
-            renderedText(range.blockIndex)?.takeIf { range.end <= it.length }?.substring(range.start, range.end)
-        }
+        val quotes = ranges.map(quoteText)
         val quote = if (quotes.all { it != null }) quotes.joinToString("\n")
             else marks.firstOrNull { it.ranges() == ranges && it.quote != null }?.quote
         return remaining + fromRanges(ranges, quote)

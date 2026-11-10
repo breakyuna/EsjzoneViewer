@@ -180,6 +180,9 @@ import com.breakyuna.esjzone.domain.reader.ReaderBlock
 import com.breakyuna.esjzone.domain.reader.ReaderUnderline
 import com.breakyuna.esjzone.domain.reader.ReaderUnderlines
 import com.breakyuna.esjzone.ui.reader.renderedReaderText
+import com.breakyuna.esjzone.ui.reader.readerDisplayOffsets
+import com.breakyuna.esjzone.ui.reader.readerLegacyUnderlineRenderings
+import com.breakyuna.esjzone.ui.reader.readerUnderlineQuote
 import com.breakyuna.esjzone.ui.reader.ReaderPageAnimation
 import com.breakyuna.esjzone.ui.navigation.ChapterStateHolder
 import com.breakyuna.esjzone.ui.reader.ReaderScript
@@ -896,6 +899,39 @@ class ChapterPage(
                 }
             } else convertedText?.blockMappings?.get(block)
 
+        // Quotes are read on the database thread, so rebuild mappings instead of sharing the UI cache.
+        fun underlineQuote(document: com.breakyuna.esjzone.domain.reader.ReaderChapterDocument):
+            (com.breakyuna.esjzone.domain.reader.ReaderUnderlineRange) -> String? {
+            val script = readerSettings.script
+            val names = nameReplaceSettings
+            return { range ->
+                readerUnderlineQuote(document.blocks.getOrNull(range.blockIndex), range) {
+                    readerDisplayOffsets(it, script, names)
+                }
+            }
+        }
+
+        // Marks saved before original-text offsets carry rendered offsets; re-anchor them once recognised.
+        LaunchedEffect(underlines, result?.chapters, scriptReady, nameReplaceSettings) {
+            if (!scriptReady) return@LaunchedEffect
+            val names = nameReplaceSettings
+            val saved = underlines
+            val chapters = result?.chapters.orEmpty()
+            val pending = withContext(Dispatchers.Default) {
+                chapters.filter { !it.requiresPassword }.mapNotNull { entry ->
+                    val key = chapterIdentity(entry.chapter)
+                    val rows = saved[key] ?: return@mapNotNull null
+                    val blocks = entry.document.blocks
+                    if (!ReaderUnderlines.hasLegacyRanges(rows, blocks)) return@mapNotNull null
+                    val migrate: (List<ReaderUnderline>) -> List<ReaderUnderline> = { current ->
+                        ReaderUnderlines.migrateToSource(current, blocks) { readerLegacyUnderlineRenderings(it, names) }
+                    }
+                    if (migrate(rows) == rows) null else key to migrate
+                }
+            }
+            pending.forEach { (key, migrate) -> underlineModel.migrate(key, migrate) }
+        }
+
         fun anchorFor(item: ReaderDisplayItem, pixelOffset: Int = 0, itemSize: Int = 1): ReaderAnchor? {
             val document = item.entry.document
             if (document.contentFingerprint.isBlank() || !scriptReady) return null
@@ -1460,17 +1496,22 @@ class ChapterPage(
             val entry = result?.chapters?.firstOrNull { sameReaderChapter(it.chapter, target) }
                 ?: return@LaunchedEffect
             val block = entry.document.blocks.getOrNull(mark.blockIndex)
+            val sourceLength = block?.sourceText()?.length ?: 0
+            val original = block != null && mark.signature == ReaderUnderlines.sourceSignature(block) &&
+                mark.end <= sourceLength
             val rendered = block?.renderedReaderText(readerTextTransform)
-            val valid = block != null && rendered != null && mark.end <= rendered.length &&
+            val valid = original || block != null && rendered != null && mark.end <= rendered.length &&
                 ReaderUnderlines.signature(block, rendered) == mark.signature
+            val sourceStart = if (original) mark.start else block?.let { textOffsets(it)?.toSource(mark.start) } ?: mark.start
             val anchor = if (valid) ReaderAnchor(chapterIdentity(target), entry.document.contentFingerprint,
-                mark.blockIndex, textOffsets(block!!)?.toSource(mark.start) ?: mark.start) else null
+                mark.blockIndex, sourceStart) else null
             val chapterProgress = anchor?.let { readerChapterProgress(entry.document, it) } ?: 0f
             val location = readerBookLocationFor(target, chapterProgress, bookChapterOrder,
                 bookChapterIndices, progressTextIndex)
                 ?: ReaderBookLocation(target, -1, chapterProgress, bookChapterOrder.size)
             pendingSeekLocation = location.copy(anchor = anchor,
-                contentPosition = if (valid) mark.blockIndex + mark.start.toFloat() / rendered!!.length else null)
+                contentPosition = if (!valid) null else if (original) mark.blockIndex + mark.start.toFloat() / sourceLength
+                    else mark.blockIndex + mark.start.toFloat() / rendered!!.length)
             pendingUnderline = null
         }
 
@@ -2128,9 +2169,8 @@ class ChapterPage(
                                         chapterKey = item.chapterKey,
                                         underlines = underlines[item.chapterKey].orEmpty(),
                                         onUnderline = { mark, remove ->
-                                            underlineModel.update(item.chapterKey, mark, remove) { blockIndex ->
-                                                item.entry.document.blocks.getOrNull(blockIndex)?.renderedReaderText(readerTextTransform)
-                                            }
+                                            underlineModel.update(item.chapterKey, mark, remove,
+                                                underlineQuote(item.entry.document))
                                         },
                                         onTextLayout = { _, layout ->
                                             if (layout == null) textLayouts.remove(item.key)
@@ -2267,9 +2307,8 @@ class ChapterPage(
                                         underlines = underlines[currentPagedDisplayItems.getOrNull(pageIndex)?.chapterKey].orEmpty(),
                                         onUnderline = { mark, remove ->
                                             currentPagedDisplayItems.getOrNull(pageIndex)?.let { item ->
-                                                underlineModel.update(item.chapterKey, mark, remove) { blockIndex ->
-                                                    item.entry.document.blocks.getOrNull(blockIndex)?.renderedReaderText(readerTextTransform)
-                                                }
+                                                underlineModel.update(item.chapterKey, mark, remove,
+                                                    underlineQuote(item.entry.document))
                                             }
                                         },
                                         highlights = currentPagedDisplayItems.getOrNull(pageIndex)?.let(::searchHighlights).orEmpty(),

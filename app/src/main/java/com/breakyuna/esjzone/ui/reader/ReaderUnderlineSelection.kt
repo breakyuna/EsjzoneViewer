@@ -9,6 +9,7 @@ import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.TextRange
+import com.breakyuna.esjzone.domain.reader.ReaderTextOffsets
 import com.breakyuna.esjzone.domain.reader.ReaderUnderline
 import com.breakyuna.esjzone.domain.reader.ReaderUnderlineRange
 import com.breakyuna.esjzone.domain.reader.ReaderUnderlines
@@ -24,7 +25,10 @@ class ReaderUnderlineSelection {
         val signature: String,
         val offset: Int,
         val text: String,
-        val save: (ReaderUnderline, Boolean) -> Unit
+        val save: (ReaderUnderline, Boolean) -> Unit,
+        /** Original-text identity and displayed-block mapping; null keeps rendered offsets. */
+        val sourceSignature: String? = null,
+        val offsets: ReaderTextOffsets? = null
     ) {
         var coordinates: LayoutCoordinates? = null
         var layout: TextLayoutResult? = null
@@ -131,8 +135,13 @@ class ReaderUnderlineSelection {
                 group.maxOf { it.key.offset + it.value.max }) to
                 group.sortedBy { it.key.offset }.joinToString("") { it.key.text.substring(it.value.min, it.value.max) }
         }
+        val segments = selected.map { it.key }
         ReaderUnderlines.selection(parts).forEach { mark ->
-            selected.first { it.key.block == mark.blockIndex }.key.save(mark, false)
+            val source = ReaderUnderlines.toSource(mark) { range ->
+                segments.firstOrNull { it.block == range.blockIndex && it.signature == range.signature }
+                    ?.let { segment -> segment.sourceSignature?.let { signature -> segment.offsets?.let { signature to it } } }
+            }
+            segments.first { it.block == mark.blockIndex }.save(source, false)
         }
     }
 

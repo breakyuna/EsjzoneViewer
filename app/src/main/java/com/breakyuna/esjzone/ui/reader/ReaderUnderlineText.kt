@@ -5,6 +5,7 @@ package com.breakyuna.esjzone.ui.reader
 import com.breakyuna.esjzone.domain.reader.ReaderLink
 import com.breakyuna.esjzone.domain.reader.ReaderTextOffsets
 import com.breakyuna.esjzone.domain.reader.ReaderUnderline
+import com.breakyuna.esjzone.domain.reader.ReaderUnderlines
 
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.gestures.awaitEachGesture
@@ -65,7 +66,9 @@ internal fun ReaderUnderlineText(
     showMagnifier: Boolean = true,
     links: List<ReaderLink> = emptyList(),
     linkOffsets: ReaderTextOffsets? = null,
-    onLinkClick: (String) -> Unit = {}
+    onLinkClick: (String) -> Unit = {},
+    sourceSignature: String? = null,
+    textOffsets: ReaderTextOffsets? = null
 ) {
     var layout by remember { mutableStateOf<TextLayoutResult?>(null) }
     val sharedSelection = LocalReaderUnderlineSelection.current
@@ -74,11 +77,14 @@ internal fun ReaderUnderlineText(
     var menu by remember(text, enabled) { mutableStateOf<Pair<ReaderUnderline, Offset>?>(null) }
     val currentSave by rememberUpdatedState(onUnderline)
     val currentLayout by rememberUpdatedState(onLayout)
-    val currentUnderlines by rememberUpdatedState(underlines)
-    val segment = remember(selection, chapter, text, blockIndex, signature, offset) {
-        ReaderUnderlineSelection.Segment(chapter, blockIndex, signature, offset, text.text) { mark, remove ->
+    // Only a mapping of exactly this displayed text may translate original offsets.
+    val displayOffsets = remember(textOffsets, text, offset) {
+        textOffsets?.takeIf { it.text.length >= offset + text.length && it.text.regionMatches(offset, text.text, 0, text.length) }
+    }
+    val segment = remember(selection, chapter, text, blockIndex, signature, offset, sourceSignature, displayOffsets) {
+        ReaderUnderlineSelection.Segment(chapter, blockIndex, signature, offset, text.text, { mark, remove ->
             currentSave(mark, remove)
-        }
+        }, sourceSignature, displayOffsets)
     }
     val selectedRange by remember(selection, segment) {
         derivedStateOf(structuralEqualityPolicy()) { selection.ranges[segment] }
@@ -90,13 +96,23 @@ internal fun ReaderUnderlineText(
     DisposableEffect(Unit) {
         onDispose { currentLayout(null) }
     }
-    val underlineRanges = remember(text, underlines, blockIndex, signature, offset) {
-        underlines.flatMap { it.ranges() }.filter { it.blockIndex == blockIndex && it.signature == signature }.mapNotNull { mark ->
-            val start = (mark.start - offset).coerceAtLeast(0)
-            val end = (mark.end - offset).coerceAtMost(text.length)
+    // Saved ranges in full-block display offsets, paired with their mark for taps.
+    val displayedMarks = remember(underlines, blockIndex, signature, sourceSignature, displayOffsets) {
+        underlines.flatMap { mark ->
+            mark.ranges().filter { it.blockIndex == blockIndex }.mapNotNull { range ->
+                ReaderUnderlines.displayRange(range, sourceSignature ?: signature, signature, displayOffsets)
+                    ?.let { mark to it }
+            }
+        }
+    }
+    val underlineRanges = remember(text, displayedMarks, offset) {
+        displayedMarks.mapNotNull { (_, range) ->
+            val start = (range.first - offset).coerceAtLeast(0)
+            val end = (range.last + 1 - offset).coerceAtMost(text.length)
             if (start < end) TextRange(start, end) else null
         }
     }
+    val currentMarks by rememberUpdatedState(displayedMarks)
     val photoTextColor = LocalReaderPhotoText.current
     val displayed = remember(text, highlights, color, photoTextColor) {
         if (highlights.isEmpty() && photoTextColor == null) text else buildAnnotatedString {
@@ -209,10 +225,7 @@ internal fun ReaderUnderlineText(
                 if (text.isEmpty()) return@awaitEachGesture
                 val character = readerUnderlineCharacterAt(result, down.position)
                 val bounds = result.getBoundingBox(character.min)
-                val mark = currentUnderlines.firstOrNull {
-                    it.ranges().any { range -> range.blockIndex == blockIndex && range.signature == signature &&
-                        offset + character.min in range.start until range.end }
-                }
+                val mark = currentMarks.firstOrNull { (_, range) -> offset + character.min in range }?.first
                 val up = waitForUpOrCancellation()
                 if (mark != null && bounds.inflate(4.dp.toPx()).contains(down.position) && up != null &&
                     (up.position - down.position).getDistance() < viewConfiguration.touchSlop &&
