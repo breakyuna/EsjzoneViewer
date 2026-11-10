@@ -14,9 +14,11 @@ import com.google.gson.Gson
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import java.io.File
 import java.util.concurrent.ConcurrentHashMap
@@ -361,16 +363,31 @@ internal class CloudViewReporter(
             val target = cloudViewRestoreChapter(known, fetch.siteChapterUrl, fetch.startedAt)
                 ?: return@withLock false
             val url = chapterViewUrl(fetch.site, target) ?: return@withLock false
+            // Queue the restore like an ordinary report so a chapter the reader
+            // opens while the request is in flight is kept, not overwritten.
+            remember(fetch.authorization, fetch.novelId, fetch.novelUrl, url,
+                reported = false, requireEnabled = false, replaceReported = true)
+            val attempt = store.find(fetch.account, fetch.site, fetch.novelKey)
+                ?.takeIf { !it.reported && it.chapterKey == EsjzoneUrls.canonicalPageKey(url) }
+                ?: return@withLock false
             val restored = try {
-                touch(fetch.authorization, url) { true }
+                touch(fetch.authorization, url) {
+                    val current = store.find(fetch.account, fetch.site, fetch.novelKey)
+                    current != null && !current.reported &&
+                        current.chapterKey == attempt.chapterKey &&
+                        current.generation == attempt.generation
+                }
             } catch (error: CancellationException) {
                 throw error
             } catch (error: Exception) {
                 AppLogger.w("CloudView", "Unable to restore the site record after a download", error)
                 false
             }
-            remember(fetch.authorization, fetch.novelId, fetch.novelUrl, url,
-                reported = restored, requireEnabled = false, replaceReported = !restored)
+            // A newer chapter recorded during the request is put back in the queue,
+            // because the restore may have reached the site after it.
+            if (restored && !store.markReported(attempt) && store.reopenSuperseding(attempt)) {
+                schedule(fetch.authorization)
+            }
             restored
         }
     }
@@ -492,16 +509,58 @@ internal class CloudViewReporter(
     }
 }
 
-object CloudViewReports {
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+/**
+ * Creates the process-wide reporter once. A download worker can start in a
+ * process that never opened MainActivity, so the background path initializes it
+ * itself instead of relying on app startup.
+ */
+internal class CloudViewReporterHolder(private val factory: (File) -> CloudViewReporter) {
     @Volatile private var reporter: CloudViewReporter? = null
 
-    fun initialize(directory: File) {
-        if (reporter != null) return
+    fun current(): CloudViewReporter? = reporter
+
+    fun initialize(directory: File): CloudViewReporter {
+        reporter?.let { return it }
         synchronized(this) {
-            if (reporter != null) return
-            reporter = create(directory)
+            reporter?.let { return it }
+            return factory(directory).also { reporter = it }
         }
+    }
+
+    /**
+     * Runs a background job that requests chapter pages for one novel, then puts
+     * the site's reading position back, also when the job fails or is cancelled.
+     */
+    suspend fun <T> preservingSiteView(
+        directory: File,
+        authorization: Authorization,
+        novelId: String,
+        novelUrl: String,
+        block: suspend () -> T
+    ): T {
+        val fetch = withContext(Dispatchers.IO) {
+            runCatching { initialize(directory) }
+                .onFailure { AppLogger.w("CloudView", "Unable to prepare chapter view reports", it) }
+                .getOrNull()
+                ?.beginBackgroundFetch(authorization, novelId, novelUrl)
+        }
+        try {
+            return block()
+        } finally {
+            withContext(NonCancellable + Dispatchers.IO) {
+                current()?.finishBackgroundFetch(fetch)
+            }
+        }
+    }
+}
+
+object CloudViewReports {
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val holder = CloudViewReporterHolder(::create)
+    private val reporter: CloudViewReporter? get() = holder.current()
+
+    fun initialize(directory: File) {
+        holder.initialize(directory)
     }
 
     private fun create(directory: File) = CloudViewReporter(
@@ -553,9 +612,11 @@ object CloudViewReports {
         reporter?.flush(authorization)
     }
 
-    internal fun beginBackgroundFetch(authorization: Authorization, novelId: String, novelUrl: String): BackgroundChapterFetch? =
-        reporter?.beginBackgroundFetch(authorization, novelId, novelUrl)
-
-    internal suspend fun finishBackgroundFetch(fetch: BackgroundChapterFetch?): Boolean =
-        reporter?.finishBackgroundFetch(fetch) ?: false
+    internal suspend fun <T> preservingSiteView(
+        directory: File,
+        authorization: Authorization,
+        novelId: String,
+        novelUrl: String,
+        block: suspend () -> T
+    ): T = holder.preservingSiteView(directory, authorization, novelId, novelUrl, block)
 }

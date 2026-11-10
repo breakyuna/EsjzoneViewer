@@ -370,25 +370,17 @@ class NovelDownloadWorker(
     /**
      * Chapter requests made for a download carry the account cookies, so the site
      * records each of them as the novel's latest view. Put the real reading
-     * position back afterwards, also when the download fails or is paused.
+     * position back afterwards, also when the download fails or is paused. The
+     * reporter is created here when WorkManager resumed the job without the app UI.
      */
     private suspend fun <T> preservingSiteView(
         authorization: Authorization,
         novelId: String,
         novelUrl: String,
         block: suspend () -> T
-    ): T {
-        val fetch = kotlinx.coroutines.withContext(Dispatchers.IO) {
-            com.breakyuna.esjzone.network.features.CloudViewReports.beginBackgroundFetch(authorization, novelId, novelUrl)
-        }
-        try {
-            return block()
-        } finally {
-            kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable + Dispatchers.IO) {
-                com.breakyuna.esjzone.network.features.CloudViewReports.finishBackgroundFetch(fetch)
-            }
-        }
-    }
+    ): T = com.breakyuna.esjzone.network.features.CloudViewReports.preservingSiteView(
+        applicationContext.filesDir, authorization, novelId, novelUrl, block
+    )
 
     @SuppressLint("MissingPermission")
     private fun publishProgress(progress: DownloadProgress) {
