@@ -7,6 +7,7 @@ import com.breakyuna.esjzone.network.EsjzoneClient
 import com.breakyuna.esjzone.network.EsjzoneUrls
 import com.breakyuna.esjzone.network.hasCredentials
 import com.breakyuna.esjzone.novellibrary.novel.ChapterSource
+import com.breakyuna.esjzone.novellibrary.novel.HistoryNovel
 import com.breakyuna.esjzone.novellibrary.novel.resolveChapterSource
 import com.breakyuna.esjzone.util.AppLogger
 import com.google.gson.Gson
@@ -91,6 +92,48 @@ internal fun shouldRequestCloudView(record: CloudViewRecord, latest: LocalReadin
     if (latest == null) return true
     if (EsjzoneUrls.canonicalPageKey(latest.chapterUrl) == record.chapterKey) return true
     return latest.lastReadAt <= record.updatedAt
+}
+
+/**
+ * A background download requests every chapter page with the account cookies,
+ * and the site records each response as the novel's latest view. This snapshot
+ * remembers where the site record stood before that happened.
+ */
+internal data class BackgroundChapterFetch(
+    val authorization: Authorization,
+    val account: String,
+    val site: String,
+    val novelKey: String,
+    val novelId: String,
+    val novelUrl: String,
+    /** The chapter the site listed for this novel before the download, if it listed one. */
+    val siteChapterUrl: String?,
+    val startedAt: Long
+)
+
+/**
+ * The chapter the site should show after a background download. A reader report
+ * made during the download is the newest position; otherwise the site's own
+ * record from before the download is the truth; an older reader report is the
+ * last fallback. Returns null when nothing trustworthy is known.
+ */
+internal fun cloudViewRestoreChapter(
+    known: CloudViewRecord?,
+    siteChapterUrl: String?,
+    startedAt: Long
+): String? {
+    if (known != null && known.updatedAt >= startedAt && known.chapterUrl.isNotBlank()) return known.chapterUrl
+    siteChapterUrl?.trim()?.takeIf { it.isNotBlank() }?.let { return it }
+    return known?.chapterUrl?.takeIf { it.isNotBlank() }
+}
+
+/** Finds this novel's row in the site's view history. */
+internal fun siteHistoryChapter(histories: List<HistoryNovel>, site: String, novelKey: String): String? {
+    if (novelKey.isBlank()) return null
+    return histories.firstOrNull { history ->
+        val chapter = chapterViewUrl(site, history.chapter.url) ?: return@firstOrNull false
+        cloudViewNovelKey("", history.url, chapter) == novelKey
+    }?.chapter?.url?.let { chapterViewUrl(site, it) }
 }
 
 internal class CloudViewReportStore(private val file: File?) {
@@ -220,6 +263,7 @@ internal class CloudViewReporter(
     private val enabled: () -> Boolean = { true },
     private val now: () -> Long = System::currentTimeMillis,
     private val accountScope: (Authorization) -> String? = { HistoryDataCache.scopeFor(it) },
+    private val siteHistory: (Authorization) -> List<HistoryNovel>? = { null },
     private val scope: CoroutineScope
 ) {
     private data class ViewScope(val account: String, val site: String, val novelKey: String)
@@ -283,6 +327,52 @@ internal class CloudViewReporter(
     fun flush(authorization: Authorization) {
         if (!enabled() || !authorization.hasCredentials()) return
         schedule(authorization)
+    }
+
+    /**
+     * Call before a background job requests chapter pages for one novel. Reads the
+     * site's current record so [finishBackgroundFetch] can put it back.
+     */
+    fun beginBackgroundFetch(authorization: Authorization, novelId: String, novelUrl: String): BackgroundChapterFetch? {
+        if (!authorization.hasCredentials()) return null
+        val account = accountScope(authorization)?.takeIf { it.isNotBlank() } ?: return null
+        val site = authorization.domain.trim()
+        if (site.isBlank()) return null
+        val novelKey = cloudViewNovelKey(novelId, novelUrl, "")
+        if (novelKey.isBlank()) return null
+        val siteChapter = runCatching { siteHistory(authorization) }
+            .onFailure { AppLogger.w("CloudView", "Unable to read the site history before a download", it) }
+            .getOrNull()
+            ?.let { siteHistoryChapter(it, site, novelKey) }
+        return BackgroundChapterFetch(authorization, account, site, novelKey, novelId.trim(), novelUrl.trim(),
+            siteChapter, now())
+    }
+
+    /**
+     * The download's chapter requests moved the site record to whichever chapter
+     * finished last. Request the chapter the reader is really at so the site shows
+     * it again. This undoes the app's own side effect, so it runs even when
+     * reporting reading progress is turned off.
+     */
+    suspend fun finishBackgroundFetch(fetch: BackgroundChapterFetch?): Boolean {
+        fetch ?: return false
+        return sendMutex.withLock {
+            val known = store.find(fetch.account, fetch.site, fetch.novelKey)
+            val target = cloudViewRestoreChapter(known, fetch.siteChapterUrl, fetch.startedAt)
+                ?: return@withLock false
+            val url = chapterViewUrl(fetch.site, target) ?: return@withLock false
+            val restored = try {
+                touch(fetch.authorization, url) { true }
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                AppLogger.w("CloudView", "Unable to restore the site record after a download", error)
+                false
+            }
+            remember(fetch.authorization, fetch.novelId, fetch.novelUrl, url,
+                reported = restored, requireEnabled = false, replaceReported = !restored)
+            restored
+        }
     }
 
     private fun remember(
@@ -432,6 +522,7 @@ object CloudViewReports {
                     EsjzoneApplication.instance.container.settings.updateWebsiteHistory.value
                 }.getOrDefault(true)
             },
+            siteHistory = { authorization -> EsjzoneClient.getHistories(authorization, forceRefresh = true) },
             scope = scope
         )
 
@@ -461,4 +552,10 @@ object CloudViewReports {
     fun flush(authorization: Authorization) {
         reporter?.flush(authorization)
     }
+
+    internal fun beginBackgroundFetch(authorization: Authorization, novelId: String, novelUrl: String): BackgroundChapterFetch? =
+        reporter?.beginBackgroundFetch(authorization, novelId, novelUrl)
+
+    internal suspend fun finishBackgroundFetch(fetch: BackgroundChapterFetch?): Boolean =
+        reporter?.finishBackgroundFetch(fetch) ?: false
 }
