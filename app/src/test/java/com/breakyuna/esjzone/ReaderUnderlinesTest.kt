@@ -12,6 +12,10 @@ import org.junit.Test
 class ReaderUnderlinesTest {
     private val signature = ReaderUnderlines.signature(ReaderBlock.Text("这是保存的原始段落"), "这是保存的原始段落")
     private fun mark(start: Int, end: Int, block: Int = 0) = ReaderUnderline(block, signature, start, end)
+    /** Quotes slice the displayed block text of each saved range. */
+    private fun quotes(text: (Int) -> String?): (ReaderUnderlineRange) -> String? = { range ->
+        text(range.blockIndex)?.takeIf { range.end <= it.length }?.substring(range.start, range.end)
+    }
 
     @Test fun savedRangesRoundTripAndRepeatedRestoreDoesNotDuplicate() {
         val rows = listOf(mark(1, 4), mark(6, 9))
@@ -62,8 +66,8 @@ class ReaderUnderlinesTest {
 
     @Test fun mergedQuoteContainsEntireSavedRangeAndSurvivesSerialization() {
         val text = "任意选择划线范围"
-        val first = ReaderUnderlines.update(emptyList(), mark(1, 3), false) { text }
-        val merged = ReaderUnderlines.update(first, mark(2, 6), false) { text }
+        val first = ReaderUnderlines.update(emptyList(), mark(1, 3), false, quotes { text })
+        val merged = ReaderUnderlines.update(first, mark(2, 6), false, quotes { text })
         assertEquals(listOf(mark(1, 6).copy(quote = text.substring(1, 6))), merged)
         val restored = ReaderUnderlines.decode(ReaderUnderlines.encode(merged))
         assertEquals(merged, restored)
@@ -106,12 +110,12 @@ class ReaderUnderlinesTest {
         val selection = ReaderUnderlines.selection(listOf(
             ReaderUnderlineRange(0, signature, 1, 4) to "乙丙丁",
             ReaderUnderlineRange(1, signature, 0, 2) to "戊己")).single()
-        val saved = ReaderUnderlines.update(emptyList(), selection, false, text::get)
+        val saved = ReaderUnderlines.update(emptyList(), selection, false, quotes(text::get))
         assertEquals("乙丙丁\n戊己", saved.single().quote)
         val restored = ReaderUnderlines.decode(ReaderUnderlines.encode(saved))
         assertEquals(saved, restored)
         assertEquals(saved, restored.fold(saved) { rows, row -> ReaderUnderlines.update(rows, row, false) })
-        val extended = ReaderUnderlines.update(restored, mark(1, 4, 1), false, text::get)
+        val extended = ReaderUnderlines.update(restored, mark(1, 4, 1), false, quotes(text::get))
         assertEquals(1, extended.size)
         assertEquals("乙丙丁\n戊己庚辛", extended.single().quote)
         assertEquals(listOf(ReaderUnderlineRange(0, signature, 1, 4), ReaderUnderlineRange(1, signature, 0, 4)),
@@ -128,7 +132,7 @@ class ReaderUnderlinesTest {
         val continuation = listOf(ReaderUnderlineRange(1, unchanged, 0, 2))
         val old = ReaderUnderline(0, original, 0, 2, continuation = continuation)
         val selected = ReaderUnderline(0, simplified, 0, 2, continuation = continuation)
-        val saved = ReaderUnderlines.update(listOf(old), selected, false) { if (it == 0) "头发" else "甲乙" }
+        val saved = ReaderUnderlines.update(listOf(old), selected, false, quotes { if (it == 0) "头发" else "甲乙" })
         assertEquals(2, saved.size)
         assertTrue(old in saved)
         assertEquals(selected.copy(quote = "头发\n甲乙"), saved.last())

@@ -57,6 +57,24 @@ data class ReaderTextOffsets(val text: String, val sourceStarts: IntArray, val s
         val index = sourceEnds.indexOfFirst { it > sourceOffset.coerceIn(0, sourceLength) }
         return if (index < 0) text.length else index
     }
+    /**
+     * Source start of the displayed character at [displayStart]. Unlike [toSource],
+     * text removed before the first visible character is not included.
+     */
+    fun toSourceStart(displayStart: Int): Int =
+        if (displayStart in text.indices) sourceStarts[displayStart] else toSource(displayStart)
+    /** Exclusive source end; a display end inside a replaced span extends to the whole span. */
+    fun toSourceEnd(displayEnd: Int): Int = when {
+        displayEnd <= 0 || text.isEmpty() -> 0
+        else -> sourceEnds[minOf(displayEnd, text.length) - 1]
+    }
+    /** Exclusive display end: every displayed character that starts before [sourceEnd]. */
+    fun toDisplayEnd(sourceEnd: Int): Int {
+        val end = sourceEnd.coerceIn(0, sourceLength)
+        var index = text.length
+        while (index > 0 && sourceStarts[index - 1] >= end) index--
+        return index
+    }
     companion object {
         fun identity(text: String) = ReaderTextOffsets(text, IntArray(text.length) { it }, IntArray(text.length) { it + 1 }, text.length)
         fun join(parts: List<ReaderTextOffsets>): ReaderTextOffsets {

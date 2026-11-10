@@ -6,6 +6,7 @@ import com.breakyuna.esjzone.app.PresentationAccess
 import com.breakyuna.esjzone.database.GeneralDatabase
 import com.breakyuna.esjzone.ui.navigation.AppStateViewModel
 import com.breakyuna.esjzone.domain.reader.ReaderUnderline
+import com.breakyuna.esjzone.domain.reader.ReaderUnderlineRange
 import com.breakyuna.esjzone.domain.reader.ReaderUnderlines
 import com.breakyuna.esjzone.util.AppLogger
 import kotlinx.coroutines.CancellationException
@@ -29,14 +30,33 @@ class ReaderUnderlinesModel(
         }
     }.flowOn(Dispatchers.IO).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
 
-    fun update(chapterKey: String, selection: ReaderUnderline, remove: Boolean,
-        renderedText: (Int) -> String? = { null }) {
+    /** Persists legacy rendered-offset marks re-anchored to original text; unchanged rows are not written. */
+    fun migrate(chapterKey: String, migrate: (List<ReaderUnderline>) -> List<ReaderUnderline>) {
         viewModelScope.launch(Dispatchers.IO) {
             try {
                 database.withTransaction {
                     val dao = database.cacheDao()
                     val key = ReaderUnderlines.KEY_PREFIX + chapterKey
-                    val updated = ReaderUnderlines.update(ReaderUnderlines.decode(dao.findByKey(key)?.value), selection, remove, renderedText)
+                    val rows = ReaderUnderlines.decode(dao.findByKey(key)?.value)
+                    val updated = migrate(rows)
+                    if (updated.isNotEmpty() && updated != rows) dao.putAtomic(key, ReaderUnderlines.encode(updated))
+                }
+            } catch (error: CancellationException) { throw error
+            } catch (error: Exception) {
+                AppLogger.w("ReaderUnderlinesModel",
+                    "Could not migrate underlines; chapter=${chapterKey.hashCode().toUInt().toString(16)}", error)
+            }
+        }
+    }
+
+    fun update(chapterKey: String, selection: ReaderUnderline, remove: Boolean,
+        quoteText: (ReaderUnderlineRange) -> String? = { null }) {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                database.withTransaction {
+                    val dao = database.cacheDao()
+                    val key = ReaderUnderlines.KEY_PREFIX + chapterKey
+                    val updated = ReaderUnderlines.update(ReaderUnderlines.decode(dao.findByKey(key)?.value), selection, remove, quoteText)
                     if (updated.isEmpty()) dao.deleteByKey(key) else dao.putAtomic(key, ReaderUnderlines.encode(updated))
                 }
             } catch (error: CancellationException) { throw error

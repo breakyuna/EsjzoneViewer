@@ -51,7 +51,8 @@ internal sealed interface ReaderPageSegment {
         val bottomSpacing: Dp,
         val blockIndex: Int = 0,
         val signature: String = "",
-        val startOffset: Int = 0
+        val startOffset: Int = 0,
+        val sourceSignature: String = signature
     ) : ReaderPageSegment
     data class Image(val url: String) : ReaderPageSegment
     data class Gap(val height: Dp) : ReaderPageSegment
@@ -108,6 +109,7 @@ internal fun paginateReaderChapter(
             constraints = Constraints(maxWidth = widthPx)
         )
         val signature = ReaderUnderlines.signature(blocks[blockIndex], text.text)
+        val sourceSignature = ReaderUnderlines.sourceSignature(blocks[blockIndex])
         var startLine = 0
         while (startLine < layout.lineCount) {
             if (current.isNotEmpty() && usedHeight >= heightPx) flush()
@@ -149,7 +151,7 @@ internal fun paginateReaderChapter(
             val gap = if (last && usedHeight + lineHeight + paragraphGap <= heightPx) {
                 settings.paragraphSpacingDp.dp
             } else 0.dp
-            add(ReaderPageSegment.TextLine(segmentText, inline, gap, blockIndex, signature, start),
+            add(ReaderPageSegment.TextLine(segmentText, inline, gap, blockIndex, signature, start, sourceSignature),
                 lineHeight + with(density) { gap.roundToPx() }, blockIndex + start.toFloat() / text.length)
             startLine = endLine
             if (last && gap == 0.dp && paragraphGap > 0) flush()
@@ -238,11 +240,13 @@ internal fun ReaderPageContent(
                         links = links[segment.blockIndex].orEmpty(),
                         linkOffsets = if (links[segment.blockIndex].isNullOrEmpty()) null else textOffsets(segment.blockIndex),
                         onLinkClick = onLinkClick,
+                        sourceSignature = segment.sourceSignature,
+                        textOffsets = textOffsets(segment.blockIndex),
                         highlights = highlights.filter { it.blockIndex == segment.blockIndex }.mapNotNull { range ->
                             textOffsets(segment.blockIndex)?.let { offsets ->
                                 androidx.compose.ui.text.TextRange(
                                     (offsets.toDisplay(range.start) - segment.startOffset).coerceIn(0, segment.text.length),
-                                    (offsets.toDisplay(range.end) - segment.startOffset).coerceIn(0, segment.text.length))
+                                    (offsets.toDisplayEnd(range.end) - segment.startOffset).coerceIn(0, segment.text.length))
                             }
                         }
                     )

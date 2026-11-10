@@ -123,9 +123,10 @@ fun ReaderBlocks(
                         links = links[blockStartIndex + index].orEmpty(),
                         linkOffsets = if (links[blockStartIndex + index].isNullOrEmpty()) null else textOffsets(block),
                         onLinkClick = onLinkClick,
+                        textOffsets = textOffsets(block),
                         highlights = highlights.filter { it.blockIndex == blockStartIndex + index }.map {
                             val offsets = textOffsets(block)
-                            androidx.compose.ui.text.TextRange(offsets.toDisplay(it.start), offsets.toDisplay(it.end))
+                            androidx.compose.ui.text.TextRange(offsets.toDisplay(it.start), offsets.toDisplayEnd(it.end))
                         }
                     )
                     is ReaderBlock.Text -> ReaderTextBlock(
@@ -144,9 +145,10 @@ fun ReaderBlocks(
                         links = links[blockStartIndex + index].orEmpty(),
                         linkOffsets = if (links[blockStartIndex + index].isNullOrEmpty()) null else textOffsets(block),
                         onLinkClick = onLinkClick,
+                        textOffsets = textOffsets(block),
                         highlights = highlights.filter { it.blockIndex == blockStartIndex + index }.map {
                             val offsets = textOffsets(block)
-                            androidx.compose.ui.text.TextRange(offsets.toDisplay(it.start), offsets.toDisplay(it.end))
+                            androidx.compose.ui.text.TextRange(offsets.toDisplay(it.start), offsets.toDisplayEnd(it.end))
                         }
                     )
                     is ReaderBlock.Image -> ReaderImage(
@@ -185,7 +187,8 @@ private fun ReaderParagraphBlock(
     highlights: List<androidx.compose.ui.text.TextRange>,
     links: List<ReaderLink>,
     linkOffsets: ReaderTextOffsets?,
-    onLinkClick: (String) -> Unit
+    onLinkClick: (String) -> Unit,
+    textOffsets: ReaderTextOffsets
 ) {
     val (paragraph, inlineContent) = remember(block, textStyle, textTransform, density) {
         val inlines = linkedMapOf<String, InlineTextContent>()
@@ -212,6 +215,8 @@ private fun ReaderParagraphBlock(
         enabled = enabled,
         blockIndex = blockIndex,
         signature = remember(block, paragraph) { ReaderUnderlines.signature(block, paragraph.text) },
+        sourceSignature = remember(block) { ReaderUnderlines.sourceSignature(block) },
+        textOffsets = textOffsets,
         underlines = underlines,
         onUnderline = onUnderline,
         onLayout = onLayout,
@@ -239,7 +244,8 @@ private fun ReaderTextBlock(
     highlights: List<androidx.compose.ui.text.TextRange>,
     links: List<ReaderLink>,
     linkOffsets: ReaderTextOffsets?,
-    onLinkClick: (String) -> Unit
+    onLinkClick: (String) -> Unit,
+    textOffsets: ReaderTextOffsets
 ) {
     val (text, inlineContent) = remember(block, textStyle, textTransform, density) {
         block.toAnnotatedReaderText(
@@ -258,6 +264,8 @@ private fun ReaderTextBlock(
         enabled = enabled,
         blockIndex = blockIndex,
         signature = remember(block, text) { ReaderUnderlines.signature(block, text.text) },
+        sourceSignature = remember(block) { ReaderUnderlines.sourceSignature(block) },
+        textOffsets = textOffsets,
         underlines = underlines,
         onUnderline = onUnderline,
         onLayout = onLayout,
