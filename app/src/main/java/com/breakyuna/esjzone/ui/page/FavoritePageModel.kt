@@ -6,6 +6,7 @@ import com.breakyuna.esjzone.app.PresentationAccess
 import com.breakyuna.esjzone.ui.navigation.AppStateViewModel
 import com.breakyuna.esjzone.database.BookshelfRepository
 import com.breakyuna.esjzone.database.BookshelfSyncResult
+import com.breakyuna.esjzone.database.ReadingStatisticsRecorder
 import com.breakyuna.esjzone.database.entity.BookshelfEntry
 import com.breakyuna.esjzone.database.entity.LocalReadingActivity
 import com.breakyuna.esjzone.network.Authorization
@@ -15,7 +16,10 @@ import com.breakyuna.esjzone.network.EsjzoneUrls
 import com.breakyuna.esjzone.util.AppLogger
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -28,6 +32,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.json.Json
 
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
@@ -98,9 +103,44 @@ class FavoritePageModel(private val authorization: Authorization) :
     val entries: StateFlow<List<BookshelfEntry>?> = BookshelfRepository.observe(authorization)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
-    /** Normalized title/author keys, built off the main thread from local rows only. */
-    internal val searchIndex: StateFlow<Map<String, BookshelfSearch.Key>> = entries
-        .map { BookshelfSearch.index(it.orEmpty()) }
+    /** Tags remembered when a detail page was opened; read from Room only. */
+    private val cachedTags: Flow<Map<String, List<String>>> =
+        PresentationAccess.database.cacheDao().observeReadingTags()
+            .map { rows ->
+                rows.associate { row ->
+                    row.key.removePrefix(ReadingStatisticsRecorder.TAGS_KEY_PREFIX) to runCatching {
+                        Json.decodeFromString<List<String>>(row.value)
+                    }.getOrDefault(emptyList())
+                }
+            }
+            .catch { error ->
+                if (error is CancellationException) throw error
+                AppLogger.w("FavoritePageModel", "Cached tags are unavailable for bookshelf search", error)
+                emit(emptyMap())
+            }
+
+    /** Tags saved in local download manifests; never reaches the network. */
+    private val downloadedTags: Flow<Map<String, List<String>>> =
+        PresentationAccess.downloads.changes
+            .map {
+                try {
+                    PresentationAccess.downloads.listDownloadedMetadata().associate { summary ->
+                        BookshelfSearch.tagKey("", summary.novelUrl) to summary.manifest.tags
+                    }
+                } catch (error: CancellationException) {
+                    throw error
+                } catch (error: Exception) {
+                    AppLogger.w("FavoritePageModel", "Download tags are unavailable for bookshelf search", error)
+                    emptyMap()
+                }
+            }
+            .flowOn(Dispatchers.IO)
+
+    /** Normalized title/author/tag keys, built off the main thread from local data only. */
+    internal val searchIndex: StateFlow<Map<String, BookshelfSearch.Key>> =
+        combine(entries, cachedTags.distinctUntilChanged(), downloadedTags.distinctUntilChanged()) { rows, cached, downloaded ->
+            BookshelfSearch.index(rows.orEmpty(), tags = BookshelfSearch.mergeTags(cached, downloaded))
+        }
         .flowOn(Dispatchers.Default)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
 
