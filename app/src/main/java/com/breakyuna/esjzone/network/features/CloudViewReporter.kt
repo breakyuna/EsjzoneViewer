@@ -11,6 +11,8 @@ import com.breakyuna.esjzone.novellibrary.novel.HistoryNovel
 import com.breakyuna.esjzone.novellibrary.novel.resolveChapterSource
 import com.breakyuna.esjzone.util.AppLogger
 import com.google.gson.Gson
+import com.google.gson.JsonParser
+import com.google.gson.annotations.SerializedName
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -139,7 +141,6 @@ internal fun siteHistoryChapter(histories: List<HistoryNovel>, site: String, nov
 }
 
 internal class CloudViewReportStore(private val file: File?) {
-    private val gson = Gson()
     private val lock = Any()
     private val records = mutableListOf<CloudViewRecord>()
 
@@ -200,47 +201,19 @@ internal class CloudViewReportStore(private val file: File?) {
 
     private fun load() {
         val stored = file?.takeIf { it.isFile } ?: return
-        val decoded = runCatching {
-            gson.fromJson(stored.readText(), Array<StoredCloudView>::class.java)?.toList().orEmpty()
-        }.getOrElse {
-            AppLogger.w("CloudView", "Unable to read saved chapter view reports", it)
-            emptyList()
+        val decoded = runCatching { CloudViewReportCodec.decode(stored.readText()) }.getOrElse {
+            // Log once and start fresh: rewriting the file keeps the warning from
+            // repeating on every launch.
+            AppLogger.w("CloudView", "Unable to read saved chapter view reports; starting fresh", it)
+            records.clear()
+            persist()
+            return
         }
         records.clear()
-        records += decoded.mapNotNull { it.toRecord() }
-    }
-
-    private data class StoredCloudView(
-        val site: String? = null,
-        val novelKey: String? = null,
-        val novelId: String? = null,
-        val novelUrl: String? = null,
-        val chapterKey: String? = null,
-        val chapterUrl: String? = null,
-        val reported: Boolean? = null,
-        val updatedAt: Long? = null,
-        val account: String? = null
-    ) {
-        fun toRecord(): CloudViewRecord? {
-            val accountScope = account?.trim().orEmpty()
-            val siteName = site?.trim().orEmpty()
-            val novel = novelKey?.trim().orEmpty()
-            val chapter = chapterKey?.trim().orEmpty()
-            if (accountScope.isBlank() || siteName.isBlank() || novel.isBlank() || chapter.isBlank()) return null
-            return CloudViewRecord(
-                site = siteName,
-                novelKey = novel,
-                novelId = novelId.orEmpty(),
-                novelUrl = novelUrl.orEmpty(),
-                chapterKey = chapter,
-                chapterUrl = chapterUrl.orEmpty(),
-                reported = reported == true,
-                updatedAt = updatedAt ?: 0L,
-                account = accountScope,
-                // Generations are process-local; persisted values cannot be compared
-                // with counters created after the app restarts.
-                generation = 0
-            )
+        records += decoded.records
+        if (decoded.discarded > 0) {
+            AppLogger.i("CloudView", "Dropped ${decoded.discarded} saved chapter view reports with missing fields")
+            persist()
         }
     }
 
@@ -248,13 +221,99 @@ internal class CloudViewReportStore(private val file: File?) {
         val target = file ?: return
         runCatching {
             target.parentFile?.mkdirs()
+            val json = CloudViewReportCodec.encode(records)
             val temporary = File(target.parentFile, "${target.name}.tmp")
-            temporary.writeText(gson.toJson(records))
+            temporary.writeText(json)
             if (!temporary.renameTo(target)) {
-                target.writeText(gson.toJson(records))
+                target.writeText(json)
                 temporary.delete()
             }
         }.onFailure { AppLogger.w("CloudView", "Unable to save chapter view reports", it) }
+    }
+}
+
+/**
+ * Wire form of one pending report in `cloud_view_reports.json`. Reading and
+ * writing both go through this class, and every field has a fixed
+ * [SerializedName], so the JSON keys stay the same in R8-minified release builds
+ * (see the matching keep rule in proguard-rules.pro). All fields are nullable
+ * with defaults: a record missing a required field is dropped instead of failing
+ * the whole file.
+ */
+internal data class StoredCloudView(
+    @SerializedName("site") val site: String? = null,
+    @SerializedName("novelKey") val novelKey: String? = null,
+    @SerializedName("novelId") val novelId: String? = null,
+    @SerializedName("novelUrl") val novelUrl: String? = null,
+    @SerializedName("chapterKey") val chapterKey: String? = null,
+    @SerializedName("chapterUrl") val chapterUrl: String? = null,
+    @SerializedName("reported") val reported: Boolean? = null,
+    @SerializedName("updatedAt") val updatedAt: Long? = null,
+    @SerializedName("account") val account: String? = null
+) {
+    fun toRecord(): CloudViewRecord? {
+        val accountScope = account?.trim().orEmpty()
+        val siteName = site?.trim().orEmpty()
+        val novel = novelKey?.trim().orEmpty()
+        val chapter = chapterKey?.trim().orEmpty()
+        if (accountScope.isBlank() || siteName.isBlank() || novel.isBlank() || chapter.isBlank()) return null
+        return CloudViewRecord(
+            site = siteName,
+            novelKey = novel,
+            novelId = novelId.orEmpty(),
+            novelUrl = novelUrl.orEmpty(),
+            chapterKey = chapter,
+            chapterUrl = chapterUrl.orEmpty(),
+            reported = reported == true,
+            updatedAt = updatedAt ?: 0L,
+            account = accountScope,
+            // Generations are process-local; persisted values cannot be compared
+            // with counters created after the app restarts.
+            generation = 0
+        )
+    }
+
+    companion object {
+        fun from(record: CloudViewRecord) = StoredCloudView(
+            site = record.site,
+            novelKey = record.novelKey,
+            novelId = record.novelId,
+            novelUrl = record.novelUrl,
+            chapterKey = record.chapterKey,
+            chapterUrl = record.chapterUrl,
+            reported = record.reported,
+            updatedAt = record.updatedAt,
+            account = record.account
+        )
+    }
+}
+
+internal data class DecodedCloudViews(val records: List<CloudViewRecord>, val discarded: Int)
+
+/**
+ * Release 0.2.5 and earlier wrote [CloudViewRecord] directly, so a minified build
+ * saved obfuscated keys (`a`, `b`, ...). Those entries lack the required fields
+ * and are discarded one by one; text that is not a JSON array throws.
+ */
+internal object CloudViewReportCodec {
+    private val gson = Gson()
+
+    fun encode(records: List<CloudViewRecord>): String =
+        gson.toJson(records.map(StoredCloudView::from).toTypedArray())
+
+    fun decode(text: String): DecodedCloudViews {
+        val array = JsonParser.parseString(text).asJsonArray
+        var discarded = 0
+        val records = array.mapNotNull { element ->
+            val record = if (element.isJsonObject) {
+                runCatching { gson.fromJson(element, StoredCloudView::class.java)?.toRecord() }.getOrNull()
+            } else {
+                null
+            }
+            if (record == null) discarded++
+            record
+        }
+        return DecodedCloudViews(records, discarded)
     }
 }
 

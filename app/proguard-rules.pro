@@ -113,3 +113,12 @@
 
 # Reader name replacement rules persist their JSON field names.
 -keep class com.breakyuna.esjzone.data.settings.ReaderSettingsDataStore$NameReplaceRuleJson { *; }
+
+# Pending website view reports (cloud_view_reports.json) are read and written by
+# Gson only through this DTO. Keep its constructors and fields so R8 full mode
+# neither strips the fields nor turns the class abstract; the JSON keys come
+# from @SerializedName.
+-keep class com.breakyuna.esjzone.network.features.StoredCloudView {
+    <init>(...);
+    <fields>;
+}
