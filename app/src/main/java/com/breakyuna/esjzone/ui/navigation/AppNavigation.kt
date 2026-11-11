@@ -493,6 +493,9 @@ internal fun LegacyRoute.restore(): AppDestination? = when (this) {
         token == SettingsPage.key || token.endsWith(".SettingsPage") -> SettingsPage
         token == com.breakyuna.esjzone.ui.page.ReaderBackgroundPage.key -> com.breakyuna.esjzone.ui.page.ReaderBackgroundPage
         token == ReadingStatisticsPage.key || token.endsWith(".ReadingStatisticsPage") -> ReadingStatisticsPage
+        token == com.breakyuna.esjzone.ui.page.SystemMessagesPage.key -> com.breakyuna.esjzone.ui.page.SystemMessagesPage
+        token == com.breakyuna.esjzone.ui.page.MemberRepliesPage.key -> com.breakyuna.esjzone.ui.page.MemberRepliesPage
+        token == com.breakyuna.esjzone.ui.page.ExperienceRecordsPage.key -> com.breakyuna.esjzone.ui.page.ExperienceRecordsPage
         token == HomeTab.key -> HomeTab
         token == ProfileTab.key -> ProfileTab
         token == ForumPage.key || token.endsWith(".ForumPage") -> ForumPage

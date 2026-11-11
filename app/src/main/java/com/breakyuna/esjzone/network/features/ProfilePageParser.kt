@@ -70,3 +70,29 @@ internal fun profileLevel(document: Document): String? =
         .mapNotNull { PROFILE_LEVEL_PATTERN.find(it)?.groupValues?.getOrNull(1) }
         .map { it.replace(Regex("\\s+"), " ").trim() }
         .firstOrNull()
+
+private val PROFILE_REGISTER_DATE_PREFIX = Regex("^\\s*(?:註冊|注册)日期\\s*[：:]?\\s*")
+private val PROFILE_EXPERIENCE_PROGRESS = Regex("([\\d,]+)\\s*/\\s*([\\d,]+)")
+
+/** `<span>註冊日期 2026-08-07</span>` inside the member card; label and date share one text node. */
+internal fun profileRegisterDate(document: Document): String? =
+    document.select("div.user-data > span, .user-data span")
+        .firstOrNull { PROFILE_REGISTER_DATE_PREFIX.containsMatchIn(it.ownText()) }
+        ?.text()
+        ?.replace(PROFILE_REGISTER_DATE_PREFIX, "")
+        ?.trim()
+        ?.takeIf(String::isNotBlank)
+
+/**
+ * Experience needed for the next level from the card tooltip, for example
+ * `F級 Lv3：16122/30000`. Bootstrap moves `title` into `data-original-title`
+ * once the tooltip initializes, so the server HTML may carry either attribute.
+ */
+internal fun profileExperienceRequired(document: Document): Int? =
+    document.select("div.user-cover .info-label, .user-cover .info-label")
+        .asSequence()
+        .flatMap { sequenceOf(it.attr("data-original-title"), it.attr("title"), it.attr("data-bs-original-title")) }
+        .filter(String::isNotBlank)
+        .mapNotNull { PROFILE_EXPERIENCE_PROGRESS.find(it)?.groupValues?.getOrNull(2) }
+        .mapNotNull { it.replace(",", "").toIntOrNull() }
+        .firstOrNull { it > 0 }
