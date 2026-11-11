@@ -1031,6 +1031,7 @@
     <string name="member_reply_chapter_notice">这条回复位于章节页。为避免改写网站观看记录，应用不会以登录状态打开该章节；可以前往作品页或复制链接。</string>
     <string name="member_reply_open_novel">前往作品页</string>
     <string name="member_reply_copy_link">复制链接</string>
+    <string name="member_reply_copy">复制回复</string>
     <string name="member_experience_value">%1$s exp</string>
     <string name="member_experience_records_end">已显示全部 %1$d 条</string>
 </resources>

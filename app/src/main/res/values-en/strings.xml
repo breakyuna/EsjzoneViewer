@@ -1030,6 +1030,7 @@
     <string name="member_reply_chapter_notice">This reply is on a chapter page. To keep your site watch history unchanged, the app does not open that chapter while signed in. You can open the novel page or copy the link.</string>
     <string name="member_reply_open_novel">Open novel</string>
     <string name="member_reply_copy_link">Copy link</string>
+    <string name="member_reply_copy">Copy reply</string>
     <string name="member_experience_value">%1$s exp</string>
     <string name="member_experience_records_end">All %1$d records shown</string>
 </resources>

@@ -6,6 +6,8 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.widget.Toast
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -46,6 +48,9 @@ import com.breakyuna.esjzone.novellibrary.user.ExperienceRecord
 import com.breakyuna.esjzone.novellibrary.user.ExperienceRecordType
 import com.breakyuna.esjzone.novellibrary.user.MemberReply
 import com.breakyuna.esjzone.novellibrary.user.SystemMessage
+import com.breakyuna.esjzone.novellibrary.user.copyText
+import com.breakyuna.esjzone.ui.component.SelectableProse
+import com.breakyuna.esjzone.ui.component.copyPlainText
 import com.breakyuna.esjzone.ui.designsystem.AppShapes
 import com.breakyuna.esjzone.ui.designsystem.AppSpacing
 import com.breakyuna.esjzone.ui.designsystem.AppTypography
@@ -282,19 +287,30 @@ private fun MemberFailureState(failure: LoadFailureKind, onRetry: () -> Unit) {
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun MemberCard(onClick: (() -> Unit)? = null, content: @Composable () -> Unit) {
+private fun MemberCard(
+    onClick: (() -> Unit)? = null,
+    onLongClick: (() -> Unit)? = null,
+    onLongClickLabel: String? = null,
+    content: @Composable () -> Unit
+) {
     val inner: @Composable () -> Unit = {
         Column(
             Modifier.fillMaxWidth().padding(AppSpacing.lg),
             verticalArrangement = Arrangement.spacedBy(AppSpacing.xs)
         ) { content() }
     }
-    if (onClick != null) {
-        Surface(onClick = onClick, shape = AppShapes.standard, color = MaterialTheme.colorScheme.surface, content = inner)
+    val modifier = if (onClick != null || onLongClick != null) {
+        Modifier.combinedClickable(
+            onClick = { onClick?.invoke() },
+            onLongClickLabel = onLongClickLabel,
+            onLongClick = onLongClick
+        )
     } else {
-        Surface(shape = AppShapes.standard, color = MaterialTheme.colorScheme.surface, content = inner)
+        Modifier
     }
+    Surface(modifier = modifier, shape = AppShapes.standard, color = MaterialTheme.colorScheme.surface, content = inner)
 }
 
 @Composable
@@ -311,14 +327,30 @@ private fun MetaText(text: String) {
 @Composable
 private fun SystemMessageRow(message: SystemMessage) {
     MemberCard {
-        Text(message.title, style = AppTypography.bodyMedium)
-        message.time?.let { MetaText(it) }
+        // The row has no other gesture, so the title and time can share one selection.
+        SelectableProse {
+            Column(verticalArrangement = Arrangement.spacedBy(AppSpacing.xs)) {
+                Text(message.title, style = AppTypography.bodyMedium)
+                message.time?.let { MetaText(it) }
+            }
+        }
     }
 }
 
 @Composable
 private fun MemberReplyRow(reply: MemberReply, onClick: () -> Unit) {
-    MemberCard(onClick = onClick) {
+    val context = LocalContext.current
+    val copyLabel = stringResource(R.string.member_reply_copy)
+    // The row opens a dialog on tap, so in-place selection would steal that click.
+    // Long press copies the full reply; the dialog wraps the body in SelectableProse.
+    MemberCard(
+        onClick = onClick,
+        onLongClickLabel = copyLabel,
+        onLongClick = {
+            val text = reply.copyText()
+            if (text.isNotBlank()) copyPlainText(context, copyLabel, text)
+        }
+    ) {
         Text(
             reply.content.ifBlank { stringResource(R.string.member_reply_no_content) },
             style = AppTypography.bodyMedium,
@@ -341,7 +373,9 @@ private fun MemberReplyDialog(reply: MemberReply, onDismiss: () -> Unit, onOpenN
         title = { Text(reply.subject ?: stringResource(R.string.member_replies)) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(AppSpacing.sm)) {
-                Text(reply.content, style = AppTypography.bodyMedium)
+                SelectableProse {
+                    Text(reply.content, style = AppTypography.bodyMedium)
+                }
                 Text(
                     stringResource(R.string.member_reply_chapter_notice),
                     style = AppTypography.bodySmall,
@@ -358,7 +392,7 @@ private fun MemberReplyDialog(reply: MemberReply, onDismiss: () -> Unit, onOpenN
             Row {
                 if (reply.url.isNotBlank()) {
                     TextButton(onClick = {
-                        copyPlainText(context, reply.url)
+                        copyReplyLink(context, reply.url)
                         Toast.makeText(context, copiedMessage, Toast.LENGTH_SHORT).show()
                         onDismiss()
                     }) { Text(stringResource(R.string.member_reply_copy_link)) }
@@ -369,7 +403,7 @@ private fun MemberReplyDialog(reply: MemberReply, onDismiss: () -> Unit, onOpenN
     )
 }
 
-private fun copyPlainText(context: Context, text: String) {
+private fun copyReplyLink(context: Context, text: String) {
     val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager ?: return
     clipboard.setPrimaryClip(ClipData.newPlainText("ESJ reply link", text))
 }
@@ -377,24 +411,29 @@ private fun copyPlainText(context: Context, text: String) {
 @Composable
 private fun ExperienceRecordRow(record: ExperienceRecord) {
     MemberCard {
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Text(
-                record.note ?: record.time.orEmpty(),
-                style = AppTypography.bodyMedium,
-                modifier = Modifier.weight(1f),
-                maxLines = 3,
-                overflow = TextOverflow.Ellipsis
-            )
-            record.exp?.let {
-                Text(
-                    stringResource(R.string.member_experience_value, it),
-                    style = AppTypography.labelLarge,
-                    color = MaterialTheme.colorScheme.primary
-                )
+        // The row has no other gesture; note, exp, time and extras share one selection.
+        SelectableProse {
+            Column(verticalArrangement = Arrangement.spacedBy(AppSpacing.xs)) {
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        record.note ?: record.time.orEmpty(),
+                        style = AppTypography.bodyMedium,
+                        modifier = Modifier.weight(1f),
+                        maxLines = 3,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    record.exp?.let {
+                        Text(
+                            stringResource(R.string.member_experience_value, it),
+                            style = AppTypography.labelLarge,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                }
+                if (record.note != null) record.time?.let { MetaText(it) }
+                record.extras.forEach { MetaText(it) }
             }
         }
-        if (record.note != null) record.time?.let { MetaText(it) }
-        record.extras.forEach { MetaText(it) }
     }
 }
 
