@@ -31,7 +31,7 @@ class ReaderUnderlinesTest {
         val merged = ReaderUnderlines.update(listOf(saved), mark(2, 5), false)
         assertEquals(info, merged.single().info)
         val restored = ReaderUnderlines.decode(ReaderUnderlines.encode(merged))
-        assertEquals(merged, restored.fold(emptyList()) { rows, row -> ReaderUnderlines.update(rows, row, false) })
+        assertEquals(merged, restored.fold(emptyList<ReaderUnderline>()) { rows, row -> ReaderUnderlines.update(rows, row, false) })
         val legacy = ReaderUnderlines.decode("[{\"blockIndex\":0,\"signature\":\"$signature\",\"start\":1,\"end\":3}]").single()
         assertNull(legacy.info)
     }
