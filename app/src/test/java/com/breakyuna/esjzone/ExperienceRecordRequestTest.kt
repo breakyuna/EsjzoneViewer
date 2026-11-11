@@ -98,8 +98,10 @@ class ExperienceRecordRequestTest {
     }
 
     @Test fun rejectedTokenDoesNotBecomeAnEmptyRecordList() {
+        val requests = mutableListOf<Request>()
         val client = OkHttpClient.Builder().addInterceptor { chain ->
             val request = chain.request()
+            requests += request
             val body = if (request.url.encodedPath == "/my/record") {
                 "<JinJing>fixture-token</JinJing>"
             } else {
@@ -113,5 +115,7 @@ class ExperienceRecordRequestTest {
                 EsjzoneClient.getExperienceRecords(authorization, ExperienceRecordType.POST, 0)
             }
         }
+        // One fresh token and one repeat after the first status 301, then failure.
+        assertEquals(listOf("POST", "GET", "POST", "GET"), requests.map { it.method })
     }
 }

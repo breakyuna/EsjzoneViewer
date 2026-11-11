@@ -1018,6 +1018,10 @@
     <string name="member_system_messages_empty">No system messages</string>
     <string name="member_replies_empty">No replies yet</string>
     <string name="member_experience_records_empty">No experience records in this category</string>
+    <string name="member_experience_records_slow_hint">The site can take up to half a minute to look up experience records. Please wait.</string>
+    <string name="member_experience_records_timeout_title">The site is responding slowly</string>
+    <string name="member_experience_records_timeout_message">The site didn\'t return experience records in time. Try again later.</string>
+    <string name="member_experience_records_timeout_compact">The site is responding slowly. Try again later.</string>
     <string name="member_experience_type_post">Posts</string>
     <string name="member_experience_type_message">Messages</string>
     <string name="member_experience_type_comment">Comments</string>

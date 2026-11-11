@@ -10,6 +10,7 @@ import com.breakyuna.esjzone.network.PageKind
 import com.breakyuna.esjzone.network.PageResponsePolicy
 import com.breakyuna.esjzone.network.PageValidation
 import com.breakyuna.esjzone.network.UntrustedPageException
+import com.breakyuna.esjzone.network.pageRequestCancellation
 import com.breakyuna.esjzone.network.readTextBounded
 import com.breakyuna.esjzone.novellibrary.user.ExperienceRecord
 import com.breakyuna.esjzone.novellibrary.user.ExperienceRecordPage
@@ -28,6 +29,10 @@ import org.jsoup.Jsoup
 import org.jsoup.nodes.Document
 import org.jsoup.nodes.Element
 import java.io.IOException
+import java.io.InterruptedIOException
+import java.util.Collections
+import java.util.IdentityHashMap
+import kotlinx.coroutines.CancellationException
 
 /** The experience endpoint answered, but not with a usable `status: 200` payload. */
 internal class ExperienceRecordException(message: String) : IOException(message)
@@ -78,6 +83,15 @@ fun EsjzoneClient.getMemberReplies(
  * Loads one page of `/inc/mem_record_data.php`, the bootstrap-table data source
  * behind `/my/record`. As in the site's table script, each request first obtains
  * a fresh token from the member page and sends it in the Authorization header.
+ *
+ * The signed-in query can take tens of seconds before the server answers, so the
+ * data request uses [EsjzoneClient.memberRecordClient] instead of the shared
+ * budget. When called inside a cancellable page request, cancelling the caller
+ * cancels the OkHttp call itself rather than leaving a slow query running.
+ *
+ * A JSON `status: 301` is the site's rejected-token answer. The token is fetched
+ * again and the request repeated once, matching the forum table; a second 301
+ * is a failure.
  */
 fun EsjzoneClient.getExperienceRecords(
     authorization: Authorization,
@@ -88,9 +102,34 @@ fun EsjzoneClient.getExperienceRecords(
     val base = authorization.memberBase()
     val referer = EsjzoneUrls.resolve("/my/record", base)
     val url = experienceRecordUrl(base, type, offset, limit)
+    var body = requestExperienceRecords(authorization, url, referer, experienceRecordToken(authorization, referer))
+    if (experienceRecordStatus(body) == "301") {
+        checkRecordRequestActive()
+        body = requestExperienceRecords(authorization, url, referer, experienceRecordToken(authorization, referer))
+    }
+    return parseExperienceRecordPage(body)
+}
+
+private fun EsjzoneClient.experienceRecordToken(authorization: Authorization, referer: String): String {
     val token = requestAuthToken(authorization, referer)
-        .takeIf { it.isNotBlank() }
+    checkRecordRequestActive()
+    return token.takeIf { it.isNotBlank() }
         ?: throw ExperienceRecordException("Experience record authorization token unavailable")
+}
+
+private fun checkRecordRequestActive() {
+    if (pageRequestCancellation.get()?.isCancelled() == true) {
+        throw CancellationException("Experience record request cancelled")
+    }
+}
+
+/** Performs one data request and returns its body after transport and session checks. */
+private fun EsjzoneClient.requestExperienceRecords(
+    authorization: Authorization,
+    url: String,
+    referer: String,
+    token: String
+): String {
     val request = Request.Builder()
         .url(url)
         .get()
@@ -100,21 +139,45 @@ fun EsjzoneClient.getExperienceRecords(
         .header("X-Requested-With", "XMLHttpRequest")
         .header("Authorization", token)
         .build()
-    val client = authenticatedClient(authorization).newBuilder()
-        .followRedirects(false)
-        .build()
+    val call = memberRecordClient(authorization).newCall(request)
+    val cancellation = pageRequestCancellation.get()
+    cancellation?.attach(call)
     val (code, body) = try {
-        client.newCall(request).execute().use { it.code to it.body?.readTextBounded().orEmpty() }
+        call.execute().use { it.code to it.body?.readTextBounded().orEmpty() }
     } catch (error: IOException) {
+        if (cancellation?.isCancelled() == true) throw CancellationException("Experience record request cancelled")
         throw NetworkRequestException(url, error)
+    } finally {
+        cancellation?.detachCall()
     }
+    checkRecordRequestActive()
     val looksLikeJson = body.trimStart().startsWith("{")
     if (code in 300..399 || (!looksLikeJson && PageResponsePolicy.looksLikeBlockedOrLoginPage(body))) {
         // A redirect from an XHR endpoint is the site's expired-session answer.
         throw UntrustedPageException(url, PageValidation(false, if (code in 300..399) "login page" else "login or block page"))
     }
     if (code !in 200..299) throw NetworkHttpException(url, code)
-    return parseExperienceRecordPage(body)
+    return body
+}
+
+/** The application-level `status` of a table response, or null when it is not a JSON object. */
+internal fun experienceRecordStatus(body: String): String? {
+    val root = runCatching { recordJson.parseToJsonElement(body.trim()) }.getOrNull() as? JsonObject
+        ?: return null
+    return (root["status"] as? JsonPrimitive)?.content?.trim()
+}
+
+/** True when a load failed because the site did not answer within the request budget. */
+internal fun Throwable.isRequestTimeout(): Boolean {
+    val seen = Collections.newSetFromMap(IdentityHashMap<Throwable, Boolean>())
+    var current: Throwable? = this
+    while (current != null && seen.add(current)) {
+        // SocketTimeoutException is a subclass; OkHttp's call timeout throws a plain
+        // InterruptedIOException("timeout").
+        if (current is InterruptedIOException) return true
+        current = current.cause
+    }
+    return false
 }
 
 internal fun experienceRecordUrl(

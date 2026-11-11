@@ -1019,6 +1019,10 @@
     <string name="member_system_messages_empty">暂无系统消息</string>
     <string name="member_replies_empty">暂无回复</string>
     <string name="member_experience_records_empty">该类别暂无经验记录</string>
+    <string name="member_experience_records_slow_hint">网站查询经验记录较慢，可能需要半分钟左右，请稍候</string>
+    <string name="member_experience_records_timeout_title">网站响应较慢</string>
+    <string name="member_experience_records_timeout_message">网站没有在限定时间内返回经验记录，请稍后重试</string>
+    <string name="member_experience_records_timeout_compact">网站响应较慢，请稍后重试</string>
     <string name="member_experience_type_post">发文</string>
     <string name="member_experience_type_message">留言</string>
     <string name="member_experience_type_comment">评论</string>
