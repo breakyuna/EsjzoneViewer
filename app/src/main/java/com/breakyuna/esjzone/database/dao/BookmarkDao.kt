@@ -22,8 +22,11 @@ interface BookmarkDao {
     @Query("SELECT * FROM bookmarks ORDER BY created_at DESC")
     fun observeAll(): Flow<List<Bookmark>>
 
-    @Query("SELECT * FROM bookmarks WHERE chapter_url = :chapterUrl LIMIT 1")
+    @Query("SELECT * FROM bookmarks WHERE chapter_url = :chapterUrl ORDER BY created_at DESC LIMIT 1")
     fun findByChapterUrl(chapterUrl: String): Bookmark?
+
+    @Query("SELECT * FROM bookmarks WHERE chapter_url = :chapterUrl ORDER BY created_at DESC")
+    fun forChapter(chapterUrl: String): List<Bookmark>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     fun insertRaw(bookmark: Bookmark)
@@ -31,8 +34,8 @@ interface BookmarkDao {
     @Transaction
     fun insert(bookmark: Bookmark) {
         val name = validNovelTitle(bookmark.novelName, bookmark.novelId, bookmark.chapterUrl, bookmark.chapterName)
-            .ifBlank { findByChapterUrl(bookmark.chapterUrl)?.let {
-                validNovelTitle(it.novelName, it.novelId, it.chapterUrl, it.chapterName)
+            .ifBlank { forChapter(bookmark.chapterUrl).firstNotNullOfOrNull {
+                validNovelTitle(it.novelName, it.novelId, it.chapterUrl, it.chapterName).takeIf(String::isNotBlank)
             }.orEmpty() }
         insertRaw(bookmark.copy(novelName = name))
     }
@@ -50,6 +53,4 @@ interface BookmarkDao {
     @Delete
     fun deleteAll(bookmarks: List<Bookmark>)
 
-    @Query("DELETE FROM bookmarks WHERE chapter_url = :chapterUrl")
-    fun deleteByChapterUrl(chapterUrl: String)
 }

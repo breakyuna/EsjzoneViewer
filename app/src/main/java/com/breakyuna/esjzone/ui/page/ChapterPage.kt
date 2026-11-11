@@ -11,6 +11,7 @@ import android.content.Intent
 import android.net.Uri
 import android.os.BatteryManager
 import androidx.activity.compose.BackHandler
+import androidx.room.withTransaction
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -105,6 +106,7 @@ import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
@@ -178,8 +180,9 @@ import com.breakyuna.esjzone.novellibrary.novel.Chapter
 import com.breakyuna.esjzone.novellibrary.novel.FavoriteNovel
 import com.breakyuna.esjzone.domain.reader.ReaderBlock
 import com.breakyuna.esjzone.domain.reader.ReaderUnderline
+import com.breakyuna.esjzone.domain.reader.ReaderUnderlineInfo
 import com.breakyuna.esjzone.domain.reader.ReaderUnderlines
-import com.breakyuna.esjzone.ui.reader.renderedReaderText
+import com.breakyuna.esjzone.ui.reader.readerUnderlinePosition
 import com.breakyuna.esjzone.ui.reader.readerDisplayOffsets
 import com.breakyuna.esjzone.ui.reader.readerLegacyUnderlineRenderings
 import com.breakyuna.esjzone.ui.reader.readerUnderlineQuote
@@ -236,7 +239,9 @@ class ChapterPage(
     private val chapterOrderComplete: Boolean = true,
     private val keepRequestedChapterOnRestore: Boolean = false,
     /** Saved bookmark paragraph; opens like a resume, without consulting local history. */
-    private val bookmarkAnchor: ReaderAnchor? = null
+    private val bookmarkAnchor: ReaderAnchor? = null,
+    /** Open a saved underline after its chapter body is available. */
+    private val initialUnderline: ReaderUnderline? = null
 ) : AppDestination {
 
     override val navKey = AppNavKey.Reader(
@@ -261,7 +266,8 @@ class ChapterPage(
         val underlineModel = rememberAppViewModel { ReaderUnderlinesModel() }
         val underlines by underlineModel.underlines.collectAsState()
         val underlineSelection = remember { ReaderUnderlineSelection() }
-        val readerBookmarks by underlineModel.bookmarks.collectAsState()
+        val bookmarkRows by underlineModel.bookmarks.collectAsState()
+        val readerBookmarks = bookmarkRows.orEmpty()
         val underlineFailureCount by underlineModel.state.collectAsState()
         val underlineContext = LocalContext.current
         val underlineFailureMessage = stringResource(R.string.reader_underline_failed)
@@ -342,10 +348,8 @@ class ChapterPage(
             mutableStateOf(false)
         }
         var showBrightness by rememberSaveable { mutableStateOf(false) }
-        var isBookmarked by rememberSaveable { mutableStateOf(false) }
-        var bookmarkStateUrl by remember { mutableStateOf<String?>(null) }
         var updatingBookmark by remember { mutableStateOf(false) }
-        var pendingBookmarkDesired by remember { mutableStateOf<Boolean?>(null) }
+        var bookmarkPicking by remember { mutableStateOf(false) }
 
         val readerTextStyle = readerBodyTextStyle(readerSettings)
 
@@ -498,11 +502,13 @@ class ChapterPage(
         var progressPreview by remember { mutableStateOf<ReaderBookLocation?>(null) }
         var progressReturnLocation by remember { mutableStateOf<ReaderBookLocation?>(null) }
         var pendingSeekLocation by remember { mutableStateOf<ReaderBookLocation?>(null) }
-        var pendingUnderline by remember { mutableStateOf<Pair<Chapter, ReaderUnderline>?>(null) }
+        var pendingUnderline by remember(chapter.url) {
+            mutableStateOf<Pair<Chapter, ReaderUnderline>?>(initialUnderline?.let { chapter to it })
+        }
         var pendingBookmark by remember { mutableStateOf<Pair<Chapter, ReaderAnchor>?>(null) }
-        // The bookmark row is keyed by chapter URL, so bind its anchor to this chapter's identity.
+        // Bind the saved anchor to the opened chapter's current identity.
         val initialBookmarkAnchor = remember(chapter.url) { bookmarkAnchor?.copy(chapterKey = chapterIdentity(chapter)) }
-        val fixedResume = searchHit != null || initialBookmarkAnchor != null
+        val fixedResume = searchHit != null || initialBookmarkAnchor != null || initialUnderline != null
         var resolvedResumeProgress by remember(chapter.url) { mutableStateOf(resumeChapterProgress ?: if (fixedResume) 0f else null) }
         var resolvedResumeAnchor by remember(chapter.url) { mutableStateOf(initialBookmarkAnchor ?: searchHit?.anchor) }
         var restoreLookupPending by remember(chapter.url) { mutableStateOf(!fixedResume && (restoreFromLocalHistory || resumeChapterProgress != null)) }
@@ -557,6 +563,7 @@ class ChapterPage(
         BackHandler {
             when {
                 sidePanels.isVisible -> sidePanels.close()
+                bookmarkPicking -> bookmarkPicking = false
                 showBrightness -> showBrightness = false
                 showReaderSettings -> showReaderSettings = false
                 showReaderContents -> showReaderContents = false
@@ -570,14 +577,19 @@ class ChapterPage(
         val chapterActivationOffset = with(density) { 56.dp.toPx().roundToInt() }
         val result = state as? ChapterPageModel.State.Result
         // Bookmark rows are observed, so adding or removing one redraws its marker at once.
-        val bookmarkedParagraphs = remember(readerBookmarks, result?.chapters) {
-            val anchors = readerBookmarks.associate { it.chapterUrl to it.anchor }
-            result?.chapters.orEmpty().filter { !it.requiresPassword }.mapNotNull { entry ->
-                val url = EsjzoneUrls.canonicalPageKey(entry.chapter.url).ifBlank { entry.chapter.url.trim() }
-                val key = chapterIdentity(entry.chapter)
-                com.breakyuna.esjzone.ui.reader.ReaderBookmarkMarker.paragraph(entry.document, key,
-                    ReaderAnchor.decode(anchors[url]))?.let { key to it }
-            }.toMap()
+        val bookmarkedParagraphs by produceState<Map<String, Set<Int>>>(emptyMap(), readerBookmarks, result?.chapters) {
+            val chapters = result?.chapters.orEmpty()
+            value = withContext(Dispatchers.Default) {
+                val anchors = readerBookmarks.groupBy(::bookmarkChapterIdentity)
+                chapters.filter { !it.requiresPassword }.mapNotNull { entry ->
+                    val key = chapterIdentity(entry.chapter)
+                    val paragraphs = anchors[key].orEmpty().mapNotNull { row ->
+                        com.breakyuna.esjzone.ui.reader.ReaderBookmarkMarker.paragraph(entry.document, key,
+                            ReaderAnchor.decode(row.anchor))
+                    }.toSet()
+                    paragraphs.takeIf { it.isNotEmpty() }?.let { key to it }
+                }.toMap()
+            }
         }
         var initialScrollPrimed by remember { mutableStateOf(false) }
         var entryContentRevealed by remember { mutableStateOf(false) }
@@ -854,23 +866,7 @@ class ChapterPage(
             }
         }
         val bookmarkChapter = activeChapter?.chapter ?: requestedChapter.value
-        val bookmarkChapterUrl = remember(bookmarkChapter.url) {
-            EsjzoneUrls.canonicalPageKey(bookmarkChapter.url)
-                .ifBlank { bookmarkChapter.url.trim() }
-        }
-        val currentBookmarkChapterUrl by rememberUpdatedState(bookmarkChapterUrl)
-        LaunchedEffect(bookmarkChapterUrl, updatingBookmark) {
-            if (updatingBookmark) return@LaunchedEffect
-            isBookmarked = withContext(Dispatchers.IO) {
-                runCatching {
-                    PresentationAccess.database.bookmarkDao().findByChapterUrl(bookmarkChapterUrl) != null
-                }.getOrElse { error ->
-                    AppLogger.w("ChapterPage", "Failed to load local bookmark state", error)
-                    false
-                }
-            }
-            bookmarkStateUrl = bookmarkChapterUrl
-        }
+        val bookmarkChapterUrl = remember(bookmarkChapter) { chapterIdentity(bookmarkChapter) }
 
         val isAtEndOfChapter = remember(displayByKey, activeChapter, scrollState, pagedMode,
             horizontalPagerState, pagerVisibleItem) {
@@ -918,6 +914,26 @@ class ChapterPage(
                 readerUnderlineQuote(document.blocks.getOrNull(range.blockIndex), range) {
                     readerDisplayOffsets(it, script, names)
                 }
+            }
+        }
+
+        fun underlineInfo(target: Chapter): ReaderUnderlineInfo {
+            val id = novelId.ifBlank { target.novelId() }
+            val title = com.breakyuna.esjzone.novellibrary.novel.validNovelTitle(
+                resolvedNovelName, id, novelUrl, target.name)
+            return ReaderUnderlineInfo(
+                novelId = id.takeIf(String::isNotBlank),
+                novelName = title.takeIf(String::isNotBlank),
+                novelUrl = novelUrl.takeIf(String::isNotBlank),
+                chapterName = target.name.takeIf(String::isNotBlank),
+                coverUrl = novelCoverUrl.takeIf { it.isNotBlank() && !it.startsWith("file:", ignoreCase = true) }
+            )
+        }
+
+        LaunchedEffect(underlines, result?.chapters, resolvedNovelName, novelId, novelUrl, novelCoverUrl) {
+            result?.chapters.orEmpty().filter { !it.requiresPassword }.forEach { entry ->
+                val key = chapterIdentity(entry.chapter)
+                if (!underlines[key].isNullOrEmpty()) underlineModel.rememberChapterInfo(key, underlineInfo(entry.chapter))
             }
         }
 
@@ -974,6 +990,19 @@ class ChapterPage(
             }
         }
         val measuredAnchor by measuredAnchorState
+        val bookmarkDocument = activeChapter?.takeIf {
+            sameReaderChapter(it.chapter, bookmarkChapter) && !it.requiresPassword
+        }?.document
+        val bookmarkParagraph = bookmarkDocument?.let { document ->
+            com.breakyuna.esjzone.ui.reader.ReaderBookmarkMarker.paragraph(document, bookmarkChapterUrl,
+                measuredAnchor?.takeIf { it.chapterKey == bookmarkChapterUrl })
+        }
+        val canBookmark = bookmarkRows != null && bookmarkChapter.url.isNotBlank() &&
+            bookmarkParagraph != null && !resumePending && pendingSeekLocation == null && !isProgrammaticScroll
+        val canChooseBookmark = bookmarkRows != null && result != null && scriptReady &&
+            !resumePending && pendingSeekLocation == null && !isProgrammaticScroll
+        val isBookmarked = bookmarkParagraph != null &&
+            bookmarkParagraph in bookmarkedParagraphs[bookmarkChapterUrl].orEmpty()
         // Observe the resulting progress, rather than every pixel of item geometry.
         val measuredChapterProgress by remember(measuredAnchorState, isAtEndOfChapter,
             activeChapter, pagedMode, pagerVisibleItem, displayByKey, scrollState) {
@@ -1245,65 +1274,71 @@ class ChapterPage(
             }
         }
 
-        fun toggleBookmark(desired: Boolean = !isBookmarked) {
-            val target = bookmarkChapter
-            if (updatingBookmark || bookmarkChapterUrl.isBlank() ||
-                bookmarkStateUrl != bookmarkChapterUrl || desired == isBookmarked) return
+        fun toggleBookmarkAt(target: Chapter, document: com.breakyuna.esjzone.domain.reader.ReaderChapterDocument,
+            visibleAnchor: ReaderAnchor) {
+            if (updatingBookmark || bookmarkRows == null || target.url.isBlank()) return
+            val targetKey = chapterIdentity(target)
+            val paragraph = com.breakyuna.esjzone.ui.reader.ReaderBookmarkMarker.paragraph(document, targetKey,
+                visibleAnchor.takeIf { it.chapterKey == targetKey }) ?: return
             val coverSource = novelCoverUrl.ifBlank { localHistoryPosition.value.novelCoverUrl }
             val currentNovelUrl = novelUrl.ifBlank { localHistoryPosition.value.novelUrl }
-            // Pin the paragraph at the top of the viewport or page; missing layout keeps a chapter-only bookmark.
-            val bookmarkDocument = activeChapter?.takeIf { sameReaderChapter(it.chapter, target) && !it.requiresPassword }?.document
-            val positionAnchor = if (desired && bookmarkDocument != null) {
-                measuredAnchor?.takeIf { it.chapterKey == chapterIdentity(target) }
-            } else null
-            val positionExcerpt = positionAnchor?.let { anchor ->
-                ReaderBookmarkPosition.excerpt(requireNotNull(bookmarkDocument), anchor, ::textOffsets)
-            }
+            // Preserve the visible offset within a text paragraph, including a long paragraph split over pages.
+            val positionAnchor = if (visibleAnchor.kind == "text" && visibleAnchor.blockIndex == paragraph) visibleAnchor
+                else ReaderAnchor(targetKey, document.contentFingerprint, paragraph)
+            val positionExcerpt = ReaderBookmarkPosition.excerpt(document, positionAnchor, ::textOffsets)
             // Acquire on the UI thread before launching, including callers from gestures.
             updatingBookmark = true
-            pendingBookmarkDesired = desired
+            bookmarkPicking = false
             scope.launch {
                 try {
-                    withContext(Dispatchers.IO) {
-                        val dao = PresentationAccess.database.bookmarkDao()
+                    val added = withContext(Dispatchers.IO) {
+                        val database = PresentationAccess.database
                         val finalNovelId = novelId.ifBlank { target.novelId() }
-                        if (!desired) {
-                            dao.deleteByChapterUrl(bookmarkChapterUrl)
-                        } else {
-                            dao.insert(
-                                com.breakyuna.esjzone.database.entity.Bookmark(
-                                    chapterUrl = bookmarkChapterUrl,
-                                    novelId = finalNovelId,
-                                    novelName = resolvedNovelName,
-                                    chapterName = target.name,
-                                    anchor = ReaderAnchor.encode(positionAnchor),
-                                    excerpt = positionExcerpt
+                        val added = database.withTransaction {
+                            val dao = database.bookmarkDao()
+                            val matches = dao.getAll().filter { row ->
+                                bookmarkChapterIdentity(row) == targetKey &&
+                                    com.breakyuna.esjzone.ui.reader.ReaderBookmarkMarker.paragraph(document,
+                                        targetKey, ReaderAnchor.decode(row.anchor)) == paragraph
+                            }
+                            if (matches.isNotEmpty()) {
+                                dao.deleteAll(matches)
+                                false
+                            } else {
+                                dao.insert(
+                                    com.breakyuna.esjzone.database.entity.Bookmark(
+                                        chapterUrl = targetKey,
+                                        novelId = finalNovelId,
+                                        novelName = resolvedNovelName,
+                                        chapterName = target.name,
+                                        anchor = ReaderAnchor.encode(positionAnchor),
+                                        excerpt = positionExcerpt
+                                    )
                                 )
-                            )
+                                true
+                            }
                         }
                         // Cover maintenance must not roll back a committed bookmark in the UI.
                         try {
-                            if (desired) {
+                            if (added) {
                                 com.breakyuna.esjzone.database.BookmarkCoverStore.saveCoverFromCacheOrDownload(
                                     novelId = finalNovelId,
                                     coverUrl = coverSource,
                                     novelUrl = currentNovelUrl,
-                                    chapterUrl = bookmarkChapterUrl
+                                    chapterUrl = targetKey
                                 )
                             } else {
-                                com.breakyuna.esjzone.database.BookmarkCoverStore.cleanupIfUnused(finalNovelId, bookmarkChapterUrl)
+                                com.breakyuna.esjzone.database.BookmarkCoverStore.cleanupIfUnused(finalNovelId, targetKey)
                             }
                         } catch (error: CancellationException) {
                             throw error
                         } catch (error: Exception) {
                             AppLogger.w("ChapterPage", "Failed to update local bookmark cover", error)
                         }
-                    }
-                    if (currentBookmarkChapterUrl == bookmarkChapterUrl) {
-                        isBookmarked = desired
+                        added
                     }
                     android.widget.Toast.makeText(context,
-                        if (desired) R.string.reader_bookmark_added else R.string.reader_bookmark_removed,
+                        if (added) R.string.reader_bookmark_added else R.string.reader_bookmark_removed,
                         android.widget.Toast.LENGTH_SHORT).show()
                 } catch (error: CancellationException) {
                     throw error
@@ -1312,10 +1347,16 @@ class ChapterPage(
                         android.widget.Toast.LENGTH_SHORT).show()
                     AppLogger.e("ChapterPage", "Failed to update local bookmark", error)
                 } finally {
-                    pendingBookmarkDesired = null
                     updatingBookmark = false
                 }
             }
+        }
+
+        fun toggleBookmark() {
+            if (!canBookmark) return
+            val document = bookmarkDocument ?: return
+            val anchor = measuredAnchor ?: return
+            toggleBookmarkAt(bookmarkChapter, document, anchor)
         }
         // Capture the reading account before asynchronous writes can outlive this screen.
         val readingBookshelfScope = remember(authorization) {
@@ -1463,16 +1504,20 @@ class ChapterPage(
         }
 
         var deferredResumeChapterKey by remember(requestedChapter.value.url) { mutableStateOf<String?>(null) }
-        LaunchedEffect(resolvedResumeProgress, restoreLookupPending, result?.chapters) {
+        LaunchedEffect(resolvedResumeProgress, restoreLookupPending, result?.chapters, pendingUnderline) {
             if (!resumePending || pendingSeekLocation != null) return@LaunchedEffect
             if (restoreLookupPending) return@LaunchedEffect
+            val current = result?.chapters?.firstOrNull {
+                sameReaderChapter(it.chapter, requestedChapter.value)
+            } ?: return@LaunchedEffect
+            if (initialUnderline != null && pendingUnderline != null) {
+                deferredResumeChapterKey = if (current.requiresPassword) chapterIdentity(current.chapter) else null
+                return@LaunchedEffect
+            }
             val restored = resolvedResumeProgress ?: run {
                 resumePending = false
                 return@LaunchedEffect
             }
-            val current = result?.chapters?.firstOrNull {
-                sameReaderChapter(it.chapter, requestedChapter.value)
-            } ?: return@LaunchedEffect
             // A password gate must not consume the saved anchor or enable history writes.
             pendingSeekLocation = current.resumeLocation(restored, resolvedResumeAnchor)?.let { location ->
                 // A changed body keeps the bookmarked paragraph index instead of the chapter start.
@@ -1496,6 +1541,7 @@ class ChapterPage(
             }.first { it }
             // The reader has chosen another chapter; allow its progress and paging controls.
             resumePending = false
+            if (initialUnderline != null) pendingUnderline = null
             deferredResumeChapterKey = null
         }
 
@@ -1505,23 +1551,13 @@ class ChapterPage(
             if (!scriptReady) return@LaunchedEffect
             val entry = result?.chapters?.firstOrNull { sameReaderChapter(it.chapter, target) }
                 ?: return@LaunchedEffect
-            val block = entry.document.blocks.getOrNull(mark.blockIndex)
-            val sourceLength = block?.sourceText()?.length ?: 0
-            val original = block != null && mark.signature == ReaderUnderlines.sourceSignature(block) &&
-                mark.end <= sourceLength
-            val rendered = block?.renderedReaderText(readerTextTransform)
-            val valid = original || block != null && rendered != null && mark.end <= rendered.length &&
-                ReaderUnderlines.signature(block, rendered) == mark.signature
-            val sourceStart = if (original) mark.start else block?.let { textOffsets(it)?.toSource(mark.start) } ?: mark.start
-            val anchor = if (valid) ReaderAnchor(chapterIdentity(target), entry.document.contentFingerprint,
-                mark.blockIndex, sourceStart) else null
-            val chapterProgress = anchor?.let { readerChapterProgress(entry.document, it) } ?: 0f
+            if (entry.requiresPassword) return@LaunchedEffect
+            val position = readerUnderlinePosition(entry.document, chapterIdentity(target), mark, readerTextTransform, ::textOffsets)
+            val chapterProgress = position.anchor?.let { readerChapterProgress(entry.document, it) } ?: 0f
             val location = readerBookLocationFor(target, chapterProgress, bookChapterOrder,
                 bookChapterIndices, progressTextIndex)
                 ?: ReaderBookLocation(target, -1, chapterProgress, bookChapterOrder.size)
-            pendingSeekLocation = location.copy(anchor = anchor,
-                contentPosition = if (!valid) null else if (original) mark.blockIndex + mark.start.toFloat() / sourceLength
-                    else mark.blockIndex + mark.start.toFloat() / rendered!!.length)
+            pendingSeekLocation = location.copy(anchor = position.anchor, contentPosition = position.contentPosition)
             pendingUnderline = null
         }
 
@@ -1530,8 +1566,8 @@ class ChapterPage(
             if (!scriptReady) return@LaunchedEffect
             val entry = result?.chapters?.firstOrNull { sameReaderChapter(it.chapter, target) }
                 ?: return@LaunchedEffect
-            pendingBookmark = null
             if (entry.requiresPassword) return@LaunchedEffect
+            pendingBookmark = null
             val targetKey = chapterIdentity(entry.chapter)
             val exact = saved.copy(chapterKey = targetKey).takeIf { it.matches(targetKey, entry.document) }
             val chapterProgress = readerChapterProgress(entry.document, saved)
@@ -1570,6 +1606,7 @@ class ChapterPage(
         }
 
         fun openTargetChapter(target: Chapter) {
+            bookmarkPicking = false
             positionRestoreFailed = false
             pendingUnderline = null
             pendingBookmark = null
@@ -1872,7 +1909,7 @@ class ChapterPage(
         ) {
         ReaderSidePanels(
             state = sidePanels,
-            gesturesEnabled = !pagedMode && readerInteractionEnabled && readerSettings.scrollSideGesturesEnabled,
+            gesturesEnabled = !bookmarkPicking && !pagedMode && readerInteractionEnabled && readerSettings.scrollSideGesturesEnabled,
             commentsEnabled = commentsAvailable,
             onOpening = { panel ->
                 dismissProgressPreview()
@@ -1923,11 +1960,11 @@ class ChapterPage(
                 imageSettings = imageBackground,
                 pagedGesturesEnabled = pagedMode && (pagingEnabled || pagedTurns.hasTurns),
                 verticalContentScrollable = pagerVisibleItem?.page?.isOversized == true,
-                bookmarkPullEnabled = !updatingBookmark && pagedMode && pagingEnabled && readerSettings.pagedBookmarkGesturesEnabled &&
-                    bookmarkStateUrl == bookmarkChapterUrl && pagerVisibleItem?.page?.isOversized == false,
+                bookmarkPullEnabled = !bookmarkPicking && !updatingBookmark && canBookmark && pagedMode && pagingEnabled && readerSettings.pagedBookmarkGesturesEnabled &&
+                    pagerVisibleItem?.page?.isOversized == false,
                 onBookmarkPull = { toggleBookmark() },
                 onReadingAreaTap = { xFraction, _ ->
-                    if (entryCoverVisible) return@ReaderShell
+                    if (entryCoverVisible || bookmarkPicking) return@ReaderShell
                     if (progressPreview != null) {
                         dismissProgressPreview()
                     } else {
@@ -2177,11 +2214,16 @@ class ChapterPage(
                                         blockStartIndex = item.ordinal - 1,
                                         underlineSelection = underlineSelection,
                                         chapterKey = item.chapterKey,
-                                        bookmarkedBlock = bookmarkedParagraphs[item.chapterKey],
+                                        bookmarkedBlocks = bookmarkedParagraphs[item.chapterKey].orEmpty(),
+                                        bookmarkPicking = bookmarkPicking,
+                                        onBookmarkSelect = { blockIndex, sourceOffset ->
+                                            toggleBookmarkAt(item.entry.chapter, item.entry.document,
+                                                ReaderAnchor(item.chapterKey, item.entry.document.contentFingerprint, blockIndex, sourceOffset))
+                                        },
                                         underlines = underlines[item.chapterKey].orEmpty(),
                                         onUnderline = { mark, remove ->
                                             underlineModel.update(item.chapterKey, mark, remove,
-                                                underlineQuote(item.entry.document))
+                                                underlineQuote(item.entry.document), underlineInfo(item.entry.chapter))
                                         },
                                         onTextLayout = { _, layout ->
                                             if (layout == null) textLayouts.remove(item.key)
@@ -2315,12 +2357,17 @@ class ChapterPage(
                                         page, readerSettings, readerTextStyle,
                                         readerContentColor, readerTextTransform,
                                         with(density) { pagination.heightPx.toDp() },
-                                        bookmarkedBlock = bookmarkedParagraphs[item.chapterKey],
+                                        bookmarkedBlocks = bookmarkedParagraphs[item.chapterKey].orEmpty(),
+                                        bookmarkPicking = bookmarkPicking,
+                                        onBookmarkSelect = { blockIndex, sourceOffset ->
+                                            toggleBookmarkAt(item.entry.chapter, item.entry.document,
+                                                ReaderAnchor(item.chapterKey, item.entry.document.contentFingerprint, blockIndex, sourceOffset))
+                                        },
                                         underlines = underlines[currentPagedDisplayItems.getOrNull(pageIndex)?.chapterKey].orEmpty(),
                                         onUnderline = { mark, remove ->
                                             currentPagedDisplayItems.getOrNull(pageIndex)?.let { item ->
                                                 underlineModel.update(item.chapterKey, mark, remove,
-                                                    underlineQuote(item.entry.document))
+                                                    underlineQuote(item.entry.document), underlineInfo(item.entry.chapter))
                                             }
                                         },
                                         highlights = currentPagedDisplayItems.getOrNull(pageIndex)?.let(::searchHighlights).orEmpty(),
@@ -2377,8 +2424,7 @@ class ChapterPage(
                             )
                         }
                     }
-                    if (pagedMode && bookmarkStateUrl == bookmarkChapterUrl &&
-                        (pendingBookmarkDesired ?: isBookmarked)) {
+                    if (pagedMode && isBookmarked) {
                         Icon(
                             imageVector = Icons.Filled.Bookmark,
                             contentDescription = stringResource(R.string.reader_bookmark_added),
@@ -2388,6 +2434,22 @@ class ChapterPage(
                                 .padding(top = pageTopPadding, end = 8.dp)
                                 .size(32.dp)
                         )
+                    }
+                    if (bookmarkPicking) {
+                        Surface(
+                            modifier = Modifier.align(Alignment.BottomCenter)
+                                .padding(start = 16.dp, end = 16.dp, bottom = pageBottomPadding + 12.dp)
+                                .widthIn(max = 480.dp).fillMaxWidth(),
+                            shape = AppShapes.pill,
+                            color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                            shadowElevation = 6.dp
+                        ) {
+                            Row(Modifier.padding(start = 16.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Text(stringResource(R.string.reader_pick_bookmark_hint), modifier = Modifier.weight(1f),
+                                    style = MaterialTheme.typography.labelLarge, maxLines = 2)
+                                TextButton(onClick = { bookmarkPicking = false }) { Text(stringResource(android.R.string.cancel)) }
+                            }
+                        }
                     }
                 }
             }
@@ -2601,12 +2663,12 @@ class ChapterPage(
                                     }
                                     Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
                                         ReaderToolButton(
-                                            contentDescription = stringResource(if (tool == ReaderTool.BOOKMARK && isBookmarked)
-                                                R.string.reader_remove_bookmark else tool.label()),
+                                            contentDescription = stringResource(if (tool == ReaderTool.BOOKMARK)
+                                                R.string.reader_pick_bookmark else tool.label()),
                                             icon = tool.icon(isBookmarked),
                                             selected = active,
                                             enabled = when (tool) {
-                                                ReaderTool.BOOKMARK -> !updatingBookmark && state is ChapterPageModel.State.Result && bookmarkStateUrl == bookmarkChapterUrl
+                                                ReaderTool.BOOKMARK -> !updatingBookmark && canChooseBookmark
                                                 ReaderTool.EYE_PROTECTION -> !customBackground
                                                 ReaderTool.COMMENTS -> commentsAvailable
                                                 ReaderTool.NOVEL_DETAIL -> detailUrl.isNotBlank()
@@ -2617,7 +2679,10 @@ class ChapterPage(
                                                 when (tool) {
                                                     ReaderTool.CONTENTS -> openReaderContents()
                                                     ReaderTool.SETTINGS -> openReaderSettings()
-                                                    ReaderTool.BOOKMARK -> toggleBookmark()
+                                                    ReaderTool.BOOKMARK -> {
+                                                        showToolbar = false
+                                                        bookmarkPicking = true
+                                                    }
                                                     ReaderTool.COMMENTS -> openReaderComments()
                                                     ReaderTool.NOVEL_DETAIL -> navigator.pushIfNotCurrent(
                                                         NovelPage(FavoriteNovel(resolvedNovelName, detailUrl), history)

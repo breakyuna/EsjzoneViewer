@@ -513,6 +513,44 @@ class GeneralDatabaseMigrationTest {
         }
     }
 
+    @Test
+    fun migration12To13PreservesOldBookmarksAndAllowsIndependentParagraphs() {
+        val name = "general-migration-v12-${System.nanoTime()}"
+        val anchor = com.breakyuna.esjzone.domain.reader.ReaderAnchor.encode(
+            com.breakyuna.esjzone.domain.reader.ReaderAnchor("/forum/1/1.html", "a".repeat(64), 3, 12))
+        createFixtureDatabase(name, 12) { sqlite ->
+            createVersion1Schema(sqlite)
+            listOf(GeneralDatabase.MIGRATION_1_2, GeneralDatabase.MIGRATION_2_3,
+                GeneralDatabase.MIGRATION_3_4, GeneralDatabase.MIGRATION_4_5,
+                GeneralDatabase.MIGRATION_5_6, GeneralDatabase.MIGRATION_6_7,
+                GeneralDatabase.MIGRATION_7_8, GeneralDatabase.MIGRATION_8_9,
+                GeneralDatabase.MIGRATION_9_10, GeneralDatabase.MIGRATION_10_11,
+                GeneralDatabase.MIGRATION_11_12).forEach { it.migrate(sqlite) }
+            insertBookmark(sqlite)
+            sqlite.execSQL("UPDATE bookmarks SET content_anchor = ?, excerpt = ? WHERE chapter_url = ?",
+                arrayOf<Any>(requireNotNull(anchor), "Saved paragraph", "https://example.test/chapter/bookmark"))
+        }
+        val database = openWithMigrations(name)
+        try {
+            val dao = database.bookmarkDao()
+            val old = dao.getAll().single()
+            assertEquals(anchor, old.anchor)
+            assertEquals("Saved paragraph", old.excerpt)
+            assertEquals(123L, old.createdAt)
+            assertTrue(old.id.isNotBlank())
+            val another = old.copy(id = "second-paragraph", anchor = com.breakyuna.esjzone.domain.reader.ReaderAnchor.encode(
+                com.breakyuna.esjzone.domain.reader.ReaderAnchor("/forum/1/1.html", "a".repeat(64), 7)),
+                excerpt = "Another paragraph", createdAt = 456L)
+            dao.insert(another)
+            assertEquals(setOf(old.id, another.id), dao.forChapter(old.chapterUrl).map { it.id }.toSet())
+            dao.delete(another)
+            assertEquals(listOf(old), dao.forChapter(old.chapterUrl))
+        } finally {
+            database.close()
+            ApplicationProvider.getApplicationContext<android.content.Context>().deleteDatabase(name)
+        }
+    }
+
     private fun createFixtureDatabase(
         databaseName: String,
         version: Int,
@@ -547,7 +585,7 @@ class GeneralDatabaseMigrationTest {
     ): GeneralDatabase {
         val context = ApplicationProvider.getApplicationContext<android.content.Context>()
         return Room.databaseBuilder(context, GeneralDatabase::class.java, databaseName)
-            .addMigrations(*migrations)
+            .addMigrations(*migrations, GeneralDatabase.MIGRATION_12_13)
             .build()
     }
 

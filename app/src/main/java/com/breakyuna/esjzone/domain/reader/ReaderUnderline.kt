@@ -11,8 +11,26 @@ import java.security.MessageDigest
  */
 data class ReaderUnderlineRange(val blockIndex: Int, val signature: String, val start: Int, val end: Int)
 
+/** Optional local display context; older marks may not have it. */
+data class ReaderUnderlineInfo(
+    val novelId: String? = null,
+    val novelName: String? = null,
+    val novelUrl: String? = null,
+    val chapterName: String? = null,
+    val coverUrl: String? = null
+) {
+    fun withFallback(previous: ReaderUnderlineInfo?): ReaderUnderlineInfo = ReaderUnderlineInfo(
+        novelId = novelId?.takeIf(String::isNotBlank) ?: previous?.novelId,
+        novelName = novelName?.takeIf(String::isNotBlank) ?: previous?.novelName,
+        novelUrl = novelUrl?.takeIf(String::isNotBlank) ?: previous?.novelUrl,
+        chapterName = chapterName?.takeIf(String::isNotBlank) ?: previous?.chapterName,
+        coverUrl = coverUrl?.takeIf(String::isNotBlank) ?: previous?.coverUrl
+    )
+}
+
 data class ReaderUnderline(val blockIndex: Int, val signature: String, val start: Int, val end: Int,
-    val quote: String? = null, val continuation: List<ReaderUnderlineRange>? = null) {
+    val quote: String? = null, val continuation: List<ReaderUnderlineRange>? = null,
+    val info: ReaderUnderlineInfo? = null) {
     fun ranges(): List<ReaderUnderlineRange> =
         listOf(ReaderUnderlineRange(blockIndex, signature, start, end)) + continuation.orEmpty()
 }
@@ -53,7 +71,7 @@ object ReaderUnderlines {
             val end = offsets.toSourceEnd(range.end)
             if (start < end) ReaderUnderlineRange(range.blockIndex, source, start, end) else range
         }
-        return fromRanges(ranges, mark.quote)
+        return fromRanges(ranges, mark.quote, mark.info)
     }
 
     /**
@@ -78,9 +96,17 @@ object ReaderUnderlines {
                 changed = true
                 ReaderUnderlineRange(range.blockIndex, source, start, end)
             }
-            fromRanges(ranges, mark.quote)
+            fromRanges(ranges, mark.quote, mark.info)
         }
-        return if (changed) migrated.distinct() else rows
+        if (!changed) return rows
+        val unique = LinkedHashMap<ReaderUnderline, ReaderUnderline>()
+        migrated.forEach { mark ->
+            val key = mark.copy(info = null)
+            val previous = unique[key]
+            unique[key] = if (previous == null) mark else previous.copy(
+                info = previous.info?.withFallback(mark.info) ?: mark.info)
+        }
+        return unique.values.toList()
     }
 
     /** True when any range still uses rendered-text offsets. */
@@ -148,10 +174,11 @@ object ReaderUnderlines {
         return result
     }
 
-    private fun fromRanges(ranges: List<ReaderUnderlineRange>, quote: String? = null): ReaderUnderline {
+    private fun fromRanges(ranges: List<ReaderUnderlineRange>, quote: String? = null,
+        info: ReaderUnderlineInfo? = null): ReaderUnderline {
         val first = ranges.first()
         return ReaderUnderline(first.blockIndex, first.signature, first.start, first.end, quote,
-            ranges.drop(1).takeIf { it.isNotEmpty() })
+            ranges.drop(1).takeIf { it.isNotEmpty() }, info)
     }
 
     /** [quoteText] returns the displayed text of one saved range. */
@@ -176,6 +203,8 @@ object ReaderUnderlines {
         val quotes = ranges.map(quoteText)
         val quote = if (quotes.all { it != null }) quotes.joinToString("\n")
             else marks.firstOrNull { it.ranges() == ranges && it.quote != null }?.quote
-        return remaining + fromRanges(ranges, quote)
+        val previousInfo = compatible.firstNotNullOfOrNull { it.info }
+        val info = selection.info?.withFallback(previousInfo) ?: previousInfo
+        return remaining + fromRanges(ranges, quote, info)
     }
 }

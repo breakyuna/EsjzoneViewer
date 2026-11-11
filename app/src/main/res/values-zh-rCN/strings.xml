@@ -580,6 +580,8 @@
     <string name="reader_open_novel_detail">返回书籍详情</string>
     <string name="reader_add_bookmark">添加本地书签</string>
     <string name="reader_remove_bookmark">移除本地书签</string>
+    <string name="reader_pick_bookmark">选择段落书签</string>
+    <string name="reader_pick_bookmark_hint">点击段落添加或取消书签</string>
     <string name="reader_preview_percent">已读本章 %1$d%%</string>
     <string name="reader_book_progress_percent">全书 %1$d%%</string>
     <string name="reader_progress_unavailable">目录加载完成后可使用全书进度</string>
@@ -606,7 +608,7 @@
     <string name="reader_password_failed">验证失败，请重试</string>
     <string name="reader_password_submit">验证</string>
     <string name="bookmarks">本地书签</string>
-    <string name="bookmarks_description">将章节保存在本机，方便快速访问</string>
+    <string name="bookmarks_description">将阅读位置保存在本机，方便快速访问</string>
     <string name="bookmarks_empty">暂时还没有本地书签</string>
     <string name="bookmark_remove">移除书签</string>
     <string name="bookmark_edit">编辑书签</string>
@@ -834,6 +836,13 @@
     <string name="reader_long_press_underline">长按划线</string>
     <string name="reader_underline_tab">划线</string>
     <string name="reader_underlines_empty">暂无划线</string>
+    <string name="reader_underline_unknown_chapter">未知章节</string>
+    <string name="underline_edit">编辑划线</string>
+    <string name="underline_select_all">全选划线</string>
+    <string name="underline_delete_selected">删除选中划线</string>
+    <string name="underline_delete_title">确认删除 %1$d 条划线？</string>
+    <string name="underline_delete_failed">删除所选划线失败，请重试。</string>
+    <string name="underline_load_failed">读取本地划线失败，请重试。</string>
     <string name="reader_underline_position">第 %1$d 段 · 第 %2$d–%3$d 字</string>
     <string name="reader_underlines">阅读划线</string>
     <string name="reader_remove_underline">取消划线</string>

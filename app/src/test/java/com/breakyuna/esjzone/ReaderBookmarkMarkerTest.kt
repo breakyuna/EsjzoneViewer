@@ -58,14 +58,16 @@ class ReaderBookmarkMarkerTest {
             ReaderPage(listOf(line(3, 18)), 3.5f),
             ReaderPage(listOf(line(3, 40), ReaderPageSegment.Gap(4.dp)), 3.8f)
         )
-        fun marked(block: Int?) = pages.mapIndexedNotNull { index, page ->
+        fun marked(blocks: Set<Int>) = pages.mapIndexedNotNull { index, page ->
             index.takeIf { page.segments.any { it is ReaderPageSegment.TextLine &&
-                ReaderBookmarkMarker.showsOn(it.blockIndex, it.startOffset, block) } }
+                ReaderBookmarkMarker.showsOn(it.blockIndex, it.startOffset, blocks) } }
         }
-        assertEquals(listOf(0), marked(3))
-        assertEquals(listOf(0), marked(0))
-        assertEquals(emptyList<Int>(), marked(null))
-        assertEquals(emptyList<Int>(), marked(5))
+        assertEquals(listOf(0), marked(setOf(3)))
+        assertEquals(listOf(0), marked(setOf(0, 3)))
+        assertTrue(ReaderBookmarkMarker.showsOn(0, 0, setOf(0, 3)))
+        assertTrue(ReaderBookmarkMarker.showsOn(3, 0, setOf(0, 3)))
+        assertEquals(emptyList<Int>(), marked(emptySet()))
+        assertEquals(emptyList<Int>(), marked(setOf(5)))
     }
 
     @Test fun ribbonStaysInTheMarginAndWithinTheFirstLineForAnyTypography() {

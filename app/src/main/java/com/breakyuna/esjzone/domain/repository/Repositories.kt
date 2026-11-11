@@ -100,7 +100,7 @@ interface HistoryRepository {
 
 interface BookmarkRepository {
     fun observe(): Flow<List<Bookmark>>
-    fun find(chapterUrl: String): Bookmark?
+    fun findForChapter(chapterUrl: String): List<Bookmark>
     fun add(bookmark: Bookmark)
     fun remove(bookmark: Bookmark)
 }

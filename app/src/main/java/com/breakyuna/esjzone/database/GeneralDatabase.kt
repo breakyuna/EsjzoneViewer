@@ -19,7 +19,7 @@ import com.breakyuna.esjzone.database.entity.ReadingStat
 
 @Database(
     entities = [Cache::class, SearchHistory::class, Bookmark::class, LocalReadingActivity::class, BookshelfEntry::class, ReadingStat::class, com.breakyuna.esjzone.database.entity.BookshelfGroup::class, com.breakyuna.esjzone.database.entity.BookshelfGroupMember::class],
-    version = 12,
+    version = 13,
     exportSchema = true
 )
 abstract class GeneralDatabase : RoomDatabase() {
@@ -39,6 +39,32 @@ abstract class GeneralDatabase : RoomDatabase() {
     abstract fun bookshelfGroupDao(): com.breakyuna.esjzone.database.dao.BookshelfGroupDao
 
     companion object {
+        val MIGRATION_12_13: Migration = object : Migration(12, 13) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL("""
+                    CREATE TABLE IF NOT EXISTS bookmarks_new (
+                        chapter_url TEXT NOT NULL,
+                        novel_id TEXT NOT NULL,
+                        novel_name TEXT NOT NULL,
+                        chapter_name TEXT NOT NULL,
+                        created_at INTEGER NOT NULL,
+                        content_anchor TEXT DEFAULT NULL,
+                        excerpt TEXT DEFAULT NULL,
+                        bookmark_id TEXT NOT NULL PRIMARY KEY
+                    )
+                """.trimIndent())
+                database.execSQL("""
+                    INSERT INTO bookmarks_new
+                        (chapter_url, novel_id, novel_name, chapter_name, created_at, content_anchor, excerpt, bookmark_id)
+                    SELECT chapter_url, novel_id, novel_name, chapter_name, created_at, content_anchor, excerpt,
+                        'legacy:' || chapter_url FROM bookmarks
+                """.trimIndent())
+                database.execSQL("DROP TABLE bookmarks")
+                database.execSQL("ALTER TABLE bookmarks_new RENAME TO bookmarks")
+                database.execSQL("CREATE INDEX IF NOT EXISTS index_bookmarks_chapter_url ON bookmarks(chapter_url)")
+            }
+        }
+
         val MIGRATION_11_12: Migration = object : Migration(11, 12) {
             override fun migrate(database: SupportSQLiteDatabase) {
                 // Existing chapter-only bookmarks keep NULL and open at the chapter start.

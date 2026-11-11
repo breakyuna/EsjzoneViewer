@@ -58,7 +58,13 @@ object LocalBackup {
 
     /** Older archives lack positions; an unreadable position falls back to the chapter start. */
     internal fun decodeBookmarks(element: com.google.gson.JsonElement): List<Bookmark> =
-        gson.fromJson(element, Array<Bookmark>::class.java).map { row ->
+        element.asJsonArray.map { item ->
+            // Gson bypasses Kotlin defaults for older archives without an id.
+            val fields = item.asJsonObject.deepCopy()
+            if (!fields.has("id") || fields["id"].isJsonNull || fields["id"].asString.isBlank()) {
+                fields.addProperty("id", java.util.UUID.randomUUID().toString())
+            }
+            val row = gson.fromJson(fields, Bookmark::class.java)
             val anchor = row.anchor?.takeIf { com.breakyuna.esjzone.domain.reader.ReaderAnchor.decode(it) != null }
             val excerpt = row.excerpt?.takeIf { anchor != null && it.isNotBlank() }
             if (anchor == row.anchor && excerpt == row.excerpt) row else row.copy(anchor = anchor, excerpt = excerpt)
@@ -90,7 +96,12 @@ object LocalBackup {
                 checkActive()
                 if (BackupCategory.UNDERLINES in selected) json.add("underlines", gson.toJsonTree(
                     database.cacheDao().getReaderUnderlines().associate { it.key to it.value }))
-                if (BackupCategory.BOOKMARKS in selected) json.add("bookmarks", gson.toJsonTree(database.bookmarkDao().getAll()))
+                if (BackupCategory.BOOKMARKS in selected) {
+                    val rows = database.bookmarkDao().getAll()
+                    // Older versions restore only one row per chapter; reject such archives there rather than lose rows.
+                    if (rows.groupingBy { it.chapterUrl }.eachCount().values.any { it > 1 }) json.addProperty("version", 4)
+                    json.add("bookmarks", gson.toJsonTree(rows))
+                }
                 if (BackupCategory.HISTORY in selected) json.add("history", gson.toJsonTree(database.localReadingActivityDao().getAll()))
                 if (BackupCategory.READING in selected) {
                     json.add("reading", gson.toJsonTree(database.readingStatDao().getAll()))
@@ -217,7 +228,7 @@ object LocalBackup {
             }
             checkActive()
             val json = JsonParser.parseString(File(staging, "backup.json").readText()).asJsonObject
-            require(json["format"]?.asString == "esjzone-local-backup" && json["version"]?.asInt in 1..3)
+            require(json["format"]?.asString == "esjzone-local-backup" && json["version"]?.asInt in 1..4)
             require(selected.any { category -> json.has(when (category) {
                 BackupCategory.UNDERLINES -> "underlines"
                 BackupCategory.BOOKMARKS -> "bookmarks"
@@ -263,7 +274,7 @@ object LocalBackup {
                 ReaderImageBackgroundStore.render(photo)
             } else null
 
-            require(bookmarks.all { it.chapterUrl.isNotBlank() })
+            require(bookmarks.all { it.chapterUrl.isNotBlank() } && bookmarks.map { it.id }.distinct().size == bookmarks.size)
             require(history.all { it.activityId.isNotBlank() && it.chapterProgress in 0f..1f && it.durationMs >= 0 &&
                 (it.anchor == null || com.breakyuna.esjzone.domain.reader.ReaderAnchor.decode(it.anchor) != null) &&
                 (it.bookProgress == null || it.bookProgress.isFinite() && it.bookProgress in 0f..1f) })
@@ -297,10 +308,7 @@ object LocalBackup {
                         val merged = incoming.fold(existing) { rows, mark -> ReaderUnderlines.update(rows, mark, false) }
                         dao.putAtomic(key, ReaderUnderlines.encode(merged))
                     }
-                    bookmarks.forEach { row ->
-                        val old = database.bookmarkDao().findByChapterUrl(row.chapterUrl)
-                        if (old == null || row.createdAt > old.createdAt) database.bookmarkDao().insert(row)
-                    }
+                    bookmarks.forEach(database.bookmarkDao()::insert)
                     history.sortedBy { it.lastReadAt }.forEach { row ->
                         val dao = database.localReadingActivityDao()
                         val old = dao.getLatestForIdentity(row.novelId, row.novelUrl)

@@ -37,8 +37,8 @@ internal object ReaderBookmarkMarker {
     }
 
     /** Only the text piece that starts the paragraph carries the marker, so a split paragraph shows it once. */
-    fun showsOn(blockIndex: Int, startOffset: Int, bookmarkedBlock: Int?): Boolean =
-        bookmarkedBlock != null && blockIndex == bookmarkedBlock && startOffset == 0
+    fun showsOn(blockIndex: Int, startOffset: Int, bookmarkedBlocks: Set<Int>): Boolean =
+        blockIndex in bookmarkedBlocks && startOffset == 0
 
     /**
      * Ribbon bounds in text-local pixels. [textWidth] is the text column width

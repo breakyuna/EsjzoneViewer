@@ -11,7 +11,7 @@ interface ReadingProgressRepository {
 }
 
 interface ReaderBookmarkRepository {
-    suspend fun find(chapterUrl: String): ReaderBookmark?
+    suspend fun findForChapter(chapterUrl: String): List<ReaderBookmark>
     suspend fun save(bookmark: ReaderBookmark)
     suspend fun remove(bookmark: ReaderBookmark)
 }

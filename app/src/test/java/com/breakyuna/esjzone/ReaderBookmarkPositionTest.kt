@@ -21,6 +21,7 @@ import com.google.gson.Gson
 import com.google.gson.JsonParser
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ReaderBookmarkPositionTest {
@@ -142,6 +143,8 @@ class ReaderBookmarkPositionTest {
         assertNull(rows[0].excerpt)
         assertNull(rows[1].anchor)
         assertNull(rows[1].excerpt)
+        assertEquals(rows.size, rows.map { it.id }.distinct().size)
+        assertTrue(rows.all { it.id.isNotBlank() })
         assertEquals(anchor, rows[2].anchor)
         assertEquals("说这里很安静。", rows[2].excerpt)
         // New rows round-trip through the same Gson field names used by export.

@@ -9,6 +9,7 @@ import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.breakyuna.esjzone.domain.reader.ReaderUnderline
+import com.breakyuna.esjzone.domain.reader.ReaderUnderlineInfo
 import com.breakyuna.esjzone.domain.reader.ReaderUnderlines
 import com.breakyuna.esjzone.backup.BackupCategory
 import com.breakyuna.esjzone.backup.LocalBackup
@@ -49,6 +50,39 @@ import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
 class LocalBackupInstrumentedTest {
+    @Test fun multipleParagraphBookmarksSurviveBackupAndRestore() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val source = Room.inMemoryDatabaseBuilder(context, GeneralDatabase::class.java).build()
+        val target = Room.inMemoryDatabaseBuilder(context, GeneralDatabase::class.java).build()
+        val file = File.createTempFile("paragraph-bookmarks-", ".zip", context.cacheDir)
+        try {
+            val chapter = "/forum/1/2.html"
+            fun bookmark(block: Int) = Bookmark(chapter, "1", "Novel", "Chapter", block.toLong(),
+                anchor = com.breakyuna.esjzone.domain.reader.ReaderAnchor.encode(
+                    com.breakyuna.esjzone.domain.reader.ReaderAnchor(chapter, "a".repeat(64), block)),
+                excerpt = "Paragraph $block")
+            val first = bookmark(1)
+            val second = bookmark(5)
+            source.bookmarkDao().insert(first)
+            source.bookmarkDao().insert(second)
+            val selected = setOf(BackupCategory.BOOKMARKS)
+            LocalBackup.export(context, Uri.fromFile(file), source, "source", selected)
+            ZipFile(file).use { zip ->
+                val json = com.google.gson.JsonParser.parseString(
+                    zip.getInputStream(zip.getEntry("backup.json")).reader().readText()).asJsonObject
+                assertEquals(4, json["version"].asInt)
+            }
+            repeat(2) { LocalBackup.restore(context, Uri.fromFile(file), target, "target", selected) }
+            assertEquals(listOf(second, first), target.bookmarkDao().forChapter(chapter))
+            target.bookmarkDao().delete(first)
+            assertEquals(listOf(second), target.bookmarkDao().forChapter(chapter))
+        } finally {
+            source.close()
+            target.close()
+            file.delete()
+        }
+    }
+
     @Test fun downloadedNovelsRoundTripThroughIncrementalZipSnapshots() = runBlocking {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val database = Room.inMemoryDatabaseBuilder(context, GeneralDatabase::class.java).build()
@@ -146,7 +180,8 @@ class LocalBackupInstrumentedTest {
             groups.add(BookshelfGroup("source", "Reading"))
             groups.assign(BookshelfGroupMember("source", "1", "Reading"))
             val underlineKey = ReaderUnderlines.KEY_PREFIX + "/forum/1/2.html"
-            val underline = ReaderUnderline(0, "a".repeat(64), 1, 8)
+            val underline = ReaderUnderline(0, "a".repeat(64), 1, 8,
+                info = ReaderUnderlineInfo(novelId = "1", novelName = "Novel", chapterName = "Chapter"))
             source.cacheDao().putAtomic(underlineKey, ReaderUnderlines.encode(listOf(underline)))
             val selected = setOf(BackupCategory.UNDERLINES, BackupCategory.BOOKMARKS, BackupCategory.READING, BackupCategory.GROUPS)
             LocalBackup.export(context, Uri.fromFile(file), source, "source", selected)

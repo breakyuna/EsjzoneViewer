@@ -53,8 +53,8 @@ class DatabaseReaderBookmarkRepository(
 ) : ReaderBookmarkRepository {
     private val dao = database.bookmarkDao()
 
-    override suspend fun find(chapterUrl: String): ReaderBookmark? =
-        dao.findByChapterUrl(chapterUrl)?.toDomain()
+    override suspend fun findForChapter(chapterUrl: String): List<ReaderBookmark> =
+        dao.forChapter(chapterUrl).map { it.toDomain() }
 
     override suspend fun save(bookmark: ReaderBookmark) {
         dao.insert(bookmark.toEntity())
@@ -91,9 +91,9 @@ private fun ReadingProgress.toEntity() = LocalReadingActivity(
 )
 
 private fun Bookmark.toDomain() = ReaderBookmark(
-    chapterUrl, novelId, novelName, chapterName, createdAt, anchor, excerpt
+    chapterUrl, novelId, novelName, chapterName, createdAt, anchor, excerpt, id
 )
 
 private fun ReaderBookmark.toEntity() = Bookmark(
-    chapterUrl, novelId, novelName, chapterName, createdAt, anchor, excerpt
+    chapterUrl, novelId, novelName, chapterName, createdAt, anchor, excerpt, id
 )

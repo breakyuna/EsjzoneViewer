@@ -36,6 +36,8 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Tab
+import androidx.compose.material3.TabRow
 import com.breakyuna.esjzone.ui.designsystem.GlobalText as Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
@@ -46,6 +48,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -99,23 +102,40 @@ object BookmarksPage : AppDestination {
     override fun Content(navigator: AppNavigator) {
         val columns = wideListColumns()
         val model = rememberAppViewModel { BookmarksPageModel() }
+        val underlineModel = rememberAppViewModel { UnderlinesPageModel() }
         val state by model.state.collectAsState()
+        val underlineState by underlineModel.state.collectAsState()
+        var tab by rememberSaveable { mutableStateOf(0) }
         var editing by remember { mutableStateOf(false) }
         var selected by remember { mutableStateOf<Set<String>>(emptySet()) }
         var pendingDelete by remember { mutableStateOf<List<LocalBookmark>>(emptyList()) }
+        var pendingUnderlineDelete by remember { mutableStateOf<List<UnderlineListRow>>(emptyList()) }
+        var deletingUnderlines by remember { mutableStateOf(false) }
         var showDeleteDialog by remember { mutableStateOf(false) }
         var deleteError by remember { mutableStateOf(false) }
         var deleting by remember { mutableStateOf(false) }
         LaunchedEffect(Unit) { model.load() }
+        LaunchedEffect(tab) { if (tab == 1) underlineModel.load() }
 
         val bookmarks = (state as? BookmarksPageModel.State.Result)?.bookmarks.orEmpty()
-        val bookmarkUrls = remember(bookmarks) { bookmarks.mapTo(LinkedHashSet()) { it.chapterUrl } }
-        LaunchedEffect(bookmarkUrls) { selected = selected.intersect(bookmarkUrls) }
+        val underlines = (underlineState as? UnderlinesPageModel.State.Result)?.rows.orEmpty()
+        val bookmarkIds = remember(bookmarks) { bookmarks.mapTo(LinkedHashSet()) { it.id } }
+        val underlineIds = remember(underlines) { underlines.mapTo(LinkedHashSet()) { it.id } }
+        val visibleIds = if (tab == 0) bookmarkIds else underlineIds
+        LaunchedEffect(visibleIds, tab) { selected = selected.intersect(visibleIds) }
 
         fun requestDelete(bookmarksToDelete: List<LocalBookmark>) {
             pendingDelete = bookmarksToDelete
+            deletingUnderlines = false
             deleteError = false
             showDeleteDialog = bookmarksToDelete.isNotEmpty()
+        }
+
+        fun requestUnderlineDelete(rows: List<UnderlineListRow>) {
+            pendingUnderlineDelete = rows
+            deletingUnderlines = true
+            deleteError = false
+            showDeleteDialog = rows.isNotEmpty()
         }
 
         fun exitEditing() {
@@ -125,39 +145,54 @@ object BookmarksPage : AppDestination {
 
         Scaffold(
             topBar = {
-                TopAppBar(
-                    title = { Text(stringResource(R.string.bookmarks), style = AppTypography.titleLarge) },
-                    navigationIcon = { BackIconButton { if (editing) exitEditing() else navigator.pop() } },
-                    actions = {
-                        if (editing) {
-                            IconButton(
-                                onClick = { selected = if (selected == bookmarkUrls) emptySet() else bookmarkUrls },
-                                enabled = bookmarkUrls.isNotEmpty()
-                            ) {
-                                Icon(Icons.Filled.SelectAll, contentDescription = stringResource(R.string.bookmark_select_all))
+                Column {
+                    TopAppBar(
+                        title = { Text(stringResource(if (tab == 0) R.string.bookmarks else R.string.reader_underlines),
+                            style = AppTypography.titleLarge) },
+                        navigationIcon = { BackIconButton { if (editing) exitEditing() else navigator.pop() } },
+                        actions = {
+                            if (editing) {
+                                IconButton(
+                                    onClick = { selected = if (selected == visibleIds) emptySet() else visibleIds },
+                                    enabled = visibleIds.isNotEmpty()
+                                ) {
+                                    Icon(Icons.Filled.SelectAll, contentDescription = stringResource(
+                                        if (tab == 0) R.string.bookmark_select_all else R.string.underline_select_all))
+                                }
+                                IconButton(
+                                    onClick = {
+                                        if (tab == 0) requestDelete(bookmarks.filter { it.id in selected })
+                                        else requestUnderlineDelete(underlines.filter { it.id in selected })
+                                    },
+                                    enabled = selected.isNotEmpty()
+                                ) {
+                                    Icon(Icons.Filled.DeleteOutline, contentDescription = stringResource(
+                                        if (tab == 0) R.string.bookmark_delete_selected else R.string.underline_delete_selected))
+                                }
+                                IconButton(onClick = ::exitEditing) {
+                                    Icon(Icons.Filled.Check, contentDescription = stringResource(R.string.bookmark_edit_done))
+                                }
+                            } else {
+                                IconButton(onClick = { editing = true }) {
+                                    Icon(Icons.Filled.Edit, contentDescription = stringResource(
+                                        if (tab == 0) R.string.bookmark_edit else R.string.underline_edit))
+                                }
                             }
-                            IconButton(
-                                onClick = { requestDelete(bookmarks.filter { it.chapterUrl in selected }) },
-                                enabled = selected.isNotEmpty()
-                            ) {
-                                Icon(Icons.Filled.DeleteOutline, contentDescription = stringResource(R.string.bookmark_delete_selected))
-                            }
-                            IconButton(onClick = ::exitEditing) {
-                                Icon(Icons.Filled.Check, contentDescription = stringResource(R.string.bookmark_edit_done))
-                            }
-                        } else {
-                            IconButton(onClick = { editing = true }) {
-                                Icon(Icons.Filled.Edit, contentDescription = stringResource(R.string.bookmark_edit))
-                            }
-                        }
-                    },
-                    colors = TopAppBarDefaults.topAppBarColors(
-                        containerColor = MaterialTheme.colorScheme.background
+                        },
+                        colors = TopAppBarDefaults.topAppBarColors(
+                            containerColor = MaterialTheme.colorScheme.background
+                        )
                     )
-                )
+                    TabRow(selectedTabIndex = tab) {
+                        listOf(R.string.reader_bookmark_action, R.string.reader_underline_tab).forEachIndexed { index, label ->
+                            Tab(selected = tab == index, onClick = { tab = index; exitEditing() },
+                                text = { Text(stringResource(label)) })
+                        }
+                    }
+                }
             }
         ) { padding ->
-            when (val current = state) {
+            if (tab == 0) when (val current = state) {
                 BookmarksPageModel.State.Loading -> LoadingSkeleton(Modifier.fillMaxWidth().padding(padding), stringResource(R.string.bookmarks))
                 is BookmarksPageModel.State.Error -> ErrorState(
                     title = stringResource(R.string.load_client_error),
@@ -173,7 +208,7 @@ object BookmarksPage : AppDestination {
                     )
                 } else {
                     val listState = rememberLazyListState()
-                    PreserveAdaptiveListAnchor(listState, current.bookmarks, columns, key = { "bookmark:${it.chapterUrl}" })
+                    PreserveAdaptiveListAnchor(listState, current.bookmarks, columns, key = { "bookmark:${it.id}" })
                     LazyColumn(
                         state = listState,
                         modifier = Modifier.fillMaxSize().accountContentWidth().padding(padding),
@@ -183,7 +218,7 @@ object BookmarksPage : AppDestination {
                         adaptiveItems(
                             current.bookmarks,
                             columns = columns,
-                            key = { "bookmark:${it.chapterUrl}" },
+                            key = { "bookmark:${it.id}" },
                             contentType = { "bookmark" }
                         ) { bookmark ->
                             BookmarkCard(
@@ -191,9 +226,9 @@ object BookmarksPage : AppDestination {
                                 cover = model.coverFor(bookmark),
                                 onOpen = {
                                     if (editing) {
-                                        selected = if (bookmark.chapterUrl in selected) selected - bookmark.chapterUrl else selected + bookmark.chapterUrl
+                                        selected = if (bookmark.id in selected) selected - bookmark.id else selected + bookmark.id
                                     } else {
-                                        val chapter = Chapter(bookmark.chapterName, bookmark.chapterUrl, false)
+                                        val chapter = Chapter(bookmark.chapterName, bookmarkChapterIdentity(bookmark), false)
                                         val cleanId = BookmarkCoverStore.cleanNovelId(bookmark.novelId, bookmark.chapterUrl)
                                         navigator.pushIfNotCurrent(
                                             ChapterPage(
@@ -210,8 +245,41 @@ object BookmarksPage : AppDestination {
                                 },
                                 onDelete = { requestDelete(listOf(bookmark)) },
                                 editing = editing,
-                                selected = bookmark.chapterUrl in selected
+                                selected = bookmark.id in selected
                             )
+                        }
+                    }
+                }
+            } else when (val current = underlineState) {
+                UnderlinesPageModel.State.Loading -> LoadingSkeleton(Modifier.fillMaxWidth().padding(padding),
+                    stringResource(R.string.reader_underlines))
+                UnderlinesPageModel.State.Error -> ErrorState(
+                    title = stringResource(R.string.load_client_error),
+                    message = stringResource(R.string.underline_load_failed),
+                    onRetry = underlineModel::retry,
+                    modifier = Modifier.fillMaxSize().accountContentWidth().padding(padding)
+                )
+                is UnderlinesPageModel.State.Result -> if (current.rows.isEmpty()) {
+                    EmptyState(title = stringResource(R.string.reader_underlines_empty),
+                        modifier = Modifier.fillMaxSize().accountContentWidth().padding(padding))
+                } else {
+                    val listState = rememberLazyListState()
+                    PreserveAdaptiveListAnchor(listState, current.rows, columns, key = { "underline:${it.id}" })
+                    LazyColumn(state = listState, modifier = Modifier.fillMaxSize().accountContentWidth().padding(padding),
+                        contentPadding = PaddingValues(AppSpacing.lg), verticalArrangement = Arrangement.spacedBy(AppSpacing.sm)) {
+                        adaptiveItems(current.rows, columns = columns, key = { "underline:${it.id}" },
+                            contentType = { "underline" }) { row ->
+                            UnderlineCard(row, editing, row.id in selected, onOpen = {
+                                if (editing) selected = if (row.id in selected) selected - row.id else selected + row.id
+                                else {
+                                    val chapter = Chapter(row.chapterName, row.chapterKey, false)
+                                    navigator.pushIfNotCurrent(ChapterPage(
+                                        novelId = row.novelId, chapter = chapter, history = ChapterStateHolder(chapter),
+                                        novelName = row.novelName, novelUrl = row.novelUrl, novelCoverUrl = row.coverUrl,
+                                        initialUnderline = row.mark
+                                    ))
+                                }
+                            }, onDelete = { requestUnderlineDelete(listOf(row)) })
                         }
                     }
                 }
@@ -221,12 +289,14 @@ object BookmarksPage : AppDestination {
         if (showDeleteDialog) {
             AlertDialog(
                 onDismissRequest = { showDeleteDialog = false },
-                title = { Text(stringResource(R.string.bookmark_delete_title, pendingDelete.size)) },
+                title = { Text(stringResource(
+                    if (deletingUnderlines) R.string.underline_delete_title else R.string.bookmark_delete_title,
+                    if (deletingUnderlines) pendingUnderlineDelete.size else pendingDelete.size)) },
                 text = {
                     Column {
                         Text(stringResource(R.string.bookmark_delete_confirm))
                         if (deleteError) Text(
-                            stringResource(R.string.bookmark_delete_failed),
+                            stringResource(if (deletingUnderlines) R.string.underline_delete_failed else R.string.bookmark_delete_failed),
                             color = MaterialTheme.colorScheme.error
                         )
                     }
@@ -235,13 +305,15 @@ object BookmarksPage : AppDestination {
                     TextButton(enabled = !deleting, onClick = {
                         deleting = true
                         deleteError = false
-                        model.delete(pendingDelete) { succeeded ->
+                        val complete: (Boolean) -> Unit = { succeeded ->
                             deleting = false
                             if (succeeded) {
                                 showDeleteDialog = false
                                 exitEditing()
                             } else deleteError = true
                         }
+                        if (deletingUnderlines) underlineModel.delete(pendingUnderlineDelete, complete)
+                        else model.delete(pendingDelete, complete)
                     }) {
                         Text(stringResource(R.string.bookmark_delete_action), color = MaterialTheme.colorScheme.error)
                     }

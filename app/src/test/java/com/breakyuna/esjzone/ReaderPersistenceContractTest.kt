@@ -11,6 +11,7 @@ import com.breakyuna.esjzone.network.EsjzoneUrls
 import com.breakyuna.esjzone.novellibrary.novel.Chapter
 import com.breakyuna.esjzone.offline.BookTextProgressIndex
 import com.breakyuna.esjzone.ui.page.chapterIdentity
+import com.breakyuna.esjzone.ui.page.bookmarkChapterIdentity
 import com.breakyuna.esjzone.ui.page.readerBookLocationFor
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -83,6 +84,18 @@ class ReaderPersistenceContractTest {
         )
         assertEquals("novel:/detail/9001.html", position.activityId)
         assertEquals(0.75f, position.chapterProgress, 0.0001f)
+    }
+
+    @Test
+    fun bookmarkKeepsItsChapterFragmentAndEachRowHasItsOwnIdentity() {
+        val chapter = Chapter("Part 2", "https://www.esjzone.cc/forum/9001/1.html#part-2", false)
+        val oldRow = Bookmark("/forum/9001/1.html", "9001", "Novel", chapter.name,
+            anchor = ReaderAnchor.encode(ReaderAnchor(chapterIdentity(chapter), "a".repeat(64), 2)))
+        val newRow = Bookmark(chapterIdentity(chapter), "9001", "Novel", chapter.name,
+            anchor = ReaderAnchor.encode(ReaderAnchor(chapterIdentity(chapter), "a".repeat(64), 5)))
+        assertEquals(chapterIdentity(chapter), bookmarkChapterIdentity(oldRow))
+        assertEquals(chapterIdentity(chapter), bookmarkChapterIdentity(newRow))
+        assertTrue(oldRow.id != newRow.id)
     }
 
     @Test

@@ -2,6 +2,7 @@ package com.breakyuna.esjzone
 
 import com.breakyuna.esjzone.domain.reader.ReaderBlock
 import com.breakyuna.esjzone.domain.reader.ReaderUnderline
+import com.breakyuna.esjzone.domain.reader.ReaderUnderlineInfo
 import com.breakyuna.esjzone.domain.reader.ReaderUnderlineRange
 import com.breakyuna.esjzone.domain.reader.ReaderUnderlines
 import androidx.compose.ui.text.TextRange
@@ -21,6 +22,18 @@ class ReaderUnderlinesTest {
         val rows = listOf(mark(1, 4), mark(6, 9))
         assertEquals(rows, ReaderUnderlines.decode(ReaderUnderlines.encode(rows)))
         assertEquals(rows.toSet(), rows.fold(rows) { result, row -> ReaderUnderlines.update(result, row, false) }.toSet())
+    }
+
+    @Test fun chapterInformationSurvivesMergeAndBackupSerialization() {
+        val info = ReaderUnderlineInfo(novelId = "123", novelName = "Novel", chapterName = "Chapter 1")
+        val saved = mark(1, 4).copy(quote = "文本", info = info)
+        assertEquals(saved, ReaderUnderlines.decode(ReaderUnderlines.encode(listOf(saved))).single())
+        val merged = ReaderUnderlines.update(listOf(saved), mark(2, 5), false)
+        assertEquals(info, merged.single().info)
+        val restored = ReaderUnderlines.decode(ReaderUnderlines.encode(merged))
+        assertEquals(merged, restored.fold(emptyList()) { rows, row -> ReaderUnderlines.update(rows, row, false) })
+        val legacy = ReaderUnderlines.decode("[{\"blockIndex\":0,\"signature\":\"$signature\",\"start\":1,\"end\":3}]").single()
+        assertNull(legacy.info)
     }
 
     @Test fun addingAcrossTwoMarksMergesOnlySameBlockAndSource() {

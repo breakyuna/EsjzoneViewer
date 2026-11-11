@@ -100,7 +100,9 @@ fun ReaderBlocks(
     },
     links: Map<Int, List<ReaderLink>> = emptyMap(),
     onLinkClick: (String) -> Unit = {},
-    bookmarkedBlock: Int? = null
+    bookmarkedBlocks: Set<Int> = emptySet(),
+    bookmarkPicking: Boolean = false,
+    onBookmarkSelect: (Int, Int) -> Unit = { _, _ -> }
 ) {
     val textStyle = readerBodyTextStyle(settings)
 
@@ -117,11 +119,13 @@ fun ReaderBlocks(
                         contentColor = contentColor,
                         paragraphSpacingDp = settings.paragraphSpacingDp,
                         enabled = settings.longPressUnderline,
-                        bookmarkMargin = if (ReaderBookmarkMarker.showsOn(blockStartIndex + index, 0, bookmarkedBlock))
+                        bookmarkMargin = if (ReaderBookmarkMarker.showsOn(blockStartIndex + index, 0, bookmarkedBlocks))
                             settings.horizontalPaddingDp.dp else null,
                         blockIndex = blockStartIndex + index,
                         underlines = underlines,
                         onUnderline = onUnderline,
+                        bookmarkPicking = bookmarkPicking,
+                        onBookmarkSelect = onBookmarkSelect,
                         onLayout = { onTextLayout(blockStartIndex + index, it) },
                         links = links[blockStartIndex + index].orEmpty(),
                         linkOffsets = if (links[blockStartIndex + index].isNullOrEmpty()) null else textOffsets(block),
@@ -141,11 +145,13 @@ fun ReaderBlocks(
                         contentColor = contentColor,
                         paragraphSpacingDp = settings.paragraphSpacingDp,
                         enabled = settings.longPressUnderline,
-                        bookmarkMargin = if (ReaderBookmarkMarker.showsOn(blockStartIndex + index, 0, bookmarkedBlock))
+                        bookmarkMargin = if (ReaderBookmarkMarker.showsOn(blockStartIndex + index, 0, bookmarkedBlocks))
                             settings.horizontalPaddingDp.dp else null,
                         blockIndex = blockStartIndex + index,
                         underlines = underlines,
                         onUnderline = onUnderline,
+                        bookmarkPicking = bookmarkPicking,
+                        onBookmarkSelect = onBookmarkSelect,
                         onLayout = { onTextLayout(blockStartIndex + index, it) },
                         links = links[blockStartIndex + index].orEmpty(),
                         linkOffsets = if (links[blockStartIndex + index].isNullOrEmpty()) null else textOffsets(block),
@@ -171,7 +177,7 @@ fun ReaderBlocks(
     }
     CompositionLocalProvider(LocalReaderUnderlineSelection provides underlineSelection,
         LocalReaderUnderlineChapter provides chapterKey) {
-        if (settings.longPressUnderline) DisableSelection { content() } else SelectionContainer { content() }
+        if (settings.longPressUnderline || bookmarkPicking) DisableSelection { content() } else SelectionContainer { content() }
     }
 }
 
@@ -189,6 +195,8 @@ private fun ReaderParagraphBlock(
     blockIndex: Int,
     underlines: List<ReaderUnderline>,
     onUnderline: (ReaderUnderline, Boolean) -> Unit,
+    bookmarkPicking: Boolean,
+    onBookmarkSelect: (Int, Int) -> Unit,
     onLayout: (androidx.compose.ui.text.TextLayoutResult?) -> Unit,
     highlights: List<androidx.compose.ui.text.TextRange>,
     links: List<ReaderLink>,
@@ -226,6 +234,8 @@ private fun ReaderParagraphBlock(
         textOffsets = textOffsets,
         underlines = underlines,
         onUnderline = onUnderline,
+        bookmarkPicking = bookmarkPicking,
+        onBookmarkSelect = onBookmarkSelect,
         onLayout = onLayout,
         highlights = highlights,
         links = links,
@@ -248,6 +258,8 @@ private fun ReaderTextBlock(
     blockIndex: Int,
     underlines: List<ReaderUnderline>,
     onUnderline: (ReaderUnderline, Boolean) -> Unit,
+    bookmarkPicking: Boolean,
+    onBookmarkSelect: (Int, Int) -> Unit,
     onLayout: (androidx.compose.ui.text.TextLayoutResult?) -> Unit,
     highlights: List<androidx.compose.ui.text.TextRange>,
     links: List<ReaderLink>,
@@ -277,6 +289,8 @@ private fun ReaderTextBlock(
         textOffsets = textOffsets,
         underlines = underlines,
         onUnderline = onUnderline,
+        bookmarkPicking = bookmarkPicking,
+        onBookmarkSelect = onBookmarkSelect,
         onLayout = onLayout,
         highlights = highlights,
         links = links,

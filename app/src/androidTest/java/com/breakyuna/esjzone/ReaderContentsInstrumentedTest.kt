@@ -12,6 +12,7 @@ import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import android.content.Context
 import com.breakyuna.esjzone.database.entity.Bookmark
+import com.breakyuna.esjzone.domain.reader.ReaderAnchor
 import com.breakyuna.esjzone.domain.reader.ReaderUnderline
 import com.breakyuna.esjzone.novellibrary.novel.Chapter
 import com.breakyuna.esjzone.ui.page.ReaderContentsContent
@@ -70,27 +71,30 @@ class ReaderContentsInstrumentedTest {
         composeRule.onNodeWithText(context.getString(R.string.reader_contents)).assertIsSelected()
     }
 
-    @Test fun bookmarkTabShowsOneEntryForRestoredMirrorAndCanonicalUrls() {
+    @Test fun bookmarkTabShowsAndOpensEachParagraphOfTheSameChapter() {
         val chapter = Chapter("Chapter 1", "https://www.esjzone.cc/forum/123/1.html", true)
         var opened: Chapter? = null
+        var selected: Bookmark? = null
+        val first = Bookmark(chapter.url, "123", "Novel", chapter.name,
+            anchor = ReaderAnchor.encode(ReaderAnchor(chapterIdentity(chapter), "a".repeat(64), 1)), excerpt = "First paragraph")
+        val second = Bookmark("https://www.esjzone.one/forum/123/1.html", "123", "Novel", chapter.name,
+            anchor = ReaderAnchor.encode(ReaderAnchor(chapterIdentity(chapter), "a".repeat(64), 5)), excerpt = "Second paragraph")
         composeRule.setContent {
             MaterialTheme {
-                ReaderContentsContent(listOf(chapter), chapter, "123", listOf(
-                    Bookmark(chapter.url, "123", "Novel", chapter.name),
-                    Bookmark("https://www.esjzone.one/forum/123/1.html", "123", "Novel", chapter.name),
-                    Bookmark("/forum/123/1.html", "123", "Novel", chapter.name)
-                ), emptyMap(), { opened = it }, { _, _ -> }, {})
+                ReaderContentsContent(listOf(chapter), chapter, "123", listOf(first, second), emptyMap(),
+                    { opened = it }, { _, _ -> }, {}, onBookmarkSelected = { target, bookmark ->
+                        opened = target
+                        selected = bookmark
+                    })
             }
         }
         composeRule.onNodeWithText(context.getString(R.string.reader_bookmark_action)).performClick()
-        val bookmarkRow = hasText(chapter.name) and hasAnyAncestor(
-            hasContentDescription(context.getString(R.string.reader_bookmark_action)))
         composeRule.waitUntil(timeoutMillis = 5_000L) {
-            composeRule.onAllNodes(bookmarkRow).fetchSemanticsNodes().size == 1
+            composeRule.onAllNodesWithText("Second paragraph").fetchSemanticsNodes().size == 1
         }
-        composeRule.onAllNodes(bookmarkRow).assertCountEquals(1)
-        composeRule.onNode(bookmarkRow).performClick()
-        composeRule.runOnIdle { assertEquals(chapter, opened) }
+        composeRule.onNodeWithText("First paragraph").assertIsDisplayed()
+        composeRule.onNodeWithText("Second paragraph").performClick()
+        composeRule.runOnIdle { assertEquals(chapter, opened); assertEquals(second, selected) }
     }
 
     @Test fun emptyPagesStillAcceptHorizontalSwipes() {

@@ -5,6 +5,7 @@ import com.breakyuna.esjzone.domain.reader.ReaderChapterDocument
 import com.breakyuna.esjzone.domain.reader.ReaderChapterRef
 import com.breakyuna.esjzone.domain.reader.ReaderTextOffsets
 import com.breakyuna.esjzone.domain.reader.ReaderUnderline
+import com.breakyuna.esjzone.domain.reader.ReaderUnderlineInfo
 import com.breakyuna.esjzone.domain.reader.ReaderUnderlineRange
 import com.breakyuna.esjzone.domain.reader.ReaderUnderlines
 import com.breakyuna.esjzone.domain.reader.searchReaderDocument
@@ -13,6 +14,7 @@ import com.breakyuna.esjzone.ui.reader.ReaderNameReplace
 import com.breakyuna.esjzone.ui.reader.ReaderNameReplaceRule
 import com.breakyuna.esjzone.ui.reader.ReaderNameReplaceSettings
 import com.breakyuna.esjzone.ui.reader.readerUnderlineQuote
+import com.breakyuna.esjzone.ui.reader.readerUnderlinePosition
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -273,6 +275,9 @@ class ReaderUnderlineOffsetsTest {
         val legacy = ReaderUnderline(0, ReaderUnderlines.signature(block, mapped.text), 0, 6)
         val current = ReaderUnderline(0, sourceSignature, 0, 3)
         assertEquals(listOf(current), ReaderUnderlines.migrateToSource(listOf(legacy, current), listOf(block)) { listOf(mapped) })
+        val info = ReaderUnderlineInfo(novelName = "Novel", chapterName = "Chapter")
+        val withInfo = ReaderUnderlines.migrateToSource(listOf(legacy.copy(info = info), current), listOf(block)) { listOf(mapped) }
+        assertEquals(listOf(current.copy(info = info)), withInfo)
     }
 
     @Test fun savedMarksMergeInOriginalOffsetsAndQuoteDisplayedText() {
@@ -296,5 +301,33 @@ class ReaderUnderlineOffsetsTest {
         assertEquals(0 to 3, range.start to range.end)
         assertEquals("Albedo", mapped.text.substring(mapped.toDisplay(range.start), mapped.toDisplayEnd(range.end)))
         assertEquals(0, hit.anchor.offset)
+    }
+
+    @Test fun underlineJumpUsesOriginalOffsetAndFallsBackToItsParagraphAfterEdits() {
+        val target = ReaderBlock.Text("abcdefgh")
+        val document = ReaderChapterDocument(ReaderChapterRef("chapter", "/forum/1/1.html"),
+            listOf(ReaderBlock.Text("before"), target), contentFingerprint = "d".repeat(64))
+        val mark = ReaderUnderline(1, ReaderUnderlines.sourceSignature(target), 2, 5)
+        val exact = readerUnderlinePosition(document, "/forum/1/1.html", mark, { it }, { null })
+        val anchor = requireNotNull(exact.anchor)
+        assertEquals(1, anchor.blockIndex)
+        assertEquals(2, anchor.offset)
+        assertEquals(1.25f, exact.contentPosition!!, 0.0001f)
+
+        val edited = document.copy(blocks = listOf(ReaderBlock.Text("before"), ReaderBlock.Text("changed")))
+        val fallback = readerUnderlinePosition(edited, "/forum/1/1.html", mark, { it }, { null })
+        assertNull(fallback.anchor)
+        assertEquals(1f, fallback.contentPosition!!, 0f)
+    }
+
+    @Test fun underlineJumpMapsLegacyRenderedOffsetsBackToTheSource() {
+        val document = ReaderChapterDocument(ReaderChapterRef("chapter", "/forum/1/1.html"), listOf(block),
+            contentFingerprint = "d".repeat(64))
+        val mapped = display(settings(longer))
+        val start = mapped.text.indexOf("和")
+        val mark = ReaderUnderline(0, ReaderUnderlines.signature(block, mapped.text), start, start + 1)
+        val position = readerUnderlinePosition(document, "/forum/1/1.html", mark,
+            { it.replace("阿贝多", "Albedo") }, { mapped })
+        assertEquals(source.indexOf('和'), requireNotNull(position.anchor).offset)
     }
 }

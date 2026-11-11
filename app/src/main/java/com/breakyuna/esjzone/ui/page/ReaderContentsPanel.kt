@@ -36,6 +36,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.breakyuna.esjzone.R
 import com.breakyuna.esjzone.database.entity.Bookmark
+import com.breakyuna.esjzone.domain.reader.ReaderAnchor
 import com.breakyuna.esjzone.domain.reader.ReaderUnderline
 import com.breakyuna.esjzone.novellibrary.novel.Chapter
 import com.breakyuna.esjzone.ui.designsystem.AppShapes
@@ -47,6 +48,10 @@ import com.breakyuna.esjzone.ui.designsystem.globalStringResource as stringResou
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+
+/** Old rows may have lost a URL fragment, but their saved anchor retains the chapter identity. */
+internal fun bookmarkChapterIdentity(bookmark: Bookmark): String =
+    chapterIdentity(Chapter(bookmark.chapterName, ReaderAnchor.decode(bookmark.anchor)?.chapterKey ?: bookmark.chapterUrl, true))
 
 @Composable
 internal fun ReaderContentsSheet(
@@ -100,11 +105,12 @@ internal fun ReaderContentsContent(
         value = withContext(Dispatchers.Default) {
             val catalog = chapters.associateBy(::chapterIdentity)
             bookmarks.filter { (novelId.isNotBlank() && it.novelId == novelId) ||
-                chapterIdentity(Chapter(it.chapterName, it.chapterUrl, true)) in catalog }
+                bookmarkChapterIdentity(it) in catalog }
                 .map { row ->
-                    val chapter = Chapter(row.chapterName, row.chapterUrl, true)
-                    (catalog[chapterIdentity(chapter)] ?: chapter) to row
-                }.distinctBy { chapterIdentity(it.first) }
+                    val key = bookmarkChapterIdentity(row)
+                    val chapter = Chapter(row.chapterName, key, true)
+                    (catalog[key] ?: chapter) to row
+                }
         }
     }
     val bookUnderlines by produceState<List<Pair<Chapter, ReaderUnderline>>>(emptyList(), chapters, currentChapter, underlines) {
@@ -174,7 +180,7 @@ internal fun ReaderContentsContent(
                             }, selected = chapterIdentity(chapter) == currentKey,
                                 onClick = { onChapterSelected(chapter) })
                         }
-                        1 -> items(bookBookmarks, key = { chapterIdentity(it.first) }) { (chapter, bookmark) ->
+                        1 -> items(bookBookmarks, key = { it.second.id }) { (chapter, bookmark) ->
                             ReaderContentsRow(chapter.name, quote = bookmark.excerpt?.takeIf { it.isNotBlank() }
                                 ?: savedChapters[NovelDownloadStore.chapterKey(chapter.url)]?.let {
                                     stringResource(if (it) R.string.local_downloaded else R.string.local_text_saved)

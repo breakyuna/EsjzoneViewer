@@ -580,6 +580,8 @@
     <string name="reader_open_novel_detail">Open novel details</string>
     <string name="reader_add_bookmark">Add local bookmark</string>
     <string name="reader_remove_bookmark">Remove local bookmark</string>
+    <string name="reader_pick_bookmark">Choose a paragraph bookmark</string>
+    <string name="reader_pick_bookmark_hint">Tap a paragraph to add or remove its bookmark</string>
     <string name="reader_preview_percent">%1$d%% through the chapter</string>
     <string name="reader_book_progress_percent">Book %1$d%%</string>
     <string name="reader_progress_unavailable">Whole-book progress is unavailable until the chapter order is known</string>
@@ -606,7 +608,7 @@
     <string name="reader_password_failed">Verification failed. Please try again.</string>
     <string name="reader_password_submit">Verify</string>
     <string name="bookmarks">Bookmarks</string>
-    <string name="bookmarks_description">Save chapters locally for quick access</string>
+    <string name="bookmarks_description">Save reading positions locally for quick access</string>
     <string name="bookmarks_empty">No local bookmarks yet</string>
     <string name="bookmark_remove">Remove bookmark</string>
     <string name="bookmark_edit">Edit bookmarks</string>
@@ -833,6 +835,13 @@
     <string name="reader_long_press_underline">Long-press to underline</string>
     <string name="reader_underline_tab">Underlines</string>
     <string name="reader_underlines_empty">No underlines yet</string>
+    <string name="reader_underline_unknown_chapter">Unknown chapter</string>
+    <string name="underline_edit">Edit underlines</string>
+    <string name="underline_select_all">Select all underlines</string>
+    <string name="underline_delete_selected">Delete selected underlines</string>
+    <string name="underline_delete_title">Delete %1$d underline(s)?</string>
+    <string name="underline_delete_failed">Could not delete the selected underlines. Please try again.</string>
+    <string name="underline_load_failed">Could not load local underlines. Please try again.</string>
     <string name="reader_underline_position">Paragraph %1$d · Characters %2$d–%3$d</string>
     <string name="reader_underlines">Reading underlines</string>
     <string name="reader_remove_underline">Remove underline</string>

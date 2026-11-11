@@ -7,6 +7,7 @@ import com.breakyuna.esjzone.database.GeneralDatabase
 import com.breakyuna.esjzone.ui.navigation.AppStateViewModel
 import com.breakyuna.esjzone.domain.reader.ReaderUnderline
 import com.breakyuna.esjzone.domain.reader.ReaderUnderlineRange
+import com.breakyuna.esjzone.domain.reader.ReaderUnderlineInfo
 import com.breakyuna.esjzone.domain.reader.ReaderUnderlines
 import com.breakyuna.esjzone.util.AppLogger
 import kotlinx.coroutines.CancellationException
@@ -17,8 +18,9 @@ import kotlinx.coroutines.launch
 class ReaderUnderlinesModel(
     private val database: GeneralDatabase = PresentationAccess.database
 ) : AppStateViewModel<Int>(0) {
-    val bookmarks = database.bookmarkDao().observeAll()
-        .flowOn(Dispatchers.IO).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    val bookmarks: StateFlow<List<com.breakyuna.esjzone.database.entity.Bookmark>?> = database.bookmarkDao().observeAll()
+        .map { it as List<com.breakyuna.esjzone.database.entity.Bookmark>? }
+        .flowOn(Dispatchers.IO).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
     val underlines = database.cacheDao().observeReaderUnderlines().map { rows ->
         rows.associate { row ->
             val chapterKey = row.key.removePrefix(ReaderUnderlines.KEY_PREFIX)
@@ -50,13 +52,14 @@ class ReaderUnderlinesModel(
     }
 
     fun update(chapterKey: String, selection: ReaderUnderline, remove: Boolean,
-        quoteText: (ReaderUnderlineRange) -> String? = { null }) {
+        quoteText: (ReaderUnderlineRange) -> String? = { null }, info: ReaderUnderlineInfo? = null) {
         viewModelScope.launch(Dispatchers.IO) {
             try {
                 database.withTransaction {
                     val dao = database.cacheDao()
                     val key = ReaderUnderlines.KEY_PREFIX + chapterKey
-                    val updated = ReaderUnderlines.update(ReaderUnderlines.decode(dao.findByKey(key)?.value), selection, remove, quoteText)
+                    val updated = ReaderUnderlines.update(ReaderUnderlines.decode(dao.findByKey(key)?.value),
+                        if (info == null) selection else selection.copy(info = info.withFallback(selection.info)), remove, quoteText)
                     if (updated.isEmpty()) dao.deleteByKey(key) else dao.putAtomic(key, ReaderUnderlines.encode(updated))
                 }
             } catch (error: CancellationException) { throw error
@@ -67,6 +70,24 @@ class ReaderUnderlinesModel(
                         "block=${selection.blockIndex}, start=${selection.start}, end=${selection.end}, " +
                         "ranges=${selection.ranges().size}", error)
                 mutableState.update { it + 1 }
+            }
+        }
+    }
+
+    /** Fill in display context for older marks when their chapter is opened. */
+    fun rememberChapterInfo(chapterKey: String, info: ReaderUnderlineInfo) {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                database.withTransaction {
+                    val dao = database.cacheDao()
+                    val key = ReaderUnderlines.KEY_PREFIX + chapterKey
+                    val rows = ReaderUnderlines.decode(dao.findByKey(key)?.value)
+                    val updated = rows.map { it.copy(info = info.withFallback(it.info)) }
+                    if (updated.isNotEmpty() && updated != rows) dao.putAtomic(key, ReaderUnderlines.encode(updated))
+                }
+            } catch (error: CancellationException) { throw error
+            } catch (error: Exception) {
+                AppLogger.w("ReaderUnderlinesModel", "Could not save underline chapter information", error)
             }
         }
     }

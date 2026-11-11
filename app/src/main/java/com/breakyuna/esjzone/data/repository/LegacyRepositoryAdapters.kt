@@ -116,7 +116,7 @@ class DatabaseHistoryRepository(private val database: GeneralDatabase) : History
 class DatabaseBookmarkRepository(private val database: GeneralDatabase) : BookmarkRepository {
     private val dao = database.bookmarkDao()
     override fun observe(): Flow<List<Bookmark>> = dao.observeAll()
-    override fun find(chapterUrl: String): Bookmark? = dao.findByChapterUrl(chapterUrl)
+    override fun findForChapter(chapterUrl: String): List<Bookmark> = dao.forChapter(chapterUrl)
     override fun add(bookmark: Bookmark) = dao.insert(bookmark)
     override fun remove(bookmark: Bookmark) = dao.delete(bookmark)
 }

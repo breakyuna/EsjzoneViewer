@@ -12,6 +12,7 @@ import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.foundation.magnifier
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.material3.Surface
 import androidx.compose.material3.TextButton
@@ -70,7 +71,9 @@ internal fun ReaderUnderlineText(
     linkOffsets: ReaderTextOffsets? = null,
     onLinkClick: (String) -> Unit = {},
     sourceSignature: String? = null,
-    textOffsets: ReaderTextOffsets? = null
+    textOffsets: ReaderTextOffsets? = null,
+    bookmarkPicking: Boolean = false,
+    onBookmarkSelect: (Int, Int) -> Unit = { _, _ -> }
 ) {
     var layout by remember { mutableStateOf<TextLayoutResult?>(null) }
     val sharedSelection = LocalReaderUnderlineSelection.current
@@ -91,10 +94,11 @@ internal fun ReaderUnderlineText(
     val selectedRange by remember(selection, segment) {
         derivedStateOf(structuralEqualityPolicy()) { selection.ranges[segment] }
     }
-    DisposableEffect(selection, segment, enabled) {
-        if (enabled) selection.register(segment)
+    DisposableEffect(selection, segment, enabled, bookmarkPicking) {
+        if (enabled && !bookmarkPicking) selection.register(segment)
         onDispose { selection.unregister(segment) }
     }
+    LaunchedEffect(bookmarkPicking) { if (bookmarkPicking) menu = null }
     DisposableEffect(Unit) {
         onDispose { currentLayout(null) }
     }
@@ -151,13 +155,15 @@ internal fun ReaderUnderlineText(
             if (link is LinkAnnotation.Url) currentLinkClick(link.url)
         }
     }
-    val linked = remember(displayed, links, linkOffsets, offset, linkListener) {
-        addReaderLinks(displayed, links, linkOffsets, offset, linkListener)
+    val linked = remember(displayed, links, linkOffsets, offset, linkListener, bookmarkPicking) {
+        addReaderLinks(displayed, if (bookmarkPicking) emptyList() else links, linkOffsets, offset, linkListener)
     }
     val (glowText, glowStyle) = readerGlowTextAppearance(linked, style)
     Text(text = glowText, inlineContent = inlineContent, style = glowStyle, color = color,
         overflow = TextOverflow.Visible, onTextLayout = { layout = it; segment.layout = it; onLayout(it) },
-        modifier = modifier.then(readerGlowTextModifier(layout)).onGloballyPositioned { segment.coordinates = it }
+        modifier = modifier.then(if (bookmarkPicking && text.text.isNotBlank()) Modifier.clickable {
+            onBookmarkSelect(blockIndex, displayOffsets?.toSource(offset) ?: 0)
+        } else Modifier).then(readerGlowTextModifier(layout)).onGloballyPositioned { segment.coordinates = it }
             .then(magnifierModifier).drawWithCache {
             val result = layout
             val lineOffset = 3.dp.toPx()
@@ -222,7 +228,7 @@ internal fun ReaderUnderlineText(
                     drawFirstLineMarker(result, bookmarkMargin.toPx())
                 }
             }
-        }.pointerInput(text, blockIndex, signature, offset, enabled) {
+        }.then(if (bookmarkPicking) Modifier else Modifier.pointerInput(text, blockIndex, signature, offset, enabled) {
             // Only consume a completed tap on a saved mark, leaving ordinary reader taps alone.
             awaitEachGesture {
                 val down = awaitFirstDown(requireUnconsumed = false)
@@ -239,7 +245,7 @@ internal fun ReaderUnderlineText(
                     menu = mark to bounds.center
                 }
             }
-        }.then(if (!enabled) Modifier else Modifier.pointerInput(segment, selection) {
+        }).then(if (!enabled || bookmarkPicking) Modifier else Modifier.pointerInput(segment, selection) {
             var position = Offset.Zero
             try {
                 detectDragGesturesAfterLongPress(

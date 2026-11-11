@@ -210,7 +210,9 @@ internal fun ReaderPageContent(
     textOffsets: (Int) -> com.breakyuna.esjzone.domain.reader.ReaderTextOffsets? = { null },
     links: Map<Int, List<ReaderLink>> = emptyMap(),
     onLinkClick: (String) -> Unit = {},
-    bookmarkedBlock: Int? = null
+    bookmarkedBlocks: Set<Int> = emptySet(),
+    bookmarkPicking: Boolean = false,
+    onBookmarkSelect: (Int, Int) -> Unit = { _, _ -> }
 ) {
     val content: @Composable () -> Unit = {
         // Ordinary pages keep their unclipped margins. A title or single line
@@ -237,8 +239,10 @@ internal fun ReaderPageContent(
                         offset = segment.startOffset,
                         underlines = underlines,
                         onUnderline = onUnderline,
+                        bookmarkPicking = bookmarkPicking,
+                        onBookmarkSelect = onBookmarkSelect,
                         showMagnifier = false,
-                        bookmarkMargin = if (ReaderBookmarkMarker.showsOn(segment.blockIndex, segment.startOffset, bookmarkedBlock))
+                        bookmarkMargin = if (ReaderBookmarkMarker.showsOn(segment.blockIndex, segment.startOffset, bookmarkedBlocks))
                             settings.horizontalPaddingDp.dp else null,
                         links = links[segment.blockIndex].orEmpty(),
                         linkOffsets = if (links[segment.blockIndex].isNullOrEmpty()) null else textOffsets(segment.blockIndex),
@@ -268,7 +272,7 @@ internal fun ReaderPageContent(
     val underlineSelection = remember(page) { ReaderUnderlineSelection() }
     CompositionLocalProvider(LocalReaderUnderlineSelection provides underlineSelection) {
         Box {
-            if (settings.longPressUnderline) DisableSelection { content() } else SelectionContainer { content() }
+            if (settings.longPressUnderline || bookmarkPicking) DisableSelection { content() } else SelectionContainer { content() }
             ReaderUnderlineMagnifier(underlineSelection, Modifier.matchParentSize())
         }
     }

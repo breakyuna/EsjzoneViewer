@@ -104,7 +104,8 @@ data class ReaderBookmark(
     val chapterName: String,
     val createdAt: Long,
     val anchor: String? = null,
-    val excerpt: String? = null
+    val excerpt: String? = null,
+    val id: String = java.util.UUID.randomUUID().toString()
 )
 
 @Immutable

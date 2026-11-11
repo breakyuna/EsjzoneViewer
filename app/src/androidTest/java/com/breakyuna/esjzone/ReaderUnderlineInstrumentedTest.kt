@@ -15,6 +15,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toPixelMap
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
@@ -22,6 +23,7 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModelStore
@@ -40,7 +42,9 @@ import com.breakyuna.esjzone.ui.reader.LocalReaderUnderlineSelection
 import com.breakyuna.esjzone.ui.reader.ReaderPage
 import com.breakyuna.esjzone.ui.reader.ReaderPageContent
 import com.breakyuna.esjzone.ui.reader.ReaderPageSegment
+import com.breakyuna.esjzone.ui.reader.ReaderBlocks
 import com.breakyuna.esjzone.ui.reader.ReaderSettings
+import com.breakyuna.esjzone.domain.reader.ReaderBlock
 import com.breakyuna.esjzone.util.AppLogger
 import com.breakyuna.esjzone.util.LogLevel
 import androidx.compose.ui.geometry.Offset
@@ -57,6 +61,60 @@ import kotlin.math.roundToInt
 @RunWith(AndroidJUnit4::class)
 class ReaderUnderlineInstrumentedTest {
     @get:Rule val composeRule = createComposeRule()
+
+    @Test fun bookmarkPickingSelectsTheTouchedFragmentWithoutTriggeringReaderTap() {
+        val picks = mutableListOf<Pair<Int, Int>>()
+        var readerTaps = 0
+        composeRule.setContent {
+            MaterialTheme {
+                ReaderShell(background = Color.White, onReadingAreaTap = { _, _ -> readerTaps++ },
+                    pagedGesturesEnabled = true) {
+                    Column {
+                        ReaderUnderlineText(AnnotatedString("First "), emptyMap(), TextStyle(fontSize = 22.sp),
+                            Color.Black, Modifier.testTag("first-paragraph"), true, 1, "a".repeat(64),
+                            underlines = emptyList(), onUnderline = { _, _ -> }, bookmarkPicking = true,
+                            onBookmarkSelect = { block, offset -> picks += block to offset })
+                        ReaderUnderlineText(AnnotatedString("Second"), emptyMap(), TextStyle(fontSize = 22.sp),
+                            Color.Black, Modifier.testTag("second-paragraph"), true, 5, "a".repeat(64), offset = 6,
+                            underlines = emptyList(), onUnderline = { _, _ -> }, bookmarkPicking = true,
+                            textOffsets = com.breakyuna.esjzone.domain.reader.ReaderTextOffsets.identity("First Second"),
+                            onBookmarkSelect = { block, offset -> picks += block to offset })
+                    }
+                }
+            }
+        }
+        composeRule.onNodeWithTag("first-paragraph").performTouchInput { click(center) }
+        composeRule.onNodeWithTag("second-paragraph").performTouchInput { click(center) }
+        composeRule.runOnIdle {
+            assertEquals(listOf(1 to 0, 5 to 6), picks)
+            assertEquals(0, readerTaps)
+        }
+    }
+
+    @Test fun bookmarkPickingTargetsDifferentParagraphsInScrollAndPagedLayouts() {
+        val picks = mutableListOf<Pair<String, Int>>()
+        val page = ReaderPage(listOf(
+            ReaderPageSegment.TextLine(AnnotatedString("Page first"), emptyMap(), 0.dp, 2, "a".repeat(64), 0),
+            ReaderPageSegment.TextLine(AnnotatedString("Page second"), emptyMap(), 0.dp, 3, "b".repeat(64), 0)
+        ), 2f)
+        composeRule.setContent {
+            MaterialTheme {
+                val measurer = rememberTextMeasurer()
+                val density = LocalDensity.current
+                Column {
+                    ReaderBlocks(listOf(ReaderBlock.Text("Scroll first"), ReaderBlock.Text("Scroll second")),
+                        ReaderSettings(longPressUnderline = false), measurer, density, Color.Black,
+                        bookmarkPicking = true, onBookmarkSelect = { block, _ -> picks += "scroll" to block })
+                    ReaderPageContent(page, ReaderSettings(longPressUnderline = true), TextStyle(fontSize = 18.sp),
+                        Color.Black, { it }, 300.dp, bookmarkPicking = true,
+                        onBookmarkSelect = { block, _ -> picks += "page" to block })
+                }
+            }
+        }
+        composeRule.onNodeWithText("Scroll second").performTouchInput { click(center) }
+        composeRule.onNodeWithText("Page second").performTouchInput { click(center) }
+        composeRule.runOnIdle { assertEquals(listOf("scroll" to 1, "page" to 3), picks) }
+    }
 
     @Test fun corruptChapterDoesNotStopObservationOfValidChapterUpdates() {
         val database = Room.inMemoryDatabaseBuilder(ApplicationProvider.getApplicationContext(),
