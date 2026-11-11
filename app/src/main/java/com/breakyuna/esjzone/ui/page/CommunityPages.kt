@@ -84,6 +84,7 @@ import com.breakyuna.esjzone.novellibrary.community.ForumTopic
 import com.breakyuna.esjzone.novellibrary.community.ForumThread
 import com.breakyuna.esjzone.novellibrary.community.groupForumCategories
 import com.breakyuna.esjzone.novellibrary.novel.CategoryNovel
+import com.breakyuna.esjzone.ui.component.SelectableProse
 import com.breakyuna.esjzone.ui.designsystem.AppShapes
 import com.breakyuna.esjzone.ui.designsystem.AppElevation
 import com.breakyuna.esjzone.ui.designsystem.AppSpacing
@@ -870,49 +871,52 @@ private fun ForumPostCard(post: ForumPost, onLinkClick: (String) -> Unit) {
         rememberCommunityLinkedText(post.contentText, post.contentHtml, post.url, onLinkClick)
     } else null
     val bodyStyle = AppTypography.bodyLarge.copy(lineHeight = 27.sp, letterSpacing = 0.1.sp)
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = AppSpacing.lg, vertical = AppSpacing.md)
-    ) {
-        Text(
-            text = post.title,
-            style = AppTypography.titleLarge,
-            fontWeight = FontWeight.Bold
-        )
-        val authorAndDate = listOfNotNull(post.author, post.createdAt)
-            .joinToString(" · ")
-        if (authorAndDate.isNotBlank()) {
+    // The post card has no row gesture: title, author line and body share one selection.
+    SelectableProse {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = AppSpacing.lg, vertical = AppSpacing.md)
+        ) {
             Text(
-                text = authorAndDate,
-                style = AppTypography.bodySmall,
-                color = appStateColors().contentMuted,
-                modifier = Modifier.padding(top = AppSpacing.sm)
+                text = post.title,
+                style = AppTypography.titleLarge,
+                fontWeight = FontWeight.Bold
             )
-        }
-        if (linkedBody != null || post.contentText.isNotBlank()) {
-            HorizontalDivider(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = AppSpacing.lg),
-                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.65f)
-            )
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = AppSpacing.lg),
-                verticalArrangement = Arrangement.spacedBy(AppSpacing.md)
-            ) {
-                if (linkedBody != null) {
-                    Text(text = linkedBody, style = bodyStyle, color = MaterialTheme.colorScheme.onSurface)
-                } else {
-                    post.contentText.lineSequence()
-                        .map { it.trim() }
-                        .filter { it.isNotBlank() }
-                        .forEach { paragraph ->
-                            val linked = rememberCommunityLinkedText(paragraph, onLinkClick = onLinkClick)
-                            Text(text = linked, style = bodyStyle, color = MaterialTheme.colorScheme.onSurface)
-                        }
+            val authorAndDate = listOfNotNull(post.author, post.createdAt)
+                .joinToString(" · ")
+            if (authorAndDate.isNotBlank()) {
+                Text(
+                    text = authorAndDate,
+                    style = AppTypography.bodySmall,
+                    color = appStateColors().contentMuted,
+                    modifier = Modifier.padding(top = AppSpacing.sm)
+                )
+            }
+            if (linkedBody != null || post.contentText.isNotBlank()) {
+                HorizontalDivider(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = AppSpacing.lg),
+                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.65f)
+                )
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = AppSpacing.lg),
+                    verticalArrangement = Arrangement.spacedBy(AppSpacing.md)
+                ) {
+                    if (linkedBody != null) {
+                        Text(text = linkedBody, style = bodyStyle, color = MaterialTheme.colorScheme.onSurface)
+                    } else {
+                        post.contentText.lineSequence()
+                            .map { it.trim() }
+                            .filter { it.isNotBlank() }
+                            .forEach { paragraph ->
+                                val linked = rememberCommunityLinkedText(paragraph, onLinkClick = onLinkClick)
+                                Text(text = linked, style = bodyStyle, color = MaterialTheme.colorScheme.onSurface)
+                            }
+                    }
                 }
             }
         }

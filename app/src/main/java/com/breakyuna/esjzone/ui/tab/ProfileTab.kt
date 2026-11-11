@@ -3,6 +3,7 @@
 package com.breakyuna.esjzone.ui.tab
 
 import com.breakyuna.esjzone.ui.designsystem.appUsesWideLayout
+import com.breakyuna.esjzone.ui.component.SelectableProse
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -324,41 +325,46 @@ private fun ProfileHero(profile: UserProfile?, domain: String, avatarCacheKey: S
                     Text(stringResource(R.string.navigation_profile), style = AppTypography.titleLarge)
                     TextButton(onClick = onRetry) { Text(stringResource(R.string.retry)) }
                 } else {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(AppSpacing.sm)
-                    ) {
-                        Text(
-                            text = profile.name,
-                            style = AppTypography.titleLarge,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            color = MaterialTheme.colorScheme.onSurface,
-                            modifier = Modifier.weight(1f)
-                        )
-                        profile.exp?.let {
-                            // Material Text supplies a solid LocalContentColor when color is unspecified.
-                            BasicText(
-                                text = stringResource(R.string.profile_experience, it),
-                                modifier = Modifier.onGloballyPositioned { coordinates ->
-                                    experienceCenterX = coordinates.positionInRoot().x + coordinates.size.width / 2f
-                                },
-                                style = AppTypography.bodySmall.copy(
-                                    brush = experienceBrush,
-                                    fontWeight = FontWeight.SemiBold
-                                ),
-                                maxLines = 1
-                            )
+                    // The hero card has no gesture; name and level are copyable member fields.
+                    SelectableProse {
+                        Column(verticalArrangement = Arrangement.spacedBy(AppSpacing.xs)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(AppSpacing.sm)
+                            ) {
+                                Text(
+                                    text = profile.name,
+                                    style = AppTypography.titleLarge,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                profile.exp?.let {
+                                    // Material Text supplies a solid LocalContentColor when color is unspecified.
+                                    BasicText(
+                                        text = stringResource(R.string.profile_experience, it),
+                                        modifier = Modifier.onGloballyPositioned { coordinates ->
+                                            experienceCenterX = coordinates.positionInRoot().x + coordinates.size.width / 2f
+                                        },
+                                        style = AppTypography.bodySmall.copy(
+                                            brush = experienceBrush,
+                                            fontWeight = FontWeight.SemiBold
+                                        ),
+                                        maxLines = 1
+                                    )
+                                }
+                            }
+                            profile.level?.let {
+                                Text(
+                                    text = it.trim(),
+                                    style = AppTypography.bodySmall,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    maxLines = 1
+                                )
+                            }
                         }
-                    }
-                    profile.level?.let {
-                        Text(
-                            text = it.trim(),
-                            style = AppTypography.bodySmall,
-                            color = MaterialTheme.colorScheme.primary,
-                            maxLines = 1
-                        )
                     }
                 }
                 Text(domain, style = AppTypography.bodySmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f))

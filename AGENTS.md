@@ -138,6 +138,7 @@ app/src/main/java/com/breakyuna/esjzone/
 
 - 用户可见文本优先放在 `app/src/main/res/values/strings.xml`，并同步维护 `values-zh-rCN/strings.xml`。
 - Compose 页面应复用现有组件和 Material 3 组件，保持加载、成功和空数据状态完整。
+- 阅读器以外的只读正文（简介、评论、帖子、会员中心字段等）用 `SelectableProse` 支持长按选择复制，只包裹文字本身，不包裹可点击或可长按的行；取舍见 [docs/text-selection.md](docs/text-selection.md)。
 - 涉及成人内容的列表、分类和主页分区必须遵守 `SettingsRepository.adult` 的 DataStore 状态。
 - 章节阅读内容可能包含正文样式、注音和远程图片，修改 `Component` 或 `ChapterPage` 时要避免破坏这些内容。
 - 不要把网络请求、数据库操作或大型列表计算直接放进 Compose 重组过程；页面状态使用 Navigation 3 entry 提供生命周期的 AndroidX `ViewModel`（当前基类为 `AppStateViewModel`），并通过协程执行后台工作。`screenModelScope` 是迁移期间保留的兼容命名，清理前必须先迁移所有调用点。

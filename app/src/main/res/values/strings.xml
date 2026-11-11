@@ -496,6 +496,8 @@
     <string name="logs_clear_message">确定要清空所有已记录的系统日志和闪退历史吗？</string>
     <string name="logs_cleared_toast">系统日志已清空</string>
     <string name="logs_copied_toast">日志内容已复制到剪贴板</string>
+    <string name="text_copied">已复制到剪贴板</string>
+    <string name="novel_description_copy">复制简介</string>
     <string name="logs_filter_all">全部</string>
     <string name="logs_search_placeholder">按关键词或标签搜索日志...</string>
     <string name="logs_empty">暂无系统日志记录</string>

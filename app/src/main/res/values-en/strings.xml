@@ -496,6 +496,8 @@
     <string name="logs_clear_message">Are you sure you want to clear all recorded system logs and crash history?</string>
     <string name="logs_cleared_toast">Logs cleared</string>
     <string name="logs_copied_toast">Logs copied to clipboard</string>
+    <string name="text_copied">Copied to clipboard</string>
+    <string name="novel_description_copy">Copy synopsis</string>
     <string name="logs_filter_all">All</string>
     <string name="logs_search_placeholder">Search logs by keyword or tag...</string>
     <string name="logs_empty">No logs recorded yet</string>

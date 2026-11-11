@@ -121,17 +121,51 @@ def check_resource_symmetry() -> list[str]:
     return failures
 
 
+UI_PAGES = ROOT / "app/src/main/java/com/breakyuna/esjzone/ui"
+# Read-only prose outside the reader must stay long-press selectable.
+SELECTABLE_PROSE_PAGES = (
+    "page/NovelPage.kt",
+    "page/CommentSection.kt",
+    "page/CommunityPages.kt",
+    "tab/ProfileTab.kt",
+)
+# Rows on these pages own long press (multi-select) or a click; text selection would steal it.
+ROW_GESTURE_PAGES = (
+    "page/FavoritePage.kt",
+    "page/HistoryPage.kt",
+    "page/BookmarksPage.kt",
+    "page/UnderlinesPage.kt",
+)
+
+
+def check_selectable_prose() -> list[str]:
+    failures: list[str] = []
+    for name in SELECTABLE_PROSE_PAGES:
+        path = UI_PAGES / name
+        if path.exists() and "SelectableProse" not in path.read_text(encoding="utf-8"):
+            failures.append(f"{path.relative_to(ROOT)} lost its SelectableProse text body")
+    for name in ROW_GESTURE_PAGES:
+        path = UI_PAGES / name
+        if not path.exists():
+            continue
+        text = path.read_text(encoding="utf-8")
+        if "SelectableProse" in text or "SelectionContainer" in text:
+            failures.append(f"{path.relative_to(ROOT)} wraps rows with long-press gestures in text selection")
+    return failures
+
+
 def main() -> int:
     files = tracked_files()
     failures = check_removed_api(files)
     failures.extend(check_secrets(files))
     failures.extend(check_resource_symmetry())
+    failures.extend(check_selectable_prose())
     if failures:
         print("Static contract verification failed:", file=sys.stderr)
         for failure in failures:
             print(f"- {failure}", file=sys.stderr)
         return 1
-    print("Static contract verification passed: removed APIs, credentials, and resources")
+    print("Static contract verification passed: removed APIs, credentials, resources, and selectable prose")
     return 0
 
 
