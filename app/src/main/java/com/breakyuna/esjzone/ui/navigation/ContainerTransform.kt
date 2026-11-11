@@ -41,6 +41,9 @@ import com.breakyuna.esjzone.ui.page.DownloadPage
 import com.breakyuna.esjzone.ui.page.ForumPage
 import com.breakyuna.esjzone.ui.page.GuestbookPage
 import com.breakyuna.esjzone.ui.page.ReadingStatisticsPage
+import com.breakyuna.esjzone.ui.page.ExperienceRecordsPage
+import com.breakyuna.esjzone.ui.page.MemberRepliesPage
+import com.breakyuna.esjzone.ui.page.SystemMessagesPage
 import com.breakyuna.esjzone.ui.page.SettingsPage
 import com.breakyuna.esjzone.ui.tab.SearchTab
 
@@ -74,7 +77,13 @@ internal data class ContainerTransformTarget(
         val BOOKMARKS = ContainerTransformTarget("BOOKMARKS", AppNavKey.ProfileTab, LegacyRoute.Static(BookmarksPage.key), 16.dp)
         val DOWNLOADS = ContainerTransformTarget("DOWNLOADS", AppNavKey.ProfileTab, LegacyRoute.Static(DownloadPage.key), 16.dp)
         val SETTINGS = ContainerTransformTarget("SETTINGS", AppNavKey.ProfileTab, LegacyRoute.Static(SettingsPage.key), 16.dp)
-        private val shortcuts = listOf(FORUM, GUESTBOOK, WATER_COOLER, SEARCH, READING_STATISTICS, BOOKSHELF_READING_STATISTICS, BOOKMARKS, DOWNLOADS, SETTINGS)
+        val SYSTEM_MESSAGES = ContainerTransformTarget("SYSTEM_MESSAGES", AppNavKey.ProfileTab, LegacyRoute.Static(SystemMessagesPage.key), 16.dp)
+        val MEMBER_REPLIES = ContainerTransformTarget("MEMBER_REPLIES", AppNavKey.ProfileTab, LegacyRoute.Static(MemberRepliesPage.key), 16.dp)
+        val EXPERIENCE_RECORDS = ContainerTransformTarget("EXPERIENCE_RECORDS", AppNavKey.ProfileTab, LegacyRoute.Static(ExperienceRecordsPage.key), 16.dp)
+        private val shortcuts = listOf(
+            FORUM, GUESTBOOK, WATER_COOLER, SEARCH, READING_STATISTICS, BOOKSHELF_READING_STATISTICS, BOOKMARKS, DOWNLOADS, SETTINGS,
+            SYSTEM_MESSAGES, MEMBER_REPLIES, EXPERIENCE_RECORDS
+        )
 
         fun homeCarousel(novelIdentity: String, page: Int) = ContainerTransformTarget(
             name = "HOME_CAROUSEL",

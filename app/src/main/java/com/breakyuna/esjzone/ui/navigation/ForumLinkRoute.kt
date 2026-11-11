@@ -10,6 +10,9 @@ import com.breakyuna.esjzone.network.features.getNovelDetail
 import com.breakyuna.esjzone.novellibrary.novel.DetailedNovel
 import com.breakyuna.esjzone.novellibrary.novel.FavoriteNovel
 import com.breakyuna.esjzone.ui.page.ChapterPage
+import com.breakyuna.esjzone.ui.page.ExperienceRecordsPage
+import com.breakyuna.esjzone.ui.page.MemberRepliesPage
+import com.breakyuna.esjzone.ui.page.SystemMessagesPage
 import com.breakyuna.esjzone.ui.page.ForumPage
 import com.breakyuna.esjzone.ui.page.GuestbookPage
 import com.breakyuna.esjzone.ui.tab.HomeTab
@@ -42,6 +45,9 @@ internal fun forumLinkRoute(url: HttpUrl): LegacyRoute? {
         "/forum" -> return LegacyRoute.Static(ForumPage.key)
         "/guestbook" -> return LegacyRoute.Static(GuestbookPage.key)
         "/my/profile", "/my/profile.html" -> return LegacyRoute.Static(ProfileTab.key)
+        "/my/sys" -> return LegacyRoute.Static(SystemMessagesPage.key)
+        "/my/reply" -> return LegacyRoute.Static(MemberRepliesPage.key)
+        "/my/record" -> return LegacyRoute.Static(ExperienceRecordsPage.key)
     }
     if (novelPath.matches(path)) return LegacyRoute.Novel(path)
     if (forumBoardPath.matches(path)) return LegacyRoute.ForumBoard(path)

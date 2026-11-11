@@ -37,5 +37,7 @@ fun EsjzoneClient.getUserProfile(
         avatarUrl,
         experience,
         level,
+        registerDate = profileRegisterDate(document),
+        expRequired = profileExperienceRequired(document)
     )
 }

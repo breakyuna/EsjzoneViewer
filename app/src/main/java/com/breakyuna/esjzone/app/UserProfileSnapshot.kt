@@ -22,6 +22,8 @@ suspend fun cacheUserProfile(
     dao.put("${prefix}avatar", profile.avatarUrl)
     dao.put("${prefix}experience", profile.exp?.toString().orEmpty())
     dao.put("${prefix}level", profile.level.orEmpty())
+    dao.put("${prefix}registerDate", profile.registerDate.orEmpty())
+    dao.put("${prefix}experienceRequired", profile.expRequired?.toString().orEmpty())
 }
 
 internal fun profileCachePrefix(authorization: Authorization, domain: String): String {

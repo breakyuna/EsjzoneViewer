@@ -100,6 +100,12 @@ import com.breakyuna.esjzone.ui.navigation.ContainerTransformTarget
 import com.breakyuna.esjzone.ui.navigation.containerTransformContent
 import com.breakyuna.esjzone.ui.navigation.containerTransformSource
 import com.breakyuna.esjzone.ui.page.ReadingStatisticsPage
+import com.breakyuna.esjzone.ui.page.ExperienceRecordsPage
+import com.breakyuna.esjzone.ui.page.MemberRepliesPage
+import com.breakyuna.esjzone.ui.page.SystemMessagesPage
+import androidx.compose.material.icons.automirrored.filled.Comment
+import androidx.compose.material.icons.filled.MilitaryTech
+import androidx.compose.material.icons.filled.Notifications
 import com.breakyuna.esjzone.util.AppLogger
 import com.breakyuna.esjzone.util.LocaleHelper
 import kotlinx.coroutines.CancellationException
@@ -130,9 +136,13 @@ object ProfileTab : AppTab {
         var profileAvatar by rememberSaveable(domain, authorization.ewsKey) { mutableStateOf("") }
         var profileExp by rememberSaveable(domain, authorization.ewsKey) { mutableStateOf<Int?>(null) }
         var profileLevel by rememberSaveable(domain, authorization.ewsKey) { mutableStateOf<String?>(null) }
+        var profileRegisterDate by rememberSaveable(domain, authorization.ewsKey) { mutableStateOf<String?>(null) }
+        var profileExpRequired by rememberSaveable(domain, authorization.ewsKey) { mutableStateOf<Int?>(null) }
         var loading by remember(domain, authorization) { mutableStateOf(true) }
         var retry by remember { mutableStateOf(0) }
-        val profile = profileName?.let { UserProfile(it, profileAvatar, profileExp, profileLevel) }
+        val profile = profileName?.let {
+            UserProfile(it, profileAvatar, profileExp, profileLevel, profileRegisterDate, profileExpRequired)
+        }
         val menuItems = profileMenuItems()
         val wide = appUsesWideLayout()
 
@@ -156,12 +166,18 @@ object ProfileTab : AppTab {
                     val avatar = dao.findByKey("${prefix}avatar")?.value.orEmpty()
                     val experience = dao.findByKey("${prefix}experience")?.value?.toIntOrNull()
                     val level = dao.findByKey("${prefix}level")?.value?.takeIf(String::isNotBlank)
-                    name?.takeIf(String::isNotBlank)?.let { UserProfile(it, avatar, experience, level) }
+                    val registerDate = dao.findByKey("${prefix}registerDate")?.value?.takeIf(String::isNotBlank)
+                    val expRequired = dao.findByKey("${prefix}experienceRequired")?.value?.toIntOrNull()
+                    name?.takeIf(String::isNotBlank)?.let {
+                        UserProfile(it, avatar, experience, level, registerDate, expRequired)
+                    }
                 }
                 if (cached != null) {
                     profileName = cached.name
                     profileAvatar = cached.avatarUrl
                     profileLevel = cached.level
+                    profileRegisterDate = cached.registerDate
+                    profileExpRequired = cached.expRequired
                 }
             } catch (e: CancellationException) { throw e } catch (e: Exception) { AppLogger.w("ProfileTab", "Failed to read cached profile", e) }
             try {
@@ -174,6 +190,8 @@ object ProfileTab : AppTab {
                 profileName = fresh.name
                 profileAvatar = fresh.avatarUrl
                 profileLevel = fresh.level
+                profileRegisterDate = fresh.registerDate
+                profileExpRequired = fresh.expRequired
                 withContext(Dispatchers.IO) { cacheUserProfile(authorization, domain, fresh) }
             } catch (e: CancellationException) { throw e } catch (e: Exception) { AppLogger.w("ProfileTab", "Profile unavailable; using local snapshot", e) } finally { loading = false }
         }
@@ -245,8 +263,29 @@ private fun profileMenuItems(): List<ProfileMenuItem> = listOf(
     ProfileMenuItem(ContainerTransformTarget.READING_STATISTICS, Icons.Filled.QueryStats, stringResource(R.string.reading_stats_title), ReadingStatisticsPage),
     ProfileMenuItem(ContainerTransformTarget.BOOKMARKS, Icons.Filled.Bookmark, stringResource(R.string.bookmarks), BookmarksPage),
     ProfileMenuItem(ContainerTransformTarget.DOWNLOADS, Icons.Filled.Download, stringResource(R.string.downloads), DownloadPage),
+    ProfileMenuItem(ContainerTransformTarget.SYSTEM_MESSAGES, Icons.Filled.Notifications, stringResource(R.string.member_system_messages), SystemMessagesPage),
+    ProfileMenuItem(ContainerTransformTarget.MEMBER_REPLIES, Icons.AutoMirrored.Filled.Comment, stringResource(R.string.member_replies), MemberRepliesPage),
+    ProfileMenuItem(ContainerTransformTarget.EXPERIENCE_RECORDS, Icons.Filled.MilitaryTech, stringResource(R.string.member_experience_records), ExperienceRecordsPage),
     ProfileMenuItem(ContainerTransformTarget.SETTINGS, Icons.Filled.Settings, stringResource(R.string.settings), SettingsPage)
 )
+
+/** Registration date and next-level progress; both are optional on older profile snapshots. */
+@Composable
+private fun ProfileMemberDetails(profile: UserProfile) {
+    val progress = profile.exp?.let { current ->
+        profile.expRequired?.let { required -> stringResource(R.string.member_experience_progress, current, required) }
+    }
+    val registered = profile.registerDate?.let { stringResource(R.string.member_register_date, it) }
+    listOfNotNull(progress, registered).forEach { line ->
+        Text(
+            text = line,
+            style = AppTypography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
+    }
+}
 
 @Composable
 private fun ProfileActions(items: List<ProfileMenuItem>, onClick: (ProfileMenuItem) -> Unit) {
@@ -366,6 +405,7 @@ private fun ProfileHero(profile: UserProfile?, domain: String, avatarCacheKey: S
                             }
                         }
                     }
+                    ProfileMemberDetails(profile)
                 }
                 Text(domain, style = AppTypography.bodySmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f))
             }
