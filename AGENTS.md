@@ -112,7 +112,7 @@ app/src/main/java/com/breakyuna/esjzone/
 - `HomeTab`：主页数据、推荐和最新更新，也提供分类入口及右上角关键词搜索和搜索历史入口。
 - `HistoryTab`：观看记录；单击浏览历史，双击直接继续最近一次阅读。
 - `FavoriteTab`：本地优先书架，支持云端补充、按最近阅读排序、按书名、作者或本机已缓存标签（详情页标签缓存与下载清单）本地搜索、编辑与批量删除。
-- `ProfileTab`：用户信息（含注册日期、升级进度）、设置和关于页面入口，以及只读的会员中心页面：`SystemMessagesPage`（`/my/sys`）、`MemberRepliesPage`（`/my/reply`，回复链接指向章节页，不能带登录 Cookie 请求，只提供作品页和复制链接）、`ExperienceRecordsPage`（`/inc/mem_record_data.php`，先从 `/my/record` 获取动态令牌，随后带 `Authorization`、`X-Requested-With` 与 `/my/record` Referer 请求；`status` 非 200 视为失败）。
+- `ProfileTab`：用户信息（含注册日期、升级进度）、设置和关于页面入口，以及只读的会员中心页面：`SystemMessagesPage`（`/my/sys`）、`MemberRepliesPage`（`/my/reply`，回复链接指向章节页，不能带登录 Cookie 请求，只提供作品页和复制链接）、`ExperienceRecordsPage`（`/inc/mem_record_data.php`，先从 `/my/record` 获取动态令牌，随后带 `Authorization`、`X-Requested-With` 与 `/my/record` Referer 请求；`status` 非 200 视为失败，301 时换令牌重试一次；登录后留言类可能 20–30 秒才响应，数据请求使用 `EsjzoneClient.memberRecordClient` 的读取 60 秒 / 总 90 秒预算，切换类别取消旧请求）。
 
 具体作品通过 `NovelPage` 展示详情，章节通过 `ChapterPage` 获取并解析后阅读。
 

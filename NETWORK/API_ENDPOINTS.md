@@ -99,7 +99,8 @@
 | 实际请求方法与参数 | 2026-11-11 由 Esjzone bot 只读观察页面自身 XHR：`GET /inc/mem_record_data.php?search=type%3A{n}&order=desc&offset={o}&limit=30`；`select#type` 切换类别，1 发文、2 留言、3 评论，以 `search=type:{n}` 发出 |
 | 请求认证 | 站点通用 `assets/js/bootstrap-table.js?t=101` 的 `initServer` 在每次表格请求前调用 `getAuthToken`，并将结果放入 `authorization` 请求头。客户端以同一登录会话向当前站点的 `/my/record` POST `plxf=getAuthToken`，解析 `<JinJing>` 后随数据请求发送；令牌获取失败则停止，不记录或保存令牌。该流程来自通用表格脚本，经验记录的登录态请求头尚需真机验证 |
 | 其他请求头 | 数据请求发送 `X-Requested-With: XMLHttpRequest` 和当前站点的 `Referer: {base}/my/record`；数据请求不跟随 HTTP 重定向，3xx 或登录页视为会话失效 |
-| 返回 JSON 结构 | `application/json`：`{"status":200,"total":"0","rows":[]}`，Observed（空账号）。`total` 可能是字符串或数字；直接在地址栏访问返回 `{"status":301,"total":0,"rows":[]}`。此处 301 是 JSON 业务状态，不是 HTTP 重定向；客户端只接受 `status` 为 200，其余视为失败而非空列表 |
+| 返回 JSON 结构 | `application/json`：`{"status":200,"total":"0","rows":[]}`，Observed（空账号）。`total` 可能是字符串或数字；直接在地址栏访问返回 `{"status":301,"total":0,"rows":[]}`。此处 301 是 JSON 业务状态，不是 HTTP 重定向；客户端只接受 `status` 为 200，其余视为失败而非空列表。数据请求返回 `status: 301` 时重新获取一次令牌并重试一次（与论坛主题表相同），再次 301 即失败 |
+| 响应耗时与超时 | 2026-11-11 由 Esjzone bot 在登录状态下用网站自身 `/my/record` 实测：留言 `type=2` 约 22–28 秒才开始返回，发文 `type=1` 约 7 秒，评论 `type=3` 约 3.3 秒；响应体几毫秒传完，延迟全在服务器开始回应之前。未登录或无令牌时约 0.2 秒返回 301。数据请求因此使用独立的客户端配置：从共享客户端派生（复用连接池），连接 5 秒、读取 60 秒、单次请求总超时 90 秒、不跟随重定向；令牌请求和其他页面仍使用共享的连接 5 秒、读取 15 秒、总超时 30 秒。超时单独提示「网站响应较慢」并保留重试，不自动重试；切换类别会取消上一个仍在进行的请求（同时取消 OkHttp Call），旧响应不会覆盖新类别 |
 | 行字段 | NOT VERIFIED：测试账号三类均无记录。表头 `data-field` 为 `cdate`（时间）、`exp`（经验值）、`non`（空表头）；客户端宽松解析，未知非空字段按 `key: value` 原样显示 |
 | 空状态 DOM | `tr.no-records-found > td[colspan=3]`「目前尚無任何資料」 |
 | 证据 | table#dataTable[data-url] Observed；XHR 与 JSON Observed |

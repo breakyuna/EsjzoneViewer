@@ -133,6 +133,39 @@ object EsjzoneClient {
             .cookieJar(AuthorizationCookieJar(authorization))
             .build()
 
+    private class DerivedClient(val shared: OkHttpClient, val client: OkHttpClient)
+
+    @Volatile private var memberRecordBaseCache: DerivedClient? = null
+
+    /**
+     * Timeout profile for `/inc/mem_record_data.php`, derived once from the current
+     * shared client (same connection pool and dispatcher). While signed in, the site
+     * can take 20–30 seconds before it starts answering the "留言" category, longer
+     * than the shared 15 s read / 30 s call budget, so only this endpoint receives
+     * the longer budget. Redirects are never followed: a 3xx means the session expired.
+     */
+    internal fun memberRecordBaseClient(): OkHttpClient {
+        val shared = sharedHttpClient
+        memberRecordBaseCache?.takeIf { it.shared === shared }?.let { return it.client }
+        val client = shared.newBuilder()
+            .followRedirects(false)
+            .readTimeout(MEMBER_RECORD_READ_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+            .callTimeout(MEMBER_RECORD_CALL_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+            .build()
+        memberRecordBaseCache = DerivedClient(shared, client)
+        return client
+    }
+
+    /**
+     * Session-scoped client for the experience record endpoint. The cookie jar is
+     * attached per request, like [authenticatedClient], because it pins the session
+     * generation that was active when it was created.
+     */
+    internal fun memberRecordClient(authorization: Authorization): OkHttpClient =
+        memberRecordBaseClient().newBuilder()
+            .cookieJar(AuthorizationCookieJar(authorization))
+            .build()
+
     fun getWenkuChapter(chapter: Chapter, url: String, forceRefresh: Boolean, allowAutoSolve: Boolean,
                         onSecurityCheck: (() -> Unit)? = null): DetailedChapter =
         (wenkuClient ?: throw WenkuCookieStoreUnavailableException())
@@ -769,4 +802,6 @@ object EsjzoneClient {
     }
 
     private const val NETWORK_PERMIT_WAIT_SECONDS = 30L
+    internal const val MEMBER_RECORD_READ_TIMEOUT_SECONDS = 60L
+    internal const val MEMBER_RECORD_CALL_TIMEOUT_SECONDS = 90L
 }

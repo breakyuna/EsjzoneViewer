@@ -166,8 +166,18 @@ object ExperienceRecordsPage : AppDestination {
                     }
                 }
             }
+            if (state.loading) item(key = "record-slow-hint") {
+                // Signed in, the site can take 20–30 s before answering some categories.
+                MetaText(stringResource(R.string.member_experience_records_slow_hint))
+            }
             if (state.refreshFailed) item(key = "record-refresh-error") {
-                ErrorStateCompact(stringResource(R.string.member_refresh_failed), onRetry = model::retry)
+                ErrorStateCompact(
+                    stringResource(
+                        if (state.timedOut) R.string.member_experience_records_timeout_compact
+                        else R.string.member_refresh_failed
+                    ),
+                    onRetry = model::retry
+                )
             }
             when {
                 !state.loaded && state.loading -> item(key = "record-loading") {
@@ -175,7 +185,10 @@ object ExperienceRecordsPage : AppDestination {
                 }
                 !state.loaded && state.failure != null -> {
                     val failure = state.failure ?: LoadFailureKind.CLIENT
-                    item(key = "record-error") { MemberFailureState(failure, onRetry = model::retry) }
+                    item(key = "record-error") {
+                        if (state.timedOut) ExperienceRecordTimeoutState(onRetry = model::retry)
+                        else MemberFailureState(failure, onRetry = model::retry)
+                    }
                 }
                 state.loaded && state.rows.isEmpty() -> item(key = "record-empty") {
                     EmptyState(
@@ -285,6 +298,17 @@ private fun MemberFailureState(failure: LoadFailureKind, onRetry: () -> Unit) {
             onRetry = onRetry
         )
     }
+}
+
+/** The site was reachable but did not answer in time; distinct from being offline. */
+@Composable
+private fun ExperienceRecordTimeoutState(onRetry: () -> Unit) {
+    ErrorState(
+        title = stringResource(R.string.member_experience_records_timeout_title),
+        message = stringResource(R.string.member_experience_records_timeout_message),
+        modifier = Modifier.fillMaxWidth().padding(top = AppSpacing.xl),
+        onRetry = onRetry
+    )
 }
 
 @OptIn(ExperimentalFoundationApi::class)
@@ -447,7 +471,13 @@ private fun ExperienceRecordFooter(state: ExperienceRecordsState, onLoadMore: ()
         when {
             state.loading && !state.refreshing -> CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.dp)
             state.refreshing || state.refreshFailed -> Unit
-            state.failure != null -> ErrorStateCompact(stringResource(R.string.member_refresh_failed), onRetry = onRetry)
+            state.failure != null -> ErrorStateCompact(
+                stringResource(
+                    if (state.timedOut) R.string.member_experience_records_timeout_compact
+                    else R.string.member_refresh_failed
+                ),
+                onRetry = onRetry
+            )
             state.canLoadMore -> TextButton(onClick = onLoadMore) { Text(stringResource(R.string.search_load_more)) }
             else -> MetaText(stringResource(R.string.member_experience_records_end, state.rows.size))
         }

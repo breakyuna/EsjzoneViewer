@@ -9,18 +9,21 @@ import com.breakyuna.esjzone.network.features.EXPERIENCE_RECORD_PAGE_SIZE
 import com.breakyuna.esjzone.network.features.getExperienceRecords
 import com.breakyuna.esjzone.network.features.getMemberReplies
 import com.breakyuna.esjzone.network.features.getSystemMessages
+import com.breakyuna.esjzone.network.features.isRequestTimeout
 import com.breakyuna.esjzone.network.loadFailureKind
 import com.breakyuna.esjzone.novellibrary.user.ExperienceRecord
+import com.breakyuna.esjzone.novellibrary.user.ExperienceRecordPage
 import com.breakyuna.esjzone.novellibrary.user.ExperienceRecordType
 import com.breakyuna.esjzone.novellibrary.user.MemberReply
 import com.breakyuna.esjzone.novellibrary.user.SystemMessage
 import com.breakyuna.esjzone.ui.navigation.AppStateViewModel
 import com.breakyuna.esjzone.util.AppLogger
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.runInterruptible
 
 /** Read-only member-center list state shared by `/my/sys` and `/my/reply`. */
 sealed class MemberListState<out T> {
@@ -97,7 +100,9 @@ data class ExperienceRecordsState(
     /** True while a same-category refresh runs over the rows still on screen. */
     val refreshing: Boolean = false,
     /** The last same-category refresh failed; [rows] are the previous result. */
-    val refreshFailed: Boolean = false
+    val refreshFailed: Boolean = false,
+    /** The last failure was the site not answering in time, not a broken connection. */
+    val timedOut: Boolean = false
 ) {
     val canLoadMore: Boolean get() = loaded && !loading && !endReached
 }
@@ -120,6 +125,7 @@ internal fun ExperienceRecordsState.appendPage(
         refreshing = false,
         refreshFailed = false,
         failure = null,
+        timedOut = false,
         endReached = rows.isEmpty() || rows.size < pageSize || merged.size >= total
     )
 }
@@ -127,24 +133,48 @@ internal fun ExperienceRecordsState.appendPage(
 /** A failed request keeps whatever was on screen; only a failed refresh is flagged as stale. */
 internal fun ExperienceRecordsState.afterFailure(
     failure: LoadFailureKind,
-    refresh: Boolean
-): ExperienceRecordsState = copy(loading = false, refreshing = false, failure = failure, refreshFailed = refresh)
+    refresh: Boolean,
+    timedOut: Boolean = false
+): ExperienceRecordsState = copy(
+    loading = false,
+    refreshing = false,
+    failure = failure,
+    refreshFailed = refresh,
+    timedOut = timedOut
+)
 
-class ExperienceRecordsPageModel(
-    private val authorization: Authorization
-) : AppStateViewModel<ExperienceRecordsState>(ExperienceRecordsState()) {
+/** Loads one page of a category; must be cancellable down to the HTTP call. */
+internal typealias ExperienceRecordLoader = suspend (type: ExperienceRecordType, offset: Int) -> ExperienceRecordPage
+
+/**
+ * Paging and category switching for `/my/record`, kept apart from the ViewModel so
+ * it can run on any scope. Only one request is active: a new category, refresh,
+ * page or retry cancels the previous job (and with it the HTTP call), and a
+ * generation check keeps a late response from replacing the newer state.
+ * Failures are never retried automatically; the slow categories would pile up.
+ */
+internal class ExperienceRecordsController(
+    private val scope: CoroutineScope,
+    private val state: MutableStateFlow<ExperienceRecordsState>,
+    private val loader: ExperienceRecordLoader,
+    private val onFailure: (Exception) -> Unit = {}
+) {
+    private val lock = Any()
     private var job: Job? = null
     private var generation = 0L
     private var started = false
 
     fun load() {
-        if (started) return
-        started = true
-        reload(mutableState.value.type)
+        synchronized(lock) {
+            if (started) return
+            started = true
+        }
+        reload(state.value.type)
     }
 
     fun selectType(type: ExperienceRecordType) {
-        if (type == mutableState.value.type && mutableState.value.loaded) return
+        val current = state.value
+        if (type == current.type && (current.loaded || current.loading)) return
         reload(type)
     }
 
@@ -153,7 +183,7 @@ class ExperienceRecordsPageModel(
      * a failure leaves them in place with a retry prompt.
      */
     fun refresh() {
-        val current = mutableState.value
+        val current = state.value
         if (!current.loaded) {
             reload(current.type)
             return
@@ -162,13 +192,13 @@ class ExperienceRecordsPageModel(
     }
 
     fun loadMore() {
-        val current = mutableState.value
+        val current = state.value
         if (!current.canLoadMore) return
         fetch(current, offset = current.rows.size)
     }
 
     fun retry() {
-        val current = mutableState.value
+        val current = state.value
         when {
             !current.loaded -> reload(current.type)
             current.refreshFailed -> refresh()
@@ -191,23 +221,51 @@ class ExperienceRecordsPageModel(
         visible: ExperienceRecordsState = base,
         refresh: Boolean = false
     ) {
-        job?.cancel()
-        val requestGeneration = ++generation
-        mutableState.value = visible.copy(loading = true, refreshing = refresh, failure = null, refreshFailed = false)
-        job = viewModelScope.launch {
-            try {
-                val page = runInterruptible(Dispatchers.IO) {
-                    PresentationAccess.client.getExperienceRecords(authorization, base.type, offset)
+        synchronized(lock) {
+            job?.cancel()
+            val requestGeneration = ++generation
+            state.value = visible.copy(
+                loading = true,
+                refreshing = refresh,
+                failure = null,
+                refreshFailed = false,
+                timedOut = false
+            )
+            job = scope.launch {
+                val next = try {
+                    val page = loader(base.type, offset)
+                    base.appendPage(page.rows, page.total)
+                } catch (error: CancellationException) {
+                    throw error
+                } catch (error: Exception) {
+                    if (isCurrent(requestGeneration)) onFailure(error)
+                    visible.afterFailure(error.loadFailureKind(), refresh, error.isRequestTimeout())
                 }
-                if (requestGeneration != generation) return@launch
-                mutableState.value = base.appendPage(page.rows, page.total)
-            } catch (error: CancellationException) {
-                throw error
-            } catch (error: Exception) {
-                if (requestGeneration != generation) return@launch
-                AppLogger.e("ExperienceRecordsPage", "Failed to load experience records", error)
-                mutableState.value = visible.afterFailure(error.loadFailureKind(), refresh)
+                synchronized(lock) {
+                    if (requestGeneration == generation) state.value = next
+                }
             }
         }
     }
+
+    private fun isCurrent(requestGeneration: Long): Boolean = synchronized(lock) { requestGeneration == generation }
+}
+
+class ExperienceRecordsPageModel(
+    authorization: Authorization
+) : AppStateViewModel<ExperienceRecordsState>(ExperienceRecordsState()) {
+    private val controller = ExperienceRecordsController(
+        scope = viewModelScope,
+        state = mutableState,
+        loader = { type, offset ->
+            cancellablePageRequest { PresentationAccess.client.getExperienceRecords(authorization, type, offset) }
+        },
+        onFailure = { error -> AppLogger.e("ExperienceRecordsPage", "Failed to load experience records", error) }
+    )
+
+    fun load() = controller.load()
+    fun selectType(type: ExperienceRecordType) = controller.selectType(type)
+    fun refresh() = controller.refresh()
+    fun loadMore() = controller.loadMore()
+    fun retry() = controller.retry()
 }
