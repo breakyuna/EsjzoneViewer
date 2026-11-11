@@ -8,6 +8,7 @@ import com.breakyuna.esjzone.network.JsoupHtmlSelector
 import com.breakyuna.esjzone.network.PageCacheTtl
 import com.breakyuna.esjzone.network.PageCache
 import com.breakyuna.esjzone.network.PageKind
+import com.breakyuna.esjzone.network.PageResponsePolicy
 import com.breakyuna.esjzone.network.NovelDetailCache
 import com.breakyuna.esjzone.network.CacheDiagnostics
 import com.breakyuna.esjzone.network.CacheEventType
@@ -170,6 +171,28 @@ fun EsjzoneClient.getNovelDetail(
         NovelDetailCache.write(detailCacheKey, detailedNovel, sourceReference, detailCacheEpoch)
     }
     return detailedNovel
+}
+
+/**
+ * Chapter list from data already on the device: the parsed-detail memory cache, then the
+ * raw detail HTML in the disk page cache. A miss returns null and never starts a request,
+ * so it cannot touch the account's reading history.
+ */
+internal fun EsjzoneClient.getCachedNovelChapterList(
+    authorization: Authorization,
+    novelUrl: String
+): NovelChapterList? {
+    if (novelUrl.isBlank()) return null
+    val targetUrl = EsjzoneUrls.resolve(novelUrl).substringBefore('#')
+    val cacheKey = novelDetailCacheKey(authorization, targetUrl)
+    NovelDetailCache.read(cacheKey)?.let { return it.chapterList }
+    val html = PageCache.readStale(cacheKey) ?: return null
+    if (!PageResponsePolicy.validate(200, html, targetUrl, kind = PageKind.DETAIL).trusted) return null
+    val document = Jsoup.parse(html, targetUrl)
+    val list = detailSelector.select(document, "#integration").firstOrNull()?.let(::analyseChapterList)
+        ?: return null
+    CacheDiagnostics.record(CacheEventType.HIT, CacheLayer.PAGE, CacheEventReason.DISK, cacheKey)
+    return list
 }
 
 private val UPDATED_AT_REGEX = Regex(
