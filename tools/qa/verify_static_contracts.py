@@ -128,6 +128,7 @@ SELECTABLE_PROSE_PAGES = (
     "page/CommentSection.kt",
     "page/CommunityPages.kt",
     "tab/ProfileTab.kt",
+    "page/MemberCenterPages.kt",
 )
 # Rows on these pages own long press (multi-select) or a click; text selection would steal it.
 ROW_GESTURE_PAGES = (

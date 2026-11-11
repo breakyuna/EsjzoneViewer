@@ -52,3 +52,27 @@ data class ExperienceRecordPage(
     val total: Int,
     val rows: List<ExperienceRecord>
 )
+
+
+/** Plain text for clipboard or tests: title, then time, skipping blanks. */
+fun SystemMessage.copyText(): String =
+    listOfNotNull(title.takeIf { it.isNotBlank() }, time?.takeIf { it.isNotBlank() })
+        .joinToString("\n")
+
+/** Plain text of a reply row: body, subject, replier and date. The chapter URL is omitted. */
+fun MemberReply.copyText(): String =
+    listOfNotNull(
+        content.takeIf { it.isNotBlank() },
+        subject?.takeIf { it.isNotBlank() },
+        replierName?.takeIf { it.isNotBlank() },
+        date?.takeIf { it.isNotBlank() },
+    ).joinToString("\n")
+
+/** Plain text of an experience row: note, exp, time (once) and any extra fields. */
+fun ExperienceRecord.copyText(): String = buildList {
+    val primary = note?.takeIf { it.isNotBlank() } ?: time?.takeIf { it.isNotBlank() }
+    primary?.let(::add)
+    exp?.takeIf { it.isNotBlank() }?.let(::add)
+    if (!note.isNullOrBlank()) time?.takeIf { it.isNotBlank() && it != primary }?.let(::add)
+    extras.mapNotNull { it.takeIf(String::isNotBlank) }.forEach(::add)
+}.joinToString("\n")

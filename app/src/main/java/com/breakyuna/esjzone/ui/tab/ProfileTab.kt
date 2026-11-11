@@ -364,7 +364,7 @@ private fun ProfileHero(profile: UserProfile?, domain: String, avatarCacheKey: S
                     Text(stringResource(R.string.navigation_profile), style = AppTypography.titleLarge)
                     TextButton(onClick = onRetry) { Text(stringResource(R.string.retry)) }
                 } else {
-                    // The hero card has no gesture; name and level are copyable member fields.
+                    // The hero card has no gesture; name, level, registration and progress are copyable.
                     SelectableProse {
                         Column(verticalArrangement = Arrangement.spacedBy(AppSpacing.xs)) {
                             Row(
@@ -403,9 +403,9 @@ private fun ProfileHero(profile: UserProfile?, domain: String, avatarCacheKey: S
                                     maxLines = 1
                                 )
                             }
+                            ProfileMemberDetails(profile)
                         }
                     }
-                    ProfileMemberDetails(profile)
                 }
                 Text(domain, style = AppTypography.bodySmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f))
             }
