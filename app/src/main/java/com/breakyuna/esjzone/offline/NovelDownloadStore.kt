@@ -32,6 +32,7 @@ import com.breakyuna.esjzone.novellibrary.novel.NovelDescription
 import com.breakyuna.esjzone.util.copyWithCancellation
 import com.breakyuna.esjzone.util.AppLogger
 import com.google.gson.Gson
+import com.google.gson.annotations.SerializedName
 import com.breakyuna.esjzone.storage.StorageAccessException
 import com.breakyuna.esjzone.storage.StorageFile
 import com.breakyuna.esjzone.storage.StorageTransferProgress
@@ -2144,7 +2145,11 @@ object NovelDownloadStore {
         saveDirectoryHints()
     }
 
-    private data class DirectoryHints(val root: String, val directories: Map<String, String>)
+    /** Alternates read hints written before the keep rule; a mismatched root is ignored anyway. */
+    private data class DirectoryHints(
+        @SerializedName(value = "root", alternate = ["a"]) val root: String,
+        @SerializedName(value = "directories", alternate = ["b"]) val directories: Map<String, String>
+    )
 
     private fun readDirectoryHints(root: StorageFile): Map<String, String> = runCatching {
         val file = directoryIndexCache ?: return emptyMap()

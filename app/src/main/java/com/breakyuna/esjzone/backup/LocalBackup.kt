@@ -30,7 +30,11 @@ enum class BackupCategory {
     UNDERLINES, BOOKMARKS, DOWNLOADS, READING, HISTORY, SEARCH, GROUPS, BOOKSHELF, READER_SETTINGS
 }
 
-data class BackupGroups(val names: List<String>, val members: Map<String, String>)
+/** Alternates read archives exported before the keep rule, when R8 renamed these fields. */
+data class BackupGroups(
+    @SerializedName(value = "names", alternate = ["a"]) val names: List<String>,
+    @SerializedName(value = "members", alternate = ["b"]) val members: Map<String, String>
+)
 
 private data class BackupShelfBook(
     @SerializedName("bookKey") val bookKey: String,
@@ -280,6 +284,7 @@ object LocalBackup {
                 (it.bookProgress == null || it.bookProgress.isFinite() && it.bookProgress in 0f..1f) })
             require(reading.all { it.bookKey.isNotBlank() && it.durationMs >= 0 && runCatching { java.time.LocalDate.parse(it.date) }.isSuccess })
             require(groups == null || (groups.names.all { it.isNotBlank() } && groups.members.values.all { it in groups.names }))
+            require(search.all { it.keyword.isNotBlank() })
             val restoreDatabase: suspend () -> Unit = {
                 database.withTransaction {
                     checkActive()

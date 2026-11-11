@@ -122,3 +122,27 @@
     <init>(...);
     <fields>;
 }
+
+# Local backups and the download directory index are written and read by Gson.
+# Release builds before these rules renamed the fields; the @SerializedName
+# alternates on each class read those older files.
+-keep class com.breakyuna.esjzone.database.entity.ReadingStat {
+    <init>(...);
+    <fields>;
+}
+-keep class com.breakyuna.esjzone.database.entity.SearchHistory {
+    <init>(...);
+    <fields>;
+}
+-keep class com.breakyuna.esjzone.backup.BackupGroups {
+    <init>(...);
+    <fields>;
+}
+-keep class com.breakyuna.esjzone.backup.BackupShelfBook {
+    <init>(...);
+    <fields>;
+}
+-keep class com.breakyuna.esjzone.offline.NovelDownloadStore$DirectoryHints {
+    <init>(...);
+    <fields>;
+}

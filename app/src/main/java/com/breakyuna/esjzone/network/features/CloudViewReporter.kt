@@ -202,9 +202,10 @@ internal class CloudViewReportStore(private val file: File?) {
     private fun load() {
         val stored = file?.takeIf { it.isFile } ?: return
         val decoded = runCatching { CloudViewReportCodec.decode(stored.readText()) }.getOrElse {
-            // Log once and start fresh: rewriting the file keeps the warning from
-            // repeating on every launch.
+            // Log once and start fresh. The original is kept beside it, and
+            // rewriting the file keeps the warning from repeating on every launch.
             AppLogger.w("CloudView", "Unable to read saved chapter view reports; starting fresh", it)
+            preserveOriginal(stored)
             records.clear()
             persist()
             return
@@ -213,8 +214,15 @@ internal class CloudViewReportStore(private val file: File?) {
         records += decoded.records
         if (decoded.discarded > 0) {
             AppLogger.i("CloudView", "Dropped ${decoded.discarded} saved chapter view reports with missing fields")
+            preserveOriginal(stored)
             persist()
         }
+    }
+
+    /** Keeps the last file that could not be read in full as `<name>.bak`. */
+    private fun preserveOriginal(stored: File) {
+        runCatching { stored.copyTo(File(stored.parentFile, "${stored.name}.bak"), overwrite = true) }
+            .onFailure { AppLogger.w("CloudView", "Unable to keep a copy of saved chapter view reports", it) }
     }
 
     private fun persist() {
@@ -239,17 +247,21 @@ internal class CloudViewReportStore(private val file: File?) {
  * (see the matching keep rule in proguard-rules.pro). All fields are nullable
  * with defaults: a record missing a required field is dropped instead of failing
  * the whole file.
+ *
+ * Earlier release builds (versionName 0.2.5) wrote [CloudViewRecord] directly and
+ * R8 renamed its fields in declaration order (`a` = site ... `i` = account,
+ * `j` = generation, which is not persisted). The alternates read those files.
  */
 internal data class StoredCloudView(
-    @SerializedName("site") val site: String? = null,
-    @SerializedName("novelKey") val novelKey: String? = null,
-    @SerializedName("novelId") val novelId: String? = null,
-    @SerializedName("novelUrl") val novelUrl: String? = null,
-    @SerializedName("chapterKey") val chapterKey: String? = null,
-    @SerializedName("chapterUrl") val chapterUrl: String? = null,
-    @SerializedName("reported") val reported: Boolean? = null,
-    @SerializedName("updatedAt") val updatedAt: Long? = null,
-    @SerializedName("account") val account: String? = null
+    @SerializedName(value = "site", alternate = ["a"]) val site: String? = null,
+    @SerializedName(value = "novelKey", alternate = ["b"]) val novelKey: String? = null,
+    @SerializedName(value = "novelId", alternate = ["c"]) val novelId: String? = null,
+    @SerializedName(value = "novelUrl", alternate = ["d"]) val novelUrl: String? = null,
+    @SerializedName(value = "chapterKey", alternate = ["e"]) val chapterKey: String? = null,
+    @SerializedName(value = "chapterUrl", alternate = ["f"]) val chapterUrl: String? = null,
+    @SerializedName(value = "reported", alternate = ["g"]) val reported: Boolean? = null,
+    @SerializedName(value = "updatedAt", alternate = ["h"]) val updatedAt: Long? = null,
+    @SerializedName(value = "account", alternate = ["i"]) val account: String? = null
 ) {
     fun toRecord(): CloudViewRecord? {
         val accountScope = account?.trim().orEmpty()
@@ -291,9 +303,8 @@ internal data class StoredCloudView(
 internal data class DecodedCloudViews(val records: List<CloudViewRecord>, val discarded: Int)
 
 /**
- * Release 0.2.5 and earlier wrote [CloudViewRecord] directly, so a minified build
- * saved obfuscated keys (`a`, `b`, ...). Those entries lack the required fields
- * and are discarded one by one; text that is not a JSON array throws.
+ * Entries missing a required field are discarded one by one; text that is not a
+ * JSON array throws.
  */
 internal object CloudViewReportCodec {
     private val gson = Gson()

@@ -48,7 +48,7 @@
 
 维护者于 2026-11-07 确认：登录会话下，站点把该账号每本书的观看记录更新为最后一次实际请求到的章节页。没有单独的进度上报接口。客户端阅读已保存或仅从本地缓存打开的章节时，若“更新网站观看记录”开启且当前账号已登录，会在该章停留后用本次授权站点补一次章节 GET。请求结果不进入阅读器，也不改写下载文件。待补记录按登录账号分开保存，换账号后不会用新会话提交上一个账号的章节。同一本书只保留最新一章。只有这次阅读确实从网站取回章节页时，才把该章记成已请求；再次翻回先前加载的章节时，若记录已经停在别的章节，会再请求一次。离线期间记下待补章节，恢复联网后只请求仍是本地最新章的记录。请求失败则保持待补，下次回到前台再试。补报在真正发出前会再核对是否仍是这本书的当前章；若这次请求落地时记录已经换成更新的章节，会把那一章重新加入待补。
 
-待补记录保存在应用私有目录的 `cloud_view_reports.json`（JSON 数组）。读写都只经过 `StoredCloudView`，字段名用 `@SerializedName` 固定为 `site`、`novelKey`、`novelId`、`novelUrl`、`chapterKey`、`chapterUrl`、`reported`、`updatedAt`、`account`，并有对应的 R8 保留规则，Release 与 Debug 包写出的文件一致。0.2.5 及更早的 Release 包把字段名混淆成了 `a`、`b`…，读取时缺少必填字段（账号、站点、小说键、章节键）的条目逐条丢弃，并把剩下的记录写回；整个文件无法解析时只记录一次警告，以空列表重新开始并覆盖旧文件。这些旧待补记录不会再补报。
+待补记录保存在应用私有目录的 `cloud_view_reports.json`（JSON 数组）。读写都只经过 `StoredCloudView`，字段名用 `@SerializedName` 固定为 `site`、`novelKey`、`novelId`、`novelUrl`、`chapterKey`、`chapterUrl`、`reported`、`updatedAt`、`account`，并有对应的 R8 保留规则，Release 与 Debug 包写出的文件一致。修复前的 Release 包（versionName 0.2.5）直接序列化 `CloudViewRecord`，字段按声明顺序被混淆为 `a`…`j`；这些名字作为 `alternate` 读取，`j`（进程内代数）不持久化。缺少账号、站点、小说键或章节键的条目逐条丢弃；整个文件无法解析（非 JSON、非数组、空文件）时只记录一次警告，以空列表重新开始。两种情况都会先把原文件复制为 `cloud_view_reports.json.bak` 再写回。
 
 ### 3.1 删除观看记录
 
