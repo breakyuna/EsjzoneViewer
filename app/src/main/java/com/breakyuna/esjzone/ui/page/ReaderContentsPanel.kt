@@ -8,12 +8,18 @@ import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.MyLocation
+import androidx.compose.material.icons.filled.SwapVert
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.breakyuna.esjzone.app.PresentationAccess
+import com.breakyuna.esjzone.network.Authorization
+import com.breakyuna.esjzone.network.LocalAuthorization
+import com.breakyuna.esjzone.network.features.getCachedNovelChapterList
 import com.breakyuna.esjzone.offline.NovelDownloadStore
 import com.breakyuna.esjzone.ui.navigation.AppStateViewModel
 import com.breakyuna.esjzone.ui.navigation.rememberAppViewModel
@@ -97,9 +103,28 @@ internal fun ReaderContentsContent(
     var locate by remember { mutableIntStateOf(0) }
     val catalogModel = rememberAppViewModel { ReaderCatalogModel(novelUrl) }
     val savedChapters by catalogModel.state.collectAsStateWithLifecycle()
-    val filteredChapters by produceState(chapters, chapters, query) {
-        value = withContext(Dispatchers.Default) { filterReaderCatalog(chapters, query) }
+    val authorization = LocalAuthorization.current
+    val tocModel = rememberAppViewModel { ReaderTocVolumesModel() }
+    val tocUrl = novelUrl.ifBlank { novelId.takeIf(String::isNotBlank)?.let { "/detail/$it.html" }.orEmpty() }
+    // Reload when the reader's order changes: a detail fetch may have refreshed the local cache.
+    LaunchedEffect(tocUrl, chapters.size) { tocModel.load(authorization, tocUrl, chapters.size) }
+    val tocSources by tocModel.state.collectAsStateWithLifecycle()
+    val descending by PresentationAccess.readerSettings.tocDescending.collectAsStateWithLifecycle()
+    val toc by produceState(ReaderToc(listOf(ReaderTocVolume("all", null, chapters))), chapters, tocSources) {
+        value = withContext(Dispatchers.Default) { buildReaderToc(chapters, tocSources) }
     }
+    val currentVolumeKey = remember(toc, currentKey) { toc.volumeKeyOf(currentKey) }
+    var expandedVolumes by remember(novelId) { mutableStateOf(emptySet<String>()) }
+    // The current chapter's volume opens by default; other volumes keep the user's choice.
+    LaunchedEffect(currentVolumeKey) { currentVolumeKey?.let { expandedVolumes = expandedVolumes + it } }
+    val tocSnapshot by produceState(TocRowsSnapshot(toc, descending, expandedVolumes, emptyList()),
+        toc, descending, expandedVolumes, query) {
+        val input = TocRowsSnapshot(toc, descending, expandedVolumes, emptyList())
+        value = input.copy(rows = withContext(Dispatchers.Default) {
+            readerTocRows(input.toc, input.descending, input.expanded, query)
+        })
+    }
+    val tocRows = tocSnapshot.rows
 
     val bookBookmarks by produceState<List<Pair<Chapter, Bookmark>>>(emptyList(), chapters, bookmarks, novelId) {
         value = withContext(Dispatchers.Default) {
@@ -122,9 +147,22 @@ internal fun ReaderContentsContent(
             }
         }
     }
-    LaunchedEffect(filteredChapters, currentKey, locate) {
-        val index = filteredChapters.indexOfFirst { chapterIdentity(it) == currentKey }
-        if (index >= 0) catalogState.scrollToItem(index)
+    // Scroll once per open, current-chapter change, order flip or locate tap; plain expand or
+    // collapse taps must not make the list jump.
+    var pendingLocate by remember { mutableStateOf(true) }
+    LaunchedEffect(toc, currentKey, locate, descending) { pendingLocate = true }
+    LaunchedEffect(tocSnapshot, pendingLocate) {
+        if (!pendingLocate) return@LaunchedEffect
+        // Rows are computed off the main thread; skip a snapshot that predates the change.
+        val snapshot = tocSnapshot
+        if (snapshot.toc !== toc || snapshot.descending != descending) return@LaunchedEffect
+        if (currentVolumeKey != null && currentVolumeKey !in snapshot.expanded &&
+            currentVolumeKey in expandedVolumes) return@LaunchedEffect
+        val index = readerTocIndexOf(tocRows, currentKey, currentVolumeKey)
+        if (index >= 0) {
+            catalogState.scrollToItem(index)
+            pendingLocate = false
+        }
     }
     val labels = listOf(R.string.reader_contents, R.string.reader_bookmark_action, R.string.reader_underline_tab)
     Column(
@@ -148,14 +186,24 @@ internal fun ReaderContentsContent(
         if (pager.currentPage == 0) Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             OutlinedTextField(value = query, onValueChange = { query = it }, singleLine = true,
                 label = { Text(stringResource(R.string.reader_catalog_search)) }, modifier = Modifier.weight(1f))
-            IconButton(onClick = { query = ""; locate++ }) {
+            IconButton(onClick = {
+                scope.launch { PresentationAccess.readerSettings.saveTocDescending(!descending) }
+            }) {
+                Icon(Icons.Filled.SwapVert, stringResource(
+                    if (descending) R.string.reader_toc_sort_ascending else R.string.reader_toc_sort_descending))
+            }
+            IconButton(onClick = {
+                query = ""
+                currentVolumeKey?.let { expandedVolumes = expandedVolumes + it }
+                locate++
+            }) {
                 Icon(Icons.Filled.MyLocation, stringResource(R.string.reader_catalog_current))
             }
         }
         HorizontalPager(state = pager, modifier = Modifier.fillMaxWidth().weight(1f)) { page ->
             val description = stringResource(labels[page])
             val isEmpty = when (page) {
-                0 -> filteredChapters.isEmpty()
+                0 -> tocRows.isEmpty()
                 1 -> bookBookmarks.isEmpty()
                 else -> bookUnderlines.isEmpty()
             }
@@ -174,11 +222,20 @@ internal fun ReaderContentsContent(
                     modifier = Modifier.fillMaxSize().semantics { contentDescription = description }
                 ) {
                     when (page) {
-                        0 -> items(filteredChapters, key = ::chapterIdentity) { chapter ->
-                            ReaderContentsRow(chapter.name, quote = savedChapters[NovelDownloadStore.chapterKey(chapter.url)]?.let {
-                                stringResource(if (it) R.string.local_downloaded else R.string.local_text_saved)
-                            }, selected = chapterIdentity(chapter) == currentKey,
-                                onClick = { onChapterSelected(chapter) })
+                        0 -> items(tocRows, key = ReaderTocRow::key, contentType = { it is ReaderTocRow.Volume }) { row ->
+                            when (row) {
+                                is ReaderTocRow.Volume -> ReaderTocVolumeRow(row,
+                                    current = row.volume.key == currentVolumeKey,
+                                    onToggle = {
+                                        expandedVolumes = if (row.expanded) expandedVolumes - row.volume.key
+                                        else expandedVolumes + row.volume.key
+                                    })
+                                is ReaderTocRow.Entry -> ReaderContentsRow(row.chapter.name,
+                                    quote = savedChapters[NovelDownloadStore.chapterKey(row.chapter.url)]?.let {
+                                        stringResource(if (it) R.string.local_downloaded else R.string.local_text_saved)
+                                    }, selected = row.chapterKey == currentKey,
+                                    onClick = { onChapterSelected(row.chapter) })
+                            }
                         }
                         1 -> items(bookBookmarks, key = { it.second.id }) { (chapter, bookmark) ->
                             ReaderContentsRow(chapter.name, quote = bookmark.excerpt?.takeIf { it.isNotBlank() }
@@ -214,6 +271,55 @@ private fun ReaderContentsRow(title: String, quote: String? = null, selected: Bo
                 fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal)
             if (quote != null) Text(quote, maxLines = 3, overflow = TextOverflow.Ellipsis,
                 style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+}
+
+private data class TocRowsSnapshot(
+    val toc: ReaderToc,
+    val descending: Boolean,
+    val expanded: Set<String>,
+    val rows: List<ReaderTocRow>
+)
+
+@Composable
+private fun ReaderTocVolumeRow(row: ReaderTocRow.Volume, current: Boolean, onToggle: () -> Unit) {
+    val title = row.volume.title ?: stringResource(R.string.reader_toc_untitled_volume)
+    // A query keeps every matching volume open, so the header cannot collapse it.
+    val description = stringResource(if (row.expanded) R.string.chapter_group_collapse else R.string.chapter_group_expand)
+    Surface(onClick = onToggle, modifier = Modifier.fillMaxWidth().padding(top = AppSpacing.xs, bottom = AppSpacing.xxs),
+        shape = AppShapes.standard,
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.48f)) {
+        Row(Modifier.padding(start = AppSpacing.md, end = AppSpacing.sm, top = AppSpacing.sm, bottom = AppSpacing.sm),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(AppSpacing.sm)) {
+            Text(title, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f),
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = if (current) FontWeight.Bold else FontWeight.SemiBold,
+                color = if (current) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface)
+            Text(stringResource(R.string.reader_toc_volume_count, row.count),
+                style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Icon(if (row.expanded) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore, description,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(20.dp))
+        }
+    }
+}
+
+/** Volume headings from the locally cached detail page only; a miss never fetches the site. */
+private class ReaderTocVolumesModel : AppStateViewModel<List<ReaderTocSourceVolume>>(emptyList()) {
+    private var loadedFor: Pair<String, Int>? = null
+
+    fun load(authorization: Authorization, novelUrl: String, chapterCount: Int) {
+        val request = novelUrl to chapterCount
+        if (novelUrl.isBlank() || loadedFor == request) return
+        loadedFor = request
+        viewModelScope.launch(Dispatchers.IO) {
+            val volumes = try {
+                PresentationAccess.client.getCachedNovelChapterList(authorization, novelUrl)
+                    ?.let { readerTocSourceVolumes(it.items) }.orEmpty()
+            } catch (e: CancellationException) { throw e }
+            catch (_: Exception) { emptyList() }
+            if (loadedFor == request) mutableState.value = volumes
         }
     }
 }

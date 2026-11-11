@@ -54,6 +54,9 @@ interface Item {
 
 class TextItem(private val component: TextComponent) : Item {
 
+    /** Plain heading text, used to group the loose chapters that follow it. */
+    val text: String get() = component.text
+
     @Composable
     override fun Render(
         currentChapter: Chapter?,

@@ -79,6 +79,16 @@ class ReaderSettingsDataStore(
         .map { it.toNameReplaceSettings() }
         .stateIn(scope, SharingStarted.Eagerly, ReaderNameReplaceSettings())
 
+    /** Reader table-of-contents order; false keeps the site's ascending order. */
+    val tocDescending: StateFlow<Boolean> = dataStore.data
+        .catch { error -> if (error is IOException) emit(emptyPreferences()) else throw error }
+        .map { it[TOC_DESCENDING] ?: false }
+        .stateIn(scope, SharingStarted.Eagerly, false)
+
+    suspend fun saveTocDescending(descending: Boolean) {
+        dataStore.edit { it[TOC_DESCENDING] = descending }
+    }
+
     suspend fun readImageBackground(): ReaderImageBackground = dataStore.data.first().toImageBackground()
 
     suspend fun saveNameReplaceSettings(settings: ReaderNameReplaceSettings) {
@@ -482,6 +492,7 @@ class ReaderSettingsDataStore(
         val SHOW_TIME_BATTERY = booleanPreferencesKey("show_time_battery")
         val NAME_REPLACE_ENABLED = booleanPreferencesKey("name_replace_enabled")
         val NAME_REPLACE_RULES = stringPreferencesKey("name_replace_rules")
+        val TOC_DESCENDING = booleanPreferencesKey("toc_descending")
         val MIGRATION_COMPLETE = booleanPreferencesKey("legacy_reader_settings_migration_complete")
         val WEBSITE_HISTORY = booleanPreferencesKey("update_website_history")
 
@@ -498,7 +509,7 @@ class ReaderSettingsDataStore(
             THEME_BACKGROUND_IN_DARK, LONG_PRESS_UNDERLINE, TAP_PAGING, SCROLL_SIDE_GESTURES,
             PAGED_BOOKMARK_GESTURES, KEEP_SCREEN_ON, VOLUME_KEY_PAGING, AUTO_RESUME_LAST_READING, LEFT_TAP_FORWARD,
             EYE_PROTECTION, SHOW_SYSTEM_STATUS_BAR, SHOW_SYSTEM_NAVIGATION_BAR, SHOW_CHAPTER_NAME,
-            SHOW_TIME_BATTERY, IMAGE_GLOW_AUTO_CLAMP, IMAGE_GLOW_ENABLED, NAME_REPLACE_ENABLED
+            SHOW_TIME_BATTERY, IMAGE_GLOW_AUTO_CLAMP, IMAGE_GLOW_ENABLED, NAME_REPLACE_ENABLED, TOC_DESCENDING
         )
     }
 }
