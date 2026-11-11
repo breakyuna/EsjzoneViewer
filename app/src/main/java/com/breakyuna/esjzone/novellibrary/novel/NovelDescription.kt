@@ -64,6 +64,18 @@ fun NovelDescription.preview(maxLength: Int = 120): String {
     return plainText.take(maxLength - 1).trimEnd() + "…"
 }
 
+/**
+ * Full plain text for copying the description: one line per text paragraph, `<br>` breaks kept,
+ * ruby annotations and images dropped, and runs of empty paragraphs collapsed to one blank line.
+ */
+fun NovelDescription.copyText(): String = components
+    .filterIsInstance<TextComponent>()
+    .joinToString("\n") { component ->
+        component.toPlainText().removeSuffix("\n").lines().joinToString("\n") { it.trimEnd() }
+    }
+    .replace(Regex("\n{3,}"), "\n\n")
+    .trim()
+
 private fun TextComponent.toPlainText(): String {
     return buildString {
         append(text)

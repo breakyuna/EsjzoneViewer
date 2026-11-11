@@ -17,6 +17,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -160,6 +161,11 @@ import com.breakyuna.esjzone.offline.NovelExporter
 import com.breakyuna.esjzone.storage.StorageMigrationBusyException
 import com.breakyuna.esjzone.ui.component.AppSectionTitle
 import com.breakyuna.esjzone.ui.component.Description
+import com.breakyuna.esjzone.ui.component.SelectableProse
+import com.breakyuna.esjzone.ui.component.copyPlainText
+import com.breakyuna.esjzone.ui.designsystem.LocalGlobalScript
+import com.breakyuna.esjzone.ui.reader.ReaderScriptConverter
+import com.breakyuna.esjzone.novellibrary.novel.copyText
 import com.breakyuna.esjzone.ui.designsystem.AppShapes
 import com.breakyuna.esjzone.ui.designsystem.AppLottieAsset
 import com.breakyuna.esjzone.ui.designsystem.AppLottieState
@@ -646,6 +652,8 @@ private fun novelDetailItems(
     val descriptionText = remember(detailed.description) {
         detailed.description.preview(Int.MAX_VALUE)
     }
+    val copyDescriptionLabel = stringResource(R.string.novel_description_copy)
+    val globalScript = LocalGlobalScript.current
     val hasRichDescription = remember(detailed.description) {
         detailed.description.components.any { it !is TextComponent }
     }
@@ -842,21 +850,30 @@ private fun novelDetailItems(
                     RebuiltSectionHeading(title = stringResource(R.string.description))
                     Spacer(modifier = Modifier.height(AppSpacing.sm))
                     if (isExpanded || descriptionText.isBlank()) {
-                        Description(
-                            description = detailed.description,
-                            showHeader = false,
-                            modifier = Modifier.fillMaxWidth()
-                        )
+                        // The full synopsis has no row gesture, so native long-press selection applies.
+                        SelectableProse {
+                            Description(
+                                description = detailed.description,
+                                showHeader = false,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        }
                     } else {
+                        // The collapsed preview keeps tap-to-expand; long press copies the whole synopsis.
                         Column(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .then(
-                                    if (showDescriptionToggle) {
-                                        Modifier.clickable { onDescriptionExpandedChange(true) }
-                                    } else {
-                                        Modifier
-                                    }
+                                .combinedClickable(
+                                    enabled = showDescriptionToggle,
+                                    onLongClickLabel = copyDescriptionLabel,
+                                    onLongClick = {
+                                        copyPlainText(
+                                            context,
+                                            copyDescriptionLabel,
+                                            ReaderScriptConverter.convert(detailed.description.copyText(), globalScript)
+                                        )
+                                    },
+                                    onClick = { onDescriptionExpandedChange(true) }
                                 )
                         ) {
                             Text(

@@ -106,6 +106,7 @@ import com.breakyuna.esjzone.novellibrary.novel.COMMENT_PAGE_SIZE
 import com.breakyuna.esjzone.novellibrary.novel.Comment
 import com.breakyuna.esjzone.novellibrary.user.UserProfile
 import com.breakyuna.esjzone.ui.navigation.AppNavigator
+import com.breakyuna.esjzone.ui.component.SelectableProse
 import com.breakyuna.esjzone.ui.designsystem.AppAvatarImage
 import com.breakyuna.esjzone.ui.designsystem.AppShapes
 import com.breakyuna.esjzone.ui.designsystem.AppElevation
@@ -1042,25 +1043,29 @@ private fun CommentCard(
                                     tint = MaterialTheme.colorScheme.primary,
                                     modifier = Modifier.size(18.dp)
                                 )
-                                Text(
-                                    text = linkedQuote,
-                                    style = AppTypography.bodyMedium,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    maxLines = 3,
-                                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
-                                    modifier = Modifier.padding(top = AppSpacing.xxs)
-                                )
+                                SelectableProse {
+                                    Text(
+                                        text = linkedQuote,
+                                        style = AppTypography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        maxLines = 3,
+                                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                                        modifier = Modifier.padding(top = AppSpacing.xxs)
+                                    )
+                                }
                             }
                         }
                     }
                 }
 
-            Text(
-                text = linkedText,
-                style = AppTypography.bodyLarge,
-                color = MaterialTheme.colorScheme.onSurface,
-                modifier = Modifier.padding(top = AppSpacing.lg)
-            )
+            // Only the body is selectable; the card has no row gesture and the reply button stays outside.
+            SelectableProse(modifier = Modifier.padding(top = AppSpacing.lg)) {
+                Text(
+                    text = linkedText,
+                    style = AppTypography.bodyLarge,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+            }
 
             if (onReply != null) {
                 HorizontalDivider(
