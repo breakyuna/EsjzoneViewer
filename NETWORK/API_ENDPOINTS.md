@@ -97,8 +97,9 @@
 | page list | [10, 20, 50, 100] |
 | sort order | desc |
 | 实际请求方法与参数 | 2026-11-11 由 Esjzone bot 只读观察页面自身 XHR：`GET /inc/mem_record_data.php?search=type%3A{n}&order=desc&offset={o}&limit=30`；`select#type` 切换类别，1 发文、2 留言、3 评论，以 `search=type:{n}` 发出 |
-| 请求头 | 客户端发送 `X-Requested-With: XMLHttpRequest` 和当前站点的 `Referer: {base}/my/record`；不跟随重定向，3xx 或登录页视为会话失效 |
-| 返回 JSON 结构 | `application/json`：`{"status":200,"total":"0","rows":[]}`，Observed（空账号）。`total` 可能是字符串或数字；直接在地址栏访问返回 `{"status":301,"total":0,"rows":[]}`。客户端只接受 `status` 为 200，其余视为失败而非空列表 |
+| 请求认证 | 站点通用 `assets/js/bootstrap-table.js?t=101` 的 `initServer` 在每次表格请求前调用 `getAuthToken`，并将结果放入 `authorization` 请求头。客户端以同一登录会话向当前站点的 `/my/record` POST `plxf=getAuthToken`，解析 `<JinJing>` 后随数据请求发送；令牌获取失败则停止，不记录或保存令牌。该流程来自通用表格脚本，经验记录的登录态请求头尚需真机验证 |
+| 其他请求头 | 数据请求发送 `X-Requested-With: XMLHttpRequest` 和当前站点的 `Referer: {base}/my/record`；数据请求不跟随 HTTP 重定向，3xx 或登录页视为会话失效 |
+| 返回 JSON 结构 | `application/json`：`{"status":200,"total":"0","rows":[]}`，Observed（空账号）。`total` 可能是字符串或数字；直接在地址栏访问返回 `{"status":301,"total":0,"rows":[]}`。此处 301 是 JSON 业务状态，不是 HTTP 重定向；客户端只接受 `status` 为 200，其余视为失败而非空列表 |
 | 行字段 | NOT VERIFIED：测试账号三类均无记录。表头 `data-field` 为 `cdate`（时间）、`exp`（经验值）、`non`（空表头）；客户端宽松解析，未知非空字段按 `key: value` 原样显示 |
 | 空状态 DOM | `tr.no-records-found > td[colspan=3]`「目前尚無任何資料」 |
 | 证据 | table#dataTable[data-url] Observed；XHR 与 JSON Observed |

@@ -76,8 +76,8 @@ fun EsjzoneClient.getMemberReplies(
 
 /**
  * Loads one page of `/inc/mem_record_data.php`, the bootstrap-table data source
- * behind `/my/record`. The endpoint only answers `status: 200` to the page's
- * own XHR, so the same Referer and X-Requested-With headers are sent.
+ * behind `/my/record`. As in the site's table script, each request first obtains
+ * a fresh token from the member page and sends it in the Authorization header.
  */
 fun EsjzoneClient.getExperienceRecords(
     authorization: Authorization,
@@ -86,14 +86,19 @@ fun EsjzoneClient.getExperienceRecords(
     limit: Int = EXPERIENCE_RECORD_PAGE_SIZE
 ): ExperienceRecordPage {
     val base = authorization.memberBase()
+    val referer = EsjzoneUrls.resolve("/my/record", base)
     val url = experienceRecordUrl(base, type, offset, limit)
+    val token = requestAuthToken(authorization, referer)
+        .takeIf { it.isNotBlank() }
+        ?: throw ExperienceRecordException("Experience record authorization token unavailable")
     val request = Request.Builder()
         .url(url)
         .get()
         .headers(headers)
         .header("Accept", "application/json, text/javascript, */*; q=0.01")
-        .header("Referer", EsjzoneUrls.resolve("/my/record", base))
+        .header("Referer", referer)
         .header("X-Requested-With", "XMLHttpRequest")
+        .header("Authorization", token)
         .build()
     val client = authenticatedClient(authorization).newBuilder()
         .followRedirects(false)
@@ -195,8 +200,8 @@ private val RECORD_NOTE_KEYS = listOf("non", "note", "memo", "description", "des
 
 /**
  * Parses the bootstrap-table JSON. `total` has been seen both as a string and
- * a number. Any `status` other than 200 is a failure; a direct non-XHR request
- * answers `status: 301` with an empty row list, which must not read as "empty".
+ * a number. Any `status` other than 200 is a failure; an unauthorized request
+ * can answer `status: 301` with an empty row list, which must not read as "empty".
  */
 internal fun parseExperienceRecordPage(body: String): ExperienceRecordPage {
     val root = runCatching { recordJson.parseToJsonElement(body.trim()) }.getOrNull() as? JsonObject
