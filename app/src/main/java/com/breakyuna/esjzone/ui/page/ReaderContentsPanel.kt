@@ -117,11 +117,11 @@ internal fun ReaderContentsContent(
     var expandedVolumes by remember(novelId) { mutableStateOf(emptySet<String>()) }
     // The current chapter's volume opens by default; other volumes keep the user's choice.
     LaunchedEffect(currentVolumeKey) { currentVolumeKey?.let { expandedVolumes = expandedVolumes + it } }
-    val tocSnapshot by produceState(TocRowsSnapshot(toc, descending, expandedVolumes, emptyList()),
+    val tocSnapshot by produceState(TocRowsSnapshot(toc, descending, expandedVolumes, query, emptyList()),
         toc, descending, expandedVolumes, query) {
-        val input = TocRowsSnapshot(toc, descending, expandedVolumes, emptyList())
+        val input = TocRowsSnapshot(toc, descending, expandedVolumes, query, emptyList())
         value = input.copy(rows = withContext(Dispatchers.Default) {
-            readerTocRows(input.toc, input.descending, input.expanded, query)
+            readerTocRows(input.toc, input.descending, input.expanded, input.query)
         })
     }
     val tocRows = tocSnapshot.rows
@@ -155,7 +155,7 @@ internal fun ReaderContentsContent(
         if (!pendingLocate) return@LaunchedEffect
         // Rows are computed off the main thread; skip a snapshot that predates the change.
         val snapshot = tocSnapshot
-        if (snapshot.toc !== toc || snapshot.descending != descending) return@LaunchedEffect
+        if (snapshot.toc !== toc || snapshot.descending != descending || snapshot.query != query) return@LaunchedEffect
         if (currentVolumeKey != null && currentVolumeKey !in snapshot.expanded &&
             currentVolumeKey in expandedVolumes) return@LaunchedEffect
         val index = readerTocIndexOf(tocRows, currentKey, currentVolumeKey)
@@ -279,6 +279,7 @@ private data class TocRowsSnapshot(
     val toc: ReaderToc,
     val descending: Boolean,
     val expanded: Set<String>,
+    val query: String,
     val rows: List<ReaderTocRow>
 )
 
