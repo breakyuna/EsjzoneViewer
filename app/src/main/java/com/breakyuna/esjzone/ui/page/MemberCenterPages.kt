@@ -35,6 +35,17 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.material3.PrimaryTabRow
+import androidx.compose.material3.Tab
+import androidx.compose.material3.LinearProgressIndicator
+import com.breakyuna.esjzone.app.PresentationAccess
+import com.breakyuna.esjzone.app.profileCachePrefix
+import com.breakyuna.esjzone.app.cacheUserProfile
+import com.breakyuna.esjzone.network.features.getUserProfile
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.CancellationException
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -76,23 +87,7 @@ object SystemMessagesPage : AppDestination {
 
     @Composable
     override fun Content(navigator: AppNavigator) {
-        val authorization = LocalAuthorization.current
-        val model = rememberAppViewModel { SystemMessagesPageModel(authorization) }
-        val state by model.state.collectAsState()
-        LaunchedEffect(Unit) { model.load() }
-        MemberPageScaffold(
-            title = stringResource(R.string.member_system_messages),
-            navigator = navigator,
-            refreshing = state is MemberListState.Loading ||
-                (state as? MemberListState.Result)?.refreshing == true,
-            onRefresh = model::refresh
-        ) {
-            memberListContent(
-                state = state,
-                emptyTitle = R.string.member_system_messages_empty,
-                onRetry = model::refresh
-            ) { _, message -> SystemMessageRow(message) }
-        }
+        MemberInboxContent(navigator, initialReplies = false)
     }
 }
 
@@ -107,33 +102,43 @@ object MemberRepliesPage : AppDestination {
 
     @Composable
     override fun Content(navigator: AppNavigator) {
-        val authorization = LocalAuthorization.current
-        val model = rememberAppViewModel { MemberRepliesPageModel(authorization) }
-        val state by model.state.collectAsState()
-        var selected by remember { mutableStateOf<MemberReply?>(null) }
-        LaunchedEffect(Unit) { model.load() }
-        selected?.let { reply ->
-            MemberReplyDialog(
-                reply = reply,
-                onDismiss = { selected = null },
-                onOpenNovel = { path ->
-                    selected = null
-                    LegacyRoute.Novel(path).restore()?.let(navigator::pushIfNotCurrent)
-                }
-            )
+        MemberInboxContent(navigator, initialReplies = true)
+    }
+}
+
+@Composable
+private fun MemberInboxContent(navigator: AppNavigator, initialReplies: Boolean) {
+    var replies by rememberSaveable { mutableStateOf(initialReplies) }
+    val authorization = LocalAuthorization.current
+    val messagesModel = rememberAppViewModel { SystemMessagesPageModel(authorization) }
+    val repliesModel = rememberAppViewModel { MemberRepliesPageModel(authorization) }
+    val messages by messagesModel.state.collectAsState()
+    val replyState by repliesModel.state.collectAsState()
+    var selected by remember { mutableStateOf<MemberReply?>(null) }
+    LaunchedEffect(replies) { if (replies) repliesModel.load() else messagesModel.load() }
+    selected?.let { reply ->
+        MemberReplyDialog(reply, onDismiss = { selected = null }, onOpenNovel = { path ->
+            selected = null
+            LegacyRoute.Novel(path).restore()?.let(navigator::pushIfNotCurrent)
+        })
+    }
+    val state = if (replies) replyState else messages
+    val refresh: () -> Unit = { if (replies) repliesModel.refresh() else messagesModel.refresh() }
+    MemberPageScaffold(
+        title = stringResource(R.string.member_messages), navigator = navigator,
+        refreshing = state is MemberListState.Loading || (state as? MemberListState.Result<*>)?.refreshing == true,
+        onRefresh = refresh
+    ) {
+        item(key = "message-tabs") {
+            PrimaryTabRow(selectedTabIndex = if (replies) 1 else 0) {
+                Tab(selected = !replies, onClick = { replies = false }, text = { Text(stringResource(R.string.member_system_messages)) })
+                Tab(selected = replies, onClick = { replies = true }, text = { Text(stringResource(R.string.member_replies)) })
+            }
         }
-        MemberPageScaffold(
-            title = stringResource(R.string.member_replies),
-            navigator = navigator,
-            refreshing = state is MemberListState.Loading ||
-                (state as? MemberListState.Result)?.refreshing == true,
-            onRefresh = model::refresh
-        ) {
-            memberListContent(
-                state = state,
-                emptyTitle = R.string.member_replies_empty,
-                onRetry = model::refresh
-            ) { _, reply -> MemberReplyRow(reply) { selected = reply } }
+        if (replies) memberListContent(replyState, R.string.member_replies_empty, repliesModel::refresh) { _, reply ->
+            MemberReplyRow(reply) { selected = reply }
+        } else memberListContent(messages, R.string.member_system_messages_empty, messagesModel::refresh) { _, message ->
+            SystemMessageRow(message)
         }
     }
 }
@@ -147,6 +152,7 @@ object ExperienceRecordsPage : AppDestination {
     override fun Content(navigator: AppNavigator) {
         val authorization = LocalAuthorization.current
         val model = rememberAppViewModel { ExperienceRecordsPageModel(authorization) }
+        val experienceProgress = rememberExperienceProgress()
         val state by model.state.collectAsState()
         LaunchedEffect(Unit) { model.load() }
         MemberPageScaffold(
@@ -155,9 +161,10 @@ object ExperienceRecordsPage : AppDestination {
             refreshing = (state.loading && !state.loaded) || state.refreshing,
             onRefresh = model::refresh
         ) {
+            item(key = "experience-progress") { ExperienceProgress(experienceProgress) }
             item(key = "record-types") {
                 Row(horizontalArrangement = Arrangement.spacedBy(AppSpacing.sm)) {
-                    ExperienceRecordType.entries.forEach { type ->
+                    listOf(ExperienceRecordType.MESSAGE, ExperienceRecordType.COMMENT, ExperienceRecordType.POST).forEach { type ->
                         FilterChip(
                             selected = state.type == type,
                             onClick = { model.selectType(type) },
@@ -204,6 +211,40 @@ object ExperienceRecordsPage : AppDestination {
                         ExperienceRecordFooter(state, onLoadMore = model::loadMore, onRetry = model::retry)
                     }
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun rememberExperienceProgress(): Pair<Int?, Int?> {
+    val authorization = LocalAuthorization.current
+    val domain = authorization.domain.ifBlank { PresentationAccess.settings.domain.value }
+    val prefix = remember(authorization, domain) { profileCachePrefix(authorization, domain) }
+    val expFlow = remember(prefix) { PresentationAccess.database.cacheDao().observeByKey("${prefix}experience") }
+    val requiredFlow = remember(prefix) { PresentationAccess.database.cacheDao().observeByKey("${prefix}experienceRequired") }
+    val exp by expFlow.collectAsState(initial = null)
+    val required by requiredFlow.collectAsState(initial = null)
+    LaunchedEffect(authorization) {
+        try {
+            val fresh = withContext(Dispatchers.IO) { PresentationAccess.client.getUserProfile(authorization) }
+            cacheUserProfile(authorization, domain, fresh)
+        } catch (error: CancellationException) { throw error }
+        catch (error: Exception) { com.breakyuna.esjzone.util.AppLogger.w("ExperienceRecords", "Profile unavailable", error) }
+    }
+    return exp?.value?.toIntOrNull() to required?.value?.toIntOrNull()
+}
+
+@Composable
+private fun ExperienceProgress(progress: Pair<Int?, Int?>) {
+    val (current, target) = progress
+    Column(Modifier.fillMaxWidth().padding(vertical = AppSpacing.lg),
+        horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(AppSpacing.sm)) {
+        if (current != null) {
+            Text(stringResource(R.string.profile_experience, current), style = AppTypography.titleLarge)
+            if (target != null && target > 0) {
+                Text(stringResource(R.string.member_experience_progress, current, target), style = AppTypography.bodySmall)
+                LinearProgressIndicator(progress = { (current.toFloat() / target).coerceIn(0f, 1f) }, modifier = Modifier.fillMaxWidth(0.65f))
             }
         }
     }

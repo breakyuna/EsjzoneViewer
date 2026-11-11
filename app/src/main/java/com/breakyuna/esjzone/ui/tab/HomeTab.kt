@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Home
@@ -31,6 +32,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
@@ -80,6 +82,7 @@ import com.breakyuna.esjzone.ui.navigation.AppNavigator
 import com.breakyuna.esjzone.ui.navigation.AppTab
 import com.breakyuna.esjzone.ui.navigation.AppTabOptions
 import com.breakyuna.esjzone.ui.navigation.LocalFloatingNavPadding
+import com.breakyuna.esjzone.ui.navigation.LocalHomeReselectRequest
 import com.breakyuna.esjzone.ui.navigation.rememberAppViewModel
 import com.breakyuna.esjzone.ui.page.ForumPage
 import com.breakyuna.esjzone.ui.page.ForumPostPage
@@ -264,6 +267,13 @@ object HomeTab : AppTab {
         var isLoadingFromPull by remember { mutableStateOf(false) }
         var pullLoadingHeightPx by remember { mutableFloatStateOf(0f) }
         var lastAutoLoadSize by remember { mutableStateOf(-1) }
+        val refreshHome = {
+            isLoadingFromPull = false
+            pullUpOffsetPx = 0f
+            pullLoadingHeightPx = 0f
+            model.reload()
+        }
+        HomeReselectionEffect(LocalHomeReselectRequest.current, listState, refreshHome)
         val isPullingUp by remember {
             derivedStateOf { !randomState.isActivated && !isLoadingFromPull && pullUpOffsetPx > 0f }
         }
@@ -417,12 +427,7 @@ object HomeTab : AppTab {
         ) { padding ->
             PullToRefreshBox(
                 isRefreshing = (state as? HomeTabModel.State.Result)?.isRefreshing == true,
-                onRefresh = {
-                    isLoadingFromPull = false
-                    pullUpOffsetPx = 0f
-                    pullLoadingHeightPx = 0f
-                    model.reload()
-                },
+                onRefresh = refreshHome,
                 modifier = Modifier
                     .fillMaxSize()
                     .wideContentWidth()
@@ -607,6 +612,19 @@ object HomeTab : AppTab {
             pullUpOffsetPx = 0f
             pullLoadingHeightPx = 0f
             model.onRandomAdultModeChanged(adult)
+        }
+    }
+}
+
+@Composable
+internal fun HomeReselectionEffect(request: Int, listState: LazyListState, onRefresh: () -> Unit) {
+    var handledRequest by remember { mutableIntStateOf(request) }
+    val currentRefresh by rememberUpdatedState(onRefresh)
+    LaunchedEffect(request, listState) {
+        if (request != handledRequest) {
+            handledRequest = request
+            currentRefresh()
+            listState.scrollToItem(0)
         }
     }
 }

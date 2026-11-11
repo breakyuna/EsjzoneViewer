@@ -24,7 +24,7 @@ import com.breakyuna.esjzone.network.EsjzoneUrls
 import com.breakyuna.esjzone.ui.page.ChapterPage
 import com.breakyuna.esjzone.ui.page.HistoryPage
 
-/** The history tab can be reselected twice to jump straight to the latest location. */
+/** Reselecting the history tab opens the latest local reading location. */
 object HistoryTab : AppTab {
 
     private val openLastReadingRequest = mutableIntStateOf(0)

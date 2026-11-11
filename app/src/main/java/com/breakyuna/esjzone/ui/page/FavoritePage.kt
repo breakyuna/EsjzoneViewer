@@ -154,13 +154,15 @@ import com.breakyuna.esjzone.ui.product.LoadingSkeleton
 import com.breakyuna.esjzone.ui.product.OfflineState
 import kotlin.math.roundToInt
 
-private enum class BookshelfFilter {
+internal enum class BookshelfFilter {
     ALL,
     DOWNLOADED,
-    UPDATES
+    UPDATES,
+    UNREAD,
+    READ
 }
 
-private fun BookshelfSort.Order.labelRes(): Int = when (this) {
+internal fun BookshelfSort.Order.labelRes(): Int = when (this) {
     BookshelfSort.Order.RECENT_READ -> R.string.bookshelf_sort_recent_read
     BookshelfSort.Order.RECENT_ADDED -> R.string.bookshelf_sort_recent_added
     BookshelfSort.Order.RECENT_UPDATED -> R.string.bookshelf_sort_recent_updated
@@ -237,6 +239,34 @@ object FavoritePage : AppDestination {
         var showLegacyRecoveryDialog by remember { mutableStateOf(false) }
         var showSyncStatusMenu by remember { mutableStateOf(false) }
         var showSortMenu by remember { mutableStateOf(false) }
+        var showShelfOptions by rememberSaveable { mutableStateOf(false) }
+        var optionsTab by rememberSaveable { mutableStateOf(0) }
+        var reverseSort by rememberSaveable { mutableStateOf(false) }
+        var sortByName by rememberSaveable { mutableStateOf(false) }
+        var columnOverride by rememberSaveable { mutableStateOf(0) }
+        var showRecentReads by rememberSaveable { mutableStateOf(true) }
+        val reselectRequest = com.breakyuna.esjzone.ui.navigation.LocalBookshelfReselectRequest.current
+        var handledReselect by remember { mutableStateOf(reselectRequest) }
+        LaunchedEffect(reselectRequest) {
+            if (handledReselect != reselectRequest) {
+                handledReselect = reselectRequest
+                if (!showBack && !editing) showShelfOptions = true
+            }
+        }
+        if (showShelfOptions) {
+            BookshelfOptionsSheet(
+                selectedTab = optionsTab, onTabChange = { optionsTab = it },
+                filter = activeFilter, onFilter = { activeFilter = it },
+                sort = activeSort, byName = sortByName,
+                onSort = { activeSort = it; sortByName = false }, onSortByName = { sortByName = true },
+                reversed = reverseSort, onReverse = { reverseSort = it },
+                listView = listView, onListView = { settings.setBookshelfListView(it) },
+                columns = columnOverride, onColumns = { columnOverride = it },
+                showRecent = showRecentReads, onShowRecent = { showRecentReads = it },
+                onDismiss = { showShelfOptions = false }
+            )
+        }
+
         var lastHandledSyncEventId by rememberSaveable { mutableStateOf(0L) }
         var lastHandledDeleteEventId by rememberSaveable { mutableStateOf(0L) }
         val suppressFloatingNav = LocalFloatingNavSuppression.current
@@ -285,11 +315,17 @@ object FavoritePage : AppDestination {
                 )
             }
         }
-        val filtered = remember(sortedVisible, downloaded, activeFilter) {
+        val orderedVisible = remember(sortedVisible, sortByName, reverseSort) {
+            val ordered = if (sortByName) sortedVisible.sortedWith(compareBy<BookshelfEntry> { it.title.lowercase() }.thenBy { it.bookKey }) else sortedVisible
+            if (reverseSort) ordered.reversed() else ordered
+        }
+        val filtered = remember(orderedVisible, downloaded, activeFilter, readingIndex) {
             when (activeFilter) {
-                BookshelfFilter.ALL -> sortedVisible
-                BookshelfFilter.DOWNLOADED -> sortedVisible.filter { it.bookKey in downloaded }
-                BookshelfFilter.UPDATES -> sortedVisible.filter { it.hasUpdate }
+                BookshelfFilter.ALL -> orderedVisible
+                BookshelfFilter.DOWNLOADED -> orderedVisible.filter { it.bookKey in downloaded }
+                BookshelfFilter.UPDATES -> orderedVisible.filter { it.hasUpdate }
+                BookshelfFilter.UNREAD -> orderedVisible.filter { it !in readingIndex }
+                BookshelfFilter.READ -> orderedVisible.filter { it in readingIndex }
             }
         }
         // Search narrows the current group/filter/sort result locally; batch actions use this list.
@@ -631,7 +667,7 @@ object FavoritePage : AppDestination {
                 }
                 val startPadding = AppSpacing.lg + navPadding.calculateStartPadding(layoutDirection)
                 val endPadding = AppSpacing.lg
-                val adaptiveColumns = bookshelfColumnCount((maxWidth - startPadding - endPadding).value, AppSpacing.xl.value,
+                val adaptiveColumns = if (columnOverride > 0) columnOverride else bookshelfColumnCount((maxWidth - startPadding - endPadding).value, AppSpacing.xl.value,
                     minCellWidth = if (wide) 140f * fontScale else 96f)
                 SideEffect { gridColumns = adaptiveColumns }
                 // Shared elements draw above their lazy parent, so clip the showcase to the
@@ -756,10 +792,11 @@ object FavoritePage : AppDestination {
                                                         text = { Text(stringResource(order.labelRes())) },
                                                         onClick = {
                                                             activeSort = order
+                                                            sortByName = false
                                                             showSortMenu = false
                                                         },
                                                         leadingIcon = {
-                                                            if (activeSort == order) Icon(Icons.Filled.Check, null)
+                                                            if (!sortByName && activeSort == order) Icon(Icons.Filled.Check, null)
                                                         }
                                                     )
                                                 }
@@ -788,7 +825,7 @@ object FavoritePage : AppDestination {
                                             }
                                         }
                                     }
-                                    if (!editing && !searching && recentReads.isNotEmpty()) {
+                                    if (showRecentReads && !editing && !searching && recentReads.isNotEmpty()) {
                                         AppBookshelfRecentReads(
                                             books = recentReads,
                                             coverMemory = coverMemory,

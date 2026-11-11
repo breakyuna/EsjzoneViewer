@@ -14,8 +14,6 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.calculateStartPadding
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxHeight
-import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -101,9 +99,7 @@ import com.breakyuna.esjzone.ui.navigation.containerTransformContent
 import com.breakyuna.esjzone.ui.navigation.containerTransformSource
 import com.breakyuna.esjzone.ui.page.ReadingStatisticsPage
 import com.breakyuna.esjzone.ui.page.ExperienceRecordsPage
-import com.breakyuna.esjzone.ui.page.MemberRepliesPage
 import com.breakyuna.esjzone.ui.page.SystemMessagesPage
-import androidx.compose.material.icons.automirrored.filled.Comment
 import androidx.compose.material.icons.filled.MilitaryTech
 import androidx.compose.material.icons.filled.Notifications
 import com.breakyuna.esjzone.util.AppLogger
@@ -263,20 +259,16 @@ private fun profileMenuItems(): List<ProfileMenuItem> = listOf(
     ProfileMenuItem(ContainerTransformTarget.READING_STATISTICS, Icons.Filled.QueryStats, stringResource(R.string.reading_stats_title), ReadingStatisticsPage),
     ProfileMenuItem(ContainerTransformTarget.BOOKMARKS, Icons.Filled.Bookmark, stringResource(R.string.bookmarks), BookmarksPage),
     ProfileMenuItem(ContainerTransformTarget.DOWNLOADS, Icons.Filled.Download, stringResource(R.string.downloads), DownloadPage),
-    ProfileMenuItem(ContainerTransformTarget.SYSTEM_MESSAGES, Icons.Filled.Notifications, stringResource(R.string.member_system_messages), SystemMessagesPage),
-    ProfileMenuItem(ContainerTransformTarget.MEMBER_REPLIES, Icons.AutoMirrored.Filled.Comment, stringResource(R.string.member_replies), MemberRepliesPage),
+    ProfileMenuItem(ContainerTransformTarget.SYSTEM_MESSAGES, Icons.Filled.Notifications, stringResource(R.string.member_messages), SystemMessagesPage),
     ProfileMenuItem(ContainerTransformTarget.EXPERIENCE_RECORDS, Icons.Filled.MilitaryTech, stringResource(R.string.member_experience_records), ExperienceRecordsPage),
     ProfileMenuItem(ContainerTransformTarget.SETTINGS, Icons.Filled.Settings, stringResource(R.string.settings), SettingsPage)
 )
 
-/** Registration date and next-level progress; both are optional on older profile snapshots. */
+/** Registration date is optional on older profile snapshots. */
 @Composable
 private fun ProfileMemberDetails(profile: UserProfile) {
-    val progress = profile.exp?.let { current ->
-        profile.expRequired?.let { required -> stringResource(R.string.member_experience_progress, current, required) }
-    }
     val registered = profile.registerDate?.let { stringResource(R.string.member_register_date, it) }
-    listOfNotNull(progress, registered).forEach { line ->
+    listOfNotNull(registered).forEach { line ->
         Text(
             text = line,
             style = AppTypography.bodySmall,
@@ -290,12 +282,8 @@ private fun ProfileMemberDetails(profile: UserProfile) {
 @Composable
 private fun ProfileActions(items: List<ProfileMenuItem>, onClick: (ProfileMenuItem) -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(AppSpacing.md)) {
-        items.chunked(2).forEach { row ->
-            Row(Modifier.height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(AppSpacing.md)) {
-                row.forEach { item ->
-                    ProfileAction(item, modifier = Modifier.weight(1f).fillMaxHeight(), onClick = { onClick(item) })
-                }
-            }
+        items.forEach { item ->
+            ProfileAction(item, modifier = Modifier.fillMaxWidth(), onClick = { onClick(item) })
         }
     }
 }
@@ -440,27 +428,15 @@ private fun ProfileAction(item: ProfileMenuItem, modifier: Modifier = Modifier, 
     val containerModifier = modifier.containerTransformSource(item.target)
     val contentModifier = Modifier.containerTransformContent()
     Surface(onClick = onClick, modifier = containerModifier, shape = AppShapes.standard, color = MaterialTheme.colorScheme.surface) {
-        Column(
-            contentModifier.fillMaxWidth().heightIn(min = 96.dp).padding(AppSpacing.lg),
-            verticalArrangement = Arrangement.spacedBy(AppSpacing.md)
+        Row(
+            contentModifier.fillMaxWidth().heightIn(min = 64.dp).padding(AppSpacing.lg),
+            horizontalArrangement = Arrangement.spacedBy(AppSpacing.md),
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically) {
-                Box(
-                    modifier = Modifier.size(36.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        item.icon,
-                        contentDescription = null,
-                        modifier = Modifier.size(20.dp),
-                        tint = MaterialTheme.colorScheme.primary
-                    )
-                }
-                Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null,
-                    tint = MaterialTheme.colorScheme.outline, modifier = Modifier.size(18.dp))
-            }
-            Text(item.title, style = AppTypography.labelLarge)
+            Icon(item.icon, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(24.dp))
+            Text(item.title, style = AppTypography.labelLarge, modifier = Modifier.weight(1f))
+            Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null,
+                tint = MaterialTheme.colorScheme.outline, modifier = Modifier.size(18.dp))
         }
     }
 }

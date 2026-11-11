@@ -243,9 +243,21 @@ class ExperienceRecordTimeoutTest {
         ExperienceRecordPage(total = notes.size, rows = notes.map { ExperienceRecord("t", "1", it) })
 
     private fun controller(loader: FakeLoader): Pair<ExperienceRecordsController, MutableStateFlow<ExperienceRecordsState>> {
-        val state = MutableStateFlow(ExperienceRecordsState())
+        val state = MutableStateFlow(ExperienceRecordsState(type = ExperienceRecordType.POST))
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
         return ExperienceRecordsController(scope, state, loader::load) to state
+    }
+
+    @Test fun initialLoadRequestsMessagesAndPublishesTheirRows() {
+        val loader = FakeLoader()
+        val state = MutableStateFlow(ExperienceRecordsState())
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
+        val controller = ExperienceRecordsController(scope, state, loader::load)
+        controller.load()
+        assertEquals(listOf(ExperienceRecordType.MESSAGE to 0), loader.calls.toList())
+        loader.deferred(ExperienceRecordType.MESSAGE).complete(page("message"))
+        assertEquals(listOf("message"), state.value.rows.map { it.note })
+        assertFalse(state.value.loading)
     }
 
     @Test fun switchingTypeCancelsThePreviousRequest() {

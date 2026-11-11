@@ -1037,4 +1037,16 @@
     <string name="member_reply_copy">Copy reply</string>
     <string name="member_experience_value">%1$s exp</string>
     <string name="member_experience_records_end">All %1$d records shown</string>
+    <string name="member_messages">Messages</string>
+    <string name="shelf_options_filter">Filter</string>
+    <string name="shelf_options_display">Display</string>
+    <string name="shelf_filter_all">All</string>
+    <string name="shelf_filter_read">Previously read</string>
+    <string name="shelf_sort_name">Name</string>
+    <string name="shelf_sort_reverse">Reverse order</string>
+    <string name="shelf_display_grid">Grid</string>
+    <string name="shelf_display_list">List</string>
+    <string name="shelf_columns">Books per row</string>
+    <string name="shelf_columns_auto">Auto</string>
+    <string name="shelf_show_recent">Show recent reads</string>
 </resources>

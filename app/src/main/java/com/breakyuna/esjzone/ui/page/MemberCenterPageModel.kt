@@ -90,7 +90,7 @@ class MemberRepliesPageModel(authorization: Authorization) : MemberListPageModel
 
 /** Accumulated rows of one experience record category. */
 data class ExperienceRecordsState(
-    val type: ExperienceRecordType = ExperienceRecordType.POST,
+    val type: ExperienceRecordType = ExperienceRecordType.MESSAGE,
     val rows: List<ExperienceRecord> = emptyList(),
     val total: Int = 0,
     val loaded: Boolean = false,

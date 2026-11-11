@@ -58,6 +58,7 @@ import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -115,6 +116,8 @@ import com.breakyuna.esjzone.ui.tab.ProfileTab
 val LocalFloatingNavPadding = compositionLocalOf { PaddingValues(0.dp) }
 /** Root tab content can yield the floating island to an edit surface or modal. */
 val LocalFloatingNavSuppression = compositionLocalOf<(Boolean) -> Unit> { {} }
+internal val LocalHomeReselectRequest = compositionLocalOf { 0 }
+internal val LocalBookshelfReselectRequest = compositionLocalOf { 0 }
 
 internal enum class AppTabId(val route: AppNavKey) {
     HOME(AppNavKey.HomeTab),
@@ -189,7 +192,8 @@ fun AdaptiveAppShell(
     val isRootOfDefaultTab = tab == defaultTabId && (selectedStack.size <= 1 || selectedStack.lastOrNull() == tab.route)
     AppExitBackHandler(enabled = isRootOfDefaultTab)
 
-    var lastHistoryTabClickTime by remember { mutableStateOf(0L) }
+    var homeReselectRequest by remember { mutableIntStateOf(0) }
+    var bookshelfReselectRequest by remember { mutableIntStateOf(0) }
     var autoResumeHandled by rememberSaveable { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
@@ -234,25 +238,23 @@ fun AdaptiveAppShell(
     val onTabSelected: (AppTabId) -> Unit = { targetTab ->
         focusManager.clearFocus(force = true)
         if (tab == targetTab) {
-            if (targetTab == AppTabId.HISTORY && (!keepWideRail || selectedStack.lastOrNull() == tab.route)) {
-                val now = System.currentTimeMillis()
-                if (now - lastHistoryTabClickTime < 400L) {
-                    HistoryTab.requestOpenLastReading()
-                    lastHistoryTabClickTime = 0L
-                } else {
-                    lastHistoryTabClickTime = now
+            if (!keepWideRail || selectedStack.lastOrNull() == tab.route) {
+                when (targetTab) {
+                    AppTabId.HOME -> homeReselectRequest++
+                    AppTabId.HISTORY -> HistoryTab.requestOpenLastReading()
+                    AppTabId.BOOKSHELF -> bookshelfReselectRequest++
+                    else -> Unit
                 }
             }
         } else {
             selectedTab = targetTab.name
-            if (targetTab == AppTabId.HISTORY) {
-                lastHistoryTabClickTime = System.currentTimeMillis()
-            }
         }
     }
 
     CompositionLocalProvider(
         LocalAuthorization provides authorization,
+        LocalHomeReselectRequest provides homeReselectRequest,
+        LocalBookshelfReselectRequest provides bookshelfReselectRequest,
         LocalFloatingNavPadding provides PaddingValues(0.dp)
     ) {
         Row(

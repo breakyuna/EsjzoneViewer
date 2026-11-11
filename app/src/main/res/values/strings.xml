@@ -1038,4 +1038,16 @@
     <string name="member_reply_copy">复制回复</string>
     <string name="member_experience_value">%1$s exp</string>
     <string name="member_experience_records_end">已显示全部 %1$d 条</string>
+    <string name="member_messages">消息</string>
+    <string name="shelf_options_filter">筛选</string>
+    <string name="shelf_options_display">显示</string>
+    <string name="shelf_filter_all">全部</string>
+    <string name="shelf_filter_read">阅读过</string>
+    <string name="shelf_sort_name">名称</string>
+    <string name="shelf_sort_reverse">反转排序</string>
+    <string name="shelf_display_grid">宫格</string>
+    <string name="shelf_display_list">列表</string>
+    <string name="shelf_columns">每行数目</string>
+    <string name="shelf_columns_auto">自动</string>
+    <string name="shelf_show_recent">显示最近阅读</string>
 </resources>
