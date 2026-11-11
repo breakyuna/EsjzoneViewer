@@ -370,6 +370,21 @@ table.table
 
 资料简介由 Froala 在 contenteditable=true 元素中编辑，提交前同步到 hidden content。编辑表单 .form-edit 的 method 为 POST，未提交验证。
 
+注册日期：`div.user-data > span` 中自身文本以「註冊日期」（兼容「注册日期」）开头的节点，标签和日期在同一文本节点中，去掉前缀得到 `2026-08-07`。升级所需经验：`div.user-cover .info-label` 的 `data-original-title`（Bootstrap tooltip 初始化后）或服务端原始 `title`，形如 `F級 Lv3：16122/30000`，取斜杠后的数字。两项写入账号资料快照，缺失时不显示。
+
+### 8.5 系统消息
+
+页面：/my/sys（服务端直出）。行：`div.col-lg-8 div.table-responsive table.table > tbody > tr`；标题 `td > h5.product-title`（纯文本），时间 `td > div.book-ep > span`。没有 `h5.product-title` 的行忽略，全部没有即为空列表。未观察到分页，也未确认打开页面是否标记已读。
+
+### 8.6 我的回复
+
+页面：/my/reply（服务端直出，bootpag 前端分页）。所有页都在同一份 HTML 中，每页一个 `section.reply-section.reply-page-N`，按文档顺序合并。条目：`section.reply-section tbody > tr > td > div.product-item > div.product-info`。
+
+- 内容和链接：`h5.product-title > a`，href 形如 `/forum/{novelId}/{postId}.html?#comment-{id}`。这是章节页，带登录 Cookie 请求会改写 `/my/view`，客户端不请求它（包括评论页和帖子页路由），只提供 `/detail/{novelId}.html`（id 为 9 位以上数字时）和复制链接。
+- 主旨：`div.book-ep`，去掉「主旨：」。
+- 回复人：自身文本含「回覆人」的 `div.book-update` 内的 `a`。
+- 日期：自身文本含「回覆日期」的 `div.book-update`，去掉前缀。
+
 ## 9. 论坛与 FAQ
 
 ### 9.1 论坛分类与首页分组

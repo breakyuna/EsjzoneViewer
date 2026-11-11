@@ -93,7 +93,11 @@ data class ExperienceRecordsState(
     val loaded: Boolean = false,
     val loading: Boolean = false,
     val endReached: Boolean = false,
-    val failure: LoadFailureKind? = null
+    val failure: LoadFailureKind? = null,
+    /** True while a same-category refresh runs over the rows still on screen. */
+    val refreshing: Boolean = false,
+    /** The last same-category refresh failed; [rows] are the previous result. */
+    val refreshFailed: Boolean = false
 ) {
     val canLoadMore: Boolean get() = loaded && !loading && !endReached
 }
@@ -113,10 +117,18 @@ internal fun ExperienceRecordsState.appendPage(
         total = total,
         loaded = true,
         loading = false,
+        refreshing = false,
+        refreshFailed = false,
         failure = null,
         endReached = rows.isEmpty() || rows.size < pageSize || merged.size >= total
     )
 }
+
+/** A failed request keeps whatever was on screen; only a failed refresh is flagged as stale. */
+internal fun ExperienceRecordsState.afterFailure(
+    failure: LoadFailureKind,
+    refresh: Boolean
+): ExperienceRecordsState = copy(loading = false, refreshing = false, failure = failure, refreshFailed = refresh)
 
 class ExperienceRecordsPageModel(
     private val authorization: Authorization
@@ -136,7 +148,18 @@ class ExperienceRecordsPageModel(
         reload(type)
     }
 
-    fun refresh() = reload(mutableState.value.type)
+    /**
+     * Same-category refresh keeps the visible rows until the first page arrives;
+     * a failure leaves them in place with a retry prompt.
+     */
+    fun refresh() {
+        val current = mutableState.value
+        if (!current.loaded) {
+            reload(current.type)
+            return
+        }
+        fetch(ExperienceRecordsState(type = current.type), offset = 0, visible = current, refresh = true)
+    }
 
     fun loadMore() {
         val current = mutableState.value
@@ -146,17 +169,31 @@ class ExperienceRecordsPageModel(
 
     fun retry() {
         val current = mutableState.value
-        if (current.loaded) fetch(current, offset = current.rows.size) else reload(current.type)
+        when {
+            !current.loaded -> reload(current.type)
+            current.refreshFailed -> refresh()
+            else -> fetch(current, offset = current.rows.size)
+        }
     }
 
     private fun reload(type: ExperienceRecordType) {
         fetch(ExperienceRecordsState(type = type), offset = 0)
     }
 
-    private fun fetch(base: ExperienceRecordsState, offset: Int) {
+    /**
+     * [base] is the state the response is appended to. [visible] is what stays
+     * on screen meanwhile and after a failure; it differs from [base] only for
+     * a same-category refresh.
+     */
+    private fun fetch(
+        base: ExperienceRecordsState,
+        offset: Int,
+        visible: ExperienceRecordsState = base,
+        refresh: Boolean = false
+    ) {
         job?.cancel()
         val requestGeneration = ++generation
-        mutableState.value = base.copy(loading = true, failure = null)
+        mutableState.value = visible.copy(loading = true, refreshing = refresh, failure = null, refreshFailed = false)
         job = viewModelScope.launch {
             try {
                 val page = runInterruptible(Dispatchers.IO) {
@@ -169,7 +206,7 @@ class ExperienceRecordsPageModel(
             } catch (error: Exception) {
                 if (requestGeneration != generation) return@launch
                 AppLogger.e("ExperienceRecordsPage", "Failed to load experience records", error)
-                mutableState.value = base.copy(loading = false, failure = error.loadFailureKind())
+                mutableState.value = visible.afterFailure(error.loadFailureKind(), refresh)
             }
         }
     }

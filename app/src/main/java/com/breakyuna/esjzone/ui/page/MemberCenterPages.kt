@@ -147,7 +147,7 @@ object ExperienceRecordsPage : AppDestination {
         MemberPageScaffold(
             title = stringResource(R.string.member_experience_records),
             navigator = navigator,
-            refreshing = state.loading && !state.loaded,
+            refreshing = (state.loading && !state.loaded) || state.refreshing,
             onRefresh = model::refresh
         ) {
             item(key = "record-types") {
@@ -160,6 +160,9 @@ object ExperienceRecordsPage : AppDestination {
                         )
                     }
                 }
+            }
+            if (state.refreshFailed) item(key = "record-refresh-error") {
+                ErrorStateCompact(stringResource(R.string.member_refresh_failed), onRetry = model::retry)
             }
             when {
                 !state.loaded && state.loading -> item(key = "record-loading") {
@@ -403,7 +406,8 @@ private fun ExperienceRecordFooter(state: ExperienceRecordsState, onLoadMore: ()
         verticalAlignment = Alignment.CenterVertically
     ) {
         when {
-            state.loading -> CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.dp)
+            state.loading && !state.refreshing -> CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.dp)
+            state.refreshing || state.refreshFailed -> Unit
             state.failure != null -> ErrorStateCompact(stringResource(R.string.member_refresh_failed), onRetry = onRetry)
             state.canLoadMore -> TextButton(onClick = onLoadMore) { Text(stringResource(R.string.search_load_more)) }
             else -> MetaText(stringResource(R.string.member_experience_records_end, state.rows.size))

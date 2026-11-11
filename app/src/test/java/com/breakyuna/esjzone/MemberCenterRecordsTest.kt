@@ -12,6 +12,8 @@ import com.breakyuna.esjzone.novellibrary.user.ExperienceRecord
 import com.breakyuna.esjzone.novellibrary.user.ExperienceRecordType
 import com.breakyuna.esjzone.ui.page.ExperienceRecordsState
 import com.breakyuna.esjzone.ui.page.appendPage
+import com.breakyuna.esjzone.ui.page.afterFailure
+import com.breakyuna.esjzone.network.LoadFailureKind
 import com.breakyuna.esjzone.ui.navigation.LegacyRoute
 import com.breakyuna.esjzone.ui.navigation.forumLinkRoute
 import com.breakyuna.esjzone.ui.page.ExperienceRecordsPage
@@ -221,6 +223,23 @@ class MemberCenterRecordsTest {
         assertFalse(ExperienceRecordsState().appendPage(emptyList(), total = 0).canLoadMore)
         // A server that keeps reporting more rows but returns a short page still ends.
         assertFalse(ExperienceRecordsState().appendPage(rows.take(5), total = 100).canLoadMore)
+    }
+
+    @Test fun failedRefreshKeepsVisibleRows() {
+        val rows = List(30) { ExperienceRecord("t$it", "1", null) }
+        val loaded = ExperienceRecordsState(type = ExperienceRecordType.COMMENT).appendPage(rows, total = 45)
+        val failed = loaded.copy(loading = true, refreshing = true).afterFailure(LoadFailureKind.NETWORK, refresh = true)
+        assertEquals(rows, failed.rows)
+        assertTrue(failed.loaded)
+        assertTrue(failed.refreshFailed)
+        assertFalse(failed.refreshing)
+        assertEquals(ExperienceRecordType.COMMENT, failed.type)
+        // A later successful first page replaces the old rows and clears the flag.
+        val refreshed = ExperienceRecordsState(type = ExperienceRecordType.COMMENT).appendPage(rows.take(2), total = 2)
+        assertEquals(2, refreshed.rows.size)
+        assertFalse(refreshed.refreshFailed)
+        // A failed load-more is not reported as a stale refresh.
+        assertFalse(loaded.afterFailure(LoadFailureKind.NETWORK, refresh = false).refreshFailed)
     }
 
     // ---- links ----

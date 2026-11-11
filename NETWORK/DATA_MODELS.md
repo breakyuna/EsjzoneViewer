@@ -182,7 +182,7 @@ Application 启动后的首分钟另由独立线程检查主线程心跳。主�
 | profile_url | string | /my/profile?uid={uid} 或 .html |
 | exp | integer/null | 经验值文本 |
 | level | string/null | 如 F级 Lv2、SSS級 Max |
-| registered_at | date/null | 注册日期 |
+| registered_at | date/null | 注册日期；客户端 `UserProfile.registerDate`，另有 `expRequired`（升级所需经验） |
 | age_visibility | enum/unknown | 预设/已满18/未满18 |
 | bio_html | string/null | 个人简介 |
 | open_message | boolean/unknown | 仅自己的编辑页有控件 |
