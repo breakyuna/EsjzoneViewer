@@ -108,7 +108,7 @@
     <string name="bookshelf_empty_filtered">没有可显示的书籍</string>
     <string name="bookshelf_empty_filtered_hint">被当前内容偏好隐藏的书籍仍保存在本地。</string>
     <string name="bookshelf_search">搜索书架</string>
-    <string name="bookshelf_search_placeholder">按书名或作者搜索</string>
+    <string name="bookshelf_search_placeholder">按书名、作者或标签搜索</string>
     <string name="bookshelf_search_empty">没有匹配的书籍</string>
     <string name="sync_bookshelf">同步书架</string>
     <string name="delete_bookshelf">从书架移除</string>
