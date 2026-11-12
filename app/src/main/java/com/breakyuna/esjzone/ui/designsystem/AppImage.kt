@@ -12,7 +12,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.mutableStateOf
@@ -134,7 +134,7 @@ fun AppCoverImage(
     refreshFromNetwork: Boolean = false,
     onRefreshSuccess: (() -> Unit)? = null
 ) {
-    val policy by CoverLoadingPolicy.state.collectAsState()
+    val policy by CoverLoadingPolicy.state.collectAsStateWithLifecycle()
     val page = LocalCoverPage.current
     val allowed = page.isBlank() || policy.allowNetwork(page)
     val source = sourceState ?: when (model) {
