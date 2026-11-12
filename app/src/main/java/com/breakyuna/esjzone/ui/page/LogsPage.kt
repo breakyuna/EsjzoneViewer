@@ -48,7 +48,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -90,8 +90,8 @@ object LogsPage : AppDestination {
         val copiedToast = stringResource(R.string.logs_copied_toast)
         val clearedToast = stringResource(R.string.logs_cleared_toast)
         val shareLabel = stringResource(R.string.logs_share)
-        val logs by AppLogger.logsFlow.collectAsState()
-        val crashReport by AppLogger.crashReportFlow.collectAsState()
+        val logs by AppLogger.logsFlow.collectAsStateWithLifecycle()
+        val crashReport by AppLogger.crashReportFlow.collectAsStateWithLifecycle()
         var filter by remember { mutableStateOf<LogLevel?>(null) }
         var query by remember { mutableStateOf("") }
         var clearDialog by remember { mutableStateOf(false) }
