@@ -12,6 +12,8 @@ import com.breakyuna.esjzone.offline.NovelExportController
 import com.breakyuna.esjzone.offline.NovelExportOutcome
 import com.breakyuna.esjzone.offline.NovelExportTarget
 import com.breakyuna.esjzone.util.AppLogger
+import com.breakyuna.esjzone.util.LocaleHelper
+import com.breakyuna.esjzone.app.PresentationAccess
 import java.io.OutputStream
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.StateFlow
@@ -75,8 +77,17 @@ class NovelExportModel(context: Context) : ViewModel() {
             }
             is NovelExportOutcome.Busy -> R.string.novel_export_busy
         }
-        Toast.makeText(appContext, message, Toast.LENGTH_SHORT).show()
+        Toast.makeText(localizedContext(), message, Toast.LENGTH_SHORT).show()
     }
+
+    /**
+     * The application Context carries the system locale; on Android 10-12 the
+     * in-app language only exists in the Activity's localized Context, so
+     * rebuild it the same way MainActivity does before resolving the message.
+     */
+    private fun localizedContext(): Context = runCatching {
+        LocaleHelper.createLocalizedContext(appContext, PresentationAccess.settings.language.value)
+    }.getOrElse { appContext }
 
     private companion object {
         const val TAG = "NovelExport"
