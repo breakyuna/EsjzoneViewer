@@ -23,6 +23,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.breakyuna.esjzone.R
 import com.breakyuna.esjzone.ui.designsystem.AppTypography
 import com.breakyuna.esjzone.ui.designsystem.globalStringResource as stringResource
@@ -117,7 +118,7 @@ internal fun ReaderImageAppearanceControls(
 
 @Composable
 internal fun ReaderGlowQualityNotice() {
-    val reduced by ReaderGlowQuality.reduced.collectAsState()
+    val reduced by ReaderGlowQuality.reduced.collectAsStateWithLifecycle()
     if (reduced) Text(stringResource(R.string.reader_glow_reduced), style = AppTypography.labelSmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant)
 }
