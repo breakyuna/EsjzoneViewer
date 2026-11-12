@@ -19,7 +19,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -600,7 +600,7 @@ fun AppNavigation() {
     // cookie session on IO before composing the root NavDisplay; LoadingScreen still
     // owns the legacy Room import for the normal Loading route.
     val currentDomain by PresentationAccess.settings.domain
-    val loginSessionChanges by PresentationAccess.client.loginSessionChanges.collectAsState()
+    val loginSessionChanges by PresentationAccess.client.loginSessionChanges.collectAsStateWithLifecycle()
     val loginSessionRevision = loginSessionChanges[currentDomain] ?: 0L
     val authorizationState = remember(currentDomain, loginSessionRevision) {
         mutableStateOf<Authorization?>(null)
@@ -631,10 +631,10 @@ fun AppNavigation() {
     val currentEntry = backStack.lastOrNull()
     val maintenanceAllowed = !autoResumePending && currentEntry != AppNavKey.Loading &&
         currentEntry != AppNavKey.Login && (currentEntry !is AppNavKey.Reader || readyReader == currentEntry)
-    val storageLocation by PresentationAccess.storage.location.collectAsState()
+    val storageLocation by PresentationAccess.storage.location.collectAsStateWithLifecycle()
     val storageSetupModel = rememberAppViewModel { StorageLocationModel() }
-    val storageSetupState by storageSetupModel.state.collectAsState()
-    val storageSetupUpgrade by PresentationAccess.storage.setupUpgrade.collectAsState()
+    val storageSetupState by storageSetupModel.state.collectAsStateWithLifecycle()
+    val storageSetupUpgrade by PresentationAccess.storage.setupUpgrade.collectAsStateWithLifecycle()
     var storageSetupPending by rememberSaveable { mutableStateOf(false) }
     // Guard restored readers/details too, after the login/loading entry has completed.
     val requiresStorageSetup = needsStorageSetup(backStack.lastOrNull(), authorization, storageLocation)
@@ -674,8 +674,8 @@ fun AppNavigation() {
     }
 
     val appContext = LocalContext.current.applicationContext
-    val readerAppearance by PresentationAccess.readerSettings.settings.collectAsState()
-    val readerImageBackground by PresentationAccess.readerSettings.imageBackground.collectAsState()
+    val readerAppearance by PresentationAccess.readerSettings.settings.collectAsStateWithLifecycle()
+    val readerImageBackground by PresentationAccess.readerSettings.imageBackground.collectAsStateWithLifecycle()
     // Warm the selected image while the user browses, before a reader entry needs its first frame.
     LaunchedEffect(readerAppearance.background, readerImageBackground.fileName, readerImageBackground.blur) {
         if (readerAppearance.background == com.breakyuna.esjzone.ui.reader.ReaderBackground.CUSTOM_IMAGE) {
@@ -699,7 +699,7 @@ fun AppNavigation() {
         registry["LoginScreen"] = LoginScreen
     }
 
-    val pendingNovelUrl by com.breakyuna.esjzone.MainActivity.pendingTargetNovel.collectAsState()
+    val pendingNovelUrl by com.breakyuna.esjzone.MainActivity.pendingTargetNovel.collectAsStateWithLifecycle()
     LaunchedEffect(pendingNovelUrl, authorization) {
         val target = pendingNovelUrl
         if (!target.isNullOrBlank() && authorization != null) {
