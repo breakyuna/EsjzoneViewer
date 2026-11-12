@@ -62,8 +62,13 @@ jobs:
       - name: Run JVM unit tests and Android lint
         run: ./gradlew testDebugUnitTest lintDebug --build-cache --parallel
 
+  # PRs also run the full minified Release build (R8 full mode) so mapping
+  # regressions are caught before merge. This job never receives signing
+  # credentials. The unsigned APK is staged only for push/workflow_dispatch;
+  # formal signing stays in sign-and-publish, which does not run on PRs
+  # (including fork PRs).
   release-build:
-    if: ${{ github.event_name != 'pull_request' && (github.event_name != 'push' || !contains(github.event.head_commit.message, '[skip android build]')) }}
+    if: ${{ github.event_name != 'push' || !contains(github.event.head_commit.message, '[skip android build]') }}
     name: Build complete release APK
     runs-on: ubuntu-24.04
 
@@ -95,8 +100,11 @@ jobs:
       - name: Build release APK
         run: ./gradlew assembleRelease --build-cache --parallel
 
+      - name: Confirm unsigned minified APK
+        run: test -f app/build/outputs/apk/release/app-release-unsigned.apk
+
       - name: Preserve release crash symbols
-        if: always()
+        if: ${{ always() && github.event_name != 'pull_request' }}
         uses: actions/upload-artifact@v4
         with:
           name: release-symbols-${{ github.sha }}
@@ -104,7 +112,20 @@ jobs:
           if-no-files-found: ignore
           retention-days: 30
 
+      - name: Upload R8 mapping for PR review
+        if: ${{ always() && github.event_name == 'pull_request' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: r8-mapping-${{ github.sha }}
+          path: |
+            app/build/outputs/mapping/release/mapping.txt
+            app/build/outputs/mapping/release/usage.txt
+            app/build/outputs/mapping/release/seeds.txt
+          if-no-files-found: ignore
+          retention-days: 7
+
       - name: Stage unsigned release APK
+        if: ${{ github.event_name != 'pull_request' }}
         uses: actions/upload-artifact@v4
         with:
           name: unsigned-release-${{ github.run_id }}

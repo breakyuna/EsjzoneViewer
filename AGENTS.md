@@ -181,7 +181,7 @@ git diff --check
 ### CI：APK 构建与设备验证
 
 - APK 构建交给 GitHub Actions；未经用户明确要求，不得在本地执行 `assembleDebug`、`assembleRelease` 或其他构建任务。仅在用户明确要求提交、发布或触发 CI 的范围内操作 GitHub Actions。
-- Release Variant、R8、资源压缩、签名和 Baseline Profile 集成由 CI 的 Release 构建检查。
+- Pull Request 与 push / workflow_dispatch 都会跑 `assembleRelease`（R8 full mode、资源压缩、Baseline Profile）。PR 只生成未签名产物 `app-release-unsigned.apk`，不向 PR 任务注入签名密钥，并上传短期保留的 `mapping.txt`（以及已生成的 usage / seeds）供 R8 审查。正式签名与发布只在非 PR 事件的 `sign-and-publish` 任务中进行。
 - 保留 Room、DataStore、SharedPreferences 迁移、Cookie / Android Framework 持久化和 MainActivity 启动等 Instrumentation 测试；仅在用户明确要求时执行设备测试、设备测试源码编译，或触发 GitHub Actions 的 Android Device Validation。
 
 ### 结果表述
