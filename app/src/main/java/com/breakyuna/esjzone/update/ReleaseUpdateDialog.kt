@@ -22,7 +22,6 @@ import androidx.compose.material3.MaterialTheme
 import com.breakyuna.esjzone.ui.designsystem.GlobalText as Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateOf
@@ -44,13 +43,13 @@ import com.breakyuna.esjzone.ui.designsystem.AppSpacing
 
 @Composable
 internal fun ReleaseUpdateDialog() {
-    val update by ReleaseUpdateChecker.update.collectAsState()
+    val update by ReleaseUpdateChecker.update.collectAsStateWithLifecycle()
     val release = update ?: return
-    val visible by ReleaseUpdateChecker.dialogVisible.collectAsState()
+    val visible by ReleaseUpdateChecker.dialogVisible.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val activity = LocalActivity.current ?: return
     val download by release.downloader.state.collectAsStateWithLifecycle()
-    val lifecycleState by LocalLifecycleOwner.current.lifecycle.currentStateFlow.collectAsState()
+    val lifecycleState by LocalLifecycleOwner.current.lifecycle.currentStateFlow.collectAsStateWithLifecycle()
     var autoInstallRequested by rememberSaveable(release.version) { mutableStateOf(false) }
     var installError by rememberSaveable(release.version) { mutableStateOf<Int?>(null) }
     val notificationsLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {
