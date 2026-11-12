@@ -42,6 +42,7 @@ import com.breakyuna.esjzone.ui.designsystem.GlobalText as Text
 import com.breakyuna.esjzone.ui.designsystem.contentArrival
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -140,6 +141,15 @@ class NovelListPage(
         val adult by PresentationAccess.settings.adult
         val listState = rememberLazyListState()
         val gridListState = rememberLazyListState()
+        val scrollFilters = listOf(novelType.intValue, sortType.intValue, adult, adultOnly)
+        var previousScrollFilters by remember { mutableStateOf(scrollFilters) }
+        if (previousScrollFilters != scrollFilters) {
+            // Reset before either layout measures a different result set. Initial
+            // composition keeps its saved scroll position when returning to the page.
+            listState.requestScrollToItem(0)
+            gridListState.requestScrollToItem(0)
+            SideEffect { previousScrollFilters = scrollFilters }
+        }
 
         DiscoveryScaffold(
             title = stringResource(R.string.novel_list),
@@ -292,21 +302,19 @@ private fun NovelListResult(
 
     val rowState = listState
     val gridState = gridListState
+    var previousGridView by remember { mutableStateOf(gridView) }
     AppPagedContent(if (gridView) 1 else 0) { layoutMode ->
         val displayGrid = layoutMode == 1
         val listState = if (displayGrid) gridState else rowState
         BoxWithConstraints(modifier = modifier.wideContentWidth()) {
-            val columns =
-                if (displayGrid)
-                    bookshelfColumnCount(
-                        availableWidth = maxWidth.value - 32.dp.value,
-                        gap = AppSpacing.md.value,
-                        minCellWidth =
-                            if (appUsesWideLayout())
-                                140f * LocalConfiguration.current.fontScale.coerceAtLeast(1f)
-                            else 96f,
-                    )
-                else wideListColumns(maxWidth = 1280f)
+            val gridColumns = bookshelfColumnCount(
+                availableWidth = maxWidth.value - 32.dp.value,
+                gap = AppSpacing.md.value,
+                minCellWidth = if (appUsesWideLayout())
+                    140f * LocalConfiguration.current.fontScale.coerceAtLeast(1f) else 96f,
+            )
+            val rowColumns = wideListColumns(maxWidth = 1280f)
+            val columns = if (displayGrid) gridColumns else rowColumns
             val rows = remember(visibleItems, columns) { visibleItems.chunked(columns) }
             PreserveAdaptiveListAnchor(
                 listState,
@@ -315,6 +323,15 @@ private fun NovelListResult(
                 leadingItemCount = if (model.refreshFailure != null) 1 else 0,
                 key = ::novelKey,
             )
+            if (displayGrid == gridView && previousGridView != gridView) {
+                val sourceState = if (previousGridView) gridState else rowState
+                val sourceColumns = if (previousGridView) gridColumns else rowColumns
+                listState.requestScrollToItem(novelListAnchorRow(
+                    sourceState.firstVisibleItemIndex, sourceColumns, columns,
+                    leadingItemCount = if (model.refreshFailure != null) 1 else 0
+                ))
+                SideEffect { previousGridView = gridView }
+            }
 
             Column(modifier = Modifier.fillMaxSize()) {
                 Surface(color = MaterialTheme.colorScheme.background) {
@@ -520,6 +537,13 @@ private fun NovelListGridCard(
 }
 
 private fun novelKey(novel: CoveredNovel): String = novel.url.trim().ifBlank { novel.name.trim() }
+
+/** Preserve the first visible book's row when switching layouts; feedback is a full-width item. */
+internal fun novelListAnchorRow(firstVisibleRow: Int, sourceColumns: Int, targetColumns: Int,
+    leadingItemCount: Int = 0): Int {
+    if (firstVisibleRow < leadingItemCount) return 0
+    return leadingItemCount + (firstVisibleRow - leadingItemCount) * sourceColumns / targetColumns
+}
 
 private fun listFailureMessage(failure: LoadFailureKind): Int = when (failure) {
     LoadFailureKind.NETWORK -> R.string.load_network_error

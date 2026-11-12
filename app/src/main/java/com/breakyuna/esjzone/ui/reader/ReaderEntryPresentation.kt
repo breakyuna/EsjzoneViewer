@@ -15,6 +15,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -52,15 +53,20 @@ internal fun ReaderEntryPresentation(
         ReaderImageBackground(transparency = transparency, cropX = cropX, cropY = cropY)
     }
     val reduced = LocalReduceMotion.current
-    val contentAlpha by animateFloatAsState(
+    val contentAlpha = animateFloatAsState(
         if (contentVisible) 1f else 0f,
         // Re-hide immediately during a new positioning pass; only reveal is animated.
         animationSpec = if (!contentVisible || reduced) snap() else tween(AppMotion.short, easing = AppMotion.standardEasing),
         label = "ReaderEntryContent"
     )
-    Box(Modifier.fillMaxSize().readerBackdrop(initialBackground, initialPainter, initialAppearance)) {
+    // Keep the frozen backdrop only while revealing the live reader. Once it is
+    // opaque, ReaderShell owns its background, including during navigation out.
+    val revealingContent by remember { derivedStateOf { contentAlpha.value < 1f } }
+    val revealBackdrop = if (contentVisible && revealingContent)
+        Modifier.readerBackdrop(initialBackground, initialPainter, initialAppearance) else Modifier
+    Box(Modifier.fillMaxSize().then(revealBackdrop)) {
         Box(Modifier.fillMaxSize()
-            .graphicsLayer { alpha = contentAlpha }
+            .graphicsLayer { alpha = contentAlpha.value }
             .then(if (contentVisible) Modifier else Modifier.clearAndSetSemantics { })
         ) { content() }
         if (!contentVisible) {

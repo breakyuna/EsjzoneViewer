@@ -1823,6 +1823,17 @@ object NovelDownloadStore {
         val chapters = stored.chapters
             .filter { !it.localOnly || it.isSaved }
             .map { ChapterItem(it.toChapter()) }
+        val catalog = stored.catalogHtml?.let {
+            Jsoup.parse(it, EsjzoneUrls.resolve(stored.url)).selectFirst("#integration")
+        }?.let { com.breakyuna.esjzone.novellibrary.novel.analyseChapterList(it) }
+            ?.takeIf { it.orderedChapters.isNotEmpty() }
+        val extraChapters = if (catalog == null) emptyList() else {
+            val catalogKeys = catalog.orderedChapters.mapTo(HashSet()) { chapterKey(it.url) }
+            // Keep volume groups while exposing chapters saved after this HTML snapshot.
+            chapters.filterNot { chapterKey(it.chapter.url) in catalogKeys }
+        }
+        val chapterList = if (catalog == null) NovelChapterList(chapters)
+            else NovelChapterList(catalog.items + extraChapters)
 
         return DetailedNovel(
             name = stored.name,
@@ -1847,32 +1858,37 @@ object NovelDownloadStore {
                     ?.let { listOf(TextComponent(it)) }
                     ?: emptyList()
             ),
-            chapterList = stored.catalogHtml?.let {
-                Jsoup.parse(it, EsjzoneUrls.resolve(stored.url)).selectFirst("#integration")
-            }?.let { com.breakyuna.esjzone.novellibrary.novel.analyseChapterList(it) } ?: NovelChapterList(chapters),
+            chapterList = chapterList,
             sourceUrl = stored.sourceUrl,
             updatedAt = stored.updatedAt,
-            chapterOrderComplete = stored.catalogHtml != null || stored.catalogComplete || stored.complete,
+            // Extra local chapters are visible, but their position in the live catalog is unverified.
+            chapterOrderComplete = extraChapters.isEmpty() &&
+                (stored.catalogHtml != null || stored.catalogComplete || stored.complete),
             descriptionHtml = stored.descriptionHtml,
             catalogHtml = stored.catalogHtml
         )
     }
 
-    /** Refresh public metadata without replacing chapter records, files or download state. */
-    fun retainNovelDetail(novel: DetailedNovel) {
+    /** Cached reader snapshots only fill gaps; a completed detail refresh may replace metadata. */
+    fun retainNovelDetail(novel: DetailedNovel, replaceExistingSnapshot: Boolean = false) {
         val directory = synchronized(ioLock) { directoryFor(novel.url, create = false) } ?: return
         val guard = newWriteGuard(directory)
         val previous = synchronized(ioLock) { readManifest(directory) } ?: return
-        val metadata = manifestFrom(novel, previous.chapters, previous.downloadedAt, previous.complete, previous.commonPassword)
+        val metadata = if (replaceExistingSnapshot)
+            manifestFrom(novel, previous.chapters, previous.downloadedAt, previous.complete, previous.commonPassword)
+            else previous
         val updated = metadata.copy(
             catalogComplete = previous.catalogComplete || previous.complete,
             description = metadata.description.ifBlank { previous.description },
-            descriptionHtml = novel.descriptionHtml ?: previous.descriptionHtml,
-            catalogHtml = novel.catalogHtml.takeIf { novel.chapterList.orderedChapters.isNotEmpty() }
-                ?: previous.catalogHtml
+            descriptionHtml = if (replaceExistingSnapshot) novel.descriptionHtml ?: previous.descriptionHtml
+                else previous.descriptionHtml ?: novel.descriptionHtml,
+            catalogHtml = if (replaceExistingSnapshot)
+                novel.catalogHtml.takeIf { novel.chapterList.orderedChapters.isNotEmpty() } ?: previous.catalogHtml
+                else previous.catalogHtml ?: novel.catalogHtml.takeIf { novel.chapterList.orderedChapters.isNotEmpty() }
         )
         if (updated == previous) return
-        writeManifest(directory, updated, guard, revalidateChapterFiles = false)
+        writeManifest(directory, updated, guard, revalidateChapterFiles = false,
+            replaceDetailSnapshot = replaceExistingSnapshot)
     }
 
     fun repairNovelName(novelUrl: String, name: String): Boolean {
@@ -2447,7 +2463,8 @@ object NovelDownloadStore {
         verifiedChapters: Map<String, DownloadedChapterRecord> = emptyMap(),
         verificationBaseline: Map<String, DownloadedChapterRecord>? = null,
         onlySeedCatalog: Boolean = false,
-        onlyRepairName: Boolean = false
+        onlyRepairName: Boolean = false,
+        replaceDetailSnapshot: Boolean = false
     ): DownloadedNovelManifest {
         val writeLock = lockNovelWrites(directory)
         try {
@@ -2462,7 +2479,8 @@ object NovelDownloadStore {
                     existing to contentRevision(directory)
                 }
                 val manifest = buildManifest(directory, snapshot.first, incoming, guard, replaceCatalog,
-                    updatePassword, changedContents, revalidateChapterFiles, verifiedChapters, verificationBaseline)
+                    updatePassword, changedContents, revalidateChapterFiles, verifiedChapters, verificationBaseline,
+                    replaceDetailSnapshot)
                 val file = StorageFile(directory, MANIFEST_FILE)
                 val temporary = prepareJson(file, if (directory.isDocument) manifest.copy(commonPassword = null) else manifest, guard)
                 try {
@@ -2487,10 +2505,11 @@ object NovelDownloadStore {
         writeGuard: DownloadWriteGuard, replaceCatalog: Boolean = false, updatePassword: Boolean = false,
         changedContents: Map<String, DownloadedChapterContent> = emptyMap(),
         revalidateChapterFiles: Boolean = true, verifiedChapters: Map<String, DownloadedChapterRecord> = emptyMap(),
-        verificationBaseline: Map<String, DownloadedChapterRecord>? = null
+        verificationBaseline: Map<String, DownloadedChapterRecord>? = null,
+        replaceDetailSnapshot: Boolean = false
     ): DownloadedNovelManifest {
         val update = if (updatePassword && existing != null) existing.copy(commonPassword = incoming.commonPassword) else incoming
-        return mergeDownloadManifest(existing, update, replaceCatalog).let { rebased ->
+        return mergeDownloadManifest(existing, update, replaceCatalog, replaceDetailSnapshot).let { rebased ->
             val merged = if (updatePassword) rebased.copy(commonPassword = incoming.commonPassword) else rebased
             val oldRecords = existing?.chapters.orEmpty().associateBy { chapterKey(it.url) }
             val records = merged.chapters.map { mergedRecord ->

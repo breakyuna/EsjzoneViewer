@@ -565,7 +565,10 @@ class ChapterPage(
             }
         }
 
-        BackHandler {
+        // Let NavDisplay own page back gestures, including predictive-back cancellation.
+        // Only consume back here when there is reader UI to dismiss first.
+        BackHandler(enabled = sidePanels.isVisible || bookmarkPicking || showBrightness ||
+            showReaderSettings || showReaderContents || progressPreview != null) {
             when {
                 sidePanels.isVisible -> sidePanels.close()
                 bookmarkPicking -> bookmarkPicking = false
@@ -573,7 +576,7 @@ class ChapterPage(
                 showReaderSettings -> showReaderSettings = false
                 showReaderContents -> showReaderContents = false
                 progressPreview != null -> dismissProgressPreview()
-                else -> navigator.pop()
+                else -> Unit
             }
         }
 
@@ -605,7 +608,7 @@ class ChapterPage(
         } == true
         val resumePositioning = resumePending && !requestedChapterLocked
         val windowLoadingAllowed = canLoadReaderWindow(entryContentRevealed, resumePending, requestedChapterLocked) &&
-            pendingSeekLocation == null
+            pendingSeekLocation == null && readerResumed
         var convertedText by remember { mutableStateOf<ReaderTextSnapshot?>(null) }
         val readerTextTransform: (String) -> String = remember(
             readerSettings.script, convertedText, nameReplaceSettings

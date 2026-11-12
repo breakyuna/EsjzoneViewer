@@ -30,6 +30,9 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.navigationBarsIgnoringVisibility
+import androidx.compose.foundation.layout.statusBarsIgnoringVisibility
+import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
@@ -357,7 +360,12 @@ private fun shellSafeDrawing(top: Boolean, bottom: Boolean): WindowInsets {
         bottom -> WindowInsetsSides.Bottom + WindowInsetsSides.Horizontal
         else -> WindowInsetsSides.Horizontal
     }
-    return WindowInsets.safeDrawing.only(sides)
+    // The reader restores hidden system bars as it loses focus. Reserve their
+    // final space from the first return frame instead of resizing with that animation.
+    return WindowInsets.safeDrawing
+        .union(WindowInsets.statusBarsIgnoringVisibility)
+        .union(WindowInsets.navigationBarsIgnoringVisibility)
+        .only(sides)
 }
 
 @Composable
@@ -396,7 +404,7 @@ private fun TabStacksDisplay(
     }
 }
 
-/** Keep stack owners mounted; tab motion affects page bodies, never their navigation chrome. */
+/** Mount tabs on first selection, then retain visited stacks for this shell instance. */
 @Composable
 internal fun TabSwitchLayers(
     selected: AppTabId,
@@ -406,8 +414,13 @@ internal fun TabSwitchLayers(
 ) {
     val reduced = LocalReduceMotion.current
     val transition = updateTransition(targetState = selected, label = "TabSwitch")
+    // Do not restore all four page trees on the first frame back from a reader.
+    // Back stacks above remain saveable; visited tabs stay mounted across tab switches.
+    val mountedTabs = remember { mutableStateMapOf(selected to true) }
+    androidx.compose.runtime.SideEffect { mountedTabs[selected] = true }
     Box(modifier) {
         AppTabId.entries.forEach { tabId ->
+            if (tabId != selected && mountedTabs[tabId] != true) return@forEach
             key(tabId) {
                 val active = selected == tabId
                 val alpha = transition.animateFloat(
@@ -569,6 +582,7 @@ private fun AppNavigationBar(
     tabs: List<AppTabId>,
     modifier: Modifier = Modifier,
     windowInsets: WindowInsets = NavigationBarDefaults.windowInsets
+        .union(WindowInsets.navigationBarsIgnoringVisibility.only(WindowInsetsSides.Bottom))
 ) {
     Surface(
         modifier = modifier,

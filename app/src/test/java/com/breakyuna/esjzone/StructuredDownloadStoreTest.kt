@@ -137,6 +137,47 @@ class StructuredDownloadStoreTest {
     }
 
     @Test
+    fun richCatalogIncludesChaptersSavedAfterItsSnapshot() = withStorage { root ->
+        val oldOrder = listOf(chapter(1), chapter(2))
+        save(1, oldOrder)
+        val detailed = novel(oldOrder).copy(
+            catalogHtml = "<div id='integration'><details open><summary>Volume 1</summary>" +
+                oldOrder.joinToString("") { "<a href='${it.url}'>${it.name}</a>" } +
+                "</details></div>"
+        )
+        NovelDownloadStore.retainNovelDetail(detailed)
+        save(3, oldOrder + chapter(3))
+        NovelDownloadStore.initializeDirectory(root)
+        val restored = requireNotNull(NovelDownloadStore.readDetailedNovel(novelUrl))
+        assertTrue(restored.chapterList.items.first() is com.breakyuna.esjzone.novellibrary.component.ChapterListItem)
+        assertEquals(listOf(1, 2, 3).map { chapter(it).url }, restored.chapterList.orderedChapters.map { it.url })
+        assertNotNull(NovelDownloadStore.readChapter(chapter(3).url, novelUrl))
+        assertFalse(restored.chapterOrderComplete)
+    }
+
+    @Test
+    fun cachedReaderDetailCannotReplaceACompletedDetailRefresh() = withStorage { root ->
+        val order = listOf(chapter(1), chapter(2))
+        save(1, order)
+        val old = novel(order).copy(
+            descriptionHtml = "<p>Old description</p>",
+            catalogHtml = "<div id='integration'><a href='${chapter(1).url}'>Old chapter name</a></div>"
+        )
+        val fresh = old.copy(descriptionHtml = "<p>Fresh description</p>",
+            catalogHtml = "<div id='integration'>" +
+                order.joinToString("") { "<a href='${it.url}'>${it.name}</a>" } + "</div>")
+        NovelDownloadStore.retainNovelDetail(old)
+        NovelDownloadStore.retainNovelDetail(fresh, replaceExistingSnapshot = true)
+        NovelDownloadStore.retainNovelDetail(old)
+        save(2, order)
+        NovelDownloadStore.initializeDirectory(root)
+        val restored = requireNotNull(NovelDownloadStore.readDetailedNovel(novelUrl))
+        assertTrue(restored.description.preview(Int.MAX_VALUE).contains("Fresh description"))
+        assertEquals(order.map { it.name }, restored.chapterList.orderedChapters.map { it.name })
+        assertNotNull(NovelDownloadStore.readChapter(chapter(2).url, novelUrl))
+    }
+
+    @Test
     fun readerOnlyIncompleteCatalogNeverPretendsToBeTheFullBook() = withStorage { root ->
         NovelDownloadStore.saveChapter("Novel", novelUrl, "", listOf(chapter(1)), chapter(1),
             DetailedChapter("Chapter 1", listOf(TextComponent("body")), null, null), auth,

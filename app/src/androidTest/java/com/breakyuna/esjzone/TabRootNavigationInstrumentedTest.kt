@@ -1,6 +1,7 @@
 package com.breakyuna.esjzone
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -9,6 +10,11 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.material3.Text
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toPixelMap
@@ -18,6 +24,8 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onRoot
+import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.navigation3.runtime.NavKey
@@ -50,6 +58,76 @@ class TabRootNavigationInstrumentedTest {
     @Test fun bottomBarStaysOpaqueAndStationaryDuringRapidTabChanges() = verifyTabChanges(false)
 
     @Test fun rootRailStaysOpaqueAndStationaryDuringRapidTabChanges() = verifyTabChanges(true)
+
+    @Test fun unvisitedTabsAreDeferredAndVisitedTabsStayMounted() {
+        val selected = mutableStateOf(AppTabId.HOME)
+        val mounted = mutableSetOf<AppTabId>()
+        composeRule.setContent {
+            TabSwitchLayers(selected.value, AppTabId.entries, Modifier.fillMaxSize()) { tab, _, _ ->
+                DisposableEffect(tab) {
+                    mounted.add(tab)
+                    onDispose { mounted.remove(tab) }
+                }
+                Box(Modifier.fillMaxSize())
+            }
+        }
+        composeRule.runOnIdle {
+            assertEquals(setOf(AppTabId.HOME), mounted)
+            selected.value = AppTabId.BOOKSHELF
+        }
+        composeRule.runOnIdle {
+            assertEquals(setOf(AppTabId.HOME, AppTabId.BOOKSHELF), mounted)
+            selected.value = AppTabId.HOME
+        }
+        composeRule.runOnIdle {
+            assertEquals(setOf(AppTabId.HOME, AppTabId.BOOKSHELF), mounted)
+        }
+    }
+
+    @Test fun returningFromReaderRestoresSelectedTabAndDefersOtherSavedTabs() {
+        val stack = mutableStateListOf<NavKey>(AppNavKey.Main)
+        val reader = AppNavKey.Legacy(LegacyRoute.Static("reader-return-test"))
+        val mounted = mutableSetOf<AppTabId>()
+        lateinit var selectTab: (AppTabId) -> Unit
+        composeRule.setContent {
+            NavDisplay(
+                backStack = stack,
+                onBack = { stack.removeLastOrNull() },
+                transitionSpec = pushTransition,
+                popTransitionSpec = popTransition,
+                entryDecorators = listOf(rememberSaveableStateHolderNavEntryDecorator()),
+                entryProvider = entryProvider {
+                    entry<AppNavKey.Main> {
+                        var selected by rememberSaveable { mutableStateOf(AppTabId.HOME.name) }
+                        selectTab = { selected = it.name }
+                        TabSwitchLayers(AppTabId.valueOf(selected), AppTabId.entries, Modifier.fillMaxSize()) { tab, _, motion ->
+                            var count by rememberSaveable { mutableStateOf(0) }
+                            DisposableEffect(tab) {
+                                mounted.add(tab)
+                                onDispose { mounted.remove(tab) }
+                            }
+                            Text("$count", Modifier.then(motion).testTag("saved-${tab.name}").clickable { count++ })
+                        }
+                    }
+                    entry<AppNavKey.Legacy> { Box(Modifier.fillMaxSize().background(Color.White)) }
+                }
+            )
+        }
+        composeRule.onNodeWithTag("saved-HOME").performClick()
+        composeRule.runOnIdle { selectTab(AppTabId.BOOKSHELF) }
+        composeRule.onNodeWithTag("saved-BOOKSHELF").performClick()
+        composeRule.runOnIdle { stack.add(reader) }
+        composeRule.waitForIdle()
+        composeRule.runOnIdle {
+            assertTrue(mounted.isEmpty())
+            stack.removeLastOrNull()
+        }
+        composeRule.waitForIdle()
+        composeRule.runOnIdle { assertEquals(setOf(AppTabId.BOOKSHELF), mounted) }
+        composeRule.onNodeWithTag("saved-BOOKSHELF").assertTextEquals("1")
+        composeRule.runOnIdle { selectTab(AppTabId.HOME) }
+        composeRule.onNodeWithTag("saved-HOME").assertTextEquals("1")
+    }
 
     private fun verifyTabChanges(sideNavigation: Boolean) {
         val selected = mutableStateOf(AppTabId.HOME)

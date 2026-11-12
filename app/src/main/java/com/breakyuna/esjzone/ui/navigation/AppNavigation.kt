@@ -583,7 +583,7 @@ internal val predictivePopTransition:
     AnimatedContentTransitionScope<Scene<NavKey>>.(Int) -> ContentTransform = { edge ->
     val fromRight = edge == NavigationEvent.EDGE_RIGHT
     unveilIn(initialColor = Color.Black.copy(alpha = 0.12f)) togetherWith
-        (scaleOut(targetScale = 0.9f,
+        (fadeOut() + scaleOut(targetScale = 0.9f,
             transformOrigin = TransformOrigin(if (fromRight) 0f else 1f, 0.5f)) +
             slideOutHorizontally { if (fromRight) -it / 12 else it / 12 })
 }

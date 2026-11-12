@@ -64,9 +64,12 @@ class NovelPageModel(
         }
         viewModelScope.launch(Dispatchers.IO) {
             val previous = mutableState.value as? State.Result
-            val cached = localOrNull { PresentationAccess.client.getCachedNovelDetail(authorization, novel) }
-            val downloaded = localOrNull { PresentationAccess.downloads.readDetailedNovel(novel.url) }
-            val local = cached ?: downloaded ?: localOrNull { basicLocalDetail() }
+            val cached = if (previous == null)
+                localOrNull { PresentationAccess.client.getCachedNovelDetail(authorization, novel) } else null
+            // Short-circuit local sources: showing cached content must not await download storage.
+            val local = previous?.detailed ?: cached
+                ?: localOrNull { PresentationAccess.downloads.readDetailedNovel(novel.url) }
+                ?: localOrNull { basicLocalDetail() }
             val normalizedLocal = local?.copy(name = preferredNovelTitle(local.name, novel.name, local.id(), local.url))
             val fallback = previous ?: normalizedLocal?.let { State.Result(it, fromDownload = cached == null) }
             ensureActive()
@@ -90,7 +93,7 @@ class NovelPageModel(
                 } else fetchedDetail
                 ensureActive()
                 mutableState.value = State.Result(detail, fromDownload = useDownloadedCatalog)
-                localOrNull { PresentationAccess.downloads.retainNovelDetail(fetchedDetail) }
+                localOrNull { PresentationAccess.downloads.retainNovelDetail(fetchedDetail, replaceExistingSnapshot = true) }
                 localOrNull { ReadingStatisticsRecorder.recordTags(detail) }
                 try {
                     NovelTitleRepository.repair(detail.id(), detail.url, detail.name)

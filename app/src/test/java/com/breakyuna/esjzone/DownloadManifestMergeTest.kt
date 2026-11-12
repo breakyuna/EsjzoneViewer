@@ -14,6 +14,31 @@ class DownloadManifestMergeTest {
         downloadedAt = 1, complete = false, catalogComplete = true)
 
     @Test
+    fun lateCompletionCannotRollBackARefreshedDetailSnapshot() {
+        val current = manifest(listOf(record(1))).copy(descriptionHtml = "new description", catalogHtml = "new catalog")
+        val late = manifest(listOf(record(1, true))).copy(descriptionHtml = "old description", catalogHtml = "old catalog")
+        val merged = mergeDownloadManifest(current, late, false)
+        assertEquals("new description", merged.descriptionHtml)
+        assertEquals("new catalog", merged.catalogHtml)
+        assertTrue(merged.chapters.single().downloaded)
+        val refreshed = mergeDownloadManifest(merged, late, false, replaceDetailSnapshot = true)
+        assertEquals("old catalog", refreshed.catalogHtml)
+        assertEquals("old description", refreshed.descriptionHtml)
+    }
+
+    @Test
+    fun cachedDetailCanSeedMissingSnapshotsAndNewCatalogCanReplaceThem() {
+        val empty = manifest(listOf(record(1, true)))
+        val seeded = mergeDownloadManifest(empty, empty.copy(catalogHtml = "cached catalog"), false)
+        assertEquals("cached catalog", seeded.catalogHtml)
+        val fresh = empty.copy(catalogHtml = "fresh catalog", descriptionHtml = "fresh description")
+        val replaced = mergeDownloadManifest(seeded, fresh, true)
+        assertEquals("fresh catalog", replaced.catalogHtml)
+        assertEquals("fresh description", replaced.descriptionHtml)
+        assertTrue(replaced.chapters.single().downloaded)
+    }
+
+    @Test
     fun lateReaderMetadataCannotClearAVerifiedAdultFlag() {
         val verified = manifest(listOf(record(1, true))).copy(isAdult = true, adultStatusKnown = true)
         val readerOnly = manifest(listOf(record(1), record(2, true)))

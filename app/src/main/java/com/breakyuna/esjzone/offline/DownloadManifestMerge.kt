@@ -6,7 +6,8 @@ import com.breakyuna.esjzone.novellibrary.novel.preferredNovelTitle
 internal fun mergeDownloadManifest(
     existing: DownloadedNovelManifest?,
     incoming: DownloadedNovelManifest,
-    replaceCatalog: Boolean
+    replaceCatalog: Boolean,
+    replaceDetailSnapshot: Boolean = false
 ): DownloadedNovelManifest {
     if (existing == null) return incoming.copy(name = preferredNovelTitle(incoming.name, "", novelUrl = incoming.url))
     val old = existing.chapters.associateBy { NovelDownloadStore.chapterKey(it.url) }
@@ -28,8 +29,10 @@ internal fun mergeDownloadManifest(
         name = preferredNovelTitle(incoming.name, existing.name, novelUrl = incoming.url),
         catalogComplete = if (replaceCatalog) incoming.catalogComplete else existing.catalogComplete || existing.complete,
         commonPassword = existing.commonPassword,
-        descriptionHtml = incoming.descriptionHtml ?: existing.descriptionHtml,
-        catalogHtml = incoming.catalogHtml ?: existing.catalogHtml,
+        descriptionHtml = if (replaceCatalog || replaceDetailSnapshot)
+            incoming.descriptionHtml ?: existing.descriptionHtml else existing.descriptionHtml ?: incoming.descriptionHtml,
+        catalogHtml = if (replaceCatalog || replaceDetailSnapshot)
+            incoming.catalogHtml ?: existing.catalogHtml else existing.catalogHtml ?: incoming.catalogHtml,
         isAdult = if (incoming.adultStatusKnown) incoming.isAdult else existing.isAdult,
         adultStatusKnown = incoming.adultStatusKnown || existing.adultStatusKnown)
 }
