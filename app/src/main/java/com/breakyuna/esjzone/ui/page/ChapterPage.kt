@@ -101,7 +101,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.mutableIntStateOf
@@ -264,11 +264,11 @@ class ChapterPage(
         }
 
         val underlineModel = rememberAppViewModel { ReaderUnderlinesModel() }
-        val underlines by underlineModel.underlines.collectAsState()
+        val underlines by underlineModel.underlines.collectAsStateWithLifecycle()
         val underlineSelection = remember { ReaderUnderlineSelection() }
-        val bookmarkRows by underlineModel.bookmarks.collectAsState()
+        val bookmarkRows by underlineModel.bookmarks.collectAsStateWithLifecycle()
         val readerBookmarks = bookmarkRows.orEmpty()
-        val underlineFailureCount by underlineModel.state.collectAsState()
+        val underlineFailureCount by underlineModel.state.collectAsStateWithLifecycle()
         val underlineContext = LocalContext.current
         val underlineFailureMessage = stringResource(R.string.reader_underline_failed)
         LaunchedEffect(underlineFailureCount) {
@@ -286,11 +286,11 @@ class ChapterPage(
         val context = LocalContext.current
         val historyState = history.state()
 
-        val storedReaderSettings by PresentationAccess.readerSettings.settings.collectAsState()
+        val storedReaderSettings by PresentationAccess.readerSettings.settings.collectAsStateWithLifecycle()
         var readerSettings by remember(storedReaderSettings) {
             mutableStateOf(storedReaderSettings)
         }
-        val storedNameReplaceSettings by PresentationAccess.readerSettings.nameReplaceSettings.collectAsState()
+        val storedNameReplaceSettings by PresentationAccess.readerSettings.nameReplaceSettings.collectAsStateWithLifecycle()
         var nameReplaceSettings by remember(storedNameReplaceSettings) {
             mutableStateOf(storedNameReplaceSettings)
         }
@@ -309,7 +309,7 @@ class ChapterPage(
         var showReaderSettings by rememberSaveable {
             mutableStateOf(false)
         }
-        val imageBackground by PresentationAccess.readerSettings.imageBackground.collectAsState()
+        val imageBackground by PresentationAccess.readerSettings.imageBackground.collectAsStateWithLifecycle()
         val appThemeMode by PresentationAccess.settings.themeMode
         val systemDark = isSystemInDarkTheme()
         val appIsLight = when (appThemeMode) {
@@ -380,7 +380,7 @@ class ChapterPage(
                     novelCoverUrl = novelCoverUrl
                 )
             }
-        val state by chapterPageModel.state.collectAsState()
+        val state by chapterPageModel.state.collectAsStateWithLifecycle()
         val resolvedNovelName by chapterPageModel.novelNameState
         var wenkuVerificationChapter by remember { mutableStateOf<Chapter?>(null) }
         var dismissedWenkuPrompt by remember { mutableStateOf<String?>(null) }
@@ -1078,7 +1078,7 @@ class ChapterPage(
         }
         val downloadChanges by remember(progressNovelUrl) {
             PresentationAccess.downloads.observeNovelChanges(progressNovelUrl)
-        }.collectAsState(initial = 0L)
+        }.collectAsStateWithLifecycle(initialValue = 0L)
         var progressTextIndex by remember(novelUrl, novelId, bookChapterOrder) {
             mutableStateOf<BookTextProgressIndex?>(null)
         }
@@ -1232,7 +1232,7 @@ class ChapterPage(
             chapter.url
         )
         val statisticsBookName = localHistoryPosition.value.novelName
-        val statisticsIncognito by PresentationAccess.settings.readingStatisticsIncognitoFlow.collectAsState()
+        val statisticsIncognito by PresentationAccess.settings.readingStatisticsIncognitoFlow.collectAsStateWithLifecycle()
         val statisticsReady = !statisticsIncognito && sidePanels.panel != ReaderSidePanel.COMMENTS && ((state as? ChapterPageModel.State.Result)
             ?.chapters?.any { it.document.blocks.isNotEmpty() } == true)
         val statisticsSession = remember(statisticsBookKey, statisticsBookName) {
