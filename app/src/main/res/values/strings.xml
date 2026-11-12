@@ -214,6 +214,11 @@
     <string name="novel_export_epub">导出 EPUB</string>
     <string name="novel_export_success">导出完成</string>
     <string name="novel_export_failed">小说导出失败</string>
+    <string name="novel_export_failed_removed">小说导出失败，未完成的文件已删除</string>
+    <string name="novel_export_failed_leftover">小说导出失败，未完成的文件无法自动删除，请手动删除</string>
+    <string name="novel_export_cancelled_removed">导出已取消，未完成的文件已删除</string>
+    <string name="novel_export_cancelled_leftover">导出已取消，未完成的文件无法自动删除，请手动删除</string>
+    <string name="novel_export_busy">已有导出正在进行，请稍候</string>
     <string name="novel_local_copy_title">离线副本</string>
     <string name="novel_local_copy_none">还没有本地副本</string>
     <string name="novel_local_copy_partial">本地已有 %1$d/%2$d 章</string>
