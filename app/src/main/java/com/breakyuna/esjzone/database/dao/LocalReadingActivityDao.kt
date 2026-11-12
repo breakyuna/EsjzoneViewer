@@ -49,6 +49,11 @@ interface LocalReadingActivityDao {
     )
     fun observeLatestForIdentity(novelId: String, novelUrl: String): Flow<LocalReadingActivity?>
 
+    // Update metadata only: verification must never replace a newer reading position.
+    @Query("UPDATE local_reading_history SET is_adult = :isAdult WHERE " +
+        "(:novelId != '' AND novel_id = :novelId) OR (:novelUrl != '' AND novel_url = :novelUrl)")
+    fun updateAdultStatus(novelId: String, novelUrl: String, isAdult: Boolean)
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     fun upsert(activity: LocalReadingActivity)
 
@@ -71,6 +76,7 @@ interface LocalReadingActivityDao {
             novelUrl = activity.novelUrl
         )
         upsert(activity.copy(
+            isAdult = activity.isAdult ?: previous?.isAdult,
             novelName = validName,
             novelCoverUrl = activity.novelCoverUrl.ifBlank {
                 previous?.novelCoverUrl.orEmpty()

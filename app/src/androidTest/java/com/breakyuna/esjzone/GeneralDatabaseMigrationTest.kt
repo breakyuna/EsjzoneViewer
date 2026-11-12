@@ -551,6 +551,42 @@ class GeneralDatabaseMigrationTest {
         }
     }
 
+    @Test
+    fun migration13To14KeepsProgressAndPreservesClassificationAcrossReaderWrites() {
+        val name = "general-migration-v13-${System.nanoTime()}"
+        createFixtureDatabase(name, 13) { sqlite ->
+            createVersion1Schema(sqlite)
+            listOf(GeneralDatabase.MIGRATION_1_2, GeneralDatabase.MIGRATION_2_3,
+                GeneralDatabase.MIGRATION_3_4, GeneralDatabase.MIGRATION_4_5,
+                GeneralDatabase.MIGRATION_5_6, GeneralDatabase.MIGRATION_6_7,
+                GeneralDatabase.MIGRATION_7_8, GeneralDatabase.MIGRATION_8_9,
+                GeneralDatabase.MIGRATION_9_10, GeneralDatabase.MIGRATION_10_11,
+                GeneralDatabase.MIGRATION_11_12, GeneralDatabase.MIGRATION_12_13)
+                .forEach { it.migrate(sqlite) }
+            insertReadingRow(sqlite, "position", 200L, 100L)
+        }
+        val database = openWithMigrations(name)
+        try {
+            val dao = database.localReadingActivityDao()
+            val original = requireNotNull(dao.getLatest())
+            assertEquals(null, original.isAdult)
+            dao.updateAdultStatus(original.novelId, original.novelUrl, true)
+            assertEquals(original.copy(isAdult = true), dao.getLatest())
+            // A later reader write has no classification and replaces the session row.
+            val newer = original.copy(activityId = "new-session", chapterProgress = 0.75f, lastReadAt = 300L)
+            dao.upsertLatest(newer)
+            assertEquals(newer.copy(isAdult = true), dao.getLatest())
+            dao.updateAdultStatus(original.novelId, original.novelUrl, false)
+            assertEquals(newer.copy(isAdult = false), dao.getLatest())
+            dao.deleteById(newer.activityId)
+            dao.updateAdultStatus(original.novelId, original.novelUrl, true)
+            assertEquals(null, dao.getLatest()) // Late verification cannot recreate a deleted record.
+        } finally {
+            database.close()
+            ApplicationProvider.getApplicationContext<android.content.Context>().deleteDatabase(name)
+        }
+    }
+
     private fun createFixtureDatabase(
         databaseName: String,
         version: Int,
@@ -585,7 +621,7 @@ class GeneralDatabaseMigrationTest {
     ): GeneralDatabase {
         val context = ApplicationProvider.getApplicationContext<android.content.Context>()
         return Room.databaseBuilder(context, GeneralDatabase::class.java, databaseName)
-            .addMigrations(*migrations, GeneralDatabase.MIGRATION_12_13)
+            .addMigrations(*migrations, GeneralDatabase.MIGRATION_12_13, GeneralDatabase.MIGRATION_13_14)
             .build()
     }
 

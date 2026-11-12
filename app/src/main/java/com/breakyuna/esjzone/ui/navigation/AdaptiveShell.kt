@@ -206,7 +206,9 @@ fun AdaptiveAppShell(
                         val latest = withContext(Dispatchers.IO) {
                             PresentationAccess.database.localReadingActivityDao().getLatest()
                         }
-                        if (latest != null) {
+                        if (latest != null && com.breakyuna.esjzone.ui.page.historyRowIncluded(
+                                PresentationAccess.settings.adult.value, latest.isAdult
+                            )) {
                             selectedTab = defaultTabId.name
                             val defaultNavigator = when (defaultTabId) {
                                 AppTabId.HOME -> homeNavigator

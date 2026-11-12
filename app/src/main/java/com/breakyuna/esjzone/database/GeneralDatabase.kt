@@ -19,7 +19,7 @@ import com.breakyuna.esjzone.database.entity.ReadingStat
 
 @Database(
     entities = [Cache::class, SearchHistory::class, Bookmark::class, LocalReadingActivity::class, BookshelfEntry::class, ReadingStat::class, com.breakyuna.esjzone.database.entity.BookshelfGroup::class, com.breakyuna.esjzone.database.entity.BookshelfGroupMember::class],
-    version = 13,
+    version = 14,
     exportSchema = true
 )
 abstract class GeneralDatabase : RoomDatabase() {
@@ -39,6 +39,12 @@ abstract class GeneralDatabase : RoomDatabase() {
     abstract fun bookshelfGroupDao(): com.breakyuna.esjzone.database.dao.BookshelfGroupDao
 
     companion object {
+        val MIGRATION_13_14: Migration = object : Migration(13, 14) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL("ALTER TABLE local_reading_history ADD COLUMN is_adult INTEGER DEFAULT NULL")
+            }
+        }
+
         val MIGRATION_12_13: Migration = object : Migration(12, 13) {
             override fun migrate(database: SupportSQLiteDatabase) {
                 database.execSQL("""

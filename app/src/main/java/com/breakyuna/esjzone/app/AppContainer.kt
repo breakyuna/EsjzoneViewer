@@ -80,7 +80,8 @@ class AppContainer(
         GeneralDatabase.MIGRATION_9_10,
         GeneralDatabase.MIGRATION_10_11,
         GeneralDatabase.MIGRATION_11_12,
-        GeneralDatabase.MIGRATION_12_13
+        GeneralDatabase.MIGRATION_12_13,
+        GeneralDatabase.MIGRATION_13_14
     ).fallbackToDestructiveMigrationOnDowngrade().build()
 
     private val imageHttpClient = OkHttpClient.Builder()

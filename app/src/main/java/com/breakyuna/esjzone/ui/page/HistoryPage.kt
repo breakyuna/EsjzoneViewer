@@ -77,6 +77,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.Lifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -213,7 +214,9 @@ object HistoryPage : AppDestination {
             ?.activities
             ?.filter { query.isBlank() || it.novelName.contains(query, true) || it.chapterName.contains(query, true) }
             .orEmpty()
-        val localRowIds = remember(localRows) { localRows.mapTo(LinkedHashSet()) { it.activityId } }
+        val adultAllowed by PresentationAccess.settings.adult
+        val localRowIds = localRows.filter { historyContentVisible(adultAllowed, it.isAdult) }
+            .mapTo(linkedSetOf()) { it.activityId }
         val cloudRows = (cloudState as? HistoryPageModel.State.Result)?.historyNovels.orEmpty()
             .distinctBy { it.url.ifBlank { it.name } }.filterByHistoryQuery(query)
         val cloudRowIds = cloudRows.filter { history ->
@@ -580,7 +583,11 @@ private fun LocalHistoryContent(
             modifier = Modifier.fillMaxSize()
         )
         is LocalHistoryPageModel.State.Result -> {
-            val rows = current.activities.filter { it.novelName.contains(query, true) || it.chapterName.contains(query, true) || query.isBlank() }
+            val adultAllowed by PresentationAccess.settings.adult
+            val rows = current.activities.filter {
+                historyRowIncluded(adultAllowed, it.isAdult) &&
+                    (it.novelName.contains(query, true) || it.chapterName.contains(query, true) || query.isBlank())
+            }
             if (rows.isEmpty()) {
                 EmptyState(
                     title = stringResource(if (query.isBlank()) R.string.history_local_empty else R.string.history_search_empty),
@@ -603,7 +610,19 @@ private fun LocalHistoryContent(
                     verticalArrangement = Arrangement.spacedBy(AppSpacing.sm)
                 ) {
                     adaptiveItems(rows, columns = columns, key = { it.activityId }, contentType = { "history" }) { activity ->
-                        LocalHistoryCard(
+                        LaunchedEffect(activity.activityId, activity.isAdult, adultAllowed) {
+                            if (!adultAllowed && activity.isAdult == null) model.loadAdultStatus(activity)
+                        }
+                        if (!adultAllowed && activity.isAdult == null) {
+                            if (model.adultStatusFailures[activity.activityId] != null) {
+                                ErrorState(
+                                    title = stringResource(R.string.history_load_failed),
+                                    message = stringResource(R.string.load_network_error),
+                                    onRetry = { model.loadAdultStatus(activity) },
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                            } else CloudHistoryDetailLoading()
+                        } else LocalHistoryCard(
                             modifier = Modifier.animateItem(),
                             activity = activity,
                             model = model,
@@ -739,7 +758,13 @@ private fun CloudHistoryContent(
             modifier = Modifier.fillMaxSize()
         )
         is HistoryPageModel.State.Result -> {
-            val rows = state.historyNovels.distinctBy { it.url.ifBlank { it.name } }.filter { it.name.contains(query, true) || it.chapter.name.contains(query, true) || query.isBlank() }
+            val adultAllowed by PresentationAccess.settings.adult
+            val rows = state.historyNovels.distinctBy { it.url.ifBlank { it.name } }.filter {
+                val detail = detailLoader.details[detailLoader.key(it)]
+                val status = detail?.takeIf { novel -> novel.adultStatusKnown }?.isAdult
+                historyRowIncluded(adultAllowed, status) &&
+                    (it.name.contains(query, true) || it.chapter.name.contains(query, true) || query.isBlank())
+            }
             if (rows.isEmpty()) {
                 EmptyState(stringResource(if (query.isBlank()) R.string.history_cloud_empty else R.string.history_search_empty), stringResource(R.string.history_cloud_separate), Modifier.fillMaxSize())
             } else {
@@ -761,7 +786,6 @@ private fun CloudHistoryContent(
                     adaptiveItems(rows, columns = columns, key = { "cloud-history:${detailLoader.key(it)}" }, contentType = { "history" }) { history ->
                         val key = detailLoader.key(history)
                         val detail = detailLoader.details[key]
-                        val adultAllowed = PresentationAccess.settings.adult.value
                         LaunchedEffect(key, adultAllowed) {
                             detailLoader.load(history, requireAdultStatus = !adultAllowed)
                         }
@@ -1040,6 +1064,48 @@ class LocalHistoryPageModel(private val authorization: Authorization) : AppState
     private var observeJob: Job? = null
     private val coverPermits = Semaphore(2)
     private val detailCovers = mutableMapOf<String, Pair<Long, CoverSource>>()
+    val adultStatusFailures = mutableStateMapOf<String, LoadFailureKind>()
+    private val adultStatusJobs = mutableMapOf<String, Job>()
+
+    fun loadAdultStatus(activity: LocalReadingActivity) {
+        val target = coverLookupUrl(activity)
+        if (adultStatusJobs[activity.activityId]?.isActive == true) return
+        adultStatusFailures.remove(activity.activityId)
+        adultStatusJobs[activity.activityId] = viewModelScope.launch {
+            try {
+                coverPermits.withPermit {
+                    val status = withContext(Dispatchers.IO) {
+                        require(target.isNotBlank())
+                        try {
+                            PresentationAccess.downloads.manifest(target)
+                                ?.takeIf { it.adultStatusKnown }?.isAdult
+                        } catch (error: CancellationException) {
+                            throw error
+                        } catch (_: Exception) {
+                            null // An unavailable download directory must not prevent detail verification.
+                        }
+                    } ?: cancellablePageRequest {
+                        val detail = PresentationAccess.client.getNovelDetail(
+                            authorization, FavoriteNovel(activity.novelName, target)
+                        )
+                        check(detail.adultStatusKnown)
+                        detail.isAdult
+                    }
+                    withContext(Dispatchers.IO) {
+                        PresentationAccess.database.localReadingActivityDao()
+                            .updateAdultStatus(activity.novelId, activity.novelUrl, status)
+                    }
+                }
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                adultStatusFailures[activity.activityId] = error.loadFailureKind()
+                AppLogger.w("LocalHistoryPageModel", "Unable to verify history content classification", error)
+            } finally {
+                adultStatusJobs.remove(activity.activityId)
+            }
+        }
+    }
 
     fun observe() {
         if (observeStarted) return
@@ -1174,6 +1240,10 @@ class LocalHistoryPageModel(private val authorization: Authorization) : AppState
                 val result = CoverSource.fromUrl(detail.coverUrl)
                 if (saveDetailToHistory) {
                     viewModelScope.launch(Dispatchers.IO) {
+                        if (detail.adultStatusKnown) {
+                            PresentationAccess.database.localReadingActivityDao()
+                                .updateAdultStatus(activity.novelId, activity.novelUrl, detail.isAdult)
+                        }
                         if (result.url.isNotBlank()) readCoverStorage(target) {
                             PresentationAccess.database.localReadingActivityDao()
                                 .updateCoverIfUnchanged(activity.activityId, activity.novelCoverUrl, result.url)

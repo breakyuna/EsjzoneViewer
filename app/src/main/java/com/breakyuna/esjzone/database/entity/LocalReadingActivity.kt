@@ -35,5 +35,7 @@ data class LocalReadingActivity(
     @ColumnInfo(name = "duration_ms") val durationMs: Long,
     @ColumnInfo(name = "novel_cover_url", defaultValue = "''") val novelCoverUrl: String = "",
     @ColumnInfo(name = "content_anchor", defaultValue = "NULL") val anchor: String? = null,
-    @ColumnInfo(name = "book_progress", defaultValue = "NULL") val bookProgress: Float? = null
+    @ColumnInfo(name = "book_progress", defaultValue = "NULL") val bookProgress: Float? = null,
+    /** null means that this work has not yet been classified from trusted metadata. */
+    @ColumnInfo(name = "is_adult", defaultValue = "NULL") val isAdult: Boolean? = null
 )

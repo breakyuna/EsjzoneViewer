@@ -85,6 +85,9 @@ object HistoryTab : AppTab {
         navigator: AppNavigator,
         activity: LocalReadingActivity
     ) {
+        if (!com.breakyuna.esjzone.ui.page.historyRowIncluded(
+                PresentationAccess.settings.adult.value, activity.isAdult
+            )) return
         val chapterUrl = EsjzoneUrls.resolve(activity.chapterUrl).ifBlank { activity.chapterUrl }
         val novelUrl = EsjzoneUrls.resolve(activity.novelUrl).ifBlank { activity.novelUrl }
         val chapter = Chapter(
