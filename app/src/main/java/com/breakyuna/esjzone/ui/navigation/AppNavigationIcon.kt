@@ -1,5 +1,7 @@
 package com.breakyuna.esjzone.ui.navigation
 
+import com.breakyuna.esjzone.ui.designsystem.AppMotion
+import com.breakyuna.esjzone.ui.designsystem.LocalReduceMotion
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
@@ -30,10 +32,7 @@ import kotlin.math.PI
 import kotlin.math.cos
 import kotlin.math.sin
 
-internal val NavigationSelectionAnimationSpec = tween<Float>(
-    durationMillis = 600,
-    easing = FastOutSlowInEasing
-)
+internal val NavigationSelectionAnimationSpec = AppMotion.effectsSlow<Float>()
 
 @Composable
 internal fun AppNavigationIcon(
@@ -49,15 +48,14 @@ internal fun AppNavigationIcon(
     }
     val historyRotation = remember(tab) { Animatable(0f) }
     var previousSelected by remember(tab) { mutableStateOf(selected) }
-    LaunchedEffect(tab, selected) {
-        if (tab == AppTabId.HISTORY && selected != previousSelected) {
-            previousSelected = selected
-            // Both selection changes advance counterclockwise. Whole-turn targets
-            // keep the arrow upright after an interrupted transition as well.
-            historyRotation.animateTo(
-                targetValue = historyRotation.targetValue - 360f,
-                animationSpec = NavigationSelectionAnimationSpec
-            )
+    val reduced = LocalReduceMotion.current
+    LaunchedEffect(tab, selected, reduced) {
+        val newlySelected = selected && !previousSelected
+        previousSelected = selected
+        if (tab == AppTabId.HISTORY) {
+            historyRotation.snapTo(0f)
+            if (newlySelected && !reduced) historyRotation.animateTo(-360f,
+                tween(AppMotion.historyRotation, easing = AppMotion.standardEasing))
         }
     }
     // Read animation state only while drawing. Reuse the path and stroke across frames;

@@ -1,5 +1,6 @@
 package com.breakyuna.esjzone.ui.page
 
+import com.breakyuna.esjzone.ui.reader.ReaderChromeMotion
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.tween
@@ -206,8 +207,8 @@ internal fun ReaderBrightnessSheet(
     AnimatedVisibility(
         visible = visible,
         modifier = modifier,
-        enter = slideInVertically(initialOffsetY = { it }) + fadeIn(),
-        exit = slideOutVertically(targetOffsetY = { it }) + fadeOut()
+        enter = ReaderChromeMotion.bottomEnter,
+        exit = ReaderChromeMotion.bottomExit
     ) {
         Surface(
             modifier = Modifier.widthIn(max = 640.dp).fillMaxWidth(),

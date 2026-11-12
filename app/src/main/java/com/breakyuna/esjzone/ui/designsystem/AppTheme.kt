@@ -192,7 +192,11 @@ fun AppTheme(
     val semanticColors = remember(colorScheme, palette, darkTheme) {
         buildSemanticColors(colorScheme, palette, darkTheme)
     }
-    CompositionLocalProvider(LocalAppSemanticColors provides semanticColors) {
+    val reducedMotion = rememberReducedMotionState() || LocalReduceMotion.current
+    CompositionLocalProvider(
+        LocalAppSemanticColors provides semanticColors,
+        LocalReduceMotion provides reducedMotion
+    ) {
         MaterialTheme(
             colorScheme = colorScheme,
             typography = androidx.compose.material3.Typography(

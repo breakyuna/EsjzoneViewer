@@ -1,6 +1,10 @@
 @file:OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 
 package com.breakyuna.esjzone.ui.page
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.animation.core.animateDpAsState
+import com.breakyuna.esjzone.ui.reader.ReaderChromeMotion
 import com.breakyuna.esjzone.ui.designsystem.AppLayout
 import com.breakyuna.esjzone.ui.designsystem.appUsesWideLayout
 import com.breakyuna.esjzone.app.PresentationAccess
@@ -2348,13 +2352,26 @@ class ChapterPage(
                                             when (readerSettings.pageAnimation) {
                                                 ReaderPageAnimation.FADE -> {
                                                     translationX = offset * span
-                                                    alpha = (1f - kotlin.math.abs(offset)).coerceIn(0f, 1f)
+                                                    alpha = (1f - 2f * kotlin.math.abs(offset)).coerceIn(0f, 1f)
                                                 }
                                                 ReaderPageAnimation.COVER -> translationX = offset.coerceAtLeast(0f) * span
                                                 else -> Unit
                                             }
                                         }
                                         .readerBackdrop(readerBackgroundColor, backgroundPainter, imageBackground)
+                                        .drawWithContent {
+                                            drawContent()
+                                            if (coverAnimation && !reducedMotion) {
+                                                val offset = horizontalPagerState.currentPage - pageIndex + horizontalPagerState.currentPageOffsetFraction
+                                                val distance = kotlin.math.abs(offset).coerceIn(0f, 1f)
+                                                val strength = 4f * distance * (1f - distance)
+                                                if (offset > 0f) drawRect(Color.Black.copy(alpha = 0.05f * strength))
+                                                else if (offset < 0f) drawRect(
+                                                    Brush.horizontalGradient(listOf(Color.Black.copy(alpha = 0.25f * strength), Color.Transparent),
+                                                        endX = 16.dp.toPx())
+                                                )
+                                            }
+                                        }
                                 ) {
                                     Box(Modifier.fillMaxSize().padding(
                                             start = if (fullPageBackground) readerSettings.horizontalPaddingDp.dp else 0.dp,
@@ -2579,12 +2596,16 @@ class ChapterPage(
 
             AnimatedVisibility(
                 visible = showToolbar,
-                enter = slideInVertically(initialOffsetY = { it }) + fadeIn(),
-                exit = slideOutVertically(targetOffsetY = { it }) + fadeOut(),
+                enter = ReaderChromeMotion.bottomEnter,
+                exit = ReaderChromeMotion.bottomExit,
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
                     .onSizeChanged { readerToolbarHeightPx = it.height }
             ) {
+                val toolbarCorner by animateDpAsState(
+                    if (showReaderSettings || showBrightness) 0.dp else 28.dp,
+                    animationSpec = AppMotion.effectsDefault(), label = "ReaderToolbarCorner"
+                )
                 Surface(
                     modifier = Modifier
                         .then(if (wide) Modifier.widthIn(max = AppLayout.wideReaderMaxWidth) else Modifier)
@@ -2594,8 +2615,7 @@ class ChapterPage(
                             indication = null,
                             onClick = {}
                         ),
-                    shape = if (showReaderSettings || showBrightness) RoundedCornerShape(0.dp)
-                        else RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
+                    shape = RoundedCornerShape(topStart = toolbarCorner, topEnd = toolbarCorner),
                     color = MaterialTheme.colorScheme.surface,
                     contentColor = MaterialTheme.colorScheme.onSurface
                 ) {
@@ -2736,8 +2756,8 @@ class ChapterPage(
 
             AnimatedVisibility(
                 visible = showToolbar,
-                enter = fadeIn(),
-                exit = fadeOut(),
+                enter = ReaderChromeMotion.topEnter,
+                exit = ReaderChromeMotion.topExit,
                 modifier = Modifier
                     .align(Alignment.TopCenter)
                     .fillMaxWidth()

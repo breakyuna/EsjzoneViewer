@@ -2,6 +2,8 @@
 
 package com.breakyuna.esjzone.ui.page
 
+import com.breakyuna.esjzone.ui.designsystem.AppPagedContent
+import com.breakyuna.esjzone.ui.designsystem.AppStateContent
 import com.breakyuna.esjzone.ui.designsystem.PreserveAdaptiveListAnchor
 import com.breakyuna.esjzone.ui.designsystem.adaptiveItems
 import com.breakyuna.esjzone.ui.designsystem.wideContentWidth
@@ -136,6 +138,8 @@ class NovelListPage(
         var adultOnlyChangedHere by rememberSaveable { mutableStateOf(initializedAdultOnly) }
         val state by model.state.collectAsStateWithLifecycle()
         val adult by PresentationAccess.settings.adult
+        val listState = rememberLazyListState()
+        val gridListState = rememberLazyListState()
 
         DiscoveryScaffold(
             title = stringResource(R.string.novel_list),
@@ -146,10 +150,12 @@ class NovelListPage(
                     gridViewChangedHere = true
                     settings.setNovelListGridView(gridView)
                 }) {
-                    Icon(
-                        imageVector = if (gridView) Icons.Filled.ViewList else Icons.Filled.GridView,
-                        contentDescription = "切换小说列表展示方式"
-                    )
+                    AppStateContent(gridView, contentKey = { it }) { grid ->
+                        Icon(
+                            imageVector = if (grid) Icons.Filled.ViewList else Icons.Filled.GridView,
+                            contentDescription = "切换小说列表展示方式",
+                        )
+                    }
                 }
             }
         ) { padding ->
@@ -158,40 +164,45 @@ class NovelListPage(
                 onRefresh = model::retry,
                 modifier = Modifier.fillMaxSize()
             ) {
-            when (val snapshot = state) {
-                NovelListPageModel.State.Loading -> DiscoveryLoadingState(
-                    modifier = Modifier.fillMaxSize().padding(padding)
-                )
-                is NovelListPageModel.State.Error -> {
-                    val contentModifier = Modifier.fillMaxSize().padding(padding)
-                    if (snapshot.failure == LoadFailureKind.NETWORK) {
-                        DiscoveryOfflineBanner(modifier = contentModifier.padding(16.dp))
-                    } else {
-                        DiscoveryErrorState(
-                            message = stringResource(listFailureMessage(snapshot.failure)),
-                            onRetry = model::retry,
-                            modifier = contentModifier
+            AppStateContent(state) { snapshot ->
+                when (snapshot) {
+                    NovelListPageModel.State.Loading ->
+                        DiscoveryLoadingState(modifier = Modifier.fillMaxSize().padding(padding))
+                    is NovelListPageModel.State.Error -> {
+                        val contentModifier = Modifier.fillMaxSize().padding(padding)
+                        if (snapshot.failure == LoadFailureKind.NETWORK) {
+                            DiscoveryOfflineBanner(modifier = contentModifier.padding(16.dp))
+                        } else {
+                            DiscoveryErrorState(
+                                message = stringResource(listFailureMessage(snapshot.failure)),
+                                onRetry = model::retry,
+                                modifier = contentModifier,
+                            )
+                        }
+                    }
+                    is NovelListPageModel.State.Result -> {
+                        NovelListResult(
+                            result = snapshot,
+                            listState = listState,
+                            gridListState = gridListState,
+                            model = model,
+                            novelType = novelType,
+                            sortType = sortType,
+                            adult = adult,
+                            adultOnly = adultOnly,
+                            onAdultOnlyChange = {
+                                adultOnly = it
+                                adultOnlyChangedHere = true
+                                settings.setNovelListAdultOnly(it)
+                            },
+                            onFilterChanged = {
+                                model.updateFilters(novelType.intValue, sortType.intValue)
+                            },
+                            gridView = gridView,
+                            navigator = navigator,
+                            modifier = Modifier.fillMaxSize().padding(padding),
                         )
                     }
-                }
-                is NovelListPageModel.State.Result -> {
-                    NovelListResult(
-                        result = snapshot,
-                        model = model,
-                        novelType = novelType,
-                        sortType = sortType,
-                        adult = adult,
-                        adultOnly = adultOnly,
-                        onAdultOnlyChange = {
-                            adultOnly = it
-                            adultOnlyChangedHere = true
-                            settings.setNovelListAdultOnly(it)
-                        },
-                        onFilterChanged = { model.updateFilters(novelType.intValue, sortType.intValue) },
-                        gridView = gridView,
-                        navigator = navigator,
-                        modifier = Modifier.fillMaxSize().padding(padding)
-                    )
                 }
             }
             }
@@ -213,6 +224,8 @@ class NovelListPage(
 @Composable
 private fun NovelListResult(
     result: NovelListPageModel.State.Result,
+    listState: androidx.compose.foundation.lazy.LazyListState,
+    gridListState: androidx.compose.foundation.lazy.LazyListState,
     model: NovelListPageModel,
     novelType: androidx.compose.runtime.MutableIntState,
     sortType: androidx.compose.runtime.MutableIntState,
@@ -224,7 +237,6 @@ private fun NovelListResult(
     navigator: com.breakyuna.esjzone.ui.navigation.AppNavigator,
     modifier: Modifier
 ) {
-    val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
     val items = remember(result.requester) {
         mutableStateListOf<CoveredNovel>().apply { addAll(result.firstPage) }
@@ -278,100 +290,137 @@ private fun NovelListResult(
         }
     }
 
-    BoxWithConstraints(modifier = modifier.wideContentWidth().contentArrival()) {
-        val columns = if (gridView) bookshelfColumnCount(
-            availableWidth = maxWidth.value - 32.dp.value,
-            gap = AppSpacing.md.value,
-            minCellWidth = if (appUsesWideLayout()) 140f * LocalConfiguration.current.fontScale.coerceAtLeast(1f) else 96f
-        ) else wideListColumns(maxWidth = 1280f)
-        val rows = remember(visibleItems, columns) { visibleItems.chunked(columns) }
-        PreserveAdaptiveListAnchor(
-            listState, visibleItems, columns,
-            leadingItemCount = if (model.refreshFailure != null) 1 else 0,
-            key = ::novelKey
-        )
+    val rowState = listState
+    val gridState = gridListState
+    AppPagedContent(if (gridView) 1 else 0) { layoutMode ->
+        val displayGrid = layoutMode == 1
+        val listState = if (displayGrid) gridState else rowState
+        BoxWithConstraints(modifier = modifier.wideContentWidth()) {
+            val columns =
+                if (displayGrid)
+                    bookshelfColumnCount(
+                        availableWidth = maxWidth.value - 32.dp.value,
+                        gap = AppSpacing.md.value,
+                        minCellWidth =
+                            if (appUsesWideLayout())
+                                140f * LocalConfiguration.current.fontScale.coerceAtLeast(1f)
+                            else 96f,
+                    )
+                else wideListColumns(maxWidth = 1280f)
+            val rows = remember(visibleItems, columns) { visibleItems.chunked(columns) }
+            PreserveAdaptiveListAnchor(
+                listState,
+                visibleItems,
+                columns,
+                leadingItemCount = if (model.refreshFailure != null) 1 else 0,
+                key = ::novelKey,
+            )
 
-        Column(modifier = Modifier.fillMaxSize()) {
-            Surface(color = MaterialTheme.colorScheme.background) {
-                NovelListFilters(
-                    novelType = novelType,
-                    sortType = sortType,
-                    adult = adult,
-                    adultOnly = adultOnly,
-                    onAdultOnlyChange = onAdultOnlyChange,
-                    onFilterChanged = onFilterChanged,
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = AppSpacing.xs)
-                )
-            }
-            LazyColumn(
-                state = listState,
-                modifier = Modifier.weight(1f),
-                contentPadding = PaddingValues(start = 16.dp, top = AppSpacing.sm, end = 16.dp, bottom = 12.dp),
-                verticalArrangement = Arrangement.spacedBy(if (gridView) AppSpacing.lg else 10.dp)
-            ) {
-            model.refreshFailure?.let { failure ->
-                item(key = "novel-list-refresh-error", contentType = "error") {
-                    DiscoveryErrorState(message = stringResource(listFailureMessage(failure)), onRetry = model::retry)
-                }
-            }
-            if (visibleItems.isEmpty()) {
-                item(key = "novel-list-empty", contentType = "empty") {
-                    com.breakyuna.esjzone.ui.discovery.DiscoveryEmptyState(
-                        title = stringResource(R.string.search_no_results),
-                        message = stringResource(R.string.search_no_results_message)
+            Column(modifier = Modifier.fillMaxSize()) {
+                Surface(color = MaterialTheme.colorScheme.background) {
+                    NovelListFilters(
+                        novelType = novelType,
+                        sortType = sortType,
+                        adult = adult,
+                        adultOnly = adultOnly,
+                        onAdultOnlyChange = onAdultOnlyChange,
+                        onFilterChanged = onFilterChanged,
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = AppSpacing.xs),
                     )
                 }
-            } else if (gridView) {
-                items(
-                    items = rows,
-                    key = { row -> "novel-list-grid:${novelKey(row.first())}" },
-                    contentType = { "novel-grid-row:$columns" }
-                ) { row ->
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(AppSpacing.md)
-                    ) {
-                        row.forEach { novel ->
-                            Box(modifier = Modifier.weight(1f)) {
-                                NovelListGridCard(
-                                    novel = novel,
-                                    onClick = { navigator.pushIfNotCurrent(NovelPage(novel)) }
-                                )
+                LazyColumn(
+                    state = listState,
+                    modifier = Modifier.weight(1f),
+                    contentPadding =
+                        PaddingValues(
+                            start = 16.dp,
+                            top = AppSpacing.sm,
+                            end = 16.dp,
+                            bottom = 12.dp,
+                        ),
+                    verticalArrangement =
+                        Arrangement.spacedBy(if (displayGrid) AppSpacing.lg else 10.dp),
+                ) {
+                    model.refreshFailure?.let { failure ->
+                        item(key = "novel-list-refresh-error", contentType = "error") {
+                            DiscoveryErrorState(
+                                message = stringResource(listFailureMessage(failure)),
+                                onRetry = model::retry,
+                            )
+                        }
+                    }
+                    if (visibleItems.isEmpty()) {
+                        item(key = "novel-list-empty", contentType = "empty") {
+                            com.breakyuna.esjzone.ui.discovery.DiscoveryEmptyState(
+                                title = stringResource(R.string.search_no_results),
+                                message = stringResource(R.string.search_no_results_message),
+                            )
+                        }
+                    } else if (displayGrid) {
+                        items(
+                            items = rows,
+                            key = { row -> "novel-list-grid:${novelKey(row.first())}" },
+                            contentType = { "novel-grid-row:$columns" },
+                        ) { row ->
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(AppSpacing.md),
+                            ) {
+                                row.forEach { novel ->
+                                    Box(modifier = Modifier.weight(1f)) {
+                                        NovelListGridCard(
+                                            novel = novel,
+                                            onClick = {
+                                                navigator.pushIfNotCurrent(NovelPage(novel))
+                                            },
+                                        )
+                                    }
+                                }
+                                repeat(columns - row.size) {
+                                    Spacer(modifier = Modifier.weight(1f))
+                                }
                             }
                         }
-                        repeat(columns - row.size) { Spacer(modifier = Modifier.weight(1f)) }
+                    } else {
+                        adaptiveItems(
+                            items = visibleItems,
+                            columns = columns,
+                            key = { novel -> "novel-list:${novelKey(novel)}" },
+                            contentType = { "novel" },
+                        ) { novel ->
+                            DiscoveryNovelCard(
+                                novel = novel,
+                                onClick = { navigator.pushIfNotCurrent(NovelPage(novel)) },
+                            )
+                        }
                     }
-                }
-            } else {
-                adaptiveItems(
-                    items = visibleItems,
-                    columns = columns,
-                    key = { novel -> "novel-list:${novelKey(novel)}" },
-                    contentType = { "novel" }
-                ) { novel ->
-                    DiscoveryNovelCard(
-                        novel = novel,
-                        onClick = { navigator.pushIfNotCurrent(NovelPage(novel)) }
+                    discoveryLoadingFooter(
+                        loading = loading,
+                        hasMore = page <= maxPage,
+                        onRetry = if (pageFailure != null) ::loadMore else null,
+                        errorMessage = pageErrorMessage,
                     )
                 }
             }
-            discoveryLoadingFooter(
-                loading = loading,
-                hasMore = page <= maxPage,
-                onRetry = if (pageFailure != null) ::loadMore else null,
-                errorMessage = pageErrorMessage
-            )
-            }
         }
-    }
 
-    LaunchedEffect(listState, visibleItems.size, page, pageFailure, model.isRefreshing) {
-        snapshotFlow {
-            val last = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
-            val total = listState.layoutInfo.totalItemsCount
-            last >= total - 3
-        }.collect { nearEnd ->
-            if (nearEnd && pageFailure == null) loadMore()
+        LaunchedEffect(
+            listState,
+            visibleItems.size,
+            page,
+            pageFailure,
+            model.isRefreshing,
+            gridView,
+        ) {
+            if (displayGrid != gridView) return@LaunchedEffect
+            snapshotFlow {
+                val last = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
+                val total = listState.layoutInfo.totalItemsCount
+                last >= total - 3
+            }
+                .collect { nearEnd ->
+                    if (nearEnd && pageFailure == null) loadMore()
+                }
         }
     }
 }

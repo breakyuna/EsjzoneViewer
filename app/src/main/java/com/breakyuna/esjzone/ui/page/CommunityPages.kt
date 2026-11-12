@@ -2,6 +2,7 @@
 
 package com.breakyuna.esjzone.ui.page
 
+import com.breakyuna.esjzone.ui.designsystem.AppStateContent
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.lifecycle.viewModelScope
 import com.breakyuna.esjzone.app.PresentationAccess
@@ -424,42 +425,47 @@ class ForumPostPage(private val topic: ForumTopic) : AppDestination {
                 onRefresh = ::refreshAll,
                 modifier = Modifier.weight(1f).fillMaxWidth()
             ) {
-            when (val snapshot = state) {
-                is CommunityState.Loading -> LoadingSkeleton(modifier = Modifier.fillMaxWidth())
-                is CommunityState.Error -> if (snapshot.failure == LoadFailureKind.NETWORK) {
-                    OfflineState(modifier = Modifier.fillMaxWidth(), onRetry = model::retry)
-                } else {
-                    ErrorState(
-                        title = stringResource(R.string.community_load_failed),
-                        message = stringResource(R.string.community_empty_guidance),
-                        modifier = Modifier.fillMaxWidth(),
-                        onRetry = model::retry
-                    )
-                }
-                is CommunityState.Empty -> EmptyState(
-                    title = stringResource(R.string.forum_threads_empty),
-                    message = stringResource(R.string.community_empty_guidance),
-                    modifier = Modifier.fillMaxWidth()
-                )
-                is CommunityState.Result -> Column(modifier = Modifier.fillMaxSize()) {
-                    Column(
-                        modifier = Modifier
-                            .weight(1f)
-                            .widthIn(max = metrics.contentMaxWidth)
-                            .fillMaxWidth()
-                            .align(Alignment.CenterHorizontally)
-                            .verticalScroll(postScrollState)
-                    ) {
-                        ForumPostCard(snapshot.data, openLink)
-                        CommentSectionContent(
-                            model = commentsModel,
-                            showHeader = true,
+            AppStateContent(state) { snapshot ->
+                when (snapshot) {
+                    is CommunityState.Loading -> LoadingSkeleton(modifier = Modifier.fillMaxWidth())
+                    is CommunityState.Error ->
+                        if (snapshot.failure == LoadFailureKind.NETWORK) {
+                            OfflineState(modifier = Modifier.fillMaxWidth(), onRetry = model::retry)
+                        } else {
+                            ErrorState(
+                                title = stringResource(R.string.community_load_failed),
+                                message = stringResource(R.string.community_empty_guidance),
+                                modifier = Modifier.fillMaxWidth(),
+                                onRetry = model::retry,
+                            )
+                        }
+                    is CommunityState.Empty ->
+                        EmptyState(
+                            title = stringResource(R.string.forum_threads_empty),
+                            message = stringResource(R.string.community_empty_guidance),
                             modifier = Modifier.fillMaxWidth(),
-                            scrollState = postScrollState,
-                            onLinkClick = openLink
                         )
-                    }
-                    CommentComposerHost(model = commentsModel)
+                    is CommunityState.Result ->
+                        Column(modifier = Modifier.fillMaxSize()) {
+                            Column(
+                                modifier =
+                                    Modifier.weight(1f)
+                                        .widthIn(max = metrics.contentMaxWidth)
+                                        .fillMaxWidth()
+                                        .align(Alignment.CenterHorizontally)
+                                        .verticalScroll(postScrollState)
+                            ) {
+                                ForumPostCard(snapshot.data, openLink)
+                                CommentSectionContent(
+                                    model = commentsModel,
+                                    showHeader = true,
+                                    modifier = Modifier.fillMaxWidth(),
+                                    scrollState = postScrollState,
+                                    onLinkClick = openLink,
+                                )
+                            }
+                            CommentComposerHost(model = commentsModel)
+                        }
                 }
             }
             }

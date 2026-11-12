@@ -1,5 +1,11 @@
 package com.breakyuna.esjzone.ui.reader
 
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.snap
+import androidx.compose.animation.core.tween
+import androidx.compose.runtime.getValue
+import com.breakyuna.esjzone.ui.designsystem.AppMotion
+import com.breakyuna.esjzone.ui.designsystem.LocalReduceMotion
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
@@ -45,9 +51,16 @@ internal fun ReaderEntryPresentation(
     val initialAppearance = remember {
         ReaderImageBackground(transparency = transparency, cropX = cropX, cropY = cropY)
     }
-    Box(Modifier.fillMaxSize()) {
+    val reduced = LocalReduceMotion.current
+    val contentAlpha by animateFloatAsState(
+        if (contentVisible) 1f else 0f,
+        // Re-hide immediately during a new positioning pass; only reveal is animated.
+        animationSpec = if (!contentVisible || reduced) snap() else tween(AppMotion.short, easing = AppMotion.standardEasing),
+        label = "ReaderEntryContent"
+    )
+    Box(Modifier.fillMaxSize().readerBackdrop(initialBackground, initialPainter, initialAppearance)) {
         Box(Modifier.fillMaxSize()
-            .graphicsLayer { alpha = if (contentVisible) 1f else 0f }
+            .graphicsLayer { alpha = contentAlpha }
             .then(if (contentVisible) Modifier else Modifier.clearAndSetSemantics { })
         ) { content() }
         if (!contentVisible) {

@@ -1,5 +1,7 @@
 package com.breakyuna.esjzone.ui.page
 
+import com.breakyuna.esjzone.ui.designsystem.AppMotion
+import com.breakyuna.esjzone.ui.designsystem.rememberMotionActive
 import com.breakyuna.esjzone.ui.designsystem.appUsesWideLayout
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.RepeatMode
@@ -458,16 +460,19 @@ private fun StatisticsEmptyState(message: String) {
 
 @Composable
 private fun ReadingStatisticsIncognitoState(modifier: Modifier = Modifier) {
-    val transition = rememberInfiniteTransition(label = "IncognitoGhost")
-    val floatOffset = transition.animateFloat(
+    val motionActive = rememberMotionActive()
+    val floatOffset = if (motionActive) {
+        val transition = rememberInfiniteTransition(label = "IncognitoGhost")
+        transition.animateFloat(
         initialValue = -12f,
         targetValue = 12f,
         animationSpec = infiniteRepeatable(
-            animation = tween(1800, easing = FastOutSlowInEasing),
+            animation = tween(AppMotion.ghost, easing = AppMotion.standardEasing),
             repeatMode = RepeatMode.Reverse
         ),
         label = "GhostFloatOffset"
-    )
+        )
+    } else androidx.compose.runtime.rememberUpdatedState(0f)
     Column(
         modifier = modifier.padding(AppSpacing.xl),
         horizontalAlignment = Alignment.CenterHorizontally,

@@ -2,6 +2,7 @@
 
 package com.breakyuna.esjzone.ui.page
 
+import com.breakyuna.esjzone.ui.designsystem.AppStateContent
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
@@ -316,26 +317,23 @@ private fun <T> LazyListScope.memberListContent(
     onRetry: () -> Unit,
     row: @Composable (Int, T) -> Unit
 ) {
-    when (state) {
-        MemberListState.Loading -> item(key = "member-loading") {
-            LoadingSkeleton(Modifier.fillMaxWidth().padding(top = AppSpacing.xl))
-        }
-        is MemberListState.Error -> item(key = "member-error") {
-            MemberFailureState(state.failure, onRetry)
-        }
-        is MemberListState.Result -> {
-            if (state.refreshFailure != null) item(key = "member-refresh-error") {
-                ErrorStateCompact(stringResource(R.string.member_refresh_failed), onRetry = onRetry)
-            }
-            if (state.items.isEmpty()) item(key = "member-empty") {
-                EmptyState(
-                    title = stringResource(emptyTitle),
-                    modifier = Modifier.fillMaxWidth().padding(top = AppSpacing.xl)
-                )
-            } else itemsIndexed(state.items, key = { index, _ -> "member-$index" }) { index, item ->
-                row(index, item)
+    if (state !is MemberListState.Result || state.items.isEmpty()) item(key = "member-status") {
+        AppStateContent(state) { snapshot ->
+            when (snapshot) {
+                MemberListState.Loading -> LoadingSkeleton(Modifier.fillMaxWidth().padding(top = AppSpacing.xl))
+                is MemberListState.Error -> MemberFailureState(snapshot.failure, onRetry)
+                is MemberListState.Result -> if (snapshot.items.isEmpty()) {
+                    EmptyState(title = stringResource(emptyTitle),
+                        modifier = Modifier.fillMaxWidth().padding(top = AppSpacing.xl))
+                } else Unit
             }
         }
+    }
+    if (state is MemberListState.Result) {
+        if (state.refreshFailure != null) item(key = "member-refresh-error") {
+            ErrorStateCompact(stringResource(R.string.member_refresh_failed), onRetry = onRetry)
+        }
+        itemsIndexed(state.items, key = { index, _ -> "member-$index" }) { index, item -> row(index, item) }
     }
 }
 

@@ -1,4 +1,15 @@
 package com.breakyuna.esjzone.ui.screen
+import com.breakyuna.esjzone.ui.designsystem.AppStateContent
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.core.tween
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.semantics
+import com.breakyuna.esjzone.ui.designsystem.AppMotion
 import com.breakyuna.esjzone.app.PresentationAccess
 import com.breakyuna.esjzone.network.LoadFailureKind
 import com.breakyuna.esjzone.network.loadFailureKind
@@ -217,20 +228,28 @@ object LoginScreen : AppDestination {
                         ),
                         keyboardActions = KeyboardActions(onDone = { submit() })
                     )
-                    if (accountMismatch) {
+                    AnimatedVisibility(visible = accountMismatch,
+                        enter = expandVertically(AppMotion.spatialDefault()) + fadeIn(tween(AppMotion.quick)),
+                        exit = shrinkVertically(AppMotion.spatialFast()) + fadeOut(tween(AppMotion.quick))
+                    ) {
                         Text(
                             text = stringResource(R.string.login_same_account_required),
                             style = AppTypography.bodyMedium,
                             color = MaterialTheme.colorScheme.error,
                             modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp)
+                                .semantics { liveRegion = LiveRegionMode.Polite }
                         )
                     }
-                    if (loginFailed || loginNetworkFailed) {
+                    AnimatedVisibility(visible = loginFailed || loginNetworkFailed,
+                        enter = expandVertically(AppMotion.spatialDefault()) + fadeIn(tween(AppMotion.quick)),
+                        exit = shrinkVertically(AppMotion.spatialFast()) + fadeOut(tween(AppMotion.quick))
+                    ) {
                         Text(
                             text = stringResource(if (loginNetworkFailed) R.string.login_network_fail else R.string.login_fail),
                             style = AppTypography.bodyMedium,
                             color = MaterialTheme.colorScheme.error,
                             modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp)
+                                .semantics { liveRegion = LiveRegionMode.Polite }
                         )
                     }
                     Button(
@@ -241,13 +260,15 @@ object LoginScreen : AppDestination {
                             .padding(16.dp),
                         shape = AppShapes.standard
                     ) {
-                        if (loggingIn) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(20.dp),
-                                strokeWidth = 2.dp
-                            )
-                        } else {
-                            Text(stringResource(R.string.button_login))
+                        AppStateContent(loggingIn, contentKey = { it }) { busy ->
+                            if (busy) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(20.dp),
+                                    strokeWidth = 2.dp,
+                                )
+                            } else {
+                                Text(stringResource(R.string.button_login))
+                            }
                         }
                     }
                 }

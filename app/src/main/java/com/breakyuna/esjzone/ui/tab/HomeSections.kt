@@ -1,5 +1,8 @@
 package com.breakyuna.esjzone.ui.tab
 
+import com.breakyuna.esjzone.ui.designsystem.AppMotion
+import com.breakyuna.esjzone.ui.designsystem.LocalReduceMotion
+import com.breakyuna.esjzone.ui.designsystem.rememberTouchExplorationEnabled
 import kotlinx.coroutines.launch
 import com.breakyuna.esjzone.ui.designsystem.appViewportSize
 import com.breakyuna.esjzone.ui.designsystem.appUsesWideLayout
@@ -86,7 +89,7 @@ private val HOME_WEEKLY_POPULAR_CONTENT_HEIGHT = 172.dp
 internal val HOME_WEEKLY_POPULAR_CARD_HEIGHT = 196.dp
 internal val HOME_WEEKLY_POPULAR_INDICATOR_SIZE = 7.dp
 private const val HOME_WEEKLY_POPULAR_AUTO_PLAY_MS = 4_000L
-private const val HOME_WEEKLY_POPULAR_ANIMATION_MS = 800
+private const val HOME_WEEKLY_POPULAR_ANIMATION_MS = AppMotion.carousel
 private const val HOME_COLLECTION_MAX_ITEMS = 16
 
 internal fun prepareHomeSectionRows(
@@ -134,7 +137,10 @@ internal fun LazyListScope.weeklyPopularCarousel(
             }
         }
 
-        LaunchedEffect(pagerState, visible.size, lifecycleOwner) {
+        val reducedMotion = LocalReduceMotion.current
+        val touchExploration = rememberTouchExplorationEnabled()
+        LaunchedEffect(pagerState, visible.size, lifecycleOwner, reducedMotion, touchExploration) {
+            if (reducedMotion || touchExploration) return@LaunchedEffect
             lifecycleOwner.repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.RESUMED) {
                 // Navigation can cancel an auto-play animation between pages. The
                 // saveable pager state retains that offset, so settle it on return.
@@ -159,7 +165,7 @@ internal fun LazyListScope.weeklyPopularCarousel(
                     try {
                         pagerState.animateScrollToPage(
                             page = pagerState.currentPage + 1,
-                            animationSpec = tween(HOME_WEEKLY_POPULAR_ANIMATION_MS)
+                            animationSpec = tween(HOME_WEEKLY_POPULAR_ANIMATION_MS, easing = AppMotion.standardEasing)
                         )
                     } catch (_: CancellationException) {
                         currentCoroutineContext().ensureActive()

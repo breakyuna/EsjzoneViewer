@@ -1,5 +1,7 @@
 package com.breakyuna.esjzone.ui.page
 
+import com.breakyuna.esjzone.ui.designsystem.AppStateContent
+import com.breakyuna.esjzone.ui.designsystem.AppPagedContent
 import com.breakyuna.esjzone.ui.designsystem.wideListColumns
 import com.breakyuna.esjzone.ui.designsystem.PreserveAdaptiveListAnchor
 import com.breakyuna.esjzone.ui.designsystem.adaptiveItems
@@ -105,6 +107,8 @@ object BookmarksPage : AppDestination {
         val underlineModel = rememberAppViewModel { UnderlinesPageModel() }
         val state by model.state.collectAsStateWithLifecycle()
         val underlineState by underlineModel.state.collectAsStateWithLifecycle()
+        val bookmarkListState = rememberLazyListState()
+        val underlineListState = rememberLazyListState()
         var tab by rememberSaveable { mutableStateOf(0) }
         var editing by remember { mutableStateOf(false) }
         var selected by remember { mutableStateOf<Set<String>>(emptySet()) }
@@ -192,97 +196,179 @@ object BookmarksPage : AppDestination {
                 }
             }
         ) { padding ->
-            if (tab == 0) when (val current = state) {
-                BookmarksPageModel.State.Loading -> LoadingSkeleton(Modifier.fillMaxWidth().padding(padding), stringResource(R.string.bookmarks))
-                is BookmarksPageModel.State.Error -> ErrorState(
-                    title = stringResource(R.string.load_client_error),
-                    message = stringResource(R.string.history_local_load_failed),
-                    onRetry = model::retry,
-                    modifier = Modifier.fillMaxSize().accountContentWidth().padding(padding)
-                )
-                is BookmarksPageModel.State.Result -> if (current.bookmarks.isEmpty()) {
-                    EmptyState(
-                        title = stringResource(R.string.bookmarks_empty),
-                        message = stringResource(R.string.bookmarks_description),
-                        modifier = Modifier.fillMaxSize().accountContentWidth().padding(padding)
-                    )
-                } else {
-                    val listState = rememberLazyListState()
-                    PreserveAdaptiveListAnchor(listState, current.bookmarks, columns, key = { "bookmark:${it.id}" })
-                    LazyColumn(
-                        state = listState,
-                        modifier = Modifier.fillMaxSize().accountContentWidth().padding(padding),
-                        contentPadding = PaddingValues(AppSpacing.lg),
-                        verticalArrangement = Arrangement.spacedBy(AppSpacing.sm)
-                    ) {
-                        adaptiveItems(
-                            current.bookmarks,
-                            columns = columns,
-                            key = { "bookmark:${it.id}" },
-                            contentType = { "bookmark" }
-                        ) { bookmark ->
-                            BookmarkCard(
-                                bookmark = bookmark,
-                                cover = model.coverFor(bookmark),
-                                onOpen = {
-                                    if (editing) {
-                                        selected = if (bookmark.id in selected) selected - bookmark.id else selected + bookmark.id
-                                    } else {
-                                        val chapter = Chapter(bookmark.chapterName, bookmarkChapterIdentity(bookmark), false)
-                                        val cleanId = BookmarkCoverStore.cleanNovelId(bookmark.novelId, bookmark.chapterUrl)
-                                        navigator.pushIfNotCurrent(
-                                            ChapterPage(
-                                                novelId = cleanId,
-                                                chapter = chapter,
-                                                history = ChapterStateHolder(chapter),
-                                                novelName = validNovelTitle(bookmark.novelName, bookmark.novelId, bookmark.chapterUrl, bookmark.chapterName),
-                                                novelUrl = "/detail/$cleanId.html",
-                                                novelCoverUrl = model.coverFor(bookmark).url,
-                                                bookmarkAnchor = ReaderAnchor.decode(bookmark.anchor)
+            AppPagedContent(tab) { displayedTab ->
+                if (displayedTab == 0)
+                    AppStateContent(state) { current ->
+                        when (current) {
+                            BookmarksPageModel.State.Loading ->
+                                LoadingSkeleton(
+                                    Modifier.fillMaxWidth().padding(padding),
+                                    stringResource(R.string.bookmarks),
+                                )
+                            is BookmarksPageModel.State.Error ->
+                                ErrorState(
+                                    title = stringResource(R.string.load_client_error),
+                                    message = stringResource(R.string.history_local_load_failed),
+                                    onRetry = model::retry,
+                                    modifier =
+                                        Modifier.fillMaxSize().accountContentWidth().padding(padding),
+                                )
+                            is BookmarksPageModel.State.Result ->
+                                if (current.bookmarks.isEmpty()) {
+                                    EmptyState(
+                                        title = stringResource(R.string.bookmarks_empty),
+                                        message = stringResource(R.string.bookmarks_description),
+                                        modifier =
+                                            Modifier.fillMaxSize().accountContentWidth().padding(padding),
+                                    )
+                                } else {
+                                    val listState = bookmarkListState
+                                    PreserveAdaptiveListAnchor(
+                                        listState,
+                                        current.bookmarks,
+                                        columns,
+                                        key = { "bookmark:${it.id}" },
+                                    )
+                                    LazyColumn(
+                                        state = listState,
+                                        modifier =
+                                            Modifier.fillMaxSize().accountContentWidth().padding(padding),
+                                        contentPadding = PaddingValues(AppSpacing.lg),
+                                        verticalArrangement = Arrangement.spacedBy(AppSpacing.sm),
+                                    ) {
+                                        adaptiveItems(
+                                            current.bookmarks,
+                                            columns = columns,
+                                            key = { "bookmark:${it.id}" },
+                                            contentType = { "bookmark" },
+                                        ) { bookmark ->
+                                            BookmarkCard(
+                                                bookmark = bookmark,
+                                                cover = model.coverFor(bookmark),
+                                                onOpen = {
+                                                    if (editing) {
+                                                        selected =
+                                                            if (bookmark.id in selected)
+                                                                selected - bookmark.id
+                                                            else selected + bookmark.id
+                                                    } else {
+                                                        val chapter =
+                                                            Chapter(
+                                                                bookmark.chapterName,
+                                                                bookmarkChapterIdentity(bookmark),
+                                                                false,
+                                                            )
+                                                        val cleanId =
+                                                            BookmarkCoverStore.cleanNovelId(
+                                                                bookmark.novelId,
+                                                                bookmark.chapterUrl,
+                                                            )
+                                                        navigator.pushIfNotCurrent(
+                                                            ChapterPage(
+                                                                novelId = cleanId,
+                                                                chapter = chapter,
+                                                                history = ChapterStateHolder(chapter),
+                                                                novelName =
+                                                                    validNovelTitle(
+                                                                        bookmark.novelName,
+                                                                        bookmark.novelId,
+                                                                        bookmark.chapterUrl,
+                                                                        bookmark.chapterName,
+                                                                    ),
+                                                                novelUrl = "/detail/$cleanId.html",
+                                                                novelCoverUrl =
+                                                                    model.coverFor(bookmark).url,
+                                                                bookmarkAnchor =
+                                                                    ReaderAnchor.decode(bookmark.anchor),
+                                                            )
+                                                        )
+                                                    }
+                                                },
+                                                onDelete = { requestDelete(listOf(bookmark)) },
+                                                editing = editing,
+                                                selected = bookmark.id in selected,
                                             )
-                                        )
+                                        }
                                     }
-                                },
-                                onDelete = { requestDelete(listOf(bookmark)) },
-                                editing = editing,
-                                selected = bookmark.id in selected
-                            )
-                        }
-                    }
-                }
-            } else when (val current = underlineState) {
-                UnderlinesPageModel.State.Loading -> LoadingSkeleton(Modifier.fillMaxWidth().padding(padding),
-                    stringResource(R.string.reader_underlines))
-                UnderlinesPageModel.State.Error -> ErrorState(
-                    title = stringResource(R.string.load_client_error),
-                    message = stringResource(R.string.underline_load_failed),
-                    onRetry = underlineModel::retry,
-                    modifier = Modifier.fillMaxSize().accountContentWidth().padding(padding)
-                )
-                is UnderlinesPageModel.State.Result -> if (current.rows.isEmpty()) {
-                    EmptyState(title = stringResource(R.string.reader_underlines_empty),
-                        modifier = Modifier.fillMaxSize().accountContentWidth().padding(padding))
-                } else {
-                    val listState = rememberLazyListState()
-                    PreserveAdaptiveListAnchor(listState, current.rows, columns, key = { "underline:${it.id}" })
-                    LazyColumn(state = listState, modifier = Modifier.fillMaxSize().accountContentWidth().padding(padding),
-                        contentPadding = PaddingValues(AppSpacing.lg), verticalArrangement = Arrangement.spacedBy(AppSpacing.sm)) {
-                        adaptiveItems(current.rows, columns = columns, key = { "underline:${it.id}" },
-                            contentType = { "underline" }) { row ->
-                            UnderlineCard(row, editing, row.id in selected, onOpen = {
-                                if (editing) selected = if (row.id in selected) selected - row.id else selected + row.id
-                                else {
-                                    val chapter = Chapter(row.chapterName, row.chapterKey, false)
-                                    navigator.pushIfNotCurrent(ChapterPage(
-                                        novelId = row.novelId, chapter = chapter, history = ChapterStateHolder(chapter),
-                                        novelName = row.novelName, novelUrl = row.novelUrl, novelCoverUrl = row.coverUrl,
-                                        initialUnderline = row.mark
-                                    ))
                                 }
-                            }, onDelete = { requestUnderlineDelete(listOf(row)) })
                         }
                     }
-                }
+                else
+                    AppStateContent(underlineState) { current ->
+                        when (current) {
+                            UnderlinesPageModel.State.Loading ->
+                                LoadingSkeleton(
+                                    Modifier.fillMaxWidth().padding(padding),
+                                    stringResource(R.string.reader_underlines),
+                                )
+                            UnderlinesPageModel.State.Error ->
+                                ErrorState(
+                                    title = stringResource(R.string.load_client_error),
+                                    message = stringResource(R.string.underline_load_failed),
+                                    onRetry = underlineModel::retry,
+                                    modifier =
+                                        Modifier.fillMaxSize().accountContentWidth().padding(padding),
+                                )
+                            is UnderlinesPageModel.State.Result ->
+                                if (current.rows.isEmpty()) {
+                                    EmptyState(
+                                        title = stringResource(R.string.reader_underlines_empty),
+                                        modifier =
+                                            Modifier.fillMaxSize().accountContentWidth().padding(padding),
+                                    )
+                                } else {
+                                    val listState = underlineListState
+                                    PreserveAdaptiveListAnchor(
+                                        listState,
+                                        current.rows,
+                                        columns,
+                                        key = { "underline:${it.id}" },
+                                    )
+                                    LazyColumn(
+                                        state = listState,
+                                        modifier =
+                                            Modifier.fillMaxSize().accountContentWidth().padding(padding),
+                                        contentPadding = PaddingValues(AppSpacing.lg),
+                                        verticalArrangement = Arrangement.spacedBy(AppSpacing.sm),
+                                    ) {
+                                        adaptiveItems(
+                                            current.rows,
+                                            columns = columns,
+                                            key = { "underline:${it.id}" },
+                                            contentType = { "underline" },
+                                        ) { row ->
+                                            UnderlineCard(
+                                                row,
+                                                editing,
+                                                row.id in selected,
+                                                onOpen = {
+                                                    if (editing)
+                                                        selected =
+                                                            if (row.id in selected) selected - row.id
+                                                            else selected + row.id
+                                                    else {
+                                                        val chapter =
+                                                            Chapter(row.chapterName, row.chapterKey, false)
+                                                        navigator.pushIfNotCurrent(
+                                                            ChapterPage(
+                                                                novelId = row.novelId,
+                                                                chapter = chapter,
+                                                                history = ChapterStateHolder(chapter),
+                                                                novelName = row.novelName,
+                                                                novelUrl = row.novelUrl,
+                                                                novelCoverUrl = row.coverUrl,
+                                                                initialUnderline = row.mark,
+                                                            )
+                                                        )
+                                                    }
+                                                },
+                                                onDelete = { requestUnderlineDelete(listOf(row)) },
+                                            )
+                                        }
+                                    }
+                                }
+                        }
+                    }
             }
         }
 

@@ -2,6 +2,8 @@
 
 package com.breakyuna.esjzone.ui.tab
 
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
+import com.breakyuna.esjzone.ui.designsystem.AppStateContent
 import androidx.compose.ui.platform.LocalConfiguration
 import com.breakyuna.esjzone.ui.designsystem.appUsesWideLayout
 import com.breakyuna.esjzone.ui.designsystem.wideContentWidth
@@ -103,66 +105,79 @@ object CategoryTab : AppTab {
 private fun CategoryBrowserContent(navigator: AppNavigator, model: CategoryModel, modifier: Modifier) {
     val state by model.state.collectAsStateWithLifecycle()
     val adult by PresentationAccess.settings.adult
+    val gridState = rememberLazyGridState()
 
     PullToRefreshBox(
         isRefreshing = state is CategoryModel.State.Loading,
         onRefresh = model::reload,
         modifier = modifier
     ) {
-        when (val snapshot = state) {
-        CategoryModel.State.Loading -> DiscoveryLoadingState(Modifier.fillMaxSize())
-        is CategoryModel.State.Error -> {
-            Column(modifier = Modifier.fillMaxSize()) {
-                if (snapshot.failure == LoadFailureKind.NETWORK) {
-                    DiscoveryOfflineBanner(modifier = Modifier.padding(16.dp))
-                }
-                DiscoveryErrorState(
-                    message = stringResource(categoryFailureMessage(snapshot.failure)),
-                    onRetry = model::retry,
-                    modifier = Modifier.fillMaxSize()
-                )
-            }
-        }
-        is CategoryModel.State.Result -> {
-            val categories = snapshot.categories.filterNot { it.isAdult && !adult }
-            if (categories.isEmpty()) {
-                DiscoveryEmptyState(
-                    title = stringResource(R.string.categories_empty),
-                    message = stringResource(R.string.home_adult_hidden),
-                    modifier = Modifier.fillMaxSize()
-                )
-            } else {
-                LazyVerticalGrid(
-                    modifier = Modifier.fillMaxSize().wideContentWidth(),
-                    columns = GridCells.Adaptive(minSize = if (appUsesWideLayout()) {
-                        200.dp * LocalConfiguration.current.fontScale.coerceAtLeast(1f)
-                    } else 156.dp),
-                    contentPadding = PaddingValues(16.dp),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    item(span = { GridItemSpan(maxLineSpan) }, key = "category-heading", contentType = "heading") {
-                        Text(
-                            text = stringResource(R.string.categories),
-                            style = MaterialTheme.typography.titleMedium,
-                            modifier = Modifier.padding(bottom = 4.dp)
-                        )
-                    }
-                    itemsIndexed(
-                        items = categories,
-                        key = { _, category -> categoryKey(category) },
-                        contentType = { _, _ -> "category" }
-                    ) { index, category ->
-                        DiscoveryCategoryCard(
-                            title = category.name,
-                            isAdult = category.isAdult,
-                            index = index,
-                            onClick = { navigator.pushIfNotCurrent(CategoryPage(category)) }
+        AppStateContent(state) { snapshot ->
+            when (snapshot) {
+                CategoryModel.State.Loading -> DiscoveryLoadingState(Modifier.fillMaxSize())
+                is CategoryModel.State.Error -> {
+                    Column(modifier = Modifier.fillMaxSize()) {
+                        if (snapshot.failure == LoadFailureKind.NETWORK) {
+                            DiscoveryOfflineBanner(modifier = Modifier.padding(16.dp))
+                        }
+                        DiscoveryErrorState(
+                            message = stringResource(categoryFailureMessage(snapshot.failure)),
+                            onRetry = model::retry,
+                            modifier = Modifier.fillMaxSize(),
                         )
                     }
                 }
+                is CategoryModel.State.Result -> {
+                    val categories = snapshot.categories.filterNot { it.isAdult && !adult }
+                    if (categories.isEmpty()) {
+                        DiscoveryEmptyState(
+                            title = stringResource(R.string.categories_empty),
+                            message = stringResource(R.string.home_adult_hidden),
+                            modifier = Modifier.fillMaxSize(),
+                        )
+                    } else {
+                        LazyVerticalGrid(
+                            state = gridState,
+                            modifier = Modifier.fillMaxSize().wideContentWidth(),
+                            columns =
+                                GridCells.Adaptive(
+                                    minSize =
+                                        if (appUsesWideLayout()) {
+                                            200.dp *
+                                                LocalConfiguration.current.fontScale.coerceAtLeast(1f)
+                                        } else 156.dp
+                                ),
+                            contentPadding = PaddingValues(16.dp),
+                            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                            verticalArrangement = Arrangement.spacedBy(12.dp),
+                        ) {
+                            item(
+                                span = { GridItemSpan(maxLineSpan) },
+                                key = "category-heading",
+                                contentType = "heading",
+                            ) {
+                                Text(
+                                    text = stringResource(R.string.categories),
+                                    style = MaterialTheme.typography.titleMedium,
+                                    modifier = Modifier.padding(bottom = 4.dp),
+                                )
+                            }
+                            itemsIndexed(
+                                items = categories,
+                                key = { _, category -> categoryKey(category) },
+                                contentType = { _, _ -> "category" },
+                            ) { index, category ->
+                                DiscoveryCategoryCard(
+                                    title = category.name,
+                                    isAdult = category.isAdult,
+                                    index = index,
+                                    onClick = { navigator.pushIfNotCurrent(CategoryPage(category)) },
+                                )
+                            }
+                        }
+                    }
+                }
             }
-        }
         }
     }
 

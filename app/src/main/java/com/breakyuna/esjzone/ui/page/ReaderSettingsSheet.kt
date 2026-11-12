@@ -1,5 +1,6 @@
 package com.breakyuna.esjzone.ui.page
 
+import com.breakyuna.esjzone.ui.reader.ReaderChromeMotion
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -78,8 +79,8 @@ internal fun ReaderSettingsSheet(
     AnimatedVisibility(
         visible = visible,
         modifier = modifier,
-        enter = slideInVertically(initialOffsetY = { it }) + fadeIn(),
-        exit = slideOutVertically(targetOffsetY = { it }) + fadeOut()
+        enter = ReaderChromeMotion.bottomEnter,
+        exit = ReaderChromeMotion.bottomExit
     ) {
         Surface(
             modifier = Modifier.widthIn(max = 640.dp).fillMaxWidth()

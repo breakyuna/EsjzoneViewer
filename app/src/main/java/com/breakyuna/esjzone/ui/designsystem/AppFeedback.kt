@@ -1,5 +1,10 @@
 package com.breakyuna.esjzone.ui.designsystem
 
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import kotlinx.coroutines.delay
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.FastOutSlowInEasing
@@ -103,7 +108,9 @@ fun AppLoadingState(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(AppSpacing.md)
         ) {
-            CircularProgressIndicator(modifier = Modifier.size(32.dp), strokeWidth = 3.dp)
+            AppDelayedLoading {
+                CircularProgressIndicator(modifier = Modifier.size(32.dp), strokeWidth = 3.dp)
+            }
             message?.takeIf(String::isNotBlank)?.let {
                 Text(it, style = AppTypography.bodyMedium, color = appStateColors().contentMuted)
             }
@@ -300,7 +307,7 @@ fun AppSideSheet(
                             initialOffsetX = { fullWidth -> if (edge == AppSideSheetEdge.START) -fullWidth else fullWidth }
                         ),
                         exit = slideOutHorizontally(
-                            animationSpec = AppMotion.standardSpec(),
+                            animationSpec = AppMotion.exitSpec(),
                             targetOffsetX = { fullWidth -> if (edge == AppSideSheetEdge.START) -fullWidth else fullWidth }
                         )
                     )
@@ -358,16 +365,18 @@ private fun BreathingSyncDot(
     modifier: Modifier = Modifier,
     color: Color = appSemanticColors().success
 ) {
-    val infiniteTransition = rememberInfiniteTransition(label = "SyncBreathingLight")
-    val alpha by infiniteTransition.animateFloat(
+    val alpha by (if (rememberMotionActive()) {
+        val infiniteTransition = rememberInfiniteTransition(label = "SyncBreathingLight")
+        infiniteTransition.animateFloat(
         initialValue = 0.25f,
         targetValue = 1.0f,
         animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 800, easing = FastOutSlowInEasing),
+            animation = tween(durationMillis = AppMotion.breathing, easing = AppMotion.standardEasing),
             repeatMode = RepeatMode.Reverse
         ),
         label = "SyncBreathingAlpha"
-    )
+        )
+    } else androidx.compose.runtime.rememberUpdatedState(1f))
     Surface(
         modifier = modifier
             .size(AppSpacing.sm)
@@ -375,4 +384,14 @@ private fun BreathingSyncDot(
         shape = CircleShape,
         color = color
     ) {}
+}
+
+/** Delay transient loaders while retaining the host's progress semantics. */
+@Composable
+fun AppDelayedLoading(modifier: Modifier = Modifier, content: @Composable () -> Unit) {
+    var visible by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) { delay(AppMotion.loadingDelay); visible = true }
+    androidx.compose.animation.AnimatedVisibility(visible, modifier = modifier,
+        enter = fadeIn(androidx.compose.animation.core.tween(AppMotion.quick)),
+        exit = fadeOut(androidx.compose.animation.core.tween(AppMotion.quick))) { content() }
 }

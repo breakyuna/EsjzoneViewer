@@ -1,4 +1,5 @@
 package com.breakyuna.esjzone.ui.page
+import androidx.compose.animation.animateContentSize
 import androidx.compose.ui.platform.testTag
 import com.breakyuna.esjzone.ui.designsystem.AppLayout
 import com.breakyuna.esjzone.ui.designsystem.appUsesWideLayout
@@ -806,41 +807,13 @@ private fun novelDetailItems(
                             overflow = TextOverflow.Ellipsis
                         )
                     }
-                    val semantics = appSemanticColors()
-                    Button(
-                        onClick = onToggleFavorite,
-                        modifier = Modifier
-                            .weight(1f)
-                            .heightIn(min = AppTouchTarget.minimum),
-                        shape = AppShapes.standard,
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = if (favorite) MaterialTheme.colorScheme.secondaryContainer else semantics.favorite,
-                            contentColor = if (favorite) MaterialTheme.colorScheme.onSecondaryContainer else semantics.onFavorite
-                        ),
-                        contentPadding = PaddingValues(horizontal = AppSpacing.sm, vertical = AppSpacing.sm)
-                    ) {
-                        Icon(
-                            imageVector = if (favorite) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder,
-                            contentDescription = stringResource(
-                                if (favorite) R.string.novel_favorited else R.string.novel_favorite
-                            ),
-                            modifier = Modifier.size(19.dp)
-                        )
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text(
-                            text = if (favoriteFailed) {
-                                stringResource(R.string.novel_favorite_failed)
-                            } else if (favoritePending) {
-                                stringResource(R.string.novel_favorite_pending)
-                            } else {
-                                stringResource(
-                                    if (favorite) R.string.novel_favorited else R.string.novel_favorite
-                                )
-                            },
-                            maxLines = 2,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                    }
+                    NovelFavoriteButton(
+                        favorite = favorite,
+                        pending = favoritePending,
+                        failed = favoriteFailed,
+                        onToggle = onToggleFavorite,
+                        modifier = Modifier.weight(1f)
+                    )
                 }
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -889,8 +862,15 @@ private fun novelDetailItems(
 
         if (descriptionText.isNotBlank() || detailed.description.components.isNotEmpty()) {
             item(key = "detail-description", contentType = "novel-description") {
+                val reducedMotion = com.breakyuna.esjzone.ui.designsystem.LocalReduceMotion.current
+                val descriptionAngle by animateFloatAsState(
+                    if (isExpanded) 180f else 0f,
+                    animationSpec = if (reducedMotion) androidx.compose.animation.core.snap() else AppMotion.effectsDefault(),
+                    label = "DescriptionChevron"
+                )
                 Column(
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier.fillMaxWidth().then(if (reducedMotion) Modifier else
+                        Modifier.animateContentSize(AppMotion.spatialDefault()))
                 ) {
                     RebuiltSectionHeading(title = stringResource(R.string.description))
                     Spacer(modifier = Modifier.height(AppSpacing.sm))
@@ -945,9 +925,9 @@ private fun novelDetailItems(
                             modifier = Modifier.align(Alignment.End)
                         ) {
                             Icon(
-                                imageVector = if (isExpanded) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
+                                imageVector = Icons.Filled.ExpandMore,
                                 contentDescription = null,
-                                modifier = Modifier.size(18.dp)
+                                modifier = Modifier.size(18.dp).graphicsLayer { rotationZ = descriptionAngle }
                             )
                             Spacer(modifier = Modifier.width(4.dp))
                             Text(

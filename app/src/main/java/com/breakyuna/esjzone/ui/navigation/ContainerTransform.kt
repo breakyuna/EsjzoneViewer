@@ -1,5 +1,6 @@
 package com.breakyuna.esjzone.ui.navigation
 
+import com.breakyuna.esjzone.ui.designsystem.AppMotion
 import androidx.compose.animation.AnimatedContentTransitionScope
 import androidx.compose.animation.EnterExitState
 import androidx.compose.animation.EnterTransition
@@ -47,7 +48,7 @@ import com.breakyuna.esjzone.ui.page.SystemMessagesPage
 import com.breakyuna.esjzone.ui.page.SettingsPage
 import com.breakyuna.esjzone.ui.tab.SearchTab
 
-internal const val ContainerTransformDurationMillis = 400
+internal const val ContainerTransformDurationMillis = AppMotion.containerTransform
 internal val LocalContainerTransformScope = compositionLocalOf<SharedTransitionScope?> { null }
 internal val LocalHomeCarouselTransformTarget = compositionLocalOf<ContainerTransformTarget?> { null }
 private const val ContainerTransformRouteMetadata = "com.breakyuna.esjzone.containerTransformRoute"
@@ -123,9 +124,7 @@ internal fun usesContainerTransform(from: Scene<NavKey>, to: Scene<NavKey>): Boo
 internal fun AnimatedContentTransitionScope<Scene<NavKey>>.containerContentTransform(pop: Boolean = false) =
     if (usesCircularReveal(initialState, targetState)) {
         // The destination's circular clip drives visibility, with the origin opaque below it.
-        (EnterTransition.None togetherWith ExitTransition.KeepUntilTransitionsFinished).apply {
-            targetContentZIndex = if (pop) -1f else 1f
-        }
+        EnterTransition.None togetherWith ExitTransition.KeepUntilTransitionsFinished
     } else if (pop) {
         EnterTransition.None togetherWith fadeOut(tween(ContainerTransformDurationMillis))
     } else {
@@ -175,7 +174,7 @@ internal fun Modifier.homeCarouselSharedElement(
                 sharedContentState = sharedState,
                 animatedVisibilityScope = visibilityScope,
                 boundsTransform = { _, _ ->
-                    tween(ContainerTransformDurationMillis, easing = FastOutSlowInEasing)
+                    tween(ContainerTransformDurationMillis, easing = AppMotion.standardEasing)
                 }
             )
         } else {
@@ -183,7 +182,7 @@ internal fun Modifier.homeCarouselSharedElement(
                 sharedContentState = sharedState,
                 animatedVisibilityScope = visibilityScope,
                 boundsTransform = { _, _ ->
-                    tween(ContainerTransformDurationMillis, easing = FastOutSlowInEasing)
+                    tween(ContainerTransformDurationMillis, easing = AppMotion.standardEasing)
                 },
                 enter = fadeIn(tween(ContainerTransformDurationMillis)),
                 exit = fadeOut(tween(ContainerTransformDurationMillis)),
@@ -208,7 +207,7 @@ private fun Modifier.containerTransformBounds(
         val sharedState = rememberSharedContentState(target)
         val cornerRadius = visibilityScope.transition.animateDp(
             transitionSpec = {
-                tween(ContainerTransformDurationMillis, easing = FastOutSlowInEasing)
+                tween(ContainerTransformDurationMillis, easing = AppMotion.standardEasing)
             },
             label = "${target.name}ContainerCorner"
         ) { state ->
@@ -236,7 +235,7 @@ private fun Modifier.containerTransformBounds(
             sharedContentState = sharedState,
             animatedVisibilityScope = visibilityScope,
             boundsTransform = { _, _ ->
-                tween(ContainerTransformDurationMillis, easing = FastOutSlowInEasing)
+                tween(ContainerTransformDurationMillis, easing = AppMotion.standardEasing)
             },
             enter = fadeIn(tween(ContainerTransformDurationMillis)),
             exit = fadeOut(tween(ContainerTransformDurationMillis)),

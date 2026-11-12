@@ -1,5 +1,10 @@
 package com.breakyuna.esjzone.ui.navigation
 
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.snap
+import androidx.compose.material3.ripple
+import com.breakyuna.esjzone.ui.designsystem.LocalReduceMotion
+import com.breakyuna.esjzone.ui.designsystem.AppMotion
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.Spring
@@ -75,7 +80,6 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import com.breakyuna.esjzone.R
 import com.breakyuna.esjzone.app.PresentationAccess
-import com.breakyuna.esjzone.ui.designsystem.AppMotion
 import com.breakyuna.esjzone.ui.discovery.DiscoveryScaffold
 import com.breakyuna.esjzone.ui.product.EmptyState
 import androidx.compose.ui.graphics.drawscope.scale
@@ -400,23 +404,29 @@ internal fun TabSwitchLayers(
     modifier: Modifier = Modifier,
     content: @Composable (AppTabId, Boolean, Modifier) -> Unit
 ) {
+    val reduced = LocalReduceMotion.current
     val transition = updateTransition(targetState = selected, label = "TabSwitch")
     Box(modifier) {
         AppTabId.entries.forEach { tabId ->
             key(tabId) {
                 val active = selected == tabId
                 val alpha = transition.animateFloat(
-                    transitionSpec = { tween(durationMillis = 300, easing = FastOutSlowInEasing) },
+                    transitionSpec = {
+                        if (reduced) snap()
+                        else if (targetState == tabId) tween(AppMotion.fadeThroughEnter,
+                            delayMillis = AppMotion.fadeThroughExit, easing = AppMotion.standardEasing)
+                        else tween(AppMotion.fadeThroughExit, easing = LinearEasing)
+                    },
                     label = "${tabId.name}TabAlpha"
                 ) { targetTab -> if (targetTab == tabId) 1f else 0f }
                 val horizontalOffset = transition.animateFloat(
-                    transitionSpec = { tween(durationMillis = 300, easing = FastOutSlowInEasing) },
+                    transitionSpec = { if (reduced) snap() else tween(AppMotion.tabSwitch, easing = AppMotion.standardEasing) },
                     label = "${tabId.name}TabOffset"
                 ) { targetTab ->
                     when {
                         targetTab == tabId -> 0f
-                        orderedTabs.indexOf(tabId) < orderedTabs.indexOf(targetTab) -> -16f
-                        else -> 16f
+                        orderedTabs.indexOf(tabId) < orderedTabs.indexOf(targetTab) -> -8f
+                        else -> 8f
                     }
                 }
                 Box(
@@ -619,7 +629,7 @@ private fun AppNavigationBarItem(
             .selectable(
                 selected = selected,
                 interactionSource = remember(tab) { MutableInteractionSource() },
-                indication = null,
+                indication = ripple(),
                 role = Role.Tab,
                 onClick = { onSelected(tab) }
             ),
@@ -645,7 +655,7 @@ private fun AppNavigationBarItem(
             text = tabLabel(tab),
             color = contentColor,
             style = MaterialTheme.typography.labelMedium,
-            fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+            fontWeight = FontWeight.Medium,
             maxLines = 1
         )
     }

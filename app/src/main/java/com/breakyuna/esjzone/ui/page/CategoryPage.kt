@@ -2,6 +2,7 @@
 
 package com.breakyuna.esjzone.ui.page
 
+import com.breakyuna.esjzone.ui.designsystem.AppStateContent
 import com.breakyuna.esjzone.ui.designsystem.wideContentWidth
 import com.breakyuna.esjzone.ui.designsystem.wideListColumns
 import com.breakyuna.esjzone.ui.designsystem.PreserveAdaptiveListAnchor
@@ -62,6 +63,7 @@ class CategoryPage(private val category: Category) : AppDestination {
         val columns = wideListColumns(maxWidth = 1280f)
         val authorization = LocalAuthorization.current
         val model = rememberAppViewModel { CategoryPageModel(authorization, category) }
+        val listState = rememberLazyListState()
         DiscoveryScaffold(
             title = category.name,
             onBack = { navigator.pop() }
@@ -72,52 +74,53 @@ class CategoryPage(private val category: Category) : AppDestination {
                 onRefresh = model::retry,
                 modifier = Modifier.fillMaxSize()
             ) {
-            when (val snapshot = state) {
-                CategoryPageModel.State.Loading -> DiscoveryLoadingState(
-                    modifier = Modifier.fillMaxSize().padding(padding)
-                )
-                is CategoryPageModel.State.Error -> {
-                    val contentModifier = Modifier.fillMaxSize().padding(padding)
-                    Column(modifier = contentModifier) {
-                        if (snapshot.failure == LoadFailureKind.NETWORK) {
-                            DiscoveryOfflineBanner(modifier = Modifier.padding(16.dp))
+            AppStateContent(state) { snapshot ->
+                when (snapshot) {
+                    CategoryPageModel.State.Loading ->
+                        DiscoveryLoadingState(modifier = Modifier.fillMaxSize().padding(padding))
+                    is CategoryPageModel.State.Error -> {
+                        val contentModifier = Modifier.fillMaxSize().padding(padding)
+                        Column(modifier = contentModifier) {
+                            if (snapshot.failure == LoadFailureKind.NETWORK) {
+                                DiscoveryOfflineBanner(modifier = Modifier.padding(16.dp))
+                            }
+                            DiscoveryErrorState(
+                                message = stringResource(categoryPageFailure(snapshot.failure)),
+                                onRetry = model::retry,
+                                modifier = Modifier.fillMaxSize(),
+                            )
                         }
-                        DiscoveryErrorState(
-                            message = stringResource(categoryPageFailure(snapshot.failure)),
-                            onRetry = model::retry,
-                            modifier = Modifier.fillMaxSize()
-                        )
                     }
-                }
-                is CategoryPageModel.State.Result -> {
-                    if (snapshot.categoryNovels.isEmpty()) {
-                        DiscoveryEmptyState(
-                            title = stringResource(R.string.search_no_results),
-                            message = stringResource(R.string.search_no_results_message),
-                            modifier = Modifier.fillMaxSize().padding(padding)
-                        )
-                    } else {
-                        val novels = snapshot.categoryNovels.distinctBy {
-                            it.url.trim().ifBlank { it.name.trim() }
-                        }
-                        val listState = rememberLazyListState()
-                        PreserveAdaptiveListAnchor(listState, novels, columns, key = ::categoryNovelKey)
-                        LazyColumn(
-                            state = listState,
-                            modifier = Modifier.fillMaxSize().wideContentWidth().padding(padding),
-                            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
-                            verticalArrangement = Arrangement.spacedBy(10.dp)
-                        ) {
-                            adaptiveItems(
-                                columns = columns,
-                                items = novels,
-                                key = { novel -> categoryNovelKey(novel) },
-                                contentType = { "category-novel" }
-                            ) { novel ->
-                                DiscoveryCategoryNovelCard(
-                                    novel = novel,
-                                    onClick = { navigator.pushIfNotCurrent(NovelPage(novel)) }
-                                )
+                    is CategoryPageModel.State.Result -> {
+                        if (snapshot.categoryNovels.isEmpty()) {
+                            DiscoveryEmptyState(
+                                title = stringResource(R.string.search_no_results),
+                                message = stringResource(R.string.search_no_results_message),
+                                modifier = Modifier.fillMaxSize().padding(padding),
+                            )
+                        } else {
+                            val novels =
+                                snapshot.categoryNovels.distinctBy {
+                                    it.url.trim().ifBlank { it.name.trim() }
+                                }
+                            PreserveAdaptiveListAnchor(listState, novels, columns, key = ::categoryNovelKey)
+                            LazyColumn(
+                                state = listState,
+                                modifier = Modifier.fillMaxSize().wideContentWidth().padding(padding),
+                                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
+                                verticalArrangement = Arrangement.spacedBy(10.dp),
+                            ) {
+                                adaptiveItems(
+                                    columns = columns,
+                                    items = novels,
+                                    key = { novel -> categoryNovelKey(novel) },
+                                    contentType = { "category-novel" },
+                                ) { novel ->
+                                    DiscoveryCategoryNovelCard(
+                                        novel = novel,
+                                        onClick = { navigator.pushIfNotCurrent(NovelPage(novel)) },
+                                    )
+                                }
                             }
                         }
                     }

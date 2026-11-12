@@ -1,64 +1,86 @@
 package com.breakyuna.esjzone.ui.designsystem
 
-import android.content.Context
-import android.os.SystemClock
+import android.database.ContentObserver
+import android.os.Handler
+import android.os.Looper
 import android.provider.Settings
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.remember
+import android.view.accessibility.AccessibilityManager
+import androidx.compose.runtime.*
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalInspectionMode
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 
-/**
- * Caches system animation scale lookup to avoid frequent Binder IPC
- * across SettingsProvider when rendering animated surfaces or Lottie icons.
- */
-object ReducedMotionHelper {
-    private const val CACHE_TTL_MS = 30_000L
+/** One observable source, also overridable by previews and accessibility hosts. */
+val LocalReduceMotion = staticCompositionLocalOf { false }
 
-    @Volatile
-    private var cachedValue: Boolean? = null
-
-    @Volatile
-    private var lastCheckedTimestamp: Long = 0L
-
-    fun isReducedMotion(context: Context): Boolean {
-        val now = SystemClock.uptimeMillis()
-        val cached = cachedValue
-        if (cached != null && (now - lastCheckedTimestamp) < CACHE_TTL_MS) {
-            return cached
-        }
-        val value = queryReducedMotion(context)
-        cachedValue = value
-        lastCheckedTimestamp = now
-        return value
-    }
-
-    private fun queryReducedMotion(context: Context): Boolean {
-        val resolver = context.contentResolver ?: return false
-        return sequenceOf(
+@Composable
+internal fun rememberReducedMotionState(): Boolean {
+    val context = LocalContext.current
+    val preview = LocalInspectionMode.current
+    val resolver = context.contentResolver
+    val keys = remember {
+        listOf(
             Settings.Global.ANIMATOR_DURATION_SCALE,
             Settings.Global.TRANSITION_ANIMATION_SCALE,
-            Settings.Global.WINDOW_ANIMATION_SCALE
-        ).any { key ->
-            runCatching {
-                Settings.Global.getFloat(resolver, key, 1f) <= 0f
-            }.getOrDefault(false)
-        }
+            Settings.Global.WINDOW_ANIMATION_SCALE,
+        )
     }
-
-    /** Clears cached animation scale, e.g. for testing. */
-    fun clearCache() {
-        cachedValue = null
-        lastCheckedTimestamp = 0L
+    fun read() =
+        preview ||
+            keys.any {
+                runCatching { Settings.Global.getFloat(resolver, it, 1f) <= 0f }.getOrDefault(false)
+            }
+    var reduced by remember(resolver, preview) { mutableStateOf(read()) }
+    DisposableEffect(resolver, preview) {
+        val observer =
+            object : ContentObserver(Handler(Looper.getMainLooper())) {
+                override fun onChange(selfChange: Boolean) {
+                    reduced = read()
+                }
+            }
+        if (!preview)
+            keys.forEach {
+                resolver.registerContentObserver(Settings.Global.getUriFor(it), false, observer)
+            }
+        // Read after registration so a change during initial composition cannot be missed.
+        reduced = read()
+        onDispose { if (!preview) resolver.unregisterContentObserver(observer) }
     }
+    return reduced
 }
 
-/**
- * Rememberable Composable helper that reads whether the user or system has requested reduced motion.
- */
+@Composable fun rememberSystemReducedMotion(): Boolean = LocalReduceMotion.current
+
+/** Stop decorative loops when the owning navigation entry is no longer resumed. */
 @Composable
-fun rememberSystemReducedMotion(): Boolean {
-    val context = LocalContext.current
-    return remember(context) {
-        ReducedMotionHelper.isReducedMotion(context)
+fun rememberMotionActive(): Boolean {
+    val lifecycle = LocalLifecycleOwner.current.lifecycle
+    var resumed by
+        remember(lifecycle) {
+            mutableStateOf(lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED))
+        }
+    DisposableEffect(lifecycle) {
+        val observer = LifecycleEventObserver { _, _ ->
+            resumed = lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)
+        }
+        lifecycle.addObserver(observer)
+        onDispose { lifecycle.removeObserver(observer) }
     }
+    return resumed && !LocalReduceMotion.current
+}
+
+@Composable
+fun rememberTouchExplorationEnabled(): Boolean {
+    val context = LocalContext.current
+    val manager = remember(context) { context.getSystemService(AccessibilityManager::class.java) }
+    var enabled by remember(manager) { mutableStateOf(manager?.isTouchExplorationEnabled == true) }
+    DisposableEffect(manager) {
+        val listener = AccessibilityManager.TouchExplorationStateChangeListener { enabled = it }
+        manager?.addTouchExplorationStateChangeListener(listener)
+        enabled = manager?.isTouchExplorationEnabled == true
+        onDispose { manager?.removeTouchExplorationStateChangeListener(listener) }
+    }
+    return enabled
 }

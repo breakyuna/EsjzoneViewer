@@ -1,5 +1,6 @@
 package com.breakyuna.esjzone.ui.designsystem
 
+import coil3.request.crossfade
 import androidx.compose.foundation.layout.Box
 import android.content.Context
 import androidx.compose.foundation.Image
@@ -80,7 +81,7 @@ fun AppImage(
     errorResource: Int? = null,
     onImageLoaded: ((AppLoadedImage) -> Unit)? = null
 ) {
-    val imageRequest = sharedMirrorImageRequest(model)
+    val imageRequest = sharedMirrorImageRequest(model, animateLoad = true)
     var errorState by remember(imageRequest) { mutableStateOf<CoverState>(CoverState.Missing) }
     val fallbackResource = errorResource ?: coverFallbackResource(errorState)
     val handleError: (Throwable) -> Unit = { failure ->
@@ -385,7 +386,7 @@ fun AppReaderZoomableImage(
     loading: @Composable () -> Unit = { AppImageLoading() }
 ) {
     val loader = readerImageLoader(model)
-    val imageRequest = sharedMirrorImageRequest(model)
+    val imageRequest = sharedMirrorImageRequest(model, animateLoad = true)
     Box(modifier = modifier) {
         ZoomableAsyncImage(
             model = imageRequest,
@@ -406,11 +407,14 @@ fun AppReaderZoomableImage(
 }
 
 @Composable
-internal fun sharedMirrorImageRequest(model: Any?, allowNetwork: Boolean = true): ImageRequest {
+internal fun sharedMirrorImageRequest(model: Any?, allowNetwork: Boolean = true, animateLoad: Boolean = false): ImageRequest {
     val context = LocalContext.current
     val activeDomain = PresentationAccess.settings.domain.value
-    return remember(model, context, activeDomain, allowNetwork) {
-        mirrorImageRequest(context, model, allowNetwork)
+    val reduced = animateLoad && LocalReduceMotion.current
+    return remember(model, context, activeDomain, allowNetwork, animateLoad, reduced) {
+        val request = mirrorImageRequest(context, model, allowNetwork)
+        if (animateLoad) request.newBuilder().crossfade(if (reduced) 0 else AppMotion.quick).build()
+        else request
     }
 }
 
@@ -448,30 +452,8 @@ internal fun readerImageLoader(model: Any?): ImageLoader {
     } else PresentationAccess.imageLoader
 }
 
-/**
- * Android's zero animation scale is the platform-level reduced-motion signal
- * available without an accessibility permission. It is intentionally read
- * once per composition: changing the developer/accessibility setting while
- * this screen is open takes effect on the next screen composition.
- */
 @Composable
-fun rememberReaderReducedMotion(): Boolean {
-    val context = LocalContext.current
-    return remember(context) {
-        val resolver = context.contentResolver
-        val animatorScale = android.provider.Settings.Global.getFloat(
-            resolver,
-            android.provider.Settings.Global.ANIMATOR_DURATION_SCALE,
-            1f
-        )
-        val transitionScale = android.provider.Settings.Global.getFloat(
-            resolver,
-            android.provider.Settings.Global.TRANSITION_ANIMATION_SCALE,
-            1f
-        )
-        animatorScale == 0f || transitionScale == 0f
-    }
-}
+fun rememberReaderReducedMotion(): Boolean = LocalReduceMotion.current
 
 @Composable
 fun AppImageLoading(modifier: Modifier = Modifier) {

@@ -1,5 +1,9 @@
 package com.breakyuna.esjzone.ui.page
 
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import com.breakyuna.esjzone.ui.designsystem.AppMotion
+import com.breakyuna.esjzone.ui.designsystem.LocalReduceMotion
 import com.breakyuna.esjzone.ui.designsystem.AppLayout
 import com.breakyuna.esjzone.ui.designsystem.appUsesWideLayout
 import androidx.compose.material.icons.filled.Settings
@@ -232,6 +236,8 @@ object SettingsPage : AppDestination {
             }
         ) { padding ->
             SettingsPaneLayout(section, { section = it }, Modifier.fillMaxSize().padding(padding)) {
+            val reduced = LocalReduceMotion.current
+            val wideMotion = com.breakyuna.esjzone.ui.designsystem.appUsesWideLayout()
             AnimatedContent(
                 targetState = section,
                 modifier = Modifier.fillMaxSize(),
@@ -241,8 +247,12 @@ object SettingsPage : AppDestination {
                     } else {
                         AnimatedContentTransitionScope.SlideDirection.Left
                     }
-                    slideIntoContainer(direction, tween(250)) togetherWith
-                        slideOutOfContainer(direction, tween(250))
+                    if (reduced) androidx.compose.animation.EnterTransition.None togetherWith androidx.compose.animation.ExitTransition.None
+                    else if (wideMotion) {
+                        fadeIn(tween(AppMotion.fadeThroughEnter, delayMillis = AppMotion.fadeThroughExit)) togetherWith
+                            fadeOut(tween(AppMotion.fadeThroughExit))
+                    } else slideIntoContainer(direction, tween(AppMotion.expressive, easing = AppMotion.standardEasing)) togetherWith
+                        slideOutOfContainer(direction, tween(AppMotion.expressive, easing = AppMotion.standardEasing))
                 },
                 label = "SettingsSectionTransition"
             ) { displayedSection ->

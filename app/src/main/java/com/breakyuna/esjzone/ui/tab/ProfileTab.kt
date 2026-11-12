@@ -2,6 +2,7 @@
 
 package com.breakyuna.esjzone.ui.tab
 
+import com.breakyuna.esjzone.ui.designsystem.AppStateContent
 import com.breakyuna.esjzone.ui.designsystem.appUsesWideLayout
 import com.breakyuna.esjzone.ui.component.SelectableProse
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
@@ -296,82 +297,115 @@ private fun ProfileHero(profile: UserProfile?, domain: String, avatarCacheKey: S
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(AppSpacing.lg)
         ) {
-            if (profile == null && loading) {
-                AppShimmerPlaceholder(
-                    modifier = Modifier.size(72.dp),
-                    shape = CircleShape,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.14f)
-                )
-            } else if (profile == null) {
-                AccountIconBadge(Icons.Filled.Person)
-            } else {
-                AppProfileAvatarImage(
-                    model = EsjzoneUrls.resolve(profile.avatarUrl, EsjzoneUrls.baseForDomain(domain)),
-                    cacheKey = avatarCacheKey,
-                    contentDescription = profile.name,
-                    modifier = Modifier.size(72.dp).clip(CircleShape)
-                        .border(0.5.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f), CircleShape)
-                )
-            }
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(AppSpacing.xs)) {
+            AppStateContent(
+                profile to loading,
+                contentKey = { (value, busy) ->
+                    if (value != null) "result" else if (busy) "loading" else "empty"
+                },
+            ) { (profile, loading) ->
                 if (profile == null && loading) {
                     AppShimmerPlaceholder(
-                        modifier = Modifier.fillMaxWidth(0.68f).height(28.dp),
-                        shape = AppShapes.compact,
-                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.14f)
-                    )
-                    AppShimmerPlaceholder(
-                        modifier = Modifier.fillMaxWidth(0.44f).height(16.dp),
-                        shape = AppShapes.compact,
-                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.11f)
+                        modifier = Modifier.size(72.dp),
+                        shape = CircleShape,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.14f),
                     )
                 } else if (profile == null) {
-                    Text(stringResource(R.string.navigation_profile), style = AppTypography.titleLarge)
-                    TextButton(onClick = onRetry) { Text(stringResource(R.string.retry)) }
+                    AccountIconBadge(Icons.Filled.Person)
                 } else {
-                    // The hero card has no gesture; name, level, registration and progress are copyable.
-                    SelectableProse {
-                        Column(verticalArrangement = Arrangement.spacedBy(AppSpacing.xs)) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(AppSpacing.sm)
-                            ) {
-                                Text(
-                                    text = profile.name,
-                                    style = AppTypography.titleLarge,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                    color = MaterialTheme.colorScheme.onSurface,
-                                    modifier = Modifier.weight(1f)
-                                )
-                                profile.exp?.let {
-                                    // Material Text supplies a solid LocalContentColor when color is unspecified.
-                                    BasicText(
-                                        text = stringResource(R.string.profile_experience, it),
-                                        modifier = Modifier.onGloballyPositioned { coordinates ->
-                                            experienceCenterX = coordinates.positionInRoot().x + coordinates.size.width / 2f
-                                        },
-                                        style = AppTypography.bodySmall.copy(
-                                            brush = experienceBrush,
-                                            fontWeight = FontWeight.SemiBold
-                                        ),
-                                        maxLines = 1
-                                    )
+                    AppProfileAvatarImage(
+                        model = EsjzoneUrls.resolve(profile.avatarUrl, EsjzoneUrls.baseForDomain(domain)),
+                        cacheKey = avatarCacheKey,
+                        contentDescription = profile.name,
+                        modifier =
+                            Modifier.size(72.dp)
+                                .clip(CircleShape)
+                                .border(
+                                    0.5.dp,
+                                    MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f),
+                                    CircleShape,
+                                ),
+                    )
+                }
+            }
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(AppSpacing.xs)) {
+                AppStateContent(
+                    profile to loading,
+                    contentKey = { (value, busy) ->
+                        if (value != null) "result" else if (busy) "loading" else "empty"
+                    },
+                ) { (profile, loading) ->
+                    Column(verticalArrangement = Arrangement.spacedBy(AppSpacing.xs)) {
+                        if (profile == null && loading) {
+                            AppShimmerPlaceholder(
+                                modifier = Modifier.fillMaxWidth(0.68f).height(28.dp),
+                                shape = AppShapes.compact,
+                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.14f),
+                            )
+                            AppShimmerPlaceholder(
+                                modifier = Modifier.fillMaxWidth(0.44f).height(16.dp),
+                                shape = AppShapes.compact,
+                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.11f),
+                            )
+                        } else if (profile == null) {
+                            Text(stringResource(R.string.navigation_profile), style = AppTypography.titleLarge)
+                            TextButton(onClick = onRetry) { Text(stringResource(R.string.retry)) }
+                        } else {
+                            // The hero card has no gesture; name, level, registration and progress are
+                            // copyable.
+                            SelectableProse {
+                                Column(verticalArrangement = Arrangement.spacedBy(AppSpacing.xs)) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(AppSpacing.sm),
+                                    ) {
+                                        Text(
+                                            text = profile.name,
+                                            style = AppTypography.titleLarge,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
+                                            color = MaterialTheme.colorScheme.onSurface,
+                                            modifier = Modifier.weight(1f),
+                                        )
+                                        profile.exp?.let {
+                                            // Material Text supplies a solid LocalContentColor when color is
+                                            // unspecified.
+                                            BasicText(
+                                                text = stringResource(R.string.profile_experience, it),
+                                                modifier =
+                                                    Modifier.onGloballyPositioned { coordinates ->
+                                                        experienceCenterX =
+                                                            coordinates.positionInRoot().x +
+                                                                coordinates.size.width / 2f
+                                                    },
+                                                style =
+                                                    AppTypography.bodySmall.copy(
+                                                        brush = experienceBrush,
+                                                        fontWeight = FontWeight.SemiBold,
+                                                    ),
+                                                maxLines = 1,
+                                            )
+                                        }
+                                    }
+                                    profile.level?.let {
+                                        Text(
+                                            text = it.trim(),
+                                            style = AppTypography.bodySmall,
+                                            color = MaterialTheme.colorScheme.primary,
+                                            maxLines = 1,
+                                        )
+                                    }
                                 }
                             }
-                            profile.level?.let {
-                                Text(
-                                    text = it.trim(),
-                                    style = AppTypography.bodySmall,
-                                    color = MaterialTheme.colorScheme.primary,
-                                    maxLines = 1
-                                )
-                            }
                         }
+                        Text(
+                            domain,
+                            style = AppTypography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                        )
                     }
                 }
-                Text(domain, style = AppTypography.bodySmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f))
+
             }
         }
     }

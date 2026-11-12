@@ -1,5 +1,10 @@
 package com.breakyuna.esjzone.ui.page
 
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
+import androidx.compose.foundation.lazy.grid.items
 import android.content.ActivityNotFoundException
 import android.content.ClipData
 import android.content.Intent
@@ -313,22 +318,23 @@ private fun DownloadList(
 ) {
     val columns = wideListColumns()
     val totalBytes = remember(novels) { novels.sumOf { it.storageBytes } }
-    val listState = rememberLazyListState()
-    PreserveAdaptiveListAnchor(listState, novels, columns, leadingItemCount = 1, key = { it.novelUrl })
-    LazyColumn(
+    val listState = rememberLazyGridState()
+    LazyVerticalGrid(
+        columns = GridCells.Fixed(columns),
         state = listState,
         modifier = modifier.contentArrival(),
         contentPadding = PaddingValues(AppSpacing.lg),
-        verticalArrangement = Arrangement.spacedBy(AppSpacing.sm)
+        verticalArrangement = Arrangement.spacedBy(AppSpacing.sm),
+        horizontalArrangement = Arrangement.spacedBy(AppSpacing.lg)
     ) {
-        item(key = "download_summary", contentType = "download_summary") {
+        item(key = "download_summary", contentType = "download_summary", span = { GridItemSpan(maxLineSpan) }) {
             Text(
                 stringResource(R.string.download_total_summary, novels.size, if (novels.any { it.storageBytes < 0 }) stringResource(R.string.storage_size_calculating) else formatBytes(totalBytes)),
                 style = AppTypography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
-        adaptiveItems(novels, columns = columns, key = { it.novelUrl }, contentType = { "download" }) { summary ->
+        items(novels, key = { it.novelUrl }, contentType = { "download" }) { summary ->
             DownloadCard(summary, editing, summary.novelUrl in selected, deleting, { onToggle(summary.novelUrl) }, { onDelete(summary.novelUrl) }, { onOpen(summary.novelUrl) }, Modifier.animateItem())
         }
     }

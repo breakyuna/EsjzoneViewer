@@ -1,5 +1,6 @@
 package com.breakyuna.esjzone.ui.navigation
 
+import com.breakyuna.esjzone.ui.designsystem.AppMotion
 import androidx.compose.animation.EnterExitState
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateFloat
@@ -53,7 +54,7 @@ internal fun Modifier.circularRevealDestination(target: ContainerTransformTarget
     val source = remember(target) { origins?.bounds?.get(target) } ?: return this
     val visibility = LocalNavAnimatedContentScope.current
     val progress = visibility.transition.animateFloat(
-        transitionSpec = { tween(ContainerTransformDurationMillis, easing = FastOutSlowInEasing) },
+        transitionSpec = { tween(ContainerTransformDurationMillis, easing = AppMotion.standardEasing) },
         label = "${target.name}Reveal"
     ) { if (it == EnterExitState.Visible) 1f else 0f }
     var pagePosition by remember { mutableStateOf(Offset.Zero) }

@@ -10,7 +10,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -21,9 +20,6 @@ import com.airbnb.lottie.compose.LottieConstants
 import com.airbnb.lottie.compose.animateLottieCompositionAsState
 import com.airbnb.lottie.compose.rememberLottieComposition
 import com.breakyuna.esjzone.R
-
-/** Allows tests and accessibility hosts to force the static Reduced Motion path. */
-val LocalReduceMotion = staticCompositionLocalOf { false }
 
 /** First-party animation assets with a deterministic static fallback. */
 enum class AppLottieAsset(
@@ -48,7 +44,7 @@ fun AppLottieState(
     modifier: Modifier = Modifier.size(80.dp),
     contentDescription: String? = null
 ) {
-    val reduceMotion = LocalReduceMotion.current || rememberSystemReducedMotion()
+    val reduceMotion = !rememberMotionActive()
     val accessibleModifier = if (contentDescription == null) {
         modifier
     } else {

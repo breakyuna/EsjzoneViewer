@@ -1,5 +1,15 @@
 package com.breakyuna.esjzone.ui.navigation
 
+import androidx.compose.ui.graphics.Color
+import androidx.compose.animation.ExperimentalAnimationApi
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.veilOut
+import androidx.compose.animation.unveilIn
+import androidx.compose.ui.graphics.TransformOrigin
+import androidx.navigationevent.NavigationEvent
 import com.breakyuna.esjzone.network.features.retainDownloadedNovelDetails
 import kotlinx.coroutines.flow.collect
 
@@ -555,21 +565,33 @@ internal fun LegacyRoute.restore(): AppDestination? = when (this) {
 // Same duration and curve as the shared novel cover, so the cover lands with its page.
 private val pageSlideSpec = tween<IntOffset>(AppMotion.expressive, easing = AppMotion.standardEasing)
 
-/** Predictive-back compatible defaults: new content covers the old entry. */
+/** The previous entry (including tab chrome) stays in place under the new page. */
+@OptIn(ExperimentalAnimationApi::class)
 internal val pushTransition: AnimatedContentTransitionScope<Scene<NavKey>>.() -> ContentTransform = {
-    slideInHorizontally(pageSlideSpec, initialOffsetX = { it }) togetherWith
-        ExitTransition.KeepUntilTransitionsFinished
+    slideInHorizontally(pageSlideSpec) { it } togetherWith
+        veilOut(tween(AppMotion.expressive), targetColor = Color.Black.copy(alpha = 0.12f))
 }
 
+@OptIn(ExperimentalAnimationApi::class)
 internal val popTransition: AnimatedContentTransitionScope<Scene<NavKey>>.() -> ContentTransform = {
-    slideInHorizontally(pageSlideSpec, initialOffsetX = { -it }) togetherWith
-        slideOutHorizontally(pageSlideSpec, targetOffsetX = { it })
+    unveilIn(tween(AppMotion.expressive), initialColor = Color.Black.copy(alpha = 0.12f)) togetherWith
+        slideOutHorizontally(pageSlideSpec) { it }
 }
 
+@OptIn(ExperimentalAnimationApi::class)
 internal val predictivePopTransition:
-    AnimatedContentTransitionScope<Scene<NavKey>>.(Int) -> ContentTransform = { _ ->
-    slideInHorizontally(initialOffsetX = { -it }) togetherWith
-        slideOutHorizontally(targetOffsetX = { it })
+    AnimatedContentTransitionScope<Scene<NavKey>>.(Int) -> ContentTransform = { edge ->
+    val fromRight = edge == NavigationEvent.EDGE_RIGHT
+    unveilIn(initialColor = Color.Black.copy(alpha = 0.12f)) togetherWith
+        (scaleOut(targetScale = 0.9f,
+            transformOrigin = TransformOrigin(if (fromRight) 0f else 1f, 0.5f)) +
+            slideOutHorizontally { if (fromRight) -it / 12 else it / 12 })
+}
+
+private val authGateMotion = NavDisplay.transitionSpec {
+    (fadeIn(tween(AppMotion.fadeThroughEnter, delayMillis = AppMotion.fadeThroughExit)) +
+        scaleIn(tween(AppMotion.fadeThroughEnter, delayMillis = AppMotion.fadeThroughExit),
+            initialScale = 0.96f)) togetherWith fadeOut(tween(AppMotion.fadeThroughExit))
 }
 
 internal fun canShowAppUpdates(destination: NavKey?, authorization: Authorization?): Boolean =
@@ -741,13 +763,13 @@ fun AppNavigation() {
                 popTransitionSpec = popTransition,
                 predictivePopTransitionSpec = predictivePopTransition,
                 entryProvider = entryProvider {
-                    entry<AppNavKey.Loading> {
+                    entry<AppNavKey.Loading>(metadata = authGateMotion) {
                         LoadingScreen().Content(navigator)
                     }
-                    entry<AppNavKey.Login> {
+                    entry<AppNavKey.Login>(metadata = authGateMotion) {
                         LoginScreen.Content(navigator)
                     }
-                    entry<AppNavKey.Main> {
+                    entry<AppNavKey.Main>(metadata = authGateMotion) {
                         val session = authorization
                         if (session == null) {
                             // A restored Main key may arrive before the

@@ -2,6 +2,19 @@
 
 package com.breakyuna.esjzone.ui.page
 
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.tween
+import androidx.compose.ui.draw.drawWithContent
+import com.breakyuna.esjzone.ui.designsystem.AppMotion
+import com.breakyuna.esjzone.ui.designsystem.LocalReduceMotion
+import com.breakyuna.esjzone.ui.designsystem.AppStateContent
+import com.breakyuna.esjzone.ui.designsystem.AppPagedContent
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.lifecycle.viewModelScope
 import com.breakyuna.esjzone.app.PresentationAccess
@@ -301,48 +314,54 @@ internal fun <T> CommunityStateContent(
     modifier: Modifier = Modifier,
     content: @Composable (T) -> Unit
 ) {
-    when (state) {
-        is CommunityState.Loading -> Box(
-            modifier = modifier.fillMaxWidth(),
-            contentAlignment = Alignment.Center
-        ) {
-            LoadingSkeleton(modifier = Modifier.fillMaxWidth())
-        }
-
-        is CommunityState.Error -> if (state.failure == LoadFailureKind.NETWORK) {
-            Box(modifier = modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-                OfflineState(
+    AppStateContent(state, modifier = modifier.fillMaxWidth()) { snapshot ->
+        when (snapshot) {
+            is CommunityState.Loading ->
+                Box(
                     modifier = Modifier.fillMaxWidth(),
-                    onRetry = onRetry
-                )
-            }
-        } else {
-            Box(modifier = modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-                ErrorState(
-                    title = stringResource(R.string.community_load_failed),
-                    message = stringResource(R.string.community_empty_guidance),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    LoadingSkeleton(modifier = Modifier.fillMaxWidth())
+                }
+
+            is CommunityState.Error ->
+                if (snapshot.failure == LoadFailureKind.NETWORK) {
+                    Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                        OfflineState(
+                            modifier = Modifier.fillMaxWidth(),
+                            onRetry = onRetry,
+                        )
+                    }
+                } else {
+                    Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                        ErrorState(
+                            title = stringResource(R.string.community_load_failed),
+                            message = stringResource(R.string.community_empty_guidance),
+                            modifier = Modifier.fillMaxWidth(),
+                            onRetry = onRetry,
+                        )
+                    }
+                }
+
+            is CommunityState.Empty ->
+                Box(
                     modifier = Modifier.fillMaxWidth(),
-                    onRetry = onRetry
-                )
-            }
-        }
+                    contentAlignment = Alignment.Center,
+                ) {
+                    EmptyState(
+                        title = emptyText,
+                        message = stringResource(R.string.community_empty_guidance),
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
 
-        is CommunityState.Empty -> Box(
-            modifier = modifier.fillMaxWidth(),
-            contentAlignment = Alignment.Center
-        ) {
-            EmptyState(
-                title = emptyText,
-                message = stringResource(R.string.community_empty_guidance),
-                modifier = Modifier.fillMaxWidth()
-            )
-        }
-
-        is CommunityState.Result -> Box(
-            modifier = modifier.fillMaxWidth(),
-            contentAlignment = Alignment.TopCenter
-        ) {
-            content(state.data)
+            is CommunityState.Result ->
+                Box(
+                    modifier = Modifier.fillMaxWidth(),
+                    contentAlignment = Alignment.TopCenter,
+                ) {
+                    content(snapshot.data)
+                }
         }
     }
 }
@@ -595,6 +614,14 @@ private fun CommentSection(
     )
 
     var handledCreatedCommentId by rememberSaveable(pageUrl) { mutableStateOf<String?>(null) }
+    var highlightCommentId by rememberSaveable(pageUrl) { mutableStateOf<String?>(null) }
+    val highlight = remember(pageUrl) { Animatable(0f) }
+    val reducedMotion = LocalReduceMotion.current
+    val highlightColor = MaterialTheme.colorScheme.primaryContainer
+    LaunchedEffect(highlightCommentId, reducedMotion) {
+        highlight.snapTo(if (highlightCommentId != null && !reducedMotion) 1f else 0f)
+        if (!reducedMotion) highlight.animateTo(0f, tween(AppMotion.commentHighlight))
+    }
     LaunchedEffect(comments, lastCreatedCommentId) {
         val createdIndex = comments.indexOfFirst { it.id == lastCreatedCommentId }
         selectedPageIndex = restoredCommentPageIndex(
@@ -603,6 +630,7 @@ private fun CommentSection(
         )
         // Keep waiting until the delivered reply is actually in the list.
         if (createdCommentHandled(lastCreatedCommentId, createdIndex)) {
+            if (handledCreatedCommentId != lastCreatedCommentId) highlightCommentId = lastCreatedCommentId
             handledCreatedCommentId = lastCreatedCommentId
         }
     }
@@ -648,21 +676,32 @@ private fun CommentSection(
                 )
             }
             pager()
-            pages[safePageIndex].forEachIndexed { index, comment ->
-                // A malformed or legacy page can contain blank/repeated DOM
-                // ids. Include the page-local position so every rendered item
-                // still has a non-blank, deterministic Compose identity.
-                key(commentRenderKey(comment, index)) {
-                    CommentCard(
-                        comment = comment,
-                        pageUrl = pageUrl,
-                        onLinkClick = onLinkClick,
-                        onReply = if (!comment.replyToken.isNullOrBlank()) {
-                            { onReply(comment) }
-                        } else {
-                            null
+            AppPagedContent(safePageIndex) { displayedPage ->
+                Column {
+                    pages.getOrNull(displayedPage).orEmpty().forEachIndexed { index, comment ->
+                        // A malformed or legacy page can contain blank/repeated DOM
+                        // ids. Include the page-local position so every rendered item
+                        // still has a non-blank, deterministic Compose identity.
+                        key(commentRenderKey(comment, index)) {
+                            CommentCard(
+                                comment = comment,
+                                modifier =
+                                    Modifier.drawWithContent {
+                                        drawContent()
+                                        if (comment.id == highlightCommentId)
+                                            drawRect(highlightColor.copy(alpha = highlight.value * 0.25f))
+                                    },
+                                pageUrl = pageUrl,
+                                onLinkClick = onLinkClick,
+                                onReply =
+                                    if (!comment.replyToken.isNullOrBlank()) {
+                                        { onReply(comment) }
+                                    } else {
+                                        null
+                                    },
+                            )
                         }
-                    )
+                    }
                 }
             }
             pager()
@@ -711,7 +750,16 @@ private fun CommentComposer(
                 .windowInsetsPadding(WindowInsets.navigationBars)
                 .padding(horizontal = AppSpacing.lg, vertical = AppSpacing.sm)
         ) {
-            if (replyAuthor != null) {
+            val reducedMotion = LocalReduceMotion.current
+            AnimatedContent(replyAuthor, contentKey = { it != null }, label = "ReplyTarget",
+                transitionSpec = {
+                    if (reducedMotion) EnterTransition.None togetherWith ExitTransition.None
+                    else fadeIn(tween(AppMotion.quick)) togetherWith fadeOut(tween(AppMotion.quick))
+                }
+            ) { displayedAuthor ->
+                Column {
+                    if (displayedAuthor != null) {
+
                 Surface(
                     modifier = Modifier.fillMaxWidth(),
                     shape = AppShapes.compact,
@@ -732,7 +780,7 @@ private fun CommentComposer(
                         )
                         Spacer(modifier = Modifier.width(AppSpacing.sm))
                         Text(
-                            text = stringResource(id = R.string.comment_replying_to, replyAuthor),
+                            text = stringResource(id = R.string.comment_replying_to, displayedAuthor),
                             style = AppTypography.labelMedium,
                             maxLines = 1,
                             overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
@@ -752,6 +800,8 @@ private fun CommentComposer(
                     }
                 }
                 Spacer(modifier = Modifier.height(AppSpacing.sm))
+                                }
+                }
             }
             Row(
                 modifier = Modifier
@@ -941,13 +991,14 @@ private fun CommentCard(
     comment: Comment,
     pageUrl: String,
     onLinkClick: (String) -> Unit,
-    onReply: (() -> Unit)?
+    onReply: (() -> Unit)?,
+    modifier: Modifier = Modifier
 ) {
     val linkedText = rememberCommunityLinkedText(
         comment.contentText, comment.contentHtml, pageUrl, onLinkClick
     )
     Surface(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .padding(vertical = AppSpacing.xs),
         shape = AppShapes.standard,

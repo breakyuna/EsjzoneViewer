@@ -1,5 +1,6 @@
 package com.breakyuna.esjzone.ui.tab
 
+import com.breakyuna.esjzone.ui.designsystem.AppMotion
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.slideInHorizontally
@@ -35,7 +36,7 @@ import com.breakyuna.esjzone.ui.discovery.DiscoveryEmptyState
 import java.time.DayOfWeek
 
 internal const val WEEKLY_UPDATE_MAX_ITEMS = 24
-private const val WEEKLY_UPDATE_TRANSITION_DURATION = 280
+private const val WEEKLY_UPDATE_TRANSITION_DURATION = AppMotion.weeklyTab
 
 internal fun LazyListScope.weeklyUpdatesCollection(
     days: List<WeeklyUpdateDay>,
@@ -59,11 +60,11 @@ internal fun LazyListScope.weeklyUpdatesCollection(
             targetState = selectedIndex,
             transitionSpec = {
                 if (targetState > initialState) {
-                    slideInHorizontally(animationSpec = tween(WEEKLY_UPDATE_TRANSITION_DURATION)) { fullWidth -> fullWidth } togetherWith
-                        slideOutHorizontally(animationSpec = tween(WEEKLY_UPDATE_TRANSITION_DURATION)) { fullWidth -> -fullWidth }
+                    slideInHorizontally(animationSpec = tween(WEEKLY_UPDATE_TRANSITION_DURATION, easing = AppMotion.standardEasing)) { fullWidth -> fullWidth } togetherWith
+                        slideOutHorizontally(animationSpec = tween(WEEKLY_UPDATE_TRANSITION_DURATION, easing = AppMotion.standardEasing)) { fullWidth -> -fullWidth }
                 } else {
-                    slideInHorizontally(animationSpec = tween(WEEKLY_UPDATE_TRANSITION_DURATION)) { fullWidth -> -fullWidth } togetherWith
-                        slideOutHorizontally(animationSpec = tween(WEEKLY_UPDATE_TRANSITION_DURATION)) { fullWidth -> fullWidth }
+                    slideInHorizontally(animationSpec = tween(WEEKLY_UPDATE_TRANSITION_DURATION, easing = AppMotion.standardEasing)) { fullWidth -> -fullWidth } togetherWith
+                        slideOutHorizontally(animationSpec = tween(WEEKLY_UPDATE_TRANSITION_DURATION, easing = AppMotion.standardEasing)) { fullWidth -> fullWidth }
                 }
             },
             modifier = Modifier

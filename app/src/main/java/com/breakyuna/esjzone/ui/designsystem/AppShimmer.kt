@@ -1,53 +1,19 @@
 package com.breakyuna.esjzone.ui.designsystem
 
-import android.provider.Settings
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
-import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import com.valentinilk.shimmer.shimmer
 
-/**
- * Returns whether the platform has disabled animator/transition motion.
- *
- * This is intentionally a small, static snapshot for loading placeholders:
- * when Android's "remove animations" setting is active, placeholders remain a
- * static surface instead of starting an independent shimmer animation.
- */
+/** Reactive reduced-motion signal provided by AppTheme. */
 @Composable
-fun appReducedMotion(): Boolean {
-    val view = LocalView.current
-    return remember(view) {
-        if (view.isInEditMode) {
-            true
-        } else {
-            val resolver = view.context.contentResolver
-            val animatorScale = Settings.Global.getFloat(
-                resolver,
-                Settings.Global.ANIMATOR_DURATION_SCALE,
-                1f
-            )
-            val transitionScale = Settings.Global.getFloat(
-                resolver,
-                Settings.Global.TRANSITION_ANIMATION_SCALE,
-                1f
-            )
-            val windowScale = Settings.Global.getFloat(
-                resolver,
-                Settings.Global.WINDOW_ANIMATION_SCALE,
-                1f
-            )
-            animatorScale == 0f || transitionScale == 0f || windowScale == 0f
-        }
-    }
-}
+fun appReducedMotion(): Boolean = LocalReduceMotion.current
 
 /**
  * Shared loading placeholder used by feature loading states.
@@ -63,7 +29,7 @@ fun AppShimmerPlaceholder(
     contentDescription: String? = null,
     animated: Boolean = true
 ) {
-    val reducedMotion = !animated || appReducedMotion()
+    val reducedMotion = !animated || !rememberMotionActive()
     val description = contentDescription
     val placeholderModifier = modifier
         .clip(shape)
