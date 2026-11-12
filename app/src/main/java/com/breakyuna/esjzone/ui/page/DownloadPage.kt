@@ -67,7 +67,7 @@ import androidx.compose.animation.core.tween
 import com.breakyuna.esjzone.ui.designsystem.AppMotion
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -123,12 +123,12 @@ object DownloadPage : AppDestination {
         val activity = LocalActivity.current
         val scope = rememberCoroutineScope()
         val model = rememberAppViewModel { DownloadPageModel() }
-        val state by model.state.collectAsState()
+        val state by model.state.collectAsStateWithLifecycle()
         val scanModel = rememberAppViewModel { StorageLocationModel() }
-        val scanState by scanModel.state.collectAsState()
-        val transfer by PresentationAccess.storage.transfer.collectAsState()
-        val activeLocation by PresentationAccess.storage.activeLocation.collectAsState()
-        val migrationLocked by PresentationAccess.downloads.migrating.collectAsState()
+        val scanState by scanModel.state.collectAsStateWithLifecycle()
+        val transfer by PresentationAccess.storage.transfer.collectAsStateWithLifecycle()
+        val activeLocation by PresentationAccess.storage.activeLocation.collectAsStateWithLifecycle()
+        val migrationLocked by PresentationAccess.downloads.migrating.collectAsStateWithLifecycle()
         val snackbarHost = remember { SnackbarHostState() }
         val folderUnavailable = stringResource(R.string.storage_open_folder_unavailable)
         val folderOpenFailed = stringResource(R.string.storage_open_folder_failed)
@@ -146,8 +146,8 @@ object DownloadPage : AppDestination {
         var pendingDelete by remember { mutableStateOf<List<String>>(emptyList()) }
         var showDelete by remember { mutableStateOf(false) }
 
-        val titleChanges by com.breakyuna.esjzone.database.NovelTitleRepository.titleChanges.collectAsState()
-        val downloadChanges by PresentationAccess.downloads.changes.collectAsState()
+        val titleChanges by com.breakyuna.esjzone.database.NovelTitleRepository.titleChanges.collectAsStateWithLifecycle()
+        val downloadChanges by PresentationAccess.downloads.changes.collectAsStateWithLifecycle()
         val entries = (state as? DownloadPageModel.State.Content)?.novels.orEmpty().filter { adult || !it.manifest.isAdult }
         val deleting = (state as? DownloadPageModel.State.Content)?.deleting == true
         LaunchedEffect(activeLocation, titleChanges, downloadChanges, deleting) {
