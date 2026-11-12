@@ -6,6 +6,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.animation.core.animateDpAsState
 import com.breakyuna.esjzone.ui.reader.ReaderChromeMotion
 import com.breakyuna.esjzone.ui.designsystem.AppLayout
+import com.breakyuna.esjzone.ui.designsystem.AppMotion
 import com.breakyuna.esjzone.ui.designsystem.appUsesWideLayout
 import com.breakyuna.esjzone.app.PresentationAccess
 
