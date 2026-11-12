@@ -5,7 +5,7 @@ import android.graphics.Typeface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.work.BackoffPolicy
@@ -99,13 +99,13 @@ internal object ReaderFontStore {
     fun family(font: ReaderFont): FontFamily {
         val context = LocalContext.current
         LaunchedEffect(font) { request(context, font) }
-        val loaded by families.collectAsState()
+        val loaded by families.collectAsStateWithLifecycle()
         return loaded[font] ?: FontFamily.Default
     }
 
     @Composable
     fun isAvailable(font: ReaderFont): Boolean {
-        val loaded by families.collectAsState()
+        val loaded by families.collectAsStateWithLifecycle()
         return font !in downloadedFonts || font in loaded
     }
 
