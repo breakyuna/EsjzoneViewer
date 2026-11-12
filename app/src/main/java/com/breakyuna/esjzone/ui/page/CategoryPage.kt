@@ -19,7 +19,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import com.breakyuna.esjzone.ui.designsystem.globalStringResource as stringResource
@@ -66,7 +66,7 @@ class CategoryPage(private val category: Category) : AppDestination {
             title = category.name,
             onBack = { navigator.pop() }
         ) { padding ->
-            val state by model.state.collectAsState()
+            val state by model.state.collectAsStateWithLifecycle()
             PullToRefreshBox(
                 isRefreshing = state is CategoryPageModel.State.Loading,
                 onRefresh = model::retry,

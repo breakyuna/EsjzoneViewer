@@ -43,7 +43,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
@@ -103,8 +103,8 @@ object BookmarksPage : AppDestination {
         val columns = wideListColumns()
         val model = rememberAppViewModel { BookmarksPageModel() }
         val underlineModel = rememberAppViewModel { UnderlinesPageModel() }
-        val state by model.state.collectAsState()
-        val underlineState by underlineModel.state.collectAsState()
+        val state by model.state.collectAsStateWithLifecycle()
+        val underlineState by underlineModel.state.collectAsStateWithLifecycle()
         var tab by rememberSaveable { mutableStateOf(0) }
         var editing by remember { mutableStateOf(false) }
         var selected by remember { mutableStateOf<Set<String>>(emptySet()) }

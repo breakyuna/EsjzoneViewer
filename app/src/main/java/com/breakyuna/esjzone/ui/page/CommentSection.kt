@@ -64,7 +64,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -358,7 +358,7 @@ internal fun CommentListPage(
     refreshing: Boolean = false,
     onBack: (() -> Unit)? = null
 ) {
-    val state by model.state.collectAsState()
+    val state by model.state.collectAsStateWithLifecycle()
 
     Column(
         modifier = Modifier
@@ -430,7 +430,7 @@ internal fun CommentSectionContent(
     scrollState: androidx.compose.foundation.ScrollState? = null,
     onLinkClick: (String) -> Unit
 ) {
-    val state by model.state.collectAsState()
+    val state by model.state.collectAsStateWithLifecycle()
     val lastCreatedCommentId by model.lastCreatedCommentId
     val anonymousName = stringResource(R.string.anonymous_user)
 

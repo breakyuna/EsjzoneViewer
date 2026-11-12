@@ -27,7 +27,7 @@ import com.breakyuna.esjzone.ui.designsystem.GlobalText as Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -100,7 +100,7 @@ class SearchPage(private val keyword: String) : AppDestination {
     override fun Content(navigator: AppNavigator) {
         val authorization = LocalAuthorization.current
         val model = rememberAppViewModel { SearchPageModel(authorization) }
-        val state by model.state.collectAsState()
+        val state by model.state.collectAsStateWithLifecycle()
         var query by rememberSaveable { mutableStateOf(keyword.trim()) }
         var excluded by rememberSaveable { mutableStateOf("") }
         var tagRowExpanded by rememberSaveable { mutableStateOf(false) }

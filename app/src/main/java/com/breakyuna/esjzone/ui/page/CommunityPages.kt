@@ -46,7 +46,7 @@ import androidx.compose.material3.Surface
 import com.breakyuna.esjzone.ui.designsystem.GlobalText as Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -111,7 +111,7 @@ object ForumPage : AppDestination {
     override fun Content(navigator: AppNavigator) {
         val authorization = LocalAuthorization.current
         val model = rememberAppViewModel { ForumPageModel(authorization) }
-        val state by model.state.collectAsState()
+        val state by model.state.collectAsStateWithLifecycle()
         val metrics = rememberAppAdaptiveMetrics()
 
         Column(
@@ -196,7 +196,7 @@ class ForumCategoryPage(private val category: ForumCategory) : AppDestination {
     override fun Content(navigator: AppNavigator) {
         val authorization = LocalAuthorization.current
         val model = rememberAppViewModel { ForumCategoryPageModel(authorization, category) }
-        val state by model.state.collectAsState()
+        val state by model.state.collectAsStateWithLifecycle()
         val metrics = rememberAppAdaptiveMetrics()
 
         Column(
@@ -261,7 +261,7 @@ class ForumBoardPage(private val thread: ForumThread) : AppDestination {
     override fun Content(navigator: AppNavigator) {
         val authorization = LocalAuthorization.current
         val model = rememberAppViewModel { ForumBoardPageModel(authorization, thread) }
-        val state by model.state.collectAsState()
+        val state by model.state.collectAsStateWithLifecycle()
         val esjNovelBoard = (state as? CommunityState.Result)
             ?.data
             ?.let { it as? ForumBoardResult.Novel }
@@ -355,8 +355,8 @@ class ForumPostPage(private val topic: ForumTopic) : AppDestination {
         val commentsModel = rememberAppViewModel {
             CommentPageModel(authorization, topic.url)
         }
-        val state by model.state.collectAsState()
-        val commentsState by commentsModel.state.collectAsState()
+        val state by model.state.collectAsStateWithLifecycle()
+        val commentsState by commentsModel.state.collectAsStateWithLifecycle()
         val openLink = rememberCommunityLinkOpener(navigator)
         val postScrollState = rememberScrollState()
         val metrics = rememberAppAdaptiveMetrics()
@@ -485,7 +485,7 @@ object GuestbookPage : AppDestination {
         val model = rememberAppViewModel {
             CommentPageModel(authorization, pageUrl)
         }
-        val state by model.state.collectAsState()
+        val state by model.state.collectAsStateWithLifecycle()
         var showSyncStatusMenu by remember { mutableStateOf(false) }
 
         // Use pre-synced page cache for instant opening when available.

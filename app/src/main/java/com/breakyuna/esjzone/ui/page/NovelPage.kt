@@ -115,7 +115,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import com.breakyuna.esjzone.ui.designsystem.AppMotion
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
@@ -225,7 +225,7 @@ class NovelPage(
         val commentModel = rememberAppViewModel { CommentPageModel(authorization, novel.url) }
         val state by rememberNovelDetailPresentationState(screenModel.state)
         val transitionSettled = rememberNovelDetailTransitionSettled()
-        val cleanupState by screenModel.cleanupState.collectAsState()
+        val cleanupState by screenModel.cleanupState.collectAsStateWithLifecycle()
         val snackbar = remember { SnackbarHostState() }
         val cleanupPrompt = stringResource(R.string.novel_local_cleanup_prompt)
         val cleanupAction = stringResource(R.string.novel_local_cleanup_action)
@@ -254,7 +254,7 @@ class NovelPage(
         }
         val localShelfEntry by remember(authorization, novel.url) {
             BookshelfRepository.observeEntry(authorization, novel.url)
-        }.collectAsState(initial = null)
+        }.collectAsStateWithLifecycle(initialValue = null)
         val detailed = (state as? NovelPageModel.State.Result)?.detailed
         val readingId = detailed?.id()?.takeIf(String::isNotBlank)
             ?: BookshelfRepository.novelIdFor(novel.url)
@@ -262,11 +262,11 @@ class NovelPage(
         val localReading by remember(readingId, readingUrl) {
             PresentationAccess.database.localReadingActivityDao()
                 .observeLatestForIdentity(readingId, readingUrl)
-        }.collectAsState(initial = null)
+        }.collectAsStateWithLifecycle(initialValue = null)
         var downloaded by remember(novel.url) { mutableStateOf<DownloadedNovelManifest?>(null) }
         val downloadChanges by remember(novel.url) {
             PresentationAccess.downloads.observeNovelChanges(novel.url)
-        }.collectAsState(initial = 0L)
+        }.collectAsStateWithLifecycle(initialValue = 0L)
         LaunchedEffect(novel.url, downloadChanges) {
             downloaded = withContext(Dispatchers.IO) {
                 PresentationAccess.downloads.manifest(novel.url)
@@ -279,7 +279,7 @@ class NovelPage(
             mutableStateOf(emptySet<String>())
         }
         val exportModel = rememberAppViewModel { NovelExportModel(context) }
-        val exporting by exportModel.isExporting.collectAsState()
+        val exporting by exportModel.isExporting.collectAsStateWithLifecycle()
         val detailedForExport = (state as? NovelPageModel.State.Result)?.detailed
 
         fun export(uri: Uri?, format: NovelExportFormat) {

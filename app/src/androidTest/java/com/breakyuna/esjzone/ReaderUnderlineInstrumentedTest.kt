@@ -49,6 +49,7 @@ import com.breakyuna.esjzone.util.AppLogger
 import com.breakyuna.esjzone.util.LogLevel
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.isSpecified
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
@@ -130,7 +131,7 @@ class ReaderUnderlineInstrumentedTest {
                 database.cacheDao().putAtomic(key, ReaderUnderlines.encode(listOf(mark)))
             }
             composeRule.setContent {
-                val rows by model.underlines.collectAsState()
+                val rows by model.underlines.collectAsStateWithLifecycle()
                 observed = rows
             }
             composeRule.waitUntil(5_000) { observed["good"] == listOf(mark) }
@@ -156,7 +157,7 @@ class ReaderUnderlineInstrumentedTest {
         val logStart = AppLogger.logsFlow.value.lastOrNull()?.id ?: 0L
         try {
             runBlocking(Dispatchers.IO) { database.cacheDao().putAtomic(key, "null") }
-            composeRule.setContent { model.underlines.collectAsState() }
+            composeRule.setContent { model.underlines.collectAsStateWithLifecycle() }
             composeRule.waitUntil(5_000) {
                 AppLogger.logsFlow.value.any { it.id > logStart && it.level == LogLevel.WARN &&
                     it.tag == "ReaderUnderlinesModel" && it.message.contains("Could not read saved underlines") }

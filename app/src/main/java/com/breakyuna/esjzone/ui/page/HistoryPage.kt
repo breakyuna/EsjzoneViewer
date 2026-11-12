@@ -73,7 +73,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.State
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.Lifecycle
 import androidx.compose.runtime.getValue
@@ -652,7 +651,7 @@ private fun LocalHistoryCard(
     val widthPx = with(LocalDensity.current) { coverWidth.roundToPx() }
     val heightPx = with(LocalDensity.current) { coverHeight.roundToPx() }
     val coverUrl = activity.novelCoverUrl
-    val policy by CoverLoadingPolicy.state.collectAsState()
+    val policy by CoverLoadingPolicy.state.collectAsStateWithLifecycle()
     val page = LocalCoverPage.current
     val allowNetwork = page.isBlank() || policy.allowNetwork(page)
     var cover by remember(model, activity.novelUrl, activity.novelId, coverUrl, widthPx, heightPx) {

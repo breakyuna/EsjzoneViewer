@@ -31,7 +31,7 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -112,8 +112,8 @@ private fun MemberInboxContent(navigator: AppNavigator, initialReplies: Boolean)
     val authorization = LocalAuthorization.current
     val messagesModel = rememberAppViewModel { SystemMessagesPageModel(authorization) }
     val repliesModel = rememberAppViewModel { MemberRepliesPageModel(authorization) }
-    val messages by messagesModel.state.collectAsState()
-    val replyState by repliesModel.state.collectAsState()
+    val messages by messagesModel.state.collectAsStateWithLifecycle()
+    val replyState by repliesModel.state.collectAsStateWithLifecycle()
     var selected by remember { mutableStateOf<MemberReply?>(null) }
     LaunchedEffect(replies) { if (replies) repliesModel.load() else messagesModel.load() }
     selected?.let { reply ->
@@ -153,7 +153,7 @@ object ExperienceRecordsPage : AppDestination {
         val authorization = LocalAuthorization.current
         val model = rememberAppViewModel { ExperienceRecordsPageModel(authorization) }
         val experienceProgress = rememberExperienceProgress()
-        val state by model.state.collectAsState()
+        val state by model.state.collectAsStateWithLifecycle()
         LaunchedEffect(Unit) { model.load() }
         MemberPageScaffold(
             title = stringResource(R.string.member_experience_records),
@@ -223,8 +223,8 @@ private fun rememberExperienceProgress(): Pair<Int?, Int?> {
     val prefix = remember(authorization, domain) { profileCachePrefix(authorization, domain) }
     val expFlow = remember(prefix) { PresentationAccess.database.cacheDao().observeByKey("${prefix}experience") }
     val requiredFlow = remember(prefix) { PresentationAccess.database.cacheDao().observeByKey("${prefix}experienceRequired") }
-    val exp by expFlow.collectAsState(initial = null)
-    val required by requiredFlow.collectAsState(initial = null)
+    val exp by expFlow.collectAsStateWithLifecycle(initialValue = null)
+    val required by requiredFlow.collectAsStateWithLifecycle(initialValue = null)
     LaunchedEffect(authorization) {
         try {
             val fresh = withContext(Dispatchers.IO) { PresentationAccess.client.getUserProfile(authorization) }

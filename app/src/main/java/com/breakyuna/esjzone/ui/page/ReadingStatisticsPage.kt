@@ -62,7 +62,7 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
@@ -148,11 +148,11 @@ object ReadingStatisticsPage : AppDestination {
         val model = rememberAppViewModel { ReadingStatisticsPageModel() }
         val authorization = LocalAuthorization.current
         val coverModel = rememberAppViewModel { LocalHistoryPageModel(authorization) }
-        val coverPolicy by CoverLoadingPolicy.state.collectAsState()
+        val coverPolicy by CoverLoadingPolicy.state.collectAsStateWithLifecycle()
         val coverPage = LocalCoverPage.current
         val allowCoverNetwork = coverPage.isBlank() || coverPolicy.allowNetwork(coverPage)
-        val state by model.state.collectAsState()
-        val incognito by PresentationAccess.settings.readingStatisticsIncognitoFlow.collectAsState()
+        val state by model.state.collectAsStateWithLifecycle()
+        val incognito by PresentationAccess.settings.readingStatisticsIncognitoFlow.collectAsStateWithLifecycle()
         var selectedDate by remember { mutableStateOf(LocalDate.now()) }
         var trendDays by remember { mutableStateOf(7) }
         var trendLineChart by rememberSaveable { mutableStateOf(false) }
