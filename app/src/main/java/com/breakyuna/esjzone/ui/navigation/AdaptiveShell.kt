@@ -1,3 +1,5 @@
+@file:OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+
 package com.breakyuna.esjzone.ui.navigation
 
 import androidx.compose.animation.core.LinearEasing
