@@ -25,6 +25,7 @@ import androidx.compose.ui.text.TextMeasurer
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.repeatOnLifecycle
@@ -233,7 +234,7 @@ internal fun ReaderGlowSurface(
     modifier: Modifier = Modifier,
     content: @Composable BoxScope.() -> Unit
 ) {
-    val reduced by ReaderGlowQuality.reduced.collectAsState()
+    val reduced by ReaderGlowQuality.reduced.collectAsStateWithLifecycle()
     val enabled = background != null && settings.glowEnabled && settings.glowStrength > 0f
     val colors = remember(settings) { readerGlowColors(settings) }
     val sink = remember(background, enabled) { if (enabled) GlowSink() else null }
