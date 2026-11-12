@@ -301,7 +301,9 @@ class NovelDownloadWorker(
             val authorization = EsjzoneClient.restoreAuthorization(host)
                 ?: Authorization("", "", host)
             if (unlockOnly) {
-                val result = preservingSiteView(authorization, novelTitleId("", resolvedUrl), resolvedUrl) {
+                val result = preservingSiteView(authorization, novelTitleId("", resolvedUrl), resolvedUrl, {
+                    NovelDownloadStore.manifest(rawUrl)?.chapters?.filterNot { it.localOnly }?.map { it.url }.orEmpty()
+                }) {
                     kotlinx.coroutines.withContext(Dispatchers.IO) {
                         NovelDownloadStore.unlockChaptersWithCommonPassword(
                             authorization, rawUrl, requireNotNull(selectedChapterUrls), actualBaseUrl,
@@ -329,7 +331,9 @@ class NovelDownloadWorker(
                 baseUrl = actualBaseUrl
             )
             resolvedNovelName = validNovelTitle(detail.name, detail.id(), detail.url)
-            val manifest = preservingSiteView(authorization, novelTitleId("", detail.url), detail.url) {
+            val manifest = preservingSiteView(authorization, novelTitleId("", detail.url), detail.url, {
+                detail.chapterList.orderedChapters.map { it.url }
+            }) {
                 NovelDownloadStore.download(authorization, detail, actualBaseUrl, concurrency,
                     selectedChapterUrls) { next ->
                     publishProgress(next)
@@ -372,14 +376,20 @@ class NovelDownloadWorker(
      * records each of them as the novel's latest view. Put the real reading
      * position back afterwards, also when the download fails or is paused. The
      * reporter is created here when WorkManager resumed the job without the app UI.
+     * When the site had no record of the novel before the job, its first chapter
+     * in [chapterUrls] (table-of-contents order) is requested instead, so the new
+     * record stops at chapter 1.
      */
     private suspend fun <T> preservingSiteView(
         authorization: Authorization,
         novelId: String,
         novelUrl: String,
+        chapterUrls: () -> List<String>,
         block: suspend () -> T
     ): T = com.breakyuna.esjzone.network.features.CloudViewReports.preservingSiteView(
-        applicationContext.filesDir, authorization, novelId, novelUrl, block
+        applicationContext.filesDir, authorization, novelId, novelUrl,
+        { com.breakyuna.esjzone.network.features.firstSiteChapter(authorization.domain.trim(), chapterUrls()) },
+        block
     )
 
     @SuppressLint("MissingPermission")

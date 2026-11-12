@@ -51,8 +51,7 @@ class ReaderSettingsDataStore(
     context: Context,
     private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.IO),
     /** Allows isolated stores in tests; the production default is stable for migration compatibility. */
-    private val dataStoreFileName: String = FILE_NAME,
-    private val appSettings: SettingsDataStore? = null
+    private val dataStoreFileName: String = FILE_NAME
 ) {
     private val dataStore: DataStore<Preferences> = PreferenceDataStoreFactory.create(
         corruptionHandler = ReplaceFileCorruptionHandler { emptyPreferences() },
@@ -115,7 +114,6 @@ class ReaderSettingsDataStore(
         for (key in BACKUP_FLOAT_KEYS) preferences[key]?.let { json.addProperty(key.name, it) }
         for (key in BACKUP_LONG_KEYS) preferences[key]?.let { json.addProperty(key.name, it) }
         for (key in BACKUP_BOOLEAN_KEYS) preferences[key]?.let { json.addProperty(key.name, it) }
-        appSettings?.readUpdateWebsiteHistory()?.let { json.addProperty(WEBSITE_HISTORY.name, it) }
         return json to preferences.toImageBackground()
     }
 
@@ -126,7 +124,8 @@ class ReaderSettingsDataStore(
         read(BACKUP_STRING_KEYS) { require(it.isString); it.asString }
         read(BACKUP_FLOAT_KEYS) { require(it.isNumber); it.asFloat.also { number -> require(number.isFinite()) } }
         read(BACKUP_LONG_KEYS) { require(it.isNumber); it.asString.toLong() }
-        read(BACKUP_BOOLEAN_KEYS + WEBSITE_HISTORY) { require(it.isBoolean); it.asBoolean }
+        // Keys of removed settings (REMOVED_SETTING_KEYS) in older archives are ignored.
+        read(BACKUP_BOOLEAN_KEYS) { require(it.isBoolean); it.asBoolean }
         read(listOf(FIRST_LINE_INDENT_CHARS)) { require(it.isNumber); it.asString.toInt().coerceIn(0, 2) }
         if (!contains(FIRST_LINE_INDENT_CHARS)) {
             // Early v3 ZIP archives used the same boolean key as the old DataStore.
@@ -158,10 +157,6 @@ class ReaderSettingsDataStore(
                 }
             }
         }
-    }
-
-    internal suspend fun restoreWebsiteHistorySetting(backup: Preferences) {
-        backup[WEBSITE_HISTORY]?.let { appSettings?.restoreUpdateWebsiteHistory(it) }
     }
 
     /** Only these fields change, so edits made elsewhere in reading settings survive applying a photo. */
@@ -494,7 +489,6 @@ class ReaderSettingsDataStore(
         val NAME_REPLACE_RULES = stringPreferencesKey("name_replace_rules")
         val TOC_DESCENDING = booleanPreferencesKey("toc_descending")
         val MIGRATION_COMPLETE = booleanPreferencesKey("legacy_reader_settings_migration_complete")
-        val WEBSITE_HISTORY = booleanPreferencesKey("update_website_history")
 
         val BACKUP_STRING_KEYS = listOf(
             BACKGROUND, FONT, SCRIPT, PAGE_ANIMATION, TOOLBAR_ORDER, TOOLBAR_TOOLS, IMAGE_GLOW_MODE, NAME_REPLACE_RULES

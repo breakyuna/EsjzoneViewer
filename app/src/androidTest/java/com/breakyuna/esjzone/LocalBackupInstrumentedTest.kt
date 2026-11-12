@@ -294,7 +294,7 @@ class LocalBackupInstrumentedTest {
         val file = File(files, "reader.zip")
         try {
             val app = SettingsDataStore(context, scope, appFile)
-            val reader = ReaderSettingsDataStore(context, scope, readerFile, app)
+            val reader = ReaderSettingsDataStore(context, scope, readerFile)
             val appearance = ReaderImageBackground(fileName = "${UUID.randomUUID()}.jpg",
                 cropX = 0.25f, cropY = 0.75f, blur = 20f, transparency = 40f, glowEnabled = false)
             val source = requireNotNull(ReaderImageBackgroundStore.file(context, appearance))
@@ -309,14 +309,12 @@ class LocalBackupInstrumentedTest {
             reader.save(settings)
             reader.saveImageBackground(appearance)
             reader.saveNameReplaceSettings(names)
-            app.restoreUpdateWebsiteHistory(false)
             val selected = setOf(BackupCategory.READER_SETTINGS)
             LocalBackup.export(context, Uri.fromFile(file), database, "source", selected, reader)
 
             source.delete()
             reader.save(ReaderSettings())
             reader.saveNameReplaceSettings(ReaderNameReplaceSettings())
-            app.restoreUpdateWebsiteHistory(true)
             app.setAdult(false)
             withTimeout(5_000) { app.adult.first { !it } }
 
@@ -328,7 +326,6 @@ class LocalBackupInstrumentedTest {
             assertEquals(settings.copy(background = ReaderBackground.CUSTOM_IMAGE),
                 withTimeout(5_000) { reader.settings.first { it.fontSizeSp == 24f } })
             assertEquals(names, withTimeout(5_000) { reader.nameReplaceSettings.first { it.enabled } })
-            assertFalse(app.readUpdateWebsiteHistory())
             assertFalse(app.adult.value)
         } finally {
             job.cancelAndJoin()

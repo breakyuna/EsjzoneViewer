@@ -144,14 +144,14 @@ class EsjHtmlCorpusBaselineTest {
 
         val history = fixture("history.html")
         assertEquals(
-            listOf("9060", "9061"),
-            history.select("tr[id^='novel-']").map { it.id().removePrefix("novel-") }
+            listOf("7001", "7002"),
+            history.select("tr[id^='view_']").map { it.id().removePrefix("view_") }
         )
         assertEquals(
             listOf("History Chapter One", "History Chapter Two"),
             history.select(".book-ep a").eachText()
         )
-        assertEquals(listOf("log-1", "log-2"), history.select(".view-del").eachAttr("data-id"))
+        assertEquals(listOf("7001", "7002"), history.select(".view-del").eachAttr("data-id"))
 
         val profile = fixture("profile.html")
         assertEquals("Fixture Profile User", profileName(profile))

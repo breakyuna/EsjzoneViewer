@@ -48,6 +48,25 @@ object SettingsDefaults {
     val VALID_START_TABS: List<String> = listOf("FOLLOW_NAV", "HOME", "BOOKSHELF", "HISTORY", "PROFILE")
 }
 
+/**
+ * Settings that were removed from the app. Their stored values are deleted on
+ * startup and ignored when an old backup contains them.
+ *
+ * `update_website_history` (「更新网站观看记录」): chapter bodies need the login
+ * cookie, so every chapter request updates the site record anyway and the
+ * switch could not keep it unchanged.
+ */
+internal val REMOVED_SETTING_KEYS: List<Preferences.Key<*>> = listOf(
+    booleanPreferencesKey("update_website_history")
+)
+
+internal fun hasRemovedSettings(preferences: Preferences): Boolean =
+    REMOVED_SETTING_KEYS.any { it in preferences }
+
+internal fun removeRemovedSettings(preferences: androidx.datastore.preferences.core.MutablePreferences) {
+    REMOVED_SETTING_KEYS.forEach { preferences.remove(it) }
+}
+
 /** Preferences-backed settings boundary; callers can migrate independently of legacy storage. */
 class SettingsDataStore(
     context: Context,
@@ -83,8 +102,6 @@ class SettingsDataStore(
         .stateIn(scope, SharingStarted.Eagerly, defaults.readingStatisticsIncognito)
     override val readerAutoSave: StateFlow<Boolean> = values.map { it.readerAutoSave }
         .stateIn(scope, SharingStarted.Eagerly, defaults.readerAutoSave)
-    override val updateWebsiteHistory: StateFlow<Boolean> = values.map { it.updateWebsiteHistory }
-        .stateIn(scope, SharingStarted.Eagerly, defaults.updateWebsiteHistory)
     override val downloadConcurrency: StateFlow<Int> = values.map { it.downloadConcurrency }
         .stateIn(scope, SharingStarted.Eagerly, defaults.downloadConcurrency)
     override val bookshelfListView: StateFlow<Boolean> = values.map { it.bookshelfListView }
@@ -123,13 +140,6 @@ class SettingsDataStore(
     override fun setLanguage(value: AppLanguage) = write { it[LANGUAGE] = value.code }
     override fun setReadingStatisticsIncognito(value: Boolean) = write { it[READING_STATISTICS_INCOGNITO] = value }
     override fun setReaderAutoSave(value: Boolean) = write { it[READER_AUTO_SAVE] = value }
-    override fun setUpdateWebsiteHistory(value: Boolean) = write { it[UPDATE_WEBSITE_HISTORY] = value }
-    internal suspend fun readUpdateWebsiteHistory(): Boolean =
-        dataStore.data.first()[UPDATE_WEBSITE_HISTORY] ?: defaults.updateWebsiteHistory
-
-    internal suspend fun restoreUpdateWebsiteHistory(value: Boolean) {
-        dataStore.edit { it[UPDATE_WEBSITE_HISTORY] = value }
-    }
     override fun setDownloadConcurrency(value: Int) = write {
         it[DOWNLOAD_CONCURRENCY] = value.coerceIn(
             SettingsDefaults.MIN_DOWNLOAD_CONCURRENCY,
@@ -167,6 +177,7 @@ class SettingsDataStore(
                 ?.takeIf { it in SettingsDefaults.VALID_START_TABS } ?: defaults.startTab
             preferences[MIGRATION_COMPLETE] = true
         }
+        dropRemovedSettings()
 
         // Remove only the settings rows after the DataStore marker is durable.
         // Session/cookie, profile, search and other cache rows are deliberately
@@ -183,6 +194,14 @@ class SettingsDataStore(
             database.cacheDao().deleteByKey(SettingsDefaults.DOWNLOAD_CONCURRENCY_KEY)
             database.cacheDao().deleteByKey(SettingsDefaults.START_TAB_KEY)
         }
+    }
+
+    /** Deletes stored values of settings that no longer exist; runs on every start and is a no-op once clean. */
+    private suspend fun dropRemovedSettings() {
+        val stored = runCatching { dataStore.data.first() }.getOrNull() ?: return
+        if (!hasRemovedSettings(stored)) return
+        runCatching { dataStore.edit(::removeRemovedSettings) }
+            .onFailure { AppLogger.w("SettingsDataStore", "Unable to drop removed settings", it) }
     }
 
     private fun write(update: suspend (androidx.datastore.preferences.core.MutablePreferences) -> Unit) {
@@ -204,7 +223,6 @@ class SettingsDataStore(
         val language: AppLanguage = AppLanguage.SYSTEM,
         val readingStatisticsIncognito: Boolean = false,
         val readerAutoSave: Boolean = true,
-        val updateWebsiteHistory: Boolean = true,
         val downloadConcurrency: Int = SettingsDefaults.DEFAULT_DOWNLOAD_CONCURRENCY,
         val bookshelfListView: Boolean = false,
         val novelListGridView: Boolean = false,
@@ -222,7 +240,6 @@ class SettingsDataStore(
         language = AppLanguage.fromCode(this[LANGUAGE]),
         readingStatisticsIncognito = this[READING_STATISTICS_INCOGNITO] ?: defaults.readingStatisticsIncognito,
         readerAutoSave = this[READER_AUTO_SAVE] ?: defaults.readerAutoSave,
-        updateWebsiteHistory = this[UPDATE_WEBSITE_HISTORY] ?: defaults.updateWebsiteHistory,
         downloadConcurrency = this[DOWNLOAD_CONCURRENCY]
             ?.coerceIn(SettingsDefaults.MIN_DOWNLOAD_CONCURRENCY, SettingsDefaults.MAX_DOWNLOAD_CONCURRENCY)
             ?: defaults.downloadConcurrency,
@@ -253,7 +270,6 @@ class SettingsDataStore(
         val LANGUAGE = stringPreferencesKey("language")
         val READING_STATISTICS_INCOGNITO = booleanPreferencesKey("reading_statistics_incognito")
         val READER_AUTO_SAVE = booleanPreferencesKey("reader_auto_save")
-        val UPDATE_WEBSITE_HISTORY = booleanPreferencesKey("update_website_history")
         val DOWNLOAD_CONCURRENCY = intPreferencesKey("download_concurrency")
         val BOOKSHELF_LIST_VIEW = booleanPreferencesKey("bookshelf_list_view")
         val NOVEL_LIST_GRID_VIEW = booleanPreferencesKey("novel_list_grid_view")
