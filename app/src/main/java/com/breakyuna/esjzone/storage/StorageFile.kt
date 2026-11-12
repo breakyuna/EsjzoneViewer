@@ -58,6 +58,27 @@ class StorageFile private constructor(
         return true
     }
 
+    /** Private directory-index hints avoid resolving every parent after process restart. */
+    internal fun documentUriHint(): String? = tree?.knownDocument(relative)?.toString()
+
+    internal fun restoreDocumentHint(encoded: String?): Boolean {
+        val owner = tree ?: return false
+        if (encoded == null || relative.isEmpty()) return false
+        return runCatching {
+            val candidate = Uri.parse(encoded)
+            require(candidate.scheme == "content" && candidate.authority == owner.root.authority)
+            require(DocumentsContract.getTreeDocumentId(candidate) == DocumentsContract.getTreeDocumentId(owner.root))
+            val valid = documentAccess {
+                owner.context.contentResolver.query(candidate, arrayOf(DocumentsContract.Document.COLUMN_MIME_TYPE,
+                    DocumentsContract.Document.COLUMN_DISPLAY_NAME), null, null, null)?.use { cursor ->
+                    cursor.moveToFirst() && cursor.getString(0) == DIRECTORY && cursor.getString(1) == name
+                } == true
+            }
+            if (valid) owner.remember(relative, candidate)
+            valid
+        }.getOrDefault(false)
+    }
+
     fun listFiles(): Array<StorageFile>? {
         if (local != null) return local.listFiles()?.map(::StorageFile)?.toTypedArray()
         if (!exists()) return null
@@ -343,6 +364,7 @@ class StorageFile private constructor(
             ?: DocumentsContract.getTreeDocumentId(root).substringAfterLast('/').substringAfter(':')
         init { documents[""] = DocumentsContract.buildDocumentUriUsingTree(root, DocumentsContract.getTreeDocumentId(root)) }
         data class Metadata(val type: String, val size: Long, val displayName: String)
+        fun knownDocument(path: String): Uri? = documents[path]
         fun remember(path: String, uri: Uri) {
             documents[path] = uri
             if (path.isNotEmpty()) {

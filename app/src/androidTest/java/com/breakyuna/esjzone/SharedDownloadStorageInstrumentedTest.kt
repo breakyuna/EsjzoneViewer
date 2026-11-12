@@ -39,6 +39,26 @@ class SharedDownloadStorageInstrumentedTest {
         })
     }
 
+    @Test fun directoryHintsRestoreOpaqueUrisAndRejectRenamedOrForeignDocuments() {
+        val directory = StorageFile(StorageFile.fromTree(context, treeUri), "case-${UUID.randomUUID()}")
+            .apply { check(mkdirs()) }
+        try {
+            val encoded = requireNotNull(directory.documentUriHint())
+            val fresh = StorageFile(StorageFile.fromTree(context, treeUri), directory.name)
+            assertNull(fresh.documentUriHint())
+            assertTrue(fresh.restoreDocumentHint(encoded))
+            assertEquals(encoded, fresh.documentUriHint())
+            val foreignTree = DocumentsContract.buildTreeDocumentUri("other.provider", "root")
+            assertFalse(fresh.restoreDocumentHint(foreignTree.toString()))
+            val renamed = StorageFile(checkNotNull(directory.parentFile), "case-${UUID.randomUUID()}")
+            check(directory.renameTo(renamed))
+            try {
+                val restarted = StorageFile(StorageFile.fromTree(context, treeUri), directory.name)
+                assertFalse(restarted.restoreDocumentHint(encoded))
+            } finally { renamed.deleteRecursively() }
+        } finally { directory.deleteRecursively() }
+    }
+
     @Test fun failedRestoreCleanupCannotReselectRetiredCopiesAfterRestartOrMigration() = kotlinx.coroutines.runBlocking {
         for (commit in listOf(true, false)) {
             val incoming = File(context.cacheDir, "restore-incoming-${UUID.randomUUID()}").apply { mkdirs() }

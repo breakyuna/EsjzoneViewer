@@ -153,6 +153,37 @@ class LocalHistoryLoadingTest {
         }
     }
 
+    @Test fun readerStartupDefersStorageButKeepsHistoryLive() = runBlocking {
+        withTimeout(5_000) {
+            val row = activity("first")
+            val rows = MutableStateFlow(listOf(row))
+            val allowed = MutableStateFlow(false)
+            val results = Channel<List<LocalReadingActivity>>(Channel.UNLIMITED)
+            val entered = Channel<List<LocalReadingActivity>>(Channel.UNLIMITED)
+            val job = launch {
+                collectLocalHistory(rows, MutableStateFlow(0L),
+                    refreshProgress = { snapshot ->
+                        entered.send(snapshot)
+                        snapshot.map { it.copy(totalChapters = 20) }
+                    },
+                    onResult = { results.trySend(it) },
+                    onProgressFailure = { throw AssertionError(it) },
+                    storageWorkAllowed = allowed)
+            }
+            try {
+                assertEquals(listOf(row), results.receive())
+                allowed.subscriptionCount.first { it > 0 }
+                assertTrue(entered.tryReceive().isFailure)
+                val newest = row.copy(lastReadAt = 2L, chapterProgress = 0.75f)
+                rows.value = listOf(newest)
+                assertEquals(listOf(newest), results.receive())
+                allowed.value = true
+                assertEquals(listOf(newest), entered.receive())
+                assertEquals(listOf(newest.copy(totalChapters = 20)), results.receive())
+            } finally { job.cancelAndJoin() }
+        }
+    }
+
     private fun activity(id: String) = LocalReadingActivity(
         activityId = id, novelId = id, novelName = "Novel", novelUrl = "/detail/$id.html",
         chapterUrl = "/forum/$id/chapter.html", chapterName = "Chapter",

@@ -196,42 +196,47 @@ fun AdaptiveAppShell(
     var bookshelfReselectRequest by remember { mutableIntStateOf(0) }
     var autoResumeHandled by rememberSaveable { mutableStateOf(false) }
 
+    val autoResumeDecisionFinished = LocalAutoResumeDecisionFinished.current
     LaunchedEffect(Unit) {
-        if (!autoResumeHandled) {
-            autoResumeHandled = true
-            if (PresentationAccess.readerSettings.settings.value.autoResumeLastReading) {
-                try {
-                    val latest = withContext(Dispatchers.IO) {
-                        PresentationAccess.database.localReadingActivityDao().getLatest()
+        try {
+            if (!autoResumeHandled) {
+                autoResumeHandled = true
+                if (PresentationAccess.readerSettings.settings.value.autoResumeLastReading) {
+                    try {
+                        val latest = withContext(Dispatchers.IO) {
+                            PresentationAccess.database.localReadingActivityDao().getLatest()
+                        }
+                        if (latest != null) {
+                            selectedTab = defaultTabId.name
+                            val defaultNavigator = when (defaultTabId) {
+                                AppTabId.HOME -> homeNavigator
+                                AppTabId.HISTORY -> historyNavigator
+                                AppTabId.BOOKSHELF -> bookshelfNavigator
+                                AppTabId.PROFILE -> profileNavigator
+                            }
+                            val defaultStack = when (defaultTabId) {
+                                AppTabId.HOME -> homeStack
+                                AppTabId.HISTORY -> historyStack
+                                AppTabId.BOOKSHELF -> bookshelfStack
+                                AppTabId.PROFILE -> profileStack
+                            }
+                            if (defaultStack.size <= 1) {
+                                HistoryTab.openLocalActivity(defaultNavigator, latest)
+                            }
+                        }
+                    } catch (e: kotlinx.coroutines.CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        com.breakyuna.esjzone.util.AppLogger.e(
+                            "AdaptiveShell",
+                            "Failed to auto resume latest reading",
+                            e
+                        )
                     }
-                    if (latest != null) {
-                        selectedTab = defaultTabId.name
-                        val defaultNavigator = when (defaultTabId) {
-                            AppTabId.HOME -> homeNavigator
-                            AppTabId.HISTORY -> historyNavigator
-                            AppTabId.BOOKSHELF -> bookshelfNavigator
-                            AppTabId.PROFILE -> profileNavigator
-                        }
-                        val defaultStack = when (defaultTabId) {
-                            AppTabId.HOME -> homeStack
-                            AppTabId.HISTORY -> historyStack
-                            AppTabId.BOOKSHELF -> bookshelfStack
-                            AppTabId.PROFILE -> profileStack
-                        }
-                        if (defaultStack.size <= 1) {
-                            HistoryTab.openLocalActivity(defaultNavigator, latest)
-                        }
-                    }
-                } catch (e: kotlinx.coroutines.CancellationException) {
-                    throw e
-                } catch (e: Exception) {
-                    com.breakyuna.esjzone.util.AppLogger.e(
-                        "AdaptiveShell",
-                        "Failed to auto resume latest reading",
-                        e
-                    )
                 }
             }
+        } finally {
+            autoResumeDecisionFinished()
         }
     }
 

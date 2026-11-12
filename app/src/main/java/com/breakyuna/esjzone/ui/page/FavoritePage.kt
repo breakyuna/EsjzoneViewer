@@ -43,7 +43,6 @@ import androidx.compose.material.icons.filled.Done
 import androidx.compose.material.icons.filled.QueryStats
 import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.SelectAll
-import androidx.compose.material.icons.filled.Sort
 import androidx.compose.material.icons.filled.ViewList
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Search
@@ -59,8 +58,6 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -226,7 +223,7 @@ object FavoritePage : AppDestination {
         var query by rememberSaveable { mutableStateOf("") }
         var focusSearch by remember { mutableStateOf(false) }
         val searchFocus = remember { FocusRequester() }
-        val searchIndex by model.searchIndex.collectAsStateWithLifecycle()
+        val searchIndex = if (searchOpen) model.searchIndex.collectAsStateWithLifecycle().value else emptyMap()
         val searchTerms = remember(query) { BookshelfSearch.terms(query) }
         val searching = searchOpen && searchTerms.isNotEmpty()
         val settings = PresentationAccess.settings
@@ -238,7 +235,6 @@ object FavoritePage : AppDestination {
         var showDeleteDialog by remember { mutableStateOf(false) }
         var showLegacyRecoveryDialog by remember { mutableStateOf(false) }
         var showSyncStatusMenu by remember { mutableStateOf(false) }
-        var showSortMenu by remember { mutableStateOf(false) }
         var showShelfOptions by rememberSaveable { mutableStateOf(false) }
         var optionsTab by rememberSaveable { mutableStateOf(0) }
         var reverseSort by rememberSaveable { mutableStateOf(false) }
@@ -282,7 +278,6 @@ object FavoritePage : AppDestination {
                 if (event == Lifecycle.Event.ON_PAUSE || event == Lifecycle.Event.ON_STOP) {
                     snackbar.currentSnackbarData?.dismiss()
                     showSyncStatusMenu = false
-                    showSortMenu = false
                 }
             }
             lifecycleOwner.lifecycle.addObserver(observer)
@@ -290,7 +285,6 @@ object FavoritePage : AppDestination {
                 lifecycleOwner.lifecycle.removeObserver(observer)
                 snackbar.currentSnackbarData?.dismiss()
                 showSyncStatusMenu = false
-                showSortMenu = false
             }
         }
 
@@ -735,73 +729,6 @@ object FavoritePage : AppDestination {
                                             onSelect = { activeGroup = it },
                                             onManage = { model.clearGroupResult(); groupDialog = ShelfGroupDialog.MANAGE }
                                         )
-                                    }
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        Row(
-                                            modifier = Modifier.weight(1f),
-                                            verticalAlignment = Alignment.CenterVertically,
-                                            horizontalArrangement = Arrangement.spacedBy(AppSpacing.xs)
-                                        ) {
-                                            Text(
-                                                stringResource(R.string.bookshelf_count, visible.size),
-                                                style = AppTypography.bodyMedium,
-                                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                                            )
-                                        }
-                                        FilterChip(
-                                            selected = activeFilter == BookshelfFilter.DOWNLOADED,
-                                            enabled = !editing,
-                                            onClick = {
-                                                activeFilter = if (activeFilter == BookshelfFilter.DOWNLOADED) {
-                                                    BookshelfFilter.ALL
-                                                } else {
-                                                    BookshelfFilter.DOWNLOADED
-                                                }
-                                            },
-                                            label = { Text(stringResource(R.string.bookshelf_filter_downloaded)) }
-                                        )
-                                        FilterChip(
-                                            selected = activeFilter == BookshelfFilter.UPDATES,
-                                            enabled = !editing,
-                                            onClick = {
-                                                activeFilter = if (activeFilter == BookshelfFilter.UPDATES) {
-                                                    BookshelfFilter.ALL
-                                                } else {
-                                                    BookshelfFilter.UPDATES
-                                                }
-                                            },
-                                            label = { Text(stringResource(R.string.bookshelf_filter_updates)) },
-                                            modifier = Modifier.padding(start = AppSpacing.sm)
-                                        )
-                                        Box {
-                                            IconButton(
-                                                onClick = { showSortMenu = true },
-                                                modifier = Modifier.size(40.dp)
-                                            ) {
-                                                Icon(
-                                                    Icons.Filled.Sort,
-                                                    contentDescription = stringResource(R.string.bookshelf_sort)
-                                                )
-                                            }
-                                            DropdownMenu(
-                                                expanded = showSortMenu,
-                                                onDismissRequest = { showSortMenu = false }
-                                            ) {
-                                                BookshelfSort.Order.values().forEach { order ->
-                                                    DropdownMenuItem(
-                                                        text = { Text(stringResource(order.labelRes())) },
-                                                        onClick = {
-                                                            activeSort = order
-                                                            sortByName = false
-                                                            showSortMenu = false
-                                                        },
-                                                        leadingIcon = {
-                                                            if (!sortByName && activeSort == order) Icon(Icons.Filled.Check, null)
-                                                        }
-                                                    )
-                                                }
-                                            }
-                                        }
                                     }
                                     if (!editing && legacyBookshelfCount > 0) {
                                         Surface(

@@ -1078,7 +1078,8 @@ class ChapterPage(
         var progressTextIndex by remember(novelUrl, novelId, bookChapterOrder) {
             mutableStateOf<BookTextProgressIndex?>(null)
         }
-        LaunchedEffect(downloadChanges, novelUrl, novelId, bookChapterOrder) {
+        LaunchedEffect(downloadChanges, novelUrl, novelId, bookChapterOrder, entryContentRevealed) {
+            if (!entryContentRevealed || bookChapterOrder.isEmpty()) return@LaunchedEffect
             progressTextIndex = withContext(Dispatchers.IO) {
                 val url = novelUrl.ifBlank { novelId.takeIf(String::isNotBlank)?.let { EsjzoneUrls.resolve("/detail/$it.html") }.orEmpty() }
                 PresentationAccess.downloads.manifest(url)?.textProgressIndex(bookChapterOrder.map { it.url })
@@ -1585,16 +1586,20 @@ class ChapterPage(
             val startIndex = firstItemByChapter[chapterIdentity(target.chapter)] ?: return@LaunchedEffect
             positionRestoreFailed = false
             isProgrammaticScroll = true
+            val restoreStarted = System.nanoTime()
+            var restoreStatus = "cancelled"
             val restored = try {
                 restoreChapterPosition(
                     target, startIndex, displayItems, pagedMode, scrollState, horizontalPagerState,
                     readerBodyStartOffset, textLayouts, identityOffsets, ::textOffsets
                 ).also {
+                    restoreStatus = if (it) "restored" else "failed"
                     // Keep the intermediate offset hidden through the final measure.
                     if (it && resumePending) withFrameNanos { }
                 }
             } finally {
                 isProgrammaticScroll = false
+                AppLogger.i("ReaderTiming", "positionMs=${(System.nanoTime() - restoreStarted) / 1_000_000} status=$restoreStatus")
             }
             if (!restored) {
                 AppLogger.w("ChapterPage", "Position restoration failed; retaining saved position for retry")
@@ -1723,6 +1728,15 @@ class ChapterPage(
         // A password form must be usable without consuming the saved anchor. Hide
         // the body again when unlocking starts its deferred exact restoration.
         val entryCoverVisible = !entryContentRevealed || positionRestoreFailed || (result != null && resumePositioning)
+        val onEntryReady = com.breakyuna.esjzone.ui.navigation.LocalReaderEntryReady.current
+        LaunchedEffect(entryCoverVisible, positionRestoreFailed) {
+            if (!entryCoverVisible || positionRestoreFailed) {
+                withFrameNanos { }
+                AppLogger.i("ReaderTiming", "entryReadyMs=${(System.nanoTime() - firstContentStarted) / 1_000_000} " +
+                    "positionFailed=$positionRestoreFailed")
+                onEntryReady()
+            }
+        }
         val readerInteractionEnabled = !entryCoverVisible && readerResumed && visiblePaginationReady && (!pagedMode || pagerLayoutReady) &&
             state is ChapterPageModel.State.Result &&
             !showReaderSettings && !showReaderContents && !readerDialogVisible

@@ -6,6 +6,7 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.collectLatest
@@ -20,7 +21,8 @@ internal suspend fun collectLocalHistory(
     downloadChanges: Flow<Long>,
     refreshProgress: suspend (List<LocalReadingActivity>) -> List<LocalReadingActivity>,
     onResult: (List<LocalReadingActivity>) -> Unit,
-    onProgressFailure: (Exception) -> Unit
+    onProgressFailure: (Exception) -> Unit,
+    storageWorkAllowed: Flow<Boolean> = flowOf(true)
 ) = coroutineScope {
     val latestRows = MutableStateFlow<List<LocalReadingActivity>?>(null)
     val publicationLock = Any()
@@ -32,10 +34,10 @@ internal suspend fun collectLocalHistory(
             }
         }
     }
-    latestRows.filterNotNull().combine(downloadChanges) { rows, _ -> rows }
-        .collectLatest { rows ->
+    combine(latestRows.filterNotNull(), downloadChanges, storageWorkAllowed) { rows, _, allowed -> rows to allowed }
+        .collectLatest { (rows, allowed) ->
             // Empty history needs no storage access, even while an older scan is finishing.
-            if (rows.isEmpty()) return@collectLatest
+            if (!allowed || rows.isEmpty() || latestRows.value !== rows) return@collectLatest
             try {
                 val refreshed = refreshProgress(rows)
                 currentCoroutineContext().ensureActive()

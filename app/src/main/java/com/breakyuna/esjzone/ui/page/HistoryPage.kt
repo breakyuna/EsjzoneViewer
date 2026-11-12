@@ -1052,6 +1052,7 @@ class LocalHistoryPageModel(private val authorization: Authorization) : AppState
                 collectLocalHistory(
                     activities = PresentationAccess.database.localReadingActivityDao().observeAll(),
                     downloadChanges = PresentationAccess.downloads.changes,
+                    storageWorkAllowed = com.breakyuna.esjzone.app.ReaderStartupWork.allowed,
                     refreshProgress = { rows ->
                         withContext(Dispatchers.IO) {
                             rows.map { activity ->

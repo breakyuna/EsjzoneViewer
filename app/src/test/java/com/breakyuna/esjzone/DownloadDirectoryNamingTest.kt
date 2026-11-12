@@ -86,6 +86,44 @@ class DownloadDirectoryNamingTest {
         }
     }
 
+    @Test fun coldChapterReadUsesItsHintWithoutOpeningUnrelatedManifests() {
+        val parent = Files.createTempDirectory("download-hints-").toFile()
+        val root = File(parent, "books").apply { mkdirs() }
+        val other = File(parent, "other").apply { mkdirs() }
+        val hints = File(parent, "directory-index.json")
+        try {
+            NovelDownloadStore.initializeDirectory(root, hints)
+            save("当前作品", 81001)
+            // A newly added malformed directory must not participate in a known book's resume.
+            File(root, "unrelated").apply { mkdirs() }.resolve("manifest.json")
+                .writeText("""{"version":99,"url":"/detail/81002.html"}""")
+            NovelDownloadStore.initializeDirectory(other)
+            NovelDownloadStore.initializeDirectory(root, hints)
+            assertEquals("正文 81001", NovelDownloadStore.readChapter(chapter(81001).url)!!
+                .content.filterIsInstance<TextComponent>().single().text)
+        } finally { parent.deleteRecursively() }
+    }
+
+    @Test fun coldHintCannotSelectAnotherBookAfterFoldersAreRenamedAndReused() {
+        val parent = Files.createTempDirectory("download-reused-hints-").toFile()
+        val root = File(parent, "books").apply { mkdirs() }
+        val other = File(parent, "other").apply { mkdirs() }
+        val hints = File(parent, "directory-index.json")
+        try {
+            NovelDownloadStore.initializeDirectory(root, hints)
+            save("原目录", 81001)
+            save("另一本", 81002)
+            check(File(root, "原目录").renameTo(File(root, "已移动")))
+            check(File(root, "另一本").renameTo(File(root, "原目录")))
+            NovelDownloadStore.initializeDirectory(other)
+            NovelDownloadStore.initializeDirectory(root, hints)
+            for (id in 81001..81002) assertEquals("正文 $id",
+                NovelDownloadStore.readChapter(chapter(id).url)!!
+                    .content.filterIsInstance<TextComponent>().single().text)
+            assertEquals(2, NovelDownloadStore.listDownloadedMetadata().size)
+        } finally { parent.deleteRecursively() }
+    }
+
     @Test fun legacyHashFoldersBecomeReadableWithoutChangingChapterFiles() = withStorage { root ->
         val manifest = save("旧下载书名", 81001)
         val chapterFile = manifest.chapters.single().fileName

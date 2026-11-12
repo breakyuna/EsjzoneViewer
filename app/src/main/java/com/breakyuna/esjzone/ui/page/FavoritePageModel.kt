@@ -25,6 +25,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.channelFlow
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.buffer
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.ensureActive
@@ -120,21 +121,24 @@ class FavoritePageModel(private val authorization: Authorization) :
             }
 
     /** Tags saved in local download manifests; never reaches the network. */
-    private val downloadedTags: Flow<Map<String, List<String>>> =
-        PresentationAccess.downloads.changes
-            .map {
-                try {
-                    PresentationAccess.downloads.listDownloadedMetadata().associate { summary ->
-                        BookshelfSearch.tagKey("", summary.novelUrl) to summary.manifest.tags
-                    }
-                } catch (error: CancellationException) {
-                    throw error
-                } catch (error: Exception) {
-                    AppLogger.w("FavoritePageModel", "Download tags are unavailable for bookshelf search", error)
-                    emptyMap()
-                }
+    private val downloadedTags: Flow<Map<String, List<String>>> = channelFlow {
+        PresentationAccess.downloads.changes.combine(com.breakyuna.esjzone.app.ReaderStartupWork.allowed) {
+            revision, allowed -> revision to allowed
+        }.collectLatest { (_, allowed) ->
+            if (!allowed) return@collectLatest
+            try {
+                val context = kotlinx.coroutines.currentCoroutineContext()
+                send(PresentationAccess.downloads.listDownloadedMetadata { context.ensureActive() }.associate { summary ->
+                    BookshelfSearch.tagKey("", summary.novelUrl) to summary.manifest.tags
+                })
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                AppLogger.w("FavoritePageModel", "Download tags are unavailable for bookshelf search", error)
+                send(emptyMap())
             }
-            .flowOn(Dispatchers.IO)
+        }
+    }.flowOn(Dispatchers.IO)
 
     /** Normalized title/author/tag keys, built off the main thread from local data only. */
     internal val searchIndex: StateFlow<Map<String, BookshelfSearch.Key>> =
@@ -142,7 +146,7 @@ class FavoritePageModel(private val authorization: Authorization) :
             BookshelfSearch.index(rows.orEmpty(), tags = BookshelfSearch.mergeTags(cached, downloaded))
         }
         .flowOn(Dispatchers.Default)
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(0), emptyMap())
 
     /** Latest local activity for the showcase, grid progress labels, and reactive ordering. */
     data class ReadingIndex(
@@ -173,6 +177,7 @@ class FavoritePageModel(private val authorization: Authorization) :
             collectLocalHistory(
                 activities = PresentationAccess.database.localReadingActivityDao().observeAll(),
                 downloadChanges = PresentationAccess.downloads.changes,
+                storageWorkAllowed = com.breakyuna.esjzone.app.ReaderStartupWork.allowed,
                 refreshProgress = { rows ->
                     rows.map {
                         kotlinx.coroutines.currentCoroutineContext().ensureActive()
@@ -226,11 +231,14 @@ class FavoritePageModel(private val authorization: Authorization) :
         if (isRefreshingDownloaded.getAndSet(true)) return
         viewModelScope.launch(Dispatchers.IO) {
             try {
-                _downloadedBookKeys.value = PresentationAccess.downloads.downloadedNovelUrls()
-                    .mapTo(LinkedHashSet()) { url ->
-                        BookshelfRepository.keyFor(url)
-                            .ifBlank { EsjzoneUrls.canonicalPageKey(url) }
-                    }
+                _downloadedBookKeys.value = com.breakyuna.esjzone.app.ReaderStartupWork.runWhenAllowed {
+                    val context = kotlinx.coroutines.currentCoroutineContext()
+                    PresentationAccess.downloads.listDownloadedMetadata { context.ensureActive() }
+                        .mapTo(LinkedHashSet()) { summary ->
+                            BookshelfRepository.keyFor(summary.novelUrl)
+                                .ifBlank { EsjzoneUrls.canonicalPageKey(summary.novelUrl) }
+                        }
+                }
                 _downloadStorageUnavailable.value = false
             } catch (error: CancellationException) {
                 throw error

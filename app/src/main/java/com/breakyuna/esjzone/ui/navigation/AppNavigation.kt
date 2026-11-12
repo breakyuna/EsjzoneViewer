@@ -15,6 +15,7 @@ import com.breakyuna.esjzone.ui.designsystem.AppMotion
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.LaunchedEffect
@@ -202,6 +203,8 @@ private fun readerRouteFromToken(token: String): ReaderRoute {
 
 /** Actual Navigation 3 entry lifecycle, including disabled/interrupted animations. */
 internal val LocalReaderNavigationSettled = compositionLocalOf { true }
+internal val LocalAutoResumeDecisionFinished = compositionLocalOf<() -> Unit> { {} }
+internal val LocalReaderEntryReady = compositionLocalOf<() -> Unit> { {} }
 
 @Composable
 internal fun ReaderDestinationContent(navigator: AppNavigator, route: ReaderRoute) {
@@ -619,6 +622,15 @@ fun AppNavigation() {
         sessionRestored = true
         com.breakyuna.esjzone.util.AppLogger.i("Startup", "Root session restored")
     }
+    // Decide auto-resume before allowing process-wide scans to acquire the reader's storage lock.
+    var autoResumePending by remember {
+        mutableStateOf(backStack.lastOrNull() == AppNavKey.Loading &&
+            PresentationAccess.readerSettings.settings.value.autoResumeLastReading)
+    }
+    var readyReader by remember { mutableStateOf<AppNavKey.Reader?>(null) }
+    val currentEntry = backStack.lastOrNull()
+    val maintenanceAllowed = !autoResumePending && currentEntry != AppNavKey.Loading &&
+        currentEntry != AppNavKey.Login && (currentEntry !is AppNavKey.Reader || readyReader == currentEntry)
     val storageLocation by PresentationAccess.storage.location.collectAsState()
     val storageSetupModel = rememberAppViewModel { StorageLocationModel() }
     val storageSetupState by storageSetupModel.state.collectAsState()
@@ -628,6 +640,9 @@ fun AppNavigation() {
     val requiresStorageSetup = needsStorageSetup(backStack.lastOrNull(), authorization, storageLocation)
     val showStorageSetup = requiresStorageSetup || storageSetupPending ||
         storageSetupState.busy
+    androidx.compose.runtime.SideEffect {
+        com.breakyuna.esjzone.app.ReaderStartupWork.setAllowed(maintenanceAllowed && !showStorageSetup && sessionRestored && authorization != null)
+    }
     LaunchedEffect(requiresStorageSetup) {
         if (requiresStorageSetup) {
             storageSetupPending = true
@@ -635,13 +650,16 @@ fun AppNavigation() {
             PresentationAccess.storage.prepareSetup(restoredSession = true)
         }
     }
-    LaunchedEffect(authorization, storageLocation, showStorageSetup) {
+    var completedTitleRepair by remember(authorization, storageLocation) { mutableStateOf<Long?>(null) }
+    LaunchedEffect(authorization, storageLocation, showStorageSetup, maintenanceAllowed) {
         val session = authorization ?: return@LaunchedEffect
-        if (showStorageSetup) return@LaunchedEffect
+        if (showStorageSetup || !maintenanceAllowed) return@LaunchedEffect
         // StateFlow conflates requests during a pass instead of cancelling and restarting its scan.
-        com.breakyuna.esjzone.database.NovelTitleRepository.repairRequests.collect {
+        com.breakyuna.esjzone.database.NovelTitleRepository.repairRequests.collect { request ->
+            if (completedTitleRepair == request) return@collect
             try {
                 com.breakyuna.esjzone.database.NovelTitleRepository.repairAll(session)
+                completedTitleRepair = request
             } catch (error: kotlinx.coroutines.CancellationException) {
                 throw error
             } catch (error: Exception) {
@@ -693,6 +711,7 @@ fun AppNavigation() {
     CompositionLocalProvider(
         // Root-level entries (especially Reader) must see the same session as
         // Main. Reader itself is guarded below when no persisted session exists.
+        LocalAutoResumeDecisionFinished provides { autoResumePending = false },
         LocalAuthorization provides (authorization ?: Authorization("", ""))
     ) {
         androidx.compose.material3.Surface(
@@ -741,6 +760,10 @@ fun AppNavigation() {
                         }
                     }
                     entry<AppNavKey.Reader> { key ->
+                        DisposableEffect(key) {
+                            readyReader = null
+                            onDispose { if (readyReader == key) readyReader = null }
+                        }
                         // Reader presentation remains untouched in this stage;
                         // ChapterPage is the independent shell boundary.
                         val session = authorization
@@ -752,6 +775,7 @@ fun AppNavigation() {
                             val transition = androidx.navigation3.ui.LocalNavAnimatedContentScope.current.transition
                             CompositionLocalProvider(
                                 LocalAuthorization provides session,
+                                LocalReaderEntryReady provides { readyReader = key },
                                 LocalReaderNavigationSettled provides (!transition.isRunning &&
                                     transition.currentState == androidx.compose.animation.EnterExitState.Visible &&
                                     transition.targetState == androidx.compose.animation.EnterExitState.Visible)

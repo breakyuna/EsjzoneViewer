@@ -36,19 +36,23 @@ object NovelTitleRepository {
             if (knownTitle.isNotBlank()) return@withContext knownTitle
             val database = PresentationAccess.database
             val history = database.localReadingActivityDao().getLatestForIdentity(id, EsjzoneUrls.resolve(url))
-            val candidates = listOf(name,
-                history?.let { validNovelTitle(it.novelName, id, url, it.chapterName) }.orEmpty(),
-                PresentationAccess.downloads.manifest(url)?.name.orEmpty()) +
-                database.bookshelfDao().forNovel(id, BookshelfRepository.keyFor(url)).map { it.title } +
-                database.bookmarkDao().forNovel(id).map { validNovelTitle(it.novelName, id, url, it.chapterName) } +
-                database.readingStatDao().forBook(readingStatisticsBookKey(id, url)).map { it.bookName }
-            var title = candidates.firstNotNullOfOrNull { validNovelTitle(it, id, url).takeIf(String::isNotBlank) }.orEmpty()
-            if (title.isBlank() && authorization != null) {
-                title = validNovelTitle(cancellablePageRequest {
-                    PresentationAccess.client.getNovelDetail(authorization, FavoriteNovel("", url))
-                }.name, id, url)
-            }
-            title
+            history?.let { validNovelTitle(it.novelName, id, url, it.chapterName) }
+                ?.takeIf(String::isNotBlank)?.let { return@withContext it }
+            validNovelTitle(PresentationAccess.downloads.manifest(url)?.name.orEmpty(), id, url)
+                .takeIf(String::isNotBlank)?.let { return@withContext it }
+            database.bookshelfDao().forNovel(id, BookshelfRepository.keyFor(url))
+                .firstNotNullOfOrNull { validNovelTitle(it.title, id, url).takeIf(String::isNotBlank) }
+                ?.let { return@withContext it }
+            database.bookmarkDao().forNovel(id)
+                .firstNotNullOfOrNull { validNovelTitle(it.novelName, id, url, it.chapterName).takeIf(String::isNotBlank) }
+                ?.let { return@withContext it }
+            database.readingStatDao().forBook(readingStatisticsBookKey(id, url))
+                .firstNotNullOfOrNull { validNovelTitle(it.bookName, id, url).takeIf(String::isNotBlank) }
+                ?.let { return@withContext it }
+            if (authorization == null) return@withContext ""
+            validNovelTitle(cancellablePageRequest {
+                PresentationAccess.client.getNovelDetail(authorization, FavoriteNovel("", url))
+            }.name, id, url)
         }
 
     suspend fun repair(novelId: String, novelUrl: String, name: String) = withContext(Dispatchers.IO) {
@@ -96,6 +100,8 @@ object NovelTitleRepository {
     /** Run after session/storage restoration and backup import, including books not opened again. */
     suspend fun repairAll(authorization: Authorization) = withContext(Dispatchers.IO) {
         val database = PresentationAccess.database
+        val context = kotlinx.coroutines.currentCoroutineContext()
+        context.ensureActive()
         val records = buildList {
             database.localReadingActivityDao().titleRepairCandidates().forEach {
                 val id = novelTitleId(it.novelId, it.novelUrl).ifBlank { novelTitleId(novelUrl = it.chapterUrl) }
@@ -114,7 +120,7 @@ object NovelTitleRepository {
             database.bookshelfDao().titleRepairCandidates().forEach {
                 add(StoredTitle(novelTitleId(it.novelId, it.url), it.url, validNovelTitle(it.title, it.novelId, it.url)))
             }
-            PresentationAccess.downloads.listDownloadedMetadata().filter {
+            PresentationAccess.downloads.listDownloadedMetadata { context.ensureActive() }.filter {
                 validNovelTitle(it.novelName, novelUrl = it.novelUrl).isBlank()
             }.forEach {
                 add(StoredTitle(novelTitleId(novelUrl = it.novelUrl), it.novelUrl,

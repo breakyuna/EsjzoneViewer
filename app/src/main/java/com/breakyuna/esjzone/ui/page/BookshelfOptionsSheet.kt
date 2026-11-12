@@ -2,6 +2,8 @@
 
 package com.breakyuna.esjzone.ui.page
 
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.layout.*
@@ -9,6 +11,9 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.Role
@@ -19,6 +24,7 @@ import com.breakyuna.esjzone.ui.designsystem.AppSpacing
 import com.breakyuna.esjzone.ui.designsystem.GlobalText as Text
 import com.breakyuna.esjzone.ui.designsystem.globalStringResource as stringResource
 import kotlin.math.roundToInt
+import kotlinx.coroutines.launch
 
 @Composable
 internal fun BookshelfOptionsSheet(
@@ -31,40 +37,48 @@ internal fun BookshelfOptionsSheet(
     showRecent: Boolean, onShowRecent: (Boolean) -> Unit,
     onDismiss: () -> Unit
 ) {
+    val pager = rememberPagerState(initialPage = selectedTab, pageCount = { 3 })
+    val scope = rememberCoroutineScope()
+    LaunchedEffect(pager) {
+        snapshotFlow { pager.settledPage }.collect { onTabChange(it) }
+    }
+
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
-        PrimaryTabRow(selectedTabIndex = selectedTab) {
+        PrimaryTabRow(selectedTabIndex = pager.currentPage) {
             listOf(R.string.shelf_options_filter, R.string.bookshelf_sort, R.string.shelf_options_display).forEachIndexed { index, title ->
-                Tab(selected = selectedTab == index, onClick = { onTabChange(index) }, text = { Text(stringResource(title)) })
+                Tab(selected = pager.currentPage == index, onClick = { scope.launch { pager.animateScrollToPage(index) } }, text = { Text(stringResource(title)) })
             }
         }
-        Column(Modifier.fillMaxWidth().heightIn(max = 560.dp).verticalScroll(rememberScrollState())
-            .padding(horizontal = AppSpacing.lg, vertical = AppSpacing.md)) {
-            when (selectedTab) {
-                0 -> {
-                    val labels = listOf(R.string.shelf_filter_all, R.string.bookshelf_filter_downloaded,
-                        R.string.bookshelf_filter_updates, R.string.bookshelf_unread, R.string.shelf_filter_read)
-                    BookshelfFilter.entries.forEachIndexed { index, value ->
-                        OptionRow(stringResource(labels[index]), filter == value) { onFilter(value) }
-                    }
-                }
-                1 -> {
-                    OptionRow(stringResource(R.string.shelf_sort_name), byName, onSortByName)
-                    BookshelfSort.Order.entries.forEach { value ->
-                        OptionRow(stringResource(value.labelRes()), !byName && sort == value) { onSort(value) }
-                    }
-                    ToggleRow(stringResource(R.string.shelf_sort_reverse), reversed, onReverse)
-                }
-                2 -> {
-                    OptionRow(stringResource(R.string.shelf_display_grid), !listView) { onListView(false) }
-                    OptionRow(stringResource(R.string.shelf_display_list), listView) { onListView(true) }
-                    if (!listView) {
-                        Row(Modifier.fillMaxWidth().padding(top = AppSpacing.md), verticalAlignment = Alignment.CenterVertically) {
-                            Text(stringResource(R.string.shelf_columns), modifier = Modifier.weight(1f))
-                            Text(if (columns == 0) stringResource(R.string.shelf_columns_auto) else columns.toString())
+        HorizontalPager(state = pager, modifier = Modifier.fillMaxWidth().heightIn(max = 560.dp)) { page ->
+            Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState())
+                .padding(horizontal = AppSpacing.lg, vertical = AppSpacing.md)) {
+                when (page) {
+                    0 -> {
+                        val labels = listOf(R.string.shelf_filter_all, R.string.bookshelf_filter_downloaded,
+                            R.string.bookshelf_filter_updates, R.string.bookshelf_unread, R.string.shelf_filter_read)
+                        BookshelfFilter.entries.forEachIndexed { index, value ->
+                            OptionRow(stringResource(labels[index]), filter == value) { onFilter(value) }
                         }
-                        Slider(value = columns.toFloat(), onValueChange = { onColumns(it.roundToInt()) }, valueRange = 0f..8f, steps = 7)
                     }
-                    ToggleRow(stringResource(R.string.shelf_show_recent), showRecent, onShowRecent)
+                    1 -> {
+                        OptionRow(stringResource(R.string.shelf_sort_name), byName, onSortByName)
+                        BookshelfSort.Order.entries.forEach { value ->
+                            OptionRow(stringResource(value.labelRes()), !byName && sort == value) { onSort(value) }
+                        }
+                        ToggleRow(stringResource(R.string.shelf_sort_reverse), reversed, onReverse)
+                    }
+                    2 -> {
+                        OptionRow(stringResource(R.string.shelf_display_grid), !listView) { onListView(false) }
+                        OptionRow(stringResource(R.string.shelf_display_list), listView) { onListView(true) }
+                        if (!listView) {
+                            Row(Modifier.fillMaxWidth().padding(top = AppSpacing.md), verticalAlignment = Alignment.CenterVertically) {
+                                Text(stringResource(R.string.shelf_columns), modifier = Modifier.weight(1f))
+                                Text(if (columns == 0) stringResource(R.string.shelf_columns_auto) else columns.toString())
+                            }
+                            Slider(value = columns.toFloat(), onValueChange = { onColumns(it.roundToInt()) }, valueRange = 0f..8f, steps = 7)
+                        }
+                        ToggleRow(stringResource(R.string.shelf_show_recent), showRecent, onShowRecent)
+                    }
                 }
             }
         }
