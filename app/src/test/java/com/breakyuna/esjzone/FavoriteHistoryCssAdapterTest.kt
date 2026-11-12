@@ -2,9 +2,13 @@ package com.breakyuna.esjzone
 
 import com.breakyuna.esjzone.network.features.pageCount
 import com.breakyuna.esjzone.network.features.parseFavoriteNovels
+import com.breakyuna.esjzone.network.features.SiteViewRecord
 import com.breakyuna.esjzone.network.features.parseHistoryNovels
+import com.breakyuna.esjzone.network.features.parseHistorySnapshot
+import com.breakyuna.esjzone.network.features.siteViewRecord
 import org.jsoup.Jsoup
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -33,11 +37,11 @@ class FavoriteHistoryCssAdapterTest {
         val histories = parseHistoryNovels(document)
 
         assertEquals(
-            listOf("9060", "9061"),
-            document.select("tr[id^='novel-']").map { it.id().removePrefix("novel-") }
+            listOf("7001", "7002"),
+            document.select("tr[id^='view_']").map { it.id().removePrefix("view_") }
         )
         assertEquals(
-            listOf("log-1", "log-2"),
+            listOf("7001", "7002"),
             histories.map { it.vid }
         )
         assertEquals(
@@ -51,7 +55,7 @@ class FavoriteHistoryCssAdapterTest {
         assertTrue(histories.all { it.chapter.isHistory })
         assertTrue(histories.all { it.chapter.url.contains("/forum/") })
         assertEquals(
-            listOf("log-1", "log-2"),
+            listOf("7001", "7002"),
             document.select(".view-del").eachAttr("data-id")
         )
     }
@@ -106,6 +110,25 @@ class FavoriteHistoryCssAdapterTest {
             </table>
         """)
         assertEquals(listOf("9102", "9103", ""), parseHistoryNovels(document).map { it.vid })
+    }
+
+    /** Real /my/view row layout (2026-11-12): `.book-ep` sits beside `.view-log`, delete is an `<a>`. */
+    @Test
+    fun historySnapshot_readsTheRealRowLayoutForTheDownloadRestore() {
+        val rows = requireNotNull(parseHistorySnapshot(fixture("history.html")))
+        assertEquals(listOf("/detail/9060.html", "/detail/9061.html"), rows.map { it.url })
+        assertEquals(listOf("7001", "7002"), rows.map { it.vid })
+        assertEquals(
+            SiteViewRecord.Found("https://www.esjzone.cc/forum/9061/8062.html"),
+            siteViewRecord(rows, "www.esjzone.cc", "id:9061")
+        )
+        assertEquals(SiteViewRecord.Absent, siteViewRecord(rows, "www.esjzone.cc", "id:9999"))
+    }
+
+    @Test
+    fun historySnapshot_isUnknownWithoutAHistoryTable() {
+        assertNull(parseHistorySnapshot(Jsoup.parse("<html><body><form id='login'></form></body></html>")))
+        assertEquals(emptyList<Any>(), parseHistorySnapshot(Jsoup.parse("<table class='table'><tbody></tbody></table>")))
     }
 
     private fun fixture(name: String) =

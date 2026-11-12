@@ -17,8 +17,24 @@ private val historySelector: HtmlSelector = JsoupHtmlSelector
 fun EsjzoneClient.getHistories(
     authorization: Authorization,
     forceRefresh: Boolean = false
-): List<HistoryNovel> {
-    val responseBody = getPage(
+): List<HistoryNovel> = parseHistoryNovels(Jsoup.parse(historyPage(authorization, forceRefresh)))
+
+/**
+ * A fresh /my/view read for deciding how to restore the site record after a
+ * download. /my/view has no pagination, so this one page is the whole list.
+ * Returns null when the page has no history table (not a /my/view page, e.g. a
+ * login or challenge page), so the caller can tell "unknown" from "not listed".
+ */
+internal fun EsjzoneClient.getHistorySnapshot(authorization: Authorization): List<HistoryNovel>? =
+    parseHistorySnapshot(Jsoup.parse(historyPage(authorization, forceRefresh = true)))
+
+internal fun parseHistorySnapshot(document: Document): List<HistoryNovel>? {
+    if (document.selectFirst("table.table") == null) return null
+    return parseHistoryNovels(document)
+}
+
+private fun EsjzoneClient.historyPage(authorization: Authorization, forceRefresh: Boolean): String =
+    getPage(
         authorization,
         EsjzoneUrls.resolve(
             "/my/view",
@@ -29,11 +45,6 @@ fun EsjzoneClient.getHistories(
         pageKind = PageKind.ACCOUNT,
         allowStaleOnError = !forceRefresh
     )
-
-    val document = Jsoup.parse(responseBody)
-
-    return parseHistoryNovels(document)
-}
 
 internal fun parseHistoryNovels(document: Document): List<HistoryNovel> {
     val novels = mutableListOf<HistoryNovel>()

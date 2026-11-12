@@ -354,7 +354,6 @@ object LocalBackup {
                             throw error
                         }
                         ReaderImageBackgroundStore.removeUnused(context, target)
-                        readerStore.restoreWebsiteHistorySetting(readerPreferences)
                     }
                 }
             }

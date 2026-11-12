@@ -123,7 +123,7 @@ class AppContainer(
     val session: SessionRepository = NetworkSessionRepository()
     val autoBackup = com.breakyuna.esjzone.backup.AutoBackup(appContext)
     val settingsDataStore = SettingsDataStore(appContext)
-    val readerSettingsDataStore = ReaderSettingsDataStore(appContext, appSettings = settingsDataStore)
+    val readerSettingsDataStore = ReaderSettingsDataStore(appContext)
     val settings: SettingsRepository = settingsDataStore
     val novel: NovelRepository = NetworkNovelRepository()
     val search: SearchRepository = NetworkSearchRepository()

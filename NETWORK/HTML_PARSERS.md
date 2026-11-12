@@ -327,6 +327,8 @@ table.table a[href*="/forum/"]
 
 客户端直接按照 `/my/view` 页面的 `table.table` 行顺序解析并展示，不进行反转。该顺序契约由 `history.html` parser fixture 固定测试。
 
+2026-11-12 Esjzone bot 登录后只读核对：`/my/view` 没有分页（`</table>` 之后直接是页脚，没有页码、下一页、加载更多或无限滚动），表内正好 30 行、每本书一行，疑似只保留最近 30 本（未确认）。行结构为 `<tr id="view_{vid}">` → `.product-info` 下的 `.view-log`（含 `h5.product-title > a[href^='/detail/']` 和 `<a class="view-del" data-id>`）与其兄弟节点 `.book-ep`（`最後觀看：<a href="/forum/...">`），没有时间列。`history.html` fixture 已按此结构脱敏。行顺序不作为任何判断依据。
+
 该书记录对应最后一次在登录会话下请求到的章节页。阅读已保存正文时，客户端按 API_ENDPOINTS.md 第 3.0 节补这次请求。
 
 云端历史卡片在后台匹配章节目录索引；计算中和未匹配到章节时显示中性占位及无进度的轨道，匹配成功后才显示章节位置和全书进度，不将未知位置显示为 100%。

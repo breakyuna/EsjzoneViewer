@@ -110,26 +110,59 @@ internal data class BackgroundChapterFetch(
     val novelKey: String,
     val novelId: String,
     val novelUrl: String,
-    /** The chapter the site listed for this novel before the download, if it listed one. */
-    val siteChapterUrl: String?,
+    /** What /my/view said about this novel before the download. */
+    val siteRecord: SiteViewRecord,
     val startedAt: Long
 )
 
+/** The novel's /my/view row read before a background download. */
+internal sealed interface SiteViewRecord {
+    /** The site listed the novel with this last-viewed chapter. */
+    data class Found(val chapterUrl: String) : SiteViewRecord
+    /**
+     * /my/view was read and the novel is not on it. The page has no pagination
+     * and seems to keep only the latest books, so a novel that dropped off the
+     * list counts as having no record, matching what the site remembers.
+     */
+    data object Absent : SiteViewRecord
+    /** /my/view could not be fetched or parsed; nothing is known. */
+    data object Unknown : SiteViewRecord
+}
+
+/** Looks the novel up in one /my/view snapshot; a null snapshot means the read failed. */
+internal fun siteViewRecord(histories: List<HistoryNovel>?, site: String, novelKey: String): SiteViewRecord {
+    histories ?: return SiteViewRecord.Unknown
+    return siteHistoryChapter(histories, site, novelKey)?.let(SiteViewRecord::Found) ?: SiteViewRecord.Absent
+}
+
 /**
- * The chapter the site should show after a background download. A reader report
- * made during the download is the newest position; otherwise the site's own
- * record from before the download is the truth; an older reader report is the
- * last fallback. Returns null when nothing trustworthy is known.
+ * The chapter the site should show after a background download:
+ * 1. a reader report made during the download is the newest position;
+ * 2. otherwise, when the site had a record before the download, that record;
+ * 3. when the site had no record, the novel's first chapter, so the new record
+ *    stops at chapter 1 instead of the last downloaded chapter;
+ * 4. when the site record is unknown (the read failed), nothing is reset to
+ *    chapter 1; an older reader report is the only fallback.
+ * Returns null when nothing should be requested.
  */
 internal fun cloudViewRestoreChapter(
     known: CloudViewRecord?,
-    siteChapterUrl: String?,
-    startedAt: Long
+    siteRecord: SiteViewRecord,
+    startedAt: Long,
+    firstChapterUrl: () -> String? = { null }
 ): String? {
     if (known != null && known.updatedAt >= startedAt && known.chapterUrl.isNotBlank()) return known.chapterUrl
-    siteChapterUrl?.trim()?.takeIf { it.isNotBlank() }?.let { return it }
-    return known?.chapterUrl?.takeIf { it.isNotBlank() }
+    val older = known?.chapterUrl?.takeIf { it.isNotBlank() }
+    return when (siteRecord) {
+        is SiteViewRecord.Found -> siteRecord.chapterUrl.trim().takeIf { it.isNotBlank() } ?: older
+        SiteViewRecord.Absent -> firstChapterUrl()?.trim()?.takeIf { it.isNotBlank() } ?: older
+        SiteViewRecord.Unknown -> older
+    }
 }
+
+/** The first chapter, in table-of-contents order, that is a chapter page on the logged-in site. */
+internal fun firstSiteChapter(site: String, chapterUrls: List<String>): String? =
+    chapterUrls.firstNotNullOfOrNull { chapterViewUrl(site, it) }
 
 /** Finds this novel's row in the site's view history. */
 internal fun siteHistoryChapter(histories: List<HistoryNovel>, site: String, novelKey: String): String? {
@@ -332,7 +365,6 @@ internal class CloudViewReporter(
     private val store: CloudViewReportStore,
     private val touch: (Authorization, String, () -> Boolean) -> Boolean,
     private val latestActivity: (novelId: String, novelUrl: String) -> LocalReadingActivity? = { _, _ -> null },
-    private val enabled: () -> Boolean = { true },
     private val now: () -> Long = System::currentTimeMillis,
     private val accountScope: (Authorization) -> String? = { HistoryDataCache.scopeFor(it) },
     private val siteHistory: (Authorization) -> List<HistoryNovel>? = { null },
@@ -392,12 +424,12 @@ internal class CloudViewReporter(
     }
 
     fun noteFetched(authorization: Authorization, novelId: String, novelUrl: String, chapterUrl: String) {
-        // A real chapter request already updated the site, including while reporting is off.
-        remember(authorization, novelId, novelUrl, chapterUrl, reported = true, requireEnabled = false)
+        // A real chapter request already updated the site.
+        remember(authorization, novelId, novelUrl, chapterUrl, reported = true)
     }
 
     fun flush(authorization: Authorization) {
-        if (!enabled() || !authorization.hasCredentials()) return
+        if (!authorization.hasCredentials()) return
         schedule(authorization)
     }
 
@@ -412,31 +444,46 @@ internal class CloudViewReporter(
         if (site.isBlank()) return null
         val novelKey = cloudViewNovelKey(novelId, novelUrl, "")
         if (novelKey.isBlank()) return null
-        val siteChapter = runCatching { siteHistory(authorization) }
+        val histories = runCatching { siteHistory(authorization) }
             .onFailure { AppLogger.w("CloudView", "Unable to read the site history before a download", it) }
             .getOrNull()
-            ?.let { siteHistoryChapter(it, site, novelKey) }
+        val siteRecord = siteViewRecord(histories, site, novelKey)
+        if (siteRecord == SiteViewRecord.Unknown) {
+            AppLogger.w("CloudView", "Site history unknown before a download; chapter 1 will not be revisited")
+        }
         return BackgroundChapterFetch(authorization, account, site, novelKey, novelId.trim(), novelUrl.trim(),
-            siteChapter, now())
+            siteRecord, now())
     }
 
     /**
      * The download's chapter requests moved the site record to whichever chapter
-     * finished last. Request the chapter the reader is really at so the site shows
-     * it again. This undoes the app's own side effect, so it runs even when
-     * reporting reading progress is turned off.
+     * finished last. Request the chapter chosen by [cloudViewRestoreChapter] so the
+     * site shows the reader's real position again, or chapter 1 for a novel the
+     * site had no record of. [firstChapterUrl] is only called in that case.
      */
-    suspend fun finishBackgroundFetch(fetch: BackgroundChapterFetch?): Boolean {
+    suspend fun finishBackgroundFetch(
+        fetch: BackgroundChapterFetch?,
+        firstChapterUrl: () -> String? = { null }
+    ): Boolean {
         fetch ?: return false
         return sendMutex.withLock {
             val known = store.find(fetch.account, fetch.site, fetch.novelKey)
-            val target = cloudViewRestoreChapter(known, fetch.siteChapterUrl, fetch.startedAt)
-                ?: return@withLock false
+            val target = cloudViewRestoreChapter(known, fetch.siteRecord, fetch.startedAt) {
+                runCatching(firstChapterUrl)
+                    .onFailure { AppLogger.w("CloudView", "Unable to find the first chapter after a download", it) }
+                    .getOrNull()
+            }
+            if (target == null) {
+                if (fetch.siteRecord == SiteViewRecord.Unknown) {
+                    AppLogger.i("CloudView", "Skipped the site record restore: history before the download is unknown")
+                }
+                return@withLock false
+            }
             val url = chapterViewUrl(fetch.site, target) ?: return@withLock false
             // Queue the restore like an ordinary report so a chapter the reader
             // opens while the request is in flight is kept, not overwritten.
             remember(fetch.authorization, fetch.novelId, fetch.novelUrl, url,
-                reported = false, requireEnabled = false, replaceReported = true)
+                reported = false, replaceReported = true)
             val attempt = store.find(fetch.account, fetch.site, fetch.novelKey)
                 ?.takeIf { !it.reported && it.chapterKey == EsjzoneUrls.canonicalPageKey(url) }
                 ?: return@withLock false
@@ -468,10 +515,9 @@ internal class CloudViewReporter(
         novelUrl: String,
         chapterUrl: String,
         reported: Boolean,
-        requireEnabled: Boolean = true,
         replaceReported: Boolean = false
     ): Boolean {
-        if ((requireEnabled && !enabled()) || !authorization.hasCredentials()) return false
+        if (!authorization.hasCredentials()) return false
         val account = accountScope(authorization)?.takeIf { it.isNotBlank() } ?: return false
         val site = authorization.domain.trim()
         val resolved = chapterViewUrl(site, chapterUrl) ?: return false
@@ -540,7 +586,7 @@ internal class CloudViewReporter(
     private fun sendPending(authorization: Authorization) {
         val account = accountScope(authorization)?.takeIf { it.isNotBlank() } ?: return
         val site = authorization.domain.trim()
-        if (!enabled() || !authorization.hasCredentials() || site.isBlank()) return
+        if (!authorization.hasCredentials() || site.isBlank()) return
         val pending = store.pending(account, site)
         if (pending.isEmpty()) return
         val current = pending.map { record ->
@@ -549,7 +595,6 @@ internal class CloudViewReporter(
         current.filter { !it.second }.forEach { store.remove(it.first) }
         var superseded = false
         for (next in current.filter { it.second }.map { it.first }) {
-            if (!enabled()) break
             val latest = store.pending(account, site).firstOrNull {
                 it.novelKey == next.novelKey && it.chapterKey == next.chapterKey &&
                     it.generation == next.generation
@@ -606,6 +651,7 @@ internal class CloudViewReporterHolder(private val factory: (File) -> CloudViewR
         authorization: Authorization,
         novelId: String,
         novelUrl: String,
+        firstChapterUrl: () -> String? = { null },
         block: suspend () -> T
     ): T {
         val fetch = withContext(Dispatchers.IO) {
@@ -618,7 +664,7 @@ internal class CloudViewReporterHolder(private val factory: (File) -> CloudViewR
             return block()
         } finally {
             withContext(NonCancellable + Dispatchers.IO) {
-                current()?.finishBackgroundFetch(fetch)
+                current()?.finishBackgroundFetch(fetch, firstChapterUrl)
             }
         }
     }
@@ -646,12 +692,7 @@ object CloudViewReports {
                         .getLatestForIdentity(novelId, novelUrl)
                 }.getOrNull()
             },
-            enabled = {
-                runCatching {
-                    EsjzoneApplication.instance.container.settings.updateWebsiteHistory.value
-                }.getOrDefault(true)
-            },
-            siteHistory = { authorization -> EsjzoneClient.getHistories(authorization, forceRefresh = true) },
+            siteHistory = { authorization -> EsjzoneClient.getHistorySnapshot(authorization) },
             scope = scope
         )
 
@@ -687,6 +728,7 @@ object CloudViewReports {
         authorization: Authorization,
         novelId: String,
         novelUrl: String,
+        firstChapterUrl: () -> String? = { null },
         block: suspend () -> T
-    ): T = holder.preservingSiteView(directory, authorization, novelId, novelUrl, block)
+    ): T = holder.preservingSiteView(directory, authorization, novelId, novelUrl, firstChapterUrl, block)
 }

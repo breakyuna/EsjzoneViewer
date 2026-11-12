@@ -101,22 +101,57 @@ class CloudViewReporterTest {
         assertEquals(listOf("https://www.esjzone.cc/forum/12/1.html"), requested)
     }
 
+    /** The website-history switch is gone: a report queued in an earlier run is always sent. */
     @Test
-    fun disabledReportingKeepsANetworkChapterFromBeingReplayedLater() = runBlocking {
+    fun aReportQueuedBeforeARestartIsSentOnTheNextFlush() = runBlocking {
+        val file = File.createTempFile("cloud-view", ".json").apply { delete() }
+        try {
+            val failed = mutableListOf<String>()
+            val first = CloudViewReporter(
+                store = CloudViewReportStore(file),
+                touch = { _, url, _ -> failed += url; false },
+                scope = this
+            )
+            first.noteLocal(authorization, "12", "/detail/12.html", "/forum/12/3.html")
+            awaitChildren()
+            assertEquals(listOf("https://www.esjzone.cc/forum/12/3.html"), failed)
+
+            val requested = mutableListOf<String>()
+            val restarted = CloudViewReporter(
+                store = CloudViewReportStore(file),
+                touch = { _, url, _ -> requested += url; true },
+                scope = this
+            )
+            restarted.flush(authorization)
+            awaitChildren()
+            assertEquals(listOf("https://www.esjzone.cc/forum/12/3.html"), requested)
+        } finally {
+            file.delete()
+            File(file.parentFile, "${file.name}.tmp").delete()
+        }
+    }
+
+    /**
+     * Documents existing behaviour, unchanged by removing the switch: a prefetch
+     * of the next chapter moves the site record ahead, and the reader's next
+     * report for the chapter on screen requests that chapter again.
+     */
+    @Test
+    fun aPrefetchedChapterMakesTheOpenChapterBeRequestedAgain() = runBlocking {
         val requested = mutableListOf<String>()
-        var enabled = false
-        val reporter = CloudViewReporter(
-            store = CloudViewReportStore(null),
-            touch = { _, url, _ -> requested += url; true },
-            enabled = { enabled },
-            scope = this
-        )
-        reporter.noteLocal(authorization, "12", "/detail/12.html", "/forum/12/1.html")
-        reporter.noteFetched(authorization, "12", "/detail/12.html", "/forum/12/4.html")
-        enabled = true
-        reporter.flush(authorization)
+        val reporter = reporter(this, requested)
+        val open = "/forum/12/1.html"
+        val generation = reporter.observeNetworkFetch(authorization, "12", "/detail/12.html", open)
+        assertTrue(reporter.fetchIsCurrent(authorization, "12", "/detail/12.html", open, generation))
+        reporter.noteFetched(authorization, "12", "/detail/12.html", open)
+        reporter.noteLocal(authorization, "12", "/detail/12.html", open)
         awaitChildren()
         assertTrue(requested.isEmpty())
+
+        reporter.observeNetworkFetch(authorization, "12", "/detail/12.html", "/forum/12/2.html")
+        reporter.noteLocal(authorization, "12", "/detail/12.html", open)
+        awaitChildren()
+        assertEquals(listOf("https://www.esjzone.cc/forum/12/1.html"), requested)
     }
 
     @Test
