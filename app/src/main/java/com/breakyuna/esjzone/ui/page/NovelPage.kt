@@ -21,6 +21,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -62,6 +63,8 @@ import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material.icons.filled.TextSnippet
 import androidx.compose.material.icons.filled.OpenInNew
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.ArrowUpward
+import androidx.compose.material.icons.filled.SwapVert
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -119,6 +122,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -223,10 +227,19 @@ class NovelPage(
         val context = LocalContext.current
         val screenModel = rememberAppViewModel { NovelPageModel(authorization, novel) }
         val commentModel = rememberAppViewModel { CommentPageModel(authorization, novel.url) }
+        val detailListState = rememberLazyListState()
         val state by rememberNovelDetailPresentationState(screenModel.state)
         val transitionSettled = rememberNovelDetailTransitionSettled()
         val cleanupState by screenModel.cleanupState.collectAsStateWithLifecycle()
         val snackbar = remember { SnackbarHostState() }
+        val refreshFailure = (state as? NovelPageModel.State.Result)?.refreshFailure
+        val refreshFailedMessage = stringResource(R.string.member_refresh_failed)
+        val retryLabel = stringResource(R.string.retry)
+        LaunchedEffect(refreshFailure) {
+            if (refreshFailure != null && snackbar.showSnackbar(
+                    message = refreshFailedMessage, actionLabel = retryLabel
+                ) == SnackbarResult.ActionPerformed) screenModel.retry()
+        }
         val cleanupPrompt = stringResource(R.string.novel_local_cleanup_prompt)
         val cleanupAction = stringResource(R.string.novel_local_cleanup_action)
         val cleanupBusy = stringResource(R.string.novel_local_cleanup_busy)
@@ -383,11 +396,12 @@ class NovelPage(
                         var showAllChapters by rememberSaveable(novel.url) {
                             mutableStateOf(false)
                         }
+                        var chaptersDescending by rememberSaveable(novel.url) { mutableStateOf(false) }
                         val expandedChapterGroups = rememberSaveable(novel.url, snapshot.fromDownload) {
                             mutableStateOf(initiallyExpandedChapterKeys(chapterList.items))
                         }
-                        val visibleRows = remember(chapterList, expandedChapterGroups.value) {
-                            visibleChapterRows(chapterList.items, expandedChapterGroups.value)
+                        val visibleRows = remember(chapterList, expandedChapterGroups.value, chaptersDescending) {
+                            visibleChapterRows(chapterList.items, expandedChapterGroups.value, descending = chaptersDescending)
                         }
                         LaunchedEffect(chapterList, localReading) {
                             // A downloaded first chapter is a fallback, not a reading-history marker.
@@ -440,6 +454,14 @@ class NovelPage(
                             onDescriptionExpandedChange = { descriptionExpanded = it },
                             showAllChapters = showAllChapters,
                             onShowAllChaptersChange = { showAllChapters = it },
+                            chaptersDescending = chaptersDescending,
+                            onToggleChapterOrder = {
+                                detailListState.layoutInfo.visibleItemsInfo
+                                    .firstOrNull { it.key == "detail-chapters-heading" }
+                                    ?.let { detailListState.requestScrollToItem(it.index) }
+                                chaptersDescending = !chaptersDescending
+                                showAllChapters = true
+                            },
                             onGroupToggle = { key ->
                                 expandedChapterGroups.value = expandedChapterGroups.value.toMutableSet().also {
                                     if (!it.add(key)) it.remove(key)
@@ -474,6 +496,7 @@ class NovelPage(
                     NovelDetailLayout(
                         hero = { RebuiltNovelHero(novel, detailed, sourceCover, transitionSettled.value) },
                         onHeroScrolledAway = { heroScrolledAway = it },
+                        contentState = detailListState,
                         modifier = Modifier.weight(1f),
                         snackbarHost = {
                             SnackbarHost(
@@ -524,13 +547,20 @@ internal fun NovelDetailLayout(
     snackbarHost: @Composable () -> Unit = {},
     overview: LazyListScope.() -> Unit = {},
     onHeroScrolledAway: (Boolean) -> Unit = {},
+    contentState: androidx.compose.foundation.lazy.LazyListState = rememberLazyListState(),
     content: LazyListScope.() -> Unit
 ) {
     val metrics = rememberAppAdaptiveMetrics()
     val wide = appUsesWideLayout()
     val overviewState = rememberLazyListState()
-    val contentState = rememberLazyListState()
+    val scope = rememberCoroutineScope()
     val heroState = if (wide) overviewState else contentState
+    val showScrollToTop by remember(wide, heroState, contentState) {
+        derivedStateOf {
+            heroState.firstVisibleItemIndex > 0 ||
+                (wide && (contentState.firstVisibleItemIndex > 0 || contentState.firstVisibleItemScrollOffset > 0))
+        }
+    }
     val reportHeroScrolledAway by rememberUpdatedState(onHeroScrolledAway)
     LaunchedEffect(heroState) {
         snapshotFlow { heroState.firstVisibleItemIndex > 0 }
@@ -591,6 +621,21 @@ internal fun NovelDetailLayout(
         }
         // The composer is outside this content area, including its system/IME insets.
         Box(Modifier.align(Alignment.BottomCenter)) { snackbarHost() }
+        AnimatedVisibility(
+            visible = showScrollToTop,
+            modifier = Modifier.align(Alignment.BottomEnd).padding(AppSpacing.md),
+            enter = fadeIn(),
+            exit = fadeOut()
+        ) {
+            Surface(shape = CircleShape, color = MaterialTheme.colorScheme.surfaceContainerHigh, shadowElevation = 4.dp) {
+                IconButton(onClick = {
+                    scope.launch { contentState.animateScrollToItem(0) }
+                    if (wide) scope.launch { overviewState.animateScrollToItem(0) }
+                }, modifier = Modifier.size(48.dp).testTag("detail-scroll-to-top")) {
+                    Icon(Icons.Filled.ArrowUpward, stringResource(R.string.novel_scroll_to_top), modifier = Modifier.size(20.dp))
+                }
+            }
+        }
     }
 }
 
@@ -617,6 +662,8 @@ private fun novelDetailItems(
     onDescriptionExpandedChange: (Boolean) -> Unit,
     showAllChapters: Boolean,
     onShowAllChaptersChange: (Boolean) -> Unit,
+    chaptersDescending: Boolean,
+    onToggleChapterOrder: () -> Unit,
     onGroupToggle: (String) -> Unit,
     visibleRows: List<com.breakyuna.esjzone.novellibrary.component.VisibleChapterRow>,
     commentModel: CommentPageModel,
@@ -674,6 +721,7 @@ private fun novelDetailItems(
                         chapter = chapter,
                         history = history,
                         chapterOrder = orderedChapters,
+                        chapterOrderComplete = detailed.chapterOrderComplete,
                         novelName = detailed.name,
                         novelUrl = detailed.url,
                         novelCoverUrl = detailed.coverUrl
@@ -715,6 +763,7 @@ private fun novelDetailItems(
                                             chapter = chapter,
                                             history = history,
                                             chapterOrder = orderedChapters,
+                                            chapterOrderComplete = detailed.chapterOrderComplete,
                                             novelName = detailed.name,
                                             novelUrl = detailed.url,
                                             novelCoverUrl = detailed.coverUrl,
@@ -917,21 +966,33 @@ private fun novelDetailItems(
             Column(
                 modifier = Modifier.fillMaxWidth().padding(top = AppSpacing.md)
             ) {
-                RebuiltSectionHeading(
-                    title = stringResource(R.string.novel_chapterlist),
-                    supportingText = orderedChapters.takeIf { it.isNotEmpty() }?.let {
-                        stringResource(R.string.novel_chapter_count, it.size)
-                    },
-                    actionLabel = if (orderedChapters.isNotEmpty()) {
-                        stringResource(
-                            if (showAllChapters) R.string.novel_show_fewer_chapters
-                            else R.string.novel_show_all_chapters
-                        )
-                    } else null,
-                    onAction = if (orderedChapters.isNotEmpty()) {
-                        { onShowAllChaptersChange(!showAllChapters) }
-                    } else null
-                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    RebuiltSectionHeading(
+                        modifier = Modifier.weight(1f),
+                        title = stringResource(R.string.novel_chapterlist),
+                        supportingText = orderedChapters.takeIf { it.isNotEmpty() && detailed.chapterOrderComplete }?.let {
+                            stringResource(R.string.novel_chapter_count, it.size)
+                        },
+                        actionLabel = if (orderedChapters.isNotEmpty()) {
+                            stringResource(
+                                if (showAllChapters) R.string.novel_show_fewer_chapters
+                                else R.string.novel_show_all_chapters
+                            )
+                        } else null,
+                        onAction = if (orderedChapters.isNotEmpty()) {
+                            { onShowAllChaptersChange(!showAllChapters) }
+                        } else null
+                    )
+                    if (orderedChapters.isNotEmpty()) {
+                        IconButton(onClick = onToggleChapterOrder) {
+                            Icon(
+                                Icons.Filled.SwapVert,
+                                stringResource(if (chaptersDescending) R.string.reader_toc_sort_ascending else R.string.reader_toc_sort_descending),
+                                modifier = Modifier.graphicsLayer { rotationZ = if (chaptersDescending) 180f else 0f }
+                            )
+                        }
+                    }
+                }
             }
         }
 
@@ -1251,12 +1312,14 @@ private fun RebuiltNovelTags(tags: List<String>, onTagClick: (String) -> Unit) {
 @Composable
 private fun RebuiltSectionHeading(
     title: String,
+    modifier: Modifier = Modifier,
     supportingText: String? = null,
     actionLabel: String? = null,
     onAction: (() -> Unit)? = null
 ) {
     AppSectionTitle(
         title = title,
+        modifier = modifier,
         supportingText = supportingText,
         actionLabel = actionLabel,
         onAction = onAction

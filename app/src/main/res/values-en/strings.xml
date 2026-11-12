@@ -973,6 +973,7 @@
     <string name="reader_catalog_current">Go to current chapter</string>
     <string name="reader_toc_sort_ascending">Sort oldest first</string>
     <string name="reader_toc_sort_descending">Sort newest first</string>
+    <string name="novel_scroll_to_top">Scroll to top</string>
     <string name="reader_toc_untitled_volume">Chapters without a volume</string>
     <string name="reader_toc_volume_count">%1$d ch.</string>
     <string name="reader_boundary_failed">Chapter could not be loaded. Current text is retained.</string>

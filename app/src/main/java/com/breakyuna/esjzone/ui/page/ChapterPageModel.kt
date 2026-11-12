@@ -27,6 +27,7 @@ import com.breakyuna.esjzone.network.features.getChapterDetail
 import com.breakyuna.esjzone.network.features.unlockPasswordProtectedChapter
 import com.breakyuna.esjzone.network.features.ChapterPasswordRejectedException
 import com.breakyuna.esjzone.network.features.ChapterPasswordRequiredException
+import com.breakyuna.esjzone.network.features.getCachedNovelDetail
 import com.breakyuna.esjzone.network.features.getNovelDetail
 import com.breakyuna.esjzone.network.external.CloudflareChallengeRequiredException
 import com.breakyuna.esjzone.network.external.CloudflareWebViewUnavailableException
@@ -961,6 +962,10 @@ private fun persistLoadedChapter(
             detail = detail,
             authorization = authorization
         )
+        PresentationAccess.client.getCachedNovelDetail(authorization,
+            com.breakyuna.esjzone.novellibrary.novel.FavoriteNovel(novelName, targetNovelUrl))?.let {
+            PresentationAccess.downloads.retainNovelDetail(it)
+        }
     }.onFailure { error ->
         AppLogger.w("ChapterPageModel", "Failed to auto-save chapter ${chapter.name}", error)
     }

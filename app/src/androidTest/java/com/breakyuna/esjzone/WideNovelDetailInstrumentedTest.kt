@@ -76,7 +76,9 @@ class WideNovelDetailInstrumentedTest {
         }
         composeRule.onNodeWithTag("detail-overview-pane").performScrollToNode(hasText("Overview 60"))
         composeRule.runOnIdle { assertEquals(true, heroScrolledAway) }
-        composeRule.onNodeWithTag("detail-overview-pane").performScrollToNode(hasText("Book overview"))
+        composeRule.onNodeWithTag("detail-scroll-to-top").performClick()
+        composeRule.onNodeWithText("Book overview").assertIsDisplayed()
+        composeRule.onNodeWithText("Chapter 0").assertIsDisplayed()
         composeRule.runOnIdle { assertEquals(false, heroScrolledAway) }
     }
 
@@ -108,7 +110,8 @@ class WideNovelDetailInstrumentedTest {
         composeRule.onNodeWithTag("detail-compact-pane").performScrollToNode(hasText("Chapter 60"))
         composeRule.onNodeWithText("Chapter 60").assertIsDisplayed()
         composeRule.runOnIdle { assertEquals(true, heroScrolledAway) }
-        composeRule.onNodeWithTag("detail-compact-pane").performScrollToNode(hasText("Book overview"))
+        composeRule.onNodeWithTag("detail-scroll-to-top").performClick()
+        composeRule.onNodeWithText("Book overview").assertIsDisplayed()
         composeRule.runOnIdle { assertEquals(false, heroScrolledAway) }
     }
 }

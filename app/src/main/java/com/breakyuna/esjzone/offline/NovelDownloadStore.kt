@@ -97,7 +97,10 @@ data class DownloadedNovelManifest(
     val commonPassword: String? = null,
     val catalogComplete: Boolean = false,
     /** Old or reader-only manifests do not prove that a false adult flag is trustworthy. */
-    val adultStatusKnown: Boolean = false
+    val adultStatusKnown: Boolean = false,
+    /** Durable public detail snapshot; no comments, favorite state or account tokens. */
+    val descriptionHtml: String? = null,
+    val catalogHtml: String? = null
 ) {
     val pendingPasswordChapters: List<DownloadedChapterRecord>
         get() = chapters.filter { it.requiresPassword && !it.isSaved }
@@ -1813,16 +1816,15 @@ object NovelDownloadStore {
         )
     }
 
-    /** Reconstructs enough detail data to open a fully downloaded novel while offline. */
-    fun readDetailedNovel(novelUrl: String): DetailedNovel? = synchronized(ioLock) {
-        val stored = readManifest(directoryFor(novelUrl, create = false))
-            ?.takeIf { it.complete }
-            ?: return@synchronized null
+    /** Every download manifest retains a detail snapshot, including partial and reader-only saves. */
+    fun readDetailedNovel(novelUrl: String): DetailedNovel? {
+        val stored = synchronized(ioLock) { readManifest(directoryFor(novelUrl, create = false)) }
+            ?: return null
         val chapters = stored.chapters
-            .filter { it.downloaded && !it.localOnly }
+            .filter { !it.localOnly || it.isSaved }
             .map { ChapterItem(it.toChapter()) }
 
-        DetailedNovel(
+        return DetailedNovel(
             name = stored.name,
             url = stored.url,
             coverUrl = stored.coverUrl,
@@ -1836,15 +1838,41 @@ object NovelDownloadStore {
             isAdult = stored.isAdult,
             adultStatusKnown = stored.adultStatusKnown,
             isFavorite = false,
-            description = NovelDescription(
+            description = stored.descriptionHtml?.let {
+                com.breakyuna.esjzone.novellibrary.novel.analyseDescription(
+                    Jsoup.parseBodyFragment(it, EsjzoneUrls.resolve(stored.url)).body()
+                )
+            } ?: NovelDescription(
                 stored.description.takeIf { it.isNotBlank() }
                     ?.let { listOf(TextComponent(it)) }
                     ?: emptyList()
             ),
-            chapterList = NovelChapterList(chapters),
+            chapterList = stored.catalogHtml?.let {
+                Jsoup.parse(it, EsjzoneUrls.resolve(stored.url)).selectFirst("#integration")
+            }?.let { com.breakyuna.esjzone.novellibrary.novel.analyseChapterList(it) } ?: NovelChapterList(chapters),
             sourceUrl = stored.sourceUrl,
-            updatedAt = stored.updatedAt
+            updatedAt = stored.updatedAt,
+            chapterOrderComplete = stored.catalogHtml != null || stored.catalogComplete || stored.complete,
+            descriptionHtml = stored.descriptionHtml,
+            catalogHtml = stored.catalogHtml
         )
+    }
+
+    /** Refresh public metadata without replacing chapter records, files or download state. */
+    fun retainNovelDetail(novel: DetailedNovel) {
+        val directory = synchronized(ioLock) { directoryFor(novel.url, create = false) } ?: return
+        val guard = newWriteGuard(directory)
+        val previous = synchronized(ioLock) { readManifest(directory) } ?: return
+        val metadata = manifestFrom(novel, previous.chapters, previous.downloadedAt, previous.complete, previous.commonPassword)
+        val updated = metadata.copy(
+            catalogComplete = previous.catalogComplete || previous.complete,
+            description = metadata.description.ifBlank { previous.description },
+            descriptionHtml = novel.descriptionHtml ?: previous.descriptionHtml,
+            catalogHtml = novel.catalogHtml.takeIf { novel.chapterList.orderedChapters.isNotEmpty() }
+                ?: previous.catalogHtml
+        )
+        if (updated == previous) return
+        writeManifest(directory, updated, guard, revalidateChapterFiles = false)
     }
 
     fun repairNovelName(novelUrl: String, name: String): Boolean {
@@ -1942,7 +1970,9 @@ object NovelDownloadStore {
         complete = complete,
         commonPassword = commonPassword,
         catalogComplete = true,
-        adultStatusKnown = novel.adultStatusKnown
+        adultStatusKnown = novel.adultStatusKnown,
+        descriptionHtml = novel.descriptionHtml,
+        catalogHtml = novel.catalogHtml
     )
 
     private fun manifestFromMetadata(
@@ -1976,7 +2006,9 @@ object NovelDownloadStore {
         complete = complete,
         commonPassword = commonPassword,
         catalogComplete = catalogComplete,
-        adultStatusKnown = previous?.adultStatusKnown == true
+        adultStatusKnown = previous?.adultStatusKnown == true,
+        descriptionHtml = previous?.descriptionHtml,
+        catalogHtml = previous?.catalogHtml
     )
 
     private fun findChapter(chapterUrl: String, novelUrl: String?): ChapterMatch? {

@@ -13,7 +13,13 @@ import com.breakyuna.esjzone.database.BookshelfRepository
 import com.breakyuna.esjzone.network.Authorization
 import com.breakyuna.esjzone.network.LoadFailureKind
 import com.breakyuna.esjzone.network.cancellablePageRequest
+import com.breakyuna.esjzone.network.features.getCachedNovelDetail
 import com.breakyuna.esjzone.network.features.getNovelDetail
+import com.breakyuna.esjzone.network.EsjzoneUrls
+import com.breakyuna.esjzone.novellibrary.novel.Chapter
+import com.breakyuna.esjzone.novellibrary.novel.NovelChapterList
+import com.breakyuna.esjzone.novellibrary.novel.NovelDescription
+import com.breakyuna.esjzone.novellibrary.component.ChapterItem
 import com.breakyuna.esjzone.network.loadFailureKind
 import com.breakyuna.esjzone.novellibrary.novel.DetailedNovel
 import com.breakyuna.esjzone.novellibrary.novel.Novel
@@ -43,59 +49,53 @@ class NovelPageModel(
     sealed class State {
         data object Loading : State()
         data class Error(val failure: LoadFailureKind) : State()
-        data class Result(val detailed: DetailedNovel, val fromDownload: Boolean = false) : State()
+        data class Result(
+            val detailed: DetailedNovel,
+            val fromDownload: Boolean = false,
+            val refreshing: Boolean = false,
+            val refreshFailure: LoadFailureKind? = null
+        ) : State()
     }
 
-    fun getDetail() {
+    fun getDetail(forceRefresh: Boolean = false) {
         synchronized(detailLoadLock) {
             if (detailLoadStarted) return
             detailLoadStarted = true
         }
         viewModelScope.launch(Dispatchers.IO) {
-            mutableState.value = State.Loading
-            val downloaded = try {
-                PresentationAccess.downloads.readDetailedNovel(novel.url)?.let { stored ->
-                    stored.copy(name = preferredNovelTitle(stored.name, novel.name, stored.id(), stored.url))
-                }
-            } catch (error: CancellationException) {
-                throw error
-            } catch (error: Exception) {
-                AppLogger.w("NovelPageModel", "Failed to read downloaded detail", error)
-                null
-            }
+            val previous = mutableState.value as? State.Result
+            val cached = localOrNull { PresentationAccess.client.getCachedNovelDetail(authorization, novel) }
+            val downloaded = localOrNull { PresentationAccess.downloads.readDetailedNovel(novel.url) }
+            val local = cached ?: downloaded ?: localOrNull { basicLocalDetail() }
+            val normalizedLocal = local?.copy(name = preferredNovelTitle(local.name, novel.name, local.id(), local.url))
+            val fallback = previous ?: normalizedLocal?.let { State.Result(it, fromDownload = cached == null) }
             ensureActive()
-            if (downloaded != null) {
-                mutableState.value = State.Result(downloaded, fromDownload = true)
-                viewModelScope.launch(Dispatchers.IO) {
-                    try {
-                        val title = NovelTitleRepository.resolve(null, downloaded.id(), downloaded.url, downloaded.name)
-                        NovelTitleRepository.repair(downloaded.id(), downloaded.url, title)
-                    } catch (error: CancellationException) {
-                        throw error
-                    } catch (error: Exception) {
-                        AppLogger.w("NovelPageModel", "Unable to repair downloaded title", error)
-                    }
-                }
-            }
+            mutableState.value = fallback?.copy(refreshing = true, refreshFailure = null) ?: State.Loading
             try {
                 val fetchedDetail = cancellablePageRequest {
                     PresentationAccess.client.getNovelDetail(
                         authorization = authorization,
                         novel = novel,
-                        includeComments = false
+                        includeComments = false,
+                        forceRefresh = forceRefresh,
+                        awaitFresh = fallback != null
                     )
                 }
-                val useDownloadedCatalog = fetchedDetail.chapterList.orderedChapters.isEmpty() && downloaded != null
+                val useDownloadedCatalog = fetchedDetail.chapterList.orderedChapters.isEmpty() && fallback?.detailed?.chapterList?.orderedChapters?.isNotEmpty() == true
                 val detail = if (useDownloadedCatalog) {
-                    val offlineDetail = requireNotNull(downloaded)
+                    val offlineDetail = requireNotNull(fallback).detailed
                     offlineDetail.copy(name = preferredNovelTitle(
                         fetchedDetail.name, offlineDetail.name, offlineDetail.id(), offlineDetail.url
                     ))
                 } else fetchedDetail
                 ensureActive()
                 mutableState.value = State.Result(detail, fromDownload = useDownloadedCatalog)
-                ReadingStatisticsRecorder.recordTags(detail)
-                NovelTitleRepository.repair(detail.id(), detail.url, detail.name)
+                localOrNull { PresentationAccess.downloads.retainNovelDetail(fetchedDetail) }
+                localOrNull { ReadingStatisticsRecorder.recordTags(detail) }
+                try {
+                    NovelTitleRepository.repair(detail.id(), detail.url, detail.name)
+                } catch (error: CancellationException) { throw error }
+                catch (error: Exception) { AppLogger.w("NovelPageModel", "Unable to repair title", error) }
                 try {
                     BookshelfRepository.updateTitleFromDetail(authorization, fetchedDetail)
                 } catch (error: CancellationException) {
@@ -107,10 +107,9 @@ class NovelPageModel(
                 throw error
             } catch (error: Exception) {
                 ensureActive()
-                if (downloaded != null) {
-                    mutableState.value = State.Result(downloaded, fromDownload = true)
-                    ReadingStatisticsRecorder.recordTags(downloaded)
-                    AppLogger.w("NovelPageModel", "Using downloaded novel detail for ${novel.name}", error)
+                if (fallback != null) {
+                    mutableState.value = fallback.copy(refreshing = false, refreshFailure = error.loadFailureKind())
+                    AppLogger.w("NovelPageModel", "Keeping local novel detail for ${novel.name}", error)
                 } else {
                     mutableState.value = State.Error(error.loadFailureKind())
                     AppLogger.e("NovelPageModel", "Failed to load novel detail for ${novel.name}", error)
@@ -119,9 +118,41 @@ class NovelPageModel(
         }
     }
 
+    private inline fun <T> localOrNull(read: () -> T): T? = try {
+        read()
+    } catch (error: CancellationException) { throw error }
+    catch (error: Exception) {
+        AppLogger.w("NovelPageModel", "Unable to read or retain local detail", error)
+        null
+    }
+
+    /** A known reading anchor must remain usable even if all detail caches were evicted. */
+    private suspend fun basicLocalDetail(): DetailedNovel? {
+        val id = BookshelfRepository.novelIdFor(novel.url)
+        val db = PresentationAccess.database
+        val activity = db.localReadingActivityDao().getLatestForIdentity(id, novel.url)
+        val shelf = db.bookshelfDao().find(BookshelfRepository.scopeFor(authorization), BookshelfRepository.keyFor(novel.url))
+        if (activity == null && shelf == null) return null
+        val anchor = activity?.chapterUrl?.takeIf(String::isNotBlank)?.let {
+            Chapter(activity.chapterName, it, true)
+        }
+        return DetailedNovel(
+            name = preferredNovelTitle(novel.name, shelf?.title ?: activity?.novelName.orEmpty(), id, novel.url),
+            url = novel.url,
+            coverUrl = (novel as? CoveredNovel)?.coverUrl?.takeIf(String::isNotBlank)
+                ?: shelf?.coverUrl ?: activity?.novelCoverUrl.orEmpty(),
+            views = 0, likes = 0, words = 0, type = "", author = shelf?.author.orEmpty(), forumUrl = "",
+            tags = emptyList(), isAdult = shelf?.isAdult ?: (activity?.isAdult == true),
+            isFavorite = shelf?.visible == true, description = NovelDescription(emptyList()),
+            chapterList = NovelChapterList(listOfNotNull(anchor?.let(::ChapterItem))),
+            adultStatusKnown = shelf != null || activity?.isAdult != null,
+            chapterOrderComplete = false
+        )
+    }
+
     fun retry() {
         synchronized(detailLoadLock) { detailLoadStarted = false }
-        getDetail()
+        getDetail(forceRefresh = true)
     }
 
     fun persistFavorite(desired: Boolean) {

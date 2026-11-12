@@ -112,7 +112,10 @@ data class DetailedNovel(
     val comments: List<Comment> = emptyList(),
     val sourceUrl: String? = null,
     val updatedAt: String? = null,
-    val adultStatusKnown: Boolean = true
+    val adultStatusKnown: Boolean = true,
+    val chapterOrderComplete: Boolean = true,
+    val descriptionHtml: String? = null,
+    val catalogHtml: String? = null
 ) : CoveredNovel {
 
     fun id(): String {

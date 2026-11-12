@@ -1,5 +1,6 @@
 package com.breakyuna.esjzone.ui.navigation
 
+import com.breakyuna.esjzone.network.features.retainDownloadedNovelDetails
 import kotlinx.coroutines.flow.collect
 
 import androidx.compose.animation.AnimatedContentTransitionScope
@@ -658,6 +659,7 @@ fun AppNavigation() {
         com.breakyuna.esjzone.database.NovelTitleRepository.repairRequests.collect { request ->
             if (completedTitleRepair == request) return@collect
             try {
+                PresentationAccess.client.retainDownloadedNovelDetails(session)
                 com.breakyuna.esjzone.database.NovelTitleRepository.repairAll(session)
                 completedTitleRepair = request
             } catch (error: kotlinx.coroutines.CancellationException) {

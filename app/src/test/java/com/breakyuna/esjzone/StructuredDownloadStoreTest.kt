@@ -112,6 +112,42 @@ class StructuredDownloadStoreTest {
     }
 
     @Test
+    fun partialDownloadRetainsRichDetailAcrossRestartAndReaderWrites() = withStorage { root ->
+        val order = listOf(chapter(1), chapter(2))
+        save(1, order)
+        val initial = requireNotNull(NovelDownloadStore.readDetailedNovel(novelUrl))
+        assertEquals(order.map { it.url }, initial.chapterList.orderedChapters.map { it.url })
+        assertFalse(requireNotNull(NovelDownloadStore.manifest(novelUrl)).complete)
+        val detailed = novel(order).copy(
+            descriptionHtml = "<div class='description'><p>Retained description</p></div>",
+            catalogHtml = "<div id='integration'><details open><summary>Volume 1</summary>" +
+                order.joinToString("") { "<a href='${it.url}' data-title='${it.name}'>${it.name}</a>" } +
+                "</details></div>"
+        )
+        NovelDownloadStore.retainNovelDetail(detailed)
+        save(2, order)
+        NovelDownloadStore.initializeDirectory(root)
+        val restored = requireNotNull(NovelDownloadStore.readDetailedNovel(novelUrl))
+        assertTrue(restored.description.preview(Int.MAX_VALUE).contains("Retained description"))
+        assertTrue(restored.chapterList.items.first() is com.breakyuna.esjzone.novellibrary.component.ChapterListItem)
+        assertEquals(order.map { it.url }, restored.chapterList.orderedChapters.map { it.url })
+        assertNotNull(NovelDownloadStore.readChapter(chapter(1).url, novelUrl))
+        assertNotNull(NovelDownloadStore.readChapter(chapter(2).url, novelUrl))
+        assertTrue(restored.chapterOrderComplete)
+    }
+
+    @Test
+    fun readerOnlyIncompleteCatalogNeverPretendsToBeTheFullBook() = withStorage { root ->
+        NovelDownloadStore.saveChapter("Novel", novelUrl, "", listOf(chapter(1)), chapter(1),
+            DetailedChapter("Chapter 1", listOf(TextComponent("body")), null, null), auth,
+            chapterOrderComplete = false)
+        NovelDownloadStore.initializeDirectory(root)
+        val detail = requireNotNull(NovelDownloadStore.readDetailedNovel(novelUrl))
+        assertFalse(detail.chapterOrderComplete)
+        assertEquals(listOf(chapter(1).url), detail.chapterList.orderedChapters.map { it.url })
+    }
+
+    @Test
     fun readerOnlyAndLegacyManifestsDoNotInventANonAdultClassification() = withStorage { root ->
         NovelDownloadStore.saveChapterCatalog("Novel", novelUrl, "", listOf(chapter(1)))
         save(1, listOf(chapter(1)))

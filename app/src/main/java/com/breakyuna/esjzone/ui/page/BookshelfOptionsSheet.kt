@@ -6,6 +6,7 @@ import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.toggleable
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -43,13 +44,19 @@ internal fun BookshelfOptionsSheet(
         snapshotFlow { pager.settledPage }.collect { onTabChange(it) }
     }
 
-    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        modifier = Modifier.padding(horizontal = 24.dp).navigationBarsPadding(),
+        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+        sheetMaxWidth = 480.dp,
+        shape = RoundedCornerShape(24.dp),
+    ) {
         PrimaryTabRow(selectedTabIndex = pager.currentPage) {
             listOf(R.string.shelf_options_filter, R.string.bookshelf_sort, R.string.shelf_options_display).forEachIndexed { index, title ->
                 Tab(selected = pager.currentPage == index, onClick = { scope.launch { pager.animateScrollToPage(index) } }, text = { Text(stringResource(title)) })
             }
         }
-        HorizontalPager(state = pager, modifier = Modifier.fillMaxWidth().heightIn(max = 560.dp)) { page ->
+        HorizontalPager(state = pager, modifier = Modifier.fillMaxWidth()) { page ->
             Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState())
                 .padding(horizontal = AppSpacing.lg, vertical = AppSpacing.md)) {
                 when (page) {

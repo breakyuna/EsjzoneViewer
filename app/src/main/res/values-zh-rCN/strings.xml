@@ -974,6 +974,7 @@
     <string name="reader_catalog_current">定位当前章节</string>
     <string name="reader_toc_sort_ascending">切换为正序</string>
     <string name="reader_toc_sort_descending">切换为倒序</string>
+    <string name="novel_scroll_to_top">回到顶部</string>
     <string name="reader_toc_untitled_volume">未分卷章节</string>
     <string name="reader_toc_volume_count">%1$d 章</string>
     <string name="reader_boundary_failed">章节加载失败，当前正文已保留</string>

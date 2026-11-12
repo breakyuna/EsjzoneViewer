@@ -273,9 +273,23 @@ fun visibleChapterRows(
     items: List<Item>,
     expandedKeys: Set<String> = emptySet(),
     depth: Int = 0,
-    path: String = ""
+    path: String = "",
+    descending: Boolean = false
 ): List<VisibleChapterRow> = buildList {
-    items.forEachIndexed { index, item ->
+    // Keep text headings in front of their loose chapters while reversing the
+    // sections and their contents. Original indices keep expansion keys stable.
+    val sections = mutableListOf<MutableList<IndexedValue<Item>>>()
+    items.withIndex().forEach { indexed ->
+        if (sections.isEmpty() || indexed.value is TextItem || indexed.value is ChapterListItem ||
+            sections.last().last().value is ChapterListItem
+        ) sections.add(mutableListOf())
+        sections.last().add(indexed)
+    }
+    val ordered = if (descending) sections.asReversed().flatMap { section ->
+        if (section.first().value is TextItem) listOf(section.first()) + section.drop(1).asReversed()
+        else section.asReversed()
+    } else items.withIndex().toList()
+    ordered.forEach { (index, item) ->
         val itemPath = if (path.isEmpty()) index.toString() else "$path.$index"
         when (item) {
             is ChapterListItem -> {
@@ -284,7 +298,7 @@ fun visibleChapterRows(
                 // and retained by the screen's saveable state.
                 val expanded = expandedKeys.contains(key)
                 add(VisibleChapterGroup(item, key, depth, expanded))
-                if (expanded) addAll(visibleChapterRows(item.children, expandedKeys, depth + 1, itemPath))
+                if (expanded) addAll(visibleChapterRows(item.children, expandedKeys, depth + 1, itemPath, descending))
             }
             else -> add(VisibleChapterItem(item, "chapter-row:$itemPath", depth))
         }

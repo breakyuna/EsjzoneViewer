@@ -1,6 +1,10 @@
 package com.breakyuna.esjzone
 
 import com.breakyuna.esjzone.novellibrary.component.ChapterListItem
+import com.breakyuna.esjzone.novellibrary.component.ChapterItem
+import com.breakyuna.esjzone.novellibrary.component.TextComponent
+import com.breakyuna.esjzone.novellibrary.component.TextItem
+import com.breakyuna.esjzone.novellibrary.novel.Chapter
 import com.breakyuna.esjzone.novellibrary.component.VisibleChapterGroup
 import com.breakyuna.esjzone.novellibrary.component.VisibleChapterItem
 import com.breakyuna.esjzone.novellibrary.component.visibleChapterRows
@@ -134,5 +138,23 @@ class ChapterListParserTest {
         assertEquals("/forum/1/2.html", (expanded[2] as VisibleChapterItem).item.let {
             (it as com.breakyuna.esjzone.novellibrary.component.ChapterItem).chapter.url
         })
+    }
+
+    @Test
+    fun descendingKeepsHeadingsAndExpansionKeysWhileReversingChapters() {
+        fun chapter(name: String) = ChapterItem(Chapter(name, "/forum/1/$name.html", false))
+        val nested = ChapterListItem(TextComponent("Group"), emptyList(), listOf(chapter("3"), chapter("4")))
+        val items = listOf(TextItem(TextComponent("Volume 1")), chapter("1"), chapter("2"),
+            nested, TextItem(TextComponent("Volume 2")), chapter("5"))
+        val expanded = setOf("chapter-group:3")
+
+        val descending = visibleChapterRows(items, expanded, descending = true)
+        assertEquals(listOf("chapter-row:4", "chapter-row:5", "chapter-group:3",
+            "chapter-row:3.1", "chapter-row:3.0", "chapter-row:0", "chapter-row:2", "chapter-row:1"),
+            descending.map { it.key })
+        assertTrue((descending[2] as VisibleChapterGroup).expanded)
+        assertEquals(listOf("chapter-row:4", "chapter-row:5", "chapter-group:3",
+            "chapter-row:0", "chapter-row:2", "chapter-row:1"),
+            visibleChapterRows(items, descending = true).map { it.key })
     }
 }

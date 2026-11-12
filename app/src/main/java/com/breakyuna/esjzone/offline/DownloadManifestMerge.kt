@@ -28,6 +28,8 @@ internal fun mergeDownloadManifest(
         name = preferredNovelTitle(incoming.name, existing.name, novelUrl = incoming.url),
         catalogComplete = if (replaceCatalog) incoming.catalogComplete else existing.catalogComplete || existing.complete,
         commonPassword = existing.commonPassword,
+        descriptionHtml = incoming.descriptionHtml ?: existing.descriptionHtml,
+        catalogHtml = incoming.catalogHtml ?: existing.catalogHtml,
         isAdult = if (incoming.adultStatusKnown) incoming.isAdult else existing.isAdult,
         adultStatusKnown = incoming.adultStatusKnown || existing.adultStatusKnown)
 }

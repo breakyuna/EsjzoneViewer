@@ -24,6 +24,7 @@ import com.breakyuna.esjzone.novellibrary.novel.analyseChapterList
 import com.breakyuna.esjzone.novellibrary.novel.analyseDescription
 import com.breakyuna.esjzone.util.AppLogger
 import org.jsoup.Jsoup
+import kotlinx.coroutines.ensureActive
 
 private val detailSelector: HtmlSelector = JsoupHtmlSelector
 
@@ -32,13 +33,14 @@ fun EsjzoneClient.getNovelDetail(
     novel: Novel,
     includeComments: Boolean = false,
     forceRefresh: Boolean = false,
-    baseUrl: String? = null
+    baseUrl: String? = null,
+    awaitFresh: Boolean = false
 ): DetailedNovel {
     val targetUrl = baseUrl?.let { EsjzoneUrls.resolve(novel.url, it) }
         ?: EsjzoneUrls.resolve(novel.url)
     val detailCacheKey = novelDetailCacheKey(authorization, targetUrl)
     val detailCacheEpoch = NovelDetailCache.currentEpoch
-    if (!includeComments && !forceRefresh) {
+    if (!includeComments && !forceRefresh && !awaitFresh) {
         NovelDetailCache.read(detailCacheKey)?.takeIf { cached ->
             validNovelTitle(cached.name, cached.id(), targetUrl).isNotBlank()
         }?.let {
@@ -55,12 +57,32 @@ fun EsjzoneClient.getNovelDetail(
         url = targetUrl,
         maxAgeMillis = PageCacheTtl.DETAIL,
         forceRefresh = forceRefresh,
-        pageKind = PageKind.DETAIL
+        pageKind = PageKind.DETAIL,
+        awaitFresh = awaitFresh,
+        allowStaleOnError = !awaitFresh && !forceRefresh
     )
     val sourceReference = if (!includeComments) {
         PageCache.referenceForBody(detailCacheKey, responseBody)
     } else null
 
+    val detailedNovel = parseNovelDetail(novel, responseBody, targetUrl, includeComments)
+    if (sourceReference != null) {
+        NovelDetailCache.write(detailCacheKey, detailedNovel, sourceReference, detailCacheEpoch)
+    }
+    return detailedNovel
+}
+
+/** Local-only lookup: opening an offline detail must never start or await a request. */
+internal fun EsjzoneClient.getCachedNovelDetail(authorization: Authorization, novel: Novel): DetailedNovel? {
+    val targetUrl = EsjzoneUrls.resolve(novel.url)
+    val cacheKey = novelDetailCacheKey(authorization, targetUrl)
+    NovelDetailCache.read(cacheKey)?.let { return it }
+    val html = PageCache.readStale(cacheKey) ?: return null
+    if (!PageResponsePolicy.validate(200, html, targetUrl, kind = PageKind.DETAIL).trusted) return null
+    return parseNovelDetail(novel, html, targetUrl, false)
+}
+
+private fun parseNovelDetail(novel: Novel, responseBody: String, targetUrl: String, includeComments: Boolean): DetailedNovel {
     val document = Jsoup.parse(responseBody, targetUrl)
 
     val coverUrl = EsjzoneUrls.coverUrlFromImage(
@@ -165,11 +187,15 @@ fun EsjzoneClient.getNovelDetail(
         chapterList,
         comments,
         sourceUrl,
-        updatedAt
+        updatedAt,
+        descriptionHtml = descriptionElements.firstOrNull()?.clone()?.apply {
+            select("script, button, input").remove()
+        }?.outerHtml(),
+        catalogHtml = chapterListElements.firstOrNull()?.clone()?.apply {
+            select("script, button, input").remove()
+            select(".active").forEach { it.removeClass("active") }
+        }?.outerHtml()
     )
-    if (sourceReference != null) {
-        NovelDetailCache.write(detailCacheKey, detailedNovel, sourceReference, detailCacheEpoch)
-    }
     return detailedNovel
 }
 
@@ -194,6 +220,25 @@ internal fun EsjzoneClient.getCachedNovelChapterList(
     CacheDiagnostics.record(CacheEventType.HIT, CacheLayer.PAGE, CacheEventReason.DISK, cacheKey)
     return list
 }
+
+/** Upgrade all existing downloads using available local pages, without startup network traffic. */
+internal suspend fun EsjzoneClient.retainDownloadedNovelDetails(authorization: Authorization) =
+    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+        val context = kotlinx.coroutines.currentCoroutineContext()
+        com.breakyuna.esjzone.offline.NovelDownloadStore.listDownloadedMetadata {
+            context.ensureActive()
+        }.forEach { row ->
+            context.ensureActive()
+            if (row.manifest.catalogHtml != null && row.manifest.descriptionHtml != null) return@forEach
+            try {
+                getCachedNovelDetail(authorization,
+                    com.breakyuna.esjzone.novellibrary.novel.FavoriteNovel(row.novelName, row.novelUrl))?.let {
+                    com.breakyuna.esjzone.offline.NovelDownloadStore.retainNovelDetail(it)
+                }
+            } catch (error: kotlinx.coroutines.CancellationException) { throw error }
+            catch (error: Exception) { AppLogger.w("GetNovelDetail", "Unable to retain downloaded detail", error) }
+        }
+    }
 
 private val UPDATED_AT_REGEX = Regex(
     "(?:更新日期|更新日|最后更新|最後更新|更新)\\s*[：:]?\\s*" +
