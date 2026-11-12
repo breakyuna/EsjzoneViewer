@@ -2119,6 +2119,7 @@ object NovelDownloadStore {
         val root = rootDirectory ?: return@synchronized null
         if (create && (mutableMigrating.value || backupRestoreInProgress)) return@synchronized null
         val key = canonicalKey(novelUrl)
+        if (!novelDirectoryIndexLoaded && directoryIndexCache == null) ensureNovelDirectoryIndex()
         if (!novelDirectoryIndexLoaded && key !in novelDirectories) {
             val hints = loadDirectoryHints(root)
             val folder = hints?.directories?.entries?.firstOrNull { it.value == key }?.key
@@ -2221,8 +2222,8 @@ object NovelDownloadStore {
     private data class DirectoryHints(
         @SerializedName(value = "root", alternate = ["a"]) val root: String,
         @SerializedName(value = "directories", alternate = ["b"]) val directories: Map<String, String>,
-        val rootDocumentUri: String? = null,
-        val documentUris: Map<String, String>? = null
+        @SerializedName("rootDocumentUri") val rootDocumentUri: String? = null,
+        @SerializedName("documentUris") val documentUris: Map<String, String>? = null
     )
 
     private fun loadDirectoryHints(root: StorageFile): DirectoryHints? {
