@@ -214,6 +214,11 @@
     <string name="novel_export_epub">Export EPUB</string>
     <string name="novel_export_success">Export complete</string>
     <string name="novel_export_failed">Unable to export novel</string>
+    <string name="novel_export_failed_removed">Unable to export novel. The incomplete file was deleted</string>
+    <string name="novel_export_failed_leftover">Unable to export novel. The incomplete file could not be deleted; please remove it manually</string>
+    <string name="novel_export_cancelled_removed">Export cancelled. The incomplete file was deleted</string>
+    <string name="novel_export_cancelled_leftover">Export cancelled. The incomplete file could not be deleted; please remove it manually</string>
+    <string name="novel_export_busy">Another export is still in progress</string>
     <string name="novel_local_copy_title">Offline copy</string>
     <string name="novel_local_copy_none">No local copy yet</string>
     <string name="novel_local_copy_partial">%1$d/%2$d chapters available locally</string>

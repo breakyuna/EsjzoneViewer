@@ -10,6 +10,7 @@ import com.breakyuna.esjzone.network.cancellablePageRequest
 
 import android.annotation.SuppressLint
 import android.content.Context
+import java.io.OutputStream
 import android.content.Intent
 import android.net.Uri
 import com.breakyuna.esjzone.ui.designsystem.GlobalToast as Toast
@@ -277,30 +278,31 @@ class NovelPage(
         var exportSelection by rememberSaveable(novel.url, stateSaver = DownloadChapterSelectionSaver) {
             mutableStateOf(emptySet<String>())
         }
-        val exportScope = rememberCoroutineScope()
+        val exportModel = rememberAppViewModel { NovelExportModel(context) }
+        val exporting by exportModel.isExporting.collectAsState()
         val detailedForExport = (state as? NovelPageModel.State.Result)?.detailed
 
-        fun export(uri: Uri, format: NovelExportFormat, detailed: DetailedNovel) {
+        fun export(uri: Uri?, format: NovelExportFormat) {
+            if (uri == null) return
+            val detailed = detailedForExport
+            // The page may have been recreated (process death) while the picker
+            // was open; the document now exists, so remove it instead of leaving 0 bytes.
+            if (detailed == null) {
+                exportModel.discard(uri)
+                return
+            }
             val selected = exportSelection
-            exportScope.launch {
-                val succeeded = try {
-                    exportNovel(context, detailed, uri, format, selected)
-                    true
-                } catch (error: CancellationException) {
-                    throw error
-                } catch (error: Exception) {
-                    AppLogger.e(
-                        "NovelPage",
-                        "Failed to export ${detailed.name} as ${format.name}",
-                        error
-                    )
-                    false
-                }
-                Toast.makeText(
-                    context,
-                    if (succeeded) R.string.novel_export_success else R.string.novel_export_failed,
-                    Toast.LENGTH_SHORT
-                ).show()
+            exportModel.start(uri, "${detailed.name} as ${format.name}") { output, checkActive ->
+                writeNovelExport(detailed, output, format, selected, checkActive)
+            }
+        }
+
+        fun requestExport(format: NovelExportFormat) {
+            // One export at a time: a second picker would create a document we must then discard.
+            if (exporting) {
+                Toast.makeText(context, R.string.novel_export_busy, Toast.LENGTH_SHORT).show()
+            } else {
+                exportFormat = format
             }
         }
 
@@ -309,16 +311,10 @@ class NovelPage(
         // registry owner on some Android/Compose combinations.
         val txtLauncher = rememberLauncherForActivityResult(
             ActivityResultContracts.CreateDocument("text/plain")
-        ) { uri ->
-            val detailed = detailedForExport
-            if (uri != null && detailed != null) export(uri, NovelExportFormat.TXT, detailed)
-        }
+        ) { uri -> export(uri, NovelExportFormat.TXT) }
         val epubLauncher = rememberLauncherForActivityResult(
             ActivityResultContracts.CreateDocument("application/epub+zip")
-        ) { uri ->
-            val detailed = detailedForExport
-            if (uri != null && detailed != null) export(uri, NovelExportFormat.EPUB, detailed)
-        }
+        ) { uri -> export(uri, NovelExportFormat.EPUB) }
 
         exportFormat?.let { format ->
             detailedForExport?.let { detailed ->
@@ -428,12 +424,8 @@ class NovelPage(
                             historyState = historyState,
                             localReading = localReading,
                             hasHistory = hasHistory,
-                            onExportTxt = {
-                                exportFormat = NovelExportFormat.TXT
-                            },
-                            onExportEpub = {
-                                exportFormat = NovelExportFormat.EPUB
-                            },
+                            onExportTxt = { requestExport(NovelExportFormat.TXT) },
+                            onExportEpub = { requestExport(NovelExportFormat.EPUB) },
                             favorite = rememberedFavorite,
                             favoritePending = localShelfEntry?.syncState != null &&
                                 localShelfEntry?.syncState != BookshelfSyncState.SYNCED,
@@ -1372,38 +1364,35 @@ private enum class NovelExportFormat {
     EPUB
 }
 
-private suspend fun exportNovel(
-    context: Context,
+/** Runs on the export controller's IO dispatcher; [checkActive] aborts on cancellation. */
+private fun writeNovelExport(
     novel: DetailedNovel,
-    uri: Uri,
+    stream: OutputStream,
     format: NovelExportFormat,
-    selectedChapterUrls: Set<String>
+    selectedChapterUrls: Set<String>,
+    checkActive: () -> Unit
 ) {
-    withContext(Dispatchers.IO) {
-        val manifest = PresentationAccess.downloads.manifest(novel.url)
-            ?: error("Novel download is unavailable")
-        val exportManifest = manifest.copy(name = com.breakyuna.esjzone.novellibrary.novel.preferredNovelTitle(
-            novel.name, manifest.name, novel.id(), novel.url
-        ))
-        val output = context.contentResolver.openOutputStream(uri, "w")
-            ?: error("Unable to open the selected file")
-        output.use { stream ->
-            val loader = { record: DownloadedChapterRecord ->
-                PresentationAccess.downloads.chapterContent(novel.url, record)
-            }
-            when (format) {
-                NovelExportFormat.TXT -> NovelExporter.exportTxt(exportManifest, loader, stream, selectedChapterUrls)
-                NovelExportFormat.EPUB -> NovelExporter.exportEpub(
-                    manifest = exportManifest,
-                    chapterLoader = loader,
-                    output = stream,
-                    imageLoader = { component ->
-                        PresentationAccess.downloads.imageFile(novel.url, component)
-                    },
-                    selectedChapterUrls = selectedChapterUrls
-                )
-            }
-        }
+    val manifest = PresentationAccess.downloads.manifest(novel.url)
+        ?: error("Novel download is unavailable")
+    val exportManifest = manifest.copy(name = com.breakyuna.esjzone.novellibrary.novel.preferredNovelTitle(
+        novel.name, manifest.name, novel.id(), novel.url
+    ))
+    val loader = { record: DownloadedChapterRecord ->
+        checkActive()
+        PresentationAccess.downloads.chapterContent(novel.url, record)
+    }
+    when (format) {
+        NovelExportFormat.TXT -> NovelExporter.exportTxt(exportManifest, loader, stream, selectedChapterUrls)
+        NovelExportFormat.EPUB -> NovelExporter.exportEpub(
+            manifest = exportManifest,
+            chapterLoader = loader,
+            output = stream,
+            imageLoader = { component ->
+                checkActive()
+                PresentationAccess.downloads.imageFile(novel.url, component)
+            },
+            selectedChapterUrls = selectedChapterUrls
+        )
     }
 }
 
