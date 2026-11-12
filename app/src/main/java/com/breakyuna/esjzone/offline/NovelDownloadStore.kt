@@ -5,6 +5,7 @@ import com.breakyuna.esjzone.novellibrary.novel.validNovelTitle
 
 import com.breakyuna.esjzone.data.reader.ChapterBody
 import com.breakyuna.esjzone.data.reader.withStructuredBody
+import com.breakyuna.esjzone.data.reader.withFormatting
 import com.breakyuna.esjzone.domain.reader.sourceText
 import android.content.Context
 import com.breakyuna.esjzone.R
@@ -1758,7 +1759,9 @@ object NovelDownloadStore {
                 throw CancellationException("Download storage changed or the novel was removed")
             }
         }
-        if (original.schemaVersion != 2 || match.record.textLength != stored.body?.textLength || !match.record.bodyAvailable) {
+        val formattingRecovered = original.body?.formatting != stored.body?.formatting
+        if (original.schemaVersion != 2 || formattingRecovered ||
+            match.record.textLength != stored.body?.textLength || !match.record.bodyAvailable) {
             // Migration and optional metadata repair must not delay first publication.
             readMaintenanceScope.launch {
                 runCatching {
@@ -1766,7 +1769,7 @@ object NovelDownloadStore {
                     val currentRecord = current?.chapters?.firstOrNull { chapterKey(it.url) == chapterKey(chapterUrl) }
                     val file = currentRecord?.let { resolveLocalFile(match.directory, it.fileName) }
                     val latest = file?.let { readStoredSnapshot(it, snapshot.guard) }
-                    if (original.schemaVersion != 2 && file != null && latest != null) {
+                    if ((original.schemaVersion != 2 || formattingRecovered) && file != null && latest != null) {
                         mergeAndWriteChapter(file, latest, match.directory, snapshot.guard, forceRewrite = true)
                     }
                     if (current != null && currentRecord != null && latest != null &&
@@ -2087,7 +2090,7 @@ object NovelDownloadStore {
     private fun readStoredChapter(directory: StorageFile, file: StorageFile): DownloadedChapterContent? = synchronized(ioLock) {
         val stored = readJson(file, DownloadedChapterContent::class.java) ?: return@synchronized null
         val decoded = decodeStoredChapter(stored) ?: return@synchronized null
-        if (stored.schemaVersion != 2) {
+        if (stored.schemaVersion != 2 || stored.body?.formatting != decoded.body?.formatting) {
             // Reading remains possible if storage is full; the original survives a failed rename.
             runCatching { writeJson(file, decoded, newWriteGuard(directory)) }
         }
@@ -2096,7 +2099,11 @@ object NovelDownloadStore {
 
     private fun decodeStoredChapter(stored: DownloadedChapterContent): DownloadedChapterContent? {
         if (stored.schemaVersion == 2) {
-            return runCatching { requireNotNull(stored.body).validate(); stored }.getOrNull()
+            return runCatching {
+                val body = requireNotNull(stored.body).validate()
+                    .withFormatting(stored.contentHtml, stored.baseUrl ?: stored.url)
+                if (body === stored.body) stored else stored.copy(body = body)
+            }.getOrNull()
         }
         if (stored.schemaVersion !in 0..1) throw IOException("Unsupported downloaded chapter version")
         return runCatching {
@@ -2117,7 +2124,8 @@ object NovelDownloadStore {
                 else TextComponent(if (component.type == IMAGE_COMPONENT) missingImageLabel() else component.value)
             }
             require(components.isNotEmpty())
-            stored.copy(schemaVersion = 2, body = ChapterBody.from(components))
+            stored.copy(schemaVersion = 2, body = ChapterBody.from(components)
+                .withFormatting(html, stored.baseUrl ?: stored.url))
         }.getOrNull()
     }
 

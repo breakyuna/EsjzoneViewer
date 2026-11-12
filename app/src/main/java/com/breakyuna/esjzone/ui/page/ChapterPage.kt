@@ -972,7 +972,11 @@ class ChapterPage(
                     fraction = chapterProgressFor(pixelOffset, itemSize) ?: 0f)
             }
             val displayOffset = if (page != null) {
-                (page.segments.firstOrNull() as? com.breakyuna.esjzone.ui.reader.ReaderPageSegment.TextLine)?.startOffset ?: 0
+                when (val first = page.segments.firstOrNull()) {
+                    is com.breakyuna.esjzone.ui.reader.ReaderPageSegment.TextLine -> first.startOffset
+                    is com.breakyuna.esjzone.ui.reader.ReaderPageSegment.Divider -> first.startOffset
+                    else -> 0
+                }
             } else {
                 val layout = textLayouts[item.key] ?: return null
                 layout.getLineStart(layout.getLineForVerticalPosition((-pixelOffset).coerceAtLeast(0).toFloat()))
@@ -2212,6 +2216,9 @@ class ChapterPage(
                                         }
                                         ReaderChapterHeading(item.entry.chapter.name, readerSettings,
                                             readerContentColor, readerTextTransform)
+                                        repeat(item.entry.document.formatting.dividersAt.count { it == 0 }) {
+                                            com.breakyuna.esjzone.ui.reader.ReaderHorizontalRule(readerContentColor)
+                                        }
                                         if (item.entry.requiresPassword) {
                                             ReaderChapterPasswordContent(
                                                 chapter = item.entry.chapter,
@@ -2246,7 +2253,9 @@ class ChapterPage(
                                         highlights = searchHighlights(item),
                                         textOffsets = { textOffsets(it) ?: com.breakyuna.esjzone.domain.reader.ReaderTextOffsets.identity(it.sourceText()) },
                                         links = item.entry.document.links,
-                                        onLinkClick = openReaderLink)
+                                        onLinkClick = openReaderLink,
+                                        formatting = item.entry.document.formatting,
+                                        renderLeadingDividers = false)
                                 }
                             }
 

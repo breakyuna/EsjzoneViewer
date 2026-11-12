@@ -116,7 +116,7 @@
 
 ### 应用内部正文快照（非网站接口）
 
-`DownloadedChapterContent.schemaVersion = 2` 的 `body` 为显式 `ChapterBody` DTO：`schemaVersion`、`parserVersion`、有序 `blocks`、SHA-256 `fingerprint` 与 UTF-16 `textLength`。块类型为 paragraph/text/image/break；文本片段保存样式标签、数值参数及 ruby 读音。图片原 URL 属于正文身份，下载相对路径及媒体类型仍位于 `components` 资源记录中，不参与指纹。`contentHtml` 仅用于富结构导出。
+`DownloadedChapterContent.schemaVersion = 2` 的 `body` 为显式 `ChapterBody` DTO：`schemaVersion`、`parserVersion`、有序 `blocks`、SHA-256 `fingerprint` 与 UTF-16 `textLength`。块类型为 paragraph/text/image/break；文本片段保存样式标签、数值参数及 ruby 读音。可选的 `formatting` 按正文块索引保存段落对齐和分割线位置，不参与正文指纹；旧数据缺少该字段时从匹配的 `contentHtml` 恢复。图片原 URL 属于正文身份，下载相对路径及媒体类型仍位于 `components` 资源记录中，不参与指纹。`contentHtml` 还用于富结构导出和恢复正文链接及排版。
 
 下载 manifest 版本 2 另存 `catalogComplete`；章节记录包含 `bodyAvailable`、`textLength` 和仅本地保留的 `localOnly`。正文可读与图片齐全分别判断，部分选择不会被标为全本完整。增量提交仅补新章、缺章和缺图，不覆盖有效的已有正文。正文成功保存后，图片超时、TLS 握手失败等图片获取错误不再使下载任务失败；保留图片原 URL、已有正文与已下载图片，`bodyAvailable` 为 true，缺图章节的 `downloaded` 及全书 `complete` 仍为 false，后续继续下载只补缺图。批量密码解锁以正文保存成功为准，缺图不计为解锁失败。
 

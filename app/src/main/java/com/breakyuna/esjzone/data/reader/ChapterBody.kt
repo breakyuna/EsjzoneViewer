@@ -19,7 +19,9 @@ data class ChapterBody(
     val parserVersion: Int,
     val blocks: List<StoredBlock>,
     val fingerprint: String,
-    val textLength: Int
+    val textLength: Int,
+    // Not part of the content fingerprint: changing presentation must not invalidate anchors.
+    val formatting: ReaderChapterFormatting? = null
 ) : Serializable {
     fun readerBlocks(imageUrl: (String) -> String = { it }): List<ReaderBlock> = blocks.map { block ->
         when (block.type) {
@@ -82,7 +84,11 @@ data class ChapterBody(
     }
 }
 
-fun DetailedChapter.withStructuredBody(): DetailedChapter = if (body != null) this else copy(body = ChapterBody.from(content))
+fun DetailedChapter.withStructuredBody(): DetailedChapter {
+    val current = body ?: ChapterBody.from(content)
+    val ready = current.withFormatting(contentHtml, sourceUrl)
+    return if (ready === body) this else copy(body = ready)
+}
 
 private fun StoredText.toReaderText() = ReaderBlock.Text(text, styles.map { it.readerStyle() }.toSet(),
     reading?.let { ReaderRuby(text, it) })

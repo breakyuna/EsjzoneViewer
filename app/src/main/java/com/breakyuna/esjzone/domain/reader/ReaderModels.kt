@@ -1,6 +1,7 @@
 package com.breakyuna.esjzone.domain.reader
 
 import androidx.compose.runtime.Immutable
+import java.io.Serializable
 
 /** Stable identity for a chapter. The domain layer never depends on Compose or navigation. */
 @Immutable
@@ -31,6 +32,14 @@ data class ReaderRuby(
 @Immutable
 data class ReaderLink(val start: Int, val end: Int, val url: String)
 
+/** Presentation metadata is separate from text identity and its saved anchors. */
+@Immutable
+data class ReaderChapterFormatting(
+    val alignments: Map<Int, String> = emptyMap(),
+    /** A position is the number of body blocks preceding the horizontal rule. */
+    val dividersAt: List<Int> = emptyList()
+) : Serializable
+
 /** The renderer can map this AST to any UI toolkit without reparsing HTML. */
 @Immutable
 sealed interface ReaderBlock {
@@ -60,7 +69,8 @@ data class ReaderChapterDocument(
     val contentHtml: String? = null,
     val sourceUrl: String? = null,
     val contentFingerprint: String = "",
-    val links: Map<Int, List<ReaderLink>> = emptyMap()
+    val links: Map<Int, List<ReaderLink>> = emptyMap(),
+    val formatting: ReaderChapterFormatting = ReaderChapterFormatting()
 ) {
     /** Derived once per immutable document, without allocating paragraph strings. */
     internal val textPrefixLengths: IntArray by lazy {

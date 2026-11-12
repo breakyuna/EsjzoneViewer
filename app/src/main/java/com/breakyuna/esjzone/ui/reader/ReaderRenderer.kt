@@ -19,6 +19,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.text.selection.DisableSelection
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.CompositionLocalProvider
@@ -40,6 +42,8 @@ import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextMeasurer
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextIndent
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.foundation.text.InlineTextContent
@@ -50,6 +54,7 @@ import com.breakyuna.esjzone.R
 import com.breakyuna.esjzone.domain.reader.sourceText
 import com.breakyuna.esjzone.domain.reader.ReaderBlock
 import com.breakyuna.esjzone.domain.reader.ReaderChapterDocument
+import com.breakyuna.esjzone.domain.reader.ReaderChapterFormatting
 import com.breakyuna.esjzone.domain.reader.ReaderLink
 import com.breakyuna.esjzone.domain.reader.ReaderTextOffsets
 import com.breakyuna.esjzone.ui.designsystem.AppImageViewer
@@ -75,7 +80,7 @@ fun ReaderRenderer(
     Column(modifier = Modifier.fillMaxWidth()) {
         ReaderChapterHeading(chapterName, settings, contentColor, textTransform)
         ReaderBlocks(document.blocks, settings, textMeasurer, density, contentColor, textTransform,
-            links = document.links, onLinkClick = onLinkClick)
+            links = document.links, onLinkClick = onLinkClick, formatting = document.formatting)
     }
 }
 
@@ -102,17 +107,26 @@ fun ReaderBlocks(
     onLinkClick: (String) -> Unit = {},
     bookmarkedBlocks: Set<Int> = emptySet(),
     bookmarkPicking: Boolean = false,
-    onBookmarkSelect: (Int, Int) -> Unit = { _, _ -> }
+    onBookmarkSelect: (Int, Int) -> Unit = { _, _ -> },
+    formatting: ReaderChapterFormatting = ReaderChapterFormatting(),
+    renderLeadingDividers: Boolean = true
 ) {
     val textStyle = readerBodyTextStyle(settings)
 
     val content: @Composable () -> Unit = {
         Column(modifier = Modifier.fillMaxWidth()) {
             blocks.forEachIndexed { index, block ->
+                val blockIndex = blockStartIndex + index
+                if (blockIndex == 0 && renderLeadingDividers) repeat(formatting.dividersAt.count { it == 0 }) {
+                    ReaderHorizontalRule(contentColor)
+                }
+                val alignment = formatting.alignments[blockIndex]
+                val paragraphStyle = readerParagraphStyle(textStyle, alignment)
                 when (block) {
                     is ReaderBlock.Paragraph -> ReaderParagraphBlock(
                         block = block,
-                        textStyle = textStyle,
+                        textStyle = paragraphStyle,
+                        fullWidth = alignment != null,
                         textMeasurer = textMeasurer,
                         density = density,
                         textTransform = textTransform,
@@ -138,7 +152,8 @@ fun ReaderBlocks(
                     )
                     is ReaderBlock.Text -> ReaderTextBlock(
                         block = block,
-                        textStyle = textStyle,
+                        textStyle = paragraphStyle,
+                        fullWidth = alignment != null,
                         textMeasurer = textMeasurer,
                         density = density,
                         textTransform = textTransform,
@@ -172,11 +187,14 @@ fun ReaderBlocks(
                         modifier = Modifier.height(with(density) { settings.lineHeightSp.sp.toDp() })
                     )
                 }
+                repeat(formatting.dividersAt.count { it == blockIndex + 1 }) {
+                    ReaderHorizontalRule(contentColor)
+                }
             }
         }
     }
     CompositionLocalProvider(LocalReaderUnderlineSelection provides underlineSelection,
-        LocalReaderUnderlineChapter provides chapterKey) {
+        LocalReaderUnderlineChapter provides chapterKey, LocalContentColor provides contentColor) {
         if (settings.longPressUnderline || bookmarkPicking) DisableSelection { content() } else SelectionContainer { content() }
     }
 }
@@ -185,6 +203,7 @@ fun ReaderBlocks(
 private fun ReaderParagraphBlock(
     block: ReaderBlock.Paragraph,
     textStyle: TextStyle,
+    fullWidth: Boolean,
     textMeasurer: TextMeasurer,
     density: Density,
     textTransform: (String) -> String,
@@ -204,15 +223,16 @@ private fun ReaderParagraphBlock(
     onLinkClick: (String) -> Unit,
     textOffsets: ReaderTextOffsets
 ) {
-    val (paragraph, inlineContent) = remember(block, textStyle, textTransform, density) {
+    val (paragraph, inlineContent) = remember(block, textStyle, textTransform, textMeasurer, density) {
         val inlines = linkedMapOf<String, InlineTextContent>()
         val annotated = buildAnnotatedString {
-            block.parts.forEach { part ->
+            block.parts.forEachIndexed { index, part ->
                 val (text, partInlines) = part.toAnnotatedReaderText(
                     baseStyle = textStyle,
                     textMeasurer = textMeasurer,
                     density = density,
-                    textTransform = textTransform
+                    textTransform = textTransform,
+                    inlineKey = "reader-ruby-$index"
                 )
                 append(text)
                 inlines.putAll(partInlines)
@@ -220,12 +240,15 @@ private fun ReaderParagraphBlock(
         }
         annotated to inlines
     }
+    val layoutStyle = remember(block, textStyle, inlineContent, textMeasurer, density, textTransform) {
+        readerRubyParagraphStyle(block, textStyle, inlineContent, textMeasurer, density, textTransform)
+    }
     ReaderUnderlineText(
         text = paragraph,
         inlineContent = inlineContent,
-        style = textStyle,
+        style = layoutStyle,
         color = contentColor,
-        modifier = Modifier.padding(bottom = paragraphSpacingDp.dp),
+        modifier = (if (fullWidth) Modifier.fillMaxWidth() else Modifier).padding(bottom = paragraphSpacingDp.dp),
         enabled = enabled,
         bookmarkMargin = bookmarkMargin,
         blockIndex = blockIndex,
@@ -248,6 +271,7 @@ private fun ReaderParagraphBlock(
 private fun ReaderTextBlock(
     block: ReaderBlock.Text,
     textStyle: TextStyle,
+    fullWidth: Boolean,
     textMeasurer: TextMeasurer,
     density: Density,
     textTransform: (String) -> String,
@@ -267,7 +291,7 @@ private fun ReaderTextBlock(
     onLinkClick: (String) -> Unit,
     textOffsets: ReaderTextOffsets
 ) {
-    val (text, inlineContent) = remember(block, textStyle, textTransform, density) {
+    val (text, inlineContent) = remember(block, textStyle, textTransform, textMeasurer, density) {
         block.toAnnotatedReaderText(
             baseStyle = textStyle,
             textMeasurer = textMeasurer,
@@ -275,12 +299,15 @@ private fun ReaderTextBlock(
             textTransform = textTransform
         )
     }
+    val layoutStyle = remember(block, textStyle, inlineContent, textMeasurer, density, textTransform) {
+        readerRubyParagraphStyle(block, textStyle, inlineContent, textMeasurer, density, textTransform)
+    }
     ReaderUnderlineText(
         text = text,
         inlineContent = inlineContent,
-        style = textStyle,
+        style = layoutStyle,
         color = contentColor,
-        modifier = Modifier.padding(bottom = paragraphSpacingDp.dp),
+        modifier = (if (fullWidth) Modifier.fillMaxWidth() else Modifier).padding(bottom = paragraphSpacingDp.dp),
         enabled = enabled,
         bookmarkMargin = bookmarkMargin,
         blockIndex = blockIndex,
@@ -297,6 +324,29 @@ private fun ReaderTextBlock(
         linkOffsets = linkOffsets,
         onLinkClick = onLinkClick
     )
+}
+
+internal fun readerParagraphStyle(style: TextStyle, alignment: String?): TextStyle {
+    val textAlign = when (alignment) {
+        "left" -> TextAlign.Left
+        "center" -> TextAlign.Center
+        "right" -> TextAlign.Right
+        "start" -> TextAlign.Start
+        "end" -> TextAlign.End
+        "justify" -> TextAlign.Justify
+        else -> return style
+    }
+    return style.copy(textAlign = textAlign,
+        textIndent = if (alignment in setOf("center", "right", "end")) TextIndent.None else style.textIndent)
+}
+
+internal val ReaderHorizontalRuleHeight = 17.dp
+
+@Composable
+internal fun ReaderHorizontalRule(contentColor: Color) {
+    Box(Modifier.fillMaxWidth().height(ReaderHorizontalRuleHeight), contentAlignment = Alignment.Center) {
+        HorizontalDivider(thickness = 1.dp, color = contentColor.copy(alpha = 0.3f))
+    }
 }
 
 @Composable

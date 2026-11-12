@@ -1,8 +1,9 @@
 package com.breakyuna.esjzone.network.external
 
 import com.breakyuna.esjzone.data.reader.withStructuredBody
+import com.breakyuna.esjzone.data.reader.ChapterBody
+import com.breakyuna.esjzone.data.reader.analyseChapterContent
 import com.breakyuna.esjzone.network.EsjzoneUrls
-import com.breakyuna.esjzone.novellibrary.component.analyseComponents
 import com.breakyuna.esjzone.novellibrary.novel.Chapter
 import com.breakyuna.esjzone.novellibrary.novel.ChapterSource
 import com.breakyuna.esjzone.novellibrary.novel.DetailedChapter
@@ -65,9 +66,10 @@ internal object ExternalChapterHtml {
             throw ExternalChapterParseException()
         }
         val title = document.selectFirst("#title")?.text()?.trim().orEmpty().ifBlank { chapter.name }
+        val parsed = analyseChapterContent(content)
         return DetailedChapter(
-            title, analyseComponents(content), previous, next,
-            content.html(), url
+            title, parsed.components, previous, next, content.html(), url,
+            body = ChapterBody.fromBlocks(parsed.blocks).copy(formatting = parsed.formatting)
         ).withStructuredBody()
     }
 

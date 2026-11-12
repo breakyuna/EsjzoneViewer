@@ -111,6 +111,15 @@ class ReaderBookmarkPositionTest {
     }
 
     @Test
+    fun dividerPageKeepsItsActualPositionAtTheEndOfThePreviousBlock() {
+        val pages = listOf(ReaderPage(listOf(line(1, 0)), 1f),
+            ReaderPage(listOf(line(1, 5)), 1.5f),
+            ReaderPage(listOf(ReaderPageSegment.Divider(1, 10)), 1.999f))
+        assertEquals(1, readerPageIndexForAnchor(pages, ReaderAnchor(key, fingerprint, 1, 7)) { it })
+        assertEquals(2, readerPageIndexForAnchor(pages, ReaderAnchor(key, fingerprint, 1, 10)) { it })
+    }
+
+    @Test
     fun changedBodyKeepsTheParagraphIndexClampedToTheCurrentChapter() {
         val exact = ReaderAnchor(key, fingerprint, 1, 6)
         assertNull(ReaderBookmarkPosition.fallbackContentPosition(document, key, exact))

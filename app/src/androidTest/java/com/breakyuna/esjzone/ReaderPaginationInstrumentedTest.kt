@@ -196,6 +196,7 @@ class ReaderPaginationInstrumentedTest {
                         ).size.height + with(density) { segment.bottomSpacing.roundToPx() }
                         is ReaderPageSegment.Gap -> with(density) { segment.height.roundToPx() }
                         is ReaderPageSegment.Image -> error("No images in this fixture")
+                        is ReaderPageSegment.Divider -> error("No dividers in this fixture")
                     }
                 }
                 assertTrue("Rendered page height $renderedHeight exceeds $height", renderedHeight <= height)

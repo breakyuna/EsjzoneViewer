@@ -1,6 +1,8 @@
 package com.breakyuna.esjzone.network.features
 
 import com.breakyuna.esjzone.data.reader.withStructuredBody
+import com.breakyuna.esjzone.data.reader.ChapterBody
+import com.breakyuna.esjzone.data.reader.analyseChapterContent
 import com.breakyuna.esjzone.network.StructuredChapterCache
 import com.breakyuna.esjzone.network.Authorization
 import com.breakyuna.esjzone.network.EsjzoneClient
@@ -11,7 +13,6 @@ import com.breakyuna.esjzone.network.PageCacheTtl
 import com.breakyuna.esjzone.network.PageKind
 import com.breakyuna.esjzone.network.readTextBounded
 import com.breakyuna.esjzone.offline.NovelDownloadStore
-import com.breakyuna.esjzone.novellibrary.component.analyseComponents
 import com.breakyuna.esjzone.novellibrary.novel.Chapter
 import com.breakyuna.esjzone.novellibrary.novel.DetailedChapter
 import com.breakyuna.esjzone.novellibrary.novel.ChapterSource
@@ -190,12 +191,13 @@ internal fun Document.isPasswordProtectedChapter(): Boolean {
 
 private fun Document.toDetailedChapter(chapter: Chapter, targetUrl: String): DetailedChapter {
     val contentElement = chapterSelector.first(this, ".forum-content.mt-3, .forum-content")
-    val components = if (contentElement != null) {
-        analyseComponents(contentElement)
+    val parsed = if (contentElement != null) {
+        analyseChapterContent(contentElement)
     } else {
         AppLogger.w("GetChapterDetail", "No content element found in chapter page: $targetUrl")
-        listOf()
+        null
     }
+    val components = parsed?.components.orEmpty()
 
     val previousChapter = chapterSelector.first(
         this,
@@ -215,7 +217,8 @@ private fun Document.toDetailedChapter(chapter: Chapter, targetUrl: String): Det
         previous,
         next,
         contentElement?.html(),
-        targetUrl
+        targetUrl,
+        body = parsed?.let { ChapterBody.fromBlocks(it.blocks).copy(formatting = it.formatting) }
     ).withStructuredBody()
 }
 

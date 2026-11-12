@@ -30,7 +30,8 @@ class LegacyReaderChapterRepository(
             next = detail.next?.toReaderRef(),
             contentHtml = detail.contentHtml,
             sourceUrl = detail.sourceUrl,
-            contentFingerprint = detail.body?.fingerprint.orEmpty()
+            contentFingerprint = detail.body?.fingerprint.orEmpty(),
+            formatting = detail.body?.formatting ?: com.breakyuna.esjzone.domain.reader.ReaderChapterFormatting()
         )
     }
 }

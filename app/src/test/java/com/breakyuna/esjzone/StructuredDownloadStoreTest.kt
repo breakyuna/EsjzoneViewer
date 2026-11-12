@@ -11,6 +11,7 @@ import com.breakyuna.esjzone.network.Authorization
 import com.breakyuna.esjzone.network.EsjzoneClient
 import com.breakyuna.esjzone.novellibrary.component.ChapterItem
 import com.breakyuna.esjzone.novellibrary.component.TextComponent
+import com.breakyuna.esjzone.novellibrary.component.analyseComponents
 import com.breakyuna.esjzone.novellibrary.novel.*
 import com.breakyuna.esjzone.offline.*
 import com.breakyuna.esjzone.storage.StorageMigrationBusyException
@@ -32,8 +33,33 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.withTimeout
 import org.junit.Assert.*
 import org.junit.Test
+import org.jsoup.Jsoup
 
 class StructuredDownloadStoreTest {
+    @Test
+    fun oldDownloadedBodyRecoversFormattingWithoutChangingItsFingerprint() = withStorage { root ->
+        val manifest = save(1, listOf(chapter(1)))
+        val directory = root.listFiles()!!.single()
+        val file = File(directory, manifest.chapters.single().fileName)
+        val html = "<p style='text-align:center'>标题</p><hr><p>正文</p>"
+        val body = ChapterBody.from(analyseComponents(Jsoup.parseBodyFragment(html, chapter(1).url).body()))
+        file.writeText(Gson().toJson(DownloadedChapterContent("Chapter 1", chapter(1).url,
+            listOf(DownloadedComponent("text", "标题"), DownloadedComponent("text", "正文")),
+            html, chapter(1).url, 2, body)))
+        val restored = requireNotNull(NovelDownloadStore.readChapter(chapter(1).url, novelUrl)).body!!
+        assertEquals(body.fingerprint, restored.fingerprint)
+        assertEquals(body.readerBlocks(), restored.readerBlocks())
+        assertEquals(mapOf(0 to "center"), restored.formatting!!.alignments)
+        assertEquals(listOf(1), restored.formatting!!.dividersAt)
+        awaitMaintenance {
+            runCatching {
+                GZIPInputStream(file.inputStream()).bufferedReader().use {
+                    Gson().fromJson(it, DownloadedChapterContent::class.java).body?.formatting == restored.formatting
+                }
+            }.getOrDefault(false)
+        }
+    }
+
     @Test
     fun failedDatabaseRestoreKeepsTheOriginalDownloadsAcrossARescan() = withStorage { root ->
         val incoming = Files.createTempDirectory("restore-rollback-incoming-").toFile()

@@ -3,13 +3,45 @@ package com.breakyuna.esjzone
 import com.breakyuna.esjzone.network.PageCache
 import com.breakyuna.esjzone.network.PageCacheTtl
 import com.breakyuna.esjzone.network.StructuredChapterCache
+import com.breakyuna.esjzone.data.reader.ChapterBody
+import com.breakyuna.esjzone.novellibrary.component.analyseComponents
 import com.breakyuna.esjzone.novellibrary.component.TextComponent
 import com.breakyuna.esjzone.novellibrary.novel.DetailedChapter
+import com.google.gson.Gson
+import com.google.gson.JsonObject
+import org.jsoup.Jsoup
 import java.nio.file.Files
 import org.junit.Assert.*
 import org.junit.Test
 
 class StructuredChapterCacheTest {
+    @Test
+    fun oldSnapshotRestoresFormattingWithoutInvalidatingItsSourceReference() {
+        val directory = Files.createTempDirectory("chapter-format-cache-").toFile()
+        PageCache.initializeDirectory(directory)
+        try {
+            val key = "fixture|/forum/1/2.html"
+            val url = "https://www.esjzone.cc/forum/1/2.html"
+            val fragment = "<p style='text-align:center'>标题</p><hr><p>正文</p>"
+            val body = ChapterBody.from(analyseComponents(Jsoup.parseBodyFragment(fragment, url).body()))
+            val json = JsonObject().apply {
+                addProperty("name", "章节")
+                addProperty("sourceUrl", url)
+                add("body", Gson().toJsonTree(body))
+                addProperty("html", fragment)
+            }
+            PageCache.write(key, fragment)
+            requireNotNull(PageCache.writeDerived(key, fragment, json.toString()))
+            repeat(2) {
+                val cached = requireNotNull(StructuredChapterCache.read(key, url))
+                assertEquals(body.fingerprint, cached.body!!.fingerprint)
+                assertEquals(mapOf(0 to "center"), cached.body!!.formatting!!.alignments)
+                assertEquals(listOf(1), cached.body!!.formatting!!.dividersAt)
+                assertTrue(PageCache.isCurrentReference(requireNotNull(cached.sourceCacheReference)))
+            }
+        } finally { directory.deleteRecursively() }
+    }
+
     @Test
     fun parsedCacheInheritsResponseAgeAndIsInvalidatedByNewResponse() {
         val directory = Files.createTempDirectory("chapter-cache-").toFile()

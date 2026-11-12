@@ -17,6 +17,7 @@ import androidx.compose.foundation.text.InlineTextContent
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.text.selection.DisableSelection
 import androidx.compose.material3.Text
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.Composable
@@ -33,6 +34,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.breakyuna.esjzone.domain.reader.ReaderBlock
+import com.breakyuna.esjzone.domain.reader.ReaderChapterFormatting
 import com.breakyuna.esjzone.domain.reader.ReaderLink
 import com.breakyuna.esjzone.R
 import com.breakyuna.esjzone.ui.designsystem.globalStringResource as stringResource
@@ -52,10 +54,13 @@ internal sealed interface ReaderPageSegment {
         val blockIndex: Int = 0,
         val signature: String = "",
         val startOffset: Int = 0,
-        val sourceSignature: String = signature
+        val sourceSignature: String = signature,
+        val alignment: String? = null,
+        val paragraphStyle: TextStyle? = null
     ) : ReaderPageSegment
     data class Image(val url: String) : ReaderPageSegment
     data class Gap(val height: Dp) : ReaderPageSegment
+    data class Divider(val blockIndex: Int, val startOffset: Int) : ReaderPageSegment
 }
 
 /** Split at measured text-line boundaries so a fixed page never ends mid-line. */
@@ -69,7 +74,8 @@ internal fun paginateReaderChapter(
     density: Density,
     widthPx: Int,
     heightPx: Int,
-    textTransform: (String) -> String
+    textTransform: (String) -> String,
+    formatting: ReaderChapterFormatting = ReaderChapterFormatting()
 ): List<ReaderPage> {
     if (widthPx <= 0 || heightPx <= 0) return emptyList()
     val pages = mutableListOf<ReaderPage>()
@@ -97,14 +103,17 @@ internal fun paginateReaderChapter(
         .mapNotNull { range ->
             content[range.item]?.let { AnnotatedString.Range(it.placeholder, range.start, range.end) }
         }
-    fun addText(text: AnnotatedString, inline: Map<String, InlineTextContent>, blockIndex: Int) {
+    fun addText(text: AnnotatedString, inline: Map<String, InlineTextContent>, blockIndex: Int,
+        paragraphStyle: TextStyle, alignment: String?) {
         if (text.isEmpty()) {
             add(ReaderPageSegment.Gap(settings.paragraphSpacingDp.dp), paragraphGap, blockIndex.toFloat())
             return
         }
+        val layoutStyle = readerRubyParagraphStyle(blocks[blockIndex], paragraphStyle, inline,
+            textMeasurer, density, textTransform)
         val layout = textMeasurer.measure(
             text = text,
-            style = textStyle,
+            style = layoutStyle,
             placeholders = placeholders(text, inline),
             constraints = Constraints(maxWidth = widthPx)
         )
@@ -135,7 +144,7 @@ internal fun paginateReaderChapter(
                 segmentText = text.subSequence(start, layout.getLineEnd(endLine - 1))
                 lineHeight = textMeasurer.measure(
                     text = segmentText,
-                    style = if (start == 0) textStyle else textStyle.copy(textIndent = androidx.compose.ui.text.style.TextIndent.None),
+                    style = if (start == 0) layoutStyle else layoutStyle.copy(textIndent = androidx.compose.ui.text.style.TextIndent.None),
                     placeholders = placeholders(segmentText, inline),
                     constraints = Constraints(maxWidth = widthPx)
                 ).size.height
@@ -151,7 +160,8 @@ internal fun paginateReaderChapter(
             val gap = if (last && usedHeight + lineHeight + paragraphGap <= heightPx) {
                 settings.paragraphSpacingDp.dp
             } else 0.dp
-            add(ReaderPageSegment.TextLine(segmentText, inline, gap, blockIndex, signature, start, sourceSignature),
+            add(ReaderPageSegment.TextLine(segmentText, inline, gap, blockIndex, signature, start,
+                sourceSignature, alignment, layoutStyle),
                 lineHeight + with(density) { gap.roundToPx() }, blockIndex + start.toFloat() / text.length)
             startLine = endLine
             if (last && gap == 0.dp && paragraphGap > 0) flush()
@@ -165,22 +175,33 @@ internal fun paginateReaderChapter(
     ).size.height + with(density) { (settings.paragraphSpacingDp + 8f).dp.roundToPx() }
     add(ReaderPageSegment.Heading(chapterName), headingHeight, -1f)
 
+    fun addDivider(blockIndex: Int, afterBlock: Boolean) {
+        if (blocks.isEmpty()) return
+        val index = blockIndex.coerceIn(0, blocks.lastIndex)
+        val offset = if (afterBlock) blocks[index].renderedReaderText(textTransform).length else 0
+        val position = index + if (afterBlock && offset > 0) 0.999f else 0f
+        add(ReaderPageSegment.Divider(index, offset), with(density) { ReaderHorizontalRuleHeight.roundToPx() }, position)
+    }
+    repeat(formatting.dividersAt.count { it == 0 }) { addDivider(0, afterBlock = false) }
     blocks.forEachIndexed { blockIndex, block ->
+        val alignment = formatting.alignments[blockIndex]
+        val paragraphStyle = readerParagraphStyle(textStyle, alignment)
         when (block) {
             is ReaderBlock.Paragraph -> {
                 val inline = linkedMapOf<String, InlineTextContent>()
                 val text = androidx.compose.ui.text.buildAnnotatedString {
-                    block.parts.forEach { part ->
-                        val (value, content) = part.toAnnotatedReaderText(textStyle, textMeasurer, density, textTransform)
+                    block.parts.forEachIndexed { index, part ->
+                        val (value, content) = part.toAnnotatedReaderText(paragraphStyle, textMeasurer, density,
+                            textTransform, inlineKey = "reader-ruby-$index")
                         append(value)
                         inline.putAll(content)
                     }
                 }
-                addText(text, inline, blockIndex)
+                addText(text, inline, blockIndex, paragraphStyle, alignment)
             }
             is ReaderBlock.Text -> {
-                val (text, inline) = block.toAnnotatedReaderText(textStyle, textMeasurer, density, textTransform)
-                addText(text, inline, blockIndex)
+                val (text, inline) = block.toAnnotatedReaderText(paragraphStyle, textMeasurer, density, textTransform)
+                addText(text, inline, blockIndex, paragraphStyle, alignment)
             }
             is ReaderBlock.Image -> {
                 flush()
@@ -191,6 +212,7 @@ internal fun paginateReaderChapter(
                 add(ReaderPageSegment.Gap(gap), with(density) { gap.roundToPx() }, blockIndex.toFloat())
             }
         }
+        repeat(formatting.dividersAt.count { it == blockIndex + 1 }) { addDivider(blockIndex, afterBlock = true) }
     }
     flush()
     return pages
@@ -230,9 +252,12 @@ internal fun ReaderPageContent(
                     is ReaderPageSegment.TextLine -> ReaderUnderlineText(
                         text = segment.text,
                         inlineContent = segment.inlineContent,
-                        style = if (segment.startOffset == 0) textStyle else textStyle.copy(textIndent = androidx.compose.ui.text.style.TextIndent.None),
+                        style = (segment.paragraphStyle ?: readerParagraphStyle(textStyle, segment.alignment)).let { style ->
+                            if (segment.startOffset == 0) style else style.copy(textIndent = androidx.compose.ui.text.style.TextIndent.None)
+                        },
                         color = contentColor,
-                        modifier = Modifier.padding(bottom = segment.bottomSpacing),
+                        modifier = (if (segment.alignment != null) Modifier.fillMaxWidth() else Modifier)
+                            .padding(bottom = segment.bottomSpacing),
                         enabled = settings.longPressUnderline,
                         blockIndex = segment.blockIndex,
                         signature = segment.signature,
@@ -265,12 +290,14 @@ internal fun ReaderPageContent(
                         contentScale = ContentScale.Fit
                     )
                     is ReaderPageSegment.Gap -> Spacer(Modifier.height(segment.height))
+                    is ReaderPageSegment.Divider -> ReaderHorizontalRule(contentColor)
                 }
             }
         }
     }
     val underlineSelection = remember(page) { ReaderUnderlineSelection() }
-    CompositionLocalProvider(LocalReaderUnderlineSelection provides underlineSelection) {
+    CompositionLocalProvider(LocalReaderUnderlineSelection provides underlineSelection,
+        LocalContentColor provides contentColor) {
         Box {
             if (settings.longPressUnderline || bookmarkPicking) DisableSelection { content() } else SelectionContainer { content() }
             ReaderUnderlineMagnifier(underlineSelection, Modifier.matchParentSize())

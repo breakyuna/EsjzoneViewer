@@ -98,6 +98,7 @@
 -keep class com.breakyuna.esjzone.data.reader.StoredBlock { *; }
 -keep class com.breakyuna.esjzone.data.reader.StoredText { *; }
 -keep class com.breakyuna.esjzone.data.reader.StoredTextStyle { *; }
+-keep class com.breakyuna.esjzone.domain.reader.ReaderChapterFormatting { *; }
 -keep class com.breakyuna.esjzone.network.StructuredChapterCache$Snapshot { *; }
 -keep class com.breakyuna.esjzone.novellibrary.novel.Chapter { *; }
 -keep class com.breakyuna.esjzone.domain.reader.ReaderAnchor { *; }

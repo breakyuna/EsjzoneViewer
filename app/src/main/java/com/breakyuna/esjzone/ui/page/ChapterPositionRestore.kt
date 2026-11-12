@@ -138,7 +138,11 @@ internal fun readerPageIndexForAnchor(
 ): Int = pages.indexOfLast { candidate ->
     candidate?.let { page ->
         val blockIndex = page.contentPosition.toInt()
-        val startOffset = (page.segments.firstOrNull() as? ReaderPageSegment.TextLine)?.startOffset ?: 0
+        val startOffset = when (val first = page.segments.firstOrNull()) {
+            is ReaderPageSegment.TextLine -> first.startOffset
+            is ReaderPageSegment.Divider -> first.startOffset
+            else -> 0
+        }
         blockIndex < anchor.blockIndex || blockIndex == anchor.blockIndex && toSource(startOffset) <= anchor.offset
     } == true
 }.coerceAtLeast(0)

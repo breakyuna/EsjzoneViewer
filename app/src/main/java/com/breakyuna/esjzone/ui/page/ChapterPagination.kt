@@ -95,7 +95,7 @@ internal class ChapterPagination(
                 if (entry.requiresPassword) listOf(ReaderPage(emptyList(), -1f, isOversized = true))
                 else cached[entry] ?: paginateReaderChapter(
                     entry.chapter.name, entry.document.blocks, settings, textStyle, headingStyle,
-                    measurer, density, widthPx, heightPx, transform
+                    measurer, density, widthPx, heightPx, transform, entry.document.formatting
                 )
             }
             val items = entries.flatMap { entry ->
