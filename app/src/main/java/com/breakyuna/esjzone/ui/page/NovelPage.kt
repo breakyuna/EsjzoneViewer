@@ -623,16 +623,20 @@ internal fun NovelDetailLayout(
         Box(Modifier.align(Alignment.BottomCenter)) { snackbarHost() }
         AnimatedVisibility(
             visible = showScrollToTop,
-            modifier = Modifier.align(Alignment.BottomEnd).padding(AppSpacing.md),
+            modifier = Modifier.align(Alignment.BottomEnd)
+                .padding(end = AppSpacing.md - 8.dp, bottom = AppSpacing.md - 8.dp),
             enter = fadeIn(),
             exit = fadeOut()
         ) {
-            Surface(shape = CircleShape, color = MaterialTheme.colorScheme.surfaceContainerHigh, shadowElevation = 4.dp) {
-                IconButton(onClick = {
-                    scope.launch { contentState.animateScrollToItem(0) }
-                    if (wide) scope.launch { overviewState.animateScrollToItem(0) }
-                }, modifier = Modifier.size(48.dp).testTag("detail-scroll-to-top")) {
-                    Icon(Icons.Filled.ArrowUpward, stringResource(R.string.novel_scroll_to_top), modifier = Modifier.size(20.dp))
+            // Include the shadow inside the fading layer so it is not clipped to the button bounds.
+            Box(Modifier.padding(8.dp)) {
+                Surface(shape = CircleShape, color = MaterialTheme.colorScheme.surfaceContainerHigh, shadowElevation = 4.dp) {
+                    IconButton(onClick = {
+                        scope.launch { contentState.animateScrollToItem(0) }
+                        if (wide) scope.launch { overviewState.animateScrollToItem(0) }
+                    }, modifier = Modifier.size(48.dp).testTag("detail-scroll-to-top")) {
+                        Icon(Icons.Filled.ArrowUpward, stringResource(R.string.novel_scroll_to_top), modifier = Modifier.size(20.dp))
+                    }
                 }
             }
         }
