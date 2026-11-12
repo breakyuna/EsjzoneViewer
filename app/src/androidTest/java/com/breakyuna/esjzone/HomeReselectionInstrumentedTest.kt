@@ -14,6 +14,7 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.unit.dp
 import com.breakyuna.esjzone.ui.tab.HomeReselectionEffect
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 
@@ -54,5 +55,35 @@ class HomeReselectionInstrumentedTest {
         }
         composeRule.waitForIdle()
         composeRule.runOnIdle { assertEquals(2, refreshes) }
+    }
+
+    @Test fun reselectRefreshesAfterTheScrollAnimation() {
+        var request by mutableIntStateOf(0)
+        val listState = LazyListState(firstVisibleItemIndex = 20)
+        var refreshes = 0
+        composeRule.setContent {
+            HomeReselectionEffect(request, listState) { refreshes++ }
+            LazyColumn(state = listState, modifier = Modifier.height(200.dp)) {
+                items((0..99).toList()) { Text("Item $it", modifier = Modifier.height(40.dp)) }
+            }
+        }
+        composeRule.waitForIdle()
+        composeRule.mainClock.autoAdvance = false
+        try {
+            composeRule.runOnIdle { request++ }
+            composeRule.mainClock.advanceTimeBy(64)
+            composeRule.runOnIdle {
+                assertEquals(0, refreshes)
+                assertTrue(listState.firstVisibleItemIndex > 0)
+            }
+            composeRule.mainClock.advanceTimeBy(5_000)
+            composeRule.runOnIdle {
+                assertEquals(0, listState.firstVisibleItemIndex)
+                assertEquals(0, listState.firstVisibleItemScrollOffset)
+                assertEquals(1, refreshes)
+            }
+        } finally {
+            composeRule.mainClock.autoAdvance = true
+        }
     }
 }

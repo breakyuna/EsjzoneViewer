@@ -177,6 +177,9 @@ object ExperienceRecordsPage : AppDestination {
                 // Signed in, the site can take 20–30 s before answering some categories.
                 MetaText(stringResource(R.string.member_experience_records_slow_hint))
             }
+            if (state.loading && (!state.loaded || state.refreshing)) item(key = "record-loading-indicator") {
+                LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+            }
             if (state.refreshFailed) item(key = "record-refresh-error") {
                 ErrorStateCompact(
                     stringResource(
@@ -217,27 +220,35 @@ object ExperienceRecordsPage : AppDestination {
 }
 
 @Composable
-private fun rememberExperienceProgress(): Pair<Int?, Int?> {
+private fun rememberExperienceProgress(): ExperienceProfileInfo {
     val authorization = LocalAuthorization.current
     val domain = authorization.domain.ifBlank { PresentationAccess.settings.domain.value }
     val prefix = remember(authorization, domain) { profileCachePrefix(authorization, domain) }
     val expFlow = remember(prefix) { PresentationAccess.database.cacheDao().observeByKey("${prefix}experience") }
     val requiredFlow = remember(prefix) { PresentationAccess.database.cacheDao().observeByKey("${prefix}experienceRequired") }
+    val registerDateFlow = remember(prefix) { PresentationAccess.database.cacheDao().observeByKey("${prefix}registerDate") }
     val exp by expFlow.collectAsStateWithLifecycle(initialValue = null)
     val required by requiredFlow.collectAsStateWithLifecycle(initialValue = null)
-    LaunchedEffect(authorization) {
+    val registerDate by registerDateFlow.collectAsStateWithLifecycle(initialValue = null)
+    LaunchedEffect(authorization, domain) {
         try {
             val fresh = withContext(Dispatchers.IO) { PresentationAccess.client.getUserProfile(authorization) }
             cacheUserProfile(authorization, domain, fresh)
         } catch (error: CancellationException) { throw error }
         catch (error: Exception) { com.breakyuna.esjzone.util.AppLogger.w("ExperienceRecords", "Profile unavailable", error) }
     }
-    return exp?.value?.toIntOrNull() to required?.value?.toIntOrNull()
+    return ExperienceProfileInfo(
+        current = exp?.value?.toIntOrNull(),
+        target = required?.value?.toIntOrNull(),
+        registerDate = registerDate?.value?.takeIf(String::isNotBlank)
+    )
 }
 
+private data class ExperienceProfileInfo(val current: Int?, val target: Int?, val registerDate: String?)
+
 @Composable
-private fun ExperienceProgress(progress: Pair<Int?, Int?>) {
-    val (current, target) = progress
+private fun ExperienceProgress(progress: ExperienceProfileInfo) {
+    val (current, target, registerDate) = progress
     Column(Modifier.fillMaxWidth().padding(vertical = AppSpacing.lg),
         horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(AppSpacing.sm)) {
         if (current != null) {
@@ -246,6 +257,13 @@ private fun ExperienceProgress(progress: Pair<Int?, Int?>) {
                 Text(stringResource(R.string.member_experience_progress, current, target), style = AppTypography.bodySmall)
                 LinearProgressIndicator(progress = { (current.toFloat() / target).coerceIn(0f, 1f) }, modifier = Modifier.fillMaxWidth(0.65f))
             }
+        }
+        registerDate?.let {
+            Text(
+                text = stringResource(R.string.member_register_date, it),
+                style = AppTypography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
         }
     }
 }

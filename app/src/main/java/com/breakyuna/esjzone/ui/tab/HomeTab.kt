@@ -623,8 +623,8 @@ internal fun HomeReselectionEffect(request: Int, listState: LazyListState, onRef
     LaunchedEffect(request, listState) {
         if (request != handledRequest) {
             handledRequest = request
+            listState.animateScrollToItem(0)
             currentRefresh()
-            listState.scrollToItem(0)
         }
     }
 }

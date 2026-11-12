@@ -157,7 +157,8 @@ internal class ExperienceRecordsController(
     private val scope: CoroutineScope,
     private val state: MutableStateFlow<ExperienceRecordsState>,
     private val loader: ExperienceRecordLoader,
-    private val onFailure: (Exception) -> Unit = {}
+    private val onFailure: (Exception) -> Unit = {},
+    private val cache: ExperienceRecordsCache? = null
 ) {
     private val lock = Any()
     private var job: Job? = null
@@ -207,7 +208,7 @@ internal class ExperienceRecordsController(
     }
 
     private fun reload(type: ExperienceRecordType) {
-        fetch(ExperienceRecordsState(type = type), offset = 0)
+        fetch(ExperienceRecordsState(type = type), offset = 0, restoreCache = true)
     }
 
     /**
@@ -219,7 +220,8 @@ internal class ExperienceRecordsController(
         base: ExperienceRecordsState,
         offset: Int,
         visible: ExperienceRecordsState = base,
-        refresh: Boolean = false
+        refresh: Boolean = false,
+        restoreCache: Boolean = false
     ) {
         synchronized(lock) {
             job?.cancel()
@@ -231,18 +233,45 @@ internal class ExperienceRecordsController(
                 refreshFailed = false,
                 timedOut = false
             )
+            val writeCache = cache?.writer(base.type)
             job = scope.launch {
+                var displayed = visible
+                if (restoreCache) {
+                    val cached = try {
+                        cache?.read(base.type)
+                    } catch (error: CancellationException) {
+                        throw error
+                    } catch (_: Exception) {
+                        null
+                    }
+                    if (cached != null) synchronized(lock) {
+                        if (requestGeneration != generation) return@launch
+                        displayed = cached
+                        state.value = cached.copy(loading = true, refreshing = true)
+                    }
+                }
+                var succeeded = false
                 val next = try {
                     val page = loader(base.type, offset)
-                    base.appendPage(page.rows, page.total)
+                    base.appendPage(page.rows, page.total).also { succeeded = true }
                 } catch (error: CancellationException) {
                     throw error
                 } catch (error: Exception) {
                     if (isCurrent(requestGeneration)) onFailure(error)
-                    visible.afterFailure(error.loadFailureKind(), refresh, error.isRequestTimeout())
+                    displayed.afterFailure(error.loadFailureKind(), refresh || displayed.loaded && restoreCache, error.isRequestTimeout())
                 }
                 synchronized(lock) {
-                    if (requestGeneration == generation) state.value = next
+                    if (requestGeneration != generation) return@launch
+                    state.value = next
+                }
+                if (succeeded && writeCache != null) {
+                    try {
+                        writeCache(next)
+                    } catch (error: CancellationException) {
+                        throw error
+                    } catch (error: Exception) {
+                        AppLogger.w("ExperienceRecordsPage", "Failed to cache experience records", error)
+                    }
                 }
             }
         }
@@ -260,7 +289,8 @@ class ExperienceRecordsPageModel(
         loader = { type, offset ->
             cancellablePageRequest { PresentationAccess.client.getExperienceRecords(authorization, type, offset) }
         },
-        onFailure = { error -> AppLogger.e("ExperienceRecordsPage", "Failed to load experience records", error) }
+        onFailure = { error -> AppLogger.e("ExperienceRecordsPage", "Failed to load experience records", error) },
+        cache = PageExperienceRecordsCache(authorization)
     )
 
     fun load() = controller.load()

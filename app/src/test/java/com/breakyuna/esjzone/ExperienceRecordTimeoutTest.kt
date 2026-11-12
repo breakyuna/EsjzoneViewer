@@ -14,6 +14,7 @@ import com.breakyuna.esjzone.novellibrary.user.ExperienceRecord
 import com.breakyuna.esjzone.novellibrary.user.ExperienceRecordPage
 import com.breakyuna.esjzone.novellibrary.user.ExperienceRecordType
 import com.breakyuna.esjzone.ui.page.ExperienceRecordsController
+import com.breakyuna.esjzone.ui.page.ExperienceRecordsCache
 import com.breakyuna.esjzone.ui.page.ExperienceRecordsState
 import java.io.IOException
 import java.io.InterruptedIOException
@@ -326,5 +327,75 @@ class ExperienceRecordTimeoutTest {
         controller.selectType(ExperienceRecordType.MESSAGE)
         assertEquals(listOf(ExperienceRecordType.MESSAGE to 0), loader.calls.toList())
         assertTrue(loader.cancelled.isEmpty())
+    }
+
+    @Test fun cachedCategoryIsShownDuringRefreshAndSurvivesTimeout() {
+        val loader = FakeLoader()
+        val cached = ExperienceRecordsState(
+            type = ExperienceRecordType.MESSAGE,
+            rows = listOf(ExperienceRecord("t", "+1", "cached")),
+            total = 1, loaded = true, endReached = true
+        )
+        val cache = object : ExperienceRecordsCache {
+            override suspend fun read(type: ExperienceRecordType) = cached.takeIf { it.type == type }
+            override fun writer(type: ExperienceRecordType): suspend (ExperienceRecordsState) -> Unit = {}
+        }
+        val state = MutableStateFlow(ExperienceRecordsState())
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
+        val controller = ExperienceRecordsController(scope, state, loader::load, cache = cache)
+
+        controller.load()
+        assertEquals(listOf("cached"), state.value.rows.map { it.note })
+        assertTrue(state.value.refreshing)
+        loader.deferred(ExperienceRecordType.MESSAGE)
+            .completeExceptionally(NetworkRequestException(url, SocketTimeoutException("timeout")))
+        assertEquals(listOf("cached"), state.value.rows.map { it.note })
+        assertTrue(state.value.refreshFailed)
+        assertTrue(state.value.timedOut)
+        assertFalse(state.value.loading)
+    }
+
+    @Test fun successfulPagesReplaceAndThenExtendTheCachedSnapshot() {
+        val loader = FakeLoader()
+        val stored = mutableMapOf<ExperienceRecordType, ExperienceRecordsState>()
+        val cache = object : ExperienceRecordsCache {
+            override suspend fun read(type: ExperienceRecordType) = stored[type]
+            override fun writer(type: ExperienceRecordType): suspend (ExperienceRecordsState) -> Unit = { stored[type] = it }
+        }
+        val state = MutableStateFlow(ExperienceRecordsState())
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
+        val controller = ExperienceRecordsController(scope, state, loader::load, cache = cache)
+        controller.load()
+        val firstPage = (1..30).map { ExperienceRecord("t", "+1", "row-$it") }
+        loader.deferred(ExperienceRecordType.MESSAGE).complete(ExperienceRecordPage(total = 31, rows = firstPage))
+        assertEquals(30, stored[ExperienceRecordType.MESSAGE]?.rows?.size)
+        controller.loadMore()
+        loader.deferred(ExperienceRecordType.MESSAGE, 30)
+            .complete(ExperienceRecordPage(total = 31, rows = listOf(ExperienceRecord("t", "+1", "last"))))
+        assertEquals(31, stored[ExperienceRecordType.MESSAGE]?.rows?.size)
+        assertTrue(stored.getValue(ExperienceRecordType.MESSAGE).endReached)
+    }
+
+    @Test fun switchingCategoriesRestoresOnlyTheSelectedCachedRecords() {
+        val loader = FakeLoader()
+        val cached = listOf(ExperienceRecordType.MESSAGE, ExperienceRecordType.COMMENT).associateWith { type ->
+            ExperienceRecordsState(type = type, rows = listOf(ExperienceRecord("t", "+1", type.name)),
+                total = 1, loaded = true, endReached = true)
+        }
+        val cache = object : ExperienceRecordsCache {
+            override suspend fun read(type: ExperienceRecordType) = cached[type]
+            override fun writer(type: ExperienceRecordType): suspend (ExperienceRecordsState) -> Unit = {}
+        }
+        val state = MutableStateFlow(ExperienceRecordsState())
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
+        val controller = ExperienceRecordsController(scope, state, loader::load, cache = cache)
+
+        controller.load()
+        assertEquals("MESSAGE", state.value.rows.single().note)
+        controller.selectType(ExperienceRecordType.COMMENT)
+        assertEquals("COMMENT", state.value.rows.single().note)
+        assertEquals(listOf(ExperienceRecordType.MESSAGE), loader.cancelled.toList())
+        loader.deferred(ExperienceRecordType.COMMENT).complete(page("fresh comment"))
+        assertEquals("fresh comment", state.value.rows.single().note)
     }
 }

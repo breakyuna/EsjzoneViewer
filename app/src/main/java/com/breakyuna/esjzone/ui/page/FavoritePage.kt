@@ -41,9 +41,7 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.Done
 import androidx.compose.material.icons.filled.QueryStats
-import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.SelectAll
-import androidx.compose.material.icons.filled.ViewList
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.OutlinedTextField
@@ -249,20 +247,6 @@ object FavoritePage : AppDestination {
                 if (!showBack && !editing) showShelfOptions = true
             }
         }
-        if (showShelfOptions) {
-            BookshelfOptionsSheet(
-                selectedTab = optionsTab, onTabChange = { optionsTab = it },
-                filter = activeFilter, onFilter = { activeFilter = it },
-                sort = activeSort, byName = sortByName,
-                onSort = { activeSort = it; sortByName = false }, onSortByName = { sortByName = true },
-                reversed = reverseSort, onReverse = { reverseSort = it },
-                listView = listView, onListView = { settings.setBookshelfListView(it) },
-                columns = columnOverride, onColumns = { columnOverride = it },
-                showRecent = showRecentReads, onShowRecent = { showRecentReads = it },
-                onDismiss = { showShelfOptions = false }
-            )
-        }
-
         var lastHandledSyncEventId by rememberSaveable { mutableStateOf(0L) }
         var lastHandledDeleteEventId by rememberSaveable { mutableStateOf(0L) }
         val suppressFloatingNav = LocalFloatingNavSuppression.current
@@ -325,6 +309,35 @@ object FavoritePage : AppDestination {
         // Search narrows the current group/filter/sort result locally; batch actions use this list.
         val shown = remember(filtered, searching, searchTerms, searchIndex) {
             if (searching) BookshelfSearch.filter(filtered, searchTerms, searchIndex) else filtered
+        }
+        if (showShelfOptions) {
+            BookshelfOptionsSheet(
+                selectedTab = optionsTab, onTabChange = { optionsTab = it },
+                filter = activeFilter, onFilter = { activeFilter = it },
+                sort = activeSort, byName = sortByName,
+                onSort = { activeSort = it; sortByName = false }, onSortByName = { sortByName = true },
+                reversed = reverseSort, onReverse = { reverseSort = it },
+                listView = listView, onListView = { targetListView ->
+                    if (targetListView != listView) {
+                        focusManager.clearFocus(force = true)
+                        val current = if (listView) listState else gridState
+                        val target = if (targetListView) listState else gridState
+                        val firstKey = current.layoutInfo.visibleItemsInfo
+                            .firstOrNull { (it.key as? String)?.startsWith("bookshelf_row:") == true }
+                            ?.key?.toString()?.removePrefix("bookshelf_row:")
+                        val targetIndex = bookshelfAnchorRow(
+                            shown.map { it.bookKey }, firstKey,
+                            columns = if (targetListView) listColumns else gridColumns,
+                            headerVisible = current.firstVisibleItemIndex == 0
+                        )
+                        target.requestScrollToItem(targetIndex, if (targetIndex == 0) current.firstVisibleItemScrollOffset else 0)
+                    }
+                    settings.setBookshelfListView(targetListView)
+                },
+                columns = columnOverride, onColumns = { columnOverride = it },
+                showRecent = showRecentReads, onShowRecent = { showRecentReads = it },
+                onDismiss = { showShelfOptions = false }
+            )
         }
         val visibleKeys = remember(shown) { shown.mapTo(LinkedHashSet()) { it.bookKey } }
         val syncing = syncState is FavoritePageModel.State.Syncing
@@ -545,22 +558,6 @@ object FavoritePage : AppDestination {
                         if (editing) exitEdit() else navigator.pop()
                     },
                     onSyncStatusMenuChange = { showSyncStatusMenu = it },
-                    listView = listView,
-                    onToggleView = {
-                        focusManager.clearFocus(force = true)
-                        val current = if (listView) listState else gridState
-                        val target = if (listView) gridState else listState
-                        val firstKey = current.layoutInfo.visibleItemsInfo
-                            .firstOrNull { (it.key as? String)?.startsWith("bookshelf_row:") == true }
-                            ?.key?.toString()?.removePrefix("bookshelf_row:")
-                        val targetIndex = bookshelfAnchorRow(
-                            shown.map { it.bookKey }, firstKey,
-                            columns = if (listView) gridColumns else listColumns,
-                            headerVisible = current.firstVisibleItemIndex == 0
-                        )
-                        target.requestScrollToItem(targetIndex, if (targetIndex == 0) current.firstVisibleItemScrollOffset else 0)
-                        settings.setBookshelfListView(!listView)
-                    },
                     onStatistics = { navigator.pushIfNotCurrent(ReadingStatisticsPage) },
                     onDone = ::exitEdit,
                     onSelectAll = { selected = bookshelfSelectAll(selected, visibleKeys) },
@@ -925,8 +922,6 @@ private fun BookshelfTopBar(
     isSyncSuccess: Boolean,
     isSyncFailed: Boolean,
     showSyncStatusMenu: Boolean,
-    listView: Boolean,
-    onToggleView: () -> Unit,
     deleting: Boolean,
     onBack: () -> Unit,
     onSyncStatusMenuChange: (Boolean) -> Unit,
@@ -990,9 +985,6 @@ private fun BookshelfTopBar(
                                 if (searchOpen) Icons.Filled.Close else Icons.Filled.Search,
                                 stringResource(if (searchOpen) R.string.close else R.string.bookshelf_search)
                             )
-                        }
-                        IconButton(onClick = onToggleView) {
-                            Icon(if (listView) Icons.Filled.GridView else Icons.Filled.ViewList, "切换书架展示方式")
                         }
                         IconButton(
                             onClick = onStatistics,
