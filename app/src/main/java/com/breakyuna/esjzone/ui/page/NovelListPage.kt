@@ -40,7 +40,6 @@ import com.breakyuna.esjzone.ui.designsystem.GlobalText as Text
 import com.breakyuna.esjzone.ui.designsystem.contentArrival
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -122,8 +121,8 @@ class NovelListPage(
     override fun Content(navigator: AppNavigator) {
         val authorization = LocalAuthorization.current
         val settings = PresentationAccess.settings
-        val rememberedGridView by settings.novelListGridViewFlow.collectAsState()
-        val rememberedAdultOnly by settings.novelListAdultOnlyFlow.collectAsState()
+        val rememberedGridView by settings.novelListGridViewFlow.collectAsStateWithLifecycle()
+        val rememberedAdultOnly by settings.novelListAdultOnlyFlow.collectAsStateWithLifecycle()
         val model = rememberAppViewModel {
             NovelListPageModel(authorization, initializedNovelType, initializedSortType)
         }
