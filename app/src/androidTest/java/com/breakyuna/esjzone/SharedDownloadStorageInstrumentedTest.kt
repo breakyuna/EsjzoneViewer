@@ -39,6 +39,37 @@ class SharedDownloadStorageInstrumentedTest {
         })
     }
 
+    @Test fun openingSnapshotReusesListedMetadataAndExpiresAfterSuccessOrFailure() {
+        val directory = StorageFile(StorageFile.fromTree(context, treeUri), "case-${UUID.randomUUID()}")
+            .apply { check(mkdirs()) }
+        val file = StorageFile(directory, "chapter.json").apply { writeText("body") }
+        try {
+            directory.withMetadataSnapshot {
+                directory.entries()
+                configure(directory, "reject-file-metadata", "metadata")
+                assertTrue(file.isFile)
+                assertEquals(4L, file.length())
+            }
+            // Outside the operation, a new query must observe current provider state.
+            assertThrows(StorageAccessException::class.java) { file.isFile }
+            configure(directory)
+            assertThrows(java.io.IOException::class.java) {
+                directory.withMetadataSnapshot {
+                    directory.entries()
+                    throw java.io.IOException("Fixture opening failure")
+                }
+            }
+            configure(directory, "reject-file-metadata", "metadata")
+            assertThrows(StorageAccessException::class.java) { file.isFile }
+            configure(directory)
+            directory.withMetadataSnapshot {
+                directory.entries()
+                check(file.delete())
+                assertFalse(file.exists())
+            }
+        } finally { configure(directory); directory.deleteRecursively() }
+    }
+
     @Test fun directoryHintsRestoreOpaqueUrisAndRejectRenamedOrForeignDocuments() {
         val directory = StorageFile(StorageFile.fromTree(context, treeUri), "case-${UUID.randomUUID()}")
             .apply { check(mkdirs()) }

@@ -58,6 +58,10 @@ class StorageFile private constructor(
         return true
     }
 
+    /** Caller excludes writes while opening related files; never retain metadata across operations. */
+    internal fun <T> withMetadataSnapshot(action: () -> T): T =
+        if (tree != null) tree.withMetadataSnapshot(action) else action()
+
     /** Private directory-index hints avoid resolving every parent after process restart. */
     internal fun documentUriHint(): String? = tree?.knownDocument(relative)?.toString()
 
@@ -357,6 +361,12 @@ class StorageFile private constructor(
 
     private class DocumentTree(val context: Context, val root: Uri) {
         private val documents = ConcurrentHashMap<String, Uri>()
+        private val metadataSnapshot = ThreadLocal<MutableMap<String, Metadata>>()
+        fun <T> withMetadataSnapshot(action: () -> T): T {
+            if (metadataSnapshot.get() != null) return action()
+            metadataSnapshot.set(HashMap())
+            return try { action() } finally { metadataSnapshot.remove() }
+        }
         private val listedDirectories = ConcurrentHashMap.newKeySet<String>()
         // Track direct children so refresh/rename/delete only visit the affected subtree.
         private val cachedChildren = ConcurrentHashMap<String, MutableSet<String>>()
@@ -366,6 +376,7 @@ class StorageFile private constructor(
         data class Metadata(val type: String, val size: Long, val displayName: String)
         fun knownDocument(path: String): Uri? = documents[path]
         fun remember(path: String, uri: Uri) {
+            metadataSnapshot.get()?.remove(path)
             documents[path] = uri
             if (path.isNotEmpty()) {
                 cachedChildren.getOrPut(path.substringBeforeLast('/', "")) {
@@ -381,10 +392,13 @@ class StorageFile private constructor(
             return documents[path]
         }
         fun metadata(path: String): Metadata? {
+            metadataSnapshot.get()?.get(path)?.let { return it }
             val uri = resolve(path) ?: run {
                 if (path.isNotEmpty()) metadata("")
                 return null
             }
+            // Resolving an unknown URI may have just listed its parent and supplied metadata.
+            metadataSnapshot.get()?.get(path)?.let { return it }
             return documentAccess {
                 val result = try {
                     context.contentResolver.query(uri, arrayOf(DocumentsContract.Document.COLUMN_MIME_TYPE,
@@ -395,6 +409,7 @@ class StorageFile private constructor(
                     if (path.isEmpty()) throw StorageAccessException(error)
                     null
                 }
+                if (result != null) metadataSnapshot.get()?.set(path, result)
                 if (result == null) {
                     if (path.isEmpty()) throw StorageAccessException()
                     // A missing child is normal; a disconnected/missing tree is an access error.
@@ -420,7 +435,9 @@ class StorageFile private constructor(
                         if (name.isNullOrBlank() || name == "." || name == ".." || '/' in name || '\\' in name) continue
                         val childPath = listOf(path, name).filter(String::isNotEmpty).joinToString("/")
                         remember(childPath, DocumentsContract.buildDocumentUriUsingTree(root, it.getString(0)))
-                        add(name to Metadata(it.getString(2), it.getLong(3), name))
+                        val metadata = Metadata(it.getString(2), it.getLong(3), name)
+                        metadataSnapshot.get()?.set(childPath, metadata)
+                        add(name to metadata)
                     }
                 }
             }
@@ -438,6 +455,8 @@ class StorageFile private constructor(
             remember(path, created)
         }
         fun invalidate(path: String, subtree: Boolean = true) {
+            // Replacement recovery can rename/delete inside an open operation.
+            metadataSnapshot.get()?.clear()
             documents.remove(path)
             if (subtree) {
                 cachedChildren.remove(path)?.forEach { invalidate(it) }

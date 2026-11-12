@@ -1720,15 +1720,21 @@ object NovelDownloadStore {
         try {
             snapshot = withStoreLock("chapter-open") {
                 lockAcquired = System.nanoTime()
-                val match = findChapter(chapterUrl, novelUrl) ?: return null
-                val file = resolveLocalFile(match.directory, match.record.fileName) ?: return null
-                file.recoverReplacement()
-                if (!file.isFile) return null
-                // Open a stable handle while replacements are excluded. Decode and validate
-                // outside the store lock; a concurrent rename cannot change this handle.
-                ChapterReadSnapshot(match, newWriteGuard(match.directory), mutableChanges.value,
-                    file.storedTextReader())
-            }
+                rootDirectory?.withMetadataSnapshot {
+                    val lookupStarted = System.nanoTime()
+                    val match = findChapter(chapterUrl, novelUrl) ?: return@withMetadataSnapshot null
+                    val found = System.nanoTime()
+                    val file = resolveLocalFile(match.directory, match.record.fileName) ?: return@withMetadataSnapshot null
+                    file.recoverReplacement()
+                    if (!file.isFile) return@withMetadataSnapshot null
+                    val checked = System.nanoTime()
+                    // Keep a stable handle across replacement; decode outside the store lock.
+                    val reader = file.storedTextReader()
+                    AppLogger.i("ReaderTiming", "chapter lookupMs=${(found - lookupStarted) / 1_000_000} " +
+                        "fileCheckMs=${(checked - found) / 1_000_000} handleMs=${(System.nanoTime() - checked) / 1_000_000}")
+                    ChapterReadSnapshot(match, newWriteGuard(match.directory), mutableChanges.value, reader)
+                }
+            } ?: return null
             opened = System.nanoTime()
             original = snapshot.reader.use { gson.fromJson(it, DownloadedChapterContent::class.java) }
                 ?: return null
@@ -1981,6 +1987,12 @@ object NovelDownloadStore {
         if (parent != null) {
             val directory = directoryFor(parent, create = false) ?: return null
             if (directory.absolutePath !in chapterKeysByDirectory) {
+                val manifest = readManifest(directory) ?: return null
+                indexChapterManifest(directory, manifest)
+            }
+            // A readable checkpoint needs no recovery scan of unfinished catalog entries.
+            // Recover on demand even when this directory was indexed by an earlier read.
+            if (target !in chapterIndex) {
                 val manifest = readManifest(directory) ?: return null
                 indexChapterManifest(directory, manifest, recoverUnpublishedFiles = true)
             }
