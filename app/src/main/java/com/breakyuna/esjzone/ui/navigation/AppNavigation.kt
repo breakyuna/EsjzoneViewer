@@ -801,6 +801,7 @@ fun AppNavigation() {
                                 LocalAuthorization provides session,
                                 LocalReaderEntryReady provides { readyReader = key },
                                 LocalReaderNavigationSettled provides (!transition.isRunning &&
+                                    transition.pendingTargetState == null &&
                                     transition.currentState == androidx.compose.animation.EnterExitState.Visible &&
                                     transition.targetState == androidx.compose.animation.EnterExitState.Visible)
                             ) {
@@ -809,7 +810,10 @@ fun AppNavigation() {
                         }
                     }
                     entry<AppNavKey.Legacy> { key ->
-                        navigator.destination(key.route)?.Content(navigator)
+                        val destination = remember(navigator, key.route) {
+                            navigator.destination(key.route)
+                        }
+                        destination?.Content(navigator)
                     }
                 }
             )

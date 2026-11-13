@@ -542,7 +542,10 @@ private fun TabStackDisplay(
                         }
                         entry<AppNavKey.Legacy>(metadata = ::containerTransformMetadata) { key ->
                             Box(Modifier.fillMaxSize().then(contentMotion)) {
-                                val destination = navigator.destination(key.route)
+                                // pop() removes the registry entry before the exit motion finishes.
+                                val destination = remember(navigator, key.route) {
+                                    navigator.destination(key.route)
+                                }
                                 if (destination != null) {
                                     val containerTarget = ContainerTransformTarget.forKey(key, origin = tabId.route)
                                     if (containerTarget != null) {

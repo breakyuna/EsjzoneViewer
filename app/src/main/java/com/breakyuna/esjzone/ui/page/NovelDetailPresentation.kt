@@ -13,7 +13,7 @@ import com.breakyuna.esjzone.ui.navigation.LocalContainerTransformScope
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 
-/** True once both the page motion and the shared cover/container motion have settled. */
+/** A deferred back gesture may keep currentState == targetState while still transforming the page. */
 @Composable
 internal fun rememberNovelDetailTransitionSettled(): State<Boolean> {
     val transition = LocalNavAnimatedContentScope.current.transition
@@ -22,6 +22,7 @@ internal fun rememberNovelDetailTransitionSettled(): State<Boolean> {
         derivedStateOf {
             transition.currentState == EnterExitState.Visible &&
                 transition.targetState == EnterExitState.Visible &&
+                transition.pendingTargetState == null &&
                 !transition.isRunning && shared?.isTransitionActive != true
         }
     }

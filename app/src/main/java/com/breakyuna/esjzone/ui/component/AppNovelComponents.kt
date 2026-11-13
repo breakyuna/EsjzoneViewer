@@ -115,6 +115,7 @@ fun AppNovelCover(
         val transition = LocalNavAnimatedContentScope.current.transition
         transition.currentState == EnterExitState.Visible &&
             transition.targetState == EnterExitState.Visible &&
+            transition.pendingTargetState == null &&
             !transition.isRunning && !sharedTransition.isTransitionActive
     } else true
     Box(
