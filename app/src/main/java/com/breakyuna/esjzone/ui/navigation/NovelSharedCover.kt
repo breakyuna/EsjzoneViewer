@@ -1,6 +1,7 @@
 package com.breakyuna.esjzone.ui.navigation
 
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.animate
 import androidx.compose.animation.AnimatedVisibilityScope
 import androidx.compose.animation.SharedTransitionScope
 import androidx.compose.animation.core.LinearEasing
@@ -29,6 +30,9 @@ import com.breakyuna.esjzone.ui.designsystem.AppMotion
 import com.breakyuna.esjzone.ui.designsystem.AppLoadedImage
 import java.util.UUID
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.channelFlow
+import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.conflate
 
 internal class SharedCoverOrigin(
     val token: String,
@@ -128,11 +132,26 @@ private fun Modifier.novelCoverSharedElement(token: String): Modifier {
             val pending = navigationTransition.pendingTargetState
             val event = gesture.value as? InProgress
             val progress = if (pending != null && event != null) event.latestEvent.progress else null
-            (pending ?: navigationTransition.targetState) to progress
+            // Pending is authoritative only while the gesture is active. On cancellation,
+            // the dispatcher can become idle before NavDisplay clears its pending target.
+            (if (progress != null) requireNotNull(pending) else navigationTransition.targetState) to progress
         }.collectLatest { (target, progress) ->
             if (progress != null) {
                 gestureDriven = true
                 coverState.seekTo(progress.coerceIn(0f, 1f), target)
+            } else if (gestureDriven && target == coverState.currentState && target != coverState.targetState) {
+                // Reversing animateTo's target also animates its old initial values towards
+                // the abandoned endpoint. Seek the original segment backwards instead so
+                // cancellation cannot briefly move further towards the source card.
+                val gestureTarget = coverState.targetState
+                val fraction = coverState.fraction
+                channelFlow {
+                    animate(fraction, 0f, animationSpec = tween(AppMotion.expressive, easing = AppMotion.standardEasing)) {
+                        value, _ -> trySend(value)
+                    }
+                }.conflate().collect { coverState.seekTo(it, gestureTarget) }
+                coverState.snapTo(target)
+                gestureDriven = false
             } else {
                 // Keep the linear bounds spec through handoff; changing it at release would
                 // remap the sampled gesture fraction and jump the cover to a different point.

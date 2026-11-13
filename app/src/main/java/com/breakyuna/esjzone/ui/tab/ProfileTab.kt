@@ -64,8 +64,7 @@ import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
-import androidx.compose.ui.semantics.heading
-import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLayoutDirection
@@ -221,9 +220,9 @@ object ProfileTab : AppTab {
                                 ProfileHero(profile, domain, avatarCacheKey, loading, onRetry = { retry++ })
                             }
                             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(AppSpacing.md)) {
+                                // Retain the measured title space, including font scaling.
                                 Text(stringResource(R.string.profile_tools), style = AppTypography.labelMedium,
-                                    modifier = Modifier.semantics { heading() },
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    modifier = Modifier.clearAndSetSemantics {}, color = Color.Transparent)
                                 ProfileActions(menuItems) { navigator.pushIfNotCurrent(it.destination) }
                             }
                         }
@@ -232,8 +231,8 @@ object ProfileTab : AppTab {
                     item(key = "profile-hero") { ProfileHero(profile, domain, avatarCacheKey, loading, onRetry = { retry++ }) }
                     item(key = "profile-menu-title") {
                         Text(stringResource(R.string.profile_tools), style = AppTypography.labelMedium,
-                            modifier = Modifier.padding(start = AppSpacing.xs, top = AppSpacing.sm).semantics { heading() },
-                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            modifier = Modifier.padding(start = AppSpacing.xs, top = AppSpacing.sm).clearAndSetSemantics {},
+                            color = Color.Transparent)
                     }
                     item(key = "profile-actions") {
                         ProfileActions(menuItems) { navigator.pushIfNotCurrent(it.destination) }

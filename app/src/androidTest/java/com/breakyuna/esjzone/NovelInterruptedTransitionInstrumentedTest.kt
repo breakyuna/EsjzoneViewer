@@ -165,6 +165,16 @@ class NovelInterruptedTransitionInstrumentedTest {
         assertTrue("Reversing the gesture must move the cover back towards the detail", reversedCover.top < furtherCover.top)
         assertTrue("Reversing the gesture must enlarge the cover again", reversedCover.width > furtherCover.width)
         composeRule.runOnIdle { input.backCancelled() }
+        var previousCover = reversedCover
+        repeat(28) {
+            composeRule.mainClock.advanceTimeByFrame()
+            val currentCover = blueBounds()
+            assertTrue("Cancellation must never push the cover further towards its source",
+                currentCover.top <= previousCover.top + 1)
+            assertTrue("Cancellation must never shrink the cover further",
+                currentCover.width >= previousCover.width - 1)
+            previousCover = currentCover
+        }
         settle()
         assertPageFillsHost()
         assertEquals("Cancelling must restore the detail cover", coverBeforeGesture, blueBounds())
