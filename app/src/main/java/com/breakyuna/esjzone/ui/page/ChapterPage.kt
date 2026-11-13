@@ -2721,10 +2721,7 @@ class ChapterPage(
                                                 when (tool) {
                                                     ReaderTool.CONTENTS -> openReaderContents()
                                                     ReaderTool.SETTINGS -> openReaderSettings()
-                                                    ReaderTool.BOOKMARK -> {
-                                                        toggleBookmark()
-                                                        showToolbar = false
-                                                    }
+                                                    ReaderTool.BOOKMARK -> toggleBookmark()
                                                     ReaderTool.COMMENTS -> openReaderComments()
                                                     ReaderTool.NOVEL_DETAIL -> navigator.pushIfNotCurrent(
                                                         NovelPage(FavoriteNovel(resolvedNovelName, detailUrl), history)
