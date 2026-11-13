@@ -494,13 +494,22 @@ object GuestbookPage : AppDestination {
         val state by model.state.collectAsStateWithLifecycle()
         var showSyncStatusMenu by remember { mutableStateOf(false) }
 
-        // Use pre-synced page cache for instant opening when available.
+        // Read the pre-synced cache and refresh while the entry animation runs.
         LaunchedEffect(model) { model.load(forceRefresh = false) }
+
+        // Read/refresh in the background, but never replace the skeleton with a
+        // whole page of comments while the entry container is still transforming.
+        val transitionSettled by rememberPageTransitionSettled()
+        var contentReady by remember(model) { mutableStateOf(false) }
+        LaunchedEffect(model, transitionSettled) {
+            if (transitionSettled) contentReady = true
+        }
 
         CommentListPage(
             navigator = navigator,
             title = stringResource(id = R.string.guestbook),
             model = model,
+            contentReady = contentReady,
             titleIndicator = {
                 CommunitySyncStatusIndicator(
                     state = state,

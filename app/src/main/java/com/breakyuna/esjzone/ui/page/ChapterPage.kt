@@ -357,7 +357,6 @@ class ChapterPage(
         }
         var showBrightness by rememberSaveable { mutableStateOf(false) }
         var updatingBookmark by remember { mutableStateOf(false) }
-        var bookmarkPicking by remember { mutableStateOf(false) }
 
         val readerTextStyle = readerBodyTextStyle(readerSettings)
 
@@ -570,11 +569,10 @@ class ChapterPage(
 
         // Let NavDisplay own page back gestures, including predictive-back cancellation.
         // Only consume back here when there is reader UI to dismiss first.
-        BackHandler(enabled = sidePanels.isVisible || bookmarkPicking || showBrightness ||
+        BackHandler(enabled = sidePanels.isVisible || showBrightness ||
             showReaderSettings || showReaderContents || progressPreview != null) {
             when {
                 sidePanels.isVisible -> sidePanels.close()
-                bookmarkPicking -> bookmarkPicking = false
                 showBrightness -> showBrightness = false
                 showReaderSettings -> showReaderSettings = false
                 showReaderContents -> showReaderContents = false
@@ -876,9 +874,6 @@ class ChapterPage(
                 }
             }
         }
-        val bookmarkChapter = activeChapter?.chapter ?: requestedChapter.value
-        val bookmarkChapterUrl = remember(bookmarkChapter) { chapterIdentity(bookmarkChapter) }
-
         val isAtEndOfChapter = remember(displayByKey, activeChapter, scrollState, pagedMode,
             horizontalPagerState, pagerVisibleItem) {
             derivedStateOf(structuralEqualityPolicy()) {
@@ -1005,17 +1000,44 @@ class ChapterPage(
             }
         }
         val measuredAnchor by measuredAnchorState
-        val bookmarkDocument = activeChapter?.takeIf {
-            sameReaderChapter(it.chapter, bookmarkChapter) && !it.requiresPassword
-        }?.document
+        fun bookmarkStartFor(item: ReaderDisplayItem, blockIndex: Int): ReaderAnchor? {
+            val document = item.entry.document
+            if (!scriptReady || item.entry.requiresPassword || document.contentFingerprint.isBlank()) return null
+            val block = document.blocks.getOrNull(blockIndex) ?: return null
+            if ((block !is ReaderBlock.Paragraph && block !is ReaderBlock.Text) || block.sourceText().isBlank()) return null
+            return ReaderAnchor(item.chapterKey, document.contentFingerprint, blockIndex)
+        }
+        // Skip the continuation of a paragraph whose start is above the screen.
+        // Select the first paragraph starting inside this viewport, across chapter boundaries too.
+        val bookmarkTarget by remember(displayByKey, scrollState, pagedMode, horizontalPagerState,
+            scriptReady) {
+            derivedStateOf(structuralEqualityPolicy()) {
+                if (pagedMode) pagerVisibleItem?.let { item ->
+                    item.page?.segments?.firstNotNullOfOrNull { segment ->
+                        if (segment !is com.breakyuna.esjzone.ui.reader.ReaderPageSegment.TextLine ||
+                            segment.startOffset != 0 || segment.text.text.isBlank()) return@firstNotNullOfOrNull null
+                        bookmarkStartFor(item, segment.blockIndex)?.let { item to it }
+                    }
+                }
+                else scrollState.layoutInfo.let { layout ->
+                    layout.visibleItemsInfo.firstNotNullOfOrNull { visible ->
+                        if (visible.offset < 0 || visible.offset >= layout.viewportEndOffset) return@firstNotNullOfOrNull null
+                        val item = displayByKey[visible.key.toString()] ?: return@firstNotNullOfOrNull null
+                        bookmarkStartFor(item, item.ordinal - 1)?.let { item to it }
+                    }
+                }
+            }
+        }
+        val bookmarkChapter = bookmarkTarget?.first?.entry?.chapter ?: requestedChapter.value
+        val bookmarkChapterUrl = remember(bookmarkChapter) { chapterIdentity(bookmarkChapter) }
+        val bookmarkDocument = bookmarkTarget?.first?.entry?.takeIf { !it.requiresPassword }?.document
+        val bookmarkPosition = bookmarkTarget?.second
         val bookmarkParagraph = bookmarkDocument?.let { document ->
             com.breakyuna.esjzone.ui.reader.ReaderBookmarkMarker.paragraph(document, bookmarkChapterUrl,
-                measuredAnchor?.takeIf { it.chapterKey == bookmarkChapterUrl })
+                bookmarkPosition?.takeIf { it.chapterKey == bookmarkChapterUrl })
         }
         val canBookmark = bookmarkRows != null && bookmarkChapter.url.isNotBlank() &&
             bookmarkParagraph != null && !resumePending && pendingSeekLocation == null && !isProgrammaticScroll
-        val canChooseBookmark = bookmarkRows != null && result != null && scriptReady &&
-            !resumePending && pendingSeekLocation == null && !isProgrammaticScroll
         val isBookmarked = bookmarkParagraph != null &&
             bookmarkParagraph in bookmarkedParagraphs[bookmarkChapterUrl].orEmpty()
         // Observe the resulting progress, rather than every pixel of item geometry.
@@ -1298,13 +1320,10 @@ class ChapterPage(
                 visibleAnchor.takeIf { it.chapterKey == targetKey }) ?: return
             val coverSource = novelCoverUrl.ifBlank { localHistoryPosition.value.novelCoverUrl }
             val currentNovelUrl = novelUrl.ifBlank { localHistoryPosition.value.novelUrl }
-            // Preserve the visible offset within a text paragraph, including a long paragraph split over pages.
-            val positionAnchor = if (visibleAnchor.kind == "text" && visibleAnchor.blockIndex == paragraph) visibleAnchor
-                else ReaderAnchor(targetKey, document.contentFingerprint, paragraph)
+            val positionAnchor = ReaderAnchor(targetKey, document.contentFingerprint, paragraph)
             val positionExcerpt = ReaderBookmarkPosition.excerpt(document, positionAnchor, ::textOffsets)
             // Acquire on the UI thread before launching, including callers from gestures.
             updatingBookmark = true
-            bookmarkPicking = false
             scope.launch {
                 try {
                     val added = withContext(Dispatchers.IO) {
@@ -1371,7 +1390,7 @@ class ChapterPage(
         fun toggleBookmark() {
             if (!canBookmark) return
             val document = bookmarkDocument ?: return
-            val anchor = measuredAnchor ?: return
+            val anchor = bookmarkPosition ?: return
             toggleBookmarkAt(bookmarkChapter, document, anchor)
         }
         // Capture the reading account before asynchronous writes can outlive this screen.
@@ -1626,7 +1645,6 @@ class ChapterPage(
         }
 
         fun openTargetChapter(target: Chapter) {
-            bookmarkPicking = false
             positionRestoreFailed = false
             pendingUnderline = null
             pendingBookmark = null
@@ -1938,7 +1956,7 @@ class ChapterPage(
         ) {
         ReaderSidePanels(
             state = sidePanels,
-            gesturesEnabled = !bookmarkPicking && !pagedMode && readerInteractionEnabled && readerSettings.scrollSideGesturesEnabled,
+            gesturesEnabled = !pagedMode && readerInteractionEnabled && readerSettings.scrollSideGesturesEnabled,
             commentsEnabled = commentsAvailable,
             onOpening = { panel ->
                 dismissProgressPreview()
@@ -1989,11 +2007,11 @@ class ChapterPage(
                 imageSettings = imageBackground,
                 pagedGesturesEnabled = pagedMode && (pagingEnabled || pagedTurns.hasTurns),
                 verticalContentScrollable = pagerVisibleItem?.page?.isOversized == true,
-                bookmarkPullEnabled = !bookmarkPicking && !updatingBookmark && canBookmark && pagedMode && pagingEnabled && readerSettings.pagedBookmarkGesturesEnabled &&
+                bookmarkPullEnabled = !updatingBookmark && canBookmark && pagedMode && pagingEnabled && readerSettings.pagedBookmarkGesturesEnabled &&
                     pagerVisibleItem?.page?.isOversized == false,
                 onBookmarkPull = { toggleBookmark() },
                 onReadingAreaTap = { xFraction, _ ->
-                    if (entryCoverVisible || bookmarkPicking) return@ReaderShell
+                    if (entryCoverVisible) return@ReaderShell
                     if (progressPreview != null) {
                         dismissProgressPreview()
                     } else {
@@ -2247,11 +2265,6 @@ class ChapterPage(
                                         underlineSelection = underlineSelection,
                                         chapterKey = item.chapterKey,
                                         bookmarkedBlocks = bookmarkedParagraphs[item.chapterKey].orEmpty(),
-                                        bookmarkPicking = bookmarkPicking,
-                                        onBookmarkSelect = { blockIndex, sourceOffset ->
-                                            toggleBookmarkAt(item.entry.chapter, item.entry.document,
-                                                ReaderAnchor(item.chapterKey, item.entry.document.contentFingerprint, blockIndex, sourceOffset))
-                                        },
                                         underlines = underlines[item.chapterKey].orEmpty(),
                                         onUnderline = { mark, remove ->
                                             underlineModel.update(item.chapterKey, mark, remove,
@@ -2405,11 +2418,6 @@ class ChapterPage(
                                         readerContentColor, readerTextTransform,
                                         with(density) { pagination.heightPx.toDp() },
                                         bookmarkedBlocks = bookmarkedParagraphs[item.chapterKey].orEmpty(),
-                                        bookmarkPicking = bookmarkPicking,
-                                        onBookmarkSelect = { blockIndex, sourceOffset ->
-                                            toggleBookmarkAt(item.entry.chapter, item.entry.document,
-                                                ReaderAnchor(item.chapterKey, item.entry.document.contentFingerprint, blockIndex, sourceOffset))
-                                        },
                                         underlines = underlines[currentPagedDisplayItems.getOrNull(pageIndex)?.chapterKey].orEmpty(),
                                         onUnderline = { mark, remove ->
                                             currentPagedDisplayItems.getOrNull(pageIndex)?.let { item ->
@@ -2479,24 +2487,8 @@ class ChapterPage(
                             modifier = Modifier.align(Alignment.TopEnd)
                                 .windowInsetsPadding(WindowInsets.displayCutout.only(WindowInsetsSides.Horizontal))
                                 .padding(top = pageTopPadding, end = 8.dp)
-                                .size(32.dp)
+                                .size(48.dp)
                         )
-                    }
-                    if (bookmarkPicking) {
-                        Surface(
-                            modifier = Modifier.align(Alignment.BottomCenter)
-                                .padding(start = 16.dp, end = 16.dp, bottom = pageBottomPadding + 12.dp)
-                                .widthIn(max = 480.dp).fillMaxWidth(),
-                            shape = AppShapes.pill,
-                            color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                            shadowElevation = 6.dp
-                        ) {
-                            Row(Modifier.padding(start = 16.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                                Text(stringResource(R.string.reader_pick_bookmark_hint), modifier = Modifier.weight(1f),
-                                    style = MaterialTheme.typography.labelLarge, maxLines = 2)
-                                TextButton(onClick = { bookmarkPicking = false }) { Text(stringResource(android.R.string.cancel)) }
-                            }
-                        }
                     }
                 }
             }
@@ -2713,12 +2705,12 @@ class ChapterPage(
                                     }
                                     Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
                                         ReaderToolButton(
-                                            contentDescription = stringResource(if (tool == ReaderTool.BOOKMARK)
-                                                R.string.reader_pick_bookmark else tool.label()),
+                                            contentDescription = stringResource(if (tool == ReaderTool.BOOKMARK && isBookmarked)
+                                                R.string.reader_remove_bookmark else tool.label()),
                                             icon = tool.icon(isBookmarked),
                                             selected = active,
                                             enabled = when (tool) {
-                                                ReaderTool.BOOKMARK -> !updatingBookmark && canChooseBookmark
+                                                ReaderTool.BOOKMARK -> !updatingBookmark && canBookmark
                                                 ReaderTool.EYE_PROTECTION -> !customBackground
                                                 ReaderTool.COMMENTS -> commentsAvailable
                                                 ReaderTool.NOVEL_DETAIL -> detailUrl.isNotBlank()
@@ -2730,8 +2722,8 @@ class ChapterPage(
                                                     ReaderTool.CONTENTS -> openReaderContents()
                                                     ReaderTool.SETTINGS -> openReaderSettings()
                                                     ReaderTool.BOOKMARK -> {
+                                                        toggleBookmark()
                                                         showToolbar = false
-                                                        bookmarkPicking = true
                                                     }
                                                     ReaderTool.COMMENTS -> openReaderComments()
                                                     ReaderTool.NOVEL_DETAIL -> navigator.pushIfNotCurrent(

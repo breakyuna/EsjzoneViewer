@@ -231,7 +231,7 @@ class NovelPage(
         val commentModel = rememberAppViewModel { CommentPageModel(authorization, novel.url) }
         val detailListState = rememberLazyListState()
         val state by rememberNovelDetailPresentationState(screenModel.state)
-        val transitionSettled = rememberNovelDetailTransitionSettled()
+        val transitionSettled = rememberPageTransitionSettled()
         val cleanupState by screenModel.cleanupState.collectAsStateWithLifecycle()
         val snackbar = remember { SnackbarHostState() }
         val refreshFailure = (state as? NovelPageModel.State.Result)?.refreshFailure

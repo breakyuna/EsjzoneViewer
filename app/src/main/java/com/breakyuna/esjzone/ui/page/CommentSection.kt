@@ -375,7 +375,8 @@ internal fun CommentListPage(
     titleIndicator: (@Composable () -> Unit)? = null,
     onRefresh: (() -> Unit)? = null,
     refreshing: Boolean = false,
-    onBack: (() -> Unit)? = null
+    onBack: (() -> Unit)? = null,
+    contentReady: Boolean = true
 ) {
     val state by model.state.collectAsStateWithLifecycle()
 
@@ -394,13 +395,14 @@ internal fun CommentListPage(
             onRefresh = { (onRefresh ?: { model.load(forceRefresh = true) })() },
             modifier = Modifier.weight(1f).fillMaxWidth()
         ) {
-        CommentSectionHost(
+        if (contentReady) CommentSectionHost(
             model = model,
             onLinkClick = rememberCommunityLinkOpener(navigator),
             showHeader = false,
             modifier = Modifier
                 .fillMaxSize()
         )
+        else LoadingSkeleton(modifier = Modifier.fillMaxWidth().padding(horizontal = AppSpacing.lg))
         }
     }
 }

@@ -15,7 +15,7 @@ import kotlinx.coroutines.flow.combine
 
 /** A deferred back gesture may keep currentState == targetState while still transforming the page. */
 @Composable
-internal fun rememberNovelDetailTransitionSettled(): State<Boolean> {
+internal fun rememberPageTransitionSettled(): State<Boolean> {
     val transition = LocalNavAnimatedContentScope.current.transition
     val shared = LocalContainerTransformScope.current
     return remember(transition, shared) {
@@ -35,7 +35,7 @@ internal fun rememberNovelDetailTransitionSettled(): State<Boolean> {
 internal fun rememberNovelDetailPresentationState(
     source: StateFlow<NovelPageModel.State>
 ): State<NovelPageModel.State> {
-    val settledState = rememberNovelDetailTransitionSettled()
+    val settledState = rememberPageTransitionSettled()
     val current = source.collectAsStateWithLifecycle()
     val initial = remember(source) { current.value }
     return produceState(initial, source, settledState) {

@@ -47,9 +47,9 @@ internal object ReaderBookmarkMarker {
      */
     fun bounds(textWidth: Float, lineTop: Float, lineBottom: Float, baseline: Float, fontSizePx: Float,
         marginPx: Float, gapPx: Float, rightToLeft: Boolean = false): Rect? {
-        val width = minOf(fontSizePx * 0.42f, marginPx - 2 * gapPx)
+        val width = minOf(fontSizePx * 0.63f, marginPx - 2 * gapPx)
         if (width < 1f || lineBottom <= lineTop || fontSizePx <= 0f) return null
-        val height = minOf(width * 1.6f, fontSizePx * 0.8f, lineBottom - lineTop)
+        val height = minOf(width * 1.6f, fontSizePx * 1.2f, lineBottom - lineTop)
         // CJK glyph boxes sit about 0.88em above the baseline; centre on that body, not the spaced line box.
         val center = (baseline - fontSizePx * 0.38f).coerceIn(lineTop + height / 2, lineBottom - height / 2)
         val left = if (rightToLeft) -gapPx - width else textWidth + gapPx
