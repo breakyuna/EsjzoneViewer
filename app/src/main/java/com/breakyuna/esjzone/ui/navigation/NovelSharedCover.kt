@@ -1,6 +1,7 @@
 package com.breakyuna.esjzone.ui.navigation
 
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.SharedTransitionScope
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
@@ -101,10 +102,15 @@ private fun Modifier.novelCoverSharedElement(token: String): Modifier {
     val visibility = LocalNavAnimatedContentScope.current
     return with(scope) {
         sharedElement(
-            sharedContentState = rememberSharedContentState("novel-cover:$token"),
+            sharedContentState = rememberSharedContentState("novel-cover:$token", IndependentSharedCoverConfig),
             animatedVisibilityScope = visibility,
             boundsTransform = { _, _ -> tween(AppMotion.expressive, easing = AppMotion.standardEasing) },
             clipInOverlayDuringTransition = OverlayClip(AppShapes.cover)
         )
     }
+}
+
+// The cover follows its shared bounds path, not the page's full-width gesture offset.
+private object IndependentSharedCoverConfig : SharedTransitionScope.SharedContentConfig {
+    override val permitTransformDuringDeferredTransition: Boolean = false
 }

@@ -18,6 +18,7 @@ import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.LinearEasing
 import androidx.compose.ui.unit.IntOffset
 import com.breakyuna.esjzone.ui.designsystem.AppMotion
 import androidx.compose.foundation.layout.fillMaxSize
@@ -564,21 +565,32 @@ private val pageSlideSpec = tween<IntOffset>(AppMotion.expressive, easing = AppM
 
 /** The previous entry (including tab chrome) stays in place under the new page. */
 @OptIn(ExperimentalAnimationApi::class)
-internal val pushTransition: AnimatedContentTransitionScope<Scene<NavKey>>.() -> ContentTransform = {
+internal fun <T : Any> AnimatedContentTransitionScope<Scene<T>>.pagePushContentTransform(): ContentTransform =
     slideInHorizontally(pageSlideSpec) { it } togetherWith
         veilOut(tween(AppMotion.expressive), targetColor = Color.Black.copy(alpha = 0.12f))
-}
 
 @OptIn(ExperimentalAnimationApi::class)
+internal fun <T : Any> AnimatedContentTransitionScope<Scene<T>>.pagePopContentTransform(
+    predictive: Boolean = false
+): ContentTransform {
+    // Gesture progress is spatial progress; applying the settling curve here front-loads the exit.
+    val easing = if (predictive) LinearEasing else AppMotion.standardEasing
+    return unveilIn(tween(AppMotion.expressive, easing = easing), initialColor = Color.Black.copy(alpha = 0.12f)) togetherWith
+        slideOutHorizontally(tween(AppMotion.expressive, easing = easing)) { it }
+}
+
+internal val pushTransition: AnimatedContentTransitionScope<Scene<NavKey>>.() -> ContentTransform = {
+    pagePushContentTransform()
+}
+
 internal val popTransition: AnimatedContentTransitionScope<Scene<NavKey>>.() -> ContentTransform = {
-    unveilIn(tween(AppMotion.expressive), initialColor = Color.Black.copy(alpha = 0.12f)) togetherWith
-        slideOutHorizontally(pageSlideSpec) { it }
+    pagePopContentTransform()
 }
 
 /** Both back edges drive the same exit as the toolbar back button. */
 internal val predictivePopTransition:
     AnimatedContentTransitionScope<Scene<NavKey>>.(Int) -> ContentTransform = { _ ->
-    popTransition()
+    pagePopContentTransform(predictive = true)
 }
 
 private val authGateMotion = NavDisplay.transitionSpec {

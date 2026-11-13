@@ -9,6 +9,9 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toPixelMap
@@ -37,6 +40,7 @@ import com.breakyuna.esjzone.ui.navigation.pushTransition
 import com.breakyuna.esjzone.ui.navigation.rememberNovelCoverSource
 import com.breakyuna.esjzone.ui.navigation.rememberSharedCoverOrigin
 import com.breakyuna.esjzone.ui.page.NovelPageModel
+import com.breakyuna.esjzone.ui.page.SettingsSectionNavigation
 import com.breakyuna.esjzone.ui.page.rememberNovelDetailPresentationState
 import com.breakyuna.esjzone.ui.page.rememberNovelDetailTransitionSettled
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -59,6 +63,43 @@ class NovelInterruptedTransitionInstrumentedTest {
     private var detailSettled = false
     private var presentedDetail: NovelPageModel.State = NovelPageModel.State.Loading
 
+    @Test fun readingSettingsTrackBackBeforeReleaseAndSupportCancellation() = verifySettingsBack("READING")
+
+    @Test fun aboutSettingsTrackBackBeforeReleaseAndSupportCancellation() = verifySettingsBack("ABOUT")
+
+    private fun verifySettingsBack(initialSection: String) {
+        var selected = initialSection
+        composeRule.setContent {
+            val dispatcher = checkNotNull(LocalNavigationEventDispatcherOwner.current).navigationEventDispatcher
+            DisposableEffect(dispatcher) {
+                dispatcher.addInput(input)
+                onDispose { dispatcher.removeInput(input) }
+            }
+            var section by remember { mutableStateOf(initialSection) }
+            SideEffect { selected = section }
+            SettingsSectionNavigation(section, { section = "MAIN" },
+                Modifier.size(320.dp, 480.dp).testTag("motion-host")) { key ->
+                Box(Modifier.fillMaxSize().background(if (key == "MAIN") Color.White else Color.Red))
+            }
+        }
+        composeRule.waitForIdle()
+        composeRule.mainClock.autoAdvance = false
+        startBack()
+        val page = redBounds()
+        val width = composeRule.onNodeWithTag("motion-host").captureToImage().width
+        assertTrue("Settings must move before release with spatially linear progress", page.left > 0 && page.left < width / 2)
+        composeRule.runOnIdle {
+            assertEquals(initialSection, selected)
+            input.backCancelled()
+        }
+        settle()
+        assertPageFillsHost()
+        startBack()
+        composeRule.runOnIdle { input.backCompleted() }
+        settle()
+        composeRule.runOnIdle { assertEquals("MAIN", selected) }
+    }
+
     @Test fun ordinaryPageLeftGestureKeepsItsFullPageSlideOnCommit() =
         verifyOrdinaryPageBack(NavigationEvent.EDGE_LEFT)
 
@@ -72,6 +113,7 @@ class NovelInterruptedTransitionInstrumentedTest {
         startBack(edge)
         val before = redBounds()
         val pixels = composeRule.onNodeWithTag("motion-host").captureToImage().toPixelMap()
+        assertTrue("A quarter gesture must not consume most of the exit distance", before.left < pixels.width / 2)
         assertEquals("The ordinary page must not shrink", pixels.height, before.height)
         assertTrue("Either back edge must slide the page right", before.left > 0)
         val color = pixels[(before.left + before.right) / 2, pixels.height / 2]
@@ -95,7 +137,9 @@ class NovelInterruptedTransitionInstrumentedTest {
         mount()
         openDuringPausedClock()
         settle()
+        val coverBeforeGesture = blueBounds()
         startBack(edge)
+        assertEquals("The page gesture must not drag the cover towards the screen edge", coverBeforeGesture, blueBounds())
         val page = redBounds()
         val pixels = composeRule.onNodeWithTag("motion-host").captureToImage().toPixelMap()
         assertTrue("Both edges must move the detail page towards its normal right-hand exit", page.left > 0)

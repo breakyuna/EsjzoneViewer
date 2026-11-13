@@ -39,6 +39,7 @@ import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.FolderOpen
+import androidx.compose.material.icons.filled.FilterList
 import androidx.compose.material.icons.filled.Done
 import androidx.compose.material.icons.filled.QueryStats
 import androidx.compose.material.icons.filled.SelectAll
@@ -579,6 +580,7 @@ object FavoritePage : AppDestination {
                     },
                     onSyncStatusMenuChange = { showSyncStatusMenu = it },
                     onStatistics = { navigator.pushIfNotCurrent(ReadingStatisticsPage) },
+                    onOptions = { showShelfOptions = true },
                     onDone = ::exitEdit,
                     onSelectAll = { selected = bookshelfSelectAll(selected, visibleKeys) },
                     searchOpen = searchOpen,
@@ -963,6 +965,7 @@ private fun BookshelfTopBar(
     onBack: () -> Unit,
     onSyncStatusMenuChange: (Boolean) -> Unit,
     onStatistics: () -> Unit,
+    onOptions: () -> Unit,
     onDone: () -> Unit,
     onSelectAll: () -> Unit,
     searchOpen: Boolean,
@@ -1022,6 +1025,9 @@ private fun BookshelfTopBar(
                                 if (searchOpen) Icons.Filled.Close else Icons.Filled.Search,
                                 stringResource(if (searchOpen) R.string.close else R.string.bookshelf_search)
                             )
+                        }
+                        IconButton(onClick = onOptions) {
+                            Icon(Icons.Filled.FilterList, stringResource(R.string.shelf_options_filter))
                         }
                         IconButton(
                             onClick = onStatistics,

@@ -1,9 +1,5 @@
 package com.breakyuna.esjzone.ui.page
 
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import com.breakyuna.esjzone.ui.designsystem.AppMotion
-import com.breakyuna.esjzone.ui.designsystem.LocalReduceMotion
 import com.breakyuna.esjzone.ui.designsystem.AppLayout
 import com.breakyuna.esjzone.ui.designsystem.appUsesWideLayout
 import androidx.compose.material.icons.filled.Settings
@@ -11,11 +7,6 @@ import androidx.compose.material3.VerticalDivider
 import androidx.compose.material3.NavigationDrawerItem
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.width
-import androidx.activity.compose.BackHandler
-import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.AnimatedContentTransitionScope
-import androidx.compose.animation.core.tween
-import androidx.compose.animation.togetherWith
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.foundation.Image
@@ -198,7 +189,6 @@ object SettingsPage : AppDestination {
         var showLogout by remember { mutableStateOf(false) }
         val sectionStateHolder = rememberSaveableStateHolder()
         var section by rememberSaveable { mutableStateOf("MAIN") }
-        BackHandler(enabled = section != "MAIN") { section = "MAIN" }
         val pageTitle = stringResource(when (section) {
             "NAVIGATION" -> R.string.settings_navigation_section
             "READING" -> R.string.settings_reading_section
@@ -236,25 +226,10 @@ object SettingsPage : AppDestination {
             }
         ) { padding ->
             SettingsPaneLayout(section, { section = it }, Modifier.fillMaxSize().padding(padding)) {
-            val reduced = LocalReduceMotion.current
-            val wideMotion = com.breakyuna.esjzone.ui.designsystem.appUsesWideLayout()
-            AnimatedContent(
-                targetState = section,
-                modifier = Modifier.fillMaxSize(),
-                transitionSpec = {
-                    val direction = if (targetState == "MAIN") {
-                        AnimatedContentTransitionScope.SlideDirection.Right
-                    } else {
-                        AnimatedContentTransitionScope.SlideDirection.Left
-                    }
-                    if (reduced) androidx.compose.animation.EnterTransition.None togetherWith androidx.compose.animation.ExitTransition.None
-                    else if (wideMotion) {
-                        fadeIn(tween(AppMotion.fadeThroughEnter, delayMillis = AppMotion.fadeThroughExit)) togetherWith
-                            fadeOut(tween(AppMotion.fadeThroughExit))
-                    } else slideIntoContainer(direction, tween(AppMotion.expressive, easing = AppMotion.standardEasing)) togetherWith
-                        slideOutOfContainer(direction, tween(AppMotion.expressive, easing = AppMotion.standardEasing))
-                },
-                label = "SettingsSectionTransition"
+            SettingsSectionNavigation(
+                section = section,
+                onBack = { section = "MAIN" },
+                modifier = Modifier.fillMaxSize()
             ) { displayedSection ->
             sectionStateHolder.SaveableStateProvider(displayedSection) {
             Column(
