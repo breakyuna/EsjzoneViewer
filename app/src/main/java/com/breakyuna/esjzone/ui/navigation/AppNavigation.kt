@@ -3,13 +3,10 @@ package com.breakyuna.esjzone.ui.navigation
 import androidx.compose.ui.graphics.Color
 import androidx.compose.animation.ExperimentalAnimationApi
 import androidx.compose.animation.scaleIn
-import androidx.compose.animation.scaleOut
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.veilOut
 import androidx.compose.animation.unveilIn
-import androidx.compose.ui.graphics.TransformOrigin
-import androidx.navigationevent.NavigationEvent
 import com.breakyuna.esjzone.network.features.retainDownloadedNovelDetails
 import kotlinx.coroutines.flow.collect
 
@@ -578,14 +575,10 @@ internal val popTransition: AnimatedContentTransitionScope<Scene<NavKey>>.() -> 
         slideOutHorizontally(pageSlideSpec) { it }
 }
 
-@OptIn(ExperimentalAnimationApi::class)
+/** Both back edges drive the same exit as the toolbar back button. */
 internal val predictivePopTransition:
-    AnimatedContentTransitionScope<Scene<NavKey>>.(Int) -> ContentTransform = { edge ->
-    val fromRight = edge == NavigationEvent.EDGE_RIGHT
-    unveilIn(initialColor = Color.Black.copy(alpha = 0.12f)) togetherWith
-        (fadeOut() + scaleOut(targetScale = 0.9f,
-            transformOrigin = TransformOrigin(if (fromRight) 0f else 1f, 0.5f)) +
-            slideOutHorizontally { if (fromRight) -it / 12 else it / 12 })
+    AnimatedContentTransitionScope<Scene<NavKey>>.(Int) -> ContentTransform = { _ ->
+    popTransition()
 }
 
 private val authGateMotion = NavDisplay.transitionSpec {

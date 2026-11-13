@@ -59,6 +59,55 @@ class NovelInterruptedTransitionInstrumentedTest {
     private var detailSettled = false
     private var presentedDetail: NovelPageModel.State = NovelPageModel.State.Loading
 
+    @Test fun ordinaryPageLeftGestureKeepsItsFullPageSlideOnCommit() =
+        verifyOrdinaryPageBack(NavigationEvent.EDGE_LEFT)
+
+    @Test fun ordinaryPageRightGestureKeepsItsDirectionOnCommit() =
+        verifyOrdinaryPageBack(NavigationEvent.EDGE_RIGHT)
+
+    private fun verifyOrdinaryPageBack(edge: Int) {
+        mount(AppNavKey.Legacy(LegacyRoute.Search("fixture")))
+        openDuringPausedClock()
+        settle()
+        startBack(edge)
+        val before = redBounds()
+        val pixels = composeRule.onNodeWithTag("motion-host").captureToImage().toPixelMap()
+        assertEquals("The ordinary page must not shrink", pixels.height, before.height)
+        assertTrue("Either back edge must slide the page right", before.left > 0)
+        val color = pixels[(before.left + before.right) / 2, pixels.height / 2]
+        assertTrue("The ordinary page must remain opaque", color.red > 0.99f && color.green < 0.01f && color.blue < 0.01f)
+        composeRule.runOnIdle { input.backCompleted() }
+        composeRule.mainClock.advanceTimeBy(96)
+        val after = redBounds()
+        assertEquals("Commit must preserve the full page height", pixels.height, after.height)
+        assertTrue("Commit must continue sliding right", after.left > before.left)
+        settle()
+        composeRule.runOnIdle { assertEquals(AppNavKey.HomeTab, stack.last()) }
+    }
+
+    @Test fun leftEdgeBackKeepsDetailOpaqueAndFullHeight() =
+        verifyDetailGesture(NavigationEvent.EDGE_LEFT)
+
+    @Test fun rightEdgeBackUsesTheSameDetailExit() =
+        verifyDetailGesture(NavigationEvent.EDGE_RIGHT)
+
+    private fun verifyDetailGesture(edge: Int) {
+        mount()
+        openDuringPausedClock()
+        settle()
+        startBack(edge)
+        val page = redBounds()
+        val pixels = composeRule.onNodeWithTag("motion-host").captureToImage().toPixelMap()
+        assertTrue("Both edges must move the detail page towards its normal right-hand exit", page.left > 0)
+        assertEquals("The detail page must not shrink", 0, page.top)
+        assertEquals("The detail page must retain its full height", pixels.height, page.bottom)
+        val color = pixels[(page.left + page.right) / 2, pixels.height / 2]
+        assertTrue("The detail page must not fade", color.red > 0.99f && color.green < 0.01f && color.blue < 0.01f)
+        composeRule.runOnIdle { input.backCancelled() }
+        settle()
+        assertPageFillsHost()
+    }
+
     @Test fun interruptedBackMovesBothPageAndCoverAndKeepsNextEntryVisible() {
         mount()
         val sourceCover = blueBounds()
@@ -124,7 +173,7 @@ class NovelInterruptedTransitionInstrumentedTest {
         assertPageFillsHost()
     }
 
-    private fun mount() {
+    private fun mount(destination: AppNavKey.Legacy = detail) {
         composeRule.setContent {
             MaterialTheme {
                 val dispatcher = checkNotNull(LocalNavigationEventDispatcherOwner.current)
@@ -146,7 +195,7 @@ class NovelInterruptedTransitionInstrumentedTest {
                         entryProvider = entryProvider {
                             entry<AppNavKey.HomeTab> {
                                 val source = rememberNovelCoverSource(url, "fixture-cover")
-                                SideEffect { openBook = { source.open { stack.add(detail) } } }
+                                SideEffect { openBook = { source.open { stack.add(destination) } } }
                                 Box(Modifier.fillMaxSize().background(Color.White)) {
                                     Box(Modifier.offset(16.dp, 300.dp).then(source.modifier)
                                         .size(48.dp, 72.dp).background(Color.Blue))
@@ -180,13 +229,13 @@ class NovelInterruptedTransitionInstrumentedTest {
         composeRule.mainClock.advanceTimeBy(96)
     }
 
-    private fun startBack() {
+    private fun startBack(edge: Int = NavigationEvent.EDGE_LEFT) {
         composeRule.runOnIdle {
-            input.backStarted(NavigationEvent(swipeEdge = NavigationEvent.EDGE_LEFT))
+            input.backStarted(NavigationEvent(swipeEdge = edge))
         }
         composeRule.mainClock.advanceTimeByFrame()
         composeRule.runOnIdle {
-            input.backProgressed(NavigationEvent(swipeEdge = NavigationEvent.EDGE_LEFT, progress = 0.25f))
+            input.backProgressed(NavigationEvent(swipeEdge = edge, progress = 0.25f))
         }
         composeRule.mainClock.advanceTimeBy(64)
     }
