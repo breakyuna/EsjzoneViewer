@@ -49,7 +49,11 @@ private fun Element.hasBlockChildren(): Boolean =
 private fun Element.isSignificantParagraph(): Boolean =
     text().isNotBlank() || selectFirst("img, br") != null
 
-internal fun extractParagraphElements(container: Element): List<Element> = buildList {
+/** Synthetic paragraphs keep their source parent available to formatting consumers. */
+internal fun extractParagraphElements(
+    container: Element,
+    onAnonymousParagraph: (Element, Element) -> Unit = { _, _ -> }
+): List<Element> = buildList {
     fun collect(element: Element) {
         if (!element.hasBlockChildren()) {
             add(element)
@@ -75,7 +79,10 @@ internal fun extractParagraphElements(container: Element): List<Element> = build
                 } else {
                     val anon = currentAnon ?: Element("p").apply {
                         setBaseUri(element.baseUri())
-                    }.also { currentAnon = it }
+                    }.also {
+                        currentAnon = it
+                        onAnonymousParagraph(it, element)
+                    }
                     anon.appendChild(child.clone())
                 }
             }

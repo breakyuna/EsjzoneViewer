@@ -1,24 +1,34 @@
 package com.breakyuna.esjzone.ui.navigation
 
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.AnimatedVisibilityScope
 import androidx.compose.animation.SharedTransitionScope
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.SeekableTransitionState
+import androidx.compose.animation.core.rememberTransition
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.navigation3.ui.LocalNavAnimatedContentScope
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.navigationevent.NavigationEventTransitionState.InProgress
+import androidx.navigationevent.compose.LocalNavigationEventDispatcherOwner
 import com.breakyuna.esjzone.novellibrary.novel.CoverState
 import com.breakyuna.esjzone.network.EsjzoneUrls
 import com.breakyuna.esjzone.ui.designsystem.AppShapes
 import com.breakyuna.esjzone.ui.designsystem.AppMotion
 import com.breakyuna.esjzone.ui.designsystem.AppLoadedImage
 import java.util.UUID
+import kotlinx.coroutines.flow.collectLatest
 
 internal class SharedCoverOrigin(
     val token: String,
@@ -99,18 +109,53 @@ internal fun rememberSharedCoverOrigin(url: String, releaseOnDispose: Boolean = 
 @Composable
 private fun Modifier.novelCoverSharedElement(token: String): Modifier {
     val scope = LocalContainerTransformScope.current ?: return this
-    val visibility = LocalNavAnimatedContentScope.current
+    val navigationTransition = LocalNavAnimatedContentScope.current.transition
+    val dispatcher = checkNotNull(LocalNavigationEventDispatcherOwner.current).navigationEventDispatcher
+    // Observe the same gesture as NavDisplay without registering another back handler.
+    val gesture = dispatcher.transitionState.collectAsStateWithLifecycle()
+    val coverState = remember(navigationTransition, token) {
+        SeekableTransitionState(navigationTransition.currentState)
+    }
+    val boundsMotion = rememberTransition(coverState, label = "NovelCover:$token")
+    var gestureDriven by remember(coverState) { mutableStateOf(false) }
+    val visibility = remember(boundsMotion) {
+        object : AnimatedVisibilityScope {
+            override val transition = boundsMotion
+        }
+    }
+    LaunchedEffect(navigationTransition, coverState, gesture) {
+        snapshotFlow {
+            val pending = navigationTransition.pendingTargetState
+            val event = gesture.value as? InProgress
+            val progress = if (pending != null && event != null) event.latestEvent.progress else null
+            (pending ?: navigationTransition.targetState) to progress
+        }.collectLatest { (target, progress) ->
+            if (progress != null) {
+                gestureDriven = true
+                coverState.seekTo(progress.coerceIn(0f, 1f), target)
+            } else {
+                // Keep the linear bounds spec through handoff; changing it at release would
+                // remap the sampled gesture fraction and jump the cover to a different point.
+                coverState.animateTo(target, animationSpec = if (gestureDriven) {
+                    tween(AppMotion.expressive, easing = AppMotion.standardEasing)
+                } else null)
+                gestureDriven = false
+            }
+        }
+    }
     return with(scope) {
         sharedElement(
             sharedContentState = rememberSharedContentState("novel-cover:$token", IndependentSharedCoverConfig),
             animatedVisibilityScope = visibility,
-            boundsTransform = { _, _ -> tween(AppMotion.expressive, easing = AppMotion.standardEasing) },
+            boundsTransform = { _, _ ->
+                tween(AppMotion.expressive, easing = if (gestureDriven) LinearEasing else AppMotion.standardEasing)
+            },
             clipInOverlayDuringTransition = OverlayClip(AppShapes.cover)
         )
     }
 }
 
-// The cover follows its shared bounds path, not the page's full-width gesture offset.
+// The independently seekable cover owns its shared bounds path; page offsets never apply to it.
 private object IndependentSharedCoverConfig : SharedTransitionScope.SharedContentConfig {
     override val permitTransformDuringDeferredTransition: Boolean = false
 }

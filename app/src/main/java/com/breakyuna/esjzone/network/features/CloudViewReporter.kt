@@ -444,6 +444,8 @@ internal class CloudViewReporter(
         if (site.isBlank()) return null
         val novelKey = cloudViewNovelKey(novelId, novelUrl, "")
         if (novelKey.isBlank()) return null
+        // Reading can advance while the history response is in flight too.
+        val startedAt = now()
         val histories = runCatching { siteHistory(authorization) }
             .onFailure { AppLogger.w("CloudView", "Unable to read the site history before a download", it) }
             .getOrNull()
@@ -452,7 +454,7 @@ internal class CloudViewReporter(
             AppLogger.w("CloudView", "Site history unknown before a download; chapter 1 will not be revisited")
         }
         return BackgroundChapterFetch(authorization, account, site, novelKey, novelId.trim(), novelUrl.trim(),
-            siteRecord, now())
+            siteRecord, startedAt)
     }
 
     /**

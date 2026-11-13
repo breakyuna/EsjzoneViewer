@@ -135,11 +135,20 @@ class NovelInterruptedTransitionInstrumentedTest {
 
     private fun verifyDetailGesture(edge: Int) {
         mount()
+        val sourceCover = blueBounds()
         openDuringPausedClock()
         settle()
         val coverBeforeGesture = blueBounds()
         startBack(edge)
-        assertEquals("The page gesture must not drag the cover towards the screen edge", coverBeforeGesture, blueBounds())
+        val quarterCover = blueBounds()
+        assertTrue("The cover must move towards its source before release",
+            quarterCover.top > coverBeforeGesture.top && quarterCover.top < sourceCover.top)
+        assertTrue("The cover must shrink towards its source before release",
+            quarterCover.width < coverBeforeGesture.width && quarterCover.width > sourceCover.width)
+        assertEquals("The cover must follow its own path instead of the page's rightward offset",
+            coverBeforeGesture.left, quarterCover.left)
+        composeRule.mainClock.advanceTimeBy(160)
+        assertEquals("Holding the gesture must hold the cover at the same progress", quarterCover, blueBounds())
         val page = redBounds()
         val pixels = composeRule.onNodeWithTag("motion-host").captureToImage().toPixelMap()
         assertTrue("Both edges must move the detail page towards its normal right-hand exit", page.left > 0)
@@ -147,9 +156,44 @@ class NovelInterruptedTransitionInstrumentedTest {
         assertEquals("The detail page must retain its full height", pixels.height, page.bottom)
         val color = pixels[(page.left + page.right) / 2, pixels.height / 2]
         assertTrue("The detail page must not fade", color.red > 0.99f && color.green < 0.01f && color.blue < 0.01f)
+        progressBack(edge, 0.6f)
+        val furtherCover = blueBounds()
+        assertTrue("More gesture progress must move the cover closer to its source", furtherCover.top > quarterCover.top)
+        assertTrue("More gesture progress must continue shrinking the cover", furtherCover.width < quarterCover.width)
+        progressBack(edge, 0.2f)
+        val reversedCover = blueBounds()
+        assertTrue("Reversing the gesture must move the cover back towards the detail", reversedCover.top < furtherCover.top)
+        assertTrue("Reversing the gesture must enlarge the cover again", reversedCover.width > furtherCover.width)
         composeRule.runOnIdle { input.backCancelled() }
         settle()
         assertPageFillsHost()
+        assertEquals("Cancelling must restore the detail cover", coverBeforeGesture, blueBounds())
+    }
+
+    @Test fun leftEdgeBackContinuesCoverFromGesturePositionOnCommit() =
+        verifyCoverCommit(NavigationEvent.EDGE_LEFT)
+
+    @Test fun rightEdgeBackContinuesCoverFromGesturePositionOnCommit() =
+        verifyCoverCommit(NavigationEvent.EDGE_RIGHT)
+
+    private fun verifyCoverCommit(edge: Int) {
+        mount()
+        val sourceCover = blueBounds()
+        openDuringPausedClock()
+        settle()
+        val detailCover = blueBounds()
+        startBack(edge)
+        val beforeRelease = blueBounds()
+        composeRule.runOnIdle { input.backCompleted() }
+        composeRule.mainClock.advanceTimeByFrame()
+        val handoff = blueBounds()
+        assertTrue("Commit must not reset the cover to the detail position", handoff.top >= beforeRelease.top - 1)
+        assertTrue("Commit must not jump the cover to the page's right edge", handoff.left <= detailCover.left + 1)
+        composeRule.mainClock.advanceTimeBy(96)
+        assertTrue("The cover must continue towards its source after release", blueBounds().top > beforeRelease.top)
+        settle()
+        assertEquals(sourceCover, blueBounds())
+        composeRule.runOnIdle { assertEquals(AppNavKey.HomeTab, stack.last()) }
     }
 
     @Test fun interruptedBackMovesBothPageAndCoverAndKeepsNextEntryVisible() {
@@ -278,8 +322,12 @@ class NovelInterruptedTransitionInstrumentedTest {
             input.backStarted(NavigationEvent(swipeEdge = edge))
         }
         composeRule.mainClock.advanceTimeByFrame()
+        progressBack(edge, 0.25f)
+    }
+
+    private fun progressBack(edge: Int, progress: Float) {
         composeRule.runOnIdle {
-            input.backProgressed(NavigationEvent(swipeEdge = edge, progress = 0.25f))
+            input.backProgressed(NavigationEvent(swipeEdge = edge, progress = progress))
         }
         composeRule.mainClock.advanceTimeBy(64)
     }

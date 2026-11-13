@@ -31,7 +31,8 @@ internal object StructuredChapterCache {
             require(stored.sourceUrl == url) // Absolute resources belong to the acquisition mirror.
             val checked = stored.body.validate()
             val html = stored.html
-            val formatKey = if (checked.formatting == null && !html.isNullOrBlank() &&
+            val needsFormattingRecovery = (checked.formatting?.parserVersion ?: 0) < ReaderChapterFormatting.CURRENT_PARSER_VERSION
+            val formatKey = if (needsFormattingRecovery && !html.isNullOrBlank() &&
                 (html.contains("text-align", ignoreCase = true) || html.contains("<hr", ignoreCase = true))) {
                 val digest = MessageDigest.getInstance("SHA-256").digest(html.toByteArray(Charsets.UTF_8))
                     .joinToString("") { "%02x".format(it) }

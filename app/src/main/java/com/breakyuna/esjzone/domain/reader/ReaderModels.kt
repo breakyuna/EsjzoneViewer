@@ -37,8 +37,14 @@ data class ReaderLink(val start: Int, val end: Int, val url: String)
 data class ReaderChapterFormatting(
     val alignments: Map<Int, String> = emptyMap(),
     /** A position is the number of body blocks preceding the horizontal rule. */
-    val dividersAt: List<Int> = emptyList()
-) : Serializable
+    val dividersAt: List<Int> = emptyList(),
+    /** Missing fields in older snapshots retain 0; the parser stamps new formatting explicitly. */
+    val parserVersion: Int = 0
+) : Serializable {
+    companion object {
+        const val CURRENT_PARSER_VERSION = 1
+    }
+}
 
 /** The renderer can map this AST to any UI toolkit without reparsing HTML. */
 @Immutable

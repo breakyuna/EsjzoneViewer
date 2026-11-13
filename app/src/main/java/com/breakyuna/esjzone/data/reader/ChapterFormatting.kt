@@ -26,6 +26,7 @@ internal fun analyseChapterContent(element: Element): ParsedChapterContent {
     val alignments = mutableMapOf<Int, String>()
     val dividers = mutableListOf<Int>()
     val inherited = IdentityHashMap<Element, String?>()
+    val sourceParents = IdentityHashMap<Element, Element>()
     fun alignmentFor(node: Element?): String? {
         if (node == null) return null
         if (inherited.containsKey(node)) return inherited[node]
@@ -35,11 +36,12 @@ internal fun analyseChapterContent(element: Element): ParsedChapterContent {
                 it.substringBefore(':').trim().equals("text-align", ignoreCase = true)
             }?.substringAfter(':')?.trim()?.lowercase()
         } else null
-        val value = if (declared == null) alignmentFor(node.parent()) else declared.takeIf { it in chapterAlignments }
+        val value = if (declared == null) alignmentFor(sourceParents[node] ?: node.parent())
+            else declared.takeIf { it in chapterAlignments }
         inherited[node] = value
         return value
     }
-    for (paragraph in extractParagraphElements(element)) {
+    for (paragraph in extractParagraphElements(element) { paragraph, parent -> sourceParents[paragraph] = parent }) {
         if (paragraph.normalName() == "hr") {
             dividers.add(blocks.size)
             continue
@@ -51,7 +53,9 @@ internal fun analyseChapterContent(element: Element): ParsedChapterContent {
         blocks.addAll(parsedBlocks)
         components.addAll(parsed)
     }
-    return ParsedChapterContent(components, blocks, ReaderChapterFormatting(alignments.toMap(), dividers.toList()))
+    return ParsedChapterContent(components, blocks, ReaderChapterFormatting(
+        alignments.toMap(), dividers.toList(), parserVersion = ReaderChapterFormatting.CURRENT_PARSER_VERSION
+    ))
 }
 
 /** Recover formatting only when the saved HTML describes the same body blocks. */
@@ -62,8 +66,10 @@ internal fun ChapterBody.withFormatting(html: String?, baseUrl: String?): Chapte
             saved.alignments.all { (index, alignment) -> index in blocks.indices && alignment in chapterAlignments } &&
                 saved.dividersAt.all { it in 0..blocks.size }
         }.getOrDefault(false)
-        if (valid) return this
-        return copy(formatting = null).withFormatting(html, baseUrl)
+        if (valid && (saved.parserVersion >= ReaderChapterFormatting.CURRENT_PARSER_VERSION || html.isNullOrBlank())) {
+            return this
+        }
+        if (!valid) return copy(formatting = null).withFormatting(html, baseUrl)
     }
     if (html.isNullOrBlank()) return this
     if (!html.contains("text-align", ignoreCase = true) && !html.contains("<hr", ignoreCase = true)) return this

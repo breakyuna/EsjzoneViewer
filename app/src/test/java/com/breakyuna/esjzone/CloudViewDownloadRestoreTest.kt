@@ -103,6 +103,35 @@ class CloudViewDownloadRestoreTest {
         assertEquals("https://www.esjzone.cc/forum/12/6.html", site.latest)
     }
 
+    @Test
+    fun readingWhileTheInitialHistoryRequestIsInFlightWinsOverItsSnapshot() = runBlocking {
+        for (hadSiteRecord in listOf(true, false)) {
+            val site = FakeSite()
+            var time = 1_000L
+            lateinit var reports: CloudViewReporter
+            reports = reporter(this, site, {
+                val snapshot = if (hadSiteRecord) listOf(history("/forum/12/3.html")) else emptyList()
+                // The response still describes the old state, but the reader has advanced.
+                time = 2_000L
+                site.request("https://www.esjzone.cc/forum/12/7.html")
+                reports.noteFetched(authorization, novelId, novelUrl, "/forum/12/7.html")
+                time = 3_000L
+                snapshot
+            }, clock = { time })
+
+            val fetch = reports.beginBackgroundFetch(authorization, novelId, novelUrl)
+            site.request("https://www.esjzone.cc/forum/12/9.html")
+            time = 4_000L
+            var lookedUpFirstChapter = false
+            assertTrue(reports.finishBackgroundFetch(fetch) {
+                lookedUpFirstChapter = true
+                "/forum/12/1.html"
+            })
+            assertEquals("https://www.esjzone.cc/forum/12/7.html", site.latest)
+            assertFalse(lookedUpFirstChapter)
+        }
+    }
+
     /** 阳's rule: the site had no record before the download, so it should end on chapter 1. */
     @Test
     fun aBookTheSiteHadNoRecordOfEndsOnTheFirstChapter() = runBlocking {

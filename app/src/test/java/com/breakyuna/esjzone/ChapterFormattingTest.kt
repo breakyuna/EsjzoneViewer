@@ -6,6 +6,7 @@ import com.breakyuna.esjzone.data.reader.withFormatting
 import com.breakyuna.esjzone.domain.reader.ReaderAnchor
 import com.breakyuna.esjzone.domain.reader.ReaderBlock
 import com.breakyuna.esjzone.domain.reader.ReaderChapterDocument
+import com.breakyuna.esjzone.domain.reader.ReaderChapterFormatting
 import com.breakyuna.esjzone.domain.reader.ReaderChapterRef
 import com.breakyuna.esjzone.domain.reader.ReaderUnderlines
 import com.breakyuna.esjzone.domain.reader.sourceText
@@ -73,5 +74,32 @@ class ChapterFormattingTest {
         assertEquals(mapOf(0 to "right"), result.formatting!!.alignments)
         assertEquals(listOf(0, 1, 1, 2), result.formatting!!.dividersAt)
         assertEquals(2, result.blocks.size)
+    }
+
+    @Test fun mixedContainersKeepAncestorAlignmentWithoutOverridingChildParagraphs() {
+        val html = "<section style='text-align: center'><div>标题<p style='text-align: right'>正文</p>尾声</div></section>"
+        val original = body(html)
+        val parsed = analyseChapterContent(Jsoup.parseBodyFragment(html).body())
+        assertEquals(listOf("标题", "正文", "尾声"), parsed.blocks.map { it.sourceText() })
+        assertEquals(mapOf(0 to "center", 1 to "right", 2 to "center"), parsed.formatting.alignments)
+        assertEquals(original.fingerprint, ChapterBody.fromBlocks(parsed.blocks).fingerprint)
+        assertEquals(original.readerBlocks(), parsed.blocks)
+    }
+
+    @Test fun cachedFormattingWithoutSourceParentSupportIsRecoveredFromMatchingHtml() {
+        val html = "<div style='text-align: center'>标题<p style='text-align: right'>正文</p>尾声</div>"
+        val gson = Gson()
+        val json = gson.toJsonTree(body(html).copy(
+            formatting = ReaderChapterFormatting(alignments = mapOf(1 to "right"))
+        )).asJsonObject
+        json.getAsJsonObject("formatting").remove("parserVersion")
+        val old = gson.fromJson(json, ChapterBody::class.java).validate()
+        val restored = old.withFormatting(html, null)
+        assertEquals(mapOf(0 to "center", 1 to "right", 2 to "center"), restored.formatting!!.alignments)
+        assertEquals(old.fingerprint, restored.fingerprint)
+        assertEquals(old.readerBlocks(), restored.readerBlocks())
+        assertSame(restored, restored.withFormatting(html, null))
+        // Without the original HTML, retain the usable formatting already on disk.
+        assertSame(old, old.withFormatting(null, null))
     }
 }
