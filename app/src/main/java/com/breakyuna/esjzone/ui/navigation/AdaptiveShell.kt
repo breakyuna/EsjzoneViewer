@@ -2,7 +2,6 @@
 
 package com.breakyuna.esjzone.ui.navigation
 
-import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.snap
 import androidx.compose.material3.ripple
 import com.breakyuna.esjzone.ui.designsystem.LocalReduceMotion
@@ -428,20 +427,21 @@ internal fun TabSwitchLayers(
                 val alpha = transition.animateFloat(
                     transitionSpec = {
                         if (reduced) snap()
-                        else if (targetState == tabId) tween(AppMotion.fadeThroughEnter,
-                            delayMillis = AppMotion.fadeThroughExit, easing = AppMotion.standardEasing)
-                        else tween(AppMotion.fadeThroughExit, easing = LinearEasing)
+                        else tween(durationMillis = 300, easing = FastOutSlowInEasing)
                     },
                     label = "${tabId.name}TabAlpha"
                 ) { targetTab -> if (targetTab == tabId) 1f else 0f }
                 val horizontalOffset = transition.animateFloat(
-                    transitionSpec = { if (reduced) snap() else tween(AppMotion.tabSwitch, easing = AppMotion.standardEasing) },
+                    transitionSpec = {
+                        if (reduced) snap()
+                        else tween(durationMillis = 300, easing = FastOutSlowInEasing)
+                    },
                     label = "${tabId.name}TabOffset"
                 ) { targetTab ->
                     when {
                         targetTab == tabId -> 0f
-                        orderedTabs.indexOf(tabId) < orderedTabs.indexOf(targetTab) -> -8f
-                        else -> 8f
+                        orderedTabs.indexOf(tabId) < orderedTabs.indexOf(targetTab) -> -16f
+                        else -> 16f
                     }
                 }
                 Box(
