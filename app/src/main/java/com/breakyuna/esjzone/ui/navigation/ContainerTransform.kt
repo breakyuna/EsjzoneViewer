@@ -158,7 +158,13 @@ internal fun Modifier.containerTransformContent(): Modifier {
     return with(sharedScope) { skipToLookaheadSize() }
 }
 
-internal enum class HomeCarouselElement { COVER, TITLE, AUTHOR }
+internal enum class HomeCarouselElement { BACKDROP, FOREGROUND, COVER, TITLE, AUTHOR }
+
+/** Keep non-shared hero content above the independently moving background. */
+@Composable
+internal fun Modifier.homeCarouselForeground(target: ContainerTransformTarget?): Modifier {
+    return homeCarouselSharedElement(target, HomeCarouselElement.FOREGROUND)
+}
 
 /** Pair each element with the clicked pager instance, including repeated novels. */
 @Composable
@@ -171,13 +177,14 @@ internal fun Modifier.homeCarouselSharedElement(
     val visibilityScope = LocalNavAnimatedContentScope.current
     return with(sharedScope) {
         val sharedState = rememberSharedContentState(target to element)
-        if (element == HomeCarouselElement.COVER) {
+        if (element == HomeCarouselElement.COVER || element == HomeCarouselElement.BACKDROP) {
             sharedElement(
                 sharedContentState = sharedState,
                 animatedVisibilityScope = visibilityScope,
                 boundsTransform = { _, _ ->
                     tween(ContainerTransformDurationMillis, easing = FastOutSlowInEasing)
-                }
+                },
+                zIndexInOverlay = if (element == HomeCarouselElement.BACKDROP) 1f else 3f
             )
         } else {
             sharedBounds(
@@ -188,9 +195,10 @@ internal fun Modifier.homeCarouselSharedElement(
                 },
                 enter = fadeIn(tween(ContainerTransformDurationMillis)),
                 exit = fadeOut(tween(ContainerTransformDurationMillis)),
+                zIndexInOverlay = if (element == HomeCarouselElement.FOREGROUND) 2f else 3f,
                 // Keep text laid out once at each endpoint and scale it along the path.
                 resizeMode = SharedTransitionScope.ResizeMode.scaleToBounds(
-                    contentScale = ContentScale.Fit,
+                    contentScale = if (element == HomeCarouselElement.FOREGROUND) ContentScale.FillBounds else ContentScale.Fit,
                     alignment = Alignment.TopStart
                 )
             )

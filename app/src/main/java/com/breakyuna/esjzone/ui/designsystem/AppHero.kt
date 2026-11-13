@@ -8,6 +8,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.blur
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.graphicsLayer
@@ -28,40 +29,47 @@ fun AppCoverBackdrop(
     modifier: Modifier = Modifier,
     coverState: CoverState? = null,
     initialImage: AppLoadedImage? = null,
+    backgroundModifier: Modifier = Modifier,
     content: @Composable BoxScope.() -> Unit
 ) {
     val colors = MaterialTheme.colorScheme
     val scrim = appSemanticColors().heroScrim
     Box(
-        modifier = modifier.clipToBounds().background(
-            Brush.linearGradient(listOf(colors.primary, colors.tertiary))
-        )
+        modifier = modifier.clipToBounds()
     ) {
-        if (coverUrl.isNotBlank()) {
-            AppCoverImage(
-                model = coverUrl,
-                contentDescription = null,
-                sourceState = coverState,
-                initialImage = initialImage,
-                contentScale = ContentScale.Crop,
-                loading = {},
-                error = {},
-                modifier = Modifier
+        // Keep the image, tint and scrim together, independently of foreground content.
+        Box(
+            backgroundModifier
+                .matchParentSize()
+                .clip(AppShapes.prominent)
+                .background(Brush.linearGradient(listOf(colors.primary, colors.tertiary)))
+        ) {
+            if (coverUrl.isNotBlank()) {
+                AppCoverImage(
+                    model = coverUrl,
+                    contentDescription = null,
+                    sourceState = coverState,
+                    initialImage = initialImage,
+                    contentScale = ContentScale.Crop,
+                    loading = {},
+                    error = {},
+                    modifier = Modifier
+                        .matchParentSize()
+                        .graphicsLayer { scaleX = 1.25f; scaleY = 1.25f }
+                        .then(if (BlurSupported) Modifier.blur(28.dp) else Modifier)
+                )
+            }
+            Box(
+                Modifier
                     .matchParentSize()
-                    .graphicsLayer { scaleX = 1.25f; scaleY = 1.25f }
-                    .then(if (BlurSupported) Modifier.blur(28.dp) else Modifier)
+                    .background(
+                        Brush.horizontalGradient(
+                            if (BlurSupported) listOf(scrim.copy(alpha = 0.10f), scrim.copy(alpha = 0.40f))
+                            else listOf(scrim.copy(alpha = 0.5f), scrim.copy(alpha = 0.72f))
+                        )
+                    )
             )
         }
-        Box(
-            Modifier
-                .matchParentSize()
-                .background(
-                    Brush.horizontalGradient(
-                        if (BlurSupported) listOf(scrim.copy(alpha = 0.10f), scrim.copy(alpha = 0.40f))
-                        else listOf(scrim.copy(alpha = 0.5f), scrim.copy(alpha = 0.72f))
-                    )
-                )
-        )
         content()
     }
 }

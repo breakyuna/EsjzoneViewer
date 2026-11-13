@@ -74,6 +74,7 @@ import com.breakyuna.esjzone.ui.discovery.DiscoveryEmptyState
 import com.breakyuna.esjzone.ui.navigation.ContainerTransformTarget
 import com.breakyuna.esjzone.ui.navigation.HomeCarouselElement
 import com.breakyuna.esjzone.ui.navigation.homeCarouselSharedElement
+import com.breakyuna.esjzone.ui.navigation.homeCarouselForeground
 import com.breakyuna.esjzone.ui.navigation.containerTransformContent
 import com.breakyuna.esjzone.ui.navigation.containerTransformSource
 import com.breakyuna.esjzone.ui.navigation.rememberNovelCoverSource
@@ -255,11 +256,14 @@ private fun WeeklyPopularCard(
         AppCoverBackdrop(
             coverUrl = novel.coverUrl,
             coverState = novel.coverState,
+            initialImage = coverSource.initialImage,
+            backgroundModifier = Modifier.homeCarouselSharedElement(target, HomeCarouselElement.BACKDROP),
             modifier = Modifier.fillMaxSize()
         ) {
             Row(
                 modifier = Modifier
                     .fillMaxSize()
+                    .homeCarouselForeground(target)
                     .containerTransformContent()
                     .padding(start = 14.dp, end = 18.dp),
                 horizontalArrangement = Arrangement.spacedBy(14.dp),

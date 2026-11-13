@@ -110,6 +110,7 @@ import com.breakyuna.esjzone.ui.navigation.LocalContainerTransformScope
 import com.breakyuna.esjzone.ui.navigation.LocalHomeCarouselTransformTarget
 import com.breakyuna.esjzone.ui.navigation.HomeCarouselElement
 import com.breakyuna.esjzone.ui.navigation.homeCarouselSharedElement
+import com.breakyuna.esjzone.ui.navigation.homeCarouselForeground
 import com.breakyuna.esjzone.novellibrary.novel.CoveredNovel
 import com.breakyuna.esjzone.novellibrary.novel.CoverSource
 import com.breakyuna.esjzone.novellibrary.novel.CoverState
@@ -1196,6 +1197,8 @@ private fun RebuiltNovelHero(
             .novelCoverDestination(preview.url),
         titleModifier = Modifier.homeCarouselSharedElement(carouselTarget, HomeCarouselElement.TITLE),
         authorModifier = Modifier.homeCarouselSharedElement(carouselTarget, HomeCarouselElement.AUTHOR),
+        backgroundModifier = Modifier.homeCarouselSharedElement(carouselTarget, HomeCarouselElement.BACKDROP),
+        foregroundModifier = Modifier.homeCarouselForeground(carouselTarget),
         animateContentArrival = false,
         onCoverClick = if (coverUrl.isNotBlank()) ({ viewingCover = true }) else null,
         modifier = Modifier

@@ -248,7 +248,9 @@ fun NovelHero(
     coverModifier: Modifier = Modifier,
     titleModifier: Modifier = Modifier,
     authorModifier: Modifier = Modifier,
-    animateContentArrival: Boolean = true
+    animateContentArrival: Boolean = true,
+    backgroundModifier: Modifier = Modifier,
+    foregroundModifier: Modifier = Modifier
 ) {
     val coverUrl = (novel.cover.model as? String).orEmpty()
     val coverState = novel.cover.state ?: CoverState.Unknown
@@ -262,10 +264,11 @@ fun NovelHero(
             coverUrl = coverUrl,
             coverState = coverState,
             initialImage = novel.cover.initialImage,
+            backgroundModifier = backgroundModifier,
             modifier = Modifier.fillMaxWidth()
         ) {
             Row(
-                modifier = Modifier
+                modifier = foregroundModifier
                     .fillMaxWidth()
                     .padding(AppSpacing.lg),
                 horizontalArrangement = Arrangement.spacedBy(AppSpacing.md),

@@ -3,6 +3,10 @@ package com.breakyuna.esjzone.ui.page
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.navigation3.runtime.NavEntry
@@ -37,6 +41,12 @@ internal fun SettingsSectionNavigation(
             if (reduced) EnterTransition.None togetherWith ExitTransition.None
             else pagePopContentTransform(predictive = true)
         },
-        entryProvider = { key -> NavEntry(key) { content(key) } }
+        entryProvider = { key ->
+            NavEntry(key) {
+                Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+                    content(key)
+                }
+            }
+        }
     )
 }
