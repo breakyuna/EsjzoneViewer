@@ -305,7 +305,11 @@ class LocalBackupInstrumentedTest {
             } finally { bitmap.recycle() }
             val bytes = source.readBytes()
             val settings = ReaderSettings(fontSizeSp = 24f, firstLineIndentChars = 1)
-            val names = ReaderNameReplaceSettings(true, listOf(ReaderNameReplaceRule(source = "Before", target = "After")))
+            val names = ReaderNameReplaceSettings(true, listOf(
+                ReaderNameReplaceRule(source = "Before", target = "After"),
+                ReaderNameReplaceRule(source = "A([0-9])", target = "B$1", bookKey = "book-1", regex = true),
+                ReaderNameReplaceRule(source = "", target = "", bookKey = "book-2")
+            ))
             reader.save(settings)
             reader.saveImageBackground(appearance)
             reader.saveNameReplaceSettings(names)

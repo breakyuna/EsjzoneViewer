@@ -188,7 +188,7 @@ internal fun ReaderSettingsSheet(
                         }
                         ReaderLayoutSlider(draft, settings, ::commit) { draft = it }
                     } else if (tab == 1) {
-                        ReaderIndentSetting(draft.firstLineIndentChars) { commit(draft.copy(firstLineIndentChars = it)) }
+                        ReaderIndentSetting(draft.firstLineIndentChars, readerSheetStyle = true) { commit(draft.copy(firstLineIndentChars = it)) }
                         ReaderToggle(stringResource(R.string.reader_show_system_status), draft.showSystemStatusBar) { commit(draft.copy(showSystemStatusBar = it)) }
                         ReaderToggle(stringResource(R.string.reader_show_system_navigation), draft.showSystemNavigationBar) { commit(draft.copy(showSystemNavigationBar = it)) }
                         ReaderToggle(stringResource(R.string.reader_show_chapter_name), draft.showChapterName) { commit(draft.copy(showChapterName = it)) }
@@ -196,17 +196,17 @@ internal fun ReaderSettingsSheet(
                         ReaderToggle(stringResource(R.string.reader_keep_screen_on), draft.keepScreenOn) { commit(draft.copy(keepScreenOn = it)) }
                         ReaderToggle(stringResource(R.string.settings_auto_resume_reading), draft.autoResumeLastReading) { commit(draft.copy(autoResumeLastReading = it)) }
                         HorizontalDivider(Modifier.padding(vertical = 8.dp))
-                        ReaderToggle(stringResource(R.string.reader_name_replace), nameReplaceSettings.enabled) {
-                            onNameReplaceChange(nameReplaceSettings.copy(enabled = it))
-                        }
                         Row(
                             modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Spacer(Modifier.weight(1f))
+                            Text(stringResource(R.string.reader_name_replace), style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
                             TextButton(onClick = { showNameReplaceRules = true }) {
                                 Text(stringResource(R.string.reader_name_replace_manage))
                             }
+                            Switch(checked = nameReplaceSettings.enabled, onCheckedChange = {
+                                onNameReplaceChange(nameReplaceSettings.copy(enabled = it))
+                            })
                         }
                         HorizontalDivider(Modifier.padding(vertical = 8.dp))
                         ReaderToggle(stringResource(R.string.reader_long_press_underline), draft.longPressUnderline) { commit(draft.copy(longPressUnderline = it)) }

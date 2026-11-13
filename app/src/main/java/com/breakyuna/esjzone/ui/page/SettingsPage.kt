@@ -815,18 +815,22 @@ internal fun ChoiceSettingRow(
     options: List<String>,
     selectedIndex: Int,
     enabled: Boolean = true,
+    readerSheetStyle: Boolean = false,
     onSelect: (Int) -> Unit
 ) {
     var expanded by remember { mutableStateOf(false) }
     Surface(onClick = { expanded = true }, enabled = enabled, color = Color.Transparent) {
         Row(
-            Modifier.fillMaxWidth().heightIn(min = 64.dp)
-                .padding(horizontal = AppSpacing.lg, vertical = AppSpacing.sm),
+            Modifier.fillMaxWidth().heightIn(min = if (readerSheetStyle) 48.dp else 64.dp)
+                .padding(
+                    horizontal = if (readerSheetStyle) 0.dp else AppSpacing.lg,
+                    vertical = if (readerSheetStyle) 0.dp else AppSpacing.sm
+                ),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(AppSpacing.md)
         ) {
             if (icon != null) SettingIcon(icon)
-            Text(title, style = AppTypography.bodyLarge, modifier = Modifier.weight(1f))
+            Text(title, style = if (readerSheetStyle) MaterialTheme.typography.bodyMedium else AppTypography.bodyLarge, modifier = Modifier.weight(1f))
             Box {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(options.getOrNull(selectedIndex).orEmpty(), style = AppTypography.labelLarge,

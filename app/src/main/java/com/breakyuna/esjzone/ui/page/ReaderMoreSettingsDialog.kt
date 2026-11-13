@@ -115,11 +115,12 @@ internal fun ReaderMoreSettingsContent(
 }
 
 @Composable
-internal fun ReaderIndentSetting(chars: Int, onSelect: (Int) -> Unit) {
+internal fun ReaderIndentSetting(chars: Int, readerSheetStyle: Boolean = false, onSelect: (Int) -> Unit) {
     ChoiceSettingRow(
         title = stringResource(R.string.reader_first_line_indent),
         options = (0..2).map { stringResource(R.string.reader_indent_chars, it) },
         selectedIndex = chars,
+        readerSheetStyle = readerSheetStyle,
         onSelect = onSelect
     )
 }

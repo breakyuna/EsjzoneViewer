@@ -10,33 +10,69 @@ data class ReaderNameReplaceRule(
     val id: String = UUID.randomUUID().toString(),
     val source: String,
     val target: String,
-    val enabled: Boolean = true
+    val enabled: Boolean = true,
+    val bookKey: String? = null,
+    val regex: Boolean = false
 )
 
 @Immutable
 data class ReaderNameReplaceSettings(
     val enabled: Boolean = false,
-    val rules: List<ReaderNameReplaceRule> = emptyList()
+    val rules: List<ReaderNameReplaceRule> = emptyList(),
+    val activeBookKey: String? = null
 )
 
-/** Display-only, case-sensitive literal replacement; longer sources win. */
+/** Display-only replacement, applied once without cascading into replacement text. */
 object ReaderNameReplace {
-    fun isActive(settings: ReaderNameReplaceSettings): Boolean =
-        settings.enabled && settings.rules.any { it.enabled && it.source.isNotBlank() }
+    private fun applicable(rule: ReaderNameReplaceRule, settings: ReaderNameReplaceSettings): Boolean =
+        rule.enabled && rule.source.isNotBlank() &&
+            (rule.bookKey == null || rule.bookKey == settings.activeBookKey)
 
-    private inline fun scan(
+    fun isActive(settings: ReaderNameReplaceSettings): Boolean =
+        settings.enabled && settings.rules.any { applicable(it, settings) }
+
+    private fun scan(
         text: String,
         settings: ReaderNameReplaceSettings,
         append: (start: Int, end: Int, target: String) -> Unit
     ) {
-        val rules = settings.rules.filter { it.enabled && it.source.isNotBlank() }
+        val rules = settings.rules.filter { applicable(it, settings) }
             .sortedByDescending { it.source.length }
+            .mapNotNull { rule ->
+                runCatching {
+                    val pattern = if (rule.regex) rule.source else java.util.regex.Pattern.quote(rule.source)
+                    rule to java.util.regex.Pattern.compile(pattern).matcher(text)
+                }.getOrNull()
+            }
         var index = 0
-        while (index < text.length) {
-            val match = rules.firstOrNull { text.startsWith(it.source, index) }
-            val end = index + (match?.source?.length ?: 1)
-            append(index, end, match?.target ?: text.substring(index, end))
+        while (index <= text.length) {
+            var start = text.length + 1
+            var end = start
+            var target = ""
+            for ((rule, matcher) in rules) {
+                if (!matcher.find(index) || matcher.start() >= start) continue
+                val replacement = if (rule.regex) runCatching {
+                    // A fresh find resets append position to zero; discard the unchanged prefix.
+                    val buffer = StringBuffer()
+                    matcher.appendReplacement(buffer, rule.target)
+                    buffer.substring(matcher.start())
+                }.getOrNull() ?: continue else rule.target
+                start = matcher.start()
+                end = matcher.end()
+                target = replacement
+            }
+            while (index < minOf(start, text.length)) {
+                append(index, index + 1, text.substring(index, index + 1))
+                index++
+            }
+            if (start > text.length) break
+            append(start, end, target)
             index = end
+            if (end == start) {
+                if (index == text.length) break
+                append(index, index + 1, text.substring(index, index + 1))
+                index++
+            }
         }
     }
 
@@ -55,8 +91,9 @@ object ReaderNameReplace {
             scan(offsets.text, settings) { start, end, target ->
                 append(target)
                 repeat(target.length) {
-                    starts.add(offsets.sourceStarts[start])
-                    ends.add(offsets.sourceEnds[end - 1])
+                    val sourceStart = offsets.sourceStarts.getOrElse(start) { offsets.sourceLength }
+                    starts.add(sourceStart)
+                    ends.add(if (end > start) offsets.sourceEnds[end - 1] else sourceStart)
                 }
             }
         }

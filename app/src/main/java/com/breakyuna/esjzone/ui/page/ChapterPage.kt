@@ -296,8 +296,11 @@ class ChapterPage(
             mutableStateOf(storedReaderSettings)
         }
         val storedNameReplaceSettings by PresentationAccess.readerSettings.nameReplaceSettings.collectAsStateWithLifecycle()
-        var nameReplaceSettings by remember(storedNameReplaceSettings) {
-            mutableStateOf(storedNameReplaceSettings)
+        val nameReplaceBookKey = com.breakyuna.esjzone.database.readingStatisticsBookKey(
+            novelId, novelUrl, chapter.url
+        )
+        var nameReplaceSettings by remember(storedNameReplaceSettings, nameReplaceBookKey) {
+            mutableStateOf(storedNameReplaceSettings.copy(activeBookKey = nameReplaceBookKey))
         }
 
         val view = LocalView.current

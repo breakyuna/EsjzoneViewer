@@ -1054,4 +1054,9 @@
     <string name="shelf_columns">Books per row</string>
     <string name="shelf_columns_auto">Auto</string>
     <string name="shelf_show_recent">Show recent reads</string>
+    <string name="reader_name_replace_book">This book</string>
+    <string name="reader_name_replace_all">All books</string>
+    <string name="reader_name_replace_regex">Regex</string>
+    <string name="reader_name_replace_rule_enabled">Enabled</string>
+    <string name="reader_name_replace_invalid_regex">Invalid regular expression</string>
 </resources>

@@ -176,4 +176,45 @@ class ReaderNameReplaceTest {
         assertArrayEquals(intArrayOf(1, 1, 1, 1, 1, 2, 3), mapped.sourceEnds)
         assertEquals(3, mapped.sourceLength)
     }
+    @Test
+    fun scopedRulesOnlyApplyToTheirBookAlongsideGlobalRules() {
+        val value = settings(
+            ReaderNameReplaceRule(source = "Alice", target = "A", bookKey = "book-1"),
+            ReaderNameReplaceRule(source = "Bob", target = "B"),
+            ReaderNameReplaceRule(source = "Carol", target = "C", bookKey = "book-2")
+        ).copy(activeBookKey = "book-1")
+        assertEquals("A B Carol", ReaderNameReplace.apply("Alice Bob Carol", value))
+        assertEquals("Alice B C", ReaderNameReplace.apply("Alice Bob Carol", value.copy(activeBookKey = "book-2")))
+    }
+
+    @Test
+    fun regexCapturesApplyRepeatedlyAndKeepSourceOffsets() {
+        val value = settings(ReaderNameReplaceRule(source = "A([0-9])", target = "B$1", regex = true))
+        val mapped = ReaderNameReplace.mapping(ReaderTextOffsets.identity("xA1 A2!"), value)
+        assertEquals("xB1 B2!", ReaderNameReplace.apply("xA1 A2!", value))
+        assertEquals("xB1 B2!", mapped.text)
+        assertArrayEquals(intArrayOf(0, 1, 1, 3, 4, 4, 6), mapped.sourceStarts)
+        assertArrayEquals(intArrayOf(1, 3, 3, 4, 6, 6, 7), mapped.sourceEnds)
+    }
+
+    @Test
+    fun invalidRegexAndInvalidCaptureDoNotBreakReading() {
+        val value = settings(
+            ReaderNameReplaceRule(source = "[", target = "bad", regex = true),
+            ReaderNameReplaceRule(source = "Alice", target = "$2", regex = true),
+            ReaderNameReplaceRule(source = "Bob", target = "B")
+        )
+        assertEquals("Alice B", ReaderNameReplace.apply("Alice Bob", value))
+    }
+
+    @Test
+    fun zeroWidthRegexMakesProgressAndMapsInsertedTextToBoundary() {
+        val value = settings(ReaderNameReplaceRule(source = "(?=A)|$", target = "X", regex = true))
+        val mapped = ReaderNameReplace.mapping(ReaderTextOffsets.identity("AB"), value)
+        assertEquals("XABX", ReaderNameReplace.apply("AB", value))
+        assertEquals("XABX", mapped.text)
+        assertArrayEquals(intArrayOf(0, 0, 1, 2), mapped.sourceStarts)
+        assertArrayEquals(intArrayOf(0, 1, 2, 2), mapped.sourceEnds)
+    }
+
 }

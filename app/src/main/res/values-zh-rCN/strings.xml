@@ -1055,4 +1055,9 @@
     <string name="shelf_columns">每行数目</string>
     <string name="shelf_columns_auto">自动</string>
     <string name="shelf_show_recent">显示最近阅读</string>
+    <string name="reader_name_replace_book">本书</string>
+    <string name="reader_name_replace_all">全部</string>
+    <string name="reader_name_replace_regex">正则</string>
+    <string name="reader_name_replace_rule_enabled">启用</string>
+    <string name="reader_name_replace_invalid_regex">正则表达式无效</string>
 </resources>

@@ -93,13 +93,12 @@ class ReaderSettingsDataStore(
     suspend fun saveNameReplaceSettings(settings: ReaderNameReplaceSettings) {
         val normalized = settings.copy(
             rules = settings.rules
-                .filter { it.source.isNotBlank() }
                 .distinctBy { it.id }
         )
         dataStore.edit {
             it[NAME_REPLACE_ENABLED] = normalized.enabled
             it[NAME_REPLACE_RULES] = gson.toJson(normalized.rules.map { rule ->
-                NameReplaceRuleJson(rule.id, rule.source, rule.target, rule.enabled)
+                NameReplaceRuleJson(rule.id, rule.source, rule.target, rule.enabled, rule.bookKey, rule.regex)
             })
         }
     }
@@ -212,12 +211,13 @@ class ReaderSettingsDataStore(
         }.getOrNull().orEmpty().mapNotNull { entry ->
             val rule = entry ?: return@mapNotNull null
             val source = rule.source ?: return@mapNotNull null
-            if (source.isBlank()) return@mapNotNull null
             ReaderNameReplaceRule(
                 id = rule.id?.takeIf { it.isNotBlank() } ?: java.util.UUID.randomUUID().toString(),
                 source = source,
                 target = rule.target.orEmpty(),
-                enabled = rule.enabled ?: true
+                enabled = rule.enabled ?: true,
+                bookKey = rule.bookKey?.takeIf { it.isNotBlank() },
+                regex = rule.regex ?: false
             )
         }
         return ReaderNameReplaceSettings(
@@ -230,7 +230,9 @@ class ReaderSettingsDataStore(
         val id: String? = null,
         val source: String? = null,
         val target: String? = null,
-        val enabled: Boolean? = null
+        val enabled: Boolean? = null,
+        val bookKey: String? = null,
+        val regex: Boolean? = null
     )
 
     suspend fun save(settings: ReaderSettings) {
