@@ -124,7 +124,9 @@ internal fun usesContainerTransform(from: Scene<NavKey>, to: Scene<NavKey>): Boo
 internal fun AnimatedContentTransitionScope<Scene<NavKey>>.containerContentTransform(pop: Boolean = false) =
     if (usesCircularReveal(initialState, targetState)) {
         // The destination's circular clip drives visibility, with the origin opaque below it.
-        EnterTransition.None togetherWith ExitTransition.KeepUntilTransitionsFinished
+        (EnterTransition.None togetherWith ExitTransition.KeepUntilTransitionsFinished).apply {
+            targetContentZIndex = if (pop) -1f else 1f
+        }
     } else if (pop) {
         EnterTransition.None togetherWith fadeOut(tween(ContainerTransformDurationMillis))
     } else {
@@ -174,7 +176,7 @@ internal fun Modifier.homeCarouselSharedElement(
                 sharedContentState = sharedState,
                 animatedVisibilityScope = visibilityScope,
                 boundsTransform = { _, _ ->
-                    tween(ContainerTransformDurationMillis, easing = AppMotion.standardEasing)
+                    tween(ContainerTransformDurationMillis, easing = FastOutSlowInEasing)
                 }
             )
         } else {
@@ -182,7 +184,7 @@ internal fun Modifier.homeCarouselSharedElement(
                 sharedContentState = sharedState,
                 animatedVisibilityScope = visibilityScope,
                 boundsTransform = { _, _ ->
-                    tween(ContainerTransformDurationMillis, easing = AppMotion.standardEasing)
+                    tween(ContainerTransformDurationMillis, easing = FastOutSlowInEasing)
                 },
                 enter = fadeIn(tween(ContainerTransformDurationMillis)),
                 exit = fadeOut(tween(ContainerTransformDurationMillis)),
@@ -207,7 +209,7 @@ private fun Modifier.containerTransformBounds(
         val sharedState = rememberSharedContentState(target)
         val cornerRadius = visibilityScope.transition.animateDp(
             transitionSpec = {
-                tween(ContainerTransformDurationMillis, easing = AppMotion.standardEasing)
+                tween(ContainerTransformDurationMillis, easing = FastOutSlowInEasing)
             },
             label = "${target.name}ContainerCorner"
         ) { state ->
@@ -235,7 +237,7 @@ private fun Modifier.containerTransformBounds(
             sharedContentState = sharedState,
             animatedVisibilityScope = visibilityScope,
             boundsTransform = { _, _ ->
-                tween(ContainerTransformDurationMillis, easing = AppMotion.standardEasing)
+                tween(ContainerTransformDurationMillis, easing = FastOutSlowInEasing)
             },
             enter = fadeIn(tween(ContainerTransformDurationMillis)),
             exit = fadeOut(tween(ContainerTransformDurationMillis)),

@@ -76,6 +76,8 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.SharedTransitionLayout
 import androidx.compose.animation.SharedTransitionScope
 import androidx.compose.animation.fadeIn
@@ -84,6 +86,7 @@ import androidx.compose.animation.togetherWith
 import androidx.compose.animation.core.tween
 import androidx.compose.runtime.SideEffect
 import com.breakyuna.esjzone.ui.designsystem.AppMotion
+import com.breakyuna.esjzone.ui.designsystem.LocalReduceMotion
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -157,6 +160,8 @@ internal enum class BookshelfFilter {
     READ
 }
 
+private enum class ShelfLoadingView { WAITING, SKELETON, CONTENT }
+
 internal fun BookshelfSort.Order.labelRes(): Int = when (this) {
     BookshelfSort.Order.RECENT_READ -> R.string.bookshelf_sort_recent_read
     BookshelfSort.Order.RECENT_ADDED -> R.string.bookshelf_sort_recent_added
@@ -197,6 +202,21 @@ object FavoritePage : AppDestination {
         }
         val readingSnapshot by model.readingIndex.collectAsStateWithLifecycle()
         val loadingShelf = shelfEntries == null || readingSnapshot == null
+        var showShelfSkeleton by remember { mutableStateOf(false) }
+        LaunchedEffect(loadingShelf) {
+            if (loadingShelf) {
+                delay(150)
+                showShelfSkeleton = true
+            } else {
+                showShelfSkeleton = false
+            }
+        }
+        val shelfLoadingView = when {
+            !loadingShelf -> ShelfLoadingView.CONTENT
+            showShelfSkeleton -> ShelfLoadingView.SKELETON
+            else -> ShelfLoadingView.WAITING
+        }
+        val reducedMotion = LocalReduceMotion.current
         val readingIndex = readingSnapshot ?: FavoritePageModel.ReadingIndex()
         val downloaded by model.downloadedBookKeys.collectAsStateWithLifecycle()
         val downloadStorageUnavailable by model.downloadStorageUnavailable.collectAsStateWithLifecycle()
@@ -651,11 +671,25 @@ object FavoritePage : AppDestination {
                 modifier = Modifier.fillMaxWidth().weight(1f)
             ) {
             BoxWithConstraints(Modifier.fillMaxSize()) {
-                // Show the header and books together once both local snapshots are ready.
-                if (loadingShelf) {
-                    LoadingSkeleton(Modifier.padding(AppSpacing.lg))
-                    return@BoxWithConstraints
-                }
+                AnimatedContent(
+                    targetState = shelfLoadingView,
+                    modifier = Modifier.fillMaxSize(),
+                    transitionSpec = {
+                        if (!reducedMotion && initialState == ShelfLoadingView.SKELETON &&
+                            targetState == ShelfLoadingView.CONTENT
+                        ) {
+                            (fadeIn(tween(AppMotion.standard)) togetherWith fadeOut(tween(AppMotion.quick)))
+                                .using(null)
+                        } else {
+                            (EnterTransition.None togetherWith ExitTransition.None).using(null)
+                        }
+                    },
+                    label = "BookshelfLoading"
+                ) { displayed ->
+                when (displayed) {
+                    ShelfLoadingView.WAITING -> Unit
+                    ShelfLoadingView.SKELETON -> LoadingSkeleton(Modifier.padding(AppSpacing.lg))
+                    ShelfLoadingView.CONTENT -> {
                 val startPadding = AppSpacing.lg + navPadding.calculateStartPadding(layoutDirection)
                 val endPadding = AppSpacing.lg
                 val adaptiveColumns = if (columnOverride > 0) columnOverride else bookshelfColumnCount((maxWidth - startPadding - endPadding).value, AppSpacing.xl.value,
@@ -867,6 +901,9 @@ object FavoritePage : AppDestination {
                             }
                         }
                     }
+                }
+                    }
+                }
                 }
             }
             }
