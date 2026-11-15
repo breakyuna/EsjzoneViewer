@@ -7,6 +7,14 @@ import org.junit.Test
 
 class SearchTagExpressionTest {
     @Test
+    fun lineBreaksBecomeSpacesInSearchAndExistingSpacesArePreserved() {
+        assertEquals("书 名 作者", normalizeSearchLineBreaks("书 名\r\n作者"))
+        assertEquals("书  名 作者", buildSearchTagExpression("\n书  名\n作者\r", "").query)
+        assertEquals("作品 作者+!TS", buildSearchTagExpression("作品\u2028作者", "TS").query)
+        assertFalse(buildSearchTagExpression("\r\n", "").canSearch)
+    }
+
+    @Test
     fun exclusionsAreAppendedWithPlusAndBangWithoutChangingTheExistingQuery() {
         val result = buildSearchTagExpression(
             currentQuery = "  作品 名 !旧标签+作者  ",

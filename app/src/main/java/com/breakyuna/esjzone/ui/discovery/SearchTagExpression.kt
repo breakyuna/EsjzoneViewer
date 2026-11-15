@@ -9,6 +9,10 @@ internal data class SearchTagExpression(
 
 private val searchTagSeparator = Regex("[\\p{javaWhitespace}+＋]+")
 private val searchTagPart = Regex("([^\\p{javaWhitespace}+＋]+)|([\\p{javaWhitespace}+＋]+)")
+private val searchLineBreaks = Regex("\\r\\n|[\\r\\n\\u0085\\u2028\\u2029]")
+
+/** Keep words separated when pasted text contains line breaks. */
+internal fun normalizeSearchLineBreaks(value: String): String = value.replace(searchLineBreaks, " ")
 
 private fun hasExcludePrefix(value: String): Boolean = value.startsWith('!') || value.startsWith('！')
 
@@ -81,7 +85,7 @@ internal fun buildSearchTagExpression(
     val tokens = excluded.split(searchTagSeparator).filter { it.isNotEmpty() }
     val bodies = tokens.map(::exclusionTagBody)
     val exclusion = bodies.filterNotNull().joinToString("+") { "!$it" }
-    val existing = currentQuery.trim()
+    val existing = normalizeSearchLineBreaks(currentQuery).trim()
     val query = when {
         existing.isEmpty() -> exclusion
         exclusion.isEmpty() -> existing

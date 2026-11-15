@@ -59,6 +59,7 @@ import com.breakyuna.esjzone.ui.discovery.DiscoveryNovelCard
 import com.breakyuna.esjzone.ui.discovery.DiscoveryOfflineBanner
 import com.breakyuna.esjzone.ui.discovery.DiscoverySearchTopBar
 import com.breakyuna.esjzone.ui.discovery.buildSearchTagExpression
+import com.breakyuna.esjzone.ui.discovery.normalizeSearchLineBreaks
 import com.breakyuna.esjzone.ui.navigation.AppNavKey
 import com.breakyuna.esjzone.ui.navigation.LegacyRoute
 import com.breakyuna.esjzone.ui.navigation.token
@@ -92,7 +93,7 @@ private fun searchSortResource(type: Int): Int = when (type) {
 }
 
 class SearchPage(private val keyword: String) : AppDestination {
-    override val navKey = AppNavKey.Legacy(LegacyRoute.Search(keyword.trim()))
+    override val navKey = AppNavKey.Legacy(LegacyRoute.Search(normalizeSearchLineBreaks(keyword).trim()))
 
     override val key: String get() = navKey.route.token()
 
@@ -101,17 +102,17 @@ class SearchPage(private val keyword: String) : AppDestination {
         val authorization = LocalAuthorization.current
         val model = rememberAppViewModel { SearchPageModel(authorization) }
         val state by model.state.collectAsStateWithLifecycle()
-        var query by rememberSaveable { mutableStateOf(keyword.trim()) }
+        var query by rememberSaveable { mutableStateOf(normalizeSearchLineBreaks(keyword).trim()) }
         var excluded by rememberSaveable { mutableStateOf("") }
         var tagRowExpanded by rememberSaveable { mutableStateOf(false) }
-        var activeQuery by rememberSaveable { mutableStateOf(keyword.trim()) }
+        var activeQuery by rememberSaveable { mutableStateOf(normalizeSearchLineBreaks(keyword).trim()) }
         var category by rememberSaveable { mutableIntStateOf(0) }
         var sort by rememberSaveable { mutableIntStateOf(1) }
 
         fun submit(value: String) {
             val expression = buildSearchTagExpression(value, excluded)
             if (!expression.canSearch) return
-            query = value.trim()
+            query = normalizeSearchLineBreaks(value).trim()
             if (activeQuery == expression.query) {
                 model.search(expression.query, category, sort)
             } else {
@@ -369,7 +370,7 @@ class SearchPageModel(
         sort: Int = 1,
         forceRefresh: Boolean = false
     ) {
-        val normalizedKeyword = keyword.trim()
+        val normalizedKeyword = normalizeSearchLineBreaks(keyword).trim()
         if (normalizedKeyword.isBlank()) return
         if (!forceRefresh && activeKeyword == normalizedKeyword && activeCategory == category && activeSort == sort &&
             (requestJob?.isActive == true || (mutableState.value as? State.Result)?.requester?.isCurrent() == true)

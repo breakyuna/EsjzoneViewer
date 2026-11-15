@@ -538,7 +538,7 @@ fun DiscoverySearchField(
     }
     OutlinedTextField(
         value = value,
-        onValueChange = onValueChange,
+        onValueChange = { onValueChange(normalizeSearchLineBreaks(it)) },
         modifier = modifier
             .fillMaxWidth()
             .semantics {

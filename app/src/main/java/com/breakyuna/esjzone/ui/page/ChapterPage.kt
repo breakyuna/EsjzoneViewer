@@ -1913,6 +1913,20 @@ class ChapterPage(
                     }
                 }.first { it }
                 pendingBoundaryTurn = null
+            } else if (!pending.forward) {
+                // The prepend may leave the list at index zero (the previous
+                // chapter heading), so do not wait for the old anchor to be visible.
+                val anchorIndex = displayIndexByKey[pending.anchorKey] ?: run {
+                    pendingBoundaryTurn = null
+                    return@LaunchedEffect
+                }
+                isProgrammaticScroll = true
+                try {
+                    scrollToPreviousBoundaryPage(scrollState, readerListIndex(anchorIndex))
+                } finally {
+                    isProgrammaticScroll = false
+                }
+                pendingBoundaryTurn = null
             } else {
                 snapshotFlow {
                     scrollState.layoutInfo.visibleItemsInfo.any { item ->

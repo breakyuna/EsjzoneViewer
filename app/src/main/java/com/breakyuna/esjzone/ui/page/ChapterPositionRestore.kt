@@ -1,6 +1,7 @@
 package com.breakyuna.esjzone.ui.page
 
 import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.pager.PagerState
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.text.TextLayoutResult
@@ -20,6 +21,11 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 
 internal data class ChapterResume(val chapter: Chapter, val progress: Float, val anchor: ReaderAnchor?)
+
+internal suspend fun scrollToPreviousBoundaryPage(state: LazyListState, anchorIndex: Int) {
+    state.scrollToItem(anchorIndex)
+    state.scrollBy(-state.layoutInfo.viewportSize.height * 0.88f)
+}
 
 internal suspend fun lookupChapterResume(
     novelId: String,

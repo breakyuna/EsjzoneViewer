@@ -50,6 +50,7 @@ import com.breakyuna.esjzone.ui.discovery.DiscoveryEmptyState
 import com.breakyuna.esjzone.ui.discovery.DiscoveryLoadingState
 import com.breakyuna.esjzone.ui.discovery.DiscoverySearchTopBar
 import com.breakyuna.esjzone.ui.discovery.buildSearchTagExpression
+import com.breakyuna.esjzone.ui.discovery.normalizeSearchLineBreaks
 import com.breakyuna.esjzone.ui.navigation.AppNavigator
 import com.breakyuna.esjzone.ui.navigation.AppTab
 import com.breakyuna.esjzone.ui.navigation.AppTabOptions
@@ -87,7 +88,7 @@ object SearchTab : AppTab {
         fun submit(value: String, exclusion: String = excluded) {
             val expression = buildSearchTagExpression(value, exclusion)
             if (!expression.canSearch) return
-            query = value.trim()
+            query = normalizeSearchLineBreaks(value).trim()
             if (exclusion.isEmpty()) excluded = ""
             val keyword = expression.query
             if (activeKeyword == keyword) {
