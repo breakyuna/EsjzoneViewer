@@ -46,13 +46,13 @@ import com.breakyuna.esjzone.network.EsjzoneUrls
 import com.breakyuna.esjzone.ui.designsystem.AppTheme
 import com.breakyuna.esjzone.ui.designsystem.LocalGlobalScript
 import com.breakyuna.esjzone.ui.reader.ReaderScript
-import com.breakyuna.esjzone.ui.reader.ReaderScriptConverter
 import com.breakyuna.esjzone.util.LocaleHelper
 import org.json.JSONObject
 
 /** Opens ordinary web links inside the app without sharing the ESJ network client's cookies. */
 @OptIn(ExperimentalMaterial3Api::class)
 class InAppBrowserActivity : ComponentActivity() {
+    private val websiteConverter = com.breakyuna.esjzone.ui.reader.WebsiteScriptConverter()
     @Volatile private var currentScriptMode = ReaderScript.ORIGINAL
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -102,10 +102,11 @@ class InAppBrowserActivity : ComponentActivity() {
                             addJavascriptInterface(object {
                                 @JavascriptInterface
                                 fun convert(text: String, mode: String): String {
-                                    if (text.length > 131_072) return text
+                                    if (text.length > 32_768) return text
                                     val script = ReaderScript.entries.firstOrNull { it.name == mode }
                                         ?: ReaderScript.ORIGINAL
-                                    return ReaderScriptConverter.convert(text, script)
+                                    if (script != currentScriptMode) return text
+                                    return websiteConverter.convert(text, script)
                                 }
                             }, "EsjScriptBridge")
                             webViewClient = object : WebViewClient() {
@@ -147,6 +148,8 @@ class InAppBrowserActivity : ComponentActivity() {
                     DisposableEffect(browser) {
                         browser.loadUrl(initialUrl)
                         onDispose {
+                            websiteConverter.close()
+                            browser.removeJavascriptInterface("EsjScriptBridge")
                             browser.stopLoading()
                             browser.destroy()
                         }

@@ -91,6 +91,7 @@ class ReaderSettingsDataStore(
     suspend fun readImageBackground(): ReaderImageBackground = dataStore.data.first().toImageBackground()
 
     suspend fun saveNameReplaceSettings(settings: ReaderNameReplaceSettings) {
+        com.breakyuna.esjzone.ui.reader.ReaderNameReplace.validate(settings)
         val normalized = settings.copy(
             rules = settings.rules
                 .distinctBy { it.id }
@@ -121,6 +122,9 @@ class ReaderSettingsDataStore(
             keys.forEach { key -> json[key.name]?.let { this[key] = decode(it.asJsonPrimitive) } }
         }
         read(BACKUP_STRING_KEYS) { require(it.isString); it.asString }
+        this[NAME_REPLACE_RULES]?.let { raw ->
+            decodeNameRules(raw)
+        }
         read(BACKUP_FLOAT_KEYS) { require(it.isNumber); it.asFloat.also { number -> require(number.isFinite()) } }
         read(BACKUP_LONG_KEYS) { require(it.isNumber); it.asString.toLong() }
         // Keys of removed settings (REMOVED_SETTING_KEYS) in older archives are ignored.
@@ -204,11 +208,23 @@ class ReaderSettingsDataStore(
     ).sanitized()
 
     private fun Preferences.toNameReplaceSettings(): ReaderNameReplaceSettings {
-        val rules = runCatching<List<NameReplaceRuleJson?>> {
-            val raw = this[NAME_REPLACE_RULES] ?: return@runCatching emptyList()
+        val rules = runCatching { decodeNameRules(this[NAME_REPLACE_RULES].orEmpty()) }.getOrDefault(emptyList())
+        return ReaderNameReplaceSettings(
+            enabled = this[NAME_REPLACE_ENABLED] ?: false,
+            rules = rules
+        )
+    }
+
+    private fun decodeNameRules(raw: String): List<ReaderNameReplaceRule> {
+        if (raw.isEmpty()) return emptyList()
+        require(raw.length <= 1024 * 1024) { "Replacement settings exceed size limit" }
+        val entries = run {
             val type = object : TypeToken<List<NameReplaceRuleJson?>>() {}.type
-            gson.fromJson(raw, type)
-        }.getOrNull().orEmpty().mapNotNull { entry ->
+            val checked = com.breakyuna.esjzone.util.BoundedJson.readText(raw.reader())
+            gson.fromJson<List<NameReplaceRuleJson?>>(checked, type)
+        }.orEmpty()
+        require(entries.size <= com.breakyuna.esjzone.ui.reader.ReaderNameReplace.MAX_RULES)
+        return entries.mapNotNull { entry ->
             val rule = entry ?: return@mapNotNull null
             val source = rule.source ?: return@mapNotNull null
             ReaderNameReplaceRule(
@@ -219,11 +235,9 @@ class ReaderSettingsDataStore(
                 bookKey = rule.bookKey?.takeIf { it.isNotBlank() },
                 regex = rule.regex ?: false
             )
+        }.also { rules ->
+            com.breakyuna.esjzone.ui.reader.ReaderNameReplace.validate(ReaderNameReplaceSettings(rules = rules))
         }
-        return ReaderNameReplaceSettings(
-            enabled = this[NAME_REPLACE_ENABLED] ?: false,
-            rules = rules
-        )
     }
 
     private data class NameReplaceRuleJson(

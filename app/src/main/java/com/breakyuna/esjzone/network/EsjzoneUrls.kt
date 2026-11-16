@@ -20,6 +20,21 @@ object EsjzoneUrls {
         return resolve(rawUrl, Base)
     }
 
+    /** Business boundary for notification/external intents and detail requests. */
+    fun novelDetailUrl(rawUrl: String, baseUrl: String = Base): String? {
+        val base = baseUrl.toHttpUrlOrNull() ?: return null
+        val target = base.resolve(rawUrl.trim()) ?: return null
+        fun trusted(host: String) = SettingsDefaults.DOMAINS.any {
+            it.removePrefix("www.").equals(host.removePrefix("www."), ignoreCase = true)
+        }
+        if (!base.isHttps || base.port != 443 || !trusted(base.host) ||
+            !target.isHttps || target.port != 443 || !trusted(target.host) ||
+            target.username.isNotEmpty() || target.password.isNotEmpty() ||
+            target.encodedQuery != null || target.encodedFragment != null ||
+            !Regex("^/detail/[0-9]{1,20}\\.html$").matches(target.encodedPath)) return null
+        return target.newBuilder().host(base.host).build().toString()
+    }
+
     fun isEsjHost(host: String): Boolean {
         val normalized = host.trim().lowercase().removePrefix("www.")
         return SettingsDefaults.DOMAINS.any { domain ->

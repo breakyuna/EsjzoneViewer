@@ -42,6 +42,7 @@ import androidx.compose.ui.window.DialogProperties
 import com.breakyuna.esjzone.R
 import com.breakyuna.esjzone.ui.designsystem.GlobalText as Text
 import com.breakyuna.esjzone.ui.designsystem.globalStringResource as stringResource
+import com.breakyuna.esjzone.ui.reader.ReaderNameReplace
 import com.breakyuna.esjzone.ui.reader.ReaderNameReplaceRule
 import com.breakyuna.esjzone.ui.reader.ReaderNameReplaceSettings
 import kotlinx.coroutines.launch
@@ -60,6 +61,7 @@ internal fun ReaderNameReplaceDialog(
     val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
     fun update(rule: ReaderNameReplaceRule) {
+        if (rule.source.length > ReaderNameReplace.MAX_PATTERN || rule.target.length > ReaderNameReplace.MAX_TARGET) return
         draft = draft.copy(rules = draft.rules.map { if (it.id == rule.id) rule else it })
     }
     fun close() {
@@ -83,7 +85,7 @@ internal fun ReaderNameReplaceDialog(
                                 onClick = { tab = index }, text = { Text(stringResource(label)) })
                         }
                     }
-                    IconButton(onClick = {
+                    IconButton(enabled = draft.rules.size < ReaderNameReplace.MAX_RULES, onClick = {
                         draft = draft.copy(rules = draft.rules + ReaderNameReplaceRule(source = "", target = "", bookKey = bookKey))
                         scope.launch { listState.animateScrollToItem(rules.size) }
                     }) {
@@ -98,7 +100,7 @@ internal fun ReaderNameReplaceDialog(
                     }
                     items(rules, key = { it.id }) { rule ->
                         val invalidPattern = rule.regex && rule.source.isNotEmpty() &&
-                            remember(rule.source) { runCatching { java.util.regex.Pattern.compile(rule.source) }.isFailure }
+                            remember(rule.source) { !ReaderNameReplace.supportedPattern(rule.source) }
                         Column(Modifier.padding(horizontal = 4.dp)) {
                             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                 RuleField(rule.source, stringResource(R.string.reader_name_replace_source), invalidPattern,

@@ -7,7 +7,8 @@ import com.breakyuna.esjzone.domain.reader.ReaderTextOffsets
 internal data class ReaderScriptSnapshot(
     val script: ReaderScript,
     val values: Map<String, String>,
-    val blockMappings: Map<ReaderBlock, ReaderTextOffsets>
+    val blockMappings: Map<ReaderBlock, ReaderTextOffsets>,
+    val nameReplace: ReaderNameReplaceSettings = ReaderNameReplaceSettings()
 )
 
 /**
@@ -68,15 +69,17 @@ object ReaderScriptConverter {
     internal fun snapshot(
         documents: Iterable<com.breakyuna.esjzone.domain.reader.ReaderChapterDocument>,
         script: ReaderScript,
-        previous: ReaderScriptSnapshot? = null
+        previous: ReaderScriptSnapshot? = null,
+        nameReplace: ReaderNameReplaceSettings = ReaderNameReplaceSettings()
     ): ReaderScriptSnapshot {
-        if (script == ReaderScript.ORIGINAL) return ReaderScriptSnapshot(script, emptyMap(), emptyMap())
-        val reusable = previous?.takeIf { it.script == script }
+        if (script == ReaderScript.ORIGINAL && !ReaderNameReplace.isActive(nameReplace))
+            return ReaderScriptSnapshot(script, emptyMap(), emptyMap(), nameReplace)
+        val reusable = previous?.takeIf { it.script == script && it.nameReplace == nameReplace }
         val result = HashMap<String, String>()
         val blocks = HashMap<ReaderBlock, ReaderTextOffsets>()
         fun add(value: String?) {
             if (!value.isNullOrEmpty() && value !in result) {
-                result[value] = reusable?.values?.get(value) ?: convert(value, script)
+                result[value] = reusable?.values?.get(value) ?: ReaderNameReplace.apply(convert(value, script), nameReplace)
             }
         }
         documents.forEach { document ->
@@ -93,10 +96,17 @@ object ReaderScriptConverter {
                     }
                     else -> Unit
                 }
-                blocks[block] = reusable?.blockMappings?.get(block) ?: blockMapping(block, script)
+                blocks[block] = reusable?.blockMappings?.get(block) ?:
+                    ReaderNameReplace.blockMapping(block, nameReplace) { blockMapping(it, script) }
             }
         }
-        return ReaderScriptSnapshot(script, result, blocks)
+        return ReaderScriptSnapshot(script, result, blocks, nameReplace)
+    }
+
+    internal fun convertUncached(text: String, script: ReaderScript): String = when {
+        script == ReaderScript.ORIGINAL || text.isEmpty() -> text
+        script == ReaderScript.SIMPLIFIED -> traditionalToSimplified.get().transliterate(text)
+        else -> simplifiedToTraditional.get().transliterate(text)
     }
 
     fun convert(text: String, script: ReaderScript): String =

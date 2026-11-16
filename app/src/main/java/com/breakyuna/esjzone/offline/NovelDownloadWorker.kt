@@ -255,13 +255,14 @@ class NovelDownloadWorker(
 
     private val unlockOnly: Boolean get() = inputData.getBoolean(KEY_UNLOCK_ONLY, false)
     private var resolvedNovelName: String? = null
+    @Volatile private var foregroundReady = false
 
     private fun notificationTitle(name: String): String =
         validNovelTitle(name, novelUrl = inputData.getString(KEY_URL).orEmpty())
             .ifBlank { applicationContext.getString(R.string.download_unknown_novel) }
 
     @SuppressLint("MissingPermission")
-    override suspend fun doWork(): Result {
+    override suspend fun doWork(): Result = withDownloadProgressUpdates(::updateProgress) work@{ publishProgress ->
         val rawUrl = inputData.getString(KEY_URL)?.trim().orEmpty()
         val name = validNovelTitle(inputData.getString(KEY_NAME).orEmpty(), novelUrl = rawUrl)
         val forumUrl = inputData.getString(KEY_FORUM_URL)?.trim().orEmpty()
@@ -272,12 +273,13 @@ class NovelDownloadWorker(
             KEY_CONCURRENCY,
             NovelDownloadStore.DEFAULT_DOWNLOAD_CONCURRENCY
         ).coerceIn(SettingsDefaults.MIN_DOWNLOAD_CONCURRENCY, SettingsDefaults.MAX_DOWNLOAD_CONCURRENCY)
-        if (rawUrl.isBlank()) return Result.failure()
+        if (rawUrl.isBlank()) return@work Result.failure()
 
-        return try {
+        try {
             AppLogger.init(applicationContext)
             try {
                 setForeground(createForegroundInfo(name, null))
+                foregroundReady = true
             } catch (error: IllegalStateException) {
                 if (error::class.java.name != "android.app.ForegroundServiceStartNotAllowedException") {
                     throw error
@@ -307,7 +309,7 @@ class NovelDownloadWorker(
                     kotlinx.coroutines.withContext(Dispatchers.IO) {
                         NovelDownloadStore.unlockChaptersWithCommonPassword(
                             authorization, rawUrl, requireNotNull(selectedChapterUrls), actualBaseUrl,
-                            onProgress = ::publishProgress
+                            onProgress = publishProgress
                         )
                     }
                 }
@@ -320,7 +322,7 @@ class NovelDownloadWorker(
                 }
                 sendResultNotification(rawUrl, applicationContext.getString(
                     R.string.novel_download_unlock_completed_title, notificationTitle(resolvedNovelName ?: name)), message)
-                return Result.success(workDataOf(
+                return@work Result.success(workDataOf(
                     KEY_UNLOCKED to result.unlockedCount, KEY_FAILED to result.failedCount))
             }
             val detail = EsjzoneClient.getNovelDetail(
@@ -358,7 +360,7 @@ class NovelDownloadWorker(
                     it is CloudflareChallengeRequiredException
                 }) {
                 sendWenkuVerificationNotification(name, rawUrl)
-                return Result.failure()
+                return@work Result.failure()
             }
             if (runAttemptCount < MAX_RETRIES) Result.retry() else {
                 if (unlockOnly) sendResultNotification(rawUrl, applicationContext.getString(
@@ -392,14 +394,13 @@ class NovelDownloadWorker(
         block
     )
 
-    @SuppressLint("MissingPermission")
-    private fun publishProgress(progress: DownloadProgress) {
-        setProgressAsync(progress.toWorkData())
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
-            ContextCompat.checkSelfPermission(applicationContext, Manifest.permission.POST_NOTIFICATIONS) ==
-            android.content.pm.PackageManager.PERMISSION_GRANTED) {
-            applicationContext.getSystemService(NotificationManager::class.java)
-                .notify(notificationId(), createNotification(resolvedNovelName ?: inputData.getString(KEY_NAME).orEmpty(), progress))
+    private suspend fun updateProgress(progress: DownloadProgress) {
+        if (isStopped) return
+        setProgress(progress.toWorkData())
+        if (foregroundReady && !isStopped) {
+            // WorkManager owns both the latest notification and its removal on stop/completion.
+            // Await this update: no pending foreground operation may outlive doWork's result.
+            setForeground(createForegroundInfo(resolvedNovelName ?: inputData.getString(KEY_NAME).orEmpty(), progress))
         }
     }
 

@@ -227,7 +227,8 @@ private data class ReaderTextSnapshot(
     val script: ReaderScript,
     val chapters: List<ReaderChapter>?,
     val values: Map<String, String>,
-    val blockMappings: Map<ReaderBlock, com.breakyuna.esjzone.domain.reader.ReaderTextOffsets>
+    val blockMappings: Map<ReaderBlock, com.breakyuna.esjzone.domain.reader.ReaderTextOffsets>,
+    val nameReplace: com.breakyuna.esjzone.ui.reader.ReaderNameReplaceSettings
 )
 
 class ChapterPage(
@@ -614,39 +615,36 @@ class ChapterPage(
         val readerTextTransform: (String) -> String = remember(
             readerSettings.script, convertedText, nameReplaceSettings
         ) {
-            val script = readerSettings.script
             val snapshot = convertedText?.takeIf {
-                it.script == script
+                it.script == readerSettings.script && it.nameReplace == nameReplaceSettings
             }?.values
-            val transform: (String) -> String = { text ->
-                val scripted = if (script == ReaderScript.ORIGINAL) text
-                else snapshot?.get(text) ?: text
-                ReaderNameReplace.apply(scripted, nameReplaceSettings)
-            }
+            // Composition/layout only looks up immutable, background-prepared results.
+            val transform: (String) -> String = { text -> snapshot?.get(text) ?: text }
             transform
         }
-        LaunchedEffect(readerSettings.script, result?.chapters) {
+        LaunchedEffect(readerSettings.script, result?.chapters, nameReplaceSettings) {
             val script = readerSettings.script
+            val names = nameReplaceSettings
             val chapters = result?.chapters.orEmpty()
-            if (script == ReaderScript.ORIGINAL || chapters.isEmpty()) {
+            if ((script == ReaderScript.ORIGINAL && !ReaderNameReplace.isActive(names)) || chapters.isEmpty()) {
                 convertedText = null
                 return@LaunchedEffect
             }
-            val previous = convertedText?.takeIf { it.script == script }?.let {
-                ReaderScriptSnapshot(it.script, it.values, it.blockMappings)
+            val previous = convertedText?.takeIf { it.script == script && it.nameReplace == names }?.let {
+                ReaderScriptSnapshot(it.script, it.values, it.blockMappings, names)
             }
             val started = System.nanoTime()
             val snapshot = withContext(Dispatchers.Default) {
-                val prepared = ReaderScriptConverter.snapshot(chapters.map { it.document }, script, previous)
+                val prepared = ReaderScriptConverter.snapshot(chapters.map { it.document }, script, previous, names)
                 val values = prepared.values.toMutableMap().apply {
                     chapters.forEach { entry ->
                         val name = entry.chapter.name
                         if (name.isNotBlank() && name !in this) {
-                            this[name] = previous?.values?.get(name) ?: ReaderScriptConverter.convert(name, script)
+                            this[name] = ReaderNameReplace.apply(ReaderScriptConverter.convert(name, script), names)
                         }
                     }
                 }.toMap()
-                ReaderTextSnapshot(script, chapters, values, prepared.blockMappings)
+                ReaderTextSnapshot(script, chapters, values, prepared.blockMappings, names)
             }
             convertedText = snapshot
             AppLogger.i("ReaderTiming", "scriptMs=${(System.nanoTime() - started) / 1_000_000} chapters=${chapters.size}")
@@ -677,8 +675,9 @@ class ChapterPage(
             androidx.compose.runtime.mutableStateMapOf<String, androidx.compose.ui.text.TextLayoutResult>()
         }
         var paginationSnapshot by remember { mutableStateOf<ReaderPaginationSnapshot?>(null) }
-        val scriptReady = readerSettings.script == ReaderScript.ORIGINAL ||
-            (convertedText?.script == readerSettings.script && convertedText?.chapters == result?.chapters)
+        val scriptReady = (readerSettings.script == ReaderScript.ORIGINAL && !ReaderNameReplace.isActive(nameReplaceSettings)) ||
+            (convertedText?.script == readerSettings.script && convertedText?.chapters == result?.chapters &&
+                convertedText?.nameReplace == nameReplaceSettings)
         val paginationReady = !pagedMode || (scriptReady && paginationSnapshot?.key == pagination.key)
         val pagedDisplayItems = remember(paginationSnapshot, result?.chapters) {
             paginationSnapshot?.itemsFor(result?.chapters.orEmpty()).orEmpty()
@@ -896,20 +895,11 @@ class ChapterPage(
 
         val identityOffsets = readerSettings.script == ReaderScript.ORIGINAL &&
             !ReaderNameReplace.isActive(nameReplaceSettings)
-        val nameTextOffsets = remember(readerSettings.script, convertedText, nameReplaceSettings) {
-            HashMap<ReaderBlock, com.breakyuna.esjzone.domain.reader.ReaderTextOffsets>()
-        }
         fun textOffsets(block: ReaderBlock): com.breakyuna.esjzone.domain.reader.ReaderTextOffsets? =
             if (identityOffsets) {
                 com.breakyuna.esjzone.domain.reader.ReaderTextOffsets.identity(block.sourceText())
             } else if (!scriptReady) null
-            else if (ReaderNameReplace.isActive(nameReplaceSettings)) {
-                nameTextOffsets.getOrPut(block) {
-                    ReaderNameReplace.blockMapping(block, nameReplaceSettings) { part ->
-                        ReaderScriptConverter.blockMapping(part, readerSettings.script)
-                    }
-                }
-            } else convertedText?.blockMappings?.get(block)
+            else convertedText?.blockMappings?.get(block)
 
         // Quotes are read on the database thread, so rebuild mappings instead of sharing the UI cache.
         fun underlineQuote(document: com.breakyuna.esjzone.domain.reader.ReaderChapterDocument):

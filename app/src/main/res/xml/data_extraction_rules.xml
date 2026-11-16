@@ -5,6 +5,7 @@
 -->
 <data-extraction-rules>
     <cloud-backup>
+        <exclude domain="sharedpref" path="wenku8_cookies.xml" />
         <exclude domain="sharedpref" path="download_secrets.xml" />
         <exclude domain="sharedpref" path="esj_session.xml" />
         <exclude domain="sharedpref" path="esj_session_secure.xml" />
@@ -26,6 +27,7 @@
         <exclude domain="file" path="datastore/user_storage.preferences_pb" />
     </cloud-backup>
     <device-transfer>
+        <exclude domain="sharedpref" path="wenku8_cookies.xml" />
         <exclude domain="sharedpref" path="download_secrets.xml" />
         <exclude domain="sharedpref" path="esj_session.xml" />
         <exclude domain="sharedpref" path="esj_session_secure.xml" />

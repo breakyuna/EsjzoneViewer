@@ -8,6 +8,7 @@
 <full-backup-content>
     <!-- Sessions are encrypted at rest, but neither the ciphertext nor legacy
          plaintext session data should be transferred to another device. -->
+    <exclude domain="sharedpref" path="wenku8_cookies.xml" />
     <exclude domain="sharedpref" path="download_secrets.xml" />
     <exclude domain="sharedpref" path="esj_session.xml" />
     <exclude domain="sharedpref" path="esj_session_secure.xml" />

@@ -71,4 +71,26 @@ class ReaderScriptConverterInstrumentedTest {
         assertEquals(setOf(ReaderTextStyle.Bold), ruby.styles)
         assertEquals(ReaderRuby("龍", "書"), ruby.ruby)
     }
+    @Test
+    fun replacementSnapshotKeepsTextAndOffsetsTogetherAndInvalidatesChangedRules() {
+        val block = ReaderBlock.Text("龍馬")
+        val document = ReaderChapterDocument(ReaderChapterRef("龍馬", "/forum/1/1.html"), listOf(block))
+        val names = com.breakyuna.esjzone.ui.reader.ReaderNameReplaceSettings(enabled = true, rules = listOf(
+            com.breakyuna.esjzone.ui.reader.ReaderNameReplaceRule(source = "龙", target = "小龙")))
+        val first = ReaderScriptConverter.snapshot(listOf(document), ReaderScript.SIMPLIFIED, nameReplace = names)
+        assertEquals("小龙马", first.values["龍馬"])
+        val mapping = requireNotNull(first.blockMappings[block])
+        assertEquals("小龙马", mapping.text)
+        assertArrayEquals(intArrayOf(0, 0, 1), mapping.sourceStarts)
+        assertArrayEquals(intArrayOf(1, 1, 2), mapping.sourceEnds)
+        val changed = names.copy(rules = listOf(names.rules.single().copy(target = "大龙")))
+        val second = ReaderScriptConverter.snapshot(listOf(document), ReaderScript.SIMPLIFIED, first, changed)
+        assertEquals("大龙马", second.values["龍馬"])
+        assertEquals("大龙马", second.blockMappings[block]!!.text)
+        val original = ReaderScriptConverter.snapshot(listOf(document), ReaderScript.ORIGINAL,
+            nameReplace = names.copy(rules = listOf(names.rules.single().copy(source = "龍", target = "小龍"))))
+        assertEquals("小龍馬", original.values["龍馬"])
+        assertEquals("小龍馬", original.blockMappings[block]!!.text)
+    }
+
 }

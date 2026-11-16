@@ -188,21 +188,25 @@ object LocalBackup {
         try {
             ZipInputStream(checkNotNull(context.contentResolver.openInputStream(uri))).use { zip ->
                 val seen = HashSet<String>()
-                val limit = (staging.usableSpace - 64L * 1024 * 1024).coerceAtLeast(0)
+                val limit = minOf(16L * 1024 * 1024 * 1024,
+                    (staging.usableSpace - 64L * 1024 * 1024).coerceAtLeast(0))
                 var extracted = 0L
                 while (true) {
                     checkActive()
                     val entry = zip.nextEntry ?: break
                     val target = safeEntry(staging, entry.name)
                     require(seen.add(entry.name) && seen.size <= 200_000)
-                    if ((entry.name.startsWith("downloads/") && BackupCategory.DOWNLOADS !in selected) ||
+                    if (entry.isDirectory || (entry.name.startsWith("downloads/") && BackupCategory.DOWNLOADS !in selected) ||
                         (entry.name == BACKGROUND_PHOTO && BackupCategory.READER_SETTINGS !in selected)
                     ) {
                         // Drain skipped data with cancellation points.
                         val buffer = ByteArray(64 * 1024)
                         while (true) {
                             checkActive()
-                            if (zip.read(buffer) < 0) break
+                            val count = zip.read(buffer)
+                            if (count < 0) break
+                            extracted += count
+                            require(extracted <= limit) { "Backup processing limit exceeded" }
                         }
                         zip.closeEntry()
                         continue
@@ -219,8 +223,11 @@ object LocalBackup {
                                 if (count < 0) break
                                 extracted += count
                                 require(extracted <= limit)
+                                entryBytes += count
+                                if (entry.name == "backup.json") {
+                                    require(entryBytes <= com.breakyuna.esjzone.util.BoundedJson.MAX_BYTES)
+                                }
                                 if (entry.name == BACKGROUND_PHOTO) {
-                                    entryBytes += count
                                     require(entryBytes <= MAX_BACKGROUND_BYTES)
                                 }
                                 output.write(buffer, 0, count)
@@ -231,7 +238,9 @@ object LocalBackup {
                 }
             }
             checkActive()
-            val json = JsonParser.parseString(File(staging, "backup.json").readText()).asJsonObject
+            val json = File(staging, "backup.json").bufferedReader().use {
+                JsonParser.parseString(com.breakyuna.esjzone.util.BoundedJson.readText(it)).asJsonObject
+            }
             require(json["format"]?.asString == "esjzone-local-backup" && json["version"]?.asInt in 1..4)
             require(selected.any { category -> json.has(when (category) {
                 BackupCategory.UNDERLINES -> "underlines"
@@ -247,7 +256,7 @@ object LocalBackup {
             val underlines = if (BackupCategory.UNDERLINES in selected && json.has("underlines"))
                 json.getAsJsonObject("underlines").entrySet().associate { (key, value) ->
                     require(key.startsWith(ReaderUnderlines.KEY_PREFIX) && key.length > ReaderUnderlines.KEY_PREFIX.length)
-                    key to ReaderUnderlines.decode(value.asString)
+                    key to ReaderUnderlines.decode(com.breakyuna.esjzone.util.BoundedJson.readText(value.asString.reader()))
                 } else emptyMap()
             val bookmarks = if (BackupCategory.BOOKMARKS in selected && json.has("bookmarks"))
                 decodeBookmarks(json["bookmarks"]) else emptyList()
@@ -258,7 +267,7 @@ object LocalBackup {
             val tags = if (BackupCategory.READING in selected && json.has("readingTags")) json.getAsJsonObject("readingTags") else JsonObject()
             require(tags.keySet().all { it.startsWith(com.breakyuna.esjzone.database.ReadingStatisticsRecorder.TAGS_KEY_PREFIX) })
             tags.entrySet().forEach { (_, value) ->
-                require(JsonParser.parseString(value.asString).asJsonArray.all { it.isJsonPrimitive && it.asJsonPrimitive.isString })
+                require(JsonParser.parseString(com.breakyuna.esjzone.util.BoundedJson.readText(value.asString.reader())).asJsonArray.all { it.isJsonPrimitive && it.asJsonPrimitive.isString })
             }
             val search = if (BackupCategory.SEARCH in selected && json.has("search"))
                 gson.fromJson(json["search"], Array<SearchHistory>::class.java).toList() else emptyList()

@@ -209,12 +209,44 @@ class ReaderNameReplaceTest {
 
     @Test
     fun zeroWidthRegexMakesProgressAndMapsInsertedTextToBoundary() {
-        val value = settings(ReaderNameReplaceRule(source = "(?=A)|$", target = "X", regex = true))
+        val value = settings(ReaderNameReplaceRule(source = "^|$", target = "X", regex = true))
         val mapped = ReaderNameReplace.mapping(ReaderTextOffsets.identity("AB"), value)
         assertEquals("XABX", ReaderNameReplace.apply("AB", value))
         assertEquals("XABX", mapped.text)
         assertArrayEquals(intArrayOf(0, 0, 1, 2), mapped.sourceStarts)
         assertArrayEquals(intArrayOf(0, 1, 2, 2), mapped.sourceEnds)
+    }
+
+    @Test
+    fun lookaroundAndPatternBackreferencesAreSkipped() {
+        val value = settings(
+            ReaderNameReplaceRule(source = "(?=Alice)", target = "bad", regex = true),
+            ReaderNameReplaceRule(source = "(A)\\1", target = "bad", regex = true),
+            ReaderNameReplaceRule(source = "Bob", target = "B")
+        )
+        assertEquals("Alice AA B", ReaderNameReplace.apply("Alice AA Bob", value))
+    }
+
+    @Test
+    fun replacementExpansionFallsBackToOriginalInsteadOfPartialOutput() {
+        val text = "a".repeat(128)
+        val value = settings(ReaderNameReplaceRule(source = "a", target = "b".repeat(4096)))
+        assertEquals(text, ReaderNameReplace.apply(text, value))
+        assertEquals(text, ReaderNameReplace.mapping(ReaderTextOffsets.identity(text), value).text)
+    }
+
+    @Test
+    fun excessiveRulesAreRejectedAtSettingsBoundary() {
+        org.junit.Assert.assertThrows(IllegalArgumentException::class.java) {
+            ReaderNameReplace.validate(settings(*Array(129) { ReaderNameReplaceRule(source = "A", target = "B") }))
+        }
+    }
+
+    @Test(timeout = 2000)
+    fun nestedRepetitionDoesNotUseBacktracking() {
+        val text = "a".repeat(20_000) + "!"
+        val value = settings(ReaderNameReplaceRule(source = "^(a+)+$", target = "bad", regex = true))
+        assertEquals(text, ReaderNameReplace.apply(text, value))
     }
 
 }

@@ -116,6 +116,7 @@ dependencies {
     baselineProfile(project(":baselineprofile"))
 
     implementation(libs.okhttp)
+    implementation(libs.re2j)
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.coil.core)
     implementation(libs.coil.compose)

@@ -28,6 +28,7 @@ import okhttp3.Request
 internal fun wenkuChapterCacheKey(url: String): String = "wenku8|${EsjzoneUrls.canonicalPageKey(url)}"
 
 internal class WenkuChapterClient(context: Context, userAgent: String) {
+    private val cacheDirectory = context.applicationContext.cacheDir
     private val jar = WenkuCookieJar(context)
     private val browser = WenkuWebViewSession(context, userAgent)
     private val client = OkHttpClient.Builder()
@@ -62,6 +63,7 @@ internal class WenkuChapterClient(context: Context, userAgent: String) {
 
     private val readerImageClient: OkHttpClient by lazy {
         client.newBuilder()
+            .addInterceptor(com.breakyuna.esjzone.network.ImageTransferInterceptor { cacheDirectory.usableSpace })
             .addInterceptor { chain ->
                 chain.proceed(chain.request().newBuilder()
                     .header("User-Agent", userAgentHeader)

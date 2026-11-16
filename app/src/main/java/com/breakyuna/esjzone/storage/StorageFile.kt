@@ -177,7 +177,10 @@ class StorageFile private constructor(
             input.mark(2)
             val compressed = input.read() == 0x1f && input.read() == 0x8b
             input.reset()
-            (if (compressed) GZIPInputStream(input) else input).bufferedReader(Charsets.UTF_8)
+            com.breakyuna.esjzone.util.BoundedInputStream(
+                if (compressed) GZIPInputStream(input) else input,
+                com.breakyuna.esjzone.util.BoundedJson.MAX_BYTES
+            ).bufferedReader(Charsets.UTF_8)
         } catch (error: Exception) { input.close(); throw error }
     }
     fun writeCompressedText(write: (java.io.Writer) -> Unit) {

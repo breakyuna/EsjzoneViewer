@@ -85,6 +85,8 @@ class AppContainer(
     ).fallbackToDestructiveMigrationOnDowngrade().build()
 
     private val imageHttpClient = OkHttpClient.Builder()
+        .callTimeout(60, java.util.concurrent.TimeUnit.SECONDS)
+        .addInterceptor(com.breakyuna.esjzone.network.ImageTransferInterceptor { appContext.cacheDir.usableSpace })
         .dispatcher(Dispatcher().apply {
             maxRequests = 8
             maxRequestsPerHost = 8

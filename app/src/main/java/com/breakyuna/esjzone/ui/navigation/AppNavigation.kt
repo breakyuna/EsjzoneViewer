@@ -733,7 +733,9 @@ fun AppNavigation() {
         val target = pendingNovelUrl
         if (!target.isNullOrBlank() && authorization != null) {
             com.breakyuna.esjzone.MainActivity.setPendingNovelUrl(null)
-            navigator.pushIfNotCurrent(NovelPage(FavoriteNovel(name = "", url = target)))
+            com.breakyuna.esjzone.network.EsjzoneUrls.novelDetailUrl(target)?.let { safeUrl ->
+                navigator.pushIfNotCurrent(NovelPage(FavoriteNovel(name = "", url = safeUrl)))
+            }
         }
     }
 

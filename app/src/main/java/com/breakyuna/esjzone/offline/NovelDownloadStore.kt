@@ -1740,7 +1740,7 @@ object NovelDownloadStore {
                 }
             } ?: return null
             opened = System.nanoTime()
-            original = snapshot.reader.use { gson.fromJson(it, DownloadedChapterContent::class.java) }
+            original = snapshot.reader.use { gson.fromJson(com.breakyuna.esjzone.util.BoundedJson.readText(it), DownloadedChapterContent::class.java) }
                 ?: return null
         } catch (error: Exception) {
             if (error is com.breakyuna.esjzone.storage.StorageAccessException || error is CancellationException) throw error
@@ -2124,7 +2124,7 @@ object NovelDownloadStore {
                 if (!file.isFile) return null
                 file.storedTextReader()
             }
-            val stored = reader.use { gson.fromJson(it, DownloadedChapterContent::class.java) } ?: return null
+            val stored = reader.use { gson.fromJson(com.breakyuna.esjzone.util.BoundedJson.readText(it), DownloadedChapterContent::class.java) } ?: return null
             val decoded = decodeStoredChapter(stored)
             synchronized(ioLock) { ensureSnapshotCurrent(guard) }
             decoded
@@ -2434,7 +2434,7 @@ object NovelDownloadStore {
                     if (file.isFile) file.storedTextReader() else null)
             }
             val manifest = validateManifest(directory, runCatching {
-                snapshot.reader?.use { gson.fromJson(it, DownloadedNovelManifest::class.java) }
+                snapshot.reader?.use { gson.fromJson(com.breakyuna.esjzone.util.BoundedJson.readText(it), DownloadedNovelManifest::class.java) }
             }.onFailure { error ->
                 if (error is com.breakyuna.esjzone.storage.StorageAccessException || error is CancellationException) throw error
                 AppLogger.w("NovelDownloadStore", "Unable to decode download manifest", error)
@@ -2802,7 +2802,7 @@ object NovelDownloadStore {
         return runCatching {
             file.recoverReplacement()
             if (!file.isFile) return@runCatching null
-            file.storedTextReader().use { gson.fromJson(it, type) }
+            file.storedTextReader().use { gson.fromJson(com.breakyuna.esjzone.util.BoundedJson.readText(it), type) }
         }.onFailure { error ->
             // Lost access must reach the UI; it is not evidence that a chapter is absent/corrupt.
             if (propagateErrors || error is com.breakyuna.esjzone.storage.StorageAccessException || error is CancellationException) throw error

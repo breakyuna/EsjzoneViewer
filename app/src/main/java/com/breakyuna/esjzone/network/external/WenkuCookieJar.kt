@@ -11,13 +11,24 @@ import okhttp3.HttpUrl.Companion.toHttpUrl
 /** Kept in its own encrypted store, independent of ESJ sign-in and sign-out. */
 internal class WenkuCookieJar(context: Context) : CookieJar {
     private val origin = "https://www.wenku8.net/".toHttpUrl()
-    private val preferences = EncryptedSharedPreferences.create(
+    private fun createPreferences(context: Context) = EncryptedSharedPreferences.create(
         context.applicationContext,
         "wenku8_cookies",
         MasterKey.Builder(context.applicationContext).setKeyScheme(MasterKey.KeyScheme.AES256_GCM).build(),
         EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
         EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
     )
+    private val preferences = try {
+        createPreferences(context)
+    } catch (error: Exception) {
+        if (error !is java.security.GeneralSecurityException && error !is java.io.IOException &&
+            error !is SecurityException) throw error
+        // A restored ciphertext can outlive its device-bound key. Reset this session only.
+        check(context.applicationContext.deleteSharedPreferences("wenku8_cookies")) {
+            "Unable to reset Wenku session storage"
+        }
+        createPreferences(context)
+    }
     private val lock = Any()
 
     override fun loadForRequest(url: HttpUrl): List<Cookie> = synchronized(lock) {

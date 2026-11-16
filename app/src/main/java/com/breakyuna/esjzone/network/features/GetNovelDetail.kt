@@ -36,8 +36,9 @@ fun EsjzoneClient.getNovelDetail(
     baseUrl: String? = null,
     awaitFresh: Boolean = false
 ): DetailedNovel {
-    val targetUrl = baseUrl?.let { EsjzoneUrls.resolve(novel.url, it) }
-        ?: EsjzoneUrls.resolve(novel.url)
+    val targetUrl = requireNotNull(EsjzoneUrls.novelDetailUrl(novel.url, baseUrl ?: EsjzoneUrls.Base)) {
+        "Invalid novel detail URL"
+    }
     val detailCacheKey = novelDetailCacheKey(authorization, targetUrl)
     val detailCacheEpoch = NovelDetailCache.currentEpoch
     if (!includeComments && !forceRefresh && !awaitFresh) {
@@ -74,7 +75,7 @@ fun EsjzoneClient.getNovelDetail(
 
 /** Local-only lookup: opening an offline detail must never start or await a request. */
 internal fun EsjzoneClient.getCachedNovelDetail(authorization: Authorization, novel: Novel): DetailedNovel? {
-    val targetUrl = EsjzoneUrls.resolve(novel.url)
+    val targetUrl = EsjzoneUrls.novelDetailUrl(novel.url) ?: return null
     val cacheKey = novelDetailCacheKey(authorization, targetUrl)
     NovelDetailCache.read(cacheKey)?.let { return it }
     val html = PageCache.readStale(cacheKey) ?: return null

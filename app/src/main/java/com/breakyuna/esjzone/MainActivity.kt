@@ -193,7 +193,7 @@ class MainActivity : ComponentActivity() {
         }
         val novelUrl = intent?.getStringExtra(EXTRA_NOVEL_URL)
         if (!novelUrl.isNullOrBlank()) {
-            setPendingNovelUrl(novelUrl)
+            setPendingNovelUrl(com.breakyuna.esjzone.network.EsjzoneUrls.novelDetailUrl(novelUrl))
             intent?.removeExtra(EXTRA_NOVEL_URL)
         }
     }
