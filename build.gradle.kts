@@ -10,7 +10,7 @@ plugins {
 
     id("com.android.test") version "9.1.1" apply false
     // 1.5 adds AGP 9 compatible Baseline Profile support.
-    id("androidx.baselineprofile") version "1.5.0-rc02" apply false
+    id("androidx.baselineprofile") version "1.5.0" apply false
 }
 
 subprojects {
