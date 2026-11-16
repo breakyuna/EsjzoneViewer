@@ -117,6 +117,29 @@ class NavigationRouteContractTest {
     }
 
     @Test
+    fun authorSearchesKeepTheirOriginDetailWhenTheSameAuthorIsSearchedAgain() {
+        val detailA = AppNavKey.Legacy(LegacyRoute.Novel("/detail/1.html"))
+        val detailB = AppNavKey.Legacy(LegacyRoute.Novel("/detail/2.html"))
+        val stack = mutableListOf<NavKey>(AppNavKey.HomeTab, detailA)
+        val navigator = com.breakyuna.esjzone.ui.navigation.AppNavigator(stack, mutableMapOf())
+        val searchA = com.breakyuna.esjzone.ui.page.SearchPage(" 作者 ", originNovelKey = "NovelPage:/detail/1.html")
+        val searchB = com.breakyuna.esjzone.ui.page.SearchPage(" 作者 ", originNovelKey = "NovelPage:/detail/2.html")
+
+        assertTrue(navigator.pushIfNotCurrent(searchA))
+        stack.add(detailB)
+        assertNotEquals(searchA.key, searchB.key)
+        assertTrue(navigator.pushIfNotCurrent(searchB))
+        assertTrue(navigator.pop())
+        assertEquals(detailB, stack.last())
+
+        val serializer = AppNavKey.Legacy.serializer()
+        val restored = Json.decodeFromString(serializer, Json.encodeToString(serializer, searchB.navKey))
+        val freshNavigator = com.breakyuna.esjzone.ui.navigation.AppNavigator(mutableListOf(), mutableMapOf())
+        assertEquals(searchB.navKey, freshNavigator.destination(restored.route)?.navKey)
+        assertEquals(searchB.key, freshNavigator.destination(restored.route)?.key)
+    }
+
+    @Test
     fun featureRoutesAreStableValueObjects() {
         assertEquals(LegacyRoute.Search("keyword"), LegacyRoute.Search("keyword"))
         assertNotEquals(LegacyRoute.Search("keyword"), LegacyRoute.Search("other"))

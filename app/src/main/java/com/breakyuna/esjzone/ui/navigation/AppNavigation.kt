@@ -158,7 +158,7 @@ sealed interface AppNavKey : NavKey {
 @Serializable
 sealed interface LegacyRoute {
     @Serializable data class Static(val token: String) : LegacyRoute
-    @Serializable data class Search(val keyword: String) : LegacyRoute
+    @Serializable data class Search(val keyword: String, val originNovelKey: String? = null) : LegacyRoute
     @Serializable data class DownloadedNovel(val url: String) : LegacyRoute
     @Serializable data class Novel(val identity: String) : LegacyRoute
     @Serializable data class Category(val identity: String, val name: String = "") : LegacyRoute
@@ -185,7 +185,9 @@ private fun encodeRouteTokenPart(value: String): String = Uri.encode(value)
 
 internal fun LegacyRoute.token(): String = when (this) {
     is LegacyRoute.Static -> token
-    is LegacyRoute.Search -> "SearchPage:$keyword"
+    // Author searches from separate detail pages must retain separate back-stack entries.
+    is LegacyRoute.Search -> if (originNovelKey == null) "SearchPage:$keyword"
+        else "AuthorSearchPage:${keyword.length}:$keyword:$originNovelKey"
     is LegacyRoute.DownloadedNovel -> "DownloadedNovelPage:$url"
     is LegacyRoute.Novel -> "NovelPage:$identity"
     is LegacyRoute.Category -> if (name.isNotBlank()) "CategoryPage:$identity:$name" else "CategoryPage:$identity"
@@ -516,7 +518,7 @@ internal fun LegacyRoute.restore(): AppDestination? = when (this) {
         token == CategoryBrowserPage().key -> CategoryBrowserPage()
         else -> null
     }
-    is LegacyRoute.Search -> SearchPage(keyword)
+    is LegacyRoute.Search -> SearchPage(keyword, originNovelKey)
     is LegacyRoute.DownloadedNovel -> com.breakyuna.esjzone.ui.page.DownloadedNovelPage(url)
     is LegacyRoute.Novel -> NovelPage(FavoriteNovel(name = "", url = identity))
     is LegacyRoute.Category -> CategoryPage(

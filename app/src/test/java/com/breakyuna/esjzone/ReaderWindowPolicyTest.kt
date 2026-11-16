@@ -7,6 +7,8 @@ import com.breakyuna.esjzone.ui.page.shouldLoadNextChapter
 import com.breakyuna.esjzone.ui.page.shouldLoadPreviousChapter
 import com.breakyuna.esjzone.ui.page.trimReaderWindowKeys
 import com.breakyuna.esjzone.domain.reader.shouldFillReaderViewport
+import com.breakyuna.esjzone.domain.reader.readerBoundaryLoadDirection
+import com.breakyuna.esjzone.domain.reader.shouldDeferReaderWindowUpdate
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -14,6 +16,49 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ReaderWindowPolicyTest {
+
+    @Test
+    fun headChangesWaitForTheGestureButOrdinaryAppendRemainsVisible() {
+        val window = (1..9).map { "chapter-$it" }
+        val trimmed = (2..10).map { "chapter-$it" }
+        assertTrue(shouldDeferReaderWindowUpdate(window, trimmed, scrolling = true))
+        assertTrue(shouldDeferReaderWindowUpdate(listOf("chapter-5"), listOf("chapter-4", "chapter-5"), scrolling = true))
+        assertFalse(shouldDeferReaderWindowUpdate(window, trimmed, scrolling = false))
+        assertFalse(shouldDeferReaderWindowUpdate(window, window + "chapter-10", scrolling = true))
+        assertFalse(shouldDeferReaderWindowUpdate(window, listOf("chapter-20"), scrolling = true))
+        assertFalse(shouldDeferReaderWindowUpdate(window, emptyList(), scrolling = true))
+    }
+
+    @Test
+    fun outwardDragLoadsAtRestoredEdgesWithoutAnyPositionChange() {
+        val head = snapshot(0, 0, "chapter-2", "chapter-2", 1000, listOf("chapter-2"))
+            .copy(canScrollBackward = false, isScrollInProgress = false)
+        val tail = head.copy(firstVisibleIndex = 30, firstVisibleChapterKey = null,
+            distanceToLoadedTail = 0, canScrollBackward = true, canScrollForward = false)
+
+        assertEquals(false, readerBoundaryLoadDirection(head, 20f))
+        assertEquals(true, readerBoundaryLoadDirection(tail, -20f))
+        assertNull(readerBoundaryLoadDirection(head, -20f))
+        assertNull(readerBoundaryLoadDirection(tail, 20f))
+        assertNull(readerBoundaryLoadDirection(head, 0f))
+    }
+
+    @Test
+    fun edgeDragWaitsForASettledWindowAndDoesNotChainAfterContentArrives() {
+        val tail = snapshot(30, 0, "chapter-2", "chapter-2", 0, listOf("chapter-2"))
+            .copy(canScrollForward = false)
+        assertNull(readerBoundaryLoadDirection(tail.copy(isProgrammaticScroll = true), -20f))
+        assertNull(readerBoundaryLoadDirection(tail.copy(layoutMatchesLoadedWindow = false), -20f))
+        assertNull(readerBoundaryLoadDirection(tail.copy(loadedChapterKeys = listOf("chapter-2", "chapter-3")), -20f))
+        assertNull(readerBoundaryLoadDirection(tail.copy(canScrollForward = true), -20f))
+
+        val head = tail.copy(firstVisibleIndex = 0, firstVisibleChapterKey = "chapter-2",
+            canScrollForward = true, canScrollBackward = false)
+        assertNull(readerBoundaryLoadDirection(head.copy(isProgrammaticScroll = true), 20f))
+        assertNull(readerBoundaryLoadDirection(head.copy(layoutMatchesLoadedWindow = false), 20f))
+        assertNull(readerBoundaryLoadDirection(head.copy(loadedChapterKeys = listOf("chapter-1", "chapter-2")), 20f))
+        assertNull(readerBoundaryLoadDirection(head.copy(canScrollBackward = true), 20f))
+    }
 
     @Test
     fun restoredScrollableTailCannotAutomaticallyChainChapterLoads() {

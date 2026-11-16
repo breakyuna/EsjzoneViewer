@@ -134,6 +134,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.Role
 import com.breakyuna.esjzone.ui.designsystem.globalStringResource as stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -496,7 +497,11 @@ class NovelPage(
                 } else {
                     // Keep the list and hero mounted when loading becomes readable content.
                     NovelDetailLayout(
-                        hero = { RebuiltNovelHero(novel, detailed, sourceCover, transitionSettled.value) },
+                        hero = {
+                            RebuiltNovelHero(novel, detailed, sourceCover, transitionSettled.value) { author ->
+                                navigator.pushIfNotCurrent(SearchPage(author, originNovelKey = key))
+                            }
+                        },
                         onHeroScrolledAway = { heroScrolledAway = it },
                         contentState = detailListState,
                         modifier = Modifier.weight(1f),
@@ -1104,7 +1109,8 @@ private fun RebuiltNovelHero(
     preview: Novel,
     detailed: DetailedNovel?,
     sourceCover: SharedCoverOrigin?,
-    replacementEnabled: Boolean
+    replacementEnabled: Boolean,
+    onAuthorClick: (String) -> Unit
 ) {
     val authorization = LocalAuthorization.current
     val carouselTarget = LocalHomeCarouselTransformTarget.current
@@ -1137,6 +1143,7 @@ private fun RebuiltNovelHero(
     val useEntryMetadata = carouselTarget != null && !entryCoverReleased
     val novel = if (useEntryMetadata) previewCover else detailed ?: previewCover
     val title = if (useEntryMetadata) preview.name else detailed?.name?.takeIf(String::isNotBlank) ?: preview.name
+    val author = novel?.author?.trim()?.takeIf(String::isNotBlank)
     var viewingCover by rememberSaveable(coverUrl) { mutableStateOf(false) }
     val adultLabel = stringResource(R.string.adult_badge)
     val metadataDescription = listOfNotNull(
@@ -1184,7 +1191,7 @@ private fun RebuiltNovelHero(
                 }
             ),
             metadata = NovelMetadataModel(
-                author = novel?.author?.trim()?.takeIf(String::isNotBlank),
+                author = author,
                 description = metadataDescription,
                 tags = listOfNotNull(
                     adultLabel.takeIf { novel?.isAdult == true }?.let { NovelTagModel(it) }
@@ -1196,7 +1203,9 @@ private fun RebuiltNovelHero(
             .homeCarouselSharedElement(carouselTarget, HomeCarouselElement.COVER)
             .novelCoverDestination(preview.url),
         titleModifier = Modifier.homeCarouselSharedElement(carouselTarget, HomeCarouselElement.TITLE),
-        authorModifier = Modifier.homeCarouselSharedElement(carouselTarget, HomeCarouselElement.AUTHOR),
+        authorModifier = Modifier
+            .homeCarouselSharedElement(carouselTarget, HomeCarouselElement.AUTHOR)
+            .then(if (author != null) Modifier.clickable(role = Role.Button) { onAuthorClick(author) } else Modifier),
         backgroundModifier = Modifier.homeCarouselSharedElement(carouselTarget, HomeCarouselElement.BACKDROP),
         foregroundModifier = Modifier.homeCarouselForeground(carouselTarget),
         animateContentArrival = false,

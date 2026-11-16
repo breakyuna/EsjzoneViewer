@@ -58,6 +58,21 @@ fun shouldLoadPreviousChapter(
     return dataWindowStable(before, current) && scrollingTowardsStart(before, current)
 }
 
+/** A drag into a settled edge has intent even when the list cannot move. */
+fun readerBoundaryLoadDirection(current: ReaderScrollSnapshot, dragDeltaY: Float): Boolean? {
+    if (!current.layoutMatchesLoadedWindow || current.isProgrammaticScroll) return null
+    return when {
+        dragDeltaY < 0f && !current.canScrollForward &&
+            current.lastVisibleChapterKey != null &&
+            current.lastVisibleChapterKey == current.loadedChapterKeys.lastOrNull() &&
+            current.distanceToLoadedTail == 0 -> true
+        dragDeltaY > 0f && !current.canScrollBackward &&
+            current.firstVisibleChapterKey != null &&
+            current.firstVisibleChapterKey == current.loadedChapterKeys.firstOrNull() -> false
+        else -> null
+    }
+}
+
 /** Only fill a viewport that is too short to scroll; reaching the tail is not a gesture. */
 fun shouldFillReaderViewport(current: ReaderScrollSnapshot): Boolean =
     current.hasNextChapter && !current.isLoadingNext &&
@@ -77,6 +92,11 @@ fun scrollingTowardsEnd(previous: ReaderScrollSnapshot, current: ReaderScrollSna
 fun scrollingTowardsStart(previous: ReaderScrollSnapshot, current: ReaderScrollSnapshot): Boolean =
     current.firstVisibleIndex < previous.firstVisibleIndex ||
         (current.firstVisibleIndex == previous.firstVisibleIndex && current.firstVisibleOffset < previous.firstVisibleOffset)
+
+/** A head change needs an index rebase; present it only after the active scroll ends. */
+fun shouldDeferReaderWindowUpdate(currentKeys: List<String>, incomingKeys: List<String>, scrolling: Boolean): Boolean =
+    scrolling && currentKeys.isNotEmpty() && incomingKeys.isNotEmpty() &&
+        currentKeys.first() != incomingKeys.first() && currentKeys.any { it in incomingKeys }
 
 fun trimReaderWindowKeys(
     keys: List<String>,

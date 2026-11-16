@@ -92,8 +92,10 @@ private fun searchSortResource(type: Int): Int = when (type) {
     else -> R.string.novel_filter_recentlyupdate
 }
 
-class SearchPage(private val keyword: String) : AppDestination {
-    override val navKey = AppNavKey.Legacy(LegacyRoute.Search(normalizeSearchLineBreaks(keyword).trim()))
+class SearchPage(private val keyword: String, originNovelKey: String? = null) : AppDestination {
+    override val navKey = AppNavKey.Legacy(
+        LegacyRoute.Search(normalizeSearchLineBreaks(keyword).trim(), originNovelKey)
+    )
 
     override val key: String get() = navKey.route.token()
 

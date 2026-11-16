@@ -121,6 +121,9 @@ import androidx.compose.runtime.structuralEqualityPolicy
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.semantics
@@ -168,6 +171,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.roundToInt
 import java.text.SimpleDateFormat
@@ -388,7 +392,23 @@ class ChapterPage(
                     novelCoverUrl = novelCoverUrl
                 )
             }
-        val state by chapterPageModel.state.collectAsStateWithLifecycle()
+        val scrollState = rememberLazyListState()
+        val incomingState by chapterPageModel.state.collectAsStateWithLifecycle()
+        // A head change requires requestScrollToItem, which cancels an active scroll.
+        // Keep the visible window stable until the gesture/fling ends; ordinary appends stay live.
+        var presentedState by remember(chapterPageModel, requestedChapter.value.url) {
+            mutableStateOf<ChapterPageModel.State>(incomingState)
+        }
+        val presentedChapters = (presentedState as? ChapterPageModel.State.Result)?.chapters.orEmpty()
+        val incomingChapters = (incomingState as? ChapterPageModel.State.Result)?.chapters.orEmpty()
+        val deferWindowUpdate = readerSettings.pageAnimation == ReaderPageAnimation.VERTICAL_SCROLL &&
+            com.breakyuna.esjzone.domain.reader.shouldDeferReaderWindowUpdate(
+                presentedChapters.map { chapterIdentity(it.chapter) },
+                incomingChapters.map { chapterIdentity(it.chapter) },
+                scrollState.isScrollInProgress
+            )
+        val state by rememberUpdatedState(if (deferWindowUpdate) presentedState else incomingState)
+        SideEffect { if (!deferWindowUpdate) presentedState = incomingState }
         val resolvedNovelName by chapterPageModel.novelNameState
         var wenkuVerificationChapter by remember { mutableStateOf<Chapter?>(null) }
         var dismissedWenkuPrompt by remember { mutableStateOf<String?>(null) }
@@ -450,16 +470,16 @@ class ChapterPage(
                             )
                         }
                         if (retryPending) {
-                            chapterPageModel.retryPendingVerification()
+                            chapterPageModel.retryPendingVerification(verified)
                         } else {
                             chapterPageModel.openChapter(requestedChapter.value)
                         }
                     }
                 },
                 onUnavailable = {
-                    val pending = pendingWenkuVerification
+                    val target = wenkuVerificationChapter ?: pendingWenkuVerification
                     wenkuVerificationChapter = null
-                    if (pending != null) chapterPageModel.markPendingStorageUnavailable()
+                    if (pendingWenkuVerification != null && target != null) chapterPageModel.markPendingStorageUnavailable(target)
                     else chapterPageModel.openChapter(requestedChapter.value)
                 },
                 onDismiss = { wenkuVerificationChapter = null }
@@ -484,10 +504,6 @@ class ChapterPage(
         }
         var readerToolbarHeightPx by remember { mutableIntStateOf(0) }
 
-        // Keep one stable list state for the entire reading session.  Chapter
-        // items use stable URL keys below, so adding a chapter before the
-        // current item no longer requires manually summing measured heights.
-        val scrollState = rememberLazyListState()
         val lifecycleOwner = LocalLifecycleOwner.current
         var readerResumed by remember { mutableStateOf(lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) }
         var commentReturnKey by rememberSaveable { mutableStateOf<String?>(null) }
@@ -610,7 +626,7 @@ class ChapterPage(
         } == true
         val resumePositioning = resumePending && !requestedChapterLocked
         val windowLoadingAllowed = canLoadReaderWindow(entryContentRevealed, resumePending, requestedChapterLocked) &&
-            pendingSeekLocation == null && readerResumed
+            pendingSeekLocation == null && readerResumed && !deferWindowUpdate
         var convertedText by remember { mutableStateOf<ReaderTextSnapshot?>(null) }
         val readerTextTransform: (String) -> String = remember(
             readerSettings.script, convertedText, nameReplaceSettings
@@ -752,16 +768,90 @@ class ChapterPage(
                 scrollState.requestScrollToItem(scrollWindowAnchor.index, scrollWindowAnchor.offset)
             }
         }
-        LaunchedEffect(pendingScrollAnchor, displayIndexByKey) {
+        LaunchedEffect(pendingScrollAnchor, displayIndexByKey, readerBodyStartOffset) {
             val anchor = pendingScrollAnchor ?: return@LaunchedEffect
-            if (anchor.key !in displayIndexByKey) {
+            val bodyIndex = displayIndexByKey[anchor.key]
+            if (bodyIndex == null) {
                 pendingScrollAnchor = null
                 return@LaunchedEffect
             }
-            snapshotFlow {
-                scrollState.layoutInfo.visibleItemsInfo.any { it.key == anchor.key && it.index == anchor.index }
-            }.first { it }
-            pendingScrollAnchor = null
+            kotlinx.coroutines.withTimeoutOrNull(2000L) {
+                snapshotFlow {
+                    scrollState.layoutInfo.visibleItemsInfo.any {
+                        it.key == anchor.key && it.index == readerListIndex(bodyIndex)
+                    }
+                }.first { it }
+            }
+            if (pendingScrollAnchor == anchor) pendingScrollAnchor = null
+        }
+        val loadedReaderChapterKeys = result?.chapters
+            .orEmpty()
+            .map { chapterIdentity(it.chapter) }
+        fun scrollSnapshot(): ReaderScrollSnapshot {
+            val currentResult = state as? ChapterPageModel.State.Result
+            val layout = scrollState.layoutInfo
+            val visibleChapterItems = layout.visibleItemsInfo
+                .filter { it.key.toString() in displayByKey }
+            val layoutMatchesLoadedWindow =
+                (state as? ChapterPageModel.State.Result)?.chapters == result?.chapters &&
+                visibleChapterItems.isNotEmpty() && visibleChapterItems.all { item ->
+                    displayItems.getOrNull(item.index - readerListIndex(0))?.key == item.key
+                }
+            return ReaderScrollSnapshot(
+                firstVisibleIndex = scrollState.firstVisibleItemIndex,
+                firstVisibleOffset = scrollState.firstVisibleItemScrollOffset,
+                firstVisibleChapterKey = visibleChapterItems.firstOrNull()
+                    ?.takeIf { it.index == readerListIndex(0) }
+                    ?.let { displayByKey[it.key.toString()]?.chapterKey },
+                lastVisibleChapterKey = visibleChapterItems.lastOrNull()
+                    ?.let { displayByKey[it.key.toString()]?.chapterKey },
+                distanceToLoadedTail = visibleChapterItems.lastOrNull()
+                    ?.takeIf { it.index == readerListIndex(displayItems.lastIndex) }?.let { item ->
+                    (
+                        item.offset + item.size - layout.viewportEndOffset
+                    ).coerceAtLeast(0)
+                } ?: Int.MAX_VALUE,
+                loadedChapterKeys = loadedReaderChapterKeys,
+                layoutMatchesLoadedWindow = layoutMatchesLoadedWindow,
+                isScrollInProgress = scrollState.isScrollInProgress,
+                isProgrammaticScroll = isProgrammaticScroll || pendingScrollAnchor != null,
+                canScrollForward = scrollState.canScrollForward,
+                canScrollBackward = scrollState.canScrollBackward,
+                hasNextChapter = currentResult?.next != null,
+                isLoadingNext = currentResult?.isLoadingNext == true
+            )
+        }
+        val onBoundaryScroll by rememberUpdatedState { deltaY: Float ->
+            if (!pagedMode && windowLoadingAllowed &&
+                ((deltaY < 0f && !scrollState.canScrollForward) ||
+                    (deltaY > 0f && !scrollState.canScrollBackward))) {
+                when (com.breakyuna.esjzone.domain.reader.readerBoundaryLoadDirection(scrollSnapshot(), deltaY)) {
+                    true -> chapterPageModel.loadNextChapter()
+                    false -> chapterPageModel.loadPreviousChapter()
+                    null -> Unit
+                }
+            }
+        }
+        val boundaryScrollConnection = remember {
+            object : NestedScrollConnection {
+                private fun observeDrag(delta: Offset, source: NestedScrollSource) {
+                    if (source == NestedScrollSource.UserInput && abs(delta.y) > abs(delta.x)) {
+                        onBoundaryScroll(delta.y)
+                    }
+                }
+
+                override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
+                    observeDrag(available, source)
+                    // Observe the drag without taking movement from LazyColumn or its overscroll.
+                    return Offset.Zero
+                }
+
+                override fun onPostScroll(consumed: Offset, available: Offset, source: NestedScrollSource): Offset {
+                    // Also catch the final input that reaches the edge before a baseline exists.
+                    observeDrag(consumed + available, source)
+                    return Offset.Zero
+                }
+            }
         }
         val pagerVisibleItem by remember(displayByKey, horizontalPagerState) {
             derivedStateOf {
@@ -1897,11 +1987,16 @@ class ChapterPage(
                 pending, displayItems.map { it.key }, displayItems.map { it.chapterKey }
             ) ?: run { pendingBoundaryTurn = null; return@LaunchedEffect }
             if (pagedMode) {
-                snapshotFlow {
-                    horizontalPagerState.layoutInfo.visiblePagesInfo.any { page ->
-                        page.key == pending.anchorKey && displayItems.getOrNull(page.index)?.key == page.key
-                    }
-                }.first { it }
+                val anchorIndex = displayIndexByKey[pending.anchorKey] ?: run {
+                    pendingBoundaryTurn = null
+                    return@LaunchedEffect
+                }
+                isProgrammaticScroll = true
+                try {
+                    horizontalPagerState.scrollToPage(anchorIndex)
+                } finally {
+                    isProgrammaticScroll = false
+                }
                 pendingBoundaryTurn = null
             } else if (!pending.forward) {
                 // The prepend may leave the list at index zero (the previous
@@ -1918,14 +2013,13 @@ class ChapterPage(
                 }
                 pendingBoundaryTurn = null
             } else {
-                snapshotFlow {
-                    scrollState.layoutInfo.visibleItemsInfo.any { item ->
-                        item.key == pending.anchorKey &&
-                            displayItems.getOrNull(item.index - readerListIndex(0))?.key == item.key
-                    }
-                }.first { it }
+                isProgrammaticScroll = true
+                try {
+                    scrollState.scrollToItem(readerListIndex(targetIndex))
+                } finally {
+                    isProgrammaticScroll = false
+                }
                 pendingBoundaryTurn = null
-                scrollState.scrollToItem(readerListIndex(targetIndex))
             }
         }
 
@@ -2049,6 +2143,7 @@ class ChapterPage(
                         state = scrollState,
                         userScrollEnabled = !pagedMode,
                         modifier = Modifier.fillMaxSize()
+                            .nestedScroll(boundaryScrollConnection)
                             .padding(horizontal = readerSettings.horizontalPaddingDp.dp),
                         verticalArrangement = Arrangement.spacedBy(0.dp),
                         contentPadding = androidx.compose.foundation.layout.PaddingValues(
@@ -2233,7 +2328,7 @@ class ChapterPage(
                                         },
                                         onRetry = {
                                             dismissedWenkuPrompt = null
-                                            chapterPageModel.retryPendingVerification()
+                                            chapterPageModel.retryPendingVerification(readerResult.verificationChapter)
                                         }
                                     )
                                 }
@@ -2300,7 +2395,7 @@ class ChapterPage(
                                         },
                                         onRetry = {
                                             dismissedWenkuPrompt = null
-                                            chapterPageModel.retryPendingVerification()
+                                            chapterPageModel.retryPendingVerification(readerResult.verificationChapter)
                                         }
                                     )
                                 }
@@ -2465,7 +2560,7 @@ class ChapterPage(
                                     },
                                     onRetry = {
                                         dismissedWenkuPrompt = null
-                                        chapterPageModel.retryPendingVerification()
+                                        chapterPageModel.retryPendingVerification(result.verificationChapter)
                                     }
                                 )
                             }
@@ -2872,9 +2967,6 @@ class ChapterPage(
             if (!restoreLookupPending) chapterPageModel.getDetail(requestedChapter.value)
         }
 
-        val loadedReaderChapterKeys = result?.chapters
-            .orEmpty()
-            .map { chapterIdentity(it.chapter) }
         LaunchedEffect(
             scrollState,
             chapterPageModel,
@@ -2888,39 +2980,7 @@ class ChapterPage(
         ) {
             if (pagedMode || !windowLoadingAllowed) return@LaunchedEffect
             var previousSnapshot: ReaderScrollSnapshot? = null
-            snapshotFlow {
-                val currentResult = state as? ChapterPageModel.State.Result
-                val visibleChapterItems = scrollState.layoutInfo.visibleItemsInfo
-                    .filter { it.key.toString() in displayByKey }
-                val layoutMatchesLoadedWindow =
-                    (state as? ChapterPageModel.State.Result)?.chapters == result?.chapters &&
-                    visibleChapterItems.isNotEmpty() && visibleChapterItems.all { item ->
-                        displayItems.getOrNull(item.index - readerListIndex(0))?.key == item.key
-                    }
-                ReaderScrollSnapshot(
-                    firstVisibleIndex = scrollState.firstVisibleItemIndex,
-                    firstVisibleOffset = scrollState.firstVisibleItemScrollOffset,
-                    firstVisibleChapterKey = visibleChapterItems.firstOrNull()
-                        ?.takeIf { it.index == readerListIndex(0) }
-                        ?.let { displayByKey[it.key.toString()]?.chapterKey },
-                    lastVisibleChapterKey = visibleChapterItems.lastOrNull()
-                        ?.let { displayByKey[it.key.toString()]?.chapterKey },
-                    distanceToLoadedTail = visibleChapterItems.lastOrNull()
-                        ?.takeIf { it.index == readerListIndex(displayItems.lastIndex) }?.let { item ->
-                        (
-                            item.offset + item.size - scrollState.layoutInfo.viewportEndOffset
-                        ).coerceAtLeast(0)
-                    } ?: Int.MAX_VALUE,
-                    loadedChapterKeys = loadedReaderChapterKeys,
-                    layoutMatchesLoadedWindow = layoutMatchesLoadedWindow,
-                    isScrollInProgress = scrollState.isScrollInProgress,
-                    isProgrammaticScroll = isProgrammaticScroll || pendingScrollAnchor != null,
-                    canScrollForward = scrollState.canScrollForward,
-                    canScrollBackward = scrollState.canScrollBackward,
-                    hasNextChapter = currentResult?.next != null,
-                    isLoadingNext = currentResult?.isLoadingNext == true
-                )
-            }.collect { snapshot ->
+            snapshotFlow { scrollSnapshot() }.collect { snapshot ->
                 if (shouldLoadPreviousChapter(
                         previous = previousSnapshot,
                         current = snapshot,

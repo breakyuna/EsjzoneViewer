@@ -25,6 +25,8 @@ internal class ReaderChapterCatalog(source: List<Chapter>, complete: Boolean = t
         indices = positions
     }
 
+    fun isCompleteFor(chapter: Chapter): Boolean = isComplete && chapterIdentity(chapter) in indices
+
     fun adjacent(chapter: Chapter, offset: Int): Chapter? {
         if (!isComplete) return null
         val index = indices[chapterIdentity(chapter)]

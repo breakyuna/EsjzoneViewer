@@ -34,6 +34,9 @@ class ReaderChapterCatalogTest {
         assertNull(catalog.adjacent(last, 1))
         assertNull(catalog.adjacent(chapter(9), 1))
         assertNull(catalog.adjacent(chapter(9), -1))
+        assertTrue(catalog.isCompleteFor(first))
+        assertTrue(catalog.isCompleteFor(last.copy(url = "https://www.esjzone.one/forum/1/2.html")))
+        assertFalse(catalog.isCompleteFor(chapter(9)))
     }
 
     @Test
@@ -43,6 +46,7 @@ class ReaderChapterCatalogTest {
 
         assertEquals(saved, partial.chapters)
         assertFalse(partial.isComplete)
+        assertFalse(partial.isCompleteFor(chapter(10)))
         assertNull(partial.adjacent(chapter(10), 1))
         assertNull(partial.adjacent(chapter(18), -1))
 
