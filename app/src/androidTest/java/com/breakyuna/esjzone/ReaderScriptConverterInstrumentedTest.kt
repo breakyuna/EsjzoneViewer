@@ -21,6 +21,22 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 class ReaderScriptConverterInstrumentedTest {
     @Test
+    fun cancelledConversionStopsWithinOneChapterInsteadOfCompletingTheSnapshot() {
+        val document = ReaderChapterDocument(ReaderChapterRef("标题", "/forum/1/1.html"),
+            (1..1000).map { ReaderBlock.Text("龍馬$it") })
+        var checks = 0
+        val cancelled = kotlinx.coroutines.CancellationException("Settings changed")
+        try {
+            ReaderScriptConverter.snapshot(listOf(document), ReaderScript.SIMPLIFIED,
+                checkCancelled = { if (++checks == 12) throw cancelled })
+            org.junit.Assert.fail("Cancelled work must not publish a partial snapshot")
+        } catch (error: kotlinx.coroutines.CancellationException) {
+            assertSame(cancelled, error)
+            assertEquals(12, checks)
+        }
+    }
+
+    @Test
     fun originalAndEmptyTextReturnTheExistingString() {
         val source = String(CharArray(8192) { '龍' })
         assertSame(source, ReaderScriptConverter.convert(source, ReaderScript.ORIGINAL))

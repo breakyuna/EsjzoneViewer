@@ -9,6 +9,7 @@ import com.breakyuna.esjzone.ui.page.trimReaderWindowKeys
 import com.breakyuna.esjzone.domain.reader.shouldFillReaderViewport
 import com.breakyuna.esjzone.domain.reader.readerBoundaryLoadDirection
 import com.breakyuna.esjzone.domain.reader.shouldDeferReaderWindowUpdate
+import com.breakyuna.esjzone.domain.reader.shouldPrepareReaderBoundary
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -16,6 +17,37 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ReaderWindowPolicyTest {
+
+    @Test
+    fun settledChapterEdgesPrepareContentWithoutAnotherGesture() {
+        val head = snapshot(0, 0, "chapter-2", "chapter-2", 2000, listOf("chapter-2"))
+            .copy(isScrollInProgress = false, hasPreviousChapter = true)
+        assertTrue(shouldPrepareReaderBoundary(head, false, 240))
+        assertFalse(shouldPrepareReaderBoundary(head, true, 720))
+        val tail = head.copy(firstVisibleIndex = 20, firstVisibleChapterKey = null, distanceToLoadedTail = 0)
+        assertTrue(shouldPrepareReaderBoundary(tail, true, 720))
+        assertFalse(shouldPrepareReaderBoundary(tail, false, 240))
+        assertFalse(shouldPrepareReaderBoundary(tail.copy(distanceToLoadedTail = 721), true, 720))
+    }
+
+    @Test
+    fun automaticPreparationWaitsForPositioningAndStopsAfterWindowExpansion() {
+        val edge = snapshot(0, 0, "chapter-2", "chapter-2", 0, listOf("chapter-2"))
+            .copy(isScrollInProgress = false, hasPreviousChapter = true)
+        for (forward in listOf(false, true)) {
+            assertFalse(shouldPrepareReaderBoundary(edge.copy(isProgrammaticScroll = true), forward, 720))
+            assertFalse(shouldPrepareReaderBoundary(edge.copy(layoutMatchesLoadedWindow = false), forward, 720))
+            assertFalse(shouldPrepareReaderBoundary(edge.copy(isScrollInProgress = true), forward, 720))
+            assertFalse(shouldPrepareReaderBoundary(edge.copy(
+                loadedChapterKeys = listOf("chapter-1", "chapter-2", "chapter-3")), forward, 720))
+        }
+        assertFalse(shouldPrepareReaderBoundary(edge.copy(isLoadingNext = true), true, 720))
+        assertFalse(shouldPrepareReaderBoundary(edge.copy(isLoadingPrevious = true), false, 240))
+        assertFalse(shouldPrepareReaderBoundary(edge.copy(hasNextChapter = false), true, 720))
+        assertFalse(shouldPrepareReaderBoundary(edge.copy(hasPreviousChapter = false), false, 240))
+        // Catalog completion alone must be enough to wake up the observer.
+        assertTrue(shouldPrepareReaderBoundary(edge.copy(hasPreviousChapter = true), false, 240))
+    }
 
     @Test
     fun headChangesWaitForTheGestureButOrdinaryAppendRemainsVisible() {

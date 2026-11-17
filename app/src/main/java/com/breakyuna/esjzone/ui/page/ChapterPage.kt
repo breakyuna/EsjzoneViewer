@@ -171,6 +171,10 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.roundToInt
@@ -368,11 +372,6 @@ class ChapterPage(
         fun updateReaderSettings(settings: ReaderSettings) {
             readerSettings = settings
             PresentationAccess.readerSettings.saveDebounced(settings)
-        }
-
-        fun updateNameReplaceSettings(settings: ReaderNameReplaceSettings) {
-            nameReplaceSettings = settings
-            scope.launch { PresentationAccess.readerSettings.saveNameReplaceSettings(settings) }
         }
 
         val requestedChapter = rememberSaveable {
@@ -602,6 +601,8 @@ class ChapterPage(
         val previousLoadThreshold = with(LocalDensity.current) { 240.dp.toPx().toInt() }
         val chapterActivationOffset = with(density) { 56.dp.toPx().roundToInt() }
         val result = state as? ChapterPageModel.State.Result
+        val showNextLoading = rememberReaderBoundaryLoading(result?.isLoadingNext == true, result?.next?.url)
+        val showPreviousLoading = rememberReaderBoundaryLoading(result?.isLoadingPrevious == true, result?.previous?.url)
         // Bookmark rows are observed, so adding or removing one redraws its marker at once.
         val bookmarkedParagraphs by produceState<Map<String, Set<Int>>>(emptyMap(), readerBookmarks, result?.chapters) {
             val chapters = result?.chapters.orEmpty()
@@ -626,14 +627,16 @@ class ChapterPage(
         } == true
         val resumePositioning = resumePending && !requestedChapterLocked
         val windowLoadingAllowed = canLoadReaderWindow(entryContentRevealed, resumePending, requestedChapterLocked) &&
-            pendingSeekLocation == null && readerResumed && !deferWindowUpdate
+            pendingSeekLocation == null && pendingBookmark == null && pendingUnderline == null &&
+            readerResumed && !deferWindowUpdate
         var convertedText by remember { mutableStateOf<ReaderTextSnapshot?>(null) }
         val readerTextTransform: (String) -> String = remember(
             readerSettings.script, convertedText, nameReplaceSettings
         ) {
-            val snapshot = convertedText?.takeIf {
-                it.script == readerSettings.script && it.nameReplace == nameReplaceSettings
-            }?.values
+            // Keep the last rendered text until its replacement snapshot is ready.
+            // Falling back to source text here would reflow the visible paragraph twice.
+            val needsTransform = readerSettings.script != ReaderScript.ORIGINAL || ReaderNameReplace.isActive(nameReplaceSettings)
+            val snapshot = convertedText?.values.takeIf { needsTransform }
             // Composition/layout only looks up immutable, background-prepared results.
             val transform: (String) -> String = { text -> snapshot?.get(text) ?: text }
             transform
@@ -651,9 +654,12 @@ class ChapterPage(
             }
             val started = System.nanoTime()
             val snapshot = withContext(Dispatchers.Default) {
-                val prepared = ReaderScriptConverter.snapshot(chapters.map { it.document }, script, previous, names)
+                val workerContext = currentCoroutineContext()
+                val prepared = ReaderScriptConverter.snapshot(chapters.map { it.document }, script, previous, names,
+                    checkCancelled = { workerContext.ensureActive() })
                 val values = prepared.values.toMutableMap().apply {
                     chapters.forEach { entry ->
+                        workerContext.ensureActive()
                         val name = entry.chapter.name
                         if (name.isNotBlank() && name !in this) {
                             this[name] = ReaderNameReplace.apply(ReaderScriptConverter.convert(name, script), names)
@@ -687,7 +693,7 @@ class ChapterPage(
             result?.chapters, readerViewport, pageTopPadding, pageBottomPadding,
             readerSettings, readerTextStyle, nameReplaceSettings
         )
-        val textLayouts = remember(pagination.layoutKey) {
+        val textLayouts = remember(pagination.layoutKey, convertedText?.script, convertedText?.nameReplace) {
             androidx.compose.runtime.mutableStateMapOf<String, androidx.compose.ui.text.TextLayoutResult>()
         }
         var paginationSnapshot by remember { mutableStateOf<ReaderPaginationSnapshot?>(null) }
@@ -818,7 +824,9 @@ class ChapterPage(
                 canScrollForward = scrollState.canScrollForward,
                 canScrollBackward = scrollState.canScrollBackward,
                 hasNextChapter = currentResult?.next != null,
-                isLoadingNext = currentResult?.isLoadingNext == true
+                isLoadingNext = currentResult?.isLoadingNext == true,
+                hasPreviousChapter = currentResult?.previous != null,
+                isLoadingPrevious = currentResult?.isLoadingPrevious == true
             )
         }
         val onBoundaryScroll by rememberUpdatedState { deltaY: Float ->
@@ -1116,7 +1124,8 @@ class ChapterPage(
             com.breakyuna.esjzone.ui.reader.ReaderBookmarkMarker.paragraph(document, bookmarkChapterUrl,
                 bookmarkPosition?.takeIf { it.chapterKey == bookmarkChapterUrl })
         }
-        val canBookmark = bookmarkRows != null && bookmarkChapter.url.isNotBlank() &&
+        val canBookmark = pendingBookmark == null && pendingUnderline == null && pendingScrollAnchor == null &&
+            bookmarkRows != null && bookmarkChapter.url.isNotBlank() &&
             bookmarkParagraph != null && !resumePending && pendingSeekLocation == null && !isProgrammaticScroll
         val isBookmarked = bookmarkParagraph != null &&
             bookmarkParagraph in bookmarkedParagraphs[bookmarkChapterUrl].orEmpty()
@@ -1221,6 +1230,13 @@ class ChapterPage(
         }
         val currentBookLocation = measuredBookLocation ?: retainedBookLocation
         val latestBookLocation by rememberUpdatedState(currentBookLocation)
+        fun updateNameReplaceSettings(settings: ReaderNameReplaceSettings) {
+            if (settings == nameReplaceSettings) return
+            // Capture source coordinates before changing text length or clearing text layouts.
+            pendingSeekLocation = pendingSeekLocation ?: currentBookLocation
+            nameReplaceSettings = settings
+            scope.launch { PresentationAccess.readerSettings.saveNameReplaceSettings(settings) }
+        }
         LaunchedEffect(pagedMode, pagination.key, scriptReady) {
             if (!pagedMode || !scriptReady || !pagination.canMeasure) return@LaunchedEffect
             val snapshot = pagination.measure(paginationSnapshot, readerTextTransform)
@@ -1392,6 +1408,7 @@ class ChapterPage(
             }
         }
 
+        val bookmarkCoverMutex = remember { Mutex() }
         fun toggleBookmarkAt(target: Chapter, document: com.breakyuna.esjzone.domain.reader.ReaderChapterDocument,
             visibleAnchor: ReaderAnchor) {
             if (updatingBookmark || bookmarkRows == null || target.url.isBlank()) return
@@ -1404,11 +1421,11 @@ class ChapterPage(
             val positionExcerpt = ReaderBookmarkPosition.excerpt(document, positionAnchor, ::textOffsets)
             // Acquire on the UI thread before launching, including callers from gestures.
             updatingBookmark = true
+            val finalNovelId = novelId.ifBlank { target.novelId() }
             scope.launch {
                 try {
                     val added = withContext(Dispatchers.IO) {
                         val database = PresentationAccess.database
-                        val finalNovelId = novelId.ifBlank { target.novelId() }
                         val added = database.withTransaction {
                             val dao = database.bookmarkDao()
                             val matches = dao.getAll().filter { row ->
@@ -1433,24 +1450,30 @@ class ChapterPage(
                                 true
                             }
                         }
-                        // Cover maintenance must not roll back a committed bookmark in the UI.
-                        try {
-                            if (added) {
-                                com.breakyuna.esjzone.database.BookmarkCoverStore.saveCoverFromCacheOrDownload(
-                                    novelId = finalNovelId,
-                                    coverUrl = coverSource,
-                                    novelUrl = currentNovelUrl,
-                                    chapterUrl = targetKey
-                                )
-                            } else {
-                                com.breakyuna.esjzone.database.BookmarkCoverStore.cleanupIfUnused(finalNovelId, targetKey)
-                            }
-                        } catch (error: CancellationException) {
-                            throw error
-                        } catch (error: Exception) {
-                            AppLogger.w("ChapterPage", "Failed to update local bookmark cover", error)
-                        }
                         added
+                    }
+                    // Cover work is ordered, but does not delay the saved-state feedback.
+                    scope.launch(Dispatchers.IO) {
+                        bookmarkCoverMutex.withLock {
+                            try {
+                                // Re-read committed state: several rapid toggles may already be saved.
+                                val hasBookmarks = PresentationAccess.database.bookmarkDao().getAll().any {
+                                    com.breakyuna.esjzone.database.BookmarkCoverStore.cleanNovelId(it.novelId, it.chapterUrl) ==
+                                        com.breakyuna.esjzone.database.BookmarkCoverStore.cleanNovelId(finalNovelId, targetKey)
+                                }
+                                if (hasBookmarks) {
+                                    com.breakyuna.esjzone.database.BookmarkCoverStore.saveCoverFromCacheOrDownload(
+                                        novelId = finalNovelId, coverUrl = coverSource,
+                                        novelUrl = currentNovelUrl, chapterUrl = targetKey)
+                                } else {
+                                    com.breakyuna.esjzone.database.BookmarkCoverStore.cleanupIfUnused(finalNovelId, targetKey)
+                                }
+                            } catch (error: CancellationException) {
+                                throw error
+                            } catch (error: Exception) {
+                                AppLogger.w("ChapterPage", "Failed to update local bookmark cover", error)
+                            }
+                        }
                     }
                     android.widget.Toast.makeText(context,
                         if (added) R.string.reader_bookmark_added else R.string.reader_bookmark_removed,
@@ -1850,10 +1873,19 @@ class ChapterPage(
                 onEntryReady()
             }
         }
-        val readerInteractionEnabled = !entryCoverVisible && readerResumed && visiblePaginationReady && (!pagedMode || pagerLayoutReady) &&
+        val positioningContent = resumePositioning || pendingSeekLocation != null ||
+            pendingBookmark != null || pendingUnderline != null || pendingScrollAnchor != null
+        // An appended chapter may still be converting while the visible chapter is ready.
+        // Only a changed text configuration blocks input; window growth must not stop a fling.
+        val textConfigurationReady = (readerSettings.script == ReaderScript.ORIGINAL &&
+            !ReaderNameReplace.isActive(nameReplaceSettings)) ||
+            (convertedText?.script == readerSettings.script && convertedText?.nameReplace == nameReplaceSettings)
+        val readerInteractionEnabled = !positioningContent && textConfigurationReady && !entryCoverVisible &&
+            readerResumed && visiblePaginationReady && (!pagedMode || pagerLayoutReady) &&
             state is ChapterPageModel.State.Result &&
             !showReaderSettings && !showReaderContents && !readerDialogVisible
         val pagingEnabled = readerInteractionEnabled && !sidePanels.isVisible
+        val userPagingEnabled = pagingEnabled && !isProgrammaticScroll
         com.breakyuna.esjzone.ui.reader.ReaderGlowFrameMonitor(
             active = customBackground && imageBackground.glowEnabled && imageBackground.glowStrength > 0f &&
                 readerSettings.fontSizeSp >= 13f && readerResumed &&
@@ -1865,15 +1897,18 @@ class ChapterPage(
             showSystemNavigationBar = readerSettings.showSystemNavigationBar
         )
 
+        // A boundary turn briefly scrolls back to its stable page key. That internal
+        // scroll must not cancel this queue; only user input is blocked by it.
         val pagedInputEnabled = !entryCoverVisible && pagedMode && readerResumed && result != null &&
             !showReaderSettings && !showReaderContents && !readerDialogVisible &&
-            !isProgrammaticScroll && !resumePending && pendingSeekLocation == null
+            !positioningContent
         val latestPagingEnabled by rememberUpdatedState(pagingEnabled)
         val latestPagedResult by rememberUpdatedState(result)
         val latestPageIndices by rememberUpdatedState(displayIndexByKey)
         val latestReducedMotion by rememberUpdatedState(reducedMotion)
 
         fun turnReaderPage(forward: Boolean) {
+            if (isProgrammaticScroll || positioningContent) return
             if (pagedMode) {
                 if (pagedInputEnabled && (pagingEnabled || pagedTurns.hasTurns)) {
                     // Dismiss chrome with the request, before scrolling starts.
@@ -2024,8 +2059,8 @@ class ChapterPage(
         }
 
         val currentTurnPage by rememberUpdatedState<(Boolean) -> Unit>(::turnReaderPage)
-        DisposableEffect(readerSettings.volumeKeyPaging, pagingEnabled) {
-            val registration = if (readerSettings.volumeKeyPaging && pagingEnabled) {
+        DisposableEffect(readerSettings.volumeKeyPaging, userPagingEnabled) {
+            val registration = if (readerSettings.volumeKeyPaging && userPagingEnabled) {
                 ReaderVolumeKeyDispatcher.register { key ->
                     currentTurnPage(key == android.view.KeyEvent.KEYCODE_VOLUME_DOWN)
                     true
@@ -2103,9 +2138,9 @@ class ChapterPage(
                 background = readerBackgroundColor,
                 backgroundPainter = backgroundPainter.takeUnless { pagePaintsImage },
                 imageSettings = imageBackground,
-                pagedGesturesEnabled = pagedMode && (pagingEnabled || pagedTurns.hasTurns),
+                pagedGesturesEnabled = pagedMode && !positioningContent && !isProgrammaticScroll && (pagingEnabled || pagedTurns.hasTurns),
                 verticalContentScrollable = pagerVisibleItem?.page?.isOversized == true,
-                bookmarkPullEnabled = !updatingBookmark && canBookmark && pagedMode && pagingEnabled && readerSettings.pagedBookmarkGesturesEnabled &&
+                bookmarkPullEnabled = !updatingBookmark && canBookmark && pagedMode && userPagingEnabled && readerSettings.pagedBookmarkGesturesEnabled &&
                     pagerVisibleItem?.page?.isOversized == false,
                 onBookmarkPull = { toggleBookmark() },
                 onReadingAreaTap = { xFraction, _ ->
@@ -2141,7 +2176,7 @@ class ChapterPage(
                     ) {
                     LazyColumn(
                         state = scrollState,
-                        userScrollEnabled = !pagedMode,
+                        userScrollEnabled = !pagedMode && userPagingEnabled,
                         modifier = Modifier.fillMaxSize()
                             .nestedScroll(boundaryScrollConnection)
                             .padding(horizontal = readerSettings.horizontalPaddingDp.dp),
@@ -2404,7 +2439,7 @@ class ChapterPage(
                             if (readerResult.nextFailed) item(key = "reader-next-retry") {
                                 ReaderBoundaryRetry { chapterPageModel.retryBoundary(true) }
                             }
-                            if (readerResult.isLoadingNext) {
+                            if (showNextLoading) {
                                 item(key = "reader-loading-next") {
                                     val loadingDescription = stringResource(R.string.reader_loading)
                                     Box(
@@ -2436,7 +2471,7 @@ class ChapterPage(
                             ),
                             pageSpacing = if (fullPageBackground) 0.dp else readerSettings.horizontalPaddingDp.dp * 2,
                             key = { index -> currentPagedDisplayItems.getOrNull(index)?.key ?: index },
-                            userScrollEnabled = pagingEnabled && !pagedTurns.hasTurns,
+                            userScrollEnabled = userPagingEnabled && !pagedTurns.hasTurns,
                             beyondViewportPageCount = if (customBackground && imageBackground.glowEnabled) 1
                                 else if (readerSettings.pageAnimation == ReaderPageAnimation.HORIZONTAL_SLIDE) 0 else 1,
                             flingBehavior = PagerDefaults.flingBehavior(
@@ -2569,8 +2604,8 @@ class ChapterPage(
                                 ReaderBoundaryRetry { chapterPageModel.retryBoundary(atNextBoundary && result.nextFailed) }
                             }
                         } else if (!visiblePaginationReady ||
-                            (atPreviousBoundary && result.isLoadingPrevious) ||
-                            (atNextBoundary && result.isLoadingNext)) {
+                            (atPreviousBoundary && showPreviousLoading) ||
+                            (atNextBoundary && showNextLoading)) {
                             CircularProgressIndicator(
                                 Modifier.align(Alignment.Center).semantics {
                                     contentDescription = readerLoadingDescription
@@ -2635,7 +2670,7 @@ class ChapterPage(
                 }
             }
 
-            if ((state as? ChapterPageModel.State.Result)?.isLoadingPrevious == true) {
+            if (showPreviousLoading) {
                 Surface(
                     modifier = Modifier
                         .align(Alignment.TopCenter)
@@ -2985,7 +3020,8 @@ class ChapterPage(
                         previous = previousSnapshot,
                         current = snapshot,
                         threshold = previousLoadThreshold
-                    )
+                    ) || com.breakyuna.esjzone.domain.reader.shouldPrepareReaderBoundary(
+                        snapshot, forward = false, threshold = previousLoadThreshold)
                 ) {
                     chapterPageModel.loadPreviousChapter()
                 }
@@ -2996,7 +3032,9 @@ class ChapterPage(
                 )
                 val viewportNeedsContent = com.breakyuna.esjzone.domain.reader.shouldFillReaderViewport(snapshot)
 
-                if (userScrolledToNext || viewportNeedsContent) {
+                val settledNearTail = com.breakyuna.esjzone.domain.reader.shouldPrepareReaderBoundary(
+                    snapshot, forward = true, threshold = continuousLoadThreshold)
+                if (userScrolledToNext || viewportNeedsContent || settledNearTail) {
                     chapterPageModel.loadNextChapter()
                 }
                 previousSnapshot = snapshot.takeIf { it.layoutMatchesLoadedWindow && !it.isProgrammaticScroll }
@@ -3509,4 +3547,17 @@ private fun ReaderBoundaryRetry(onRetry: () -> Unit) {
         Text(stringResource(R.string.reader_boundary_failed), Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
         TextButton(onClick = onRetry) { Text(stringResource(R.string.retry)) }
     }
+}
+
+/** Keep fast local/cache reads from flashing a spinner, without hiding in-flight state from navigation. */
+@Composable
+private fun rememberReaderBoundaryLoading(loading: Boolean, target: String?): Boolean {
+    var visible by remember(loading, target) { mutableStateOf(false) }
+    LaunchedEffect(loading, target) {
+        if (loading) {
+            kotlinx.coroutines.delay(150L)
+            visible = true
+        }
+    }
+    return visible
 }

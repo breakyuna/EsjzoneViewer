@@ -15,6 +15,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import com.breakyuna.esjzone.network.Authorization
@@ -197,6 +199,7 @@ class ChapterPageModel(
             loadedChapters.clear()
             passwordJobs.clear()
             passwordStates.clear()
+            prefetchJobs.clear()
             prefetchedDetails.clear()
             loadingNext = false
             loadingPrevious = false
@@ -295,7 +298,7 @@ class ChapterPageModel(
 
             val hasCanonicalOrder = synchronized(lock) { hasCanonicalOrderLocked() }
             if (hasCanonicalOrder) {
-                prefetchNext(chapter)
+                prefetchNext(chapter, currentSession)
             } else {
                 requestChapterOrder(currentSession, chapter)
             }
@@ -328,7 +331,7 @@ class ChapterPageModel(
                     recordNetworkFetch(target, detail)
                     queueChapterPersistence(target, detail)
                     publish(currentSession)
-                    prefetchNext(target)
+                    prefetchNext(target, currentSession)
                 }
             } catch (error: CancellationException) {
                 throw error
@@ -410,7 +413,7 @@ class ChapterPageModel(
                         }
                     }
                     publish(session)
-                    prefetchNext(chapterToLoad)
+                    prefetchNext(chapterToLoad, session)
                 }
             } catch (e: CancellationException) {
                 throw e
@@ -487,7 +490,7 @@ class ChapterPageModel(
                         }
                     }
                     publish(session)
-                    prefetchPrevious(chapterToLoad)
+                    prefetchPrevious(chapterToLoad, session)
                 }
             } catch (e: CancellationException) {
                 throw e
@@ -546,7 +549,7 @@ class ChapterPageModel(
                     publish(currentSession)
                     queueChapterCatalogPersistence()
                     if (chapter != null) {
-                        prefetchNext(chapter)
+                        prefetchNext(chapter, currentSession)
                     }
                     val pendingLoads = synchronized(lock) {
                         val requested = pendingNextRequest
@@ -732,49 +735,53 @@ class ChapterPageModel(
         }
     }
 
-    private fun prefetchNext(chapter: Chapter) {
-        adjacentChapter(chapter, 1)?.let(::prefetch)
+    private fun prefetchNext(chapter: Chapter, currentSession: Long) {
+        adjacentChapter(chapter, 1)?.let { prefetch(it, currentSession) }
     }
 
-    private fun prefetchPrevious(chapter: Chapter) {
-        adjacentChapter(chapter, -1)?.let(::prefetch)
+    private fun prefetchPrevious(chapter: Chapter, currentSession: Long) {
+        adjacentChapter(chapter, -1)?.let { prefetch(it, currentSession) }
     }
 
-    private fun prefetch(chapter: Chapter) {
+    private fun prefetch(chapter: Chapter, currentSession: Long) {
         if (chapter.isExternal) return
         val key = chapterKey(chapter)
         if (key.isBlank()) return
-        synchronized(lock) {
-            if (loadedChapters.any { sameChapter(it.chapter, chapter) } ||
+        val job = synchronized(lock) {
+            if (!isCurrentSessionLocked(currentSession) ||
+                loadedChapters.any { sameChapter(it.chapter, chapter) } ||
                 prefetchedDetails.containsKey(key) || prefetchJobs.containsKey(key)
-            ) {
-                return
-            }
-            prefetchJobs[key] = viewModelScope.launch(Dispatchers.IO) {
+            ) return
+            // Register before starting, including completion cleanup for cancellation before dispatch.
+            val pending = viewModelScope.launch(Dispatchers.IO, start = CoroutineStart.LAZY) {
                 val detail = try {
                     cancellablePageRequest {
                         PresentationAccess.client.getChapterDetail(authorization, chapter, novelUrl = downloadNovelUrl)
                     }
                 } catch (e: CancellationException) {
-                    synchronized(lock) {
-                        prefetchJobs.remove(key)
-                    }
                     throw e
                 } catch (e: Exception) {
-                    AppLogger.w(
-                        "ChapterPageModel",
-                        "Prefetch failed for chapter ${chapter.name}",
-                        e
-                    )
+                    AppLogger.w("ChapterPageModel", "Prefetch failed for chapter ${chapter.name}", e)
                     null
                 }
-                if (detail != null) recordNetworkFetch(chapter, detail)
+                currentCoroutineContext().ensureActive()
                 synchronized(lock) {
-                    if (detail != null) prefetchedDetails[key] = detail
-                    prefetchJobs.remove(key)
+                    if (isCurrentSessionLocked(currentSession) && detail != null) {
+                        recordNetworkFetch(chapter, detail)
+                        prefetchedDetails[key] = detail
+                    }
                 }
             }
+            prefetchJobs[key] = pending
+            pending.invokeOnCompletion {
+                synchronized(lock) {
+                    // An old completion must never remove a replacement job for the same chapter.
+                    if (prefetchJobs[key] === pending) prefetchJobs.remove(key)
+                }
+            }
+            pending
         }
+        job.start()
     }
 
     private suspend fun ensureChapterOrder(currentSession: Long): Boolean {

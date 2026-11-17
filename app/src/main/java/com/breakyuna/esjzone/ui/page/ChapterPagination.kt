@@ -23,6 +23,7 @@ import com.breakyuna.esjzone.ui.reader.ReaderSettings
 import com.breakyuna.esjzone.ui.reader.paginateReaderChapter
 import com.breakyuna.esjzone.util.AppLogger
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 
@@ -90,12 +91,14 @@ internal class ChapterPagination(
         val snapshot = withContext(Dispatchers.Default) {
             // Keep the worker's measurer separate from UI text layout.
             val measurer = TextMeasurer(fontResolver, density, layoutDirection, cacheSize = 0)
+            val workerContext = currentCoroutineContext()
             val pages = entries.associateWith { entry ->
                 ensureActive()
                 if (entry.requiresPassword) listOf(ReaderPage(emptyList(), -1f, isOversized = true))
                 else cached[entry] ?: paginateReaderChapter(
                     entry.chapter.name, entry.document.blocks, settings, textStyle, headingStyle,
-                    measurer, density, widthPx, heightPx, transform, entry.document.formatting
+                    measurer, density, widthPx, heightPx, transform, entry.document.formatting,
+                    checkCancelled = { workerContext.ensureActive() }
                 )
             }
             val items = entries.flatMap { entry ->

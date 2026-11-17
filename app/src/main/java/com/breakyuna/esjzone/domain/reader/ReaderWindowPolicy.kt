@@ -13,7 +13,9 @@ data class ReaderScrollSnapshot(
     val canScrollForward: Boolean = true,
     val canScrollBackward: Boolean = true,
     val hasNextChapter: Boolean = false,
-    val isLoadingNext: Boolean = false
+    val isLoadingNext: Boolean = false,
+    val hasPreviousChapter: Boolean = false,
+    val isLoadingPrevious: Boolean = false
 )
 
 data class ReaderWindowAnchor(
@@ -70,6 +72,24 @@ fun readerBoundaryLoadDirection(current: ReaderScrollSnapshot, dragDeltaY: Float
             current.firstVisibleChapterKey != null &&
             current.firstVisibleChapterKey == current.loadedChapterKeys.firstOrNull() -> false
         else -> null
+    }
+}
+
+/** After a seek settles, prepare adjacent content without requiring a new drag.
+ * Inspect only the actual window edges so inserting a chapter does not load the whole book.
+ */
+fun shouldPrepareReaderBoundary(current: ReaderScrollSnapshot, forward: Boolean, threshold: Int): Boolean {
+    if (!current.layoutMatchesLoadedWindow || current.isProgrammaticScroll || current.isScrollInProgress) return false
+    return if (forward) {
+        current.hasNextChapter && !current.isLoadingNext &&
+            current.lastVisibleChapterKey != null &&
+            current.lastVisibleChapterKey == current.loadedChapterKeys.lastOrNull() &&
+            current.distanceToLoadedTail <= threshold
+    } else {
+        current.hasPreviousChapter && !current.isLoadingPrevious &&
+            current.firstVisibleChapterKey != null &&
+            current.firstVisibleChapterKey == current.loadedChapterKeys.firstOrNull() &&
+            current.firstVisibleOffset <= threshold
     }
 }
 

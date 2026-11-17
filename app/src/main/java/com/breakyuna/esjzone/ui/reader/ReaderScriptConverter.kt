@@ -70,21 +70,26 @@ object ReaderScriptConverter {
         documents: Iterable<com.breakyuna.esjzone.domain.reader.ReaderChapterDocument>,
         script: ReaderScript,
         previous: ReaderScriptSnapshot? = null,
-        nameReplace: ReaderNameReplaceSettings = ReaderNameReplaceSettings()
+        nameReplace: ReaderNameReplaceSettings = ReaderNameReplaceSettings(),
+        checkCancelled: () -> Unit = {}
     ): ReaderScriptSnapshot {
+        checkCancelled()
         if (script == ReaderScript.ORIGINAL && !ReaderNameReplace.isActive(nameReplace))
             return ReaderScriptSnapshot(script, emptyMap(), emptyMap(), nameReplace)
         val reusable = previous?.takeIf { it.script == script && it.nameReplace == nameReplace }
         val result = HashMap<String, String>()
         val blocks = HashMap<ReaderBlock, ReaderTextOffsets>()
         fun add(value: String?) {
+            checkCancelled()
             if (!value.isNullOrEmpty() && value !in result) {
                 result[value] = reusable?.values?.get(value) ?: ReaderNameReplace.apply(convert(value, script), nameReplace)
             }
         }
         documents.forEach { document ->
+            checkCancelled()
             add(document.chapter.name)
             document.blocks.forEach { block ->
+                checkCancelled()
                 when (block) {
                     is com.breakyuna.esjzone.domain.reader.ReaderBlock.Paragraph -> block.parts.forEach { part ->
                         add(part.value)

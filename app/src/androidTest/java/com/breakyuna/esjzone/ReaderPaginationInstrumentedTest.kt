@@ -42,6 +42,26 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 class ReaderPaginationInstrumentedTest {
     @Test
+    fun cancelledPaginationStopsInsideASingleLongParagraph() {
+        val density = Density(1f)
+        val measurer = TextMeasurer(
+            createFontFamilyResolver(ApplicationProvider.getApplicationContext()),
+            density, LayoutDirection.Ltr)
+        val style = TextStyle(fontSize = 18.sp, lineHeight = 24.sp)
+        var checks = 0
+        val cancelled = kotlinx.coroutines.CancellationException("Reader layout changed")
+        try {
+            paginateReaderChapter("标题", listOf(ReaderBlock.Text("正文内容".repeat(1000))),
+                ReaderSettings(), style, style, measurer, density, 200, 100, { it },
+                checkCancelled = { if (++checks == 12) throw cancelled })
+            org.junit.Assert.fail("Cancelled pagination must not return partial pages")
+        } catch (error: kotlinx.coroutines.CancellationException) {
+            org.junit.Assert.assertSame(cancelled, error)
+            assertEquals(12, checks)
+        }
+    }
+
+    @Test
     fun readerSnapshotRetainsParagraphMappingsAfterConversionCacheEviction() {
         val block = ReaderBlock.Paragraph(listOf(ReaderBlock.Text("漢"), ReaderBlock.Text("語蔿")))
         val document = com.breakyuna.esjzone.domain.reader.ReaderChapterDocument(

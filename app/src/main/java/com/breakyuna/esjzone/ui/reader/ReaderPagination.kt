@@ -75,8 +75,10 @@ internal fun paginateReaderChapter(
     widthPx: Int,
     heightPx: Int,
     textTransform: (String) -> String,
-    formatting: ReaderChapterFormatting = ReaderChapterFormatting()
+    formatting: ReaderChapterFormatting = ReaderChapterFormatting(),
+    checkCancelled: () -> Unit = {}
 ): List<ReaderPage> {
+    checkCancelled()
     if (widthPx <= 0 || heightPx <= 0) return emptyList()
     val pages = mutableListOf<ReaderPage>()
     val current = mutableListOf<ReaderPageSegment>()
@@ -111,6 +113,7 @@ internal fun paginateReaderChapter(
         }
         val layoutStyle = readerRubyParagraphStyle(blocks[blockIndex], paragraphStyle, inline,
             textMeasurer, density, textTransform)
+        checkCancelled()
         val layout = textMeasurer.measure(
             text = text,
             style = layoutStyle,
@@ -121,9 +124,11 @@ internal fun paginateReaderChapter(
         val sourceSignature = ReaderUnderlines.sourceSignature(blocks[blockIndex])
         var startLine = 0
         while (startLine < layout.lineCount) {
+            checkCancelled()
             if (current.isNotEmpty() && usedHeight >= heightPx) flush()
             var endLine = startLine
             while (endLine < layout.lineCount) {
+                checkCancelled()
                 val nextHeight = layout.getLineBottom(endLine).toInt() - layout.getLineTop(startLine).toInt()
                 if (current.isNotEmpty() && usedHeight + nextHeight > heightPx) break
                 if (current.isEmpty() && nextHeight > heightPx && endLine > startLine) break
@@ -141,6 +146,7 @@ internal fun paginateReaderChapter(
             var segmentText: AnnotatedString
             var lineHeight: Int
             while (true) {
+                checkCancelled()
                 segmentText = text.subSequence(start, layout.getLineEnd(endLine - 1))
                 lineHeight = textMeasurer.measure(
                     text = segmentText,
@@ -184,6 +190,7 @@ internal fun paginateReaderChapter(
     }
     repeat(formatting.dividersAt.count { it == 0 }) { addDivider(0, afterBlock = false) }
     blocks.forEachIndexed { blockIndex, block ->
+        checkCancelled()
         val alignment = formatting.alignments[blockIndex]
         val paragraphStyle = readerParagraphStyle(textStyle, alignment)
         when (block) {
@@ -191,6 +198,7 @@ internal fun paginateReaderChapter(
                 val inline = linkedMapOf<String, InlineTextContent>()
                 val text = androidx.compose.ui.text.buildAnnotatedString {
                     block.parts.forEachIndexed { index, part ->
+                        checkCancelled()
                         val (value, content) = part.toAnnotatedReaderText(paragraphStyle, textMeasurer, density,
                             textTransform, inlineKey = "reader-ruby-$index")
                         append(value)
