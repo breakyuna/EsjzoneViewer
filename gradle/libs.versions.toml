@@ -13,7 +13,7 @@ espressoCore = "3.7.0"
 lifecycleRuntimeKtx = "2.10.0"
 lifecycleViewModelNavigation3 = "2.10.0"
 activityCompose = "1.13.0"
-composeBom = "2026.09.00"
+composeBom = "2026.11.01"
 # Includes deferred predictive-back handoff and stable scene z-order after interruption.
 # This also requires Compose animation/runtime 1.13.0-alpha03 transitively.
 navigation3 = "1.3.0-alpha04"
