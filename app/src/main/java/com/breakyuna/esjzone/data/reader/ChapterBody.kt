@@ -6,6 +6,7 @@ import com.breakyuna.esjzone.domain.reader.*
 import com.breakyuna.esjzone.novellibrary.component.*
 import com.breakyuna.esjzone.novellibrary.novel.DetailedChapter
 import com.google.gson.Gson
+import org.jsoup.Jsoup
 import java.io.Serializable
 import java.security.MessageDigest
 
@@ -51,20 +52,51 @@ data class ChapterBody(
         require(fingerprint == digest(blocks) && textLength == length(blocks)) { "Invalid chapter content" }
     }
 
+    internal fun recoverLeadingBreakText(html: String?, baseUrl: String): ChapterBody {
+        if (parserVersion >= CURRENT_PARSER_VERSION || html.isNullOrBlank() ||
+            !html.contains("<br", ignoreCase = true) || blocks.none { it.type == "break" }) return this
+
+        return runCatching {
+            val parsed = analyseChapterContent(Jsoup.parseBodyFragment(html, baseUrl).body())
+            val parsedBlocks = parsed.blocks.map(::storeBlock)
+            if (blocks.size != parsedBlocks.size) return this
+
+            // Saved HTML may have been pretty-printed. Preserve the original
+            // blocks and only put back text that was dropped at a leading break.
+            val repaired = blocks.zip(parsedBlocks).map { (stored, candidate) ->
+                when {
+                    stored == candidate -> stored
+                    stored.type == "break" && candidate.type == "paragraph" &&
+                        candidate.parts.firstOrNull()?.text == "\n" &&
+                        candidate.parts.any { it.text.isNotBlank() } -> candidate
+                    stored.type == "paragraph" && candidate.type == "paragraph" &&
+                        stored.textWithoutWhitespace() == candidate.textWithoutWhitespace() -> stored
+                    else -> return this
+                }
+            }
+            if (repaired == blocks) this else ChapterBody(
+                schemaVersion, CURRENT_PARSER_VERSION, repaired, digest(repaired), length(repaired),
+                formatting ?: parsed.formatting
+            )
+        }.getOrDefault(this)
+    }
+
     companion object {
+        private const val CURRENT_PARSER_VERSION = 2
         private val gson = Gson()
         fun from(components: List<Component>): ChapterBody = fromBlocks(components.flatMap(Component::toReaderBlocks))
         fun fromBlocks(blocks: List<ReaderBlock>): ChapterBody {
-            val stored = blocks.map { block ->
-                when (block) {
-                    is ReaderBlock.Paragraph -> StoredBlock("paragraph", block.parts.map(::storeText))
-                    is ReaderBlock.Text -> StoredBlock("text", listOf(storeText(block)))
-                    is ReaderBlock.Image -> StoredBlock("image", image = block.url)
-                    ReaderBlock.LineBreak -> StoredBlock("break")
-                }
-            }
-            return ChapterBody(2, 1, stored, digest(stored), length(stored))
+            val stored = blocks.map(::storeBlock)
+            return ChapterBody(2, CURRENT_PARSER_VERSION, stored, digest(stored), length(stored))
         }
+        private fun storeBlock(block: ReaderBlock): StoredBlock = when (block) {
+            is ReaderBlock.Paragraph -> StoredBlock("paragraph", block.parts.map(::storeText))
+            is ReaderBlock.Text -> StoredBlock("text", listOf(storeText(block)))
+            is ReaderBlock.Image -> StoredBlock("image", image = block.url)
+            ReaderBlock.LineBreak -> StoredBlock("break")
+        }
+        private fun StoredBlock.textWithoutWhitespace() =
+            parts.joinToString("") { part -> part.text.filterNot(Char::isWhitespace) }
         private fun length(blocks: List<StoredBlock>) = blocks.sumOf { b -> b.parts.sumOf { it.text.length } }
         private fun digest(blocks: List<StoredBlock>): String = MessageDigest.getInstance("SHA-256")
             .digest(gson.toJson(blocks.map { block -> block.copy(parts = block.parts.map { part ->

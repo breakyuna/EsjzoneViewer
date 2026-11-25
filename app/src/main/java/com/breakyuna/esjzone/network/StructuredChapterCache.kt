@@ -29,8 +29,8 @@ internal object StructuredChapterCache {
         return runCatching {
             val stored = requireNotNull(gson.fromJson(encoded, Snapshot::class.java))
             require(stored.sourceUrl == url) // Absolute resources belong to the acquisition mirror.
-            val checked = stored.body.validate()
             val html = stored.html
+            val checked = stored.body.validate().recoverLeadingBreakText(html, stored.sourceUrl)
             val needsFormattingRecovery = (checked.formatting?.parserVersion ?: 0) < ReaderChapterFormatting.CURRENT_PARSER_VERSION
             val formatKey = if (needsFormattingRecovery && !html.isNullOrBlank() &&
                 (html.contains("text-align", ignoreCase = true) || html.contains("<hr", ignoreCase = true))) {

@@ -21,6 +21,7 @@ class ChapterFormattingTest {
         <p style="text-align: center;"><strong>༺ 真是该死的世界 ༻</strong></p>
         <hr><p>他写下的<ruby>游戏评测<rt>粪作排雷</rt></ruby>洋洋洒洒。</p>
     """.trimIndent()
+    private val leadingBreakChapter = "<br><br>第一段<br>第二段<details><summary>作者的话</summary>附言</details>"
 
     private fun body(html: String = source): ChapterBody = ChapterBody.from(
         analyseComponents(Jsoup.parseBodyFragment(html, "https://www.esjzone.cc/forum/1/2.html").body())
@@ -56,6 +57,28 @@ class ChapterFormattingTest {
         assertEquals(existing.fingerprint, newBody.fingerprint)
         assertEquals(mapOf(0 to "center"), newBody.formatting!!.alignments)
         assertEquals(listOf(1), newBody.formatting!!.dividersAt)
+    }
+
+    @Test fun leadingBreaksDoNotHideProseBeforeAuthorNote() {
+        val parsed = analyseChapterContent(Jsoup.parseBodyFragment(leadingBreakChapter).body())
+        assertEquals(listOf("\n\n第一段\n第二段", "作者的话附言"), parsed.blocks.map { it.sourceText() })
+        assertEquals(listOf(ReaderBlock.LineBreak),
+            analyseChapterContent(Jsoup.parseBodyFragment("<p><br></p>").body()).blocks)
+    }
+
+    @Test fun oldSnapshotRecoversDroppedProseFromSavedHtml() {
+        val container = Jsoup.parseBodyFragment(leadingBreakChapter).body()
+        val note = analyseChapterContent(container).blocks.last()
+        val old = ChapterBody.fromBlocks(listOf(ReaderBlock.LineBreak, note)).copy(parserVersion = 1)
+        val html = container.html()
+
+        val recovered = old.recoverLeadingBreakText(html, "").validate()
+
+        assertEquals("第一段第二段", recovered.readerBlocks().first().sourceText().filterNot(Char::isWhitespace))
+        assertEquals(old.blocks.last(), recovered.blocks.last())
+        assertNotEquals(old.fingerprint, recovered.fingerprint)
+        assertSame(old, old.recoverLeadingBreakText(html.replace("附言", "不同的附言"), ""))
+        assertSame(old, old.recoverLeadingBreakText(null, ""))
     }
 
     @Test fun onlyMatchingHtmlCanSupplyFormatting() {

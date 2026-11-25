@@ -1762,8 +1762,8 @@ object NovelDownloadStore {
                 throw CancellationException("Download storage changed or the novel was removed")
             }
         }
-        val formattingRecovered = original.body?.formatting != stored.body?.formatting
-        if (original.schemaVersion != 2 || formattingRecovered ||
+        val bodyRecovered = original.body != stored.body
+        if (original.schemaVersion != 2 || bodyRecovered ||
             match.record.textLength != stored.body?.textLength || !match.record.bodyAvailable) {
             // Migration and optional metadata repair must not delay first publication.
             readMaintenanceScope.launch {
@@ -1772,7 +1772,7 @@ object NovelDownloadStore {
                     val currentRecord = current?.chapters?.firstOrNull { chapterKey(it.url) == chapterKey(chapterUrl) }
                     val file = currentRecord?.let { resolveLocalFile(match.directory, it.fileName) }
                     val latest = file?.let { readStoredSnapshot(it, snapshot.guard) }
-                    if ((original.schemaVersion != 2 || formattingRecovered) && file != null && latest != null) {
+                    if ((original.schemaVersion != 2 || bodyRecovered) && file != null && latest != null) {
                         mergeAndWriteChapter(file, latest, match.directory, snapshot.guard, forceRewrite = true)
                     }
                     if (current != null && currentRecord != null && latest != null &&
@@ -2138,7 +2138,7 @@ object NovelDownloadStore {
     private fun readStoredChapter(directory: StorageFile, file: StorageFile): DownloadedChapterContent? = synchronized(ioLock) {
         val stored = readJson(file, DownloadedChapterContent::class.java) ?: return@synchronized null
         val decoded = decodeStoredChapter(stored) ?: return@synchronized null
-        if (stored.schemaVersion != 2 || stored.body?.formatting != decoded.body?.formatting) {
+        if (stored.schemaVersion != 2 || stored.body != decoded.body) {
             // Reading remains possible if storage is full; the original survives a failed rename.
             runCatching { writeJson(file, decoded, newWriteGuard(directory)) }
         }
@@ -2149,6 +2149,7 @@ object NovelDownloadStore {
         if (stored.schemaVersion == 2) {
             return runCatching {
                 val body = requireNotNull(stored.body).validate()
+                    .recoverLeadingBreakText(stored.contentHtml, stored.baseUrl ?: stored.url)
                     .withFormatting(stored.contentHtml, stored.baseUrl ?: stored.url)
                 if (body === stored.body) stored else stored.copy(body = body)
             }.getOrNull()

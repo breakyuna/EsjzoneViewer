@@ -628,9 +628,15 @@ class FuriganaTextStyle(text: TextComponent) : TextStyle {
 
 private fun List<TextComponent>.toSingle(): List<TextComponent> {
     val first = firstOrNull() ?: return emptyList()
+    val rest = drop(1)
+    // A standalone break has no text in the reader. Keep the entire group as a
+    // paragraph when a leading break is followed by prose.
+    val paragraph = if (first is NewLineComponent && rest.any { it.text.isNotBlank() }) {
+        TextComponent(first.text)
+    } else first
 
-    for (component in drop(1))
-        first.append(component)
+    for (component in rest)
+        paragraph.append(component)
 
-    return listOf(first)
+    return listOf(paragraph)
 }
