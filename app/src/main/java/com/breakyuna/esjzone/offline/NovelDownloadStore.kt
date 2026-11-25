@@ -2148,9 +2148,11 @@ object NovelDownloadStore {
     private fun decodeStoredChapter(stored: DownloadedChapterContent): DownloadedChapterContent? {
         if (stored.schemaVersion == 2) {
             return runCatching {
+                val baseUrl = stored.baseUrl ?: stored.url
                 val body = requireNotNull(stored.body).validate()
-                    .recoverLeadingBreakText(stored.contentHtml, stored.baseUrl ?: stored.url)
-                    .withFormatting(stored.contentHtml, stored.baseUrl ?: stored.url)
+                    .rebuildFromHtmlIfOutdated(stored.contentHtml, baseUrl)
+                    .recoverLeadingBreakText(stored.contentHtml, baseUrl)
+                    .withFormatting(stored.contentHtml, baseUrl)
                 if (body === stored.body) stored else stored.copy(body = body)
             }.getOrNull()
         }

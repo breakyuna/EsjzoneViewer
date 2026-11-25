@@ -7,6 +7,8 @@ import com.breakyuna.esjzone.domain.reader.sourceText
 import com.breakyuna.esjzone.novellibrary.component.Component
 import com.breakyuna.esjzone.novellibrary.component.analyseParagraph
 import com.breakyuna.esjzone.novellibrary.component.extractParagraphElements
+import com.breakyuna.esjzone.util.AppLogger
+import kotlinx.coroutines.CancellationException
 import org.jsoup.Jsoup
 import org.jsoup.nodes.Element
 import java.util.IdentityHashMap
@@ -20,11 +22,65 @@ internal fun String.hasChapterFormattingMarkup(): Boolean =
 internal data class ParsedChapterContent(
     val components: List<Component>,
     val blocks: List<ReaderBlock>,
-    val formatting: ReaderChapterFormatting
+    val formatting: ReaderChapterFormatting,
+    val degraded: Boolean = false
 )
 
-/** Parse the body and its layout in the same pass without adding text blocks. */
-internal fun analyseChapterContent(element: Element): ParsedChapterContent {
+/**
+ * Parse the body and its layout in one pass, then verify content conservation
+ * against an independent DOM traversal. If the primary parser drops visible
+ * prose, furigana, or images, fall back immediately to the lossless walker.
+ */
+internal fun analyseChapterContent(
+    element: Element,
+    primaryParser: (Element) -> ParsedChapterContent = ::parseRichChapterContent
+): ParsedChapterContent {
+    val expected = extractDomContentSnapshot(element)
+    val primary = try {
+        primaryParser(element)
+    } catch (error: CancellationException) {
+        throw error
+    } catch (error: Exception) {
+        AppLogger.w(
+            "ChapterIntegrity",
+            "Rich parser failed (${error.javaClass.simpleName}); switching to lossless fallback"
+        )
+        null
+    }
+    if (primary != null) {
+        val actual = extractBlocksContentSnapshot(primary.blocks)
+        if (isContentConserved(expected, actual)) return primary
+        AppLogger.w(
+            "ChapterIntegrity",
+            "Rich parser failed content conservation (${expected.countsComparedTo(actual)}); " +
+                "switching to lossless fallback"
+        )
+    }
+
+    val fallbackBlocks = parseLosslessFallbackBlocks(element)
+    val fallback = extractBlocksContentSnapshot(fallbackBlocks)
+    if (isContentConserved(expected, fallback)) {
+        AppLogger.d("ChapterIntegrity", "Lossless fallback passed content conservation")
+    } else {
+        AppLogger.w(
+            "ChapterIntegrity",
+            "Lossless fallback failed content conservation (${expected.countsComparedTo(fallback)})"
+        )
+    }
+    val fallbackComponents = if (fallbackBlocks.isEmpty()) emptyList()
+        else ChapterBody.fromBlocks(fallbackBlocks).components()
+    return ParsedChapterContent(
+        components = fallbackComponents,
+        blocks = fallbackBlocks,
+        formatting = ReaderChapterFormatting(
+            parserVersion = ReaderChapterFormatting.CURRENT_PARSER_VERSION,
+            degraded = true
+        ),
+        degraded = true
+    )
+}
+
+private fun parseRichChapterContent(element: Element): ParsedChapterContent {
     val components = mutableListOf<Component>()
     val blocks = mutableListOf<ReaderBlock>()
     val alignments = mutableMapOf<Int, String>()

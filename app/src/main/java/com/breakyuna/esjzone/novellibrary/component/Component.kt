@@ -37,14 +37,24 @@ import java.io.Serializable
 private val BLOCK_TAG_NAMES = setOf(
     "p", "div", "section", "article", "blockquote", "main", "aside",
     "header", "footer", "h1", "h2", "h3", "h4", "h5", "h6",
-    "ul", "ol", "li", "pre", "hr", "table", "tr", "details"
+    "ul", "ol", "li", "pre", "hr", "table", "thead", "tbody", "tfoot",
+    "tr", "td", "th", "details", "figure", "figcaption", "dl", "dt", "dd",
+    "center", "address", "fieldset", "legend"
 )
+
+private val IGNORED_TAG_NAMES = setOf("script", "style", "noscript", "template", "rp")
 
 private fun Node.isBlockElement(): Boolean =
     this is Element && normalName() in BLOCK_TAG_NAMES
 
-private fun Element.hasBlockChildren(): Boolean =
-    childNodes().any { it.isBlockElement() }
+private fun Node.containsBlockElement(): Boolean = when {
+    isBlockElement() -> true
+    this is Element -> normalName() !in IGNORED_TAG_NAMES && childNodes().any { it.containsBlockElement() }
+    else -> false
+}
+
+private fun Element.hasBlockDescendants(): Boolean =
+    childNodes().any { it.containsBlockElement() }
 
 private fun Element.isSignificantParagraph(): Boolean =
     text().isNotBlank() || selectFirst("img, br") != null
@@ -55,7 +65,8 @@ internal fun extractParagraphElements(
     onAnonymousParagraph: (Element, Element) -> Unit = { _, _ -> }
 ): List<Element> = buildList {
     fun collect(element: Element) {
-        if (!element.hasBlockChildren()) {
+        if (element.normalName() in IGNORED_TAG_NAMES) return
+        if (!element.hasBlockDescendants()) {
             add(element)
             return
         }
@@ -70,9 +81,10 @@ internal fun extractParagraphElements(
         }
 
         for (child in element.childNodes()) {
-            if (child.isBlockElement()) {
+            if (child is Element && child.normalName() in IGNORED_TAG_NAMES) continue
+            if (child is Element && child.containsBlockElement()) {
                 flushAnon()
-                collect(child as Element)
+                collect(child)
             } else {
                 if (child is TextNode && child.text().isBlank()) {
                     currentAnon?.appendChild(child.clone())
@@ -106,7 +118,8 @@ fun analyseComponents(element: Element): List<Component> {
 
 
 internal fun analyseParagraph(paragraph: Element): List<Component> {
-    if (paragraph.hasBlockChildren()) {
+    if (paragraph.normalName() in IGNORED_TAG_NAMES) return emptyList()
+    if (paragraph.hasBlockDescendants()) {
         return analyseComponents(paragraph)
     }
 
@@ -143,6 +156,7 @@ internal fun analyseParagraph(paragraph: Element): List<Component> {
             for (style in styles) component = component.style(style)
             currentTexts.add(component)
         } else if (node is Element) {
+            if (node.normalName() in IGNORED_TAG_NAMES) return
             if (node.tagName() == "img") {
                 val imageUrl = resolveImageUrl(node)
                 if (imageUrl.isNotBlank()) {
@@ -157,21 +171,7 @@ internal fun analyseParagraph(paragraph: Element): List<Component> {
                 return
             }
 
-            val newStyles = mutableListOf<TextStyle>()
-            newStyles.addAll(styles)
-            if (node.nameIs("strong")) {
-                newStyles.add(BoldTextStyle)
-            } else if (node.nameIs("em")) {
-                newStyles.add(ItalicTextStyle)
-            } else if (node.nameIs("u")) {
-                newStyles.add(UnderlineTextStyle)
-            } else if (node.nameIs("s")) {
-                newStyles.add(LineThroughTextStyle)
-            } else if (node.nameIs("span")) {
-                newStyles.addAll(analyseStyles(node.attr("style").replace(" ", "")))
-            } else if (node.nameIs("a")) {
-                node.attr("href").trim().takeIf { it.isNotEmpty() }?.let { newStyles.add(LinkTextStyle(it)) }
-            }
+            val newStyles = extractInlineStyles(node, styles)
 
             for (child in node.childNodes()) {
                 collectMixed(child, newStyles)
@@ -187,7 +187,7 @@ internal fun analyseParagraph(paragraph: Element): List<Component> {
     return results
 }
 
-private fun resolveImageUrl(image: Element): String {
+internal fun resolveImageUrl(image: Element): String {
     // A non-empty placeholder src must not hide the real lazy-loaded URL.
     val baseUrl = image.baseUri().trim().ifBlank { EsjzoneUrls.Base }
     return sequenceOf(
@@ -202,12 +202,10 @@ private fun resolveImageUrl(image: Element): String {
     )
         .mapNotNull { attribute ->
             val raw = image.attr(attribute).trim()
-            if (raw.startsWith("file:", ignoreCase = true)) {
-                raw.takeIf { it.removePrefix("file:").trim().isNotBlank() }
-            } else {
-                EsjzoneUrls.resolve(raw, baseUrl)
-                    .trim()
-                    .takeIf { it.isNotBlank() }
+            when {
+                raw.startsWith('#') -> null
+                raw.startsWith("file:", ignoreCase = true) -> raw.takeIf { it.substringAfter(':').isNotBlank() }
+                else -> EsjzoneUrls.resolve(raw, baseUrl).trim().takeIf { it.isNotBlank() }
             }
         }
         .firstOrNull()
@@ -215,10 +213,32 @@ private fun resolveImageUrl(image: Element): String {
 }
 
 private val STYLE_BACKGROUND_COLOR_REGEX =
-    "background-color:rgb\\(([0-9]+),([0-9]+),([0-9]+)\\)".toRegex()
+    "background-color:rgba?\\(([0-9]+),([0-9]+),([0-9]+)(?:,[0-9.]+)?\\)".toRegex(RegexOption.IGNORE_CASE)
 private val STYLE_COLOR_REGEX =
-    "(?<!background-)color:rgb\\(([0-9]+),([0-9]+),([0-9]+)\\)".toRegex()
-private val STYLE_FONT_SIZE_REGEX = "font-size:([0-9]+)px".toRegex()
+    "(?<!background-)color:rgba?\\(([0-9]+),([0-9]+),([0-9]+)(?:,[0-9.]+)?\\)".toRegex(RegexOption.IGNORE_CASE)
+private val STYLE_HEX_BACKGROUND_COLOR_REGEX =
+    "background-color:#([0-9a-f]{3}|[0-9a-f]{6})(?![0-9a-f])".toRegex(RegexOption.IGNORE_CASE)
+private val STYLE_HEX_COLOR_REGEX =
+    "(?<!background-)color:#([0-9a-f]{3}|[0-9a-f]{6})(?![0-9a-f])".toRegex(RegexOption.IGNORE_CASE)
+private val STYLE_FONT_SIZE_REGEX = "font-size:([0-9]+)px".toRegex(RegexOption.IGNORE_CASE)
+
+private fun extractInlineStyles(node: Element, baseStyles: List<TextStyle>): List<TextStyle> {
+    val newStyles = mutableListOf<TextStyle>()
+    newStyles.addAll(baseStyles)
+    when (node.normalName()) {
+        "strong", "b" -> newStyles.add(BoldTextStyle)
+        "em", "i" -> newStyles.add(ItalicTextStyle)
+        "u", "ins" -> newStyles.add(UnderlineTextStyle)
+        "s", "del", "strike" -> newStyles.add(LineThroughTextStyle)
+        "a" -> node.attr("href").trim().takeIf { it.isNotEmpty() }?.let { newStyles.add(LinkTextStyle(it)) }
+        "font" -> parseStandaloneColor(node.attr("color"))?.let { newStyles.add(ColorTextStyle(it)) }
+    }
+    val inlineCss = node.attr("style")
+    if (inlineCss.isNotBlank()) {
+        newStyles.addAll(analyseStyles(inlineCss.replace(" ", "")))
+    }
+    return newStyles
+}
 
 private fun analyseText(node: Node, styles: List<TextStyle>): List<TextComponent> {
     if (node is TextNode) {
@@ -227,67 +247,65 @@ private fun analyseText(node: Node, styles: List<TextStyle>): List<TextComponent
             component = component.style(style)
         return listOf(component)
     } else if (node is Element) {
+        if (node.normalName() in IGNORED_TAG_NAMES) return emptyList()
         val list = mutableListOf<TextComponent>()
 
         if (node.nameIs("ruby")) {
+            val directRts = node.children().filter { it.nameIs("rt") }
+            if (directRts.isNotEmpty()) {
+                val pendingBase = mutableListOf<Node>()
+                fun emitBase(appliedStyles: List<TextStyle>) {
+                    for (baseNode in pendingBase) {
+                        if (baseNode is TextNode) {
+                            list.addAll(analyseText(baseNode, appliedStyles))
+                        } else if (baseNode is Element && !baseNode.nameIs("rp") && !baseNode.nameIs("rt")) {
+                            list.addAll(analyseText(baseNode, appliedStyles))
+                        }
+                    }
+                    pendingBase.clear()
+                }
+                for (childNode in node.childNodes()) {
+                    if (childNode is Element && childNode.nameIs("rt")) {
+                        val single = analyseText(childNode, emptyList()).toSingle().firstOrNull()
+                        val applied = if (single != null) styles + FuriganaTextStyle(single) else styles
+                        emitBase(applied)
+                    } else if (childNode is Element && childNode.nameIs("rp")) {
+                        continue
+                    } else {
+                        pendingBase.add(childNode)
+                    }
+                }
+                emitBase(styles)
+                return list
+            }
             val rt = node.getElementsByTag("rt").firstOrNull()
             if (rt != null) {
-                val furiganaComponents = mutableListOf<TextComponent>()
-
-                furiganaComponents.addAll(analyseText(rt, listOf()))
-
-                if (furiganaComponents.isNotEmpty()) {
-                    val newStyles = mutableListOf<TextStyle>()
-                    newStyles.addAll(styles)
-
-                    val single = furiganaComponents.toSingle().firstOrNull()
-                    if (single != null) {
-                        newStyles.add(FuriganaTextStyle(single))
-
-                        for (childNode in node.childNodes()) {
-                            if (childNode is TextNode)
-                                list.addAll(analyseText(childNode, newStyles))
-                            else if (childNode is Element) {
-                                if (!childNode.nameIs("rp") && !childNode.nameIs("rt")) {
-                                    list.addAll(analyseText(childNode, newStyles))
-                                }
-                            }
+                val single = analyseText(rt, listOf()).toSingle().firstOrNull()
+                if (single != null) {
+                    val newStyles = styles + FuriganaTextStyle(single)
+                    for (childNode in node.childNodes()) {
+                        if (childNode is TextNode) {
+                            list.addAll(analyseText(childNode, newStyles))
+                        } else if (childNode is Element && !childNode.nameIs("rp") && !childNode.nameIs("rt")) {
+                            list.addAll(analyseText(childNode, newStyles))
                         }
-                        return list
                     }
+                    return list
                 }
             }
             for (childNode in node.childNodes()) {
-                if (childNode is TextNode)
+                if (childNode is TextNode) {
                     list.addAll(analyseText(childNode, styles))
-                else if (childNode is Element) {
-                    if (!childNode.nameIs("rp") && !childNode.nameIs("rt")) {
-                        list.addAll(analyseText(childNode, styles))
-                    }
+                } else if (childNode is Element && !childNode.nameIs("rp") && !childNode.nameIs("rt")) {
+                    list.addAll(analyseText(childNode, styles))
                 }
             }
             return list
         } else if (node.nameIs("br")) {
             return listOf(NewLineComponent())
-        } else if (node.nameIs("rp")) {
-            return listOf()
         }
 
-        val newStyles = mutableListOf<TextStyle>()
-        newStyles.addAll(styles)
-        if (node.nameIs("strong")) {
-            newStyles.add(BoldTextStyle)
-        } else if (node.nameIs("em")) {
-            newStyles.add(ItalicTextStyle)
-        } else if (node.nameIs("u")) {
-            newStyles.add(UnderlineTextStyle)
-        } else if (node.nameIs("s")) {
-            newStyles.add(LineThroughTextStyle)
-        } else if (node.nameIs("span")) {
-            newStyles.addAll(analyseStyles(node.attr("style").replace(" ", "")))
-        } else if (node.nameIs("a")) {
-            node.attr("href").trim().takeIf { it.isNotEmpty() }?.let { newStyles.add(LinkTextStyle(it)) }
-        }
+        val newStyles = extractInlineStyles(node, styles)
 
         node.childNodes().map { analyseText(it, newStyles) }.forEach { list.addAll(it) }
         return list
@@ -303,9 +321,19 @@ private fun analyseStyles(styleString: String): List<TextStyle> {
             list.add(ColorTextStyle(color))
         }
     }
+    for (result in STYLE_HEX_COLOR_REGEX.findAll(styleString)) {
+        parseHexColor(result.groupValues[1])?.let { color ->
+            list.add(ColorTextStyle(color))
+        }
+    }
 
     for (result in STYLE_BACKGROUND_COLOR_REGEX.findAll(styleString)) {
         parseRgbColor(result)?.let { color ->
+            list.add(BackgroundColorTextStyle(color))
+        }
+    }
+    for (result in STYLE_HEX_BACKGROUND_COLOR_REGEX.findAll(styleString)) {
+        parseHexColor(result.groupValues[1])?.let { color ->
             list.add(BackgroundColorTextStyle(color))
         }
     }
@@ -318,6 +346,24 @@ private fun analyseStyles(styleString: String): List<TextStyle> {
     }
 
     return list.toList()
+}
+
+private fun parseStandaloneColor(raw: String): Color? {
+    val trimmed = raw.trim().replace(" ", "")
+    if (trimmed.startsWith("#")) return parseHexColor(trimmed.removePrefix("#"))
+    val match = "rgba?\\(([0-9]+),([0-9]+),([0-9]+)(?:,[0-9.]+)?\\)".toRegex(RegexOption.IGNORE_CASE)
+        .matchEntire(trimmed)
+    return match?.let(::parseRgbColor)
+}
+
+private fun parseHexColor(hex: String): Color? {
+    val normalized = when (hex.length) {
+        3 -> hex.map { "$it$it" }.joinToString("")
+        6 -> hex
+        else -> return null
+    }
+    val rgb = normalized.toIntOrNull(16) ?: return null
+    return Color((rgb shr 16) and 0xFF, (rgb shr 8) and 0xFF, rgb and 0xFF)
 }
 
 private fun parseRgbColor(result: MatchResult): Color? {

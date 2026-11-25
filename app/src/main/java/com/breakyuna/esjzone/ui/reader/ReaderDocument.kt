@@ -50,7 +50,8 @@ fun DetailedChapter.toReaderDocument(chapter: Chapter): ReaderChapterDocument {
         sourceUrl = sourceUrl,
         contentFingerprint = body?.fingerprint.orEmpty(),
         links = readerChapterLinks(blocks, contentHtml, sourceUrl?.takeIf(String::isNotBlank) ?: chapter.url),
-        formatting = body?.formatting ?: com.breakyuna.esjzone.domain.reader.ReaderChapterFormatting()
+        formatting = body?.formatting ?: com.breakyuna.esjzone.domain.reader.ReaderChapterFormatting(),
+        legacyPositions = body?.legacyPositions
     )
 }
 

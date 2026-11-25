@@ -22,7 +22,8 @@ data class ChapterBody(
     val fingerprint: String,
     val textLength: Int,
     // Not part of the content fingerprint: changing presentation must not invalidate anchors.
-    val formatting: ReaderChapterFormatting? = null
+    val formatting: ReaderChapterFormatting? = null,
+    val legacyPositions: ReaderLegacyPositions? = null
 ) : Serializable {
     fun readerBlocks(imageUrl: (String) -> String = { it }): List<ReaderBlock> = blocks.map { block ->
         when (block.type) {
@@ -74,15 +75,94 @@ data class ChapterBody(
                     else -> return this
                 }
             }
-            if (repaired == blocks) this else ChapterBody(
-                schemaVersion, CURRENT_PARSER_VERSION, repaired, digest(repaired), length(repaired),
-                formatting ?: parsed.formatting
-            )
+            if (repaired == blocks) this else withRebuiltBlocks(repaired, formatting ?: parsed.formatting)
         }.getOrDefault(this)
     }
 
+    /**
+     * Treats saved chapter HTML as the source of truth when the parser version
+     * advances. Upgrades blocks and formatting
+     * cleanly without requiring one-off migration code for every HTML quirk.
+     */
+    internal fun rebuildFromHtmlIfOutdated(html: String?, baseUrl: String): ChapterBody {
+        if (parserVersion >= CURRENT_PARSER_VERSION || html.isNullOrBlank()) return this
+
+        return runCatching {
+            val document = Jsoup.parseBodyFragment(html, baseUrl)
+            if (document.selectFirst("#oops input#pw, input#pw[name=pw]") != null) return this
+            if (com.breakyuna.esjzone.network.external.CloudflareChallenge.hasChallengeDocumentMarkers(html)) return this
+
+            val parsed = analyseChapterContent(document.body())
+            val parsedBlocks = parsed.blocks.map(::storeBlock)
+            if (parsedBlocks.isEmpty()) return this
+            if (!isCompatibleRebuild(blocks, parsedBlocks)) return this
+
+            withRebuiltBlocks(parsedBlocks, parsed.formatting)
+        }.getOrDefault(this)
+    }
+
+    private fun withRebuiltBlocks(rebuilt: List<StoredBlock>, formatting: ReaderChapterFormatting): ChapterBody {
+        val upgraded = copy(parserVersion = CURRENT_PARSER_VERSION, formatting = formatting)
+        if (rebuilt == blocks) return upgraded
+        val newFingerprint = digest(rebuilt)
+        return upgraded.copy(
+            blocks = rebuilt,
+            fingerprint = newFingerprint,
+            textLength = length(rebuilt),
+            legacyPositions = if (newFingerprint == fingerprint) legacyPositions else legacyPositionsFor(rebuilt)
+        )
+    }
+
+    internal fun inheritLegacyPositions(previous: ChapterBody?): ChapterBody {
+        if (previous == null || legacyPositions != null) return this
+        val positions = when {
+            fingerprint == previous.fingerprint -> previous.legacyPositions
+            previous.parserVersion < parserVersion -> previous.legacyPositionsFor(blocks)
+            previous.legacyPositions != null &&
+                blocks.joinToString("") { it.textWithoutWhitespace() } ==
+                previous.blocks.joinToString("") { it.textWithoutWhitespace() } -> previous.legacyPositions
+            else -> null
+        }
+        return if (positions == null) this else copy(legacyPositions = positions)
+    }
+
+    private fun legacyPositionsFor(rebuilt: List<StoredBlock>): ReaderLegacyPositions? {
+        val normalized = rebuilt.joinToString("") { it.textWithoutWhitespace() }
+        val oldBlocks = readerBlocks()
+        val oldText = oldBlocks.map { it.sourceText() }
+        val pieces = oldText.map { it.filterNot(Char::isWhitespace) }
+
+        // A block is mapped only when the surrounding old blocks constrain it to one location.
+        val latestStarts = IntArray(pieces.size)
+        var end = normalized.length
+        for (index in pieces.indices.reversed()) {
+            val piece = pieces[index]
+            if (piece.isEmpty()) continue
+            end = normalized.lastIndexOf(piece, end - piece.length)
+            if (end < 0) return null
+            latestStarts[index] = end
+        }
+
+        var next = 0
+        val positions = buildMap {
+            for ((index, piece) in pieces.withIndex()) {
+                if (piece.isEmpty()) continue
+                val start = normalized.indexOf(piece, next)
+                if (start < 0) return null
+                next = start + piece.length
+                if (start != latestStarts[index]) continue
+                val raw = oldText[index]
+                put(index, ReaderLegacyTextBlock(
+                    start, raw.length, raw.indices.filter { raw[it].isWhitespace() },
+                    ReaderUnderlines.sourceSignature(oldBlocks[index])
+                ))
+            }
+        }
+        return positions.takeIf { it.isNotEmpty() }?.let { ReaderLegacyPositions(fingerprint, it) }
+    }
+
     companion object {
-        private const val CURRENT_PARSER_VERSION = 2
+        internal const val CURRENT_PARSER_VERSION = 3
         private val gson = Gson()
         fun from(components: List<Component>): ChapterBody = fromBlocks(components.flatMap(Component::toReaderBlocks))
         fun fromBlocks(blocks: List<ReaderBlock>): ChapterBody {
@@ -97,6 +177,25 @@ data class ChapterBody(
         }
         private fun StoredBlock.textWithoutWhitespace() =
             parts.joinToString("") { part -> part.text.filterNot(Char::isWhitespace) }
+        private fun isCompatibleRebuild(existing: List<StoredBlock>, candidate: List<StoredBlock>): Boolean {
+            val oldText = existing.joinToString("") { it.textWithoutWhitespace() }
+            val newText = candidate.joinToString("") { it.textWithoutWhitespace() }
+            val oldImages = existing.mapNotNull { it.image?.takeIf(String::isNotBlank) }
+            val newImages = candidate.mapNotNull { it.image?.takeIf(String::isNotBlank) }
+            if (oldText == newText && oldImages == newImages) return true
+            if (oldImages.any { it !in newImages }) return false
+            if (oldText.isEmpty()) return true
+            // Every surviving text block from the old snapshot must appear in order in the rebuilt text.
+            var cursor = 0
+            for (block in existing) {
+                val piece = block.textWithoutWhitespace()
+                if (piece.isEmpty()) continue
+                val found = newText.indexOf(piece, startIndex = cursor)
+                if (found < 0) return false
+                cursor = found + piece.length
+            }
+            return true
+        }
         private fun length(blocks: List<StoredBlock>) = blocks.sumOf { b -> b.parts.sumOf { it.text.length } }
         private fun digest(blocks: List<StoredBlock>): String = MessageDigest.getInstance("SHA-256")
             .digest(gson.toJson(blocks.map { block -> block.copy(parts = block.parts.map { part ->

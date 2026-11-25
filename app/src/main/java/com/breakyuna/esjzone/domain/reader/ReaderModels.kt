@@ -41,7 +41,9 @@ data class ReaderChapterFormatting(
     /** Missing fields in older snapshots retain 0; the parser stamps new formatting explicitly. */
     val parserVersion: Int = 0,
     /** Number of source text parts belonging to the visible summary at the start of a block. */
-    val disclosureTitleParts: Map<Int, Int> = emptyMap()
+    val disclosureTitleParts: Map<Int, Int> = emptyMap(),
+    /** True when the primary rich parser failed content conservation and lossless fallback was used. */
+    val degraded: Boolean = false
 ) : Serializable {
     companion object {
         const val CURRENT_PARSER_VERSION = 2
@@ -78,8 +80,11 @@ data class ReaderChapterDocument(
     val sourceUrl: String? = null,
     val contentFingerprint: String = "",
     val links: Map<Int, List<ReaderLink>> = emptyMap(),
-    val formatting: ReaderChapterFormatting = ReaderChapterFormatting()
+    val formatting: ReaderChapterFormatting = ReaderChapterFormatting(),
+    val legacyPositions: ReaderLegacyPositions? = null
 ) {
+    internal val normalizedTextIndex by lazy { buildNormalizedDocumentText(blocks) }
+
     /** Derived once per immutable document, without allocating paragraph strings. */
     internal val textPrefixLengths: IntArray by lazy {
         IntArray(blocks.size + 1).also { prefix ->

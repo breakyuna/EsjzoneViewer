@@ -586,7 +586,9 @@ class ChapterPageModel(
         val entry = ReaderChapter(
             chapter, detail.toReaderDocument(chapter), detail.previous, detail.next, offline,
             servedFromDownload = detail.servedFromDownload,
-            servedFromNetwork = detail.servedFromNetwork
+            servedFromNetwork = detail.servedFromNetwork,
+            sourceHtml = detail.contentHtml,
+            localImages = detail.imageLocations
         )
         AppLogger.i("ReaderTiming", "detailMs=${(loaded - started) / 1_000_000} documentMs=${(System.nanoTime() - loaded) / 1_000_000}")
         return entry

@@ -21,8 +21,8 @@ internal object StructuredChapterCache {
     private data class Snapshot(val name: String, val sourceUrl: String, val body: ChapterBody,
         val html: String?, val previous: Chapter?, val next: Chapter?)
 
-    fun read(key: String, url: String): DetailedChapter? {
-        val entry = PageCache.readEntry(PageCache.structuredKey(key), PageCacheTtl.CHAPTER, sourceKey = key) ?: run {
+    fun read(key: String, url: String, maxAgeMillis: Long = PageCacheTtl.CHAPTER): DetailedChapter? {
+        val entry = PageCache.readEntry(PageCache.structuredKey(key), maxAgeMillis, sourceKey = key) ?: run {
             CacheAnalysis.lookup(CacheLayer.CHAPTER, fresh = false)
             return null
         }
@@ -31,7 +31,9 @@ internal object StructuredChapterCache {
             val stored = requireNotNull(gson.fromJson(encoded, Snapshot::class.java))
             require(stored.sourceUrl == url) // Absolute resources belong to the acquisition mirror.
             val html = stored.html
-            val checked = stored.body.validate().recoverLeadingBreakText(html, stored.sourceUrl)
+            val checked = stored.body.validate()
+                .rebuildFromHtmlIfOutdated(html, stored.sourceUrl)
+                .recoverLeadingBreakText(html, stored.sourceUrl)
             val needsFormattingRecovery = (checked.formatting?.parserVersion ?: 0) < ReaderChapterFormatting.CURRENT_PARSER_VERSION
             val formatKey = if (needsFormattingRecovery && !html.isNullOrBlank() && html.hasChapterFormattingMarkup()) {
                 val digest = MessageDigest.getInstance("SHA-256").digest(html.toByteArray(Charsets.UTF_8))
@@ -47,8 +49,10 @@ internal object StructuredChapterCache {
             DetailedChapter(stored.name, body.components(), stored.previous, stored.next,
                 stored.html, stored.sourceUrl, body, sourceCacheReference = entry.reference)
                 .also {
-                    CacheAnalysis.lookup(CacheLayer.CHAPTER, fresh = true)
-                    CacheDiagnostics.record(CacheEventType.HIT, CacheLayer.CHAPTER, CacheEventReason.FRESH, PageCache.structuredKey(key))
+                    val fresh = System.currentTimeMillis() - entry.fetchedAt <= PageCacheTtl.CHAPTER
+                    CacheAnalysis.lookup(CacheLayer.CHAPTER, fresh = fresh)
+                    val reason = if (fresh) CacheEventReason.FRESH else CacheEventReason.STALE
+                    CacheDiagnostics.record(CacheEventType.HIT, CacheLayer.CHAPTER, reason, PageCache.structuredKey(key))
                 }
         }.getOrElse {
             CacheAnalysis.lookup(CacheLayer.CHAPTER, fresh = false)
