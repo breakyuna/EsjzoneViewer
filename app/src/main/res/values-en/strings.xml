@@ -341,9 +341,6 @@
     <string name="open_in_system_browser">Open in system browser</string>
     <string name="web_page">Web page</string>
     <string name="open_in_app_browser">Open in app</string>
-    <string name="reader_open_web_view">Web view</string>
-    <string name="reader_open_online_page">Open live webpage</string>
-    <string name="reader_degraded_notice">Compatibility mode</string>
     <string name="wenku_webview_unavailable">Android System WebView is unavailable</string>
     <string name="wenku_webview_unavailable_desc">Update or enable System WebView, then retry.</string>
     <string name="wenku_cookie_store_unavailable">Wenku8 cookie storage is unavailable</string>

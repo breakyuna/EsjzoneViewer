@@ -23,7 +23,9 @@ import androidx.compose.ui.text.style.LineHeightStyle
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.TextUnit
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.breakyuna.esjzone.domain.reader.ReaderBlock
 import com.breakyuna.esjzone.domain.reader.ReaderChapterDocument
@@ -60,6 +62,26 @@ internal fun ReaderBlock.renderedReaderText(textTransform: (String) -> String): 
     is ReaderBlock.Paragraph -> parts.joinToString("") { it.renderedReaderText(textTransform) }
     is ReaderBlock.Text -> textTransform(value)
     else -> ""
+}
+
+internal fun ReaderBlock.isBlankLine(): Boolean = when (this) {
+    is ReaderBlock.Paragraph -> parts.all { it.isPlainBlank() }
+    is ReaderBlock.Text -> isPlainBlank()
+    ReaderBlock.LineBreak -> true
+    is ReaderBlock.Image -> false
+}
+
+private fun ReaderBlock.Text.isPlainBlank(): Boolean = value.isBlank() && ruby == null && styles.isEmpty()
+
+/** A following blank line already supplies separation unless a divider comes first. */
+internal fun ReaderSettings.paragraphSpacingBefore(
+    nextBlock: ReaderBlock?,
+    blankLineHeight: Dp,
+    hasDivider: Boolean
+): Dp {
+    val spacing = paragraphSpacingDp.dp
+    return if (!hasDivider && nextBlock?.isBlankLine() == true) maxOf(0.dp, spacing - blankLineHeight)
+    else spacing
 }
 
 internal fun ReaderBlock.Paragraph.toAnnotatedReaderParagraph(

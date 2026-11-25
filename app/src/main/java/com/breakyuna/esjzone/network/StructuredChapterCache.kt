@@ -13,7 +13,12 @@ import java.security.MessageDigest
 /** Shares PageCache's account namespace, timestamps, quota, clearing and atomic writes. */
 internal object StructuredChapterCache {
     private val gson = Gson()
-    private data class FormattingKey(val fingerprint: String, val sourceUrl: String, val htmlDigest: String)
+    private data class FormattingKey(
+        val fingerprint: String,
+        val sourceUrl: String,
+        val htmlDigest: String,
+        val savedAlignments: Map<Int, String>
+    )
     private data class FormattingResult(val value: ReaderChapterFormatting?)
     private val recoveredFormatting = object : LinkedHashMap<FormattingKey, FormattingResult>(64, 0.75f, true) {
         override fun removeEldestEntry(eldest: MutableMap.MutableEntry<FormattingKey, FormattingResult>?) = size > 64
@@ -38,7 +43,7 @@ internal object StructuredChapterCache {
             val formatKey = if (needsFormattingRecovery && !html.isNullOrBlank() && html.hasChapterFormattingMarkup()) {
                 val digest = MessageDigest.getInstance("SHA-256").digest(html.toByteArray(Charsets.UTF_8))
                     .joinToString("") { "%02x".format(it) }
-                FormattingKey(checked.fingerprint, stored.sourceUrl, digest)
+                FormattingKey(checked.fingerprint, stored.sourceUrl, digest, checked.formatting?.alignments.orEmpty())
             } else null
             val cached = formatKey?.let { synchronized(recoveredFormatting) { recoveredFormatting[it] } }
             val body = if (cached != null) cached.value?.let { checked.copy(formatting = it) } ?: checked

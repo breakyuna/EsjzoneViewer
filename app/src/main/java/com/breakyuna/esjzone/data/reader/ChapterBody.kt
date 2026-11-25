@@ -5,6 +5,7 @@ import com.breakyuna.esjzone.data.repository.toReaderBlocks
 import com.breakyuna.esjzone.domain.reader.*
 import com.breakyuna.esjzone.novellibrary.component.*
 import com.breakyuna.esjzone.novellibrary.novel.DetailedChapter
+import com.breakyuna.esjzone.util.BoundedJson
 import com.google.gson.Gson
 import org.jsoup.Jsoup
 import java.io.Serializable
@@ -102,7 +103,14 @@ data class ChapterBody(
     }
 
     private fun withRebuiltBlocks(rebuilt: List<StoredBlock>, formatting: ReaderChapterFormatting): ChapterBody {
-        val upgraded = copy(parserVersion = CURRENT_PARSER_VERSION, formatting = formatting)
+        val sameLayout = rebuilt.size == blocks.size && blocks.indices.all { index ->
+            val previous = blocks[index]
+            val current = rebuilt[index]
+            previous == current || previous.type == current.type && previous.image == current.image &&
+                previous.textWithoutWhitespace() == current.textWithoutWhitespace()
+        }
+        val layout = if (sameLayout) keepSavedAlignments(formatting) else formatting
+        val upgraded = copy(parserVersion = CURRENT_PARSER_VERSION, formatting = layout)
         if (rebuilt == blocks) return upgraded
         val newFingerprint = digest(rebuilt)
         return upgraded.copy(
@@ -152,10 +160,14 @@ data class ChapterBody(
                 next = start + piece.length
                 if (start != latestStarts[index]) continue
                 val raw = oldText[index]
+                val whitespaceOffsets = raw.indices.asSequence().filter { raw[it].isWhitespace() }
+                    .take(BoundedJson.MAX_ITEMS + 1).toList()
+                if (whitespaceOffsets.size > BoundedJson.MAX_ITEMS) continue
                 put(index, ReaderLegacyTextBlock(
-                    start, raw.length, raw.indices.filter { raw[it].isWhitespace() },
+                    start, raw.length, whitespaceOffsets,
                     ReaderUnderlines.sourceSignature(oldBlocks[index])
                 ))
+                if (size == BoundedJson.MAX_ITEMS) break
             }
         }
         return positions.takeIf { it.isNotEmpty() }?.let { ReaderLegacyPositions(fingerprint, it) }

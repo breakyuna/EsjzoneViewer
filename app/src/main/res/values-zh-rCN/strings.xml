@@ -341,9 +341,6 @@
     <string name="open_in_system_browser">使用系统浏览器打开</string>
     <string name="web_page">网页</string>
     <string name="open_in_app_browser">在应用内打开</string>
-    <string name="reader_open_web_view">网页原版</string>
-    <string name="reader_open_online_page">打开在线网页</string>
-    <string name="reader_degraded_notice">兼容显示</string>
     <string name="wenku_webview_unavailable">Android System WebView 不可用</string>
     <string name="wenku_webview_unavailable_desc">请更新或启用系统 WebView，然后重试。</string>
     <string name="wenku_cookie_store_unavailable">轻小说文库 Cookie 存储不可用</string>

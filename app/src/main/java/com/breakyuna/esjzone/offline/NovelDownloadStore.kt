@@ -32,6 +32,7 @@ import com.breakyuna.esjzone.novellibrary.novel.NovelChapterList
 import com.breakyuna.esjzone.novellibrary.novel.NovelDescription
 import com.breakyuna.esjzone.util.copyWithCancellation
 import com.breakyuna.esjzone.util.AppLogger
+import com.breakyuna.esjzone.util.BoundedJson
 import com.google.gson.Gson
 import com.google.gson.annotations.SerializedName
 import com.breakyuna.esjzone.storage.StorageAccessException
@@ -1361,7 +1362,9 @@ object NovelDownloadStore {
                 val manifest = buildManifest(directory, previous, current, writeGuard,
                     replaceCatalog = replaceCatalog, revalidateChapterFiles = false,
                     changedContents = savedContent?.let { mapOf(targetKey to it) }.orEmpty())
-                val bodyTemporary = savedContent?.let { prepareJson(targetFile, it, writeGuard) }
+                val bodyTemporary = savedContent?.let {
+                    prepareJson(targetFile, it, writeGuard, checkReadLimits = oldContent != null)
+                }
                 try {
                     val manifestFile = StorageFile(directory, MANIFEST_FILE)
                     val manifestTemporary = prepareJson(manifestFile,
@@ -1698,7 +1701,9 @@ object NovelDownloadStore {
                 val revision = synchronized(ioLock) { ensureWriteAllowed(guard); contentRevision(directory) }
                 val latest = readStoredSnapshot(file, guard)
                 val merged = latest?.let { mergeChapterAssets(directory, it, incoming) } ?: incoming
-                val temporary = if (!forceRewrite && latest == merged) null else prepareJson(file, merged, guard)
+                val temporary = if (!forceRewrite && latest == merged) null else {
+                    prepareJson(file, merged, guard, checkReadLimits = latest != null || forceRewrite)
+                }
                 try {
                     val committed = withStoreLock("chapter-commit") {
                         ensureWriteAllowed(guard)
@@ -2140,7 +2145,7 @@ object NovelDownloadStore {
         val decoded = decodeStoredChapter(stored) ?: return@synchronized null
         if (stored.schemaVersion != 2 || stored.body != decoded.body) {
             // Reading remains possible if storage is full; the original survives a failed rename.
-            runCatching { writeJson(file, decoded, newWriteGuard(directory)) }
+            runCatching { writeMigratedChapter(file, decoded, newWriteGuard(directory)) }
         }
         decoded
     }
@@ -2758,7 +2763,12 @@ object NovelDownloadStore {
             resolveLocalFile(directory, relative)?.let { it.isFile && it.length() > 0L } == true
         }
 
-    private fun prepareJson(file: StorageFile, value: Any, writeGuard: DownloadWriteGuard): StorageFile {
+    private fun prepareJson(
+        file: StorageFile,
+        value: Any,
+        writeGuard: DownloadWriteGuard,
+        checkReadLimits: Boolean = false
+    ): StorageFile {
         val parent = requireNotNull(file.parentFile)
         val (temporary, stream) = withStoreLock("write-open") {
             ensureWriteAllowed(writeGuard)
@@ -2777,6 +2787,11 @@ object NovelDownloadStore {
                         .use { gson.toJson(value, it) }
                 }
             }
+            // Rebuilt chapters can grow while preserving their text. Validate with the same
+            // decompressed byte and JSON limits as the reader before replacing a readable file.
+            if (checkReadLimits || (value is DownloadedChapterContent && value.body?.legacyPositions != null)) {
+                temporary.storedTextReader().use { BoundedJson.readText(it) }
+            }
             return temporary
         } catch (error: Throwable) {
             temporary.delete()
@@ -2791,8 +2806,8 @@ object NovelDownloadStore {
             (contentWriteRevisions[writeGuard.directoryPath] ?: 0L) + 1L
     }
 
-    private fun writeJson(file: StorageFile, value: Any, writeGuard: DownloadWriteGuard) {
-        val temporary = prepareJson(file, value, writeGuard)
+    private fun writeMigratedChapter(file: StorageFile, value: DownloadedChapterContent, writeGuard: DownloadWriteGuard) {
+        val temporary = prepareJson(file, value, writeGuard, checkReadLimits = true)
         try { synchronized(ioLock) { commitJson(temporary, file, writeGuard) } }
         finally { temporary.delete() }
     }

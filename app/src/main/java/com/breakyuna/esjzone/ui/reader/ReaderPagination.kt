@@ -84,7 +84,8 @@ internal fun paginateReaderChapter(
     val current = mutableListOf<ReaderPageSegment>()
     var usedHeight = 0
     var pageContentPosition = -1f
-    val paragraphGap = with(density) { settings.paragraphSpacingDp.dp.roundToPx() }
+    val blankLineHeight = with(density) { settings.lineHeightSp.sp.toDp() }
+    val blankLineHeightPx = with(density) { blankLineHeight.roundToPx() }
     fun flush() {
         if (current.isNotEmpty()) {
             pages += ReaderPage(current.toList(), pageContentPosition, isOversized = usedHeight > heightPx)
@@ -106,9 +107,10 @@ internal fun paginateReaderChapter(
             content[range.item]?.let { AnnotatedString.Range(it.placeholder, range.start, range.end) }
         }
     fun addText(text: AnnotatedString, inline: Map<String, InlineTextContent>, blockIndex: Int,
-        paragraphStyle: TextStyle, alignment: String?) {
+        paragraphStyle: TextStyle, alignment: String?, paragraphSpacing: Dp) {
+        val paragraphGap = with(density) { paragraphSpacing.roundToPx() }
         if (text.isEmpty()) {
-            add(ReaderPageSegment.Gap(settings.paragraphSpacingDp.dp), paragraphGap, blockIndex.toFloat())
+            add(ReaderPageSegment.Gap(paragraphSpacing), paragraphGap, blockIndex.toFloat())
             return
         }
         val layoutStyle = readerRubyParagraphStyle(blocks[blockIndex], paragraphStyle, inline,
@@ -164,7 +166,7 @@ internal fun paginateReaderChapter(
             }
             val last = endLine == layout.lineCount
             val gap = if (last && usedHeight + lineHeight + paragraphGap <= heightPx) {
-                settings.paragraphSpacingDp.dp
+                paragraphSpacing
             } else 0.dp
             add(ReaderPageSegment.TextLine(segmentText, inline, gap, blockIndex, signature, start,
                 sourceSignature, alignment, layoutStyle),
@@ -193,23 +195,24 @@ internal fun paginateReaderChapter(
         checkCancelled()
         val alignment = formatting.alignments[blockIndex]
         val paragraphStyle = readerParagraphStyle(textStyle, alignment)
-        when (block) {
-            is ReaderBlock.Paragraph -> {
+        val paragraphSpacing = settings.paragraphSpacingBefore(
+            blocks.getOrNull(blockIndex + 1), blankLineHeight, blockIndex + 1 in formatting.dividersAt
+        )
+        when {
+            block.isBlankLine() ->
+                add(ReaderPageSegment.Gap(blankLineHeight), blankLineHeightPx, blockIndex.toFloat())
+            block is ReaderBlock.Paragraph -> {
                 val (text, inline) = block.toAnnotatedReaderParagraph(paragraphStyle, textMeasurer, density,
                     textTransform, formatting.disclosureTitleParts[blockIndex], checkCancelled)
-                addText(text, inline, blockIndex, paragraphStyle, alignment)
+                addText(text, inline, blockIndex, paragraphStyle, alignment, paragraphSpacing)
             }
-            is ReaderBlock.Text -> {
+            block is ReaderBlock.Text -> {
                 val (text, inline) = block.toAnnotatedReaderText(paragraphStyle, textMeasurer, density, textTransform)
-                addText(text, inline, blockIndex, paragraphStyle, alignment)
+                addText(text, inline, blockIndex, paragraphStyle, alignment, paragraphSpacing)
             }
-            is ReaderBlock.Image -> {
+            block is ReaderBlock.Image -> {
                 flush()
                 pages += ReaderPage(listOf(ReaderPageSegment.Image(block.url)), blockIndex.toFloat())
-            }
-            ReaderBlock.LineBreak -> {
-                val gap = with(density) { settings.lineHeightSp.sp.toDp() }
-                add(ReaderPageSegment.Gap(gap), with(density) { gap.roundToPx() }, blockIndex.toFloat())
             }
         }
         repeat(formatting.dividersAt.count { it == blockIndex + 1 }) { addDivider(blockIndex, afterBlock = true) }

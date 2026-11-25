@@ -18,9 +18,7 @@ data class ReaderChapter(
     val isOffline: Boolean = false,
     val requiresPassword: Boolean = false,
     val servedFromDownload: Boolean = false,
-    val servedFromNetwork: Boolean = false,
-    val sourceHtml: String? = null,
-    val localImages: Map<String, String> = emptyMap()
+    val servedFromNetwork: Boolean = false
 ) {
     companion object {
         fun passwordRequired(chapter: Chapter): ReaderChapter = ReaderChapter(
@@ -101,9 +99,7 @@ internal fun MutableList<ReaderChapter>.replacePasswordChapter(chapter: Chapter,
     this[index] = ReaderChapter(
         original, detail.toReaderDocument(original), detail.previous, detail.next,
         servedFromDownload = detail.servedFromDownload,
-        servedFromNetwork = detail.servedFromNetwork,
-        sourceHtml = detail.contentHtml,
-        localImages = detail.imageLocations
+        servedFromNetwork = detail.servedFromNetwork
     )
     return true
 }

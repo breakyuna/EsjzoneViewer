@@ -65,7 +65,6 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.ChevronLeft
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.automirrored.filled.Undo
-import androidx.compose.material.icons.filled.Language
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.AlertDialog
@@ -85,7 +84,6 @@ import androidx.compose.foundation.pager.PagerSnapDistance
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.BookmarkBorder
-import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.IconButtonDefaults
 import com.breakyuna.esjzone.ui.reader.ReaderPageTurnQueue
 import com.breakyuna.esjzone.ui.reader.animateReaderPageTurn
@@ -213,6 +211,7 @@ import com.breakyuna.esjzone.ui.reader.ReaderNameReplaceSettings
 import com.breakyuna.esjzone.ui.reader.ReaderChapterHeading
 import com.breakyuna.esjzone.ui.reader.ReaderUnderlineSelection
 import com.breakyuna.esjzone.ui.reader.ReaderBlocks
+import com.breakyuna.esjzone.ui.reader.isBlankLine
 import com.breakyuna.esjzone.ui.reader.ReaderBoundaryTurn
 import com.breakyuna.esjzone.ui.reader.resolveReaderBoundaryPage
 import com.breakyuna.esjzone.ui.reader.ReaderPageContent
@@ -1071,6 +1070,7 @@ class ChapterPage(
                 return ReaderAnchor(item.chapterKey, document.contentFingerprint, blockIndex, kind = "image",
                     fraction = chapterProgressFor(pixelOffset, itemSize) ?: 0f)
             }
+            if (block.isBlankLine()) return ReaderAnchor(item.chapterKey, document.contentFingerprint, blockIndex)
             val displayOffset = if (page != null) {
                 when (val first = page.segments.firstOrNull()) {
                     is com.breakyuna.esjzone.ui.reader.ReaderPageSegment.TextLine -> first.startOffset
@@ -2422,7 +2422,8 @@ class ChapterPage(
                                         links = item.entry.document.links,
                                         onLinkClick = openReaderLink,
                                         formatting = item.entry.document.formatting,
-                                        renderLeadingDividers = false)
+                                        renderLeadingDividers = false,
+                                        nextBlock = item.entry.document.blocks.getOrNull(item.ordinal))
                                 }
                             }
 
@@ -2709,72 +2710,6 @@ class ChapterPage(
                 }
             }
 
-            var dismissedDegradedChapters by remember { mutableStateOf(setOf<String>()) }
-            fun openChapterWebView(target: ReaderChapter? = activeChapter) {
-                val chapterEntry = target ?: activeChapter
-                val fallbackUrl = chapterEntry?.document?.sourceUrl?.takeIf(String::isNotBlank)
-                    ?: EsjzoneUrls.resolve((chapterEntry?.chapter ?: currentReadingChapter).url)
-                val html = chapterEntry?.sourceHtml
-                if (!html.isNullOrBlank()) {
-                    InAppBrowserActivity.openChapterHtml(
-                        context = context,
-                        title = chapterEntry.chapter.name,
-                        html = html,
-                        sourceUrl = fallbackUrl,
-                        fontSizeSp = readerSettings.fontSizeSp,
-                        localImages = chapterEntry.localImages,
-                        novelUrl = novelUrl
-                    )
-                } else {
-                    InAppBrowserActivity.open(context, fallbackUrl, keepInApp = true)
-                }
-            }
-
-            val degradedChapter = activeChapter?.takeIf {
-                it.document.formatting.degraded && !it.requiresPassword &&
-                    chapterIdentity(it.chapter) !in dismissedDegradedChapters
-            }
-            AnimatedVisibility(
-                visible = degradedChapter != null && !showToolbar,
-                enter = fadeIn(),
-                exit = fadeOut(),
-                modifier = Modifier
-                    .align(Alignment.TopCenter)
-                    .windowInsetsPadding(WindowInsets.statusBarsIgnoringVisibility.union(WindowInsets.displayCutout).only(WindowInsetsSides.Top))
-                    .padding(top = AppSpacing.sm, start = AppSpacing.md, end = AppSpacing.md)
-                    .zIndex(2f)
-            ) {
-                degradedChapter?.let { entry ->
-                    Surface(
-                        shape = RoundedCornerShape(20.dp),
-                        color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                        contentColor = MaterialTheme.colorScheme.onSurface,
-                        tonalElevation = 4.dp,
-                        shadowElevation = 4.dp
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(start = AppSpacing.md, end = AppSpacing.xs, top = 2.dp, bottom = 2.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(AppSpacing.xs)
-                        ) {
-                            Text(
-                                text = stringResource(R.string.reader_degraded_notice),
-                                style = MaterialTheme.typography.labelMedium
-                            )
-                            TextButton(onClick = { openChapterWebView(entry) }) {
-                                Text(stringResource(R.string.reader_open_web_view))
-                            }
-                            IconButton(
-                                onClick = { dismissedDegradedChapters = dismissedDegradedChapters + chapterIdentity(entry.chapter) },
-                                modifier = Modifier.size(32.dp)
-                            ) {
-                                Icon(Icons.Filled.Close, stringResource(R.string.close), modifier = Modifier.size(16.dp))
-                            }
-                        }
-                    }
-                }
-            }
-
             AnimatedVisibility(
                 visible = progressPreview != null,
                 enter = fadeIn(),
@@ -3011,9 +2946,6 @@ class ChapterPage(
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis
                             )
-                        }
-                        IconButton(onClick = { openChapterWebView() }) {
-                            Icon(Icons.Filled.Language, stringResource(R.string.reader_open_web_view))
                         }
                         IconButton(onClick = ::openReaderSettings) {
                             Icon(Icons.Filled.Settings, stringResource(R.string.reader_settings))

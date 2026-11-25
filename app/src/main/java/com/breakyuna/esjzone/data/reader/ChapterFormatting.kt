@@ -151,22 +151,32 @@ private fun ReaderBlock.leadingTitleParts(title: String): Int? {
     return null
 }
 
+/** The saved HTML omits the outer container, so some inherited alignments only exist in the snapshot. */
+internal fun ChapterBody.keepSavedAlignments(recovered: ReaderChapterFormatting): ReaderChapterFormatting {
+    val saved = formatting?.alignments.orEmpty().filter { (index, alignment) ->
+        index in blocks.indices && alignment in chapterAlignments
+    }
+    return if (saved.isEmpty()) recovered else recovered.copy(alignments = saved + recovered.alignments)
+}
+
 /** Recover formatting only when the saved HTML describes the same body blocks. */
 internal fun ChapterBody.withFormatting(html: String?, baseUrl: String?): ChapterBody {
     val saved = formatting
     if (saved != null) {
+        val savedTitles: Map<Int, Int>? = saved.disclosureTitleParts
         val valid = runCatching {
             saved.alignments.all { (index, alignment) -> index in blocks.indices && alignment in chapterAlignments } &&
                 saved.dividersAt.all { it in 0..blocks.size } &&
-                saved.disclosureTitleParts.all { (index, count) ->
+                savedTitles.orEmpty().all { (index, count) ->
                     val block = blocks.getOrNull(index)
                     block?.type == "paragraph" && count in 1..block.parts.size
                 }
         }.getOrDefault(false)
-        if (valid && (saved.parserVersion >= ReaderChapterFormatting.CURRENT_PARSER_VERSION || html.isNullOrBlank())) {
-            return this
-        }
         if (!valid) return copy(formatting = null).withFormatting(html, baseUrl)
+        if (savedTitles == null) {
+            return copy(formatting = saved.copy(disclosureTitleParts = emptyMap())).withFormatting(html, baseUrl)
+        }
+        if (saved.parserVersion >= ReaderChapterFormatting.CURRENT_PARSER_VERSION || html.isNullOrBlank()) return this
     }
     if (html.isNullOrBlank() || !html.hasChapterFormattingMarkup()) return this
     val result = runCatching {
@@ -193,7 +203,7 @@ internal fun ChapterBody.withFormatting(html: String?, baseUrl: String?): Chapte
             val title = (parsed[index] as ReaderBlock.Paragraph).parts.take(count).joinToString("") { it.value }
             stored[index].leadingTitleParts(title)?.let { index to it }
         }.toMap()
-        layout.copy(disclosureTitleParts = titles)
+        keepSavedAlignments(layout.copy(disclosureTitleParts = titles))
     }.getOrElse { return this }
     return if (result == null) this else copy(formatting = result)
 }

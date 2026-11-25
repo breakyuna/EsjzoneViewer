@@ -10,7 +10,7 @@ internal object BoundedJson {
     const val MAX_BYTES = 32L * 1024 * 1024
     const val MAX_CHARS = 16 * 1024 * 1024
     private const val MAX_TOKENS = 500_000
-    private const val MAX_ITEMS = 50_000
+    const val MAX_ITEMS = 50_000
     private const val MAX_STRING = 4 * 1024 * 1024
 
     fun readText(reader: Reader): String {
