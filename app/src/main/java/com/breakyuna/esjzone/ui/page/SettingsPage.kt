@@ -1,7 +1,26 @@
 package com.breakyuna.esjzone.ui.page
 
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.snap
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.ripple
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.text.font.FontWeight
 import com.breakyuna.esjzone.ui.designsystem.AppLayout
+import com.breakyuna.esjzone.ui.designsystem.AppMotion
+import com.breakyuna.esjzone.ui.designsystem.LocalReduceMotion
 import com.breakyuna.esjzone.ui.designsystem.appUsesWideLayout
+import com.breakyuna.esjzone.ui.navigation.AppNavigationIcon
+import com.breakyuna.esjzone.ui.navigation.AppTabId
+import com.breakyuna.esjzone.ui.navigation.NavigationSelectionAnimationSpec
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.VerticalDivider
 import androidx.compose.material3.NavigationDrawerItem
@@ -86,6 +105,7 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.MutableState
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.compose.runtime.getValue
@@ -200,9 +220,9 @@ object SettingsPage : AppDestination {
         var switchingDomain by remember { mutableStateOf(false) }
         var siteUnavailable by remember { mutableStateOf(false) }
         var draggingNavigationItem by remember { mutableStateOf<String?>(null) }
-        var editableNavigationOrder by remember { mutableStateOf(navigationOrder) }
+        val editableNavigationOrder = remember { mutableStateOf(navigationOrder) }
         LaunchedEffect(navigationOrder, draggingNavigationItem) {
-            if (draggingNavigationItem == null) editableNavigationOrder = navigationOrder
+            if (draggingNavigationItem == null) editableNavigationOrder.value = navigationOrder
         }
         LaunchedEffect(Unit) {
             ReleaseUpdateChecker.initialize(context)
@@ -378,106 +398,15 @@ object SettingsPage : AppDestination {
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.padding(AppSpacing.md)
                         )
-                        Surface(
-                            modifier = Modifier.fillMaxWidth(),
-                            shape = AppShapes.standard,
-                            color = MaterialTheme.colorScheme.surfaceContainerLow
-                        ) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth().selectableGroup().padding(horizontal = 8.dp, vertical = 6.dp),
-                                horizontalArrangement = Arrangement.SpaceEvenly,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                editableNavigationOrder.forEach { item ->
-                                    key(item) {
-                                    val dragging = draggingNavigationItem == item
-                                    val selected = item == if (startTab == com.breakyuna.esjzone.data.settings.SettingsDefaults.START_TAB_FOLLOW_NAV) {
-                                        editableNavigationOrder.firstOrNull()
-                                    } else startTab
-                                    var dragOffsetX by remember(item) { mutableFloatStateOf(0f) }
-                                    Surface(
-                                        modifier = Modifier
-                                            .weight(1f)
-                                            .zIndex(if (dragging) 1f else 0f)
-                                            .graphicsLayer {
-                                                translationX = dragOffsetX
-                                                scaleX = if (dragging) 1.05f else 1f
-                                                scaleY = if (dragging) 1.05f else 1f
-                                            }
-                                            .selectable(
-                                                selected = selected,
-                                                role = Role.RadioButton,
-                                                onClick = { PresentationAccess.settings.setStartTab(item) }
-                                            )
-                                            .pointerInput(item) {
-                                                detectDragGesturesAfterLongPress(
-                                                    onDragStart = {
-                                                        draggingNavigationItem = item
-                                                        dragOffsetX = 0f
-                                                    },
-                                                    onDragCancel = {
-                                                        dragOffsetX = 0f
-                                                        draggingNavigationItem = null
-                                                    },
-                                                    onDragEnd = {
-                                                        dragOffsetX = 0f
-                                                        draggingNavigationItem = null
-                                                        PresentationAccess.settings.setNavigationOrder(
-                                                            editableNavigationOrder
-                                                        )
-                                                    },
-                                                    onDrag = { change, dragAmount ->
-                                                        change.consume()
-                                                        dragOffsetX += dragAmount.x
-                                                        val threshold = size.width * 0.55f
-                                                        val currentIndex = editableNavigationOrder.indexOf(item)
-                                                        val targetIndex = when {
-                                                            dragOffsetX > threshold -> currentIndex + 1
-                                                            dragOffsetX < -threshold -> currentIndex - 1
-                                                            else -> currentIndex
-                                                        }
-                                                        if (targetIndex in editableNavigationOrder.indices && targetIndex != currentIndex) {
-                                                            val reordered = editableNavigationOrder.toMutableList()
-                                                            java.util.Collections.swap(reordered, currentIndex, targetIndex)
-                                                            editableNavigationOrder = reordered
-                                                            val indexDelta = targetIndex - currentIndex
-                                                            dragOffsetX -= indexDelta * size.width.toFloat()
-                                                        }
-                                                    }
-                                                )
-                                            },
-                                        shape = AppShapes.compact,
-                                        color = if (selected) {
-                                            MaterialTheme.colorScheme.primaryContainer
-                                        } else Color.Transparent,
-                                        shadowElevation = if (dragging) 6.dp else 0.dp
-                                    ) {
-                                        Column(
-                                            modifier = Modifier.padding(horizontal = AppSpacing.xxs, vertical = AppSpacing.md),
-                                            horizontalAlignment = Alignment.CenterHorizontally,
-                                            verticalArrangement = Arrangement.spacedBy(2.dp)
-                                        ) {
-                                            Icon(
-                                                navigationItemIcon(item),
-                                                contentDescription = null,
-                                                modifier = Modifier.size(24.dp),
-                                                tint = if (selected) MaterialTheme.colorScheme.onPrimaryContainer
-                                                else MaterialTheme.colorScheme.onSurfaceVariant
-                                            )
-                                            Text(
-                                                navigationItemLabel(item),
-                                                style = AppTypography.labelLarge,
-                                                maxLines = 1,
-                                                overflow = TextOverflow.Ellipsis,
-                                                color = if (selected) MaterialTheme.colorScheme.onPrimaryContainer
-                                                else MaterialTheme.colorScheme.onSurfaceVariant
-                                            )
-                                        }
-                                    }
-                                    }
-                                }
-                            }
-                        }
+                        NavigationBarPreview(
+                            orderState = editableNavigationOrder,
+                            startTab = startTab,
+                            draggingItem = draggingNavigationItem,
+                            onDraggingItemChange = { draggingNavigationItem = it },
+                            onCommitOrder = { PresentationAccess.settings.setNavigationOrder(it) },
+                            onCancelOrder = { editableNavigationOrder.value = navigationOrder },
+                            onSelectStartTab = { PresentationAccess.settings.setStartTab(it) }
+                        )
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.End,
@@ -489,10 +418,10 @@ object SettingsPage : AppDestination {
                                         SettingsDefaults.NAVIGATION_ORDER
                                     )
                                     PresentationAccess.settings.setStartTab(SettingsDefaults.DEFAULT_START_TAB)
-                                    editableNavigationOrder = SettingsDefaults.NAVIGATION_ORDER
+                                    editableNavigationOrder.value = SettingsDefaults.NAVIGATION_ORDER
                                     draggingNavigationItem = null
                                 },
-                                enabled = editableNavigationOrder != SettingsDefaults.NAVIGATION_ORDER ||
+                                enabled = editableNavigationOrder.value != SettingsDefaults.NAVIGATION_ORDER ||
                                     startTab != SettingsDefaults.DEFAULT_START_TAB
                             ) {
                                 Icon(Icons.Filled.RestartAlt, contentDescription = null)
@@ -727,6 +656,340 @@ object SettingsPage : AppDestination {
             dismissButton = { TextButton(onClick = { showLogout = false }, enabled = !state.logoutInProgress) { Text(stringResource(R.string.logout_cancel)) } }
         )
     }
+}
+
+@Composable
+private fun NavigationBarPreview(
+    orderState: MutableState<List<String>>,
+    startTab: String,
+    draggingItem: String?,
+    onDraggingItemChange: (String?) -> Unit,
+    onCommitOrder: (List<String>) -> Unit,
+    onCancelOrder: () -> Unit,
+    onSelectStartTab: (String) -> Unit
+) {
+    // A move and release can both run before the preview recomposes.
+    var order by orderState
+    val isDark = MaterialTheme.colorScheme.background.luminance() < 0.5f
+    val reduced = LocalReduceMotion.current
+    val density = LocalDensity.current
+    val haptics = LocalHapticFeedback.current
+    val latestOnDraggingItemChange by rememberUpdatedState(onDraggingItemChange)
+    val latestOnCommitOrder by rememberUpdatedState(onCommitOrder)
+    val latestOnCancelOrder by rememberUpdatedState(onCancelOrder)
+
+    var dragStartIndex by remember { mutableIntStateOf(0) }
+    var dragDistance by remember { mutableFloatStateOf(0f) }
+    var lastDraggedItem by remember { mutableStateOf<String?>(null) }
+    var lastTargetSlotIndex by remember { mutableIntStateOf(0) }
+
+    LaunchedEffect(draggingItem) {
+        if (draggingItem == null) {
+            dragDistance = 0f
+        }
+    }
+
+    val barShape = AppShapes.standard
+    val itemShape = RoundedCornerShape(12.dp)
+    val placeholderShape = RoundedCornerShape(10.dp)
+    val barContainerColor = if (isDark) {
+        MaterialTheme.colorScheme.surfaceContainerLow
+    } else {
+        MaterialTheme.colorScheme.surfaceContainer
+    }
+    val barBorderColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = if (isDark) 0.5f else 0.65f)
+    val elevatedCardColor = if (isDark) {
+        MaterialTheme.colorScheme.surfaceContainerHighest
+    } else {
+        MaterialTheme.colorScheme.surfaceContainerLowest
+    }
+    val shadowBaseColor = if (isDark) Color.Black else MaterialTheme.colorScheme.onSurface
+    val itemHeight = (68f + (density.fontScale - 1f).coerceAtLeast(0f) * 20f).dp
+    val selectedId = if (startTab == SettingsDefaults.START_TAB_FOLLOW_NAV) {
+        order.firstOrNull()
+    } else {
+        startTab
+    }
+
+    // Reserve breathing room inside SettingsSection so lifted card elevation shadows never clip.
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = AppSpacing.md, vertical = AppSpacing.sm)
+    ) {
+        BoxWithConstraints(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(barContainerColor, barShape)
+                .border(AppLayout.divider, barBorderColor, barShape)
+                .padding(AppSpacing.xs)
+                .height(itemHeight)
+                .selectableGroup()
+        ) {
+            val itemCount = order.size.coerceAtLeast(1)
+            val slotWidth = maxWidth / itemCount
+            val slotWidthPx = with(density) { slotWidth.toPx() }
+            val edgeOvershootPx = with(density) { 4.dp.toPx() }
+            val latestSlotWidthPx by rememberUpdatedState(slotWidthPx)
+
+            val placeholderAlpha by animateFloatAsState(
+                targetValue = if (draggingItem != null) 1f else 0f,
+                animationSpec = if (reduced) snap() else AppMotion.effectsDefault(),
+                label = "NavPreviewSlotAlpha"
+            )
+            key(lastDraggedItem) {
+                val placeholderOffsetX by animateFloatAsState(
+                    targetValue = lastTargetSlotIndex.coerceIn(0, (itemCount - 1).coerceAtLeast(0)) * slotWidthPx,
+                    animationSpec = if (reduced) snap() else AppMotion.spatialFast(),
+                    label = "NavPreviewSlotOffset"
+                )
+                if (placeholderAlpha > 0.005f) {
+                    Box(
+                        modifier = Modifier
+                            .width(slotWidth)
+                            .fillMaxHeight()
+                            .graphicsLayer {
+                                translationX = placeholderOffsetX
+                                alpha = placeholderAlpha
+                            }
+                            .padding(2.dp)
+                            .background(
+                                MaterialTheme.colorScheme.primary.copy(alpha = if (isDark) 0.10f else 0.08f),
+                                placeholderShape
+                            )
+                            .border(
+                                AppLayout.divider,
+                                MaterialTheme.colorScheme.primary.copy(alpha = if (isDark) 0.24f else 0.18f),
+                                placeholderShape
+                            )
+                    )
+                }
+            }
+
+            order.forEach { item ->
+                key(item) {
+                    val isDragging = draggingItem == item
+                    val anotherDragging = draggingItem != null && !isDragging
+                    val selected = item == selectedId
+                    val currentIndex = order.indexOf(item).coerceAtLeast(0)
+
+                    val dragProgress by animateFloatAsState(
+                        targetValue = if (isDragging) 1f else 0f,
+                        animationSpec = if (reduced) snap() else AppMotion.effectsDefault(),
+                        label = "NavPreviewDrag_$item"
+                    )
+                    val itemScale by animateFloatAsState(
+                        targetValue = if (isDragging) 1.04f else 1f,
+                        animationSpec = if (reduced) snap() else AppMotion.spatialFast(),
+                        label = "NavPreviewScale_$item"
+                    )
+                    val latestItemScale by rememberUpdatedState(itemScale)
+                    val dimAlpha by animateFloatAsState(
+                        targetValue = if (anotherDragging) 0.58f else 1f,
+                        animationSpec = if (reduced) snap() else AppMotion.effectsDefault(),
+                        label = "NavPreviewDim_$item"
+                    )
+                    val offsetX = animateFloatAsState(
+                        targetValue = if (isDragging) {
+                            dragStartIndex * slotWidthPx + dragDistance
+                        } else {
+                            currentIndex * slotWidthPx
+                        },
+                        animationSpec = if (isDragging || reduced) snap() else AppMotion.spatialFast(),
+                        label = "NavPreviewOffset_$item"
+                    )
+                    val selectionProgress = animateFloatAsState(
+                        targetValue = if (selected) 1f else 0f,
+                        animationSpec = if (reduced) snap() else NavigationSelectionAnimationSpec,
+                        label = "NavPreviewSelect_$item"
+                    )
+
+                    // Ramp card opacity to 1 before shadow appears so shadows never bleed through transparent fills.
+                    val cardBgAlpha = (dragProgress / 0.35f).coerceIn(0f, 1f)
+                    val shadowAlpha = ((dragProgress - 0.35f) / 0.65f).coerceIn(0f, 1f)
+                    val cardBorderColor = MaterialTheme.colorScheme.primary.copy(
+                        alpha = (if (isDark) 0.42f else 0.26f) * dragProgress
+                    )
+                    val zIndex = when {
+                        isDragging -> 2f
+                        lastDraggedItem == item && dragProgress > 0.01f -> 1.5f
+                        lastDraggedItem == item -> 1f
+                        else -> 0f
+                    }
+
+                    val indicatorColor = MaterialTheme.colorScheme.primaryContainer
+                    val pillColor = indicatorColor.copy(alpha = indicatorColor.alpha * selectionProgress.value)
+                    val idleLabelColor = lerp(
+                        MaterialTheme.colorScheme.onSurfaceVariant,
+                        MaterialTheme.colorScheme.primary,
+                        selectionProgress.value
+                    )
+                    val labelColor = if (selected) {
+                        idleLabelColor
+                    } else {
+                        lerp(idleLabelColor, MaterialTheme.colorScheme.onSurface, dragProgress)
+                    }
+                    val idleIconColor = lerp(
+                        MaterialTheme.colorScheme.onSurfaceVariant,
+                        MaterialTheme.colorScheme.onPrimaryContainer,
+                        selectionProgress.value
+                    )
+                    val iconColor = if (selected) {
+                        idleIconColor
+                    } else {
+                        lerp(idleIconColor, MaterialTheme.colorScheme.onSurface, dragProgress)
+                    }
+                    val pillWidth = (slotWidth - 12.dp).coerceIn(28.dp, 52.dp)
+                    val tabId = navigationTabId(item)
+
+                    // Outer layer carries lift, scale, and a soft ambient spread shadow;
+                    // inner layer adds a tight contact shadow beneath an opaque elevated card.
+                    Box(
+                        modifier = Modifier
+                            .width(slotWidth)
+                            .fillMaxHeight()
+                            .zIndex(zIndex)
+                            .graphicsLayer {
+                                translationX = offsetX.value
+                                translationY = -3.dp.toPx() * dragProgress
+                                scaleX = itemScale
+                                scaleY = itemScale
+                                shadowElevation = (if (isDark) 14.dp else 12.dp).toPx() * shadowAlpha
+                                shape = itemShape
+                                clip = false
+                                ambientShadowColor = shadowBaseColor.copy(alpha = if (isDark) 1f else 0.55f)
+                                spotShadowColor = shadowBaseColor.copy(alpha = if (isDark) 1f else 0.42f)
+                            }
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .graphicsLayer {
+                                    shadowElevation = (if (isDark) 4.dp else 3.dp).toPx() * shadowAlpha
+                                    shape = itemShape
+                                    clip = false
+                                    ambientShadowColor = shadowBaseColor.copy(alpha = if (isDark) 1f else 0.45f)
+                                    spotShadowColor = shadowBaseColor.copy(alpha = if (isDark) 1f else 0.55f)
+                                }
+                                .background(elevatedCardColor.copy(alpha = cardBgAlpha), itemShape)
+                                .border(AppLayout.divider, cardBorderColor, itemShape)
+                                .clip(itemShape)
+                                .selectable(
+                                    selected = selected,
+                                    interactionSource = remember(item) { MutableInteractionSource() },
+                                    indication = ripple(),
+                                    role = Role.RadioButton,
+                                    onClick = { onSelectStartTab(item) }
+                                )
+                                .pointerInput(item) {
+                                    detectDragGesturesAfterLongPress(
+                                        onDragStart = {
+                                            val startIdx = order.indexOf(item).coerceAtLeast(0)
+                                            dragStartIndex = startIdx
+                                            dragDistance = 0f
+                                            lastDraggedItem = item
+                                            lastTargetSlotIndex = startIdx
+                                            latestOnDraggingItemChange(item)
+                                            haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                                        },
+                                        onDragCancel = {
+                                            dragDistance = 0f
+                                            lastTargetSlotIndex = dragStartIndex
+                                            latestOnDraggingItemChange(null)
+                                            latestOnCancelOrder()
+                                        },
+                                        onDragEnd = {
+                                            latestOnCommitOrder(order)
+                                            dragDistance = 0f
+                                            latestOnDraggingItemChange(null)
+                                        },
+                                        onDrag = { change, dragAmount ->
+                                            change.consume()
+                                            val width = latestSlotWidthPx
+                                            if (width <= 0f) return@detectDragGesturesAfterLongPress
+                                            val currentOrder = order
+                                            val maxX = width * (currentOrder.lastIndex.coerceAtLeast(0))
+                                            val rawX = dragStartIndex * width + dragDistance + dragAmount.x * latestItemScale
+                                            val clampedX = rawX.coerceIn(-edgeOvershootPx, maxX + edgeOvershootPx)
+                                            dragDistance = clampedX - dragStartIndex * width
+
+                                            val currentIdx = currentOrder.indexOf(item)
+                                            if (currentIdx < 0) return@detectDragGesturesAfterLongPress
+                                            val delta = clampedX - currentIdx * width
+                                            val threshold = width * 0.52f
+                                            val targetIdx = when {
+                                                delta > threshold && currentIdx < currentOrder.lastIndex -> currentIdx + 1
+                                                delta < -threshold && currentIdx > 0 -> currentIdx - 1
+                                                else -> currentIdx
+                                            }
+                                            if (targetIdx != currentIdx) {
+                                                val reordered = currentOrder.toMutableList().apply {
+                                                    add(targetIdx, removeAt(currentIdx))
+                                                }
+                                                lastTargetSlotIndex = targetIdx
+                                                order = reordered
+                                                haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                            }
+                                        }
+                                    )
+                                },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .graphicsLayer { alpha = dimAlpha }
+                                    .padding(horizontal = AppSpacing.xs),
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.spacedBy(AppSpacing.xs, Alignment.CenterVertically)
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(width = pillWidth, height = 30.dp)
+                                        .clip(CircleShape)
+                                        .background(pillColor),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    if (tabId != null) {
+                                        AppNavigationIcon(
+                                            tab = tabId,
+                                            selected = selected,
+                                            progress = selectionProgress,
+                                            tint = iconColor,
+                                            cutoutColor = indicatorColor
+                                        )
+                                    } else {
+                                        Icon(
+                                            navigationItemIcon(item),
+                                            contentDescription = null,
+                                            modifier = Modifier.size(24.dp),
+                                            tint = iconColor
+                                        )
+                                    }
+                                }
+                                Text(
+                                    navigationItemLabel(item),
+                                    style = AppTypography.labelMedium,
+                                    fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    color = labelColor
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+private fun navigationTabId(id: String): AppTabId? = when (id) {
+    "HOME" -> AppTabId.HOME
+    "HISTORY" -> AppTabId.HISTORY
+    "BOOKSHELF" -> AppTabId.BOOKSHELF
+    "PROFILE" -> AppTabId.PROFILE
+    else -> null
 }
 
 @Composable

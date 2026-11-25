@@ -1,8 +1,14 @@
 package com.breakyuna.esjzone
 
-import com.breakyuna.esjzone.network.features.parseNovelCard
+import com.breakyuna.esjzone.network.features.HomeSection
 import com.breakyuna.esjzone.network.features.NovelCardLayout
+import com.breakyuna.esjzone.network.features.pageCount
+import com.breakyuna.esjzone.network.features.parseNovelCard
+import com.breakyuna.esjzone.network.features.selectHomeSectionCards
+import com.breakyuna.esjzone.network.features.selectNovelCards
+import com.breakyuna.esjzone.network.features.selectNovelForumLinks
 import org.jsoup.Jsoup
+import org.jsoup.nodes.Document
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -77,4 +83,56 @@ class NovelCardParserTest {
         assertEquals(1234, novel.views)
         assertEquals(56, novel.likes)
     }
+
+    @Test
+    fun homeSections_keepIndependentOrderingStatisticsAndAdultSemantics() {
+        val document = fixture("home.html")
+        val expected = listOf(
+            HomeSection.TRANSLATED to Triple("Home Fixture Novel", 1_234, false),
+            HomeSection.ORIGINAL to Triple("Original Fixture Novel", 321, false),
+            HomeSection.TRANSLATED_R18 to Triple("Translated R18 Fixture", 654, true),
+            HomeSection.ORIGINAL_R18 to Triple("Original R18 Fixture", 987, true),
+            HomeSection.RECOMMENDATION to Triple("Recommended Fixture Novel", 78, true)
+        )
+
+        expected.forEach { (section, contract) ->
+            val cards = selectHomeSectionCards(document, section)
+            assertEquals("card count for ${section.key}", 1, cards.size)
+            val novel = parseNovelCard(cards.single(), section.name.endsWith("R18"), NovelCardLayout.HOME)
+            assertEquals(contract.first, novel.name)
+            assertEquals("/detail/${when (section) {
+                HomeSection.TRANSLATED -> "9001"
+                HomeSection.ORIGINAL -> "9003"
+                HomeSection.TRANSLATED_R18 -> "9004"
+                HomeSection.ORIGINAL_R18 -> "9005"
+                HomeSection.RECOMMENDATION -> "9002"
+            }}.html", novel.url)
+            assertEquals(contract.second, novel.views)
+            assertEquals(contract.third, novel.isAdult)
+        }
+    }
+
+    @Test
+    fun listFixture_selectsOnlyNovelForumBoards() {
+        val links = selectNovelForumLinks(fixture("list.html"))
+        assertEquals(1, links.size)
+        assertEquals("Category Fixture Novel", links.single().text())
+        assertEquals("/forum/9100/9110/", links.single().attr("href"))
+    }
+
+    @Test
+    fun listAndSearchFixtures_selectCardsAndPagerWithoutPositionalXpath() {
+        assertEquals(1, selectNovelCards(fixture("list.html")).size)
+        assertEquals(2, selectNovelCards(fixture("search.html")).size)
+        assertEquals(2, pageCount(fixture("search.html")))
+        assertEquals(1, pageCount(fixture("list.html")))
+    }
+
+    private fun fixture(name: String): Document =
+        Jsoup.parse(
+            requireNotNull(javaClass.getResource("/esj/$name")) {
+                "missing checked-in parser fixture: $name"
+            }.openStream().bufferedReader().use { it.readText() },
+            "https://example.test/"
+        )
 }

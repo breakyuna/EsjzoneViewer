@@ -1,10 +1,21 @@
+@file:OptIn(androidx.compose.ui.text.ExperimentalTextApi::class)
+
 package com.breakyuna.esjzone.ui.page
 
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.LinkAnnotation
+import androidx.compose.ui.text.LinkInteractionListener
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.TextLinkStyles
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class CommunityUrlDetectionTest {
+    private val linkStyles = TextLinkStyles(style = SpanStyle(color = Color.Blue))
+    private val linkListener = LinkInteractionListener { }
+
     private fun detected(text: String): List<Pair<String, String>> = findCommunityUrls(text).map {
         text.substring(it.start, it.end) to it.url
     }
@@ -66,5 +77,29 @@ class CommunityUrlDetectionTest {
             ),
             detected(text)
         )
+    }
+
+    @Test fun existingLinkKeepsItsTargetAndBareWwwIsAddedOnce() {
+        val label = "https://example.com/title"
+        val target = "https://www.esjzone.cc/detail/123.html"
+        val text = "$label 和 www.example.org/info"
+        val source = AnnotatedString.Builder().apply {
+            append(text)
+            addLink(LinkAnnotation.Url(target, linkStyles, linkListener), 0, label.length)
+        }.toAnnotatedString()
+        val result = linkifyCommunityText(source, linkStyles, linkListener)
+        val links = result.getLinkAnnotations(0, result.length)
+
+        assertEquals(2, links.size)
+        assertEquals(target, (links[0].item as LinkAnnotation.Url).url)
+        assertEquals("https://www.example.org/info", (links[1].item as LinkAnnotation.Url).url)
+        assertEquals(text, result.text)
+    }
+
+    @Test fun pendingCommentIsTreatedAsLiteralText() {
+        val text = "示例 <a href=\"https://example.com\">文字</a> 和 www.example.org"
+        val result = buildCommunityLinkedText(text, text, "", linkStyles, linkListener)
+        assertEquals(text, result.text)
+        assertEquals(2, result.getLinkAnnotations(0, result.length).size)
     }
 }

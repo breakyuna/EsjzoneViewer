@@ -16,6 +16,7 @@ internal fun ChapterSettingsPanels(
     onConfigureImage: () -> Unit,
     onReflow: () -> Unit,
     onSettingsChange: (ReaderSettings) -> Unit,
+    onBookIndentChange: (Int) -> Unit,
     onDismissSettings: () -> Unit,
     onDismissBrightness: () -> Unit,
     nameReplaceSettings: ReaderNameReplaceSettings,
@@ -39,7 +40,6 @@ internal fun ChapterSettingsPanels(
         onSettingsChange = { updated ->
             if (updated.pageAnimation != settings.pageAnimation ||
                 updated.font != settings.font ||
-                updated.firstLineIndentChars != settings.firstLineIndentChars ||
                 updated.fontSizeSp != settings.fontSizeSp ||
                 updated.letterSpacingSp != settings.letterSpacingSp ||
                 updated.lineSpacingSp != settings.lineSpacingSp ||
@@ -51,6 +51,7 @@ internal fun ChapterSettingsPanels(
             }
             onSettingsChange(updated)
         },
+        onBookIndentChange = onBookIndentChange,
         onDismiss = onDismissSettings,
         nameReplaceSettings = nameReplaceSettings,
         onNameReplaceChange = onNameReplaceChange,

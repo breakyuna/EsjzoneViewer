@@ -1,188 +1,93 @@
 # Esjzone 项目协作指南
 
-适用于在本仓库中进行代码维护的自动化代理和开发者。本文集中说明工作流程、架构边界和验证要求。
+适用于在本仓库中进行代码维护的自动化代理和开发者，集中说明强制约束、架构边界、协作规范与验证要求。
 
 ## 强制约束
 
-- 优先完成核心需求，确保主流程正确。不要过度关注边界情况、测试覆盖率或理论上的异常场景。只有当边界问题会真实影响当前功能时才处理。
-- 采用最小必要修改，不要顺手重构、增加额外抽象、兼容层、兜底机制或无关测试。
-- 删除看似未使用的内容前，确认资源、反射和网页解析流程中的引用。
-- 验证以“足够证明本次修改正确”为准，不追求绝对完，在核心功能正确后即可停止。
-- 未经明确要求，不得修改 `applicationId`、包名、数据库名称、远程仓库地址或发布签名配置。
-- 不得在日志、异常信息、测试数据或文档中写入真实密码、会话 Cookie、`ews_key`、`ews_token` 或其他账户凭据。
-- 保持现有 GPL-3.0 许可证文件和第三方开源库归属信息。
-- 默认只执行文末允许的静态检查。未经用户明确要求，不得运行任何编译、测试、构建或会触发编译的 Android Lint；大规模改动也不例外，不得将“修复”“改进”或“检查更改”视为执行这些任务的授权。
+- **最小改动**：优先保证核心主流程正确；不做顺手重构、额外抽象、兼容层、兜底机制或无关测试；仅处理真实影响当前功能的边界问题。删除看似未用代码前，先确认资源、反射与网页解析引用。
+- **禁止变更项**：未经明确要求，不得修改 `applicationId`、包名、数据库名称、远程仓库地址、发布签名配置，或破坏 GPL-3.0 许可证与第三方库归属信息。
+- **凭据隔离**：不得在代码、日志、异常、测试数据、提交记录或文档中写入真实密码、Cookie、`ews_key`、`ews_token` 或其他凭据。本地签名密钥库、Gradle 属性、测试账号等敏感配置可由构建环境透明使用，但不得主动读取、回显、复制、修改、删除或提交。
+- **默认仅静态检查**：未经用户明确要求，不得运行任何编译、测试、构建或会触发编译的 Android Lint；改动规模大或已有测试用例均不构成授权，“修复”“改进”“检查更改”亦不视为授权。验证达到“足以证明本次修改正确”即可停止。
 
-### 本地凭据
+## 工作流程与文档入口
 
-本地可能配置 Release 签名密钥库、Gradle 用户属性、测试账号、API key、Cookie、Token 或其他开发凭据。自动化代理可以让现有本地构建环境透明使用这些配置，但不得主动读取真实密码、Token、Cookie 或私钥内容；不得打印、回显、复制到仓库，或写入代码、文档和终端日志；不得提交、修改或删除本地凭据，也不得为了调试而 `cat` 敏感配置文件。
+1. 修改前确认调用链；涉及站点接口/解析先查 `NETWORK/`，涉及存储、手势、宽屏或安全边界先查 `docs/`。
+2. 按下文边界实现最小改动；行为变更补充检验结果的测试（补充测试源码不代表获准运行）。
+3. 同步更新受影响的资源、引用与文档（改动站点 URL、CSS selector、更新协议或登录流程时，同步更新 `NETWORK/`）。
+4. 默认仅执行文末静态检查，并如实报告已执行、未执行及未完成的检查。
 
-## 工作流程
-
-1. 确认修改范围及相关调用链。设计、添加或修改功能与解析前，必须先查阅 `NETWORK/` 中相关的网站逆向分析文档，基于已验证的实际 DOM 结构与接口规范实现。
-2. 按下述修改边界实现变更。行为修改应补充能检验结果的测试，不添加只重复实现过程的测试；补充测试源码不代表获准运行测试。
-3. 同步维护受影响的资源、引用和文档。改动站点 URL、CSS selector 或登录流程时，必须更新 `NETWORK/` 中对应的技术说明。
-4. 默认仅执行静态验证；编译、测试、构建和 Android Lint 仅在用户明确要求时执行，并如实报告已执行、未执行及未完成的检查。
-
-网站分析文档入口：
-
-- [API_ENDPOINTS.md](NETWORK/API_ENDPOINTS.md)：接口规范。
-- [AUTH.md](NETWORK/AUTH.md)：认证流程。
-- [DATA_MODELS.md](NETWORK/DATA_MODELS.md)：数据模型。
-- [FEATURE_MATRIX.md](NETWORK/FEATURE_MATRIX.md)：功能对照。
-- [HTML_PARSERS.md](NETWORK/HTML_PARSERS.md)：页面解析。
-- [SITE_MAP.md](NETWORK/SITE_MAP.md)：站点结构。
+- `NETWORK/`：[API_ENDPOINTS.md](NETWORK/API_ENDPOINTS.md)（接口）、[AUTH.md](NETWORK/AUTH.md)（认证）、[DATA_MODELS.md](NETWORK/DATA_MODELS.md)（模型）、[FEATURE_MATRIX.md](NETWORK/FEATURE_MATRIX.md)（功能对照）、[HTML_PARSERS.md](NETWORK/HTML_PARSERS.md)（解析）、[SITE_MAP.md](NETWORK/SITE_MAP.md)（站点结构）、[APP_UPDATES.md](NETWORK/APP_UPDATES.md)（更新与 APK 下载）。
+- `docs/`：[maintenance-notes.md](docs/maintenance-notes.md)（启动/存储/缓存与安全边界）、[text-selection.md](docs/text-selection.md)（正文选择复制）、[reader-gestures.md](docs/reader-gestures.md)（阅读器手势）、[wide-layout.md](docs/wide-layout.md)（宽屏布局）、[cache-analysis.md](docs/cache-analysis.md)（缓存上限与 Debug 日志）。
 
 ## 长时间任务等待策略
 
-Gradle 构建、测试、GitHub Actions、长时间脚本和 Subagent 等预计需要数分钟的任务，应优先使用少量长时间阻塞等待，避免由主 Agent 频繁轮询状态。
+仅针对已获准启动的长耗时任务（Gradle、GitHub Actions、长脚本、Subagent），遵循“启动 → 单次长阻塞等待 → 完成即处理”：
 
-### 通用规则
+- 预计耗时数分钟的任务优先单次阻塞等待最长 10 分钟（600000 ms）；提前完成即处理，超时且仍在运行时再检查并继续长等待，勿高频轮询或仅因无新输出而中断。
+- 等待 GitHub Actions 优先使用 `gh run watch --exit-status --interval 30`，不要反复调用 `gh run view`。
+- 并行子任务尽量统一等待完成事件，避免逐个轮询。
 
-- 对预计耗时约 5～8 分钟的任务，优先进行一次最长 10 分钟（600000 ms）的阻塞等待；任务提前完成时立即处理结果，无须等满时长。
-- 如果任务本身可以持续阻塞直到完成，应等待该进程或完成事件，不要每隔几十秒重新查询状态，也不要只为汇报“仍在运行”而唤醒主 Agent。
-- 只有一次长等待超时且任务仍在运行时，才检查当前状态并继续长等待。暂时没有新输出不代表任务卡死。
-- 等待期间，除非出现异常、失败、需要人工输入或必须立即干预的情况，不要为了确认进度而额外调用模型。
-- 明显超过 10 分钟的任务，可以按预计耗时延长单次等待；始终优先少量长等待，而非大量短等待。
+## 架构概览与关键入口
 
-### Gradle 构建、测试与静态分析
-
-只有用户明确要求后，才能启动 Gradle 编译、构建、测试或 Lint；以下等待规则不构成运行授权。启动已获准的长任务后，优先对运行中的进程进行一次最长 10 分钟的阻塞等待，不要每隔几十秒调用 `write_stdin` 或重新检查输出。进程提前结束时立即处理退出状态和输出；10 分钟后仍在运行时，再检查一次状态并继续长等待。
-
-### GitHub Actions
-
-不要由主 Agent 反复执行 `gh run view` 查询 Workflow 状态。优先让 GitHub CLI 自行等待，例如：
-
-```bash
-gh run watch --exit-status --interval 30
-```
-
-主 Agent 对 `gh run watch` 进程进行一次最长 10 分钟的阻塞等待；Workflow 提前结束时立即分析结果，超时后仍在运行时再继续长等待，不要为了中间进度频繁唤醒主 Agent。
-
-### Subagent
-
-预计需要数分钟的 Subagent 启动后，默认优先等待一次最长 10 分钟；支持显式超时时可使用 `wait_agent(timeout_ms=600000)`。Subagent 提前完成时立即处理结果；只有等待超时且仍在运行时才再次等待。并行运行多个 Subagent 时，尽量一次等待多个完成事件，不要逐个高频轮询。
-
-核心流程是“启动任务 → 长时间阻塞等待 → 完成时立即返回 → 处理结果”。尽可能由 Runtime、Shell、GitHub CLI 或 Subagent 的等待机制负责阻塞，减少无意义的模型轮询、上下文重复输入和 Token 消耗，同时保持完成后的及时响应
-
-
-## 项目结构与调用链
-
-### 技术概览
-
-- 项目类型：Android 应用。
-- 根项目名：`EsjzoneApplication`。
-- 应用模块：`app`。
-- 包名与命名空间：`com.breakyuna.esjzone`。
-- UI 技术：Kotlin、Jetpack Compose、Material 3。
-- 最低 Android 版本：API 29；编译 SDK：37；目标 SDK：37。
-- Java/Kotlin 编译目标：17。
-
-应用通过 OkHttp 访问可选的 Esjzone 站点，使用 Jsoup CSS 选择器解析 HTML 页面，使用 Room 保存本地状态，使用 Coil 加载和缓存图片。页面导航基于 AndroidX Navigation 3。根宿主和标签页宿主通过参数将对应的 `AppNavigator` 传给页面，带参数的目的地直接创建可序列化的 `AppNavKey`。阅读器进入根栈，其他页面进入发起导航的栈。路由和返回栈管理集中在 `ui/navigation/`，已有保存路由继续支持恢复。
-
-### 目录职责
-
-```text
-app/src/main/java/com/breakyuna/esjzone/
-├── MainActivity.kt              # 初始化图片加载器、Room 和 Compose 根入口
-├── AppLanguage.kt               # 应用语言枚举与持久化编码
-├── data/settings/               # SettingsRepository 与 ReaderSettingsDataStore
-├── database/                    # Room 数据库、DAO、缓存、书签、阅读历史和本地优先书架
-├── network/                     # OkHttp 客户端、认证、Cookie、URL、CSS 解析和请求功能
-├── novellibrary/                # 小说、章节、用户、分类和正文组件模型
-├── ui/
-│   ├── app/                     # 应用根导航
-│   ├── component/               # 可复用 Compose 组件
-│   ├── navigation/              # Navigator 与 CompositionLocal
-│   ├── page/                    # 小说详情、章节阅读、搜索结果等页面
-│   ├── screen/                  # 加载、登录和主界面
-│   ├── tab/                     # 主页、历史、分类、收藏、搜索入口、个人中心 Tab
-│   └── designsystem/            # Material 3 主题、Design Token 和共享视觉组件
-└── util/                       # 通用工具函数
-```
-
-### 启动与认证
-
-`MainActivity` 先显示启动状态，再由进程级协程与互斥锁初始化使用 applicationContext 的 `GeneralDatabase`、`ImageLoader`、下载存储和设置 DataStore；失败提供重试，Activity 重建复用已初始化资源。启动阶段幂等迁移旧 Room 设置与 Reader SharedPreferences，并由 `SettingsRepository` 恢复站点、主题、语言和成人内容状态。`LoadingScreen` 只恢复本地会话，然后立即进入 `MainScreen`；主界面显示后由生命周期绑定的后台协程执行有界 `checkAuthorization`。明确失效时显示可选的重新登录提示，但不自动清除会话；网络状态未知时保留本地会话。进入主界面后后台调度书架同步，UI 不等待同步完成，本地书架和阅读历史可离线使用。
-
-### 主界面
-
-`MainScreen` 提供四个底部 Tab；分类和搜索从主页/页面入口打开：
-
-- `HomeTab`：主页数据、推荐和最新更新，也提供分类入口及右上角关键词搜索和搜索历史入口；再次点击主页导航按钮以动画滚动到顶部后刷新。
-- `HistoryTab`：观看记录；切换到历史页后，再次点击历史导航按钮继续最近一次本地阅读。
-- `FavoriteTab`：再次点击已选中的书架导航按钮打开筛选／排序／显示底部面板；本地优先书架，支持云端补充、按最近阅读排序、按书名、作者或本机已缓存标签（详情页标签缓存与下载清单）本地搜索、编辑与批量删除。
-- `ProfileTab`：用户信息、单列常用功能、设置和关于页面入口，以及只读的会员中心页面（系统消息和我的回复共用“消息”入口，经验记录顶部显示升级进度和注册日期，默认留言并按留言／评论／发文排列）：`SystemMessagesPage`（`/my/sys`）、`MemberRepliesPage`（`/my/reply`，回复链接指向章节页，不能带登录 Cookie 请求，只提供作品页和复制链接）、`ExperienceRecordsPage`（`/inc/mem_record_data.php`，先从 `/my/record` 获取动态令牌，随后带 `Authorization`、`X-Requested-With` 与 `/my/record` Referer 请求；`status` 非 200 视为失败，301 时换令牌重试一次；登录后留言类可能 20–30 秒才响应，数据请求使用 `EsjzoneClient.memberRecordClient` 的读取 60 秒 / 总 90 秒预算，切换类别取消旧请求；各账号、各类别缓存已加载的记录，打开时先显示缓存并后台刷新）。
-
-具体作品通过 `NovelPage` 展示详情，章节通过 `ChapterPage` 获取并解析后阅读。
+- **技术栈**：Android 应用（根项目 `EsjzoneApplication`，模块 `:app`、`:baselineprofile`，包名 `com.breakyuna.esjzone`）；API 29+，compileSdk/targetSdk 37，Java/Kotlin 17；Kotlin、Jetpack Compose、Material 3、OkHttp、Jsoup、Room、DataStore、Coil、AndroidX Navigation 3。
+- **核心包职责**（`app/src/main/java/com/breakyuna/esjzone/`）：
+  - 入口与装配：`MainActivity.kt`、`StartupCoordinator.kt`、`app/`（`AppContainer`、`PresentationAccess`）、`AppLanguage`/`AppPalette`/`AppThemeMode`。
+  - 数据与领域：`data/`（`settings/` DataStore、`reader/`、`repository/` 适配器）、`domain/`（`reader/` 模型与会话控制、`repository/` 含 `SettingsRepository`）、`database/`（Room `GeneralDatabase`、DAO、实体）。
+  - 网络与外围：`network/`（OkHttp、认证、Cookie、URL、`features/` CSS 解析）、`novellibrary/`（领域与正文模型）、`offline/`、`storage/`、`backup/`、`update/`、`util/`。
+  - 界面层：`ui/app/`（根导航）、`ui/navigation/`（`AppNavigator`、`AppNavKey`、`AppStateViewModel`、自适应导航壳）、`ui/designsystem/`（M3 主题、Design Token、`GlobalText`）、`ui/component/`（含 `SelectableProse`）、`ui/product/`、`ui/discovery/`、`ui/reader/`、`ui/screen/`（`LoadingScreen`、`LoginScreen`、`MainScreen`、`StorageSetupScreen`）、`ui/tab/`、`ui/page/`。
+- **启动与导航不变量**：
+  - `MainActivity` 先展示启动状态，再以进程级协程与互斥锁基于 `applicationContext` 初始化数据库、`ImageLoader`、下载存储与 DataStore（失败可重试，重建复用）；启动时幂等迁移旧 Room 设置与 Reader SharedPreferences。
+  - `LoadingScreen` 仅恢复本地会话即进 `MainScreen`；主界面后台执行有界 `checkAuthorization`（失效仅提示重登不自动清会话，网络未知保留会话）并异步同步书架，本地书架与历史可离线使用。
+  - 导航由 Navigation 3 管理（保留旧保存路由恢复）：通过参数传递 `AppNavigator`、用可序列化 `AppNavKey` 传参；阅读器（`ChapterPage`）进根栈，其余页面进发起导航的栈。`MainScreen` 含四个底部 Tab（`HomeTab`、`HistoryTab`、`FavoriteTab`、`ProfileTab`），分类与搜索从主页/页面入口进入；会员中心只读页与特殊接口约束见 `NETWORK/` 及 `network/features/` 注释。
 
 ## 修改边界
 
 ### 网络与解析
 
-- 所有站点基地址应通过 `SettingsRepository.domain`（由 `SettingsDataStore` 提供）和 `EsjzoneUrls` 获取，不要在新功能中散落硬编码域名。
-- 登录流程使用站点返回的认证 token，并通过 `AuthorizationCookieJar` 携带会话 Cookie。
-- 网络请求和网页解析应放在后台协程中，避免阻塞 Compose 主线程。
-- 页面字段变化时，优先同步检查 `network/features/` 的 CSS selector adapter 和 `novellibrary/` 中对应模型。
-- 站点可能将 HTML 片段嵌入 JSON 或页面字段，修改解析逻辑时要保留空字段、异常 HTML 和相对 URL 的处理。
+- 站点基地址统一通过 `SettingsRepository.domain`（`data/settings/SettingsDataStore`）与 `EsjzoneUrls` 获取，禁止硬编码域名。
+- 认证请求使用站点 token 与 `AuthorizationCookieJar`；无登录态请求（如会员回复外链、更新 APK 下载）不得混用带凭据客户端。
+- 网络与解析均在后台协程执行；页面字段变动时同步检查 `network/features/` 与 `novellibrary/`，保留空字段、异常 HTML、嵌入 JSON 的 HTML 片段及相对 URL 处理。
 
 ### 本地数据与下载
 
-`GeneralDatabase` 的实体包括：`Cache`（会话 Cookie、站点、主题和成人内容显示选项）、`SearchHistory`（搜索关键词）、`Bookmark`（每章可有多条书签，可带段落锚点和摘要）、`LocalReadingActivity`（设备本地阅读位置）和 `BookshelfEntry`（本地优先书架及同步意图）。本地阅读历史不上传；书架以本地状态和删除意图为准，远端同步失败时保留本地数据与待处理状态。已登录时（不再有开关），阅读尚未向当前账号请求过的本机或缓存章节会另请求该章节页面，让站点观看记录停在最后请求的一章；这不上传本地阅读记录本身。
-
-数据库访问应使用 IO 调度器。新增缓存键时要同时考虑首次安装、旧数据缺失和非法值恢复；应用设置的权威来源是 DataStore，旧 Room 设置仅用于一次性迁移。离线下载任务必须使用入队时保存的站点域名和自己的请求基址，不得改写 `SettingsRepository.domain` 或其他前台设置状态；下载文件、导出和数据库书架数据的生命周期分别管理。
+- `GeneralDatabase`（`database/GeneralDatabase.kt`）包含 `Cache`、`SearchHistory`、`Bookmark`、`LocalReadingActivity`、`BookshelfEntry`、`ReadingStat`、`BookshelfGroup`、`BookshelfGroupMember`；改表结构须提供 `Migration` 并同步导出 schema。
+- 本地阅读历史不上传；书架以本地状态与删除意图为准，远端同步失败保留本地状态。已登录时，阅读尚未向当前账号请求过的本地/缓存章节会补请求该章节页以更新站点最后观看位置（不上传本地历史本身）。
+- 数据库访问使用 IO 调度器；应用设置以 DataStore 为权威来源（旧 Room 仅一次性迁移），新增键须兼容首次安装、缺省与非法值恢复。
+- 离线下载任务须使用入队时记录的域名与独立请求基址，不得改写前台 `SettingsRepository.domain`；下载、导出、缓存与书架生命周期独立（并发与代际一致性见 [docs/maintenance-notes.md](docs/maintenance-notes.md)）。
 
 ### UI、状态与资源
 
-- UI 保持高信息密度和视觉简洁；禁止为含义明确的设置项添加描述、副标题、helper text 或解释小字。只有功能存在歧义或需要警告时才允许添加辅助说明。不要通过增加文字解释 UI，优先通过布局、控件和命名让功能自解释。
+- **简洁高密**：禁止为含义明确的设置项添加描述、副标题、helper text 或解释小字；仅功能存在歧义或需警告时允许辅助说明，优先通过布局、控件和命名自解释。
+- **多语言与简繁**：同步维护全部三份 `strings.xml` 且键名完全一致：`app/src/main/res/values/strings.xml`（默认简体中文）、`values-zh-rCN/strings.xml`（简体中文）、`values-en/strings.xml`（英文）。面向用户的 Compose 文本优先使用 `ui/designsystem/` 的 `GlobalText`（常 `as Text`）与 `globalStringResource`，确保全局简繁转换生效；页面保持加载、成功、错误和空态完整。
+- **正文与内容约束**：阅读器外只读正文用 `SelectableProse` 仅包裹文字本身，不得包裹可点击或可长按的行（见 [docs/text-selection.md](docs/text-selection.md)）；涉及成人内容的列表/分类/历史/主页须遵守 `SettingsRepository.adult`（隐藏时不得将未知分类当作非成人）；修改 `Component`、`ui/reader/` 或 `ChapterPage` 时勿破坏正文样式、注音、划线锚点与远程图片。
+- **状态管理**：禁止在 Compose 重组中做 I/O 或重计算；页面状态使用 Navigation 3 entry 作用域的 `AppStateViewModel` 与协程。
 
-- 用户可见文本优先放在 `app/src/main/res/values/strings.xml`，并同步维护 `values-zh-rCN/strings.xml`。
-- Compose 页面应复用现有组件和 Material 3 组件，保持加载、成功和空数据状态完整。
-- 阅读器以外的只读正文（简介、评论、帖子、会员中心字段等）用 `SelectableProse` 支持长按选择复制，只包裹文字本身，不包裹可点击或可长按的行；取舍见 [docs/text-selection.md](docs/text-selection.md)。
-- 涉及成人内容的列表、分类和主页分区必须遵守 `SettingsRepository.adult` 的 DataStore 状态。
-- 章节阅读内容可能包含正文样式、注音和远程图片，修改 `Component` 或 `ChapterPage` 时要避免破坏这些内容。
-- 不要把网络请求、数据库操作或大型列表计算直接放进 Compose 重组过程；页面状态使用 Navigation 3 entry 提供生命周期的 AndroidX `ViewModel`（当前基类为 `AppStateViewModel`），并通过协程执行后台工作。`screenModelScope` 是迁移期间保留的兼容命名，清理前必须先迁移所有调用点。
+## 提交、PR 与代码审查规范
+
+- **Commit 格式**：采用 Conventional Commits 且描述使用简体中文：`<type>: <简体中文描述>` 或 `<type>(<scope>): <简体中文描述>`。
+  - 常用 `type`：`feat`、`fix`、`refactor`、`perf`、`style`、`docs`、`test`、`build`、`ci`、`chore`、`revert`（例：`fix: 修复以换行开头的章节正文丢失`、`feat(reader): 支持章节多段落书签`）。
+  - 首行简洁明确（建议 ≤50 字），不加句末句号，保留代码标识符、路径、API 名称和技术术语原文；复杂说明或未验证项写在空行后的正文中；单次提交保持单一职责，不夹带无关修改或敏感文件。
+- **分支、PR 与发布**：分支建议 `<type>/<short-topic>`；PR 标题同 Commit 格式，正文按 [.github/pull_request_template.md](.github/pull_request_template.md) 填写并显式标注未验证项；正式发布 Tag 须严格匹配 `gradle.properties` 中的 `v<app_version>`。
+- **PR 代码审查**：所有 GitHub PR 审查评论（标题、问题描述、风险分析、修复建议）必须使用简体中文，保留代码标识符、路径、API 名称、技术术语原文及 `P0`/`P1`/`P2` 优先级标记，不得因翻译降低技术准确度或严格度。
+
 ## 本地验证策略
 
-本地验证用于提前发现会使 GitHub Actions 中断的常见错误。Termux 已配置 Android SDK、JDK 和 Gradle，但没有模拟器。默认仅进行静态检查；工具可用、改动规模较大或存在测试用例，都不构成编译或测试授权。
+Termux 已配置 Android SDK、JDK 与 Gradle（无模拟器）。**默认仅执行静态检查**，不得私自运行 JVM/设备测试、Lint、构建或 Node 等行为测试脚本。
 
-### 所有改动：静态检查
+### 静态检查（所有改动默认执行）
 
 ```bash
 python3 tools/qa/verify_static_contracts.py
 git diff --check
 ```
 
-同时检查修改范围内的以下内容：
+脚本自动校验已移除旧 API/主题残留、凭据特征、三份 `strings.xml` 键名对称及 `SelectableProse` 与行长按页面互斥；同时人工核对变更范围内的符号/路径/文档链接引用、语法结构、中英文翻译与敏感信息。
 
-- 新增或删除的类名、资源名、路径和文档链接的引用。
-- Kotlin、XML、JSON、Markdown 结构。
-- 新增用户可见文本的英文和简体中文资源。
-- 敏感信息和无关文件。
+### 编译、测试、Lint 与 CI（仅用户明确要求时）
 
-无论改动规模，用户没有明确要求编译或测试时，完成上述静态检查即可结束本地验证。不得额外运行 JVM／设备测试、Node 等行为测试或其他测试脚本；只检查语法、结构、引用和资源的静态检查可以执行。
-
-### 用户明确要求时：编译、测试与 Android Lint
-
-仅执行用户明确要求的检查，不得自行扩大到其他任务。用户明确要求 JVM 单元测试与 Android Lint 时，遵守以下验证时机：
-
-- 修改期间不得每改一处就运行 Gradle 测试、Lint 或构建；可按需进行轻量静态检查。
-- 完成本次任务的全部代码、资源、文档及测试修改，并确认修改范围完整、静态检查通过后，再统一执行用户要求的检查。
-- 若检查失败，先集中修复相关问题，确认修复完成后可在原授权范围内复跑受影响的检查；用户要求停止后立即停止，不再复跑。检查通过后，没有新的修改或未解决问题，不重复运行。
-
-以下仅为用户明确要求两项检查时使用的命令，不是默认执行步骤：
-
-```bash
-./gradlew testDebugUnitTest lintDebug --build-cache
-```
-
-`testDebugUnitTest` 验证 JVM 单元测试和业务回归，`lintDebug` 检查 Android 项目问题；两者也会编译所需的 Debug 代码。只有两项全部成功，才能称为“本地测试与 Lint 通过”。
-
-### CI：APK 构建与设备验证
-
-- APK 构建交给 GitHub Actions；未经用户明确要求，不得在本地执行 `assembleDebug`、`assembleRelease` 或其他构建任务。仅在用户明确要求提交、发布或触发 CI 的范围内操作 GitHub Actions。
-- Pull Request 与 push / workflow_dispatch 都会跑 `assembleRelease`（R8 full mode、资源压缩、Baseline Profile）。PR 只生成未签名产物 `app-release-unsigned.apk`，不向 PR 任务注入签名密钥，并上传短期保留的 `mapping.txt`（以及已生成的 usage / seeds）供 R8 审查。正式签名与发布只在非 PR 事件的 `sign-and-publish` 任务中进行。
-- 保留 Room、DataStore、SharedPreferences 迁移、Cookie / Android Framework 持久化和 MainActivity 启动等 Instrumentation 测试；仅在用户明确要求时执行设备测试、设备测试源码编译，或触发 GitHub Actions 的 Android Device Validation。
+- 修改期间勿逐处跑 Gradle；完成全部改动且静态检查通过后，仅在用户明确授权范围内统一执行。失败时集中修复后可复跑受影响项，通过后无新改动不重复跑，用户要求停止即停。
+- 用户明确要求 JVM 单元测试与 Android Lint 时运行：`./gradlew testDebugUnitTest lintDebug --build-cache`（两项均过方可称为“本地测试与 Lint 通过”）。
+- APK 构建与设备测试交给 GitHub Actions（`.github/workflows/build.yml`、`release.yml`、`device-validation.yml`）：未经明确要求不得本地执行 `assembleDebug`/`assembleRelease`、编译/运行设备测试或操作 CI。PR 与 push 均跑 R8 Release 构建（PR 仅产未签名 APK 并传 R8 mapping，正式签名仅在非 PR 流程）；保留 Room/DataStore/Prefs 迁移、Cookie 持久化与 `MainActivity` 启动等 Instrumentation 测试。
 
 ### 结果表述
 
@@ -195,15 +100,4 @@ git diff --check
 | `assembleRelease` | Release 构建通过 |
 | `connectedDebugAndroidTest` | Android Instrumentation 测试通过 |
 
-静态验证通过不能代表 JVM 单元测试、Android Lint 或 APK 构建通过；本地测试与 Lint 通过也不代表 APK 构建通过。未执行的项目标注“未验证”，已启动但未完成的检查不得报告为通过。
-
-
-## Code Review Rules
-
-### Review Language
-
-- 所有 GitHub Pull Request 代码审查评论必须使用简体中文。
-- 问题标题、问题描述、风险分析和修复建议均使用简体中文。
-- 保留代码标识符、文件路径、API 名称和技术术语的原始形式。
-- 保留 P0、P1、P2 等问题优先级标记。
-- 不要为了翻译而改变技术含义或降低审查严格程度。
+不同层级检查结果不可互代；未执行项须标注“未验证”，已启动未完成项不得报告为通过。

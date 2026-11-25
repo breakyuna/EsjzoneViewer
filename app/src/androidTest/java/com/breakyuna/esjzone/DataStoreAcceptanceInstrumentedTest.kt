@@ -4,24 +4,33 @@ import android.content.Context
 import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.floatPreferencesKey
 import androidx.datastore.preferences.core.intPreferencesKey
+import androidx.datastore.preferences.core.longPreferencesKey
+import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStoreFile
 import androidx.test.core.app.ApplicationProvider
 import com.breakyuna.esjzone.data.settings.ReaderSettingsDataStore
 import com.breakyuna.esjzone.data.settings.SettingsDataStore
 import com.breakyuna.esjzone.ui.reader.ReaderBackground
 import com.breakyuna.esjzone.ui.reader.ReaderFont
+import com.breakyuna.esjzone.ui.reader.ReaderImageBackground
 import com.breakyuna.esjzone.ui.reader.ReaderScript
 import com.breakyuna.esjzone.ui.reader.ReaderSettings
 import com.breakyuna.esjzone.ui.reader.ReaderTool
+import java.util.UUID
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -311,6 +320,96 @@ class DataStoreAcceptanceInstrumentedTest {
                 requireNotNull(verifyScope.coroutineContext[Job]).cancelAndJoin()
                 file.delete()
             }
+        }
+    }
+
+    @Test
+    fun bookIndentKeepsTheLatestSelectionWhileEarlierWritesFinish() = runBlocking {
+        val name = fileName("reader-book-indent")
+        val job = SupervisorJob()
+        val scope = CoroutineScope(coroutineContext + job)
+        try {
+            val reader = ReaderSettingsDataStore(context, scope, name)
+            reader.saveBookIndentInBackground("book-1", 2)
+            reader.saveBookIndentInBackground("book-2", 0)
+            reader.saveBookIndentInBackground("book-1", 1)
+            reader.saveBookIndentInBackground("book-1", 2)
+            val expected = mapOf("book-1" to 2, "book-2" to 0)
+            assertEquals(expected, reader.bookIndents.value)
+
+            val observed = mutableListOf<Map<String, Int>>()
+            val observer = launch(start = CoroutineStart.UNDISPATCHED) {
+                reader.bookIndents.collect { observed += it }
+            }
+            val (snapshot, _) = try {
+                withTimeout(5_000) { reader.backupSnapshot() }
+            } finally {
+                observer.cancelAndJoin()
+            }
+            assertEquals(listOf(expected), observed)
+            assertEquals(expected, snapshot.getAsJsonObject("book_first_line_indent_chars")
+                .entrySet().associate { (key, value) -> key to value.asInt })
+        } finally {
+            job.cancelAndJoin()
+            context.preferencesDataStoreFile(name).delete()
+        }
+    }
+
+    @Test
+    fun legacyBackgroundRetainsPhotoColorBlurAndTransparency() = runBlocking {
+        val storeName = "reader-legacy-photo-${UUID.randomUUID()}.preferences_pb"
+        val photoName = "${UUID.randomUUID()}.jpg"
+        val legacyJob = SupervisorJob()
+        try {
+            val legacy = PreferenceDataStoreFactory.create(scope = CoroutineScope(legacyJob + Dispatchers.IO),
+                produceFile = { context.preferencesDataStoreFile(storeName) })
+            legacy.edit {
+                it[stringPreferencesKey("background")] = ReaderBackground.CUSTOM_IMAGE.name
+                it[stringPreferencesKey("background_image_file")] = photoName
+                it[longPreferencesKey("background_image_text_color")] = 0xFF202020L
+                it[floatPreferencesKey("background_image_blur")] = 50f
+                it[floatPreferencesKey("background_image_transparency")] = 90f
+            }
+        } finally { legacyJob.cancelAndJoin() }
+        val job = SupervisorJob()
+        try {
+            val current = ReaderSettingsDataStore(context, CoroutineScope(job + Dispatchers.IO), storeName)
+            val image = current.readImageBackground()
+            assertEquals(photoName, image.fileName)
+            assertEquals(0xFF202020L, image.textColor)
+            assertEquals(50f, image.blur, 0f)
+            assertEquals(90f, image.transparency, 0f)
+            assertEquals(0.5f, image.cropX, 0f)
+            assertEquals(0.5f, image.cropY, 0f)
+            assertTrue(image.glowEnabled)
+            assertEquals(70f, image.glowStrength, 0f)
+            assertEquals(ReaderBackground.CUSTOM_IMAGE, current.settings.first { it.background == ReaderBackground.CUSTOM_IMAGE }.background)
+        } finally { job.cancelAndJoin(); context.preferencesDataStoreFile(storeName).delete() }
+    }
+
+    @Test
+    fun applyingPhotoRetainsPendingReaderEditsAndSurvivesStoreRecreation() = runBlocking {
+        withTimeout(5_000) {
+            val fileName = "reader-image-${UUID.randomUUID()}.preferences_pb"
+            val original = ReaderSettings(fontSizeSp = 24f, horizontalPaddingDp = 28f)
+            val photo = ReaderImageBackground("${UUID.randomUUID()}.jpg", 0xFF111111L, glowEnabled = false, glowStrength = 37f)
+            val firstJob = SupervisorJob()
+            try {
+                val first = ReaderSettingsDataStore(context, CoroutineScope(firstJob + Dispatchers.IO), fileName)
+                assertEquals(70f, first.readImageBackground().glowStrength, 0f)
+                first.saveDebounced(original)
+                first.saveImageBackground(photo)
+                val applied = first.settings.first { it.background == ReaderBackground.CUSTOM_IMAGE }
+                assertEquals(original.copy(background = ReaderBackground.CUSTOM_IMAGE), applied)
+                first.save(applied.copy(background = ReaderBackground.SYSTEM))
+                assertEquals(photo, first.readImageBackground())
+            } finally { firstJob.cancelAndJoin() }
+            val secondJob = SupervisorJob()
+            try {
+                val second = ReaderSettingsDataStore(context, CoroutineScope(secondJob + Dispatchers.IO), fileName)
+                assertEquals(photo, second.readImageBackground())
+                assertEquals(original, second.settings.first { it.fontSizeSp == 24f })
+            } finally { secondJob.cancelAndJoin(); context.preferencesDataStoreFile(fileName).delete() }
         }
     }
 

@@ -1,6 +1,7 @@
 package com.breakyuna.esjzone.domain.reader
 
 import com.google.gson.Gson
+import java.io.Serializable
 
 /** A position belongs to one immutable chapter snapshot. Offsets are UTF-16. */
 data class ReaderAnchor(
@@ -10,7 +11,13 @@ data class ReaderAnchor(
     val offset: Int = 0,
     val kind: String = "text",
     val fraction: Float = 0f,
-    val version: Int = 1
+    val version: Int = 1,
+    /** Normalized text excerpt starting at this anchor for cross-parser re-anchoring. */
+    val textQuote: String? = null,
+    /** Normalized text immediately preceding this anchor to disambiguate repeated phrases. */
+    val textPrefix: String? = null,
+    /** Normalized character fraction [0, 1] in the chapter text stream. */
+    val normalizedOffset: Float? = null
 ) {
     fun matches(key: String, document: ReaderChapterDocument): Boolean =
         chapterKey == key && fingerprint.isNotBlank() && fingerprint == document.contentFingerprint &&
@@ -23,7 +30,84 @@ data class ReaderAnchor(
                 else -> false
             }
 
+    /** Captures layout-independent text context so this anchor survives future parser upgrades. */
+    fun withTextContext(document: ReaderChapterDocument): ReaderAnchor {
+        if (kind != "text" || !matches(chapterKey, document)) return this
+        val stream = document.normalizedTextIndex
+        if (stream.text.isEmpty()) return this
+        val streamPos = stream.findStreamIndex(blockIndex, offset)
+        val quote = stream.text.substring(streamPos, (streamPos + QUOTE_LENGTH).coerceAtMost(stream.text.length))
+            .takeIf { it.isNotEmpty() } ?: return this
+        val prefix = stream.text.substring((streamPos - PREFIX_LENGTH).coerceAtLeast(0), streamPos)
+            .takeIf { it.isNotEmpty() }
+        val ratio = (streamPos.toFloat() / stream.text.length).coerceIn(0f, 1f)
+        return copy(textQuote = quote, textPrefix = prefix, normalizedOffset = ratio)
+    }
+
+    /**
+     * Resolves an exact match first; if a parser upgrade changed the snapshot
+     * fingerprint, re-anchors via saved text context without losing position.
+     */
+    fun resolveIn(key: String, document: ReaderChapterDocument): ReaderAnchor? {
+        if (matches(key, document)) return this
+        if (chapterKey != key || document.contentFingerprint.isBlank()) return null
+        if (kind == "heading") {
+            return copy(fingerprint = document.contentFingerprint, blockIndex = -1, offset = 0)
+        }
+        if (kind == "end") {
+            return copy(fingerprint = document.contentFingerprint)
+        }
+        if (kind != "text") return null
+
+        val oldBlock = document.legacyPositions?.takeIf { it.fingerprint == fingerprint }
+            ?.textBlocks?.get(blockIndex)
+        if (oldBlock == null && textQuote.isNullOrBlank()) return null
+        val stream = document.normalizedTextIndex
+        if (stream.text.isEmpty()) return null
+        oldBlock?.let { block ->
+            val position = block.streamOffset(offset) ?: return@let
+            val atEnd = position == block.normalizedEnd
+            val index = if (atEnd) position - 1 else position
+            if (index in stream.text.indices) {
+                return copy(
+                    fingerprint = document.contentFingerprint,
+                    blockIndex = stream.blockIndices[index],
+                    offset = stream.sourceOffsets[index] + if (atEnd) 1 else 0
+                )
+            }
+        }
+        val quote = textQuote?.filterNot(Char::isWhitespace)?.takeIf { it.isNotEmpty() } ?: return null
+        val candidates = findQuotePositions(stream.text, quote)
+            .ifEmpty {
+                if (quote.length > SHORT_QUOTE_LENGTH) {
+                    findQuotePositions(stream.text, quote.substring(0, SHORT_QUOTE_LENGTH))
+                } else emptyList()
+            }
+        if (candidates.isEmpty()) return null
+
+        val prefix = textPrefix?.filterNot(Char::isWhitespace).orEmpty()
+        val expectedPos = normalizedOffset?.let { (it * stream.text.length).toInt() }
+        val best = candidates.maxWithOrNull(
+            compareBy<Int> { pos ->
+                if (prefix.isEmpty()) 0 else matchingPrefixLength(stream.text, pos, prefix)
+            }.thenBy { pos ->
+                if (expectedPos == null) 0 else -kotlin.math.abs(pos - expectedPos)
+            }
+        ) ?: return null
+
+        val resolvedBlock = stream.blockIndices[best]
+        val resolvedOffset = stream.sourceOffsets[best]
+        return copy(
+            fingerprint = document.contentFingerprint,
+            blockIndex = resolvedBlock,
+            offset = resolvedOffset
+        )
+    }
+
     companion object {
+        private const val QUOTE_LENGTH = 32
+        private const val SHORT_QUOTE_LENGTH = 12
+        private const val PREFIX_LENGTH = 16
         private val gson = Gson()
         fun encode(anchor: ReaderAnchor?): String? = anchor?.let(gson::toJson)
         fun decode(value: String?): ReaderAnchor? = runCatching {
@@ -34,9 +118,100 @@ data class ReaderAnchor(
                 require(it.kind in setOf("heading", "text", "image", "end"))
                 require(it.kind != "heading" || it.blockIndex == -1)
                 require(it.kind in setOf("heading", "end") || it.blockIndex >= 0)
+                require(it.normalizedOffset == null || (it.normalizedOffset.isFinite() && it.normalizedOffset in 0f..1f))
             }
         }.getOrNull()
+
+        private fun findQuotePositions(haystack: String, needle: String): List<Int> = buildList {
+            var from = 0
+            while (from <= haystack.length - needle.length) {
+                val found = haystack.indexOf(needle, from)
+                if (found < 0) break
+                add(found)
+                from = found + 1
+            }
+        }
+
+        private fun matchingPrefixLength(haystack: String, pos: Int, prefix: String): Int {
+            var matched = 0
+            var h = pos - 1
+            var p = prefix.length - 1
+            while (h >= 0 && p >= 0 && haystack[h] == prefix[p]) {
+                matched++
+                h--
+                p--
+            }
+            return matched
+        }
     }
+}
+
+/** Positions from the saved body before re-parsing, in the new body's normalized text. */
+data class ReaderLegacyPositions(
+    val fingerprint: String,
+    val textBlocks: Map<Int, ReaderLegacyTextBlock>
+) : Serializable
+
+data class ReaderLegacyTextBlock(
+    val normalizedStart: Int,
+    val sourceLength: Int,
+    val whitespaceOffsets: List<Int>,
+    val sourceSignature: String
+) : Serializable {
+    internal val normalizedEnd: Int get() = normalizedStart + sourceLength - whitespaceOffsets.size
+
+    internal fun streamOffset(offset: Int): Int? {
+        if (offset !in 0..sourceLength) return null
+        val whitespaceIndex = whitespaceOffsets.binarySearch(offset)
+        val precedingWhitespace = if (whitespaceIndex >= 0) whitespaceIndex else -whitespaceIndex - 1
+        return normalizedStart + offset - precedingWhitespace
+    }
+}
+
+internal class NormalizedDocumentText(
+    val text: String,
+    val blockIndices: IntArray,
+    val sourceOffsets: IntArray
+) {
+    fun findStreamIndex(targetBlock: Int, targetOffset: Int): Int {
+        var start = 0
+        var end = blockIndices.size
+        while (start < end) {
+            val middle = start + (end - start) / 2
+            val block = blockIndices[middle]
+            if (block < targetBlock || (block == targetBlock && sourceOffsets[middle] < targetOffset)) {
+                start = middle + 1
+            } else {
+                end = middle
+            }
+        }
+        return start
+    }
+}
+
+internal fun buildNormalizedDocumentText(
+    blocks: List<ReaderBlock>,
+    textForBlock: (Int, ReaderBlock) -> String = { _, block -> block.sourceText() }
+): NormalizedDocumentText {
+    val sb = StringBuilder()
+    val blockList = mutableListOf<Int>()
+    val offsetList = mutableListOf<Int>()
+    blocks.forEachIndexed { blockIndex, block ->
+        if (block !is ReaderBlock.Paragraph && block !is ReaderBlock.Text) return@forEachIndexed
+        val raw = textForBlock(blockIndex, block)
+        raw.forEachIndexed { offset, ch ->
+            if (!ch.isWhitespace()) {
+                sb.append(ch)
+                blockList.add(blockIndex)
+                offsetList.add(offset)
+            }
+        }
+    }
+    return NormalizedDocumentText(
+        text = sb.toString(),
+        blockIndices = blockList.toIntArray(),
+        sourceOffsets = offsetList.toIntArray()
+    )
 }
 
 fun ReaderBlock.sourceText(): String = when (this) {

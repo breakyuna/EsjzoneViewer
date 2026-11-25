@@ -1,10 +1,12 @@
 package com.breakyuna.esjzone
 
 import com.breakyuna.esjzone.network.EsjzoneUrls
+import com.breakyuna.esjzone.network.features.favoritePageUrl
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import org.jsoup.Jsoup
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -19,7 +21,7 @@ class EsjzoneUrlsTest {
     }
 
     @Test
-    fun coverOrEmpty_recognizesSitePlaceholderVariants() {
+    fun coverOrEmpty_filtersPlaceholdersAndResolvesValidUrls() {
         val placeholders = listOf(
             "https://www.esjzone.cc/assets/img/empty_cover.jpg?t=123",
             "https://www.esjzone.cc/assets/img/nophoto.png",
@@ -29,36 +31,21 @@ class EsjzoneUrlsTest {
             "https://i.pinimg.com/236x/86/1e/51/861e5157abc25f92f6b49af0f1465927.webp?t=123",
             "https://images.example.com/covers/861e5157abc25f92f6b49af0f1465927.png"
         )
+        placeholders.forEach { url -> assertEquals("", EsjzoneUrls.coverOrEmpty(url)) }
 
-        placeholders.forEach { url ->
-            assertEquals("", EsjzoneUrls.coverOrEmpty(url))
-        }
-    }
-
-    @Test
-    fun coverOrEmpty_keepsAndResolvesActualRelativeCover() {
         assertEquals(
             "https://www.esjzone.cc/uploads/covers/book.jpg",
             EsjzoneUrls.coverOrEmpty("/uploads/covers/book.jpg")
         )
-    }
-
-    @Test
-    fun coverOrEmpty_keepsNormalPinterestCover() {
-        val cover = "https://i.pinimg.com/564x/aa/bb/cc/aabbccddeeff00112233445566778899.jpg"
-
-        assertEquals(cover, EsjzoneUrls.coverOrEmpty(cover))
-    }
-
-    @Test
-    fun coverOrEmpty_preservesFileUri() {
+        val pinterestCover = "https://i.pinimg.com/564x/aa/bb/cc/aabbccddeeff00112233445566778899.jpg"
+        assertEquals(pinterestCover, EsjzoneUrls.coverOrEmpty(pinterestCover))
         val fileUri = "file:///data/user/0/com.breakyuna.esjzone/files/bookmark_covers/cover_123.jpg"
         assertEquals(fileUri, EsjzoneUrls.coverOrEmpty(fileUri))
     }
 
     @Test
-    fun coverUrlFromNovelCard_readsLazyAttributesBeforePlaceholderSrc() {
-        val card = Jsoup.parse(
+    fun coverUrlFromNovelCard_prefersNonPlaceholderLazyAttributes() {
+        val dataOriginalCard = Jsoup.parse(
             """
             <div class="novel-card">
               <a><img src="/assets/img/empty_cover.jpg" data-original="/uploads/covers/book.jpg"></a>
@@ -66,16 +53,12 @@ class EsjzoneUrlsTest {
             """.trimIndent(),
             "https://www.esjzone.cc/"
         ).selectFirst(".novel-card")
-
         assertEquals(
             "https://www.esjzone.cc/uploads/covers/book.jpg",
-            EsjzoneUrls.coverUrlFromNovelCard(card)
+            EsjzoneUrls.coverUrlFromNovelCard(dataOriginalCard)
         )
-    }
 
-    @Test
-    fun coverUrlFromNovelCard_skipsPlaceholderCandidateAndUsesNextLazyAttribute() {
-        val card = Jsoup.parse(
+        val fallbackLazyCard = Jsoup.parse(
             """
             <div class="novel-card">
               <a><img data-src="/assets/img/nophoto.png" data-lazy-src="/uploads/covers/book.jpg"></a>
@@ -83,28 +66,21 @@ class EsjzoneUrlsTest {
             """.trimIndent(),
             "https://www.esjzone.cc/"
         ).selectFirst(".novel-card")
-
         assertEquals(
             "https://www.esjzone.cc/uploads/covers/book.jpg",
-            EsjzoneUrls.coverUrlFromNovelCard(card)
+            EsjzoneUrls.coverUrlFromNovelCard(fallbackLazyCard)
         )
     }
 
     @Test
-    fun coverUrlFromNovelCard_returnsEmptyForPlaceholderOnlyCard() {
-        val card = Jsoup.parse(
-            """
-            <div><a><img src="/assets/img/empty_cover.jpg"></a></div>
-            """.trimIndent(),
+    fun coverUrlFromNovelCard_returnsEmptyForPlaceholderCards() {
+        val placeholderImgCard = Jsoup.parse(
+            """<div><a><img src="/assets/img/empty_cover.jpg"></a></div>""",
             "https://www.esjzone.cc/"
         ).selectFirst("div")
+        assertTrue(EsjzoneUrls.coverUrlFromNovelCard(placeholderImgCard).isEmpty())
 
-        assertTrue(EsjzoneUrls.coverUrlFromNovelCard(card).isEmpty())
-    }
-
-    @Test
-    fun coverUrlFromNovelCard_returnsEmptyForEsjGrayLazyBackground() {
-        val card = Jsoup.parse(
+        val grayLazyCard = Jsoup.parse(
             """
             <div class="card mb-30">
               <a class="card-img-tiles">
@@ -116,8 +92,7 @@ class EsjzoneUrlsTest {
             """.trimIndent(),
             "https://www.esjzone.cc/"
         ).selectFirst(".card")
-
-        assertTrue(EsjzoneUrls.coverUrlFromNovelCard(card).isEmpty())
+        assertTrue(EsjzoneUrls.coverUrlFromNovelCard(grayLazyCard).isEmpty())
     }
 
     @Test
@@ -207,11 +182,31 @@ class EsjzoneUrlsTest {
             "https://www.esjzone.cc:444/detail/12.html", "http://www.esjzone.cc/detail/12.html",
             "https://user@www.esjzone.cc/detail/12.html", "https://evil.test/detail/12.html",
             "https://evil.esjzone.cc/detail/12.html", "/detail/12%2f34.html").forEach {
-            org.junit.Assert.assertNull(it, EsjzoneUrls.novelDetailUrl(it, base))
+            assertNull(it, EsjzoneUrls.novelDetailUrl(it, base))
         }
         assertEquals("https://www.esjzone.cc/detail/12.html", EsjzoneUrls.novelDetailUrl("/detail/12.html", base))
         assertEquals("https://www.esjzone.cc/detail/12.html",
             EsjzoneUrls.novelDetailUrl("https://www.esjzone.one/detail/12.html", base))
+    }
+
+    @Test
+    fun favoritePageUrl_entersSortModeBeforeFollowingNumericPager() {
+        assertEquals(
+            "https://www.esjzone.cc/my/favorite/new/",
+            favoritePageUrl("new", 1)
+        )
+        assertEquals(
+            "https://www.esjzone.cc/my/favorite/udate/",
+            favoritePageUrl("udate", 1)
+        )
+        assertEquals(
+            "https://www.esjzone.cc/my/favorite/2",
+            favoritePageUrl("new", 2)
+        )
+        assertEquals(
+            "https://www.esjzone.cc/my/favorite/udate/2",
+            favoritePageUrl("udate", 2)
+        )
     }
 
 }

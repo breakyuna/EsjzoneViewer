@@ -12,6 +12,7 @@ import com.breakyuna.esjzone.domain.reader.ReaderTextOffsets
 import com.breakyuna.esjzone.novellibrary.novel.Chapter
 import com.breakyuna.esjzone.ui.reader.ReaderPage
 import com.breakyuna.esjzone.ui.reader.ReaderPageSegment
+import com.breakyuna.esjzone.ui.reader.isBlankLine
 import com.breakyuna.esjzone.ui.reader.readerItemForContentPosition
 import com.breakyuna.esjzone.ui.reader.restoreReaderPosition
 import kotlin.math.roundToInt
@@ -100,17 +101,18 @@ internal suspend fun restoreChapterPosition(
             (contentPosition - (displayItems[targetIndex].ordinal - 1f)).coerceIn(0f, 1f)
         } else scaled - scaled.toInt()
         if (exactAnchor?.kind == "text" && !pagedMode) {
+            val block = displayItems[targetIndex].entry.document.blocks.getOrNull(exactAnchor.blockIndex)
+            if (block == null || block.isBlankLine()) return@restoreReaderPosition true
             val layout = withTimeoutOrNull(1500L) {
                 snapshotFlow { textLayouts[targetItemKey] }.first { it != null }
             }
-            val block = displayItems[targetIndex].entry.document.blocks.getOrNull(exactAnchor.blockIndex)
-            if (layout != null && block != null) {
+            if (layout != null) {
                 val offset = if (identityOffsets) exactAnchor.offset
                     else textOffsets(block)?.toDisplay(exactAnchor.offset) ?: exactAnchor.offset
                 val line = layout.getLineForOffset(offset.coerceIn(0, layout.layoutInput.text.length))
                 scrollState.scrollToItem(
-                readerListIndex(targetIndex), layout.getLineTop(line).roundToInt().coerceAtLeast(0)
-            )
+                    readerListIndex(targetIndex), layout.getLineTop(line).roundToInt().coerceAtLeast(0)
+                )
             }
         } else if (exactAnchor?.kind == "end" && !pagedMode) {
             val visible = scrollState.layoutInfo.visibleItemsInfo.firstOrNull { it.key == targetItemKey }

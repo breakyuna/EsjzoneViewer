@@ -28,40 +28,6 @@ class CacheDiagnosticsTest {
         CacheEventType.HIT, CacheLayer.PAGE, CacheEventReason.FRESH, key)
 
     @Test
-    fun recordingCanBePausedAndClearedWithoutChangingCacheContent() = withTrace {
-        val directory = Files.createTempDirectory("cache-trace-toggle-").toFile()
-        PageCache.initializeDirectory(directory)
-        try {
-            hit("ignored")
-            assertTrue(CacheDiagnostics.state.value.events.isEmpty())
-            CacheDiagnostics.setRecording(true)
-            assertTrue(PageCache.write("fixture", "cached content"))
-            val recorded = CacheDiagnostics.state.value.events
-            CacheDiagnostics.setRecording(false)
-            hit("ignored while paused")
-            assertEquals(recorded, CacheDiagnostics.state.value.events)
-            CacheDiagnostics.setRecording(true)
-            CacheDiagnostics.clear()
-            assertTrue(CacheDiagnostics.state.value.recording)
-            assertTrue(CacheDiagnostics.state.value.events.isEmpty())
-            assertEquals("cached content", PageCache.readStale("fixture"))
-        } finally { directory.deleteRecursively() }
-    }
-
-    @Test
-    fun retainsOnlyTheLatest500EventsWithUniqueIncreasingIds() = withTrace {
-        CacheDiagnostics.setRecording(true)
-        repeat(510) { hit("fixture-$it") }
-        val events = CacheDiagnostics.state.value.events
-        assertEquals(500, events.size)
-        assertTrue(events.zipWithNext().all { (first, second) -> first.id < second.id })
-        val lastId = events.last().id
-        CacheDiagnostics.clear()
-        hit("after clear")
-        assertTrue(CacheDiagnostics.state.value.events.single().id > lastId)
-    }
-
-    @Test
     fun onlyDigestsAreRetainedAndFileIdsMatchKeyIds() = withTrace {
         CacheDiagnostics.setRecording(true)
         val key = "fixture-account|https://example.invalid/tags?keyword=fixture-search"

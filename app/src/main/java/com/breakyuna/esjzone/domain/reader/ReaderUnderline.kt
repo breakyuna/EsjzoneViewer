@@ -80,6 +80,11 @@ object ReaderUnderlines {
      * matches none of them is kept untouched so it can migrate later.
      */
     fun migrateToSource(rows: List<ReaderUnderline>, blocks: List<ReaderBlock>,
+        renderings: (ReaderBlock) -> List<ReaderTextOffsets>): List<ReaderUnderline> =
+        migrateToSource(rows, blocks, ReaderUnderlineAnchors(blocks)::resolve, renderings)
+
+    internal fun migrateToSource(rows: List<ReaderUnderline>, blocks: List<ReaderBlock>,
+        reanchor: (ReaderUnderline) -> ReaderUnderline?,
         renderings: (ReaderBlock) -> List<ReaderTextOffsets>): List<ReaderUnderline> {
         var changed = false
         val migrated = rows.map { mark ->
@@ -96,7 +101,11 @@ object ReaderUnderlines {
                 changed = true
                 ReaderUnderlineRange(range.blockIndex, source, start, end)
             }
-            fromRanges(ranges, mark.quote, mark.info)
+            val updated = fromRanges(ranges, mark.quote, mark.info)
+            val allMatched = updated.ranges().all { range ->
+                blocks.getOrNull(range.blockIndex)?.let { sourceSignature(it) == range.signature } == true
+            }
+            if (allMatched) updated else reanchor(updated)?.also { changed = true } ?: updated
         }
         if (!changed) return rows
         val unique = LinkedHashMap<ReaderUnderline, ReaderUnderline>()
@@ -109,9 +118,19 @@ object ReaderUnderlines {
         return unique.values.toList()
     }
 
-    /** True when any range still uses rendered-text offsets. */
+    /**
+     * Re-anchors an underline whose block structure changed across parser versions
+     * by matching its saved quote against the current chapter's normalized text.
+     */
+    fun reanchorByQuote(mark: ReaderUnderline, blocks: List<ReaderBlock>): ReaderUnderline? =
+        ReaderUnderlineAnchors(blocks).resolve(mark)
+
+    /** True when a range needs offset migration or can be re-anchored by its saved quote. */
     fun hasLegacyRanges(rows: List<ReaderUnderline>, blocks: List<ReaderBlock>): Boolean = rows.any { mark ->
-        mark.ranges().any { range -> blocks.getOrNull(range.blockIndex)?.let { sourceSignature(it) != range.signature } == true }
+        mark.ranges().any { range ->
+            val block = blocks.getOrNull(range.blockIndex)
+            if (block == null) !mark.quote.isNullOrBlank() else sourceSignature(block) != range.signature
+        }
     }
     fun decode(value: String?): List<ReaderUnderline> {
         if (value == null) return emptyList()
@@ -174,7 +193,7 @@ object ReaderUnderlines {
         return result
     }
 
-    private fun fromRanges(ranges: List<ReaderUnderlineRange>, quote: String? = null,
+    internal fun fromRanges(ranges: List<ReaderUnderlineRange>, quote: String? = null,
         info: ReaderUnderlineInfo? = null): ReaderUnderline {
         val first = ranges.first()
         return ReaderUnderline(first.blockIndex, first.signature, first.start, first.end, quote,
