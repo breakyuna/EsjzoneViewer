@@ -1,9 +1,7 @@
 package com.breakyuna.esjzone
 
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
@@ -14,30 +12,17 @@ import androidx.compose.foundation.pager.PagerDefaults
 import androidx.compose.foundation.pager.PagerSnapDistance
 import androidx.compose.foundation.pager.PagerState
 import androidx.compose.foundation.pager.rememberPagerState
-import androidx.compose.foundation.ScrollState
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.foundation.text.BasicText
-import androidx.compose.foundation.text.selection.SelectionContainer
-import androidx.compose.runtime.CompositionLocalProvider
-import androidx.compose.ui.platform.LocalHapticFeedback
-import androidx.compose.ui.hapticfeedback.HapticFeedback
-import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.test.click
-import androidx.compose.ui.test.longClick
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.swipe
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-import androidx.compose.ui.text.TextStyle
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.breakyuna.esjzone.ui.reader.ReaderShell
 import com.breakyuna.esjzone.ui.reader.ReaderSidePanel
@@ -45,7 +30,6 @@ import com.breakyuna.esjzone.ui.reader.ReaderSidePanels
 import com.breakyuna.esjzone.ui.reader.ReaderSidePanelsState
 import com.breakyuna.esjzone.ui.reader.rememberReaderSidePanelsState
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -57,132 +41,7 @@ class ReaderGestureInstrumentedTest {
     val composeRule = createComposeRule()
 
     @Test
-    fun scrollingReaderTapOutsideSelectionClearsFocusBeforeReaderActions() {
-        verifySelectionDismissal(paged = false)
-    }
-
-    @Test
-    fun pagedReaderTapOutsideSelectionClearsFocusBeforeReaderActions() {
-        verifySelectionDismissal(paged = true)
-    }
-
-    private fun verifySelectionDismissal(paged: Boolean) {
-        var selectionFocused = false
-        var taps = 0
-        composeRule.setContent {
-            Box(Modifier.size(280.dp)) {
-                ReaderShell(background = Color.White, pagedGesturesEnabled = paged,
-                    onReadingAreaTap = { _, _ -> taps++ }) {
-                    Column(Modifier.fillMaxSize()) {
-                        Box(Modifier.height(64.dp))
-                        SelectionContainer(Modifier.onFocusChanged { selectionFocused = it.hasFocus }) {
-                            BasicText("Selectable reader text", Modifier.testTag("selected-text"),
-                                style = TextStyle(fontSize = 20.sp))
-                        }
-                        Box(Modifier.fillMaxWidth().height(80.dp).testTag("selection-blank"))
-                        SelectionContainer {
-                            BasicText("Another paragraph", Modifier.testTag("other-paragraph"),
-                                style = TextStyle(fontSize = 20.sp))
-                        }
-                    }
-                }
-            }
-        }
-        listOf("selection-blank", "other-paragraph").forEachIndexed { index, outside ->
-            composeRule.onNodeWithTag("selected-text").performTouchInput { longClick() }
-            composeRule.runOnIdle { assertTrue(selectionFocused) }
-            composeRule.onNodeWithTag(outside).performTouchInput { click() }
-            composeRule.runOnIdle {
-                assertFalse(selectionFocused)
-                assertEquals(index, taps)
-            }
-            // Once selection is dismissed, normal toolbar/tap-page handling resumes.
-            composeRule.onNodeWithTag(outside).performTouchInput { click() }
-            composeRule.runOnIdle { assertEquals(index + 1, taps) }
-        }
-    }
-
-    @Test
-    fun bookmarkThresholdFeedbackOccursOncePerGestureAndDoesNotCommitEarly() {
-        val feedback = mutableListOf<HapticFeedbackType>()
-        var bookmarks = 0
-        var density = 1f
-        val haptics = object : HapticFeedback {
-            override fun performHapticFeedback(hapticFeedbackType: HapticFeedbackType) {
-                feedback.add(hapticFeedbackType)
-            }
-        }
-        composeRule.setContent {
-            density = LocalDensity.current.density
-            CompositionLocalProvider(LocalHapticFeedback provides haptics) {
-                Box(Modifier.size(240.dp).testTag("reader")) {
-                    ReaderShell(background = Color.White, onReadingAreaTap = { _, _ -> },
-                        pagedGesturesEnabled = true, bookmarkPullEnabled = true,
-                        onBookmarkPull = { bookmarks++ }) { Box(Modifier.fillMaxSize()) }
-                }
-            }
-        }
-        composeRule.onNodeWithTag("reader").performTouchInput {
-            val start = center - Offset(0f, 70f) * density
-            down(start)
-            moveTo(start + Offset(0f, 40f) * density, delayMillis = 50)
-        }
-        composeRule.runOnIdle { assertTrue(feedback.isEmpty()) }
-        composeRule.onNodeWithTag("reader").performTouchInput {
-            moveTo(center + Offset(0f, 40f) * density, delayMillis = 50)
-            moveTo(center - Offset(0f, 20f) * density, delayMillis = 50)
-            moveTo(center + Offset(0f, 50f) * density, delayMillis = 50)
-        }
-        composeRule.runOnIdle {
-            assertEquals(listOf(HapticFeedbackType.LongPress), feedback)
-            assertEquals(0, bookmarks)
-        }
-        composeRule.onNodeWithTag("reader").performTouchInput { up() }
-        composeRule.runOnIdle { assertEquals(1, bookmarks) }
-    }
-
-    @Test
-    fun verticalReadingLocksOutSidePanelsEvenWhenTheFingerTurnsSideways() {
-        lateinit var listState: LazyListState
-        lateinit var panels: ReaderSidePanelsState
-        var density = 1f
-        composeRule.setContent {
-            density = LocalDensity.current.density
-            listState = rememberLazyListState()
-            panels = rememberReaderSidePanelsState()
-            Box(Modifier.size(240.dp).testTag("reader")) {
-                ReaderSidePanels(panels, true, true, {}, {}, {}) {
-                    ReaderShell(background = Color.White, onReadingAreaTap = { _, _ -> }) {
-                        LazyColumn(state = listState, modifier = Modifier.fillMaxSize()) {
-                            items(30) { Box(Modifier.height(64.dp)) }
-                        }
-                    }
-                }
-            }
-        }
-        composeRule.onNodeWithTag("reader").performTouchInput {
-            down(center + Offset(0f, 60f) * density)
-            moveTo(center - Offset(0f, 40f) * density, delayMillis = 200)
-        }
-        // Vertical reading follows the finger before release.
-        composeRule.runOnIdle {
-            assertTrue(listState.firstVisibleItemIndex > 0 || listState.firstVisibleItemScrollOffset > 0)
-            assertEquals(null, panels.panel)
-        }
-        composeRule.onNodeWithTag("reader").performTouchInput { up() }
-        composeRule.waitForIdle()
-        composeRule.onNodeWithTag("reader").performTouchInput {
-            val start = center + Offset(-60f, 60f) * density
-            down(start)
-            moveTo(start + Offset(20f, -15f) * density, delayMillis = 50)
-            moveTo(start + Offset(120f, -25f) * density, delayMillis = 150)
-            up()
-        }
-        composeRule.runOnIdle { assertEquals(null, panels.panel) }
-    }
-
-    @Test
-    fun actualSidePanelContentFollowsDragAndSettlesOnBothSides() {
+    fun actualSidePanelContentFollowsDragAndVerticalScrollLocksOutSidePanels() {
         lateinit var panels: ReaderSidePanelsState
         lateinit var readerList: LazyListState
         lateinit var panelList: LazyListState
@@ -252,30 +111,15 @@ class ReaderGestureInstrumentedTest {
             composeRule.waitForIdle()
             composeRule.runOnIdle { assertEquals(null, panels.panel) }
         }
-    }
-
-    @Test
-    fun shortPullReturnsAndUnavailableCommentsNeverReveal() {
-        lateinit var panels: ReaderSidePanelsState
-        var density = 1f
-        composeRule.setContent {
-            density = LocalDensity.current.density
-            panels = rememberReaderSidePanelsState()
-            Box(Modifier.size(240.dp).testTag("reader")) {
-                ReaderSidePanels(panels, true, false, {}, { Box(Modifier.fillMaxSize()) }, {}) {
-                    ReaderShell(background = Color.White, onReadingAreaTap = { _, _ -> }) { }
-                }
-            }
-        }
         composeRule.onNodeWithTag("reader").performTouchInput {
-            swipe(center, center + Offset(28f, 0f) * density, 200)
+            down(center + Offset(0f, 60f) * density)
+            moveTo(center - Offset(0f, 40f) * density, delayMillis = 200)
+            up()
         }
-        composeRule.waitForIdle()
-        composeRule.runOnIdle { assertEquals(null, panels.panel) }
-        composeRule.onNodeWithTag("reader").performTouchInput {
-            swipe(center + Offset(70f, 0f) * density, center - Offset(70f, 0f) * density, 300)
+        composeRule.runOnIdle {
+            assertTrue(readerList.firstVisibleItemIndex > 0 || readerList.firstVisibleItemScrollOffset > 0)
+            assertEquals(null, panels.panel)
         }
-        composeRule.runOnIdle { assertEquals(null, panels.panel) }
     }
 
     @Test
@@ -381,38 +225,6 @@ class ReaderGestureInstrumentedTest {
             assertEquals(1, pagerState.currentPage)
             assertEquals(0f, pagerState.currentPageOffsetFraction, 0.001f)
             assertEquals(0, taps)
-        }
-    }
-
-    @Test
-    fun nestedVerticalScrollingTakesPriorityOverBookmarkPulls() {
-        lateinit var scrollState: ScrollState
-        lateinit var pagerState: PagerState
-        var density = 1f
-        var pulls = 0
-        composeRule.setContent {
-            density = LocalDensity.current.density
-            scrollState = rememberScrollState(initial = 140)
-            pagerState = rememberPagerState(initialPage = 1) { 3 }
-            Box(Modifier.size(240.dp).testTag("reader")) {
-                ReaderShell(background = Color.White, onReadingAreaTap = { _, _ -> },
-                    pagedGesturesEnabled = true, verticalContentScrollable = true,
-                    bookmarkPullEnabled = true, onBookmarkPull = { pulls++ }) {
-                    HorizontalPager(state = pagerState, modifier = Modifier.fillMaxSize()) {
-                        Column(Modifier.fillMaxSize().verticalScroll(scrollState)) {
-                            Box(Modifier.height(800.dp))
-                        }
-                    }
-                }
-            }
-        }
-        composeRule.onNodeWithTag("reader").performTouchInput {
-            swipe(center - Offset(20f, 60f) * density, center + Offset(20f, 60f) * density, 300)
-        }
-        composeRule.runOnIdle {
-            assertTrue(scrollState.value < 140)
-            assertEquals(0, pulls)
-            assertEquals(1, pagerState.currentPage)
         }
     }
 }

@@ -4,8 +4,12 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
+import com.breakyuna.esjzone.novellibrary.component.FuriganaTextStyle
+import com.breakyuna.esjzone.novellibrary.component.ImageComponent
 import com.breakyuna.esjzone.novellibrary.component.TextComponent
+import com.breakyuna.esjzone.novellibrary.novel.NovelDescription
 import com.breakyuna.esjzone.novellibrary.novel.analyseDescription
+import com.breakyuna.esjzone.novellibrary.novel.copyText
 import com.breakyuna.esjzone.novellibrary.novel.preview
 import com.breakyuna.esjzone.ui.component.descriptionDisplayText
 import org.jsoup.Jsoup
@@ -48,5 +52,41 @@ class DescriptionLayoutTest {
     fun inlineContentRetainsEnoughVerticalSpace() {
         val text = descriptionDisplayText(AnnotatedString("注音"), inlineHeight = 48f)
         assertEquals(48.sp, text.paragraphStyles.single().item.lineHeight)
+    }
+
+    private fun parseDescription(html: String): NovelDescription =
+        analyseDescription(Jsoup.parse("<div>$html</div>").selectFirst("body > div")!!)
+
+    @Test
+    fun keepsParagraphsAndLineBreaksThatPreviewFlattens() {
+        val description = parseDescription(
+            "<p><strong>小說簡介：</strong></p><p>第一行<br>第二行 </p><p>第三段</p>"
+        )
+
+        assertEquals("小說簡介：\n第一行\n第二行\n第三段", description.copyText())
+        assertEquals("第一行 第二行 第三段", description.preview(Int.MAX_VALUE))
+    }
+
+    @Test
+    fun collapsesEmptyParagraphRunsAndDropsTrailingBreaks() {
+        val description = parseDescription(
+            "<p>開頭<br></p><p><br></p><p><br></p><p><br></p><p>結尾</p><p><br></p>"
+        )
+
+        assertEquals("開頭\n\n結尾", description.copyText())
+    }
+
+    @Test
+    fun copiesRubyBaseTextAndSkipsImages() {
+        val description = NovelDescription(
+            listOf(
+                ImageComponent("https://example.invalid/cover.jpg"),
+                TextComponent("在").append(
+                    TextComponent("英雄").style(FuriganaTextStyle(TextComponent("Hero")))
+                ).append(TextComponent("番組")),
+            )
+        )
+
+        assertEquals("在英雄番組", description.copyText())
     }
 }

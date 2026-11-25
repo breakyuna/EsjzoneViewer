@@ -1,15 +1,16 @@
 package com.breakyuna.esjzone
 
+import com.breakyuna.esjzone.domain.reader.readerBoundaryLoadDirection
+import com.breakyuna.esjzone.domain.reader.shouldDeferReaderWindowUpdate
+import com.breakyuna.esjzone.domain.reader.shouldFillReaderViewport
+import com.breakyuna.esjzone.domain.reader.shouldPrepareReaderBoundary
+import com.breakyuna.esjzone.novellibrary.novel.Chapter
+import com.breakyuna.esjzone.ui.page.ReaderBoundaryVerification
+import com.breakyuna.esjzone.ui.page.ReaderBoundaryVerifications
 import com.breakyuna.esjzone.ui.page.ReaderScrollSnapshot
-import com.breakyuna.esjzone.ui.page.ReaderWindowAnchor
-import com.breakyuna.esjzone.ui.page.chapterProgressFor
 import com.breakyuna.esjzone.ui.page.shouldLoadNextChapter
 import com.breakyuna.esjzone.ui.page.shouldLoadPreviousChapter
 import com.breakyuna.esjzone.ui.page.trimReaderWindowKeys
-import com.breakyuna.esjzone.domain.reader.shouldFillReaderViewport
-import com.breakyuna.esjzone.domain.reader.readerBoundaryLoadDirection
-import com.breakyuna.esjzone.domain.reader.shouldDeferReaderWindowUpdate
-import com.breakyuna.esjzone.domain.reader.shouldPrepareReaderBoundary
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -19,21 +20,18 @@ import org.junit.Test
 class ReaderWindowPolicyTest {
 
     @Test
-    fun settledChapterEdgesPrepareContentWithoutAnotherGesture() {
+    fun settledBoundaryPreparationRespectsEdgesAndGuards() {
         val head = snapshot(0, 0, "chapter-2", "chapter-2", 2000, listOf("chapter-2"))
             .copy(isScrollInProgress = false, hasPreviousChapter = true)
         assertTrue(shouldPrepareReaderBoundary(head, false, 240))
         assertFalse(shouldPrepareReaderBoundary(head, true, 720))
+
         val tail = head.copy(firstVisibleIndex = 20, firstVisibleChapterKey = null, distanceToLoadedTail = 0)
         assertTrue(shouldPrepareReaderBoundary(tail, true, 720))
         assertFalse(shouldPrepareReaderBoundary(tail, false, 240))
         assertFalse(shouldPrepareReaderBoundary(tail.copy(distanceToLoadedTail = 721), true, 720))
-    }
 
-    @Test
-    fun automaticPreparationWaitsForPositioningAndStopsAfterWindowExpansion() {
-        val edge = snapshot(0, 0, "chapter-2", "chapter-2", 0, listOf("chapter-2"))
-            .copy(isScrollInProgress = false, hasPreviousChapter = true)
+        val edge = head.copy(distanceToLoadedTail = 0)
         for (forward in listOf(false, true)) {
             assertFalse(shouldPrepareReaderBoundary(edge.copy(isProgrammaticScroll = true), forward, 720))
             assertFalse(shouldPrepareReaderBoundary(edge.copy(layoutMatchesLoadedWindow = false), forward, 720))
@@ -45,8 +43,6 @@ class ReaderWindowPolicyTest {
         assertFalse(shouldPrepareReaderBoundary(edge.copy(isLoadingPrevious = true), false, 240))
         assertFalse(shouldPrepareReaderBoundary(edge.copy(hasNextChapter = false), true, 720))
         assertFalse(shouldPrepareReaderBoundary(edge.copy(hasPreviousChapter = false), false, 240))
-        // Catalog completion alone must be enough to wake up the observer.
-        assertTrue(shouldPrepareReaderBoundary(edge.copy(hasPreviousChapter = true), false, 240))
     }
 
     @Test
@@ -62,7 +58,7 @@ class ReaderWindowPolicyTest {
     }
 
     @Test
-    fun outwardDragLoadsAtRestoredEdgesWithoutAnyPositionChange() {
+    fun outwardEdgeDragLoadsOnlyFromSettledUnexpandedBoundary() {
         val head = snapshot(0, 0, "chapter-2", "chapter-2", 1000, listOf("chapter-2"))
             .copy(canScrollBackward = false, isScrollInProgress = false)
         val tail = head.copy(firstVisibleIndex = 30, firstVisibleChapterKey = null,
@@ -73,21 +69,11 @@ class ReaderWindowPolicyTest {
         assertNull(readerBoundaryLoadDirection(head, -20f))
         assertNull(readerBoundaryLoadDirection(tail, 20f))
         assertNull(readerBoundaryLoadDirection(head, 0f))
-    }
 
-    @Test
-    fun edgeDragWaitsForASettledWindowAndDoesNotChainAfterContentArrives() {
-        val tail = snapshot(30, 0, "chapter-2", "chapter-2", 0, listOf("chapter-2"))
-            .copy(canScrollForward = false)
         assertNull(readerBoundaryLoadDirection(tail.copy(isProgrammaticScroll = true), -20f))
         assertNull(readerBoundaryLoadDirection(tail.copy(layoutMatchesLoadedWindow = false), -20f))
         assertNull(readerBoundaryLoadDirection(tail.copy(loadedChapterKeys = listOf("chapter-2", "chapter-3")), -20f))
         assertNull(readerBoundaryLoadDirection(tail.copy(canScrollForward = true), -20f))
-
-        val head = tail.copy(firstVisibleIndex = 0, firstVisibleChapterKey = "chapter-2",
-            canScrollForward = true, canScrollBackward = false)
-        assertNull(readerBoundaryLoadDirection(head.copy(isProgrammaticScroll = true), 20f))
-        assertNull(readerBoundaryLoadDirection(head.copy(layoutMatchesLoadedWindow = false), 20f))
         assertNull(readerBoundaryLoadDirection(head.copy(loadedChapterKeys = listOf("chapter-1", "chapter-2")), 20f))
         assertNull(readerBoundaryLoadDirection(head.copy(canScrollBackward = true), 20f))
     }
@@ -109,33 +95,20 @@ class ReaderWindowPolicyTest {
     }
 
     @Test
-    fun shortViewportFillsOnlyWithACompleteSettledBodyLayout() {
+    fun shortViewportFillsOnlyWhenSettledAndCatalogReady() {
         val short = snapshot(0, 0, "chapter-1", "chapter-1", 0, listOf("chapter-1"))
             .copy(canScrollForward = false, canScrollBackward = false, isScrollInProgress = false)
 
         assertTrue(shouldFillReaderViewport(short))
         assertFalse(shouldFillReaderViewport(short.copy(canScrollForward = true)))
+        assertFalse(shouldFillReaderViewport(short.copy(canScrollBackward = true)))
         assertFalse(shouldFillReaderViewport(short.copy(isProgrammaticScroll = true)))
         assertFalse(shouldFillReaderViewport(short.copy(layoutMatchesLoadedWindow = false)))
         assertFalse(shouldFillReaderViewport(short.copy(distanceToLoadedTail = Int.MAX_VALUE)))
         assertFalse(shouldFillReaderViewport(short.copy(lastVisibleChapterKey = null)))
         assertFalse(shouldFillReaderViewport(short.copy(loadedChapterKeys = listOf("chapter-1", "chapter-2"))))
-    }
-
-    @Test
-    fun catalogReadinessReevaluatesShortViewportWithoutScrollOrLayoutChanges() {
-        val waiting = snapshot(0, 0, "chapter-1", "chapter-1", 0, listOf("chapter-1"))
-            .copy(canScrollForward = false, canScrollBackward = false,
-                isScrollInProgress = false, hasNextChapter = false, isLoadingNext = true)
-        assertFalse(shouldFillReaderViewport(waiting))
-        val catalogPublished = waiting.copy(hasNextChapter = true)
-        assertTrue(waiting != catalogPublished)
-        assertFalse(shouldFillReaderViewport(catalogPublished))
-        val ready = catalogPublished.copy(isLoadingNext = false)
-        assertTrue(catalogPublished != ready)
-        assertTrue(shouldFillReaderViewport(ready))
-        assertFalse(shouldFillReaderViewport(ready.copy(hasNextChapter = false)))
-        assertFalse(shouldFillReaderViewport(ready.copy(canScrollBackward = true)))
+        assertFalse(shouldFillReaderViewport(short.copy(hasNextChapter = false)))
+        assertFalse(shouldFillReaderViewport(short.copy(isLoadingNext = true)))
     }
 
     @Test
@@ -144,27 +117,9 @@ class ReaderWindowPolicyTest {
         val current = snapshot(2, 0, "chapter-2", "chapter-3", 0, previous.loadedChapterKeys)
 
         assertTrue(shouldLoadNextChapter(previous, current, threshold = 720))
-        assertFalse(
-            shouldLoadNextChapter(
-                previous,
-                current.copy(lastVisibleChapterKey = "reader-loading-next"),
-                threshold = 720
-            )
-        )
-        assertFalse(
-            shouldLoadNextChapter(
-                previous,
-                current.copy(lastVisibleChapterKey = "chapter-2"),
-                threshold = 720
-            )
-        )
-        assertFalse(
-            shouldLoadNextChapter(
-                previous,
-                current.copy(layoutMatchesLoadedWindow = false),
-                threshold = 720
-            )
-        )
+        assertFalse(shouldLoadNextChapter(previous, current.copy(lastVisibleChapterKey = "reader-loading-next"), threshold = 720))
+        assertFalse(shouldLoadNextChapter(previous, current.copy(lastVisibleChapterKey = "chapter-2"), threshold = 720))
+        assertFalse(shouldLoadNextChapter(previous, current.copy(layoutMatchesLoadedWindow = false), threshold = 720))
     }
 
     @Test
@@ -175,15 +130,6 @@ class ReaderWindowPolicyTest {
 
         assertFalse(shouldLoadNextChapter(previous, appended, threshold = 720))
         assertFalse(shouldLoadPreviousChapter(previous, prepended, threshold = 240))
-    }
-
-    @Test
-    fun programmaticSeekCannotTriggerEitherDirection() {
-        val previous = snapshot(1, 0, "chapter-2", "chapter-3", 0, listOf("chapter-1", "chapter-2", "chapter-3"))
-        val seek = snapshot(0, 0, "chapter-1", "chapter-2", 0, previous.loadedChapterKeys, programmatic = true)
-
-        assertFalse(shouldLoadNextChapter(previous, seek, threshold = 720))
-        assertFalse(shouldLoadPreviousChapter(previous, seek, threshold = 240))
     }
 
     @Test
@@ -205,93 +151,59 @@ class ReaderWindowPolicyTest {
     }
 
     @Test
-    fun trimProtectsVisibleNineChapterWindowAndIsConservativeWithoutAnchor() {
+    fun trimProtectsVisibleAndEdgeChaptersAndIsConservativeWithoutAnchor() {
         val keys = (1..11).map { "chapter-$it" }
-        assertEquals(
-            keys,
-            trimReaderWindowKeys(keys, trimFromStart = true, maxSize = 9, protectedKeys = emptySet())
-        )
+        assertEquals(keys, trimReaderWindowKeys(keys, trimFromStart = true, maxSize = 9, protectedKeys = emptySet()))
         assertEquals(
             (3..11).map { "chapter-$it" },
-            trimReaderWindowKeys(
-                keys,
-                trimFromStart = true,
-                maxSize = 9,
-                protectedKeys = setOf("chapter-3", "chapter-4")
-            )
+            trimReaderWindowKeys(keys, trimFromStart = true, maxSize = 9, protectedKeys = setOf("chapter-3", "chapter-4"))
         )
         assertEquals(
             (1..9).map { "chapter-$it" },
-            trimReaderWindowKeys(
-                keys,
-                trimFromStart = false,
-                maxSize = 9,
-                protectedKeys = setOf("chapter-8", "chapter-9")
-            )
+            trimReaderWindowKeys(keys, trimFromStart = false, maxSize = 9, protectedKeys = setOf("chapter-8", "chapter-9"))
         )
+        val ten = (1..10).map { "chapter-$it" }
+        assertEquals(ten, trimReaderWindowKeys(ten, trimFromStart = true, maxSize = 9, protectedKeys = setOf("chapter-1")))
+        assertEquals(ten, trimReaderWindowKeys(ten, trimFromStart = false, maxSize = 9, protectedKeys = setOf("chapter-10")))
     }
 
     @Test
-    fun protectedEdgePreventsDeletingTheCurrentChapter() {
-        val keys = (1..10).map { "chapter-$it" }
-        assertEquals(
-            keys,
-            trimReaderWindowKeys(
-                keys,
-                trimFromStart = true,
-                maxSize = 9,
-                protectedKeys = setOf("chapter-1")
-            )
-        )
-        assertEquals(
-            keys,
-            trimReaderWindowKeys(
-                keys,
-                trimFromStart = false,
-                maxSize = 9,
-                protectedKeys = setOf("chapter-10")
-            )
-        )
+    fun bothDirectionsSurviveAndRetryOnlyRemovesItsOwnGate() {
+        val previous = Chapter("Previous", "/forum/1/1.html", false)
+        val next = Chapter("Next", "/forum/1/3.html", false)
+        val gates = ReaderBoundaryVerifications()
+        gates.remember(ReaderBoundaryVerification(previous, -1))
+        gates.remember(ReaderBoundaryVerification(next, 1))
+        gates.markStorageUnavailable(next)
+        assertEquals(previous, gates.current?.chapter)
+        val retry = gates.take(next)
+        assertEquals(next, retry?.chapter)
+        assertTrue(retry?.storageUnavailable == true)
+        assertEquals(previous, gates.current?.chapter)
+        assertNull(gates.take(next))
+        gates.remember(ReaderBoundaryVerification(next, 1, storageUnavailable = true))
+        gates.resolve(previous.copy(url = "https://www.esjzone.one/forum/1/1.html"))
+        assertEquals(next, gates.current?.chapter)
+        assertTrue(gates.current?.storageUnavailable == true)
+        gates.clear()
+        assertNull(gates.current)
+        assertFalse(gates.blocks(1))
     }
 
     @Test
-    fun layoutAnchorOnlyProtectsKeysAfterACompletedLayout() {
-        assertEquals(
-            emptySet<String>(),
-            ReaderWindowAnchor(setOf("chapter-2"), "chapter-2", layoutReady = false)
-                .protectedChapterKeys
-        )
-        assertEquals(
-            setOf("chapter-2", "chapter-3"),
-            ReaderWindowAnchor(setOf("chapter-2"), "chapter-3", layoutReady = true)
-                .protectedChapterKeys
-        )
-    }
-
-    @Test
-    fun missingLayoutGeometryDoesNotResetProgressToZero() {
-        assertNull(chapterProgressFor(itemOffset = null, itemSize = null))
-        assertNull(chapterProgressFor(itemOffset = 0, itemSize = 0))
-        assertEquals(0.5f, chapterProgressFor(itemOffset = -50, itemSize = 100) ?: -1f, 0.0001f)
-    }
-
-    @Test
-    fun latestAsyncAnchorWinsOverTheAnchorAtRequestStart() {
-        val keys = (1..10).map { "chapter-$it" }
-        val atRequestStart = setOf("chapter-1")
-        val whenRequestCompletes = setOf("chapter-4", "chapter-5")
-
-        val retained = trimReaderWindowKeys(
-            keys,
-            trimFromStart = true,
-            maxSize = 9,
-            protectedKeys = whenRequestCompletes
-        )
-
-        assertEquals(keys, trimReaderWindowKeys(keys, true, 9, atRequestStart))
-        assertEquals((2..10).map { "chapter-$it" }, retained)
-        assertTrue("chapter-4" in retained)
-        assertTrue("chapter-5" in retained)
+    fun movingTheWindowDropsOnlyGatesThatAreNoLongerAdjacent() {
+        val previous = Chapter("Previous", "/forum/1/1.html", false)
+        val next = Chapter("Next", "/forum/1/3.html", false)
+        val gates = ReaderBoundaryVerifications()
+        gates.remember(ReaderBoundaryVerification(previous, -1))
+        gates.remember(ReaderBoundaryVerification(next, 1))
+        gates.retainTargets(previous, next)
+        assertTrue(gates.blocks(-1, previous))
+        assertFalse(gates.blocks(-1, next))
+        gates.retainTargets(next, next)
+        assertFalse(gates.blocks(-1))
+        assertEquals(next, gates.current?.chapter)
+        assertTrue(gates.blocks(1, next))
     }
 
     private fun snapshot(

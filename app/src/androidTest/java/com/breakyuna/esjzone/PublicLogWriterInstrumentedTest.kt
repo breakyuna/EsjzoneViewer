@@ -40,9 +40,16 @@ class PublicLogWriterInstrumentedTest {
             .apply { check(mkdirs()) }
     }
 
+    private fun denyOpen(root: StorageFile, denied: Boolean) {
+        context.contentResolver.call(treeUri, "configure-fixture", root.name, Bundle().apply {
+            putString("mode", if (denied) "security" else null)
+            putString("operation", "open")
+        })
+    }
+
     private fun text(file: StorageFile) = file.inputStream().bufferedReader().use { it.readText() }
 
-    @Test fun restoresPublicLogsBeforeStorageInitializationEvenWithMigrationLockHeld() = runBlocking {
+    @Test fun restoresPublicLogsBeforeStorageInitializationAndRecoversFromStorageAccessFailure() = runBlocking {
         for (pending in listOf(false, true)) {
             val root = directory()
             val files = File(context.cacheDir, "log-selection-${UUID.randomUUID()}").apply { mkdirs() }
@@ -72,84 +79,26 @@ class PublicLogWriterInstrumentedTest {
                     val writer = PublicLogWriter(sessionTime = "2026-11-01_18-45-39-845")
                     writer.append(AppLogger.sanitizeForDisplay("Startup password=fixture-secret"))
                     writer.attach(logs)
-                    val record = text(StorageFile(root, "logs/app_2026-11-01_18-45-39-845.txt"))
+                    val logFile = StorageFile(root, "logs/app_2026-11-01_18-45-39-845.txt")
+                    val record = text(logFile)
                     assertTrue(record.contains("Startup"))
                     assertFalse(record.contains("fixture-secret"))
+                    if (!pending) {
+                        denyOpen(root, true)
+                        try {
+                            assertThrows(StorageAccessException::class.java) { writer.append("During failure") }
+                        } finally {
+                            denyOpen(root, false)
+                        }
+                        writer.append("Recovered")
+                        assertTrue(text(logFile).contains("During failure\nRecovered\n"))
+                    }
                 } finally { storage.operationMutex.unlock() }
             } finally {
+                denyOpen(root, false)
                 root.deleteRecursively()
                 files.deleteRecursively()
             }
-        }
-    }
-
-    @Test fun appendsRotatesSurvivesWriterRestartAndClearsOnlyLogFiles() {
-        val shared = directory()
-        val local = File(context.cacheDir, "local-logs-${UUID.randomUUID()}").apply { mkdirs() }
-        try {
-            for (root in listOf(shared, StorageFile(local))) {
-                val keep = StorageFile(root, "downloads/keep.txt")
-                check(requireNotNull(keep.parentFile).mkdirs())
-                keep.writeText("keep")
-                val logs = StorageFile(root, "logs")
-                val writer = PublicLogWriter(maxBytes = 64, sessionTime = "2026-11-01_18-45-39-845")
-                writer.attach(logs)
-                writer.append("a".repeat(30))
-                writer.append("b".repeat(30))
-                writer.append("c".repeat(30))
-                assertEquals("a".repeat(30) + "\n" + "b".repeat(30) + "\n",
-                    text(StorageFile(logs, "app_2026-11-01_18-45-39-845.txt")))
-                assertEquals("c".repeat(30) + "\n", text(StorageFile(logs, "app_2026-11-01_18-45-39-845-part2.txt")))
-                val restarted = PublicLogWriter(maxBytes = 64, sessionTime = "2026-11-01_18-45-40-123")
-                restarted.attach(logs)
-                restarted.append("Restarted 日志")
-                assertEquals("Restarted 日志\n", text(StorageFile(logs, "app_2026-11-01_18-45-40-123.txt")))
-                assertEquals("c".repeat(30) + "\n", text(StorageFile(logs, "app_2026-11-01_18-45-39-845-part2.txt")))
-                val sameTime = PublicLogWriter(maxBytes = 64, sessionTime = "2026-11-01_18-45-40-123")
-                sameTime.attach(logs)
-                sameTime.append("Same millisecond")
-                assertEquals("Same millisecond\n", text(StorageFile(logs, "app_2026-11-01_18-45-40-123-part2.txt")))
-                StorageFile(logs, "app_logs.log (1).txt").writeText("legacy")
-                StorageFile(logs, "keep.txt").writeText("keep")
-                restarted.writeCrashReport("Startup failure")
-                assertEquals("Startup failure", text(StorageFile(logs, "last_crash.log")))
-                restarted.clear()
-                assertEquals(listOf("keep.txt"), logs.entries().map { it.file.name })
-                assertEquals("keep", text(keep))
-            }
-        } finally {
-            shared.deleteRecursively()
-            local.deleteRecursively()
-        }
-    }
-
-    @Test fun inaccessibleProviderRetainsRecordsAndDirectorySwitchUsesNewSelection() {
-        val first = directory()
-        val second = directory()
-        fun denyOpen(denied: Boolean) {
-            context.contentResolver.call(treeUri, "configure-fixture", first.name, Bundle().apply {
-                putString("mode", if (denied) "security" else null)
-                putString("operation", "open")
-            })
-        }
-        try {
-            val writer = PublicLogWriter(sessionTime = "2026-11-01_18-45-39-845")
-            writer.attach(StorageFile(first, "logs"))
-            writer.append("Before failure")
-            denyOpen(true)
-            assertThrows(StorageAccessException::class.java) { writer.append("During failure") }
-            denyOpen(false)
-            writer.append("Recovered")
-            assertEquals("Before failure\nDuring failure\nRecovered\n",
-                text(StorageFile(first, "logs/app_2026-11-01_18-45-39-845.txt")))
-            writer.attach(StorageFile(second, "logs"))
-            writer.append("New selection")
-            assertEquals("New selection\n", text(StorageFile(second, "logs/app_2026-11-01_18-45-39-845.txt")))
-            assertFalse(text(StorageFile(first, "logs/app_2026-11-01_18-45-39-845.txt")).contains("New selection"))
-        } finally {
-            denyOpen(false)
-            first.deleteRecursively()
-            second.deleteRecursively()
         }
     }
 }

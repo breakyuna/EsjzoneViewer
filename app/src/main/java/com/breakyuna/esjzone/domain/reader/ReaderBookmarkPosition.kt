@@ -36,6 +36,9 @@ object ReaderBookmarkPosition {
      */
     fun fallbackContentPosition(document: ReaderChapterDocument, chapterKey: String, anchor: ReaderAnchor?): Float? {
         if (anchor == null || anchor.matches(chapterKey, document) || document.blocks.isEmpty()) return null
+        anchor.resolveIn(chapterKey, document)?.let { resolved ->
+            return readerContentPosition(document, resolved)
+        }
         return when (anchor.kind) {
             "heading" -> -1f
             "end" -> document.blocks.lastIndex.toFloat()

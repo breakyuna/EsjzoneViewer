@@ -13,6 +13,8 @@ import com.breakyuna.esjzone.database.entity.ReadingStat
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -112,5 +114,18 @@ class NovelTitleDaoInstrumentedTest {
         database.bookshelfDao().upsert(shelf)
         database.bookshelfDao().repairNovelName(shelf.scope, shelf.bookKey, "123", "Real title")
         assertEquals(shelf.copy(title = "Real title"), database.bookshelfDao().find(shelf.scope, shelf.bookKey))
+    }
+
+    @Test
+    fun readingTheLatestChapterOnlyClearsTheReadingAccountsUpdate() = runBlocking {
+        val dao = database.bookshelfDao()
+        val entry = BookshelfEntry(scope = "account-a", bookKey = "/detail/123.html",
+            url = "/detail/123.html", title = "Novel", latestFingerprint = "/forum/123/456.html",
+            hasUpdate = true)
+        dao.upsert(entry)
+        dao.upsert(entry.copy(scope = "account-b"))
+        dao.clearUpdateForFingerprint("account-a", entry.latestFingerprint)
+        assertFalse(requireNotNull(dao.find("account-a", entry.bookKey)).hasUpdate)
+        assertTrue(requireNotNull(dao.find("account-b", entry.bookKey)).hasUpdate)
     }
 }

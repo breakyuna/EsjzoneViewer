@@ -11,6 +11,7 @@ import com.breakyuna.esjzone.novellibrary.novel.ChapterSource
 import com.breakyuna.esjzone.novellibrary.novel.resolveChapterSource
 import com.breakyuna.esjzone.novellibrary.novel.NovelChapterList
 import com.breakyuna.esjzone.novellibrary.component.ChapterItem
+import com.breakyuna.esjzone.ui.page.WenkuVerificationPolicy
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -149,5 +150,51 @@ class WenkuChapterTest {
         val restored = ExternalChapterHtml.parse(cached, Chapter("fallback", url, false), url)
         assertEquals(detail.name, restored.name)
         assertEquals(detail.contentHtml, restored.contentHtml)
+    }
+
+    @Test fun waitsForChapterWhileClearanceIsAvailable() {
+        val policy = WenkuVerificationPolicy(acceptChapterContent = true)
+
+        assertEquals(
+            WenkuVerificationPolicy.Decision.WAIT,
+            policy.next(hasReadableChapter = false, hasClearance = true, nowElapsedMillis = 1_000)
+        )
+        assertEquals(
+            WenkuVerificationPolicy.Decision.WAIT,
+            policy.next(hasReadableChapter = false, hasClearance = true, nowElapsedMillis = 5_000)
+        )
+        assertEquals(
+            WenkuVerificationPolicy.Decision.USE_CHAPTER_CONTENT,
+            policy.next(hasReadableChapter = true, hasClearance = true, nowElapsedMillis = 6_000)
+        )
+    }
+
+    @Test fun clearanceGraceCanExtendCheckAndThenFallsBack() {
+        val policy = WenkuVerificationPolicy(acceptChapterContent = true)
+
+        assertEquals(
+            WenkuVerificationPolicy.Decision.WAIT,
+            policy.next(hasReadableChapter = false, hasClearance = true, nowElapsedMillis = 59_000)
+        )
+        assertTrue(policy.shouldContinue(nowElapsedMillis = 61_000, checkStartedAtMillis = 1_000))
+        assertEquals(
+            WenkuVerificationPolicy.Decision.USE_CLEARANCE,
+            policy.next(hasReadableChapter = false, hasClearance = true, nowElapsedMillis = 79_000)
+        )
+
+        val noClearance = WenkuVerificationPolicy(acceptChapterContent = true)
+        assertEquals(
+            WenkuVerificationPolicy.Decision.WAIT,
+            noClearance.next(hasReadableChapter = false, hasClearance = false, nowElapsedMillis = 61_000)
+        )
+        assertFalse(noClearance.shouldContinue(nowElapsedMillis = 61_000, checkStartedAtMillis = 1_000))
+    }
+
+    @Test fun downloadFlowAcceptsExistingClearanceWithoutChapterCapture() {
+        val policy = WenkuVerificationPolicy(acceptChapterContent = false)
+        assertEquals(
+            WenkuVerificationPolicy.Decision.USE_CLEARANCE,
+            policy.next(hasReadableChapter = false, hasClearance = true, nowElapsedMillis = 1_000)
+        )
     }
 }

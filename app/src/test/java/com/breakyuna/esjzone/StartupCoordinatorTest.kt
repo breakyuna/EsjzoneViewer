@@ -1,6 +1,5 @@
 package com.breakyuna.esjzone
 
-import com.breakyuna.esjzone.update.ReleaseVersion
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.async
 import kotlinx.coroutines.runBlocking
@@ -11,27 +10,9 @@ import org.junit.Test
 
 class StartupCoordinatorTest {
     @Test
-    fun stateStartsAsStarting() {
-        val coordinator = coordinator()
-
-        assertEquals(StartupState.Starting, coordinator.state.value)
-    }
-
-    @Test
-    fun successfulInitializationMovesToReadyAndRunsOnlyOnce() = runBlocking {
-        val coordinator = coordinator()
-        var calls = 0
-
-        coordinator.initializeOnce { calls += 1 }
-        coordinator.initializeOnce { calls += 1 }
-
-        assertEquals(1, calls)
-        assertEquals(StartupState.Ready, coordinator.state.value)
-    }
-
-    @Test
     fun concurrentInitializationRunsOnlyOnce() = runBlocking {
         val coordinator = coordinator()
+        assertEquals(StartupState.Starting, coordinator.state.value)
         val entered = CompletableDeferred<Unit>()
         val release = CompletableDeferred<Unit>()
         var calls = 0
@@ -53,6 +34,7 @@ class StartupCoordinatorTest {
         release.complete(Unit)
         first.await()
         second.await()
+        coordinator.initializeOnce { calls += 1 }
 
         assertEquals(1, calls)
         assertEquals(StartupState.Ready, coordinator.state.value)

@@ -84,7 +84,6 @@ import androidx.compose.foundation.pager.PagerSnapDistance
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.BookmarkBorder
-import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.IconButtonDefaults
 import com.breakyuna.esjzone.ui.reader.ReaderPageTurnQueue
 import com.breakyuna.esjzone.ui.reader.animateReaderPageTurn
@@ -190,12 +189,14 @@ import com.breakyuna.esjzone.database.entity.LocalReadingActivity
 import com.breakyuna.esjzone.network.EsjzoneUrls
 import com.breakyuna.esjzone.network.LocalAuthorization
 import com.breakyuna.esjzone.novellibrary.novel.Chapter
+import com.breakyuna.esjzone.novellibrary.novel.ChapterSource
 import com.breakyuna.esjzone.novellibrary.novel.FavoriteNovel
 import com.breakyuna.esjzone.domain.reader.ReaderBlock
 import com.breakyuna.esjzone.domain.reader.ReaderUnderline
 import com.breakyuna.esjzone.domain.reader.ReaderUnderlineInfo
 import com.breakyuna.esjzone.domain.reader.ReaderUnderlines
 import com.breakyuna.esjzone.ui.reader.readerUnderlinePosition
+import com.breakyuna.esjzone.ui.reader.readerUnderlineAnchors
 import com.breakyuna.esjzone.ui.reader.readerDisplayOffsets
 import com.breakyuna.esjzone.ui.reader.readerLegacyUnderlineRenderings
 import com.breakyuna.esjzone.ui.reader.readerUnderlineQuote
@@ -211,6 +212,7 @@ import com.breakyuna.esjzone.ui.reader.ReaderNameReplaceSettings
 import com.breakyuna.esjzone.ui.reader.ReaderChapterHeading
 import com.breakyuna.esjzone.ui.reader.ReaderUnderlineSelection
 import com.breakyuna.esjzone.ui.reader.ReaderBlocks
+import com.breakyuna.esjzone.ui.reader.isBlankLine
 import com.breakyuna.esjzone.ui.reader.ReaderBoundaryTurn
 import com.breakyuna.esjzone.ui.reader.resolveReaderBoundaryPage
 import com.breakyuna.esjzone.ui.reader.ReaderPageContent
@@ -224,6 +226,7 @@ import com.breakyuna.esjzone.ui.designsystem.AppShapes
 import com.breakyuna.esjzone.ui.designsystem.AppSpacing
 import com.breakyuna.esjzone.domain.reader.ReaderAnchor
 import com.breakyuna.esjzone.domain.reader.ReaderBookmarkPosition
+import com.breakyuna.esjzone.domain.reader.ReaderChapterDocument
 import com.breakyuna.esjzone.domain.reader.readerChapterProgress
 import com.breakyuna.esjzone.domain.reader.readerContentPosition
 import com.breakyuna.esjzone.domain.reader.sourceText
@@ -300,11 +303,24 @@ class ChapterPage(
         val context = LocalContext.current
         val historyState = history.state()
 
-        val storedReaderSettings by PresentationAccess.readerSettings.settings.collectAsStateWithLifecycle()
-        var readerSettings by remember(storedReaderSettings) {
+        val readerSettingsStore = PresentationAccess.readerSettings
+        val storedReaderSettings by readerSettingsStore.settings.collectAsStateWithLifecycle()
+        var globalReaderSettings by remember(storedReaderSettings) {
             mutableStateOf(storedReaderSettings)
         }
-        val storedNameReplaceSettings by PresentationAccess.readerSettings.nameReplaceSettings.collectAsStateWithLifecycle()
+        val indentBookKey = remember(novelId, novelUrl, chapter.url) {
+            readingStatisticsBookKey(novelId.ifBlank { chapter.novelId() }, novelUrl,
+                if (chapter.source == ChapterSource.WENKU8) {
+                    chapterIdentity(chapter).substringBefore('?').substringBeforeLast('/')
+                } else chapterIdentity(chapter))
+        }
+        val bookIndents by readerSettingsStore.bookIndents.collectAsStateWithLifecycle()
+        val firstLineIndentChars = bookIndents[indentBookKey] ?: storedReaderSettings.firstLineIndentChars
+        val effectiveReaderSettings = remember(globalReaderSettings, firstLineIndentChars) {
+            globalReaderSettings.copy(firstLineIndentChars = firstLineIndentChars)
+        }
+        val readerSettings by rememberUpdatedState(effectiveReaderSettings)
+        val storedNameReplaceSettings by readerSettingsStore.nameReplaceSettings.collectAsStateWithLifecycle()
         val nameReplaceBookKey = com.breakyuna.esjzone.database.readingStatisticsBookKey(
             novelId, novelUrl, chapter.url
         )
@@ -370,8 +386,11 @@ class ChapterPage(
         val readerTextStyle = readerBodyTextStyle(readerSettings)
 
         fun updateReaderSettings(settings: ReaderSettings) {
-            readerSettings = settings
-            PresentationAccess.readerSettings.saveDebounced(settings)
+            val updatedGlobal = settings.copy(firstLineIndentChars = globalReaderSettings.firstLineIndentChars)
+            if (updatedGlobal != globalReaderSettings) {
+                globalReaderSettings = updatedGlobal
+                readerSettingsStore.saveDebounced(updatedGlobal)
+            }
         }
 
         val requestedChapter = rememberSaveable {
@@ -1000,7 +1019,7 @@ class ChapterPage(
             else convertedText?.blockMappings?.get(block)
 
         // Quotes are read on the database thread, so rebuild mappings instead of sharing the UI cache.
-        fun underlineQuote(document: com.breakyuna.esjzone.domain.reader.ReaderChapterDocument):
+        fun underlineQuote(document: ReaderChapterDocument):
             (com.breakyuna.esjzone.domain.reader.ReaderUnderlineRange) -> String? {
             val script = readerSettings.script
             val names = nameReplaceSettings
@@ -1043,8 +1062,11 @@ class ChapterPage(
                     val rows = saved[key] ?: return@mapNotNull null
                     val blocks = entry.document.blocks
                     if (!ReaderUnderlines.hasLegacyRanges(rows, blocks)) return@mapNotNull null
+                    val anchors = readerUnderlineAnchors(entry.document, names)
                     val migrate: (List<ReaderUnderline>) -> List<ReaderUnderline> = { current ->
-                        ReaderUnderlines.migrateToSource(current, blocks) { readerLegacyUnderlineRenderings(it, names) }
+                        ReaderUnderlines.migrateToSource(current, blocks, anchors::resolve) {
+                            readerLegacyUnderlineRenderings(it, names)
+                        }
                     }
                     if (migrate(rows) == rows) null else key to migrate
                 }
@@ -1065,6 +1087,7 @@ class ChapterPage(
                 return ReaderAnchor(item.chapterKey, document.contentFingerprint, blockIndex, kind = "image",
                     fraction = chapterProgressFor(pixelOffset, itemSize) ?: 0f)
             }
+            if (block.isBlankLine()) return ReaderAnchor(item.chapterKey, document.contentFingerprint, blockIndex)
             val displayOffset = if (page != null) {
                 when (val first = page.segments.firstOrNull()) {
                     is com.breakyuna.esjzone.ui.reader.ReaderPageSegment.TextLine -> first.startOffset
@@ -1092,7 +1115,12 @@ class ChapterPage(
             val document = item.entry.document
             if (!scriptReady || item.entry.requiresPassword || document.contentFingerprint.isBlank()) return null
             val block = document.blocks.getOrNull(blockIndex) ?: return null
-            if ((block !is ReaderBlock.Paragraph && block !is ReaderBlock.Text) || block.sourceText().isBlank()) return null
+            val hasText = when (block) {
+                is ReaderBlock.Paragraph -> block.parts.any { it.value.isNotBlank() }
+                is ReaderBlock.Text -> block.value.isNotBlank()
+                else -> false
+            }
+            if (!hasText) return null
             return ReaderAnchor(item.chapterKey, document.contentFingerprint, blockIndex)
         }
         // Skip the continuation of a paragraph whose start is above the screen.
@@ -1345,7 +1373,8 @@ class ChapterPage(
                 chapterIndex = currentBookLocation?.chapterIndex ?: -1,
                 totalChapters = currentBookLocation?.totalChapters ?: bookChapterOrder.size,
                 chapterProgress = currentBookLocation?.chapterProgress ?: measuredChapterProgress ?: 0f,
-                anchor = remember(currentBookLocation?.anchor) { ReaderAnchor.encode(currentBookLocation?.anchor) },
+                anchor = currentBookLocation?.anchor,
+                anchorDocument = activeChapter?.document,
                 bookProgress = currentBookLocation?.bookProgress
             )
         )
@@ -1409,7 +1438,7 @@ class ChapterPage(
         }
 
         val bookmarkCoverMutex = remember { Mutex() }
-        fun toggleBookmarkAt(target: Chapter, document: com.breakyuna.esjzone.domain.reader.ReaderChapterDocument,
+        fun toggleBookmarkAt(target: Chapter, document: ReaderChapterDocument,
             visibleAnchor: ReaderAnchor) {
             if (updatingBookmark || bookmarkRows == null || target.url.isBlank()) return
             val targetKey = chapterIdentity(target)
@@ -1443,7 +1472,7 @@ class ChapterPage(
                                         novelId = finalNovelId,
                                         novelName = resolvedNovelName,
                                         chapterName = target.name,
-                                        anchor = ReaderAnchor.encode(positionAnchor),
+                                        anchor = ReaderAnchor.encode(positionAnchor.withTextContext(document)),
                                         excerpt = positionExcerpt
                                     )
                                 )
@@ -1500,42 +1529,30 @@ class ChapterPage(
         val readingBookshelfScope = remember(authorization) {
             com.breakyuna.esjzone.database.BookshelfRepository.scopeFor(authorization)
         }
+        fun persistLocalReadingPosition(position: LocalReadingPosition) {
+            val now = System.currentTimeMillis()
+            LocalReadingHistoryRecorder.upsert(readingBookshelfScope) {
+                position.toLocalReadingActivity(localHistoryActivityId, localHistoryStartedAt, now)
+            }
+        }
         LaunchedEffect(localHistoryActivityId, readingBookshelfScope) {
             snapshotFlow { if (resumePending) null else lastReadablePosition.value }
                 .filterNotNull()
                 .distinctUntilChanged()
                 .debounce(750)
-                .collect { position ->
-                    LocalReadingHistoryRecorder.upsert(
-                        position.toLocalReadingActivity(
-                            activityId = localHistoryActivityId,
-                            startedAt = localHistoryStartedAt
-                        ),
-                        bookshelfScope = readingBookshelfScope
-                    )
-                }
+                .collect { persistLocalReadingPosition(it) }
         }
         DisposableEffect(lifecycleOwner, localHistoryActivityId, readingBookshelfScope) {
             val observer = LifecycleEventObserver { _, event ->
                 if ((event == Lifecycle.Event.ON_PAUSE || event == Lifecycle.Event.ON_STOP) && !resumePending) {
-                    lastReadablePosition.value?.let { position ->
-                        LocalReadingHistoryRecorder.upsert(position.toLocalReadingActivity(
-                            activityId = localHistoryActivityId,
-                            startedAt = localHistoryStartedAt
-                        ), bookshelfScope = readingBookshelfScope)
-                    }
+                    lastReadablePosition.value?.let(::persistLocalReadingPosition)
                 }
             }
             lifecycleOwner.lifecycle.addObserver(observer)
             onDispose {
                 lifecycleOwner.lifecycle.removeObserver(observer)
                 if (!resumePending) {
-                    lastReadablePosition.value?.let { position ->
-                        LocalReadingHistoryRecorder.upsert(position.toLocalReadingActivity(
-                            activityId = localHistoryActivityId,
-                            startedAt = localHistoryStartedAt
-                        ), bookshelfScope = readingBookshelfScope)
-                    }
+                    lastReadablePosition.value?.let(::persistLocalReadingPosition)
                 }
             }
         }
@@ -1657,10 +1674,13 @@ class ChapterPage(
                 return@LaunchedEffect
             }
             // A password gate must not consume the saved anchor or enable history writes.
-            pendingSeekLocation = current.resumeLocation(restored, resolvedResumeAnchor)?.let { location ->
+            val currentKey = chapterIdentity(current.chapter)
+            val resolvedAnchor = resolvedResumeAnchor?.copy(chapterKey = currentKey)
+                ?.resolveIn(currentKey, current.document) ?: resolvedResumeAnchor
+            pendingSeekLocation = current.resumeLocation(restored, resolvedAnchor)?.let { location ->
                 // A changed body keeps the bookmarked paragraph index instead of the chapter start.
                 if (initialBookmarkAnchor == null) location else location.copy(contentPosition =
-                    ReaderBookmarkPosition.fallbackContentPosition(current.document, chapterIdentity(current.chapter), resolvedResumeAnchor))
+                    ReaderBookmarkPosition.fallbackContentPosition(current.document, currentKey, resolvedAnchor))
             }
             deferredResumeChapterKey = if (current.requiresPassword) chapterIdentity(current.chapter) else null
         }
@@ -1683,14 +1703,19 @@ class ChapterPage(
             deferredResumeChapterKey = null
         }
 
-        LaunchedEffect(pendingUnderline, result?.chapters, scriptReady, readerSettings.script,
+        LaunchedEffect(pendingUnderline, result?.chapters, scriptReady, readerSettings.script, nameReplaceSettings,
             bookChapterOrder, progressTextIndex) {
             val (target, mark) = pendingUnderline ?: return@LaunchedEffect
             if (!scriptReady) return@LaunchedEffect
             val entry = result?.chapters?.firstOrNull { sameReaderChapter(it.chapter, target) }
                 ?: return@LaunchedEffect
             if (entry.requiresPassword) return@LaunchedEffect
-            val position = readerUnderlinePosition(entry.document, chapterIdentity(target), mark, readerTextTransform, ::textOffsets)
+            val names = nameReplaceSettings
+            val mappings = convertedText?.blockMappings
+            val position = withContext(Dispatchers.Default) {
+                readerUnderlinePosition(entry.document, chapterIdentity(target), mark, readerTextTransform,
+                    { block -> if (identityOffsets) null else mappings?.get(block) }, names)
+            }
             val chapterProgress = position.anchor?.let { readerChapterProgress(entry.document, it) } ?: 0f
             val location = readerBookLocationFor(target, chapterProgress, bookChapterOrder,
                 bookChapterIndices, progressTextIndex)
@@ -1707,13 +1732,14 @@ class ChapterPage(
             if (entry.requiresPassword) return@LaunchedEffect
             pendingBookmark = null
             val targetKey = chapterIdentity(entry.chapter)
-            val exact = saved.copy(chapterKey = targetKey).takeIf { it.matches(targetKey, entry.document) }
-            val chapterProgress = readerChapterProgress(entry.document, saved)
+            val exact = saved.copy(chapterKey = targetKey).resolveIn(targetKey, entry.document)
+            val chapterProgress = readerChapterProgress(entry.document, exact ?: saved)
             val location = readerBookLocationFor(entry.chapter, chapterProgress, bookChapterOrder,
                 bookChapterIndices, progressTextIndex)
                 ?: ReaderBookLocation(entry.chapter, -1, chapterProgress, bookChapterOrder.size)
             pendingSeekLocation = location.copy(anchor = exact,
-                contentPosition = ReaderBookmarkPosition.fallbackContentPosition(entry.document, targetKey, saved.copy(chapterKey = targetKey)))
+                contentPosition = if (exact != null) null
+                else ReaderBookmarkPosition.fallbackContentPosition(entry.document, targetKey, saved.copy(chapterKey = targetKey)))
         }
 
         LaunchedEffect(pendingSeekLocation, displayItems, paginationReady, scriptReady, readerBodyStartOffset,
@@ -2413,7 +2439,8 @@ class ChapterPage(
                                         links = item.entry.document.links,
                                         onLinkClick = openReaderLink,
                                         formatting = item.entry.document.formatting,
-                                        renderLeadingDividers = false)
+                                        renderLeadingDividers = false,
+                                        nextBlock = item.entry.document.blocks.getOrNull(item.ordinal))
                                 }
                             }
 
@@ -2986,6 +3013,14 @@ class ChapterPage(
                 },
                 onReflow = { pendingSeekLocation = currentBookLocation },
                 onSettingsChange = ::updateReaderSettings,
+                onBookIndentChange = { chars ->
+                    val currentIndent = readerSettingsStore.bookIndents.value[indentBookKey]
+                        ?: readerSettingsStore.settings.value.firstLineIndentChars
+                    if (chars != currentIndent) {
+                        pendingSeekLocation = pendingSeekLocation ?: currentBookLocation
+                        readerSettingsStore.saveBookIndentInBackground(indentBookKey, chars)
+                    }
+                },
                 onDismissSettings = { showReaderSettings = false },
                 onDismissBrightness = { showBrightness = false },
                 nameReplaceSettings = nameReplaceSettings,
@@ -3065,7 +3100,7 @@ internal data class ReaderBookLocation(
         get() = textBookProgress ?: com.breakyuna.esjzone.domain.reader.readerBookProgress(chapterIndex, totalChapters, chapterProgress)
 }
 
-private data class LocalReadingPosition(
+internal data class LocalReadingPosition(
     val novelId: String,
     val novelName: String,
     val novelUrl: String,
@@ -3075,14 +3110,15 @@ private data class LocalReadingPosition(
     val chapterIndex: Int,
     val totalChapters: Int,
     val chapterProgress: Float,
-    val anchor: String? = null,
+    val anchor: ReaderAnchor? = null,
+    val anchorDocument: ReaderChapterDocument? = null,
     val bookProgress: Float? = null
 )
 
-private fun LocalReadingPosition.toLocalReadingActivity(
+internal fun LocalReadingPosition.toLocalReadingActivity(
     activityId: String,
     startedAt: Long,
-    now: Long = System.currentTimeMillis()
+    now: Long
 ): LocalReadingActivity = LocalReadingActivity(
     activityId = activityId,
     novelId = novelId,
@@ -3097,7 +3133,9 @@ private fun LocalReadingPosition.toLocalReadingActivity(
     startedAt = startedAt,
     lastReadAt = now,
     durationMs = (now - startedAt).coerceAtLeast(0L),
-    anchor = anchor,
+    anchor = ReaderAnchor.encode(anchor?.let { anchor ->
+        anchorDocument?.let(anchor::withTextContext) ?: anchor
+    }),
     bookProgress = bookProgress
 )
 

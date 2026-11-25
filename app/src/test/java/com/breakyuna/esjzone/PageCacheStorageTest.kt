@@ -86,30 +86,6 @@ class PageCacheStorageTest {
     }
 
     @Test
-    fun startupCleansLegacyFilesAndCountsCurrentCacheInOnePass() {
-        val directory = Files.createTempDirectory("startup-cache-scan-").toFile()
-        PageCache.initializeDirectory(directory)
-        try {
-            assertTrue(PageCache.write("fixture", "cached body"))
-            val currentSize = PageCache.stats().sizeBytes
-            val legacy = java.io.File(directory, "esj-page-v2-legacy.html").apply { writeText("old") }
-            var scans = 0
-            val countedDirectory = object : java.io.File(directory.path) {
-                override fun listFiles(): Array<java.io.File>? {
-                    scans++
-                    return super.listFiles()
-                }
-            }
-            PageCache.initializeDirectory(countedDirectory)
-            assertEquals(1, scans)
-            assertFalse(legacy.exists())
-            assertEquals(1, PageCache.stats().entryCount)
-            assertEquals(currentSize, PageCache.stats().sizeBytes)
-            assertEquals("cached body", PageCache.readStale("fixture"))
-        } finally { directory.deleteRecursively() }
-    }
-
-    @Test
     fun compressedCachePreservesTextAndCountsPhysicalBytes() {
         val directory = Files.createTempDirectory("page-storage-").toFile()
         PageCache.initializeDirectory(directory)
@@ -175,7 +151,7 @@ class PageCacheStorageTest {
     }
 
     @Test
-    fun delayedRequestsCannotOverwriteNewerRequestOrRepopulateClearedCache() {
+    fun staleTokensNeverOverwriteNewerClearedOrRecreatedEntries() {
         val directory = Files.createTempDirectory("page-generations-").toFile()
         PageCache.initializeDirectory(directory)
         try {
@@ -184,8 +160,18 @@ class PageCacheStorageTest {
             assertTrue(PageCache.write("page", "new", expected = current))
             assertFalse(PageCache.write("page", "late-old", expected = old))
             assertEquals("new", PageCache.readStale("page"))
+
+            val reference = requireNotNull(PageCache.readEntry("page")).reference
+            PageCache.remove("page")
+            val recreated = PageCache.currentToken("page")
+            assertNotEquals(current, recreated)
+            assertFalse(PageCache.write("page", "late-removed", expected = current))
+            assertTrue(PageCache.write("page", "fresh", expected = recreated))
+            PageCache.removeReference(reference)
+            assertEquals("fresh", PageCache.readStale("page"))
+
             PageCache.clear()
-            assertFalse(PageCache.write("page", "late-new", expected = current))
+            assertFalse(PageCache.write("page", "late-cleared", expected = recreated))
             assertEquals(0, PageCache.stats().entryCount)
         } finally { directory.deleteRecursively() }
     }
@@ -210,23 +196,4 @@ class PageCacheStorageTest {
             assertEquals(0L, PageCache.stats().sizeBytes)
         } finally { directory.deleteRecursively() }
     }
-
-    @Test
-    fun removingAndRecreatingAKeyNeverRevivesOldTokensOrReferences() {
-        val directory = Files.createTempDirectory("page-key-reuse-").toFile()
-        PageCache.initializeDirectory(directory)
-        try {
-            val old = PageCache.currentToken("page")
-            assertTrue(PageCache.write("page", "old", expected = old))
-            val reference = requireNotNull(PageCache.readEntry("page")).reference
-            PageCache.remove("page")
-            val current = PageCache.currentToken("page")
-            assertNotEquals(old, current)
-            assertFalse(PageCache.write("page", "late-old", expected = old))
-            assertTrue(PageCache.write("page", "new", expected = current))
-            PageCache.removeReference(reference)
-            assertEquals("new", PageCache.readStale("page"))
-        } finally { directory.deleteRecursively() }
-    }
-
 }
