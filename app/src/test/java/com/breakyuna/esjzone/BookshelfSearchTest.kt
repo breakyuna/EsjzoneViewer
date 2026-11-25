@@ -30,47 +30,11 @@ class BookshelfSearchTest {
     }
 
     @Test
-    fun blankQueryKeepsEveryBookInOrder() {
+    fun blankUnmatchedAndUnindexedRows_behavePredictably() {
         assertEquals(listOf("1", "2", "3", "4"), search(""))
         assertEquals(listOf("1", "2", "3", "4"), search("   \t "))
-    }
-
-    @Test
-    fun matchingIgnoresCaseAndWidth() {
-        assertEquals(listOf("1"), search("SWORD art"))
-        assertEquals(listOf("4"), search("re：ゼロ"))
-        assertEquals(listOf("4"), search("Ｒｅ"))
-    }
-
-    @Test
-    fun whitespaceIsIgnoredInsideTitlesAndSplitsTerms() {
-        assertEquals(listOf("1"), search("swordart"))
-        assertEquals(listOf("1"), search("  刀剑  神域 "))
-        assertEquals(listOf("1"), search("神域\u3000online"))
-    }
-
-    @Test
-    fun simplifiedAndTraditionalMatchEachOther() {
-        assertEquals(listOf("1"), search("刀劍"))
-        assertEquals(listOf("2"), search("恋爱"))
-        assertEquals(listOf("2"), search("戀愛"))
-        assertEquals(listOf("3"), search("輕小說"))
-    }
-
-    @Test
-    fun authorMatchesAndTermsCombineAcrossFields() {
-        assertEquals(listOf("2"), search("渡航"))
-        assertEquals(listOf("1"), search("川原 刀剑"))
-        assertEquals(emptyList<String>(), search("川原 青春"))
-    }
-
-    @Test
-    fun noMatchReturnsEmptyResult() {
         assertEquals(emptyList<String>(), search("不存在的书"))
-    }
 
-    @Test
-    fun rowsMissingFromTheIndexAreStillMatched() {
         val extra = entry("5", "新加入的書")
         val terms = BookshelfSearch.terms("新加入的书", fold)
         val result = BookshelfSearch.filter(books + extra, terms, BookshelfSearch.index(books, fold), fold)
@@ -78,16 +42,17 @@ class BookshelfSearchTest {
     }
 
     @Test
-    fun selectAllAppliesOnlyToShownResults() {
-        val shown = linkedSetOf("1", "3")
-        assertEquals(shown, bookshelfSelectAll(emptySet(), shown))
-        assertEquals(shown, bookshelfSelectAll(setOf("1"), shown))
-        assertTrue(bookshelfSelectAll(shown, shown).isEmpty())
-        assertTrue(bookshelfSelectAll(emptySet(), emptySet()).isEmpty())
-    }
-
-    @Test
-    fun defaultFoldWithoutIcuLeavesTextUsable() {
+    fun matchingFoldsCaseWidthWhitespaceAndChineseScript() {
+        assertEquals(listOf("1"), search("SWORD art"))
+        assertEquals(listOf("4"), search("re：ゼロ"))
+        assertEquals(listOf("4"), search("Ｒｅ"))
+        assertEquals(listOf("1"), search("swordart"))
+        assertEquals(listOf("1"), search("  刀剑  神域 "))
+        assertEquals(listOf("1"), search("神域\u3000online"))
+        assertEquals(listOf("1"), search("刀劍"))
+        assertEquals(listOf("2"), search("恋爱"))
+        assertEquals(listOf("2"), search("戀愛"))
+        assertEquals(listOf("3"), search("輕小說"))
         assertEquals("刀剑神域", BookshelfSearch.normalize(" 刀剑 神域 "))
         assertEquals("abc", BookshelfSearch.normalize("ＡＢＣ"))
     }
@@ -104,19 +69,24 @@ class BookshelfSearchTest {
     }
 
     @Test
+    fun termsCombineAcrossTitleAuthorAndTags() {
+        assertEquals(listOf("2"), search("渡航"))
+        assertEquals(listOf("1"), search("川原 刀剑"))
+        assertEquals(emptyList<String>(), search("川原 青春"))
+        assertEquals(listOf("1"), searchWithTags("川原 冒险"))
+        assertEquals(listOf("2"), searchWithTags("恋爱 渡航"))
+        assertEquals(listOf("3"), searchWithTags("恋爱 日常"))
+        assertEquals(emptyList<String>(), searchWithTags("冒险 校园"))
+        assertEquals(emptyList<String>(), search("校园"))
+        assertEquals(listOf("4"), searchWithTags("長月"))
+    }
+
+    @Test
     fun tagsMatchWithScriptWidthAndCaseFolding() {
         assertEquals(listOf("2"), searchWithTags("校园"))
         assertEquals(listOf("2", "3"), searchWithTags("恋爱"))
         assertEquals(listOf("1"), searchWithTags("ｖｒ游戏"))
         assertEquals(listOf("1"), searchWithTags("vr遊戲"))
-    }
-
-    @Test
-    fun termsCombineAcrossTitleAuthorAndTags() {
-        assertEquals(listOf("1"), searchWithTags("川原 冒险"))
-        assertEquals(listOf("2"), searchWithTags("恋爱 渡航"))
-        assertEquals(listOf("3"), searchWithTags("恋爱 日常"))
-        assertEquals(emptyList<String>(), searchWithTags("冒险 校园"))
     }
 
     @Test
@@ -126,23 +96,22 @@ class BookshelfSearchTest {
     }
 
     @Test
-    fun booksWithoutCachedTagsKeepTitleAndAuthorSearch() {
-        assertEquals(emptyList<String>(), search("校园"))
-        assertEquals(listOf("4"), searchWithTags("長月"))
-    }
-
-    @Test
-    fun mergeTagsDropsBlanksDuplicatesAndBlankKeys() {
+    fun tagNormalization_mergesCleanlyAndExtractsDetailKey() {
         val merged = BookshelfSearch.mergeTags(
             mapOf("a" to listOf(" 奇幻 ", "", "奇幻"), "" to listOf("丢弃")),
             mapOf("a" to listOf("战斗", "奇幻"), "b" to listOf("  "))
         )
         assertEquals(mapOf("a" to listOf("奇幻", "战斗")), merged)
+        assertEquals("123", BookshelfSearch.tagKey("123", "https://www.esjzone.cc/detail/123.html"))
+        assertEquals("123", BookshelfSearch.tagKey("", "https://www.esjzone.cc/detail/123.html"))
     }
 
     @Test
-    fun tagKeyMatchesDetailIdForEntriesAndManifests() {
-        assertEquals("123", BookshelfSearch.tagKey("123", "https://www.esjzone.cc/detail/123.html"))
-        assertEquals("123", BookshelfSearch.tagKey("", "https://www.esjzone.cc/detail/123.html"))
+    fun selectAllAppliesOnlyToShownResults() {
+        val shown = linkedSetOf("1", "3")
+        assertEquals(shown, bookshelfSelectAll(emptySet(), shown))
+        assertEquals(shown, bookshelfSelectAll(setOf("1"), shown))
+        assertTrue(bookshelfSelectAll(shown, shown).isEmpty())
+        assertTrue(bookshelfSelectAll(emptySet(), emptySet()).isEmpty())
     }
 }

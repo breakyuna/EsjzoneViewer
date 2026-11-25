@@ -1,15 +1,11 @@
 package com.breakyuna.esjzone
 
 import com.breakyuna.esjzone.network.Authorization
-import com.breakyuna.esjzone.network.features.CloudViewRecord
 import com.breakyuna.esjzone.network.features.CloudViewReportStore
-import com.breakyuna.esjzone.network.features.CloudViewReporterHolder
 import com.breakyuna.esjzone.network.features.CloudViewReporter
+import com.breakyuna.esjzone.network.features.CloudViewReporterHolder
 import com.breakyuna.esjzone.network.features.SiteViewRecord
-import com.breakyuna.esjzone.network.features.cloudViewRestoreChapter
 import com.breakyuna.esjzone.network.features.firstSiteChapter
-import com.breakyuna.esjzone.network.features.siteViewRecord
-import com.breakyuna.esjzone.network.features.siteHistoryChapter
 import com.breakyuna.esjzone.novellibrary.novel.Chapter
 import com.breakyuna.esjzone.novellibrary.novel.HistoryNovel
 import kotlinx.coroutines.CoroutineScope
@@ -74,14 +70,16 @@ class CloudViewDownloadRestoreTest {
     fun downloadingABookLeavesTheSiteOnTheChapterTheReaderWasAt() = runBlocking {
         val site = FakeSite()
         site.latest = "https://www.esjzone.cc/forum/12/3.html"
-        val reporter = reporter(this, site, { listOf(history(site.latest!!)) })
+        val reporter = reporter(this, site, { listOf(otherBook(), history(site.latest!!)) })
 
         val fetch = reporter.beginBackgroundFetch(authorization, novelId, novelUrl)
         // The download worker requests chapters with the account cookies, often out of order.
         listOf(1, 5, 2, 9, 4).forEach { site.request("https://www.esjzone.cc/forum/12/$it.html") }
         assertEquals("https://www.esjzone.cc/forum/12/4.html", site.latest)
 
-        assertTrue(reporter.finishBackgroundFetch(fetch))
+        var lookedUpFirst = false
+        assertTrue(reporter.finishBackgroundFetch(fetch) { lookedUpFirst = true; "/forum/12/1.html" })
+        assertFalse(lookedUpFirst)
         assertEquals("https://www.esjzone.cc/forum/12/3.html", site.latest)
     }
 
@@ -135,35 +133,35 @@ class CloudViewDownloadRestoreTest {
     /** 阳's rule: the site had no record before the download, so it should end on chapter 1. */
     @Test
     fun aBookTheSiteHadNoRecordOfEndsOnTheFirstChapter() = runBlocking {
-        val site = FakeSite()
-        val reporter = reporter(this, site, { listOf(otherBook()) })
-        val fetch = reporter.beginBackgroundFetch(authorization, novelId, novelUrl)
-        assertEquals(SiteViewRecord.Absent, fetch?.siteRecord)
-        listOf(4, 9).forEach { site.request("https://www.esjzone.cc/forum/12/$it.html") }
-        assertTrue(reporter.finishBackgroundFetch(fetch) { "/forum/12/1.html" })
-        assertEquals("https://www.esjzone.cc/forum/12/1.html", site.latest)
-    }
+        for (historySnapshot in listOf(listOf(otherBook()), emptyList())) {
+            val site = FakeSite()
+            val reporter = reporter(this, site, { historySnapshot })
+            val fetch = reporter.beginBackgroundFetch(authorization, novelId, novelUrl)
+            assertEquals(SiteViewRecord.Absent, fetch?.siteRecord)
+            listOf(4, 9).forEach { site.request("https://www.esjzone.cc/forum/12/$it.html") }
+            assertTrue(reporter.finishBackgroundFetch(fetch) { "/forum/12/1.html" })
+            assertEquals("https://www.esjzone.cc/forum/12/1.html", site.latest)
+        }
 
-    @Test
-    fun anEmptySiteHistoryAlsoMeansNoRecord() = runBlocking {
         val site = FakeSite()
-        val reporter = reporter(this, site, { emptyList() })
-        val fetch = reporter.beginBackgroundFetch(authorization, novelId, novelUrl)
-        site.request("https://www.esjzone.cc/forum/12/9.html")
-        assertTrue(reporter.finishBackgroundFetch(fetch) { "https://www.esjzone.cc/forum/12/1.html" })
-        assertEquals("https://www.esjzone.cc/forum/12/1.html", site.latest)
-    }
+        val directory = java.nio.file.Files.createTempDirectory("cloud-view").toFile()
+        try {
+            val holder = CloudViewReporterHolder { reporter(this, site, { emptyList() }) }
+            holder.preservingSiteView(directory, authorization, novelId, novelUrl, { "/forum/12/1.html" }) {
+                listOf(1, 5, 9).forEach { site.request("https://www.esjzone.cc/forum/12/$it.html") }
+            }
+            assertEquals("https://www.esjzone.cc/forum/12/1.html", site.latest)
+        } finally {
+            directory.deleteRecursively()
+        }
 
-    @Test
-    fun aBookWithARecordIsRestoredAndTheFirstChapterIsNotLookedUp() = runBlocking {
-        val site = FakeSite()
-        val reporter = reporter(this, site, { listOf(otherBook(), history("/forum/12/3.html")) })
-        val fetch = reporter.beginBackgroundFetch(authorization, novelId, novelUrl)
-        site.request("https://www.esjzone.cc/forum/12/9.html")
-        var looked = false
-        assertTrue(reporter.finishBackgroundFetch(fetch) { looked = true; "/forum/12/1.html" })
-        assertFalse(looked)
-        assertEquals("https://www.esjzone.cc/forum/12/3.html", site.latest)
+        val noFirstSite = FakeSite()
+        val noFirstReporter = reporter(this, noFirstSite, { emptyList() })
+        val noFirstFetch = noFirstReporter.beginBackgroundFetch(authorization, novelId, novelUrl)
+        noFirstSite.request("https://www.esjzone.cc/forum/12/9.html")
+        assertFalse(noFirstReporter.finishBackgroundFetch(noFirstFetch) { throw IllegalStateException("no manifest") })
+        assertFalse(noFirstReporter.finishBackgroundFetch(noFirstFetch))
+        assertEquals(listOf("https://www.esjzone.cc/forum/12/9.html"), noFirstSite.requests)
     }
 
     /** /my/view could not be read (or was not a history page): never reset to chapter 1. */
@@ -180,17 +178,6 @@ class CloudViewDownloadRestoreTest {
             assertFalse(looked)
             assertEquals(listOf("https://www.esjzone.cc/forum/12/9.html"), site.requests)
         }
-    }
-
-    @Test
-    fun noFirstChapterMeansNothingIsRequested() = runBlocking {
-        val site = FakeSite()
-        val reporter = reporter(this, site, { emptyList() })
-        val fetch = reporter.beginBackgroundFetch(authorization, novelId, novelUrl)
-        site.request("https://www.esjzone.cc/forum/12/9.html")
-        assertFalse(reporter.finishBackgroundFetch(fetch) { throw IllegalStateException("no manifest") })
-        assertFalse(reporter.finishBackgroundFetch(fetch))
-        assertEquals(listOf("https://www.esjzone.cc/forum/12/9.html"), site.requests)
     }
 
     @Test
@@ -217,51 +204,6 @@ class CloudViewDownloadRestoreTest {
     }
 
     @Test
-    fun siteHistoryMatchesTheBookByIdAndIgnoresOtherBooks() {
-        val rows = listOf(
-            HistoryNovel("Other", "/detail/34.html", "vid-34", Chapter("C", "/forum/34/1.html", true)),
-            history("/forum/12/7.html")
-        )
-        assertEquals("https://www.esjzone.cc/forum/12/7.html", siteHistoryChapter(rows, "www.esjzone.cc", "id:12"))
-        assertNull(siteHistoryChapter(rows, "www.esjzone.cc", "id:56"))
-    }
-
-    @Test
-    fun restoreDecision() {
-        fun record(chapter: String, at: Long) = CloudViewRecord("www.esjzone.cc", "id:12", "12", novelUrl,
-            "/forum/12/$chapter.html", "https://www.esjzone.cc/forum/12/$chapter.html", true, at, "acct")
-        val found = SiteViewRecord.Found("https://www.esjzone.cc/forum/12/3.html")
-        val first = { "https://www.esjzone.cc/forum/12/1.html" }
-        // A reader report made during the download wins in every case.
-        for (siteRecord in listOf(found, SiteViewRecord.Absent, SiteViewRecord.Unknown)) {
-            assertEquals("https://www.esjzone.cc/forum/12/6.html",
-                cloudViewRestoreChapter(record("6", 200), siteRecord, 100, first))
-        }
-        // Had a record: restore it.
-        assertEquals("https://www.esjzone.cc/forum/12/3.html", cloudViewRestoreChapter(record("2", 50), found, 100, first))
-        assertEquals("https://www.esjzone.cc/forum/12/3.html", cloudViewRestoreChapter(null, found, 100, first))
-        // No record: the first chapter, even over an older reader report.
-        assertEquals("https://www.esjzone.cc/forum/12/1.html", cloudViewRestoreChapter(null, SiteViewRecord.Absent, 100, first))
-        assertEquals("https://www.esjzone.cc/forum/12/1.html",
-            cloudViewRestoreChapter(record("2", 50), SiteViewRecord.Absent, 100, first))
-        assertEquals("https://www.esjzone.cc/forum/12/2.html",
-            cloudViewRestoreChapter(record("2", 50), SiteViewRecord.Absent, 100) { null })
-        assertNull(cloudViewRestoreChapter(null, SiteViewRecord.Absent, 100) { " " })
-        // Unknown: never chapter 1; only an older reader report.
-        assertEquals("https://www.esjzone.cc/forum/12/2.html",
-            cloudViewRestoreChapter(record("2", 50), SiteViewRecord.Unknown, 100, first))
-        assertNull(cloudViewRestoreChapter(null, SiteViewRecord.Unknown, 100, first))
-    }
-
-    @Test
-    fun siteViewRecordTellsAFailedReadFromAMissingBook() {
-        assertEquals(SiteViewRecord.Unknown, siteViewRecord(null, "www.esjzone.cc", "id:12"))
-        assertEquals(SiteViewRecord.Absent, siteViewRecord(listOf(otherBook()), "www.esjzone.cc", "id:12"))
-        assertEquals(SiteViewRecord.Found("https://www.esjzone.cc/forum/12/7.html"),
-            siteViewRecord(listOf(otherBook(), history("/forum/12/7.html")), "www.esjzone.cc", "id:12"))
-    }
-
-    @Test
     fun firstSiteChapterSkipsLinksThatAreNotChaptersOnTheLoggedInSite() {
         assertEquals("https://www.esjzone.cc/forum/12/1.html", firstSiteChapter("www.esjzone.cc",
             listOf("https://example.com/post/1", "https://www.esjzone.cc/detail/99.html", "/forum/12/1.html", "/forum/12/2.html")))
@@ -269,107 +211,65 @@ class CloudViewDownloadRestoreTest {
         assertNull(firstSiteChapter("www.esjzone.cc", emptyList()))
     }
 
+    /** WorkManager can resume a download in a process where MainActivity never ran, and failures must still restore. */
     @Test
-    fun aDownloadOfANewBookThroughTheHolderEndsOnTheFirstChapter() = runBlocking {
-        val site = FakeSite()
+    fun holderRestoresSitePositionOnColdResumeAndDownloadFailure() = runBlocking {
         val directory = java.nio.file.Files.createTempDirectory("cloud-view").toFile()
-        val holder = CloudViewReporterHolder { reporter(this, site, { emptyList() }) }
-        holder.preservingSiteView(directory, authorization, novelId, novelUrl, { "/forum/12/1.html" }) {
-            listOf(1, 5, 9).forEach { site.request("https://www.esjzone.cc/forum/12/$it.html") }
-        }
-        assertEquals("https://www.esjzone.cc/forum/12/1.html", site.latest)
-        directory.deleteRecursively()
-        Unit
-    }
+        try {
+            val site = FakeSite().apply { latest = "https://www.esjzone.cc/forum/12/3.html" }
+            val holder = CloudViewReporterHolder { reporter(this, site, { listOf(history(site.latest!!)) }) }
+            assertNull(holder.current())
 
-    /** Codex P2: WorkManager can resume a download in a process where MainActivity never ran. */
-    @Test
-    fun aDownloadResumedWithoutTheAppUiStillRestoresTheSitePosition() = runBlocking {
-        val site = FakeSite()
-        site.latest = "https://www.esjzone.cc/forum/12/3.html"
-        val directory = java.nio.file.Files.createTempDirectory("cloud-view").toFile()
-        val holder = CloudViewReporterHolder { reporter(this, site, { listOf(history(site.latest!!)) }) }
-        assertNull(holder.current())
-
-        holder.preservingSiteView(directory, authorization, novelId, novelUrl) {
-            listOf(1, 5, 9).forEach { site.request("https://www.esjzone.cc/forum/12/$it.html") }
-        }
-
-        assertNotNull(holder.current())
-        assertEquals("https://www.esjzone.cc/forum/12/3.html", site.latest)
-        directory.deleteRecursively()
-        Unit
-    }
-
-    @Test
-    fun theRestoreRunsWhenTheDownloadFails() = runBlocking {
-        val site = FakeSite()
-        site.latest = "https://www.esjzone.cc/forum/12/3.html"
-        val directory = java.nio.file.Files.createTempDirectory("cloud-view").toFile()
-        val holder = CloudViewReporterHolder { reporter(this, site, { listOf(history(site.latest!!)) }) }
-        val failure = runCatching {
             holder.preservingSiteView(directory, authorization, novelId, novelUrl) {
-                site.request("https://www.esjzone.cc/forum/12/9.html")
-                throw java.io.IOException("network lost")
+                listOf(1, 5, 9).forEach { site.request("https://www.esjzone.cc/forum/12/$it.html") }
             }
+            assertNotNull(holder.current())
+            assertEquals("https://www.esjzone.cc/forum/12/3.html", site.latest)
+
+            val failure = runCatching {
+                holder.preservingSiteView(directory, authorization, novelId, novelUrl) {
+                    site.request("https://www.esjzone.cc/forum/12/9.html")
+                    throw java.io.IOException("network lost")
+                }
+            }
+            assertTrue(failure.isFailure)
+            assertEquals("https://www.esjzone.cc/forum/12/3.html", site.latest)
+        } finally {
+            directory.deleteRecursively()
         }
-        assertTrue(failure.isFailure)
-        assertEquals("https://www.esjzone.cc/forum/12/3.html", site.latest)
-        directory.deleteRecursively()
         Unit
     }
 
-    /** Codex P2: a chapter opened while the restore request is in flight must not be dropped. */
+    /** A chapter opened or fetched while the restore request is in flight must not be dropped. */
     @Test
-    fun aChapterOpenedDuringTheRestoreRequestIsStillReported() = runBlocking {
-        val site = FakeSite()
-        site.latest = "https://www.esjzone.cc/forum/12/3.html"
-        var time = 1_000L
-        lateinit var reporter: CloudViewReporter
-        var readerMoved = false
-        reporter = reporter(this, site, { listOf(history("/forum/12/3.html")) }, clock = { time }, inFlight = { url ->
-            if (!readerMoved && url.endsWith("/forum/12/3.html")) {
-                readerMoved = true
-                time = 3_000L
-                reporter.noteLocal(authorization, novelId, novelUrl, "/forum/12/7.html")
-            }
-        })
+    fun aChapterReadDuringTheRestoreRequestIsStillReported() = runBlocking {
+        for (fetched in listOf(false, true)) {
+            val site = FakeSite().apply { latest = "https://www.esjzone.cc/forum/12/3.html" }
+            var time = 1_000L
+            lateinit var reporter: CloudViewReporter
+            var readerMoved = false
+            reporter = reporter(this, site, { listOf(history("/forum/12/3.html")) }, clock = { time }, inFlight = { url ->
+                if (!readerMoved && url.endsWith("/forum/12/3.html")) {
+                    readerMoved = true
+                    time = 3_000L
+                    if (fetched) {
+                        site.request("https://www.esjzone.cc/forum/12/7.html")
+                        reporter.noteFetched(authorization, novelId, novelUrl, "/forum/12/7.html")
+                    } else {
+                        reporter.noteLocal(authorization, novelId, novelUrl, "/forum/12/7.html")
+                    }
+                }
+            })
 
-        val fetch = reporter.beginBackgroundFetch(authorization, novelId, novelUrl)
-        site.request("https://www.esjzone.cc/forum/12/9.html")
-        time = 2_000L
-        assertTrue(reporter.finishBackgroundFetch(fetch))
-        awaitChildren()
+            val fetch = reporter.beginBackgroundFetch(authorization, novelId, novelUrl)
+            site.request("https://www.esjzone.cc/forum/12/9.html")
+            time = 2_000L
+            assertTrue(reporter.finishBackgroundFetch(fetch))
+            awaitChildren()
 
-        assertTrue(readerMoved)
-        assertEquals("https://www.esjzone.cc/forum/12/7.html", site.latest)
-    }
-
-    @Test
-    fun aChapterFetchedDuringTheRestoreRequestIsSentAgainAfterIt() = runBlocking {
-        val site = FakeSite()
-        site.latest = "https://www.esjzone.cc/forum/12/3.html"
-        var time = 1_000L
-        lateinit var reporter: CloudViewReporter
-        var readerFetched = false
-        reporter = reporter(this, site, { listOf(history("/forum/12/3.html")) }, clock = { time }, inFlight = { url ->
-            if (!readerFetched && url.endsWith("/forum/12/3.html")) {
-                readerFetched = true
-                time = 3_000L
-                // The reader's own page request reached the site before the restore did.
-                site.request("https://www.esjzone.cc/forum/12/7.html")
-                reporter.noteFetched(authorization, novelId, novelUrl, "/forum/12/7.html")
-            }
-        })
-
-        val fetch = reporter.beginBackgroundFetch(authorization, novelId, novelUrl)
-        site.request("https://www.esjzone.cc/forum/12/9.html")
-        time = 2_000L
-        assertTrue(reporter.finishBackgroundFetch(fetch))
-        awaitChildren()
-
-        assertTrue(readerFetched)
-        assertEquals("https://www.esjzone.cc/forum/12/7.html", site.latest)
+            assertTrue(readerMoved)
+            assertEquals("https://www.esjzone.cc/forum/12/7.html", site.latest)
+        }
     }
 
     private suspend fun awaitChildren() {

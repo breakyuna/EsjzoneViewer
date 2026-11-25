@@ -5,49 +5,53 @@ import android.content.Intent
 import android.content.res.Configuration
 import android.net.Uri
 import android.os.Bundle
-import android.webkit.WebResourceRequest
-import android.webkit.WebResourceError
 import android.webkit.JavascriptInterface
+import android.webkit.WebResourceError
+import android.webkit.WebResourceRequest
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
-import androidx.compose.foundation.layout.fillMaxSize
+import androidx.annotation.VisibleForTesting
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.OpenInNew
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Scaffold
-import com.breakyuna.esjzone.ui.designsystem.GlobalText as Text
 import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
-import com.breakyuna.esjzone.ui.designsystem.globalStringResource as stringResource
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.view.WindowCompat
-import com.breakyuna.esjzone.R
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.breakyuna.esjzone.AppThemeMode
+import com.breakyuna.esjzone.R
 import com.breakyuna.esjzone.app.PresentationAccess
 import com.breakyuna.esjzone.network.EsjzoneUrls
+import com.breakyuna.esjzone.novellibrary.component.resolveImageUrl
 import com.breakyuna.esjzone.ui.designsystem.AppTheme
 import com.breakyuna.esjzone.ui.designsystem.LocalGlobalScript
+import com.breakyuna.esjzone.ui.designsystem.GlobalText as Text
+import com.breakyuna.esjzone.ui.designsystem.globalStringResource as stringResource
 import com.breakyuna.esjzone.ui.reader.ReaderScript
 import com.breakyuna.esjzone.util.LocaleHelper
 import org.json.JSONObject
+import org.jsoup.Jsoup
 
 /** Opens ordinary web links inside the app without sharing the ESJ network client's cookies. */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -111,8 +115,9 @@ class InAppBrowserActivity : ComponentActivity() {
                             }, "EsjScriptBridge")
                             webViewClient = object : WebViewClient() {
                                 override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
-                                    if (isWebUrl(request.url.toString())) return false
-                                    if (request.isForMainFrame) openSystemBrowser(request.url.toString())
+                                    val target = request.url.toString()
+                                    if (isWebUrl(target)) return false
+                                    if (request.isForMainFrame) openSystemBrowser(target)
                                     return true
                                 }
 
@@ -121,22 +126,22 @@ class InAppBrowserActivity : ComponentActivity() {
                                     canGoBack = view.canGoBack()
                                 }
 
-                            override fun onPageFinished(view: WebView, url: String) {
-                                currentUrl = url
-                                canGoBack = view.canGoBack()
-                                applyWebsiteScript(view, currentScriptMode)
-                            }
-
-                            override fun onReceivedError(
-                                view: WebView,
-                                request: WebResourceRequest,
-                                error: WebResourceError
-                            ) {
-                                if (!keepInApp && request.isForMainFrame && request.url.scheme == "http") {
-                                    openSystemBrowser(request.url.toString())
-                                    finish()
+                                override fun onPageFinished(view: WebView, url: String) {
+                                    currentUrl = url
+                                    canGoBack = view.canGoBack()
+                                    applyWebsiteScript(view, currentScriptMode)
                                 }
-                            }
+
+                                override fun onReceivedError(
+                                    view: WebView,
+                                    request: WebResourceRequest,
+                                    error: WebResourceError
+                                ) {
+                                    if (!keepInApp && request.isForMainFrame && request.url.scheme == "http") {
+                                        openSystemBrowser(request.url.toString())
+                                        finish()
+                                    }
+                                }
                             }
                             setDownloadListener { url, _, _, _, _ -> openSystemBrowser(url) }
                         }
@@ -158,7 +163,13 @@ class InAppBrowserActivity : ComponentActivity() {
                     Scaffold(
                         topBar = {
                             TopAppBar(
-                                title = { Text(Uri.parse(currentUrl).host ?: stringResource(R.string.web_page)) },
+                                title = {
+                                    Text(
+                                        text = Uri.parse(currentUrl).host ?: stringResource(R.string.web_page),
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                },
                                 navigationIcon = {
                                     IconButton(onClick = { if (browser.canGoBack()) browser.goBack() else finish() }) {
                                         Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.close))
@@ -242,6 +253,76 @@ class InAppBrowserActivity : ComponentActivity() {
                     .putExtra(EXTRA_KEEP_IN_APP, keepInApp)
                     .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             )
+        }
+
+        @VisibleForTesting(otherwise = VisibleForTesting.NONE)
+        internal fun buildSafeChapterHtmlDocument(
+            title: String,
+            rawHtml: String,
+            darkTheme: Boolean,
+            fontSizeSp: Float,
+            baseUrl: String = "",
+            localImages: Map<String, String> = emptyMap()
+        ): String {
+            val fragment = Jsoup.parseBodyFragment(rawHtml, baseUrl)
+            fragment.select("script, iframe, object, embed, form, base, meta").remove()
+            for (element in fragment.allElements) {
+                val dangerousAttrs = element.attributes().asList()
+                    .filter { attr ->
+                        val key = attr.key.lowercase()
+                        val value = attr.value.trim().lowercase()
+                        key.startsWith("on") ||
+                            ((key == "href" || key == "src" || key == "action") && value.startsWith("javascript:"))
+                    }
+                dangerousAttrs.forEach { element.removeAttr(it.key) }
+                if (element.normalName() == "details") {
+                    element.attr("open", "")
+                }
+                if (element.normalName() == "img") {
+                    val source = resolveImageUrl(element)
+                    if (source.isNotBlank()) {
+                        element.attr("src", source)
+                        if (localImages[source]?.let { it != source } == true) {
+                            element.removeAttr("srcset").removeAttr("sizes")
+                            element.closest("picture")?.select("source")?.remove()
+                        }
+                    }
+                }
+            }
+            val safeTitle = org.jsoup.nodes.Entities.escape(title)
+            val bg = if (darkTheme) "#121212" else "#FAF9F6"
+            val fg = if (darkTheme) "#E6E1E5" else "#1C1B1F"
+            val muted = if (darkTheme) "#A8A2A8" else "#625B71"
+            val border = if (darkTheme) "#38353B" else "#DED8E1"
+            val link = if (darkTheme) "#9ECAFF" else "#1A5FB4"
+            val sizePx = fontSizeSp.coerceIn(12f, 36f)
+            return """
+                <!doctype html>
+                <html>
+                <head>
+                <meta charset="utf-8">
+                <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                <style>
+                  html, body { margin: 0; padding: 0; background: $bg; color: $fg; }
+                  body { padding: 16px 20px 48px; font-size: ${sizePx}px; line-height: 1.75; word-wrap: break-word; overflow-wrap: break-word; }
+                  h1.chapter-title { font-size: 1.25em; margin: 0 0 18px; line-height: 1.4; }
+                  a { color: $link; }
+                  img { max-width: 100%; height: auto; display: block; margin: 12px auto; }
+                  hr { border: none; border-top: 1px solid $border; margin: 18px 0; }
+                  details { border-top: 1px solid $border; border-bottom: 1px solid $border; padding: 10px 0; margin: 14px 0; }
+                  summary { font-weight: 600; cursor: pointer; margin-bottom: 6px; }
+                  blockquote { margin: 12px 0; padding: 4px 12px; border-left: 3px solid $border; color: $muted; }
+                  table { border-collapse: collapse; width: 100%; margin: 12px 0; display: block; overflow-x: auto; }
+                  th, td { border: 1px solid $border; padding: 6px 8px; text-align: left; }
+                  pre { overflow-x: auto; padding: 10px; border: 1px solid $border; border-radius: 6px; }
+                </style>
+                </head>
+                <body>
+                  ${if (safeTitle.isNotBlank()) "<h1 class=\"chapter-title\">$safeTitle</h1>" else ""}
+                  ${fragment.body().html()}
+                </body>
+                </html>
+            """.trimIndent()
         }
 
         private fun isWebUrl(url: String): Boolean = Uri.parse(url).scheme?.lowercase() in setOf("http", "https") &&
