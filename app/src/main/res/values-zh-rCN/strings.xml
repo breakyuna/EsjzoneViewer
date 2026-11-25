@@ -994,7 +994,7 @@
     <string name="reader_background_image_failed">无法读取图片，请选择 32 MB 以内的有效图片后重试</string>
     <string name="reader_background_save_failed">背景保存失败，请重试</string>
     <string name="reader_indent_chars">%1$d 字</string>
-    <string name="reader_first_line_indent">首行缩进（两字符）</string>
+    <string name="reader_first_line_indent">本书首行缩进</string>
     <string name="reader_color_hue">色相</string>
     <string name="reader_color_saturation">饱和度</string>
     <string name="reader_color_brightness">明度</string>

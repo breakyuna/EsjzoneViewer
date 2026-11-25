@@ -189,6 +189,7 @@ import com.breakyuna.esjzone.database.entity.LocalReadingActivity
 import com.breakyuna.esjzone.network.EsjzoneUrls
 import com.breakyuna.esjzone.network.LocalAuthorization
 import com.breakyuna.esjzone.novellibrary.novel.Chapter
+import com.breakyuna.esjzone.novellibrary.novel.ChapterSource
 import com.breakyuna.esjzone.novellibrary.novel.FavoriteNovel
 import com.breakyuna.esjzone.domain.reader.ReaderBlock
 import com.breakyuna.esjzone.domain.reader.ReaderUnderline
@@ -302,11 +303,24 @@ class ChapterPage(
         val context = LocalContext.current
         val historyState = history.state()
 
-        val storedReaderSettings by PresentationAccess.readerSettings.settings.collectAsStateWithLifecycle()
-        var readerSettings by remember(storedReaderSettings) {
+        val readerSettingsStore = PresentationAccess.readerSettings
+        val storedReaderSettings by readerSettingsStore.settings.collectAsStateWithLifecycle()
+        var globalReaderSettings by remember(storedReaderSettings) {
             mutableStateOf(storedReaderSettings)
         }
-        val storedNameReplaceSettings by PresentationAccess.readerSettings.nameReplaceSettings.collectAsStateWithLifecycle()
+        val indentBookKey = remember(novelId, novelUrl, chapter.url) {
+            readingStatisticsBookKey(novelId.ifBlank { chapter.novelId() }, novelUrl,
+                if (chapter.source == ChapterSource.WENKU8) {
+                    chapterIdentity(chapter).substringBefore('?').substringBeforeLast('/')
+                } else chapterIdentity(chapter))
+        }
+        val bookIndents by readerSettingsStore.bookIndents.collectAsStateWithLifecycle()
+        val firstLineIndentChars = bookIndents[indentBookKey] ?: storedReaderSettings.firstLineIndentChars
+        val effectiveReaderSettings = remember(globalReaderSettings, firstLineIndentChars) {
+            globalReaderSettings.copy(firstLineIndentChars = firstLineIndentChars)
+        }
+        val readerSettings by rememberUpdatedState(effectiveReaderSettings)
+        val storedNameReplaceSettings by readerSettingsStore.nameReplaceSettings.collectAsStateWithLifecycle()
         val nameReplaceBookKey = com.breakyuna.esjzone.database.readingStatisticsBookKey(
             novelId, novelUrl, chapter.url
         )
@@ -372,8 +386,11 @@ class ChapterPage(
         val readerTextStyle = readerBodyTextStyle(readerSettings)
 
         fun updateReaderSettings(settings: ReaderSettings) {
-            readerSettings = settings
-            PresentationAccess.readerSettings.saveDebounced(settings)
+            val updatedGlobal = settings.copy(firstLineIndentChars = globalReaderSettings.firstLineIndentChars)
+            if (updatedGlobal != globalReaderSettings) {
+                globalReaderSettings = updatedGlobal
+                readerSettingsStore.saveDebounced(updatedGlobal)
+            }
         }
 
         val requestedChapter = rememberSaveable {
@@ -2996,6 +3013,14 @@ class ChapterPage(
                 },
                 onReflow = { pendingSeekLocation = currentBookLocation },
                 onSettingsChange = ::updateReaderSettings,
+                onBookIndentChange = { chars ->
+                    val currentIndent = readerSettingsStore.bookIndents.value[indentBookKey]
+                        ?: readerSettingsStore.settings.value.firstLineIndentChars
+                    if (chars != currentIndent) {
+                        pendingSeekLocation = pendingSeekLocation ?: currentBookLocation
+                        readerSettingsStore.saveBookIndentInBackground(indentBookKey, chars)
+                    }
+                },
                 onDismissSettings = { showReaderSettings = false },
                 onDismissBrightness = { showBrightness = false },
                 nameReplaceSettings = nameReplaceSettings,

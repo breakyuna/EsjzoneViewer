@@ -20,12 +20,15 @@ import com.breakyuna.esjzone.ui.reader.ReaderSettings
 import com.breakyuna.esjzone.ui.reader.ReaderTool
 import java.util.UUID
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import org.junit.Assert.assertEquals
@@ -317,6 +320,38 @@ class DataStoreAcceptanceInstrumentedTest {
                 requireNotNull(verifyScope.coroutineContext[Job]).cancelAndJoin()
                 file.delete()
             }
+        }
+    }
+
+    @Test
+    fun bookIndentKeepsTheLatestSelectionWhileEarlierWritesFinish() = runBlocking {
+        val name = fileName("reader-book-indent")
+        val job = SupervisorJob()
+        val scope = CoroutineScope(coroutineContext + job)
+        try {
+            val reader = ReaderSettingsDataStore(context, scope, name)
+            reader.saveBookIndentInBackground("book-1", 2)
+            reader.saveBookIndentInBackground("book-2", 0)
+            reader.saveBookIndentInBackground("book-1", 1)
+            reader.saveBookIndentInBackground("book-1", 2)
+            val expected = mapOf("book-1" to 2, "book-2" to 0)
+            assertEquals(expected, reader.bookIndents.value)
+
+            val observed = mutableListOf<Map<String, Int>>()
+            val observer = launch(start = CoroutineStart.UNDISPATCHED) {
+                reader.bookIndents.collect { observed += it }
+            }
+            val (snapshot, _) = try {
+                withTimeout(5_000) { reader.backupSnapshot() }
+            } finally {
+                observer.cancelAndJoin()
+            }
+            assertEquals(listOf(expected), observed)
+            assertEquals(expected, snapshot.getAsJsonObject("book_first_line_indent_chars")
+                .entrySet().associate { (key, value) -> key to value.asInt })
+        } finally {
+            job.cancelAndJoin()
+            context.preferencesDataStoreFile(name).delete()
         }
     }
 
