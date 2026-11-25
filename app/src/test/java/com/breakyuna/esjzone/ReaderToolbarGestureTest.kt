@@ -36,7 +36,8 @@ class ReaderToolbarGestureTest {
         assertEquals(emptyList<ReaderTool>(), ReaderTool.decode(""))
         assertEquals(listOf(ReaderTool.BRIGHTNESS, ReaderTool.CONTENTS),
             ReaderTool.decode("SCRIPT,BRIGHTNESS,LAYOUT,CONTENTS,BRIGHTNESS,UNKNOWN"))
-        assertEquals(ReaderTool.entries.size, ReaderTool.decode(ReaderTool.entries.joinToString(",") { it.name }).size)
+        assertEquals(ReaderTool.entries.take(ReaderTool.MAX_VISIBLE),
+            ReaderTool.decode(ReaderTool.entries.joinToString(",") { it.name }))
     }
 
     @Test fun fullToolbarOrderRestoresHiddenPositionsAndMigratesExistingSelection() {

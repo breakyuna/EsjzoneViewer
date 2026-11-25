@@ -12,8 +12,10 @@ import com.breakyuna.esjzone.domain.reader.ReaderChapterDocument
 import com.breakyuna.esjzone.domain.reader.ReaderChapterFormatting
 import com.breakyuna.esjzone.domain.reader.ReaderChapterRef
 import com.breakyuna.esjzone.domain.reader.ReaderRuby
+import com.breakyuna.esjzone.domain.reader.ReaderTextOffsets
 import com.breakyuna.esjzone.domain.reader.ReaderTextStyle
 import com.breakyuna.esjzone.domain.reader.ReaderUnderline
+import com.breakyuna.esjzone.domain.reader.ReaderUnderlineAnchors
 import com.breakyuna.esjzone.domain.reader.ReaderUnderlines
 import com.breakyuna.esjzone.domain.reader.sourceText
 import com.breakyuna.esjzone.network.features.selectChapterContentElement
@@ -22,10 +24,10 @@ import com.breakyuna.esjzone.novellibrary.component.TextComponent
 import com.breakyuna.esjzone.data.repository.toReaderBlocks
 import com.breakyuna.esjzone.ui.page.InAppBrowserActivity
 import com.breakyuna.esjzone.ui.reader.ReaderBookmarkMarker
+import com.breakyuna.esjzone.ui.reader.ReaderNameReplace
 import com.breakyuna.esjzone.ui.reader.ReaderNameReplaceRule
 import com.breakyuna.esjzone.ui.reader.ReaderNameReplaceSettings
 import com.breakyuna.esjzone.ui.reader.readerUnderlineAnchors
-import com.breakyuna.esjzone.ui.reader.readerUnderlinePosition
 import com.breakyuna.esjzone.util.AppLogger
 import com.google.gson.Gson
 import kotlinx.coroutines.CancellationException
@@ -291,10 +293,6 @@ class ChapterContentIntegrityTest {
         assertEquals(3, reanchored!!.blockIndex)
         assertEquals(0, reanchored.start)
         assertEquals(7, reanchored.end)
-
-        val jump = readerUnderlinePosition(newDoc, key, mark, { it }, { null })
-        assertNotNull(jump.anchor)
-        assertEquals(3, jump.anchor!!.blockIndex)
     }
 
     @Test
@@ -335,14 +333,16 @@ class ChapterContentIntegrityTest {
     fun displayedNameQuoteCanReanchorAcrossNewBlocksInSourceOffsets() {
         val old = ReaderBlock.Text("前文：阿贝多来了")
         val blocks = listOf(ReaderBlock.Text("前文："), ReaderBlock.Text("阿贝多"), ReaderBlock.Text("来了"))
-        val doc = ReaderChapterDocument(ReaderChapterRef("章节", "/forum/1/101.html"), blocks)
         val mark = ReaderUnderline(0, ReaderUnderlines.sourceSignature(old), 3, old.value.length, quote = "Albedo来了")
         val settings = ReaderNameReplaceSettings(enabled = true, rules = listOf(ReaderNameReplaceRule(
             source = "阿贝多", target = "Albedo"
         )))
 
         assertNull(ReaderUnderlines.reanchorByQuote(mark, blocks))
-        val reanchored = requireNotNull(readerUnderlineAnchors(doc, settings).resolve(mark))
+        val anchors = ReaderUnderlineAnchors(blocks, renderings = listOf({ block ->
+            ReaderNameReplace.blockMapping(block, settings) { ReaderTextOffsets.identity(it.sourceText()) }
+        }))
+        val reanchored = requireNotNull(anchors.resolve(mark))
         assertEquals(listOf(1, 2), reanchored.ranges().map { it.blockIndex })
         assertEquals(listOf(0 to 3, 0 to 2), reanchored.ranges().map { it.start to it.end })
     }
@@ -351,10 +351,12 @@ class ChapterContentIntegrityTest {
     fun simplifiedQuoteCanReanchorInTraditionalSource() {
         val old = ReaderBlock.Text("前文：漢字")
         val blocks = listOf(ReaderBlock.Text("前文："), ReaderBlock.Text("漢字"))
-        val doc = ReaderChapterDocument(ReaderChapterRef("章节", "/forum/1/101.html"), blocks)
         val mark = ReaderUnderline(0, ReaderUnderlines.sourceSignature(old), 3, old.value.length, quote = "汉字")
 
-        val reanchored = requireNotNull(readerUnderlineAnchors(doc, ReaderNameReplaceSettings()).resolve(mark))
+        val anchors = ReaderUnderlineAnchors(blocks, renderings = listOf({ block ->
+            ReaderTextOffsets.identity(block.sourceText().replace('漢', '汉'))
+        }))
+        val reanchored = requireNotNull(anchors.resolve(mark))
         assertEquals(1, reanchored.blockIndex)
         assertEquals(0, reanchored.start)
         assertEquals(2, reanchored.end)

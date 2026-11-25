@@ -6,8 +6,14 @@ import com.breakyuna.esjzone.domain.reader.ReaderChapterDocument
 import com.breakyuna.esjzone.domain.reader.ReaderChapterRef
 import com.breakyuna.esjzone.domain.reader.ReaderRuby
 import com.breakyuna.esjzone.domain.reader.ReaderTextStyle
+import com.breakyuna.esjzone.domain.reader.ReaderUnderline
+import com.breakyuna.esjzone.domain.reader.ReaderUnderlines
+import com.breakyuna.esjzone.ui.reader.ReaderNameReplaceRule
+import com.breakyuna.esjzone.ui.reader.ReaderNameReplaceSettings
 import com.breakyuna.esjzone.ui.reader.ReaderScript
 import com.breakyuna.esjzone.ui.reader.ReaderScriptConverter
+import com.breakyuna.esjzone.ui.reader.readerUnderlineAnchors
+import com.breakyuna.esjzone.ui.reader.readerUnderlinePosition
 import java.util.concurrent.Callable
 import java.util.concurrent.CyclicBarrier
 import java.util.concurrent.Executors
@@ -60,5 +66,26 @@ class ReaderScriptConverterInstrumentedTest {
         assertArrayEquals(intArrayOf(1, 2), mapping.sourceEnds)
         assertEquals(setOf(ReaderTextStyle.Bold), ruby.styles)
         assertEquals(ReaderRuby("龍", "書"), ruby.ruby)
+    }
+
+    @Test
+    fun underlineLookupUsesAndroidIcuAndNameReplacementAfterReparsing() {
+        val old = ReaderBlock.Text("前文：阿贝多來了")
+        val blocks = listOf(ReaderBlock.Text("前文："), ReaderBlock.Text("阿贝多"), ReaderBlock.Text("來了"))
+        val chapter = ReaderChapterRef("章节", "/forum/1/101.html")
+        val document = ReaderChapterDocument(chapter, blocks, contentFingerprint = "a".repeat(64))
+        val mark = ReaderUnderline(0, ReaderUnderlines.sourceSignature(old), 3, old.value.length, quote = "Albedo来了")
+        val names = ReaderNameReplaceSettings(enabled = true, rules = listOf(ReaderNameReplaceRule(
+            source = "阿贝多", target = "Albedo"
+        )))
+
+        val migrated = requireNotNull(readerUnderlineAnchors(document, names).resolve(mark))
+        assertEquals(listOf(1, 2), migrated.ranges().map { it.blockIndex })
+        assertEquals(listOf(0 to 3, 0 to 2), migrated.ranges().map { it.start to it.end })
+
+        val jump = readerUnderlinePosition(document, chapter.url, mark, { it }, { null }, names)
+        val anchor = requireNotNull(jump.anchor)
+        assertEquals(1, anchor.blockIndex)
+        assertEquals(0, anchor.offset)
     }
 }

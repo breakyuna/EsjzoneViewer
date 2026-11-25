@@ -38,7 +38,7 @@ class CloudViewReportStoreTest {
 
     @Test
     fun recordsRoundTripThroughStoredDtoWithSerializedNamesAndNoBackup() {
-        val file = tempFile()
+        val file = tempFile().apply { writeText("[]") }
         assertTrue(CloudViewReportStore(file).merge(record))
         // Generations are process-local and are not persisted.
         assertEquals(listOf(record.copy(generation = 0)), CloudViewReportStore(file).snapshot())
