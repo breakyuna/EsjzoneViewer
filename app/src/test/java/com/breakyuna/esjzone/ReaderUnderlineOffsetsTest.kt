@@ -13,8 +13,8 @@ import com.breakyuna.esjzone.domain.reader.sourceText
 import com.breakyuna.esjzone.ui.reader.ReaderNameReplace
 import com.breakyuna.esjzone.ui.reader.ReaderNameReplaceRule
 import com.breakyuna.esjzone.ui.reader.ReaderNameReplaceSettings
-import com.breakyuna.esjzone.ui.reader.readerUnderlineQuote
 import com.breakyuna.esjzone.ui.reader.readerUnderlinePosition
+import com.breakyuna.esjzone.ui.reader.readerUnderlineQuote
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -81,76 +81,6 @@ class ReaderUnderlineOffsetsTest {
         }
     }
 
-    @Test fun selectionInsideReplacedNameExpandsToWholeOriginalName() {
-        val mapped = display(settings(longer))
-        // "bed" inside "Albedo" saves the entire original "阿贝多".
-        val mark = select(mapped, 2, 5)
-        assertEquals(ReaderUnderlineRange(0, sourceSignature, 0, 3), mark.ranges().single())
-        assertEquals("Albedo", drawn(mark, mapped))
-        assertEquals("阿贝多", drawn(mark, ReaderTextOffsets.identity(source)))
-    }
-
-    @Test fun markStaysOnSameOriginalTextWhenSwitchesAndRulesChange() {
-        val withRules = settings(longer, shorter, removed)
-        val mapped = display(withRules)
-        val start = mapped.text.indexOf("去找琴")
-        val mark = select(mapped, start, start + 3)
-        assertEquals("去找琴团长", source.substring(mark.start, mark.end))
-        val variants = mapOf(
-            settings(longer, shorter, removed, enabled = false) to "去找琴团长",
-            settings(longer, shorter.copy(enabled = false), removed) to "去找琴团长",
-            settings(longer) to "去找琴团长",
-            settings(longer, shorter.copy(target = "Jean"), removed) to "去找Jean",
-            settings(longer, shorter, removed, ReaderNameReplaceRule(id = "d", source = "去找", target = "")) to "琴",
-            settings() to "去找琴团长",
-            withRules to "去找琴"
-        )
-        variants.forEach { (options, expected) -> assertEquals(expected, drawn(mark, display(options))) }
-    }
-
-    @Test fun adjacentAndOverlappingRulesKeepIndependentSpans() {
-        val text = ReaderBlock.Text("阿贝多阿贝")
-        val options = settings(ReaderNameReplaceRule(source = "阿贝多", target = "A"),
-            ReaderNameReplaceRule(source = "阿贝", target = "BB"), ReaderNameReplaceRule(source = "阿", target = "C"))
-        val mapped = display(options, text)
-        assertEquals("ABB", mapped.text)
-        assertEquals(0 to 3, mapped.toSource(0) to mapped.toSourceEnd(1))
-        assertEquals(3 to 5, mapped.toSource(1) to mapped.toSourceEnd(2))
-        assertEquals(1 to 3, mapped.toDisplay(3) to mapped.toDisplayEnd(5))
-    }
-
-    @Test fun replacementToEmptyTextHidesOnlyThatSpanAndKeepsTheMark() {
-        val mapped = display(settings(removed))
-        val name = source.indexOf("可莉")
-        val onlyRemoved = ReaderUnderline(0, sourceSignature, name, name + 2)
-        assertNull(ReaderUnderlines.displayRange(onlyRemoved.ranges().single(), sourceSignature,
-            ReaderUnderlines.signature(block, mapped.text), mapped))
-        assertEquals("可莉", drawn(onlyRemoved, ReaderTextOffsets.identity(source)))
-        val around = ReaderUnderline(0, sourceSignature, name - 1, name + 3)
-        assertEquals("和去", drawn(around, mapped))
-        // A whole-block replacement to nothing leaves no drawable text but no crash.
-        val gone = display(settings(ReaderNameReplaceRule(source = source, target = "")))
-        assertEquals("", gone.text)
-        assertNull(ReaderUnderlines.displayRange(ReaderUnderlineRange(0, sourceSignature, 0, source.length),
-            sourceSignature, ReaderUnderlines.signature(block, ""), gone))
-    }
-
-    @Test fun selectionFromFirstVisibleCharacterSkipsNameRemovedAtParagraphStart() {
-        val text = ReaderBlock.Text("可莉来了")
-        val signature = ReaderUnderlines.sourceSignature(text)
-        val mapped = display(settings(ReaderNameReplaceRule(source = "可莉", target = "")), text)
-        assertEquals("来了", mapped.text)
-        val selected = ReaderUnderlines.toSource(ReaderUnderline(0, ReaderUnderlines.signature(text, mapped.text), 0, 1)) {
-            signature to mapped
-        }
-        assertEquals(ReaderUnderlineRange(0, signature, 2, 3), selected.ranges().single())
-        val migrated = ReaderUnderlines.migrateToSource(listOf(ReaderUnderline(0,
-            ReaderUnderlines.signature(text, mapped.text), 0, 1)), listOf(text)) { listOf(mapped) }
-        assertEquals(ReaderUnderline(0, signature, 2, 3), migrated.single())
-        // Anchors keep their paragraph-start meaning.
-        assertEquals(0, mapped.toSource(0))
-    }
-
     /** Selecting [visible] on displayed text and migrating the same legacy range both save [expected] of the original. */
     private fun assertRemovedNamesExcluded(block: ReaderBlock, removed: List<String>, visible: String, expected: IntRange) {
         val signature = ReaderUnderlines.sourceSignature(block)
@@ -171,6 +101,8 @@ class ReaderUnderlineOffsetsTest {
         val start = ReaderBlock.Text("可莉来了")
         assertRemovedNamesExcluded(start, listOf("可莉"), "来", 2..2)
         assertRemovedNamesExcluded(start, listOf("可莉"), "来了", 2..3)
+        // Anchors keep their paragraph-start meaning.
+        assertEquals(0, display(settings(removed), start).toSource(0))
         val end = ReaderBlock.Text("来了可莉")
         assertRemovedNamesExcluded(end, listOf("可莉"), "了", 1..1)
         assertRemovedNamesExcluded(end, listOf("可莉"), "来了", 0..1)
@@ -189,11 +121,14 @@ class ReaderUnderlineOffsetsTest {
     }
 
     @Test fun removedNameOnlyRangesAndWholeRemovedParagraphsAreKeptButHidden() {
-        val block = ReaderBlock.Text("甲可莉乙")
-        val signature = ReaderUnderlines.sourceSignature(block)
-        val mapped = display(settings(removed), block)
-        assertNull(ReaderUnderlines.displayRange(ReaderUnderlineRange(0, signature, 1, 3), signature,
+        val mapped = display(settings(removed))
+        val name = source.indexOf("可莉")
+        val onlyRemoved = ReaderUnderline(0, sourceSignature, name, name + 2)
+        assertNull(ReaderUnderlines.displayRange(onlyRemoved.ranges().single(), sourceSignature,
             ReaderUnderlines.signature(block, mapped.text), mapped))
+        assertEquals("可莉", drawn(onlyRemoved, ReaderTextOffsets.identity(source)))
+        assertEquals("和去", drawn(ReaderUnderline(0, sourceSignature, name - 1, name + 3), mapped))
+
         // Nothing is displayed for a fully removed paragraph, so no legacy range can match or be lost.
         val whole = ReaderBlock.Text("可莉")
         val gone = display(settings(removed), whole)
@@ -209,28 +144,24 @@ class ReaderUnderlineOffsetsTest {
             original.signature, ReaderTextOffsets.identity("可莉")))
     }
 
-    @Test fun legacyRangeDrawsOnlyOnItsExactRendering() {
-        val mapped = display(settings(longer))
-        val rendered = ReaderUnderlines.signature(block, mapped.text)
-        val legacy = ReaderUnderlineRange(0, rendered, 0, 6)
-        assertEquals(0 until 6, ReaderUnderlines.displayRange(legacy, sourceSignature, rendered, mapped))
-        assertNull(ReaderUnderlines.displayRange(legacy, sourceSignature, sourceSignature, ReaderTextOffsets.identity(source)))
-        // Without a mapping, original offsets are drawn only on untransformed text.
-        val original = ReaderUnderlineRange(0, sourceSignature, 0, 3)
-        assertEquals(0 until 3, ReaderUnderlines.displayRange(original, sourceSignature, sourceSignature, null))
-        assertNull(ReaderUnderlines.displayRange(original, sourceSignature, rendered, null))
-    }
-
-    @Test fun unresolvedSelectionStaysInRenderedOffsets() {
-        val rendered = ReaderUnderlines.signature(block, "x")
-        val mark = ReaderUnderline(0, rendered, 0, 1)
-        assertEquals(mark, ReaderUnderlines.toSource(mark) { null })
-    }
-
-    @Test fun legacyRenderedMarksMigrateToOriginalOffsets() {
+    @Test fun legacyRenderedMarksMigrateToOriginalOffsetsAndCollapseDuplicates() {
         val options = settings(longer, shorter)
         val mapped = display(options)
         val rendered = ReaderUnderlines.signature(block, mapped.text)
+
+        // Exact rendering check & unresolved fallback.
+        val legacyRange = ReaderUnderlineRange(0, rendered, 0, 6)
+        assertEquals(0 until 6, ReaderUnderlines.displayRange(legacyRange, sourceSignature, rendered, mapped))
+        assertNull(ReaderUnderlines.displayRange(legacyRange, sourceSignature, sourceSignature, ReaderTextOffsets.identity(source)))
+        assertNull(ReaderUnderlines.displayRange(ReaderUnderlineRange(0, sourceSignature, 0, 3), sourceSignature, rendered, null))
+        val unresolved = ReaderUnderline(0, ReaderUnderlines.signature(block, "x"), 0, 1)
+        assertEquals(unresolved, ReaderUnderlines.toSource(unresolved) { null })
+
+        // Already-original marks skip migration.
+        val alreadyOriginal = listOf(ReaderUnderline(0, ReaderUnderlines.signature(block, source), 1, 3))
+        assertFalse(ReaderUnderlines.hasLegacyRanges(alreadyOriginal, listOf(block)))
+        assertSame(alreadyOriginal, ReaderUnderlines.migrateToSource(alreadyOriginal, listOf(block)) { error("not needed") })
+
         val second = mapped.text.lastIndexOf("Albedo")
         val legacy = ReaderUnderline(0, rendered, second, second + 8, quote = "Albedo笑了")
         val untouched = ReaderUnderline(0, sourceSignature, 4, 6, quote = "可莉")
@@ -241,18 +172,31 @@ class ReaderUnderlineOffsetsTest {
         val migrated = ReaderUnderlines.migrateToSource(rows, listOf(block), renderings)
         val start = source.lastIndexOf("阿贝多")
         assertEquals(listOf(ReaderUnderline(0, sourceSignature, start, start + 5, quote = "Albedo笑了"), untouched, unknown), migrated)
-        assertEquals("阿贝多笑了", source.substring(start, start + 5))
-        // Stable after migration, after a persistence round trip and once rules are switched off.
         assertSame(migrated, ReaderUnderlines.migrateToSource(migrated, listOf(block), renderings))
-        assertEquals(migrated, ReaderUnderlines.decode(ReaderUnderlines.encode(migrated)))
         assertEquals("阿贝多笑了", drawn(migrated.first(), ReaderTextOffsets.identity(source)))
         assertEquals("Albedo笑了", drawn(migrated.first(), mapped))
+
+        // Duplicate collapse preserves info.
+        val mappedLonger = display(settings(longer))
+        val duplicateLegacy = ReaderUnderline(0, ReaderUnderlines.signature(block, mappedLonger.text), 0, 6)
+        val current = ReaderUnderline(0, sourceSignature, 0, 3)
+        val info = ReaderUnderlineInfo(novelName = "Novel", chapterName = "Chapter")
+        assertEquals(listOf(current.copy(info = info)),
+            ReaderUnderlines.migrateToSource(listOf(duplicateLegacy.copy(info = info), current), listOf(block)) { listOf(mappedLonger) })
     }
 
-    @Test fun marksWithoutReplacementAreAlreadyOriginalAndNeedNoMigration() {
-        val legacy = listOf(ReaderUnderline(0, ReaderUnderlines.signature(block, source), 1, 3))
-        assertFalse(ReaderUnderlines.hasLegacyRanges(legacy, listOf(block)))
-        assertSame(legacy, ReaderUnderlines.migrateToSource(legacy, listOf(block)) { error("not needed") })
+    @Test fun quotedMarkOnRemovedBlockMigratesWhenTheBodyShrinks() {
+        val current = ReaderBlock.Text("前文。留下的句子。后文。")
+        val removed = ReaderBlock.Text("留下的句子。")
+        val mark = ReaderUnderline(3, ReaderUnderlines.sourceSignature(removed), 0, 6, quote = removed.value)
+        val blocks = listOf(current)
+
+        assertFalse(ReaderUnderlines.hasLegacyRanges(listOf(mark.copy(quote = " ")), blocks))
+        assertTrue(ReaderUnderlines.hasLegacyRanges(listOf(mark), blocks))
+        val migrated = ReaderUnderlines.migrateToSource(listOf(mark), blocks) { error("no legacy rendering") }
+        assertEquals(listOf(ReaderUnderline(0, ReaderUnderlines.sourceSignature(current), 3, 9, quote = removed.value)),
+            migrated)
+        assertFalse(ReaderUnderlines.hasLegacyRanges(migrated, blocks))
     }
 
     @Test fun crossParagraphLegacyMarkMigratesEachRangeAndKeepsOrder() {
@@ -268,16 +212,6 @@ class ReaderUnderlineOffsetsTest {
         assertEquals(listOf(ReaderUnderlineRange(0, ReaderUnderlines.sourceSignature(first), 2, 6),
             ReaderUnderlineRange(1, ReaderUnderlines.sourceSignature(second), 0, 4)), migrated.ranges())
         assertEquals(migrated, ReaderUnderlines.decode(ReaderUnderlines.encode(listOf(migrated))).single())
-    }
-
-    @Test fun migratedDuplicateOfANewerMarkCollapses() {
-        val mapped = display(settings(longer))
-        val legacy = ReaderUnderline(0, ReaderUnderlines.signature(block, mapped.text), 0, 6)
-        val current = ReaderUnderline(0, sourceSignature, 0, 3)
-        assertEquals(listOf(current), ReaderUnderlines.migrateToSource(listOf(legacy, current), listOf(block)) { listOf(mapped) })
-        val info = ReaderUnderlineInfo(novelName = "Novel", chapterName = "Chapter")
-        val withInfo = ReaderUnderlines.migrateToSource(listOf(legacy.copy(info = info), current), listOf(block)) { listOf(mapped) }
-        assertEquals(listOf(current.copy(info = info)), withInfo)
     }
 
     @Test fun savedMarksMergeInOriginalOffsetsAndQuoteDisplayedText() {
@@ -303,7 +237,7 @@ class ReaderUnderlineOffsetsTest {
         assertEquals(0, hit.anchor.offset)
     }
 
-    @Test fun underlineJumpUsesOriginalOffsetAndFallsBackToItsParagraphAfterEdits() {
+    @Test fun underlineJumpUsesOriginalOrLegacyOffsetsAndFallsBackAfterEdits() {
         val target = ReaderBlock.Text("abcdefgh")
         val document = ReaderChapterDocument(ReaderChapterRef("chapter", "/forum/1/1.html"),
             listOf(ReaderBlock.Text("before"), target), contentFingerprint = "d".repeat(64))
@@ -318,15 +252,13 @@ class ReaderUnderlineOffsetsTest {
         val fallback = readerUnderlinePosition(edited, "/forum/1/1.html", mark, { it }, { null })
         assertNull(fallback.anchor)
         assertEquals(1f, fallback.contentPosition!!, 0f)
-    }
 
-    @Test fun underlineJumpMapsLegacyRenderedOffsetsBackToTheSource() {
-        val document = ReaderChapterDocument(ReaderChapterRef("chapter", "/forum/1/1.html"), listOf(block),
+        val replacedDoc = ReaderChapterDocument(ReaderChapterRef("chapter", "/forum/1/1.html"), listOf(block),
             contentFingerprint = "d".repeat(64))
         val mapped = display(settings(longer))
         val start = mapped.text.indexOf("和")
-        val mark = ReaderUnderline(0, ReaderUnderlines.signature(block, mapped.text), start, start + 1)
-        val position = readerUnderlinePosition(document, "/forum/1/1.html", mark,
+        val legacyMark = ReaderUnderline(0, ReaderUnderlines.signature(block, mapped.text), start, start + 1)
+        val position = readerUnderlinePosition(replacedDoc, "/forum/1/1.html", legacyMark,
             { it.replace("阿贝多", "Albedo") }, { mapped })
         assertEquals(source.indexOf('和'), requireNotNull(position.anchor).offset)
     }

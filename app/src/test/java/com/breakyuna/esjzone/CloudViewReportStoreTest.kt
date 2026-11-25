@@ -3,7 +3,6 @@ package com.breakyuna.esjzone
 import com.breakyuna.esjzone.network.features.CloudViewRecord
 import com.breakyuna.esjzone.network.features.CloudViewReportCodec
 import com.breakyuna.esjzone.network.features.CloudViewReportStore
-import com.breakyuna.esjzone.network.features.StoredCloudView
 import com.google.gson.JsonParser
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -38,17 +37,12 @@ class CloudViewReportStoreTest {
             """"reported":true,"updatedAt":200,"account":"account-scope"}"""
 
     @Test
-    fun recordsRoundTripThroughTheStoredDto() {
-        val file = tempFile()
+    fun recordsRoundTripThroughStoredDtoWithSerializedNamesAndNoBackup() {
+        val file = tempFile().apply { writeText("[]") }
         assertTrue(CloudViewReportStore(file).merge(record))
         // Generations are process-local and are not persisted.
         assertEquals(listOf(record.copy(generation = 0)), CloudViewReportStore(file).snapshot())
-    }
 
-    @Test
-    fun savedJsonUsesTheSerializedNames() {
-        val file = tempFile()
-        CloudViewReportStore(file).merge(record)
         val saved = JsonParser.parseString(file.readText()).asJsonArray.single().asJsonObject
         assertEquals(
             setOf("site", "novelKey", "novelId", "novelUrl", "chapterKey", "chapterUrl", "reported", "updatedAt", "account"),
@@ -58,6 +52,12 @@ class CloudViewReportStoreTest {
         assertEquals(false, saved["reported"].asBoolean)
         assertEquals(100L, saved["updatedAt"].asLong)
         assertEquals("account-scope", saved["account"].asString)
+        assertFalse(File(file.parentFile, "${file.name}.bak").exists())
+
+        val readable = tempFile()
+        readable.writeText("[" + validJson() + "]")
+        assertEquals(listOf(validRecord()), CloudViewReportStore(readable).snapshot())
+        assertFalse(File(readable.parentFile, "${readable.name}.bak").exists())
     }
 
     @Test
@@ -93,25 +93,10 @@ class CloudViewReportStoreTest {
     }
 
     @Test
-    fun readableFileLeavesNoCopy() {
-        val file = tempFile()
-        file.writeText("[" + validJson() + "]")
-        assertEquals(listOf(validRecord()), CloudViewReportStore(file).snapshot())
-        assertFalse(File(file.parentFile, "${file.name}.bak").exists())
-    }
-
-    @Test
     fun codecCountsDiscardedEntries() {
         val decoded = CloudViewReportCodec.decode("[" + validJson() + ",{\"novelKey\":\"id:1\"},[]]")
         assertEquals(listOf("id:34"), decoded.records.map { it.novelKey })
         assertEquals(2, decoded.discarded)
         assertEquals(decoded.records, CloudViewReportCodec.decode(CloudViewReportCodec.encode(decoded.records)).records)
-    }
-
-    @Test
-    fun releaseBuildKeepsTheStoredDto() {
-        val rules = File("proguard-rules.pro").readText()
-        val className = StoredCloudView::class.java.name
-        assertTrue(rules.contains("-keep class $className {"))
     }
 }

@@ -2,22 +2,47 @@ package com.breakyuna.esjzone
 
 import com.breakyuna.esjzone.database.ReadingStatisticsSession
 import com.breakyuna.esjzone.database.ReadingStatisticsSummary
-import com.breakyuna.esjzone.database.readingStatisticsBookKey
+import com.breakyuna.esjzone.database.entity.LocalReadingActivity
 import com.breakyuna.esjzone.database.entity.ReadingStat
+import com.breakyuna.esjzone.database.readingStatisticsBookKey
+import com.breakyuna.esjzone.ui.page.statisticsActivitiesByBook
+import com.breakyuna.esjzone.ui.page.statisticsCoverLookupUrl
 import java.time.LocalDate
 import java.time.ZoneId
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Test
 
 class ReadingStatisticsTest {
     private val zone = ZoneId.of("Asia/Shanghai")
 
+    private fun activity(id: String, novelId: String, novelUrl: String, chapterUrl: String = "") =
+        LocalReadingActivity(id, novelId, "书名", novelUrl, chapterUrl, "章节", 0, 1,
+            0f, 0L, 0L, 0L)
+
     @Test
-    fun readingTimeAndTagsUseSameDetailFallbackKey() {
+    fun readingTimeTagsAndHistoryUseSameBookIdentity() {
         val detailUrl = "https://www.esjzone.cc/detail/12345.html"
         assertEquals("12345", readingStatisticsBookKey("", detailUrl, "/forum/12345/99.html"))
         assertEquals("12345", readingStatisticsBookKey("", detailUrl))
         assertEquals("known-id", readingStatisticsBookKey("known-id", detailUrl))
+
+        val latest = activity("new", "123", "https://www.esjzone.cc/detail/123.html")
+        val older = activity("old", "123", "https://www.esjzone.one/detail/123.html")
+        val missingId = activity("other", "", "https://www.esjzone.cc/detail/456.html")
+        val byBook = statisticsActivitiesByBook(listOf(latest, older, missingId))
+        assertEquals(latest, byBook["123"])
+        assertEquals(missingId, byBook["456"])
+    }
+
+    @Test
+    fun fallbackCoverLookupDoesNotTreatAForumPostAsABook() {
+        assertEquals("/detail/123.html", statisticsCoverLookupUrl("123"))
+        assertEquals("/detail/123.html", statisticsCoverLookupUrl("/detail/123.html"))
+        assertEquals("https://example.com/book/42", statisticsCoverLookupUrl("https://example.com/book/42"))
+        assertNull(statisticsCoverLookupUrl("/forum/123/456.html"))
+        assertNull(statisticsCoverLookupUrl("https://user:password@example.com/book"))
+        assertNull(statisticsCoverLookupUrl(""))
     }
 
     @Test
@@ -140,63 +165,45 @@ class ReadingStatisticsTest {
     }
 
     @Test
-    fun tagDistributionGroupsBelowFivePercentWithoutDroppingDuration() {
+    fun tagDistributionGroupsBelowFivePercentAndSupportsFullListAndOnlyOther() {
         val today = LocalDate.parse("2026-09-26")
         val amounts = listOf(85L, 5L, 4L, 3L, 2L, 1L)
         val rows = amounts.mapIndexed { index, amount ->
             ReadingStat(today.toString(), "$index", "Book", amount)
         }
         val tags = amounts.indices.associate { "$it" to listOf("Tag $it") }
-        val slices = ReadingStatisticsSummary(rows, today, tags).tagDistribution(null)
-        assertEquals(listOf("Tag 0", "Tag 1", null), slices.map { it.tag })
-        assertEquals(listOf(85L, 5L, 10L), slices.map { it.durationMs })
-        assertEquals(100L, slices.sumOf { it.durationMs })
-    }
-
-    @Test
-    fun fullTagListKeepsSmallTagsAndMatchesChartTotal() {
-        val today = LocalDate.parse("2026-09-26")
-        val rows = listOf(90L, 6L, 4L).mapIndexed { index, duration ->
-            ReadingStat(today.toString(), "$index", "Book", duration)
-        }
-        val tags = rows.indices.associate { "$it" to listOf("Tag $it") }
         val summary = ReadingStatisticsSummary(rows, today, tags)
-        val full = summary.tagDistribution(7, groupSmallTags = false)
-        assertEquals(listOf("Tag 0", "Tag 1", "Tag 2"), full.map { it.tag })
-        assertEquals(listOf(90L, 6L, 4L), full.map { it.durationMs })
-        assertEquals(summary.tagDistribution(7).sumOf { it.durationMs }, full.sumOf { it.durationMs })
+        val grouped = summary.tagDistribution(null)
+        assertEquals(listOf("Tag 0", "Tag 1", null), grouped.map { it.tag })
+        assertEquals(listOf(85L, 5L, 10L), grouped.map { it.durationMs })
+        assertEquals(100L, grouped.sumOf { it.durationMs })
+
+        val full = summary.tagDistribution(null, groupSmallTags = false)
+        assertEquals(amounts.indices.map { "Tag $it" }, full.map { it.tag })
+        assertEquals(grouped.sumOf { it.durationMs }, full.sumOf { it.durationMs })
+
+        val tinyRows = (1..21).map { ReadingStat(today.toString(), "$it", "Book", 1L) }
+        val tinyTags = (1..21).associate { "$it" to listOf("Tag $it") }
+        val onlyOther = ReadingStatisticsSummary(tinyRows, today, tinyTags).tagDistribution(7)
+        assertEquals(1, onlyOther.size)
+        assertEquals(null, onlyOther.single().tag)
+        assertEquals(21L, onlyOther.single().durationMs)
     }
 
     @Test
-    fun tagDistributionCanContainOnlyOther() {
-        val today = LocalDate.parse("2026-09-26")
-        val rows = (1..21).map { ReadingStat(today.toString(), "$it", "Book", 1L) }
-        val tags = (1..21).associate { "$it" to listOf("Tag $it") }
-        val slices = ReadingStatisticsSummary(rows, today, tags).tagDistribution(7)
-        assertEquals(1, slices.size)
-        assertEquals(null, slices.single().tag)
-        assertEquals(21L, slices.single().durationMs)
-    }
-
-    @Test
-    fun rankingUsesKnownTitleEvenWhenRecentRowsContainAnIdOrNoName() {
+    fun rankingResolvesKnownTitleAndHidesUnresolvedIdentityWithoutDroppingTime() {
         val today = LocalDate.parse("2026-10-30")
-        val summary = ReadingStatisticsSummary(listOf(
+        val resolved = ReadingStatisticsSummary(listOf(
             ReadingStat("2026-09-01", "123", "1984", 500_000L),
             ReadingStat("2026-10-29", "123", "123", 60_000L),
             ReadingStat("2026-10-30", "123", "", 90_000L)
         ), today)
-        assertEquals("1984", summary.topBooks(7).single().bookName)
-        assertEquals(150_000L, summary.topBooks(7).single().durationMs)
-        assertEquals(650_000L, summary.topBooks(null).single().durationMs)
-    }
+        assertEquals("1984", resolved.topBooks(7).single().bookName)
+        assertEquals(150_000L, resolved.topBooks(7).single().durationMs)
+        assertEquals(650_000L, resolved.topBooks(null).single().durationMs)
 
-    @Test
-    fun unresolvedIdentityIsNotDisplayedAsATitleAndTimeRemainsCounted() {
-        val today = LocalDate.parse("2026-10-30")
-        val summary = ReadingStatisticsSummary(listOf(ReadingStat(today.toString(), "123", "123", 60_000L)), today)
-        assertEquals("", summary.topBooks(7).single().bookName)
-        assertEquals(60_000L, summary.totalMs)
+        val unresolved = ReadingStatisticsSummary(listOf(ReadingStat(today.toString(), "123", "123", 60_000L)), today)
+        assertEquals("", unresolved.topBooks(7).single().bookName)
+        assertEquals(60_000L, unresolved.totalMs)
     }
-
 }

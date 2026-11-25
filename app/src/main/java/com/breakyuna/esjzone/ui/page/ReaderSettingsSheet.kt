@@ -54,6 +54,7 @@ internal fun ReaderSettingsSheet(
     visible: Boolean,
     settings: ReaderSettings,
     onSettingsChange: (ReaderSettings) -> Unit,
+    onBookIndentChange: (Int) -> Unit,
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier,
     customImageAvailable: Boolean? = false,
@@ -188,7 +189,15 @@ internal fun ReaderSettingsSheet(
                         }
                         ReaderLayoutSlider(draft, settings, ::commit) { draft = it }
                     } else if (tab == 1) {
-                        ReaderIndentSetting(draft.firstLineIndentChars, readerSheetStyle = true) { commit(draft.copy(firstLineIndentChars = it)) }
+                        ChoiceSettingRow(
+                            title = stringResource(R.string.reader_first_line_indent),
+                            options = (0..2).map { stringResource(R.string.reader_indent_chars, it) },
+                            selectedIndex = draft.firstLineIndentChars,
+                            readerSheetStyle = true
+                        ) { chars ->
+                            draft = draft.copy(firstLineIndentChars = chars)
+                            onBookIndentChange(chars)
+                        }
                         ReaderToggle(stringResource(R.string.reader_show_system_status), draft.showSystemStatusBar) { commit(draft.copy(showSystemStatusBar = it)) }
                         ReaderToggle(stringResource(R.string.reader_show_system_navigation), draft.showSystemNavigationBar) { commit(draft.copy(showSystemNavigationBar = it)) }
                         ReaderToggle(stringResource(R.string.reader_show_chapter_name), draft.showChapterName) { commit(draft.copy(showChapterName = it)) }
@@ -261,7 +270,22 @@ internal fun ReaderSettingsSheet(
         )
     }
 
-    if (confirmReset) AlertDialog(onDismissRequest = { confirmReset = false }, title = { Text(stringResource(R.string.reader_reset)) }, text = { Text(stringResource(R.string.reader_reset_confirmation)) }, confirmButton = { TextButton(onClick = { commit(ReaderSettings()); confirmReset = false }) { Text(stringResource(R.string.reader_reset)) } }, dismissButton = { TextButton(onClick = { confirmReset = false }) { Text(stringResource(R.string.cancel)) } })
+    if (confirmReset) AlertDialog(
+        onDismissRequest = { confirmReset = false },
+        title = { Text(stringResource(R.string.reader_reset)) },
+        text = { Text(stringResource(R.string.reader_reset_confirmation)) },
+        confirmButton = {
+            TextButton(onClick = {
+                val defaults = ReaderSettings()
+                commit(defaults)
+                onBookIndentChange(defaults.firstLineIndentChars)
+                confirmReset = false
+            }) { Text(stringResource(R.string.reader_reset)) }
+        },
+        dismissButton = {
+            TextButton(onClick = { confirmReset = false }) { Text(stringResource(R.string.cancel)) }
+        }
+    )
 }
 
 @Composable

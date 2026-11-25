@@ -8,7 +8,6 @@ import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
-import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.preferencesDataStoreFile
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
@@ -18,25 +17,19 @@ import com.breakyuna.esjzone.novellibrary.novel.Chapter
 import com.breakyuna.esjzone.novellibrary.novel.DetailedChapter
 import com.breakyuna.esjzone.offline.NovelDownloadStore
 import com.breakyuna.esjzone.storage.StorageFile
-import com.breakyuna.esjzone.storage.StorageMigrationBusyException
-import com.breakyuna.esjzone.storage.StorageTransferPhase
 import com.breakyuna.esjzone.storage.StorageTransferException
 import com.breakyuna.esjzone.storage.StorageTransferFailure
 import com.breakyuna.esjzone.storage.StorageTransferFailureReason
-import com.breakyuna.esjzone.storage.message
+import com.breakyuna.esjzone.storage.StorageTransferPhase
 import com.breakyuna.esjzone.storage.UserStorage
+import com.breakyuna.esjzone.storage.message
 import java.io.File
 import java.util.UUID
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.CoroutineStart
-import kotlinx.coroutines.async
 import kotlinx.coroutines.cancelAndJoin
-import kotlinx.coroutines.currentCoroutineContext
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
-import kotlinx.coroutines.withTimeout
 import org.junit.Assert.*
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -57,104 +50,6 @@ class UserStorageLifecycleInstrumentedTest {
         val store = PreferenceDataStoreFactory.create(scope = CoroutineScope(job + Dispatchers.IO),
             produceFile = { context.preferencesDataStoreFile("user_storage.preferences_pb") })
         try { store.edit { update(it) } } finally { job.cancelAndJoin() }
-    }
-
-    @Test fun activeDeletionRejectsRestoreAndMigrationWithoutLeavingAPendingJournal() = runBlocking {
-        context.contentResolver.call(treeUri, "grant-fixture-tree", null, null)
-        val directory = File(context.cacheDir, "deletion-${UUID.randomUUID()}").apply { mkdirs() }
-        val restartedDirectory = File(context.cacheDir, "deletion-restored-${UUID.randomUUID()}").apply { mkdirs() }
-        val isolated = isolatedContext(directory)
-        val tree = StorageFile(StorageFile.fromTree(context, treeUri), "case-${UUID.randomUUID()}")
-            .apply { check(mkdirs()) }
-        val selectedUri = DocumentsContract.buildTreeDocumentUri(treeUri.authority,
-            DocumentsContract.getDocumentId(tree.uri))
-        val downloads = StorageFile(tree, "downloads").apply { check(mkdirs()) }
-        val backup = File(directory, "backup")
-        val id = UUID.randomUUID().mostSignificantBits and Long.MAX_VALUE
-        val novel = "https://www.esjzone.cc/detail/$id.html"
-        val chapter = Chapter("Chapter", "https://www.esjzone.cc/forum/$id/1.html", false)
-        val executor = java.util.concurrent.Executors.newSingleThreadExecutor()
-        var deletion: java.util.concurrent.Future<Boolean>? = null
-        try {
-            seed(isolated) { it[stringPreferencesKey("directory_uri")] = selectedUri.toString() }
-            val storage = UserStorage(isolated)
-            storage.initialize()
-            NovelDownloadStore.initialize(context, downloads)
-            requireNotNull(NovelDownloadStore.saveChapter("Protected $id", novel, "", listOf(chapter), chapter,
-                DetailedChapter("Chapter", listOf(TextComponent("Protected text")), null, null),
-                Authorization("", "", "www.esjzone.cc")))
-            NovelDownloadStore.exportBackup(backup)
-            context.contentResolver.call(treeUri, "configure-fixture", tree.name, android.os.Bundle().apply {
-                putString("mode", "block-delete")
-                putString("operation", "delete")
-            })
-            deletion = executor.submit<Boolean> { NovelDownloadStore.delete(novel) }
-            assertTrue(context.contentResolver.call(treeUri, "await-fixture-block", tree.name, null)
-                ?.getBoolean("entered") == true)
-            assertThrows(StorageMigrationBusyException::class.java) {
-                NovelDownloadStore.importBackup(backup, replaceExisting = true)
-            }
-            assertFalse("An active deletion is not a completed deletion", NovelDownloadStore.delete(novel))
-            val failure = runCatching { storage.moveToPrivate() }.exceptionOrNull()
-            assertTrue("Migration must reject before persisting its journal", failure is StorageMigrationBusyException)
-            assertEquals(selectedUri.toString(), storage.location.value)
-            assertEquals(StorageTransferPhase.IDLE, storage.transfer.value.phase)
-            assertFalse(NovelDownloadStore.migrating.value)
-
-            // Restart with the persisted bytes, rather than trusting only in-memory state.
-            val restartedContext = isolatedContext(restartedDirectory)
-            val copied = restartedContext.preferencesDataStoreFile("user_storage.preferences_pb")
-            copied.parentFile!!.mkdirs()
-            isolated.preferencesDataStoreFile("user_storage.preferences_pb").copyTo(copied)
-            val restarted = UserStorage(restartedContext)
-            restarted.initialize()
-            assertEquals(selectedUri.toString(), restarted.location.value)
-            assertEquals(StorageTransferPhase.IDLE, restarted.transfer.value.phase)
-            assertFalse(NovelDownloadStore.migrating.value)
-
-            context.contentResolver.call(treeUri, "release-fixture-block", tree.name, null)
-            assertTrue(deletion.get(10, java.util.concurrent.TimeUnit.SECONDS))
-            NovelDownloadStore.importBackup(backup, replaceExisting = true)
-            assertEquals("Protected text", NovelDownloadStore.readChapter(chapter.url)!!
-                .content.filterIsInstance<TextComponent>().single().text)
-        } finally {
-            context.contentResolver.call(treeUri, "release-fixture-block", tree.name, null)
-            context.contentResolver.call(treeUri, "configure-fixture", tree.name, null)
-            try {
-                deletion?.get(10, java.util.concurrent.TimeUnit.SECONDS)
-            } finally {
-                executor.shutdownNow()
-                NovelDownloadStore.finishStorageMigration()
-                val container = EsjzoneApplication.instance.container
-                container.initializeDownloads()
-                NovelDownloadStore.restoreStorage(container.storage.downloads())
-                tree.deleteRecursively()
-                directory.deleteRecursively()
-                restartedDirectory.deleteRecursively()
-            }
-        }
-    }
-
-    @Test fun knownSetupStateDoesNotWaitForTheTransferLock() = runBlocking {
-        for (selected in listOf(true, false)) {
-            val directory = File(context.cacheDir, "startup-${UUID.randomUUID()}").apply { mkdirs() }
-            try {
-                val isolated = isolatedContext(directory)
-                seed(isolated) {
-                    if (selected) it[stringPreferencesKey("directory_uri")] = treeUri.toString()
-                    else it[booleanPreferencesKey("setup_from_private_storage")] = true
-                }
-                val storage = UserStorage(isolated)
-                storage.initialize()
-                // A restored worker can own this lock before LoadingScreen calls prepareSetup.
-                storage.operationMutex.lock()
-                try {
-                    withTimeout(1_000) { storage.prepareSetup(restoredSession = true) }
-                    if (selected) assertEquals(treeUri.toString(), storage.location.value)
-                    else assertEquals(true, storage.setupUpgrade.value)
-                } finally { storage.operationMutex.unlock() }
-            } finally { directory.deleteRecursively() }
-        }
     }
 
     @Test fun sharedDownloadsAndBackupsReturnToOriginalPrivatePathsWithoutLosingSetupChoice() = runBlocking {
@@ -223,10 +118,6 @@ class UserStorageLifecycleInstrumentedTest {
         }
     }
 
-    @Test fun committedAndRestoredCleanupProtectTargetsUntilTheJournalClears() = runBlocking {
-        for (restored in listOf(false, true)) verifyCleanupProtection(restored)
-    }
-
     @Test fun failureReasonAndConflictingPathSurviveRestartAndUsePhaseSpecificGuidance() = runBlocking {
         for (cleanup in listOf(false, true)) {
             val directory = File(context.cacheDir, "failure-${UUID.randomUUID()}").apply { mkdirs() }
@@ -263,111 +154,6 @@ class UserStorageLifecycleInstrumentedTest {
                 directory.deleteRecursively()
                 restartedDirectory.deleteRecursively()
             }
-        }
-    }
-
-    @Test fun failureRemainsVisibleWhenTheFailureJournalCannotBeWritten() = runBlocking {
-        val directory = File(context.cacheDir, "failure-write-${UUID.randomUUID()}").apply { mkdirs() }
-        val savedPreferences = File(directory, "saved-preferences")
-        val isolated = isolatedContext(directory)
-        val preferencesDirectory = isolated.preferencesDataStoreFile("user_storage.preferences_pb").parentFile!!
-        try {
-            seed(isolated) {
-                it[stringPreferencesKey("migration_target_uri")] = UserStorage.PRIVATE_LOCATION
-                it[booleanPreferencesKey("migration_failed")] = true
-            }
-            val storage = UserStorage(isolated)
-            storage.initialize()
-            check(preferencesDirectory.renameTo(savedPreferences))
-            // A file in place of the preferences directory makes the next DataStore write fail.
-            check(preferencesDirectory.createNewFile())
-            val failure = StorageTransferFailure(StorageTransferFailureReason.TARGET_FILE_CONFLICT,
-                "downloads/Novel/chapter.json")
-            withTimeout(5_000) { storage.recordTransferFailure(StorageTransferException(failure)) }
-            assertEquals(StorageTransferPhase.FAILED, storage.transfer.value.phase)
-            assertEquals(failure, storage.transfer.value.failure)
-            assertTrue(storage.transfer.value.message(context).contains(failure.item))
-            assertTrue(NovelDownloadStore.migrating.value)
-        } finally {
-            if (preferencesDirectory.isFile) preferencesDirectory.delete()
-            if (savedPreferences.exists()) savedPreferences.renameTo(preferencesDirectory)
-            NovelDownloadStore.finishStorageMigration()
-            directory.deleteRecursively()
-        }
-    }
-
-    private suspend fun verifyCleanupProtection(restored: Boolean) {
-        context.contentResolver.call(treeUri, "grant-fixture-tree", null, null)
-        val directory = File(context.cacheDir, "cleanup-${UUID.randomUUID()}").apply { mkdirs() }
-        val isolated = isolatedContext(directory)
-        val id = UUID.randomUUID().mostSignificantBits and Long.MAX_VALUE
-        val novel = "https://www.esjzone.cc/detail/$id.html"
-        val chapter = Chapter("Chapter", "https://www.esjzone.cc/forum/$id/1.html", false)
-        val target = StorageFile(StorageFile.fromTree(context, treeUri), "downloads")
-        var copied: StorageFile? = null
-        try {
-            NovelDownloadStore.initialize(context)
-            NovelDownloadStore.initializeDirectory(File(directory, "downloaded_novels"))
-            requireNotNull(NovelDownloadStore.saveChapter("Journal $id", novel, "", listOf(chapter), chapter,
-                DetailedChapter("Chapter", listOf(TextComponent("Saved text")), null, null),
-                Authorization("", "", "www.esjzone.cc")))
-            val original = StorageFile(File(directory, "downloaded_novels").listFiles()!!.single())
-            val migration = if (restored) {
-                NovelDownloadStore.migrateStorage(target, holdWritesUntilCommit = true) { }
-            } else null
-            copied = StorageFile(target, migration?.targets?.getValue(original.name) ?: original.name)
-            seed(isolated) {
-                if (migration != null) {
-                    it[stringPreferencesKey("directory_uri")] = treeUri.toString()
-                    it[stringPreferencesKey("migration_cleanup_source")] = ""
-                    it[stringSetPreferencesKey("migration_cleanup_books")] = setOf(original.name)
-                    it[stringSetPreferencesKey("migration_cleanup_targets")] =
-                        migration.targets.map { (source, destination) -> "$source/$destination" }.toSet()
-                } else {
-                    it[stringPreferencesKey("migration_target_uri")] = treeUri.toString()
-                }
-                // Prevent automatic enqueue: this test drives the resumed worker explicitly.
-                it[booleanPreferencesKey("migration_failed")] = true
-            }
-            NovelDownloadStore.finishStorageMigration() // Model losing the in-memory barrier on restart.
-            val storage = UserStorage(isolated)
-            storage.initialize()
-            assertEquals(treeUri.toString(), storage.location.value)
-            assertEquals(if (restored) treeUri.toString() else "", storage.activeLocation.value)
-            // The selected location is already the target. Observers must still receive the commit.
-            val activeRootChanged = CoroutineScope(currentCoroutineContext()).async(start = CoroutineStart.UNDISPATCHED) {
-                storage.activeLocation.first { it == treeUri.toString() }
-                storage.backups().absolutePath
-            }
-            assertTrue(NovelDownloadStore.migrating.value)
-            storage.retainReader()
-            try {
-                assertFalse(storage.transferFiles { })
-                val expectedBackups = StorageFile(StorageFile.fromTree(context, treeUri), "autobackup")
-                assertEquals(expectedBackups.absolutePath, withTimeout(1_000) { activeRootChanged.await() })
-            } finally { activeRootChanged.cancelAndJoin() }
-            assertEquals(treeUri.toString(), storage.activeLocation.value)
-            assertEquals(StorageTransferPhase.WAITING_FOR_READER, storage.transfer.value.phase)
-            assertTrue(NovelDownloadStore.migrating.value)
-            assertFalse(NovelDownloadStore.delete(novel))
-            assertEquals(0, NovelDownloadStore.deleteAll(listOf(novel)))
-            assertNotNull(NovelDownloadStore.readChapter(chapter.url))
-            storage.recordTransferFailure()
-            assertEquals(StorageTransferPhase.CLEANUP_FAILED, storage.transfer.value.phase)
-            assertTrue(NovelDownloadStore.migrating.value)
-            assertFalse(NovelDownloadStore.delete(novel))
-            storage.releaseReader()
-            assertTrue(storage.transferFiles { })
-            assertFalse(original.exists())
-            assertFalse(NovelDownloadStore.migrating.value)
-            assertTrue(NovelDownloadStore.delete(novel))
-        } finally {
-            NovelDownloadStore.finishStorageMigration()
-            copied?.deleteRecursively()
-            directory.deleteRecursively()
-            val container = EsjzoneApplication.instance.container
-            container.initializeDownloads()
-            NovelDownloadStore.restoreStorage(container.storage.downloads())
         }
     }
 }

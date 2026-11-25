@@ -23,13 +23,13 @@ internal object ReaderBookmarkMarker {
     /**
      * The paragraph a bookmark pins: the first non-blank text block from its
      * anchor onward, the same paragraph its saved excerpt starts with (a
-     * heading anchor starts at the first block). Chapter-only and stale
-     * anchors show no marker.
+     * heading anchor starts at the first block). Chapter-only bookmarks and
+     * unresolved anchors show no marker.
      */
     fun paragraph(document: ReaderChapterDocument, chapterKey: String, anchor: ReaderAnchor?): Int? {
         if (anchor == null || anchor.kind == "end") return null
-        if (!anchor.copy(chapterKey = chapterKey).matches(chapterKey, document)) return null
-        for (index in anchor.blockIndex.coerceAtLeast(0) until document.blocks.size) {
+        val resolved = anchor.copy(chapterKey = chapterKey).resolveIn(chapterKey, document) ?: return null
+        for (index in resolved.blockIndex.coerceAtLeast(0) until document.blocks.size) {
             val block = document.blocks[index]
             if ((block is ReaderBlock.Paragraph || block is ReaderBlock.Text) && block.sourceText().isNotBlank()) return index
         }

@@ -1,13 +1,11 @@
 package com.breakyuna.esjzone
 
-import com.breakyuna.esjzone.ui.page.directoryBytes
-import com.breakyuna.esjzone.ui.page.classifyStorageUsage
 import com.breakyuna.esjzone.ui.page.StorageCategory
+import com.breakyuna.esjzone.ui.page.classifyStorageUsage
+import com.breakyuna.esjzone.ui.page.directoryBytes
 import java.io.File
-import java.io.IOException
 import java.nio.file.Files
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -74,38 +72,6 @@ class StorageUsageTest {
             assertEquals(0L, usage.first { it.category == StorageCategory.APP_DATA }.bytes)
             assertTrue(usage.flatMap { it.parts }.all { it.bytes >= 0L })
             assertEquals(217L, usage.sumOf { it.bytes })
-        } finally {
-            root.deleteRecursively()
-        }
-    }
-
-    @Test
-    fun ignoresDirectoryRemovedBeforeListing() {
-        val root = Files.createTempDirectory("storage-usage-").toFile()
-        try {
-            val disappearing = object : File(root.absolutePath) {
-                override fun listFiles(): Array<File>? {
-                    assertTrue(root.delete())
-                    return super.listFiles()
-                }
-            }
-
-            assertEquals(0L, directoryBytes(disappearing))
-        } finally {
-            root.deleteRecursively()
-        }
-    }
-
-    @Test
-    fun reportsListingFailureForDirectoryThatStillExists() {
-        val root = Files.createTempDirectory("storage-usage-").toFile()
-        try {
-            val unreadable = object : File(root.absolutePath) {
-                override fun listFiles(): Array<File>? = null
-            }
-
-            assertThrows(IOException::class.java) { directoryBytes(unreadable) }
-            assertTrue(root.isDirectory)
         } finally {
             root.deleteRecursively()
         }

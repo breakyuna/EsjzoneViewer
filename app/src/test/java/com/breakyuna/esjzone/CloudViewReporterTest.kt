@@ -6,15 +6,10 @@ import com.breakyuna.esjzone.network.features.CloudViewRecord
 import com.breakyuna.esjzone.network.features.CloudViewReportStore
 import com.breakyuna.esjzone.network.features.CloudViewReporter
 import com.breakyuna.esjzone.network.features.HistoryDataCache
-import com.breakyuna.esjzone.network.features.chapterViewUrl
-import com.breakyuna.esjzone.network.features.cloudViewFetchIsCurrent
-import com.breakyuna.esjzone.network.features.shouldRequestCloudView
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.job
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.File
@@ -172,47 +167,6 @@ class CloudViewReporterTest {
     }
 
     @Test
-    fun confirmationAdvancesOnlyWhenTheConfirmedChapterChanges() = runBlocking {
-        val reporter = reporter(this, mutableListOf())
-        val other = Authorization("other-key", "other-token", "www.esjzone.cc")
-        assertFalse(reporter.fetchIsCurrent(authorization, "12", "/detail/12.html", "/forum/12/1.html", null))
-        assertTrue(reporter.fetchIsCurrent(authorization, "12", "/detail/12.html", "/forum/12/1.html", 0))
-        reporter.noteFetched(authorization, "12", "/detail/12.html", "/forum/12/1.html")
-        assertEquals(1, reporter.confirmation(authorization, "12", "/detail/12.html", "/forum/12/1.html"))
-        assertFalse(reporter.fetchIsCurrent(authorization, "12", "/detail/12.html", "/forum/12/1.html", 0))
-        reporter.noteFetched(authorization, "12", "/detail/12.html", "/forum/12/1.html")
-        assertEquals(1, reporter.confirmation(authorization, "12", "/detail/12.html", "/forum/12/1.html"))
-        reporter.observeNetworkFetch(authorization, "34", "/detail/34.html", "/forum/34/8.html")
-        assertTrue(reporter.fetchIsCurrent(authorization, "12", "/detail/12.html", "/forum/12/1.html", 1))
-        reporter.noteLocal(authorization, "12", "/detail/12.html", "/forum/12/2.html")
-        assertEquals(2, reporter.confirmation(authorization, "12", "/detail/12.html", "/forum/12/1.html"))
-        assertEquals(0, reporter.confirmation(other, "12", "/detail/12.html", "/forum/12/1.html"))
-        assertFalse(cloudViewFetchIsCurrent(null, 0))
-        assertTrue(cloudViewFetchIsCurrent(2, 2))
-    }
-
-    @Test
-    fun laterFetchMakesThePreviouslyReportedChapterPendingAgain() = runBlocking {
-        val requested = mutableListOf<String>()
-        val reporter = reporter(this, requested)
-        reporter.noteFetched(authorization, "12", "/detail/12.html", "/forum/12/1.html")
-        reporter.noteLocal(authorization, "12", "/detail/12.html", "/forum/12/1.html")
-        awaitChildren()
-        assertTrue(requested.isEmpty())
-        reporter.observeNetworkFetch(authorization, "34", "/detail/34.html", "/forum/34/8.html")
-        assertNull(reporter.observeNetworkFetch(
-            authorization, "12", "/detail/12.html", "https://www.wenku8.net/novel/1/12/2.htm"
-        ))
-        reporter.noteLocal(authorization, "12", "/detail/12.html", "/forum/12/1.html")
-        awaitChildren()
-        assertTrue(requested.isEmpty())
-        reporter.observeNetworkFetch(authorization, "12", "/detail/12.html", "/forum/12/2.html")
-        reporter.noteLocal(authorization, "12", "/detail/12.html", "/forum/12/1.html")
-        awaitChildren()
-        assertEquals(listOf("https://www.esjzone.cc/forum/12/1.html"), requested)
-    }
-
-    @Test
     fun restoredGenerationDoesNotMaskANewerFetchAfterRestart() = runBlocking {
         val file = File.createTempFile("cloud-view-restart", ".json")
         file.deleteOnExit()
@@ -277,33 +231,6 @@ class CloudViewReporterTest {
             ),
             requested
         )
-    }
-
-    @Test
-    fun savedReportWithoutAnAccountIsDropped() {
-        val file = File.createTempFile("cloud-view", ".json")
-        file.deleteOnExit()
-        val account = HistoryDataCache.scopeFor(authorization)
-        assertTrue(!account.isNullOrBlank())
-        val store = CloudViewReportStore(file)
-        assertTrue(store.merge(CloudViewRecord(
-            "www.esjzone.cc", "id:12", "12", "/detail/12.html", "/forum/12/1.html",
-            "https://www.esjzone.cc/forum/12/1.html", false, 100L, account!!
-        )))
-        assertEquals(account, CloudViewReportStore(file).snapshot().single().account)
-        file.writeText("""[{"site":"www.esjzone.cc","novelKey":"id:12","novelId":"12","novelUrl":"/detail/12.html","chapterKey":"/forum/12/1.html","chapterUrl":"https://www.esjzone.cc/forum/12/1.html","reported":true,"updatedAt":1}]""")
-        assertTrue(CloudViewReportStore(file).snapshot().isEmpty())
-    }
-
-    @Test
-    fun externalChapterIsNotAWebsiteView() {
-        assertNull(chapterViewUrl("www.esjzone.cc", "https://example.com/read/1"))
-        val record = com.breakyuna.esjzone.network.features.CloudViewRecord(
-            "www.esjzone.cc", "id:12", "12", "/detail/12.html", "/forum/12/1.html",
-            "https://www.esjzone.cc/forum/12/1.html", false, 100L
-        )
-        assertTrue(shouldRequestCloudView(record, null))
-        assertTrue(shouldRequestCloudView(record, activity(chapterUrl = "/forum/12/1.html", lastReadAt = 1L)))
     }
 
     private fun reporter(

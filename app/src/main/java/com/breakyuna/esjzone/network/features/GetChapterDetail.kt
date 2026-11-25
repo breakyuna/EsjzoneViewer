@@ -13,6 +13,7 @@ import com.breakyuna.esjzone.network.PageCacheTtl
 import com.breakyuna.esjzone.network.PageKind
 import com.breakyuna.esjzone.network.readTextBounded
 import com.breakyuna.esjzone.offline.NovelDownloadStore
+import com.breakyuna.esjzone.novellibrary.component.resolveImageUrl
 import com.breakyuna.esjzone.novellibrary.novel.Chapter
 import com.breakyuna.esjzone.novellibrary.novel.DetailedChapter
 import com.breakyuna.esjzone.novellibrary.novel.ChapterSource
@@ -72,6 +73,7 @@ fun EsjzoneClient.getChapterDetail(
 
     val cacheKey = novelDetailCacheKey(authorization, targetUrl)
     if (!forceRefresh) StructuredChapterCache.read(cacheKey, targetUrl)?.let { return it }
+    val previousBody = StructuredChapterCache.read(cacheKey, targetUrl, Long.MAX_VALUE)?.body
     AppLogger.i("GetChapterDetail", "Fetching ESJ chapter: ${chapter.name} at $targetUrl")
     var parsedHtml: String? = null
     var parsedDetail: DetailedChapter? = null
@@ -107,7 +109,8 @@ fun EsjzoneClient.getChapterDetail(
         throw error
     }
 
-    val detail = validatedDetail(responseBody)
+    val parsed = validatedDetail(responseBody)
+    val detail = parsed.copy(body = parsed.body?.inheritLegacyPositions(previousBody))
     val reference = StructuredChapterCache.write(cacheKey, responseBody, detail)
     return detail.copy(sourceCacheReference = reference, servedFromNetwork = fetchedFromNetwork)
 }
@@ -168,7 +171,7 @@ fun EsjzoneClient.unlockPasswordProtectedChapter(
     }
     val unlockedHtml = payload.get("html")?.asString?.takeIf { it.isNotBlank() }
         ?: throw IOException("Unlocked chapter response was empty")
-    val content = chapterSelector.first(document, ".forum-content.mt-3, .forum-content")
+    val content = selectChapterContentElement(document)
         ?: throw IOException("Chapter content container was missing")
     content.html(unlockedHtml)
     if (document.isPasswordProtectedChapter()) {
@@ -183,14 +186,40 @@ internal fun isPasswordProtectedChapterHtml(html: String, baseUrl: String = ""):
     Jsoup.parse(html, baseUrl).isPasswordProtectedChapter()
 
 internal fun Document.isPasswordProtectedChapter(): Boolean {
-    val content = chapterSelector.first(this, ".forum-content.mt-3, .forum-content") ?: return false
-    return content.selectFirst("#oops") != null &&
-        content.selectFirst("input#pw[name=pw]") != null &&
-        content.selectFirst(".btn-send-pw") != null
+    val content = selectChapterContentElement(this) ?: return false
+    return content.isPasswordGateElement()
+}
+
+private fun Element.isPasswordGateElement(): Boolean =
+    selectFirst("#oops") != null &&
+        selectFirst("input#pw[name=pw]") != null &&
+        selectFirst(".btn-send-pw") != null
+
+/**
+ * Selects the chapter body container robustly when multiple `.forum-content`
+ * blocks exist (for example, an announcement or nested banner before the body),
+ * while excluding comment areas and preserving password-gate detection.
+ */
+internal fun selectChapterContentElement(document: Document): Element? {
+    val candidates = document.select(".forum-content").filter { element ->
+        !element.hasClass("comments-section") && !element.hasClass("comment") &&
+            element.parents().none { it.hasClass("comments-section") || it.hasClass("comment") }
+    }
+    val preferred = candidates.filter { it.hasClass("mt-3") }.ifEmpty { candidates }
+    val topLevel = preferred.filter { candidate ->
+        candidate.parents().none { it in preferred }
+    }
+    if (topLevel.size == 1) return topLevel.first()
+    topLevel.firstOrNull { it.isPasswordGateElement() }?.let { return it }
+    return topLevel.maxByOrNull { candidate ->
+        val chars = candidate.text().count { !it.isWhitespace() }
+        val images = candidate.select("img").count { resolveImageUrl(it).isNotBlank() }
+        chars + images * 200
+    }
 }
 
 private fun Document.toDetailedChapter(chapter: Chapter, targetUrl: String): DetailedChapter {
-    val contentElement = chapterSelector.first(this, ".forum-content.mt-3, .forum-content")
+    val contentElement = selectChapterContentElement(this)
     val parsed = if (contentElement != null) {
         analyseChapterContent(contentElement)
     } else {

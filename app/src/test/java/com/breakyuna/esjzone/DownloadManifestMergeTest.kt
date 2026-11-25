@@ -85,35 +85,26 @@ class DownloadManifestMergeTest {
     }
 
     @Test
-    fun fullBookPercentageRequiresAllLengthsAndWeightsByTextSize() {
+    fun textBookProgressAndSlider_weightByTextLengthAndRequireCompleteLengths() {
         val complete = manifest(listOf(record(1, true), record(2, true)))
         val urls = complete.chapters.map { it.url }
         assertEquals(2f / 3f, complete.textBookProgress(urls, NovelDownloadStore.chapterKey(urls[1]), 0.5f)!!, 0.0001f)
-        assertNull(complete.copy(chapters = listOf(record(1, true), record(2))).textBookProgress(urls, NovelDownloadStore.chapterKey(urls[0]), 1f))
         assertNull(complete.textBookProgress(urls + record(3).url, NovelDownloadStore.chapterKey(urls[0]), 1f))
-    }
 
-    @Test
-    fun sliderSelectsChapterUsingTheDisplayedTextWeights() {
-        val book = manifest(listOf(record(1, true).copy(textLength = 10), record(2, true).copy(textLength = 90)))
-        val urls = book.chapters.map { it.url }
-        assertEquals(0, book.chapterIndexAtTextProgress(urls, 0f))
-        assertEquals(0, book.chapterIndexAtTextProgress(urls, 0.09f))
-        assertEquals(1, book.chapterIndexAtTextProgress(urls, 0.1f))
-        assertEquals(1, book.chapterIndexAtTextProgress(urls, 0.5f))
-        assertEquals(1, book.chapterIndexAtTextProgress(urls, 1f))
-        val chapterStart = book.textBookProgress(urls, NovelDownloadStore.chapterKey(urls[1]), 0f)!!
+        val weighted = manifest(listOf(record(1, true).copy(textLength = 10), record(2, true).copy(textLength = 90)))
+        assertEquals(0, weighted.chapterIndexAtTextProgress(urls, 0f))
+        assertEquals(0, weighted.chapterIndexAtTextProgress(urls, 0.09f))
+        assertEquals(1, weighted.chapterIndexAtTextProgress(urls, 0.1f))
+        assertEquals(1, weighted.chapterIndexAtTextProgress(urls, 0.5f))
+        assertEquals(1, weighted.chapterIndexAtTextProgress(urls, 1f))
+        val chapterStart = weighted.textBookProgress(urls, NovelDownloadStore.chapterKey(urls[1]), 0f)!!
         assertEquals(0.1f, chapterStart, 0.0001f)
-        assertEquals(1, book.chapterIndexAtTextProgress(urls, chapterStart))
-    }
+        assertEquals(1, weighted.chapterIndexAtTextProgress(urls, chapterStart))
 
-    @Test
-    fun sliderAndDisplayBothFallBackWhenAnyLengthIsUnknown() {
-        val book = manifest(listOf(record(1, true), record(2)))
-        val urls = book.chapters.map { it.url }
-        assertNull(book.chapterIndexAtTextProgress(urls, 0.5f))
-        assertNull(book.textBookProgress(urls, NovelDownloadStore.chapterKey(urls[0]), 0.5f))
-        val emptyText = book.copy(chapters = book.chapters.map { it.copy(textLength = 0) })
+        val incomplete = manifest(listOf(record(1, true), record(2)))
+        assertNull(incomplete.chapterIndexAtTextProgress(urls, 0.5f))
+        assertNull(incomplete.textBookProgress(urls, NovelDownloadStore.chapterKey(urls[0]), 0.5f))
+        val emptyText = incomplete.copy(chapters = incomplete.chapters.map { it.copy(textLength = 0) })
         assertNull(emptyText.chapterIndexAtTextProgress(urls, 0.5f))
     }
 
@@ -136,22 +127,20 @@ class DownloadManifestMergeTest {
         assertEquals(3, index.chapterIndex(0.1f))
         assertNull(book.copy(chapters = book.chapters.map { it.copy(textLength = null) }).textProgressIndex(urls))
     }
+
     @Test
-    fun staleReaderSaveCannotReplaceTheOfflineTitleWithAnId() {
+    fun titleMerge_protectsOfflineTitleRepairsLegacyIdsAndKeepsNumericTitles() {
         val existing = manifest(listOf(record(1, true)))
         val lateSave = existing.copy(name = "9001", chapters = listOf(record(2, true)))
         val merged = mergeDownloadManifest(existing, lateSave, false)
         assertEquals("Novel", merged.name)
         assertEquals(2, merged.chapters.size)
         assertTrue(merged.chapters.all { it.downloaded })
-    }
 
-    @Test
-    fun correctedTitleRepairsOldManifestAndNumericTitlesRemainValid() {
-        val existing = manifest(listOf(record(1, true))).copy(name = "9001")
-        assertEquals("Real title", mergeDownloadManifest(existing, existing.copy(name = "Real title"), false).name)
-        assertEquals("1984", mergeDownloadManifest(existing, existing.copy(name = "1984"), true).name)
-        assertEquals("", mergeDownloadManifest(null, existing, false).name)
+        val legacyIdTitle = existing.copy(name = "9001")
+        assertEquals("Real title", mergeDownloadManifest(legacyIdTitle, legacyIdTitle.copy(name = "Real title"), false).name)
+        assertEquals("1984", mergeDownloadManifest(legacyIdTitle, legacyIdTitle.copy(name = "1984"), true).name)
+        assertEquals("", mergeDownloadManifest(null, legacyIdTitle, false).name)
     }
 
 }

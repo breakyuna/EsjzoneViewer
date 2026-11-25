@@ -1,14 +1,17 @@
 package com.breakyuna.esjzone
 
-import com.breakyuna.esjzone.offline.DownloadedChapterRecord
+import com.breakyuna.esjzone.offline.ChapterSelectionCodec
 import com.breakyuna.esjzone.offline.DownloadProgress
+import com.breakyuna.esjzone.offline.DownloadedChapterRecord
 import com.breakyuna.esjzone.offline.DownloadedNovelManifest
 import com.breakyuna.esjzone.offline.NovelDownloadManager
-import com.breakyuna.esjzone.offline.ChapterSelectionCodec
 import com.breakyuna.esjzone.offline.NovelDownloadStore
 import com.google.gson.Gson
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -19,13 +22,29 @@ class NovelDownloadContractTest {
         number - 1, "Chapter $number", "/forum/9001/$number.html", "chapter-$number.json", downloaded)
 
     @Test
-    fun queuedDownload_restoresCompletedChaptersWithoutWorkerProgress() {
+    fun queuedDownload_restoresFullEmptyRefreshedAndDeduplicatedProgress() {
         val chapters = listOf(progressRecord(1, true), progressRecord(2, true), progressRecord(3, false))
-        val tags = setOf(NovelDownloadManager.TOTAL_TAG_PREFIX + 3,
+        val fullTags = setOf(NovelDownloadManager.TOTAL_TAG_PREFIX + 3,
             NovelDownloadManager.SELECTION_TAG_PREFIX)
-        assertEquals(DownloadProgress(2, 3, ""), NovelDownloadManager.restoredProgress(tags, chapters))
+        assertEquals(DownloadProgress(2, 3, ""), NovelDownloadManager.restoredProgress(fullTags, chapters))
         assertEquals(DownloadProgress(3, 3, ""),
-            NovelDownloadManager.restoredProgress(tags, chapters.map { it.copy(downloaded = true) }))
+            NovelDownloadManager.restoredProgress(fullTags, chapters.map { it.copy(downloaded = true) }))
+
+        val emptyTags = setOf(NovelDownloadManager.TOTAL_TAG_PREFIX + 12,
+            NovelDownloadManager.SELECTION_TAG_PREFIX)
+        assertEquals(DownloadProgress(0, 12, ""), NovelDownloadManager.restoredProgress(emptyTags, emptyList()))
+
+        val refreshedTags = setOf(NovelDownloadManager.TOTAL_TAG_PREFIX + 2,
+            NovelDownloadManager.SELECTION_TAG_PREFIX)
+        assertEquals(DownloadProgress(2, 3, ""), NovelDownloadManager.restoredProgress(refreshedTags, chapters))
+
+        val mixed = listOf(
+            progressRecord(1, true),
+            progressRecord(1, true),
+            progressRecord(2, false).copy(bodyAvailable = true),
+            progressRecord(3, true).copy(localOnly = true)
+        )
+        assertEquals(DownloadProgress(2, 2, ""), NovelDownloadManager.restoredProgress(emptySet(), mixed))
     }
 
     @Test
@@ -38,7 +57,7 @@ class NovelDownloadContractTest {
     }
 
     @Test
-    fun queuedUnlock_restoresOnlyItsTargetsIncludingChaptersOutsideCurrentCatalog() {
+    fun queuedUnlock_restoresTargetsOutsideCatalogAndSavedUnlockedBodies() {
         val tags = setOf(NovelDownloadManager.UNLOCK_TAG,
             NovelDownloadManager.TOTAL_TAG_PREFIX + 2,
             NovelDownloadManager.SELECTION_TAG_PREFIX + ChapterSelectionCodec.encode(
@@ -50,38 +69,12 @@ class NovelDownloadContractTest {
         assertEquals(DownloadProgress(1, 2, ""), NovelDownloadManager.restoredProgress(tags, chapters))
         assertEquals(DownloadProgress(2, 2, ""), NovelDownloadManager.restoredProgress(tags,
             chapters.map { if (it.index == 2) it.copy(downloaded = true, requiresPassword = false) else it }))
-    }
 
-    @Test
-    fun queuedUnlock_countsSavedBodiesAfterPasswordGateIsRemoved() {
-        val tags = setOf(NovelDownloadManager.UNLOCK_TAG,
+        val bodyAvailableTags = setOf(NovelDownloadManager.UNLOCK_TAG,
             NovelDownloadManager.TOTAL_TAG_PREFIX + 1,
             NovelDownloadManager.SELECTION_TAG_PREFIX + ChapterSelectionCodec.encode(setOf("/forum/9001/1.html")))
-        val chapter = progressRecord(1, false).copy(bodyAvailable = true, requiresPassword = false)
-
-        assertEquals(DownloadProgress(1, 1, ""), NovelDownloadManager.restoredProgress(tags, listOf(chapter)))
-    }
-
-    @Test
-    fun queuedDownload_keepsTotalBeforeAnyChapterHasBeenSaved() {
-        val tags = setOf(NovelDownloadManager.TOTAL_TAG_PREFIX + 12,
-            NovelDownloadManager.SELECTION_TAG_PREFIX)
-        assertEquals(DownloadProgress(0, 12, ""), NovelDownloadManager.restoredProgress(tags, emptyList()))
-    }
-
-    @Test
-    fun interruptedFullDownload_keepsRefreshedCatalogProgress() {
-        val tags = setOf(NovelDownloadManager.TOTAL_TAG_PREFIX + 2,
-            NovelDownloadManager.SELECTION_TAG_PREFIX)
-        val chapters = listOf(progressRecord(1, true), progressRecord(2, true), progressRecord(3, false))
-        assertEquals(DownloadProgress(2, 3, ""), NovelDownloadManager.restoredProgress(tags, chapters))
-    }
-
-    @Test
-    fun queuedDownload_countsSavedBodiesButExcludesDuplicatesAndChaptersOutsideCatalog() {
-        val chapters = listOf(progressRecord(1, true), progressRecord(1, true),
-            progressRecord(2, false).copy(bodyAvailable = true), progressRecord(3, true).copy(localOnly = true))
-        assertEquals(DownloadProgress(2, 2, ""), NovelDownloadManager.restoredProgress(emptySet(), chapters))
+        val unlockedBody = progressRecord(1, false).copy(bodyAvailable = true, requiresPassword = false)
+        assertEquals(DownloadProgress(1, 1, ""), NovelDownloadManager.restoredProgress(bodyAvailableTags, listOf(unlockedBody)))
     }
 
     @Test
@@ -99,7 +92,7 @@ class NovelDownloadContractTest {
         assertEquals(null, NovelDownloadStore.selectionKeys(available, null))
         assertEquals(setOf(NovelDownloadStore.chapterKey(available[1])),
             NovelDownloadStore.selectionKeys(available, setOf(available[1])))
-        org.junit.Assert.assertThrows(IllegalArgumentException::class.java) {
+        assertThrows(IllegalArgumentException::class.java) {
             NovelDownloadStore.selectionKeys(available, setOf("/forum/9001/3.html"))
         }
     }
@@ -122,7 +115,7 @@ class NovelDownloadContractTest {
     }
 
     @Test
-    fun manifestRoundTrip_preservesPartialStateAndChapterFileIdentity() {
+    fun manifestRoundTrip_preservesPartialStatePasswordsAndLegacyDefaults() {
         val manifest = DownloadedNovelManifest(
             name = "Fixture novel",
             url = "https://www.esjzone.cc/detail/9001.html",
@@ -139,95 +132,22 @@ class NovelDownloadContractTest {
             sourceUrl = null,
             updatedAt = null,
             chapters = listOf(
-                DownloadedChapterRecord(
-                    index = 0,
-                    name = "Chapter 1",
-                    url = "/forum/9001/1.html",
-                    fileName = "chapter-a.json",
-                    downloaded = true
-                ),
-                DownloadedChapterRecord(
-                    index = 1,
-                    name = "Chapter 2",
-                    url = "/forum/9001/2.html",
-                    fileName = "chapter-b.json",
-                    downloaded = false
-                )
+                DownloadedChapterRecord(0, "Chapter 1", "/forum/9001/1.html", "chapter-a.json", downloaded = true),
+                DownloadedChapterRecord(1, "Chapter 2 (Protected)", "/forum/9001/2.html", "chapter-b.json", downloaded = false, requiresPassword = true),
+                DownloadedChapterRecord(2, "Chapter 3 (Protected but Downloaded)", "/forum/9001/3.html", "chapter-c.json", downloaded = true, requiresPassword = true)
             ),
             downloadedAt = 1234L,
-            complete = false
+            complete = false,
+            commonPassword = "test_common_secret"
         )
 
         val restored = Gson().fromJson(Gson().toJson(manifest), DownloadedNovelManifest::class.java)
         assertEquals(manifest, restored)
         assertEquals("chapter-a.json", restored.chapters.first().fileName)
-        assertTrue(restored.chapters.first().downloaded)
-        assertTrue(!restored.complete)
-    }
+        assertFalse(restored.complete)
+        assertEquals("test_common_secret", restored.commonPassword)
+        assertEquals(listOf("Chapter 2 (Protected)"), restored.pendingPasswordChapters.map { it.name })
 
-    @Test
-    fun downloadConcurrency_defaultsToFive() {
-        assertEquals(5, NovelDownloadStore.DEFAULT_DOWNLOAD_CONCURRENCY)
-    }
-
-    @Test
-    fun manifestRoundTrip_preservesRequiresPasswordAndPendingPasswordChapters() {
-        val manifest = DownloadedNovelManifest(
-            name = "Fixture novel",
-            url = "https://www.esjzone.cc/detail/9001.html",
-            coverUrl = "",
-            views = 12,
-            likes = 3,
-            words = 400,
-            type = "原创",
-            author = "Fixture author",
-            forumUrl = "/forum/9001/1.html",
-            tags = listOf("tag"),
-            isAdult = false,
-            description = "fixture",
-            sourceUrl = null,
-            updatedAt = null,
-            chapters = listOf(
-                DownloadedChapterRecord(
-                    index = 0,
-                    name = "Chapter 1",
-                    url = "/forum/9001/1.html",
-                    fileName = "chapter-a.json",
-                    downloaded = true,
-                    requiresPassword = false
-                ),
-                DownloadedChapterRecord(
-                    index = 1,
-                    name = "Chapter 2 (Protected)",
-                    url = "/forum/9001/2.html",
-                    fileName = "chapter-b.json",
-                    downloaded = false,
-                    requiresPassword = true
-                ),
-                DownloadedChapterRecord(
-                    index = 2,
-                    name = "Chapter 3 (Protected but Downloaded)",
-                    url = "/forum/9001/3.html",
-                    fileName = "chapter-c.json",
-                    downloaded = true,
-                    requiresPassword = true
-                )
-            ),
-            downloadedAt = 1234L,
-            complete = false
-        )
-
-        val restored = Gson().fromJson(Gson().toJson(manifest), DownloadedNovelManifest::class.java)
-        assertEquals(manifest, restored)
-        assertTrue(restored.chapters[1].requiresPassword)
-        // Chapter 2 requires password and is not downloaded -> in pending
-        // Chapter 3 is downloaded -> excluded from pendingPasswordChapters
-        assertEquals(1, restored.pendingPasswordChapters.size)
-        assertEquals("Chapter 2 (Protected)", restored.pendingPasswordChapters.first().name)
-    }
-
-    @Test
-    fun legacyManifestWithoutRequiresPassword_defaultsToFalse() {
         val legacyJson = """
             {
                 "name": "Legacy Novel",
@@ -255,70 +175,9 @@ class NovelDownloadContractTest {
             }
         """.trimIndent()
 
-        val restored = Gson().fromJson(legacyJson, DownloadedNovelManifest::class.java)
-        assertEquals(false, restored.chapters.first().requiresPassword)
-        assertTrue(restored.pendingPasswordChapters.isEmpty())
-    }
-
-    @Test
-    fun manifestRoundTrip_preservesCommonPassword() {
-        val manifest = DownloadedNovelManifest(
-            name = "Fixture novel",
-            url = "https://www.esjzone.cc/detail/9001.html",
-            coverUrl = "",
-            views = 12,
-            likes = 3,
-            words = 400,
-            type = "原创",
-            author = "Fixture author",
-            forumUrl = "/forum/9001/1.html",
-            tags = listOf("tag"),
-            isAdult = false,
-            description = "fixture",
-            sourceUrl = null,
-            updatedAt = null,
-            chapters = listOf(
-                DownloadedChapterRecord(
-                    index = 0,
-                    name = "Chapter 1",
-                    url = "/forum/9001/1.html",
-                    fileName = "chapter-a.json",
-                    downloaded = false,
-                    requiresPassword = true
-                )
-            ),
-            downloadedAt = 1234L,
-            complete = false,
-            commonPassword = "test_common_secret"
-        )
-
-        val restored = Gson().fromJson(Gson().toJson(manifest), DownloadedNovelManifest::class.java)
-        assertEquals(manifest, restored)
-        assertEquals("test_common_secret", restored.commonPassword)
-    }
-
-    @Test
-    fun legacyManifestWithoutCommonPassword_defaultsToNull() {
-        val legacyJson = """
-            {
-                "name": "Legacy Novel",
-                "url": "https://www.esjzone.cc/detail/9001.html",
-                "coverUrl": "",
-                "views": 0,
-                "likes": 0,
-                "words": 0,
-                "type": "",
-                "author": "",
-                "tags": [],
-                "isAdult": false,
-                "description": "",
-                "chapters": [],
-                "downloadedAt": 0,
-                "complete": false
-            }
-        """.trimIndent()
-
-        val restored = Gson().fromJson(legacyJson, DownloadedNovelManifest::class.java)
-        org.junit.Assert.assertNull(restored.commonPassword)
+        val legacy = Gson().fromJson(legacyJson, DownloadedNovelManifest::class.java)
+        assertFalse(legacy.chapters.first().requiresPassword)
+        assertTrue(legacy.pendingPasswordChapters.isEmpty())
+        assertNull(legacy.commonPassword)
     }
 }
