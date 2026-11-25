@@ -32,6 +32,7 @@ import com.breakyuna.esjzone.novellibrary.novel.NovelChapterList
 import com.breakyuna.esjzone.novellibrary.novel.NovelDescription
 import com.breakyuna.esjzone.util.copyWithCancellation
 import com.breakyuna.esjzone.util.AppLogger
+import com.breakyuna.esjzone.util.BoundedJson
 import com.google.gson.Gson
 import com.google.gson.annotations.SerializedName
 import com.breakyuna.esjzone.storage.StorageAccessException
@@ -1361,7 +1362,9 @@ object NovelDownloadStore {
                 val manifest = buildManifest(directory, previous, current, writeGuard,
                     replaceCatalog = replaceCatalog, revalidateChapterFiles = false,
                     changedContents = savedContent?.let { mapOf(targetKey to it) }.orEmpty())
-                val bodyTemporary = savedContent?.let { prepareJson(targetFile, it, writeGuard) }
+                val bodyTemporary = savedContent?.let {
+                    prepareJson(targetFile, it, writeGuard, checkReadLimits = oldContent != null)
+                }
                 try {
                     val manifestFile = StorageFile(directory, MANIFEST_FILE)
                     val manifestTemporary = prepareJson(manifestFile,
@@ -1698,7 +1701,9 @@ object NovelDownloadStore {
                 val revision = synchronized(ioLock) { ensureWriteAllowed(guard); contentRevision(directory) }
                 val latest = readStoredSnapshot(file, guard)
                 val merged = latest?.let { mergeChapterAssets(directory, it, incoming) } ?: incoming
-                val temporary = if (!forceRewrite && latest == merged) null else prepareJson(file, merged, guard)
+                val temporary = if (!forceRewrite && latest == merged) null else {
+                    prepareJson(file, merged, guard, checkReadLimits = latest != null || forceRewrite)
+                }
                 try {
                     val committed = withStoreLock("chapter-commit") {
                         ensureWriteAllowed(guard)
@@ -1762,8 +1767,8 @@ object NovelDownloadStore {
                 throw CancellationException("Download storage changed or the novel was removed")
             }
         }
-        val formattingRecovered = original.body?.formatting != stored.body?.formatting
-        if (original.schemaVersion != 2 || formattingRecovered ||
+        val bodyRecovered = original.body != stored.body
+        if (original.schemaVersion != 2 || bodyRecovered ||
             match.record.textLength != stored.body?.textLength || !match.record.bodyAvailable) {
             // Migration and optional metadata repair must not delay first publication.
             readMaintenanceScope.launch {
@@ -1772,7 +1777,7 @@ object NovelDownloadStore {
                     val currentRecord = current?.chapters?.firstOrNull { chapterKey(it.url) == chapterKey(chapterUrl) }
                     val file = currentRecord?.let { resolveLocalFile(match.directory, it.fileName) }
                     val latest = file?.let { readStoredSnapshot(it, snapshot.guard) }
-                    if ((original.schemaVersion != 2 || formattingRecovered) && file != null && latest != null) {
+                    if ((original.schemaVersion != 2 || bodyRecovered) && file != null && latest != null) {
                         mergeAndWriteChapter(file, latest, match.directory, snapshot.guard, forceRewrite = true)
                     }
                     if (current != null && currentRecord != null && latest != null &&
@@ -2138,9 +2143,9 @@ object NovelDownloadStore {
     private fun readStoredChapter(directory: StorageFile, file: StorageFile): DownloadedChapterContent? = synchronized(ioLock) {
         val stored = readJson(file, DownloadedChapterContent::class.java) ?: return@synchronized null
         val decoded = decodeStoredChapter(stored) ?: return@synchronized null
-        if (stored.schemaVersion != 2 || stored.body?.formatting != decoded.body?.formatting) {
+        if (stored.schemaVersion != 2 || stored.body != decoded.body) {
             // Reading remains possible if storage is full; the original survives a failed rename.
-            runCatching { writeJson(file, decoded, newWriteGuard(directory)) }
+            runCatching { writeMigratedChapter(file, decoded, newWriteGuard(directory)) }
         }
         decoded
     }
@@ -2148,8 +2153,11 @@ object NovelDownloadStore {
     private fun decodeStoredChapter(stored: DownloadedChapterContent): DownloadedChapterContent? {
         if (stored.schemaVersion == 2) {
             return runCatching {
+                val baseUrl = stored.baseUrl ?: stored.url
                 val body = requireNotNull(stored.body).validate()
-                    .withFormatting(stored.contentHtml, stored.baseUrl ?: stored.url)
+                    .rebuildFromHtmlIfOutdated(stored.contentHtml, baseUrl)
+                    .recoverLeadingBreakText(stored.contentHtml, baseUrl)
+                    .withFormatting(stored.contentHtml, baseUrl)
                 if (body === stored.body) stored else stored.copy(body = body)
             }.getOrNull()
         }
@@ -2755,7 +2763,12 @@ object NovelDownloadStore {
             resolveLocalFile(directory, relative)?.let { it.isFile && it.length() > 0L } == true
         }
 
-    private fun prepareJson(file: StorageFile, value: Any, writeGuard: DownloadWriteGuard): StorageFile {
+    private fun prepareJson(
+        file: StorageFile,
+        value: Any,
+        writeGuard: DownloadWriteGuard,
+        checkReadLimits: Boolean = false
+    ): StorageFile {
         val parent = requireNotNull(file.parentFile)
         val (temporary, stream) = withStoreLock("write-open") {
             ensureWriteAllowed(writeGuard)
@@ -2774,6 +2787,11 @@ object NovelDownloadStore {
                         .use { gson.toJson(value, it) }
                 }
             }
+            // Rebuilt chapters can grow while preserving their text. Validate with the same
+            // decompressed byte and JSON limits as the reader before replacing a readable file.
+            if (checkReadLimits || (value is DownloadedChapterContent && value.body?.legacyPositions != null)) {
+                temporary.storedTextReader().use { BoundedJson.readText(it) }
+            }
             return temporary
         } catch (error: Throwable) {
             temporary.delete()
@@ -2788,8 +2806,8 @@ object NovelDownloadStore {
             (contentWriteRevisions[writeGuard.directoryPath] ?: 0L) + 1L
     }
 
-    private fun writeJson(file: StorageFile, value: Any, writeGuard: DownloadWriteGuard) {
-        val temporary = prepareJson(file, value, writeGuard)
+    private fun writeMigratedChapter(file: StorageFile, value: DownloadedChapterContent, writeGuard: DownloadWriteGuard) {
+        val temporary = prepareJson(file, value, writeGuard, checkReadLimits = true)
         try { synchronized(ioLock) { commitJson(temporary, file, writeGuard) } }
         finally { temporary.delete() }
     }

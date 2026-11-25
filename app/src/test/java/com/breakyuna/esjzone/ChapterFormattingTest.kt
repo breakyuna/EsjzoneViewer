@@ -21,6 +21,7 @@ class ChapterFormattingTest {
         <p style="text-align: center;"><strong>༺ 真是该死的世界 ༻</strong></p>
         <hr><p>他写下的<ruby>游戏评测<rt>粪作排雷</rt></ruby>洋洋洒洒。</p>
     """.trimIndent()
+    private val leadingBreakChapter = "<br><br>第一段<br>第二段<details><summary>作者的话</summary>附言</details>"
 
     private fun body(html: String = source): ChapterBody = ChapterBody.from(
         analyseComponents(Jsoup.parseBodyFragment(html, "https://www.esjzone.cc/forum/1/2.html").body())
@@ -58,6 +59,28 @@ class ChapterFormattingTest {
         assertEquals(listOf(1), newBody.formatting!!.dividersAt)
     }
 
+    @Test fun leadingBreaksDoNotHideProseBeforeAuthorNote() {
+        val parsed = analyseChapterContent(Jsoup.parseBodyFragment(leadingBreakChapter).body())
+        assertEquals(listOf("\n\n第一段\n第二段", "作者的话附言"), parsed.blocks.map { it.sourceText() })
+        assertEquals(listOf(ReaderBlock.LineBreak),
+            analyseChapterContent(Jsoup.parseBodyFragment("<p><br></p>").body()).blocks)
+    }
+
+    @Test fun oldSnapshotRecoversDroppedProseFromSavedHtml() {
+        val container = Jsoup.parseBodyFragment(leadingBreakChapter).body()
+        val note = analyseChapterContent(container).blocks.last()
+        val old = ChapterBody.fromBlocks(listOf(ReaderBlock.LineBreak, note)).copy(parserVersion = 1)
+        val html = container.html()
+
+        val recovered = old.recoverLeadingBreakText(html, "").validate()
+
+        assertEquals("第一段第二段", recovered.readerBlocks().first().sourceText().filterNot(Char::isWhitespace))
+        assertEquals(old.blocks.last(), recovered.blocks.last())
+        assertNotEquals(old.fingerprint, recovered.fingerprint)
+        assertSame(old, old.recoverLeadingBreakText(html.replace("附言", "不同的附言"), ""))
+        assertSame(old, old.recoverLeadingBreakText(null, ""))
+    }
+
     @Test fun onlyMatchingHtmlCanSupplyFormatting() {
         val old = body()
         val changed = source.replace("游戏评测", "不同的正文")
@@ -66,6 +89,31 @@ class ChapterFormattingTest {
         assertEquals(old.fingerprint, result.fingerprint)
         assertNull(old.withFormatting(null, null).formatting)
         assertSame(old, old.withFormatting("<p>正文无格式</p>", null))
+    }
+
+    @Test fun inlineAndManuallySpacedDisclosureBodiesShareTheSameLayout() {
+        for (note in listOf("附言一<br><br>附言二", "-<br><br>附言一<br><br>附言二")) {
+            val html = "<p>正文</p><details><summary><strong>作者</strong>的话</summary>$note</details><p>尾声</p>"
+            val parsed = analyseChapterContent(Jsoup.parseBodyFragment(html).body())
+
+            assertEquals(mapOf(1 to 2), parsed.formatting.disclosureTitleParts)
+            assertEquals(listOf(2), parsed.formatting.dividersAt)
+            assertEquals(body(html).fingerprint, ChapterBody.fromBlocks(parsed.blocks).fingerprint)
+        }
+    }
+
+    @Test fun oldDownloadsCanRecoverDisclosureLayoutWithoutMovingTextAnchors() {
+        val html = "<details><summary>作者的话</summary><p>第一段</p><p>第二段</p></details><p>尾声</p>"
+        val gson = Gson()
+        val encoded = gson.toJsonTree(body(html).copy(formatting = ReaderChapterFormatting(parserVersion = 1))).asJsonObject
+        encoded.getAsJsonObject("formatting").remove("disclosureTitleParts")
+        val old = gson.fromJson(encoded, ChapterBody::class.java).validate()
+        val layout = old.withFormatting(Jsoup.parseBodyFragment(html).body().html(), null)
+
+        assertEquals(mapOf(0 to 1), layout.formatting!!.disclosureTitleParts)
+        assertEquals(listOf(3), layout.formatting!!.dividersAt)
+        assertEquals(old.blocks, layout.blocks)
+        assertEquals(old.fingerprint, layout.fingerprint)
     }
 
     @Test fun inheritedAlignmentAndRulesKeepTheirOriginalBlockPositions() {

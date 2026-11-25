@@ -45,9 +45,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextIndent
 import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.buildAnnotatedString
-import androidx.compose.foundation.text.InlineTextContent
 import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.breakyuna.esjzone.R
@@ -109,9 +108,11 @@ fun ReaderBlocks(
     bookmarkPicking: Boolean = false,
     onBookmarkSelect: (Int, Int) -> Unit = { _, _ -> },
     formatting: ReaderChapterFormatting = ReaderChapterFormatting(),
-    renderLeadingDividers: Boolean = true
+    renderLeadingDividers: Boolean = true,
+    nextBlock: ReaderBlock? = null
 ) {
     val textStyle = readerBodyTextStyle(settings)
+    val blankLineHeight = with(density) { settings.lineHeightSp.sp.toDp() }
 
     val content: @Composable () -> Unit = {
         Column(modifier = Modifier.fillMaxWidth()) {
@@ -122,16 +123,22 @@ fun ReaderBlocks(
                 }
                 val alignment = formatting.alignments[blockIndex]
                 val paragraphStyle = readerParagraphStyle(textStyle, alignment)
-                when (block) {
-                    is ReaderBlock.Paragraph -> ReaderParagraphBlock(
+                val followingBlock = blocks.getOrNull(index + 1) ?: nextBlock
+                val paragraphSpacing = settings.paragraphSpacingBefore(
+                    followingBlock, blankLineHeight, blockIndex + 1 in formatting.dividersAt
+                )
+                when {
+                    block.isBlankLine() -> Spacer(Modifier.height(blankLineHeight))
+                    block is ReaderBlock.Paragraph -> ReaderParagraphBlock(
                         block = block,
                         textStyle = paragraphStyle,
+                        disclosureTitleParts = formatting.disclosureTitleParts[blockIndex],
                         fullWidth = alignment != null,
                         textMeasurer = textMeasurer,
                         density = density,
                         textTransform = textTransform,
                         contentColor = contentColor,
-                        paragraphSpacingDp = settings.paragraphSpacingDp,
+                        paragraphSpacing = paragraphSpacing,
                         enabled = settings.longPressUnderline,
                         bookmarkMargin = if (ReaderBookmarkMarker.showsOn(blockStartIndex + index, 0, bookmarkedBlocks))
                             settings.horizontalPaddingDp.dp else null,
@@ -150,7 +157,7 @@ fun ReaderBlocks(
                             androidx.compose.ui.text.TextRange(offsets.toDisplay(it.start), offsets.toDisplayEnd(it.end))
                         }
                     )
-                    is ReaderBlock.Text -> ReaderTextBlock(
+                    block is ReaderBlock.Text -> ReaderTextBlock(
                         block = block,
                         textStyle = paragraphStyle,
                         fullWidth = alignment != null,
@@ -158,7 +165,7 @@ fun ReaderBlocks(
                         density = density,
                         textTransform = textTransform,
                         contentColor = contentColor,
-                        paragraphSpacingDp = settings.paragraphSpacingDp,
+                        paragraphSpacing = paragraphSpacing,
                         enabled = settings.longPressUnderline,
                         bookmarkMargin = if (ReaderBookmarkMarker.showsOn(blockStartIndex + index, 0, bookmarkedBlocks))
                             settings.horizontalPaddingDp.dp else null,
@@ -177,14 +184,11 @@ fun ReaderBlocks(
                             androidx.compose.ui.text.TextRange(offsets.toDisplay(it.start), offsets.toDisplayEnd(it.end))
                         }
                     )
-                    is ReaderBlock.Image -> ReaderImage(
+                    block is ReaderBlock.Image -> ReaderImage(
                         url = block.url,
                         contentDescription = stringResource(R.string.reader_open_image),
                         contentColor = contentColor,
                         modifier = Modifier.padding(vertical = settings.paragraphSpacingDp.dp)
-                    )
-                    ReaderBlock.LineBreak -> Spacer(
-                        modifier = Modifier.height(with(density) { settings.lineHeightSp.sp.toDp() })
                     )
                 }
                 repeat(formatting.dividersAt.count { it == blockIndex + 1 }) {
@@ -203,12 +207,13 @@ fun ReaderBlocks(
 private fun ReaderParagraphBlock(
     block: ReaderBlock.Paragraph,
     textStyle: TextStyle,
+    disclosureTitleParts: Int?,
     fullWidth: Boolean,
     textMeasurer: TextMeasurer,
     density: Density,
     textTransform: (String) -> String,
     contentColor: Color,
-    paragraphSpacingDp: Float,
+    paragraphSpacing: Dp,
     enabled: Boolean,
     bookmarkMargin: androidx.compose.ui.unit.Dp?,
     blockIndex: Int,
@@ -223,22 +228,8 @@ private fun ReaderParagraphBlock(
     onLinkClick: (String) -> Unit,
     textOffsets: ReaderTextOffsets
 ) {
-    val (paragraph, inlineContent) = remember(block, textStyle, textTransform, textMeasurer, density) {
-        val inlines = linkedMapOf<String, InlineTextContent>()
-        val annotated = buildAnnotatedString {
-            block.parts.forEachIndexed { index, part ->
-                val (text, partInlines) = part.toAnnotatedReaderText(
-                    baseStyle = textStyle,
-                    textMeasurer = textMeasurer,
-                    density = density,
-                    textTransform = textTransform,
-                    inlineKey = "reader-ruby-$index"
-                )
-                append(text)
-                inlines.putAll(partInlines)
-            }
-        }
-        annotated to inlines
+    val (paragraph, inlineContent) = remember(block, textStyle, textTransform, textMeasurer, density, disclosureTitleParts) {
+        block.toAnnotatedReaderParagraph(textStyle, textMeasurer, density, textTransform, disclosureTitleParts)
     }
     val layoutStyle = remember(block, textStyle, inlineContent, textMeasurer, density, textTransform) {
         readerRubyParagraphStyle(block, textStyle, inlineContent, textMeasurer, density, textTransform)
@@ -248,7 +239,7 @@ private fun ReaderParagraphBlock(
         inlineContent = inlineContent,
         style = layoutStyle,
         color = contentColor,
-        modifier = (if (fullWidth) Modifier.fillMaxWidth() else Modifier).padding(bottom = paragraphSpacingDp.dp),
+        modifier = (if (fullWidth) Modifier.fillMaxWidth() else Modifier).padding(bottom = paragraphSpacing),
         enabled = enabled,
         bookmarkMargin = bookmarkMargin,
         blockIndex = blockIndex,
@@ -276,7 +267,7 @@ private fun ReaderTextBlock(
     density: Density,
     textTransform: (String) -> String,
     contentColor: Color,
-    paragraphSpacingDp: Float,
+    paragraphSpacing: Dp,
     enabled: Boolean,
     bookmarkMargin: androidx.compose.ui.unit.Dp?,
     blockIndex: Int,
@@ -307,7 +298,7 @@ private fun ReaderTextBlock(
         inlineContent = inlineContent,
         style = layoutStyle,
         color = contentColor,
-        modifier = (if (fullWidth) Modifier.fillMaxWidth() else Modifier).padding(bottom = paragraphSpacingDp.dp),
+        modifier = (if (fullWidth) Modifier.fillMaxWidth() else Modifier).padding(bottom = paragraphSpacing),
         enabled = enabled,
         bookmarkMargin = bookmarkMargin,
         blockIndex = blockIndex,

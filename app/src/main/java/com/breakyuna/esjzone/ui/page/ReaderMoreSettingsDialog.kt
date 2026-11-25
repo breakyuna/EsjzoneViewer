@@ -92,7 +92,6 @@ internal fun ReaderMoreSettingsContent(
         }
     }
     SettingsSection(title = stringResource(R.string.reader_more_display)) {
-        ReaderIndentSetting(draft.firstLineIndentChars) { commit(draft.copy(firstLineIndentChars = it)) }
         MoreReaderToggle(stringResource(R.string.reader_keep_screen_on), draft.keepScreenOn) {
             commit(draft.copy(keepScreenOn = it))
         }
@@ -112,17 +111,6 @@ internal fun ReaderMoreSettingsContent(
             commit(draft.copy(showTimeBattery = it))
         }
     }
-}
-
-@Composable
-internal fun ReaderIndentSetting(chars: Int, readerSheetStyle: Boolean = false, onSelect: (Int) -> Unit) {
-    ChoiceSettingRow(
-        title = stringResource(R.string.reader_first_line_indent),
-        options = (0..2).map { stringResource(R.string.reader_indent_chars, it) },
-        selectedIndex = chars,
-        readerSheetStyle = readerSheetStyle,
-        onSelect = onSelect
-    )
 }
 
 @Composable

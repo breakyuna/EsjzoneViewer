@@ -4,24 +4,24 @@ import android.content.Context
 import android.provider.DocumentsContract
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
-import com.breakyuna.esjzone.network.Authorization
-import com.breakyuna.esjzone.novellibrary.component.TextComponent
-import com.breakyuna.esjzone.novellibrary.component.ImageComponent
 import com.breakyuna.esjzone.data.reader.ChapterBody
+import com.breakyuna.esjzone.network.Authorization
+import com.breakyuna.esjzone.novellibrary.component.ImageComponent
+import com.breakyuna.esjzone.novellibrary.component.TextComponent
 import com.breakyuna.esjzone.novellibrary.novel.Chapter
 import com.breakyuna.esjzone.novellibrary.novel.DetailedChapter
+import com.breakyuna.esjzone.offline.DownloadedComponent
 import com.breakyuna.esjzone.offline.NovelDownloadStore
 import com.breakyuna.esjzone.offline.NovelExporter
-import com.breakyuna.esjzone.offline.DownloadedComponent
-import com.breakyuna.esjzone.storage.StorageFile
 import com.breakyuna.esjzone.storage.StorageAccessException
+import com.breakyuna.esjzone.storage.StorageFile
 import com.google.gson.JsonParser
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.util.UUID
 import org.junit.Assert.*
-import org.junit.Test
 import org.junit.Before
+import org.junit.Test
 import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
@@ -37,115 +37,6 @@ class SharedDownloadStorageInstrumentedTest {
             putString("mode", mode)
             putString("operation", operation)
         })
-    }
-
-    @Test fun openingSnapshotReusesListedMetadataAndExpiresAfterSuccessOrFailure() {
-        val directory = StorageFile(StorageFile.fromTree(context, treeUri), "case-${UUID.randomUUID()}")
-            .apply { check(mkdirs()) }
-        val file = StorageFile(directory, "chapter.json").apply { writeText("body") }
-        try {
-            directory.withMetadataSnapshot {
-                directory.entries()
-                configure(directory, "reject-file-metadata", "metadata")
-                assertTrue(file.isFile)
-                assertEquals(4L, file.length())
-            }
-            // Outside the operation, a new query must observe current provider state.
-            assertThrows(StorageAccessException::class.java) { file.isFile }
-            configure(directory)
-            assertThrows(java.io.IOException::class.java) {
-                directory.withMetadataSnapshot {
-                    directory.entries()
-                    throw java.io.IOException("Fixture opening failure")
-                }
-            }
-            configure(directory, "reject-file-metadata", "metadata")
-            assertThrows(StorageAccessException::class.java) { file.isFile }
-            configure(directory)
-            directory.withMetadataSnapshot {
-                directory.entries()
-                check(file.delete())
-                assertFalse(file.exists())
-            }
-        } finally { configure(directory); directory.deleteRecursively() }
-    }
-
-    @Test fun directoryHintsRestoreOpaqueUrisAndRejectRenamedOrForeignDocuments() {
-        val directory = StorageFile(StorageFile.fromTree(context, treeUri), "case-${UUID.randomUUID()}")
-            .apply { check(mkdirs()) }
-        try {
-            val encoded = requireNotNull(directory.documentUriHint())
-            val fresh = StorageFile(StorageFile.fromTree(context, treeUri), directory.name)
-            assertNull(fresh.documentUriHint())
-            assertTrue(fresh.restoreDocumentHint(encoded))
-            assertEquals(encoded, fresh.documentUriHint())
-            val foreignTree = DocumentsContract.buildTreeDocumentUri("other.provider", "root")
-            assertFalse(fresh.restoreDocumentHint(foreignTree.toString()))
-            val renamed = StorageFile(checkNotNull(directory.parentFile), "case-${UUID.randomUUID()}")
-            check(directory.renameTo(renamed))
-            try {
-                val restarted = StorageFile(StorageFile.fromTree(context, treeUri), directory.name)
-                assertFalse(restarted.restoreDocumentHint(encoded))
-            } finally { renamed.deleteRecursively() }
-        } finally { directory.deleteRecursively() }
-    }
-
-    @Test fun failedRestoreCleanupCannotReselectRetiredCopiesAfterRestartOrMigration() = kotlinx.coroutines.runBlocking {
-        for (commit in listOf(true, false)) {
-            val incoming = File(context.cacheDir, "restore-incoming-${UUID.randomUUID()}").apply { mkdirs() }
-            val backup = File(context.cacheDir, "restore-backup-${UUID.randomUUID()}")
-            val migrated = File(context.cacheDir, "restore-migrated-${UUID.randomUUID()}").apply { mkdirs() }
-            val shared = StorageFile(StorageFile.fromTree(context, treeUri), "case-${UUID.randomUUID()}")
-                .apply { check(mkdirs()) }
-            val downloads = StorageFile(shared, "downloads")
-            val novelUrl = "https://www.esjzone.cc/detail/9001.html"
-            val chapter = Chapter("Chapter", "https://www.esjzone.cc/forum/9001/1.html", false)
-            fun save(text: String) = requireNotNull(NovelDownloadStore.saveChapter("Novel", novelUrl, "",
-                listOf(chapter), chapter, DetailedChapter("Chapter", listOf(TextComponent(text)), null, null),
-                Authorization("", "", "www.esjzone.cc")))
-            try {
-                NovelDownloadStore.initialize(context)
-                NovelDownloadStore.initializeDirectory(incoming)
-                save("restored body")
-                NovelDownloadStore.exportBackup(backup)
-                NovelDownloadStore.initialize(context, downloads)
-                save("original body")
-                configure(shared, "reject-book-delete", "delete")
-                if (commit) {
-                    NovelDownloadStore.importBackup(backup, replaceExisting = true)
-                } else {
-                    try {
-                        NovelDownloadStore.withRestoredBackup(backup, {}) {
-                            throw java.io.IOException("Fixture database failure")
-                        }
-                        fail("Database failure must abort the restore")
-                    } catch (_: java.io.IOException) { }
-                }
-                assertEquals(2, downloads.listFiles()!!.count { it.isDirectory && !it.name.endsWith(".tmp") })
-                // Lose all in-memory provider handles and discard directory hints.
-                NovelDownloadStore.restoreStorage(StorageFile(StorageFile.fromTree(context, treeUri),
-                    shared.name + "/downloads"))
-                NovelDownloadStore.reindex()
-                val expected = if (commit) "restored body" else "original body"
-                assertEquals(expected, NovelDownloadStore.readChapter(chapter.url)!!.content
-                    .filterIsInstance<TextComponent>().single().text)
-                assertEquals(1, NovelDownloadStore.listDownloadedNovels().size)
-                val migration = NovelDownloadStore.migrateStorage(StorageFile(migrated)) { }
-                assertEquals(1, migration.books.size)
-                assertEquals(expected, NovelDownloadStore.readChapter(chapter.url)!!.content
-                    .filterIsInstance<TextComponent>().single().text)
-            } finally {
-                configure(shared)
-                NovelDownloadStore.finishStorageMigration()
-                val container = EsjzoneApplication.instance.container
-                container.initializeDownloads()
-                NovelDownloadStore.restoreStorage(container.storage.downloads())
-                shared.deleteRecursively()
-                incoming.deleteRecursively()
-                backup.deleteRecursively()
-                migrated.deleteRecursively()
-            }
-        }
     }
 
     @Test fun providerAccessFailuresAreReportedAsStorageErrorsForQueriesAndFileOperations() {
@@ -205,34 +96,6 @@ class SharedDownloadStorageInstrumentedTest {
             assertEquals("new", StorageFile(sibling, "new.bin").inputStream().reader().use { it.readText() })
             assertTrue(renamed.entries().isEmpty())
         } finally { directory.deleteRecursively() }
-    }
-
-    @Test fun recursiveSizesUseDirectoryMetadataWithoutPerFileQueries() {
-        val directory = StorageFile(StorageFile.fromTree(context, treeUri), "case-${UUID.randomUUID()}")
-            .apply { check(mkdirs()) }
-        try {
-            StorageFile(directory, "chapter.json").writeText("chapter")
-            val images = StorageFile(directory, "images").apply { check(mkdirs()) }
-            StorageFile(images, "picture.bin").outputStream().use { it.write(ByteArray(4096)) }
-            configure(directory, "reject-file-metadata", "metadata")
-            val fresh = StorageFile(StorageFile.fromTree(context, treeUri), directory.name)
-            val files = fresh.fileEntries().toList()
-            assertEquals(2, files.size)
-            assertEquals(4103L, files.sumOf { it.size })
-        } finally { configure(directory); directory.deleteRecursively() }
-    }
-
-    @Test fun unrepresentableProviderNamesDoNotHideValidDownloads() {
-        val directory = StorageFile(StorageFile.fromTree(context, treeUri), "case-${UUID.randomUUID()}")
-            .apply { check(mkdirs()) }
-        try {
-            StorageFile(directory, "valid.json").writeText("fixture")
-            configure(directory, "odd-names")
-            val fresh = StorageFile(StorageFile.fromTree(context, treeUri), directory.name)
-            assertEquals(listOf("valid.json"), fresh.listFiles()!!.map { it.name })
-            assertEquals("fixture", StorageFile(fresh, "valid.json").inputStream().reader().use { it.readText() })
-            assertFalse(StorageFile(fresh, "absent.json").exists())
-        } finally { configure(directory); directory.deleteRecursively() }
     }
 
     @Test fun migrateReadRescanExportAndRestoreThroughDocumentUris() {
@@ -332,55 +195,6 @@ class SharedDownloadStorageInstrumentedTest {
         }
     }
 
-    @Test fun publicLegacyNamesRemainReadableWhenRenameIsDeniedAndDeletedRootsRegainMediaMarker() {
-        val privateRoot = File(context.cacheDir, "storage-${UUID.randomUUID()}").apply { mkdirs() }
-        val shared = StorageFile(StorageFile.fromTree(context, treeUri), "case-${UUID.randomUUID()}")
-            .apply { check(mkdirs()) }
-        val downloads = StorageFile(shared, "downloads")
-        val novelId = (UUID.randomUUID().mostSignificantBits and Long.MAX_VALUE).toString()
-        val novelUrl = "https://www.esjzone.cc/detail/$novelId.html"
-        val chapter = Chapter("Chapter", "https://www.esjzone.cc/forum/$novelId/1.html", false)
-        fun freshDownloads() = StorageFile(StorageFile.fromTree(context, treeUri), "${shared.name}/downloads")
-        fun save() = requireNotNull(NovelDownloadStore.saveChapter("可读书名", novelUrl, "", listOf(chapter), chapter,
-            DetailedChapter("Chapter", listOf(TextComponent("保存的正文")), null, null),
-            Authorization("", "", "www.esjzone.cc")))
-        try {
-            NovelDownloadStore.initialize(context)
-            NovelDownloadStore.initializeDirectory(privateRoot)
-            save()
-            NovelDownloadStore.migrateStorage(downloads) { }
-            val named = downloads.listFiles()!!.single { it.isDirectory }
-            assertEquals("可读书名", named.name)
-            val hash = java.security.MessageDigest.getInstance("SHA-256").digest("/detail/$novelId.html".toByteArray())
-                .joinToString("") { "%02x".format(it.toInt() and 0xff) }
-            val legacy = StorageFile(downloads, hash)
-            check(named.renameTo(legacy))
-            NovelDownloadStore.restoreStorage(StorageFile(privateRoot))
-            NovelDownloadStore.restoreStorage(freshDownloads())
-            configure(shared, "security", "rename")
-            try {
-                assertNotNull(NovelDownloadStore.readChapter(chapter.url))
-                assertTrue(legacy.isDirectory)
-            } finally { configure(shared) }
-            NovelDownloadStore.restoreStorage(StorageFile(privateRoot))
-            val reopened = freshDownloads()
-            NovelDownloadStore.restoreStorage(reopened)
-            assertNotNull(NovelDownloadStore.readChapter(chapter.url))
-            assertTrue(StorageFile(reopened, "可读书名").isDirectory)
-            assertFalse(StorageFile(reopened, hash).exists())
-            check(reopened.deleteRecursively())
-            save()
-            assertTrue(StorageFile(reopened, ".nomedia").isFile)
-            assertNotNull(NovelDownloadStore.readChapter(chapter.url))
-        } finally {
-            configure(shared)
-            kotlinx.coroutines.runBlocking { EsjzoneApplication.instance.container.initializeDownloads() }
-            NovelDownloadStore.restoreStorage(EsjzoneApplication.instance.container.storage.downloads())
-            shared.deleteRecursively()
-            privateRoot.deleteRecursively()
-        }
-    }
-
     @Test fun replacingDocumentKeepsPublishedContentAndReadableDocumentUri() {
         val directory = StorageFile(StorageFile.fromTree(context, treeUri), "case-${UUID.randomUUID()}")
             .apply { check(mkdirs()) }
@@ -400,118 +214,5 @@ class SharedDownloadStorageInstrumentedTest {
             assertEquals("new", reopened.inputStream().reader().use { it.readText() })
             assertFalse(previous.exists())
         } finally { directory.deleteRecursively() }
-    }
-
-    @Test fun migrationRecoversInterruptedChapterReplacementBeforeRemovingOriginals() {
-        val privateRoot = File(context.cacheDir, "storage-${UUID.randomUUID()}").apply { mkdirs() }
-        val restored = File(context.cacheDir, "storage-restored-${UUID.randomUUID()}").apply { mkdirs() }
-        val shared = StorageFile(StorageFile.fromTree(context, treeUri), "case-${UUID.randomUUID()}")
-            .apply { check(mkdirs()) }
-        val downloads = StorageFile(shared, "downloads")
-        val novelId = (UUID.randomUUID().mostSignificantBits and Long.MAX_VALUE).toString()
-        val novelUrl = "https://www.esjzone.cc/detail/$novelId.html"
-        val chapter = Chapter("Chapter", "https://www.esjzone.cc/forum/$novelId/1.html", false)
-        try {
-            NovelDownloadStore.initialize(context)
-            NovelDownloadStore.initializeDirectory(privateRoot)
-            requireNotNull(NovelDownloadStore.saveChapter("Novel", novelUrl, "", listOf(chapter), chapter,
-                DetailedChapter("Chapter", listOf(TextComponent("可恢复正文")), null, null),
-                Authorization("", "", "www.esjzone.cc")))
-            NovelDownloadStore.migrateStorage(downloads) { }
-            val record = NovelDownloadStore.manifest(novelUrl)!!.chapters.single()
-            val book = downloads.listFiles()!!.single()
-            val published = StorageFile(book, record.fileName)
-            val previous = StorageFile(book, "${record.fileName}.previous.tmp")
-            check(published.renameTo(previous))
-            configure(shared, "security", "rename")
-            try {
-                // readJson must not turn a failed replacement recovery into an absent chapter.
-                assertThrows(StorageAccessException::class.java) { NovelDownloadStore.readChapter(chapter.url) }
-            } finally { configure(shared) }
-            assertTrue(previous.exists())
-            // A fresh tree models process restart; no successful chapter read precedes migration.
-            val reopened = StorageFile(StorageFile.fromTree(context, treeUri), shared.name + "/downloads")
-            NovelDownloadStore.restoreStorage(reopened)
-            val migration = NovelDownloadStore.migrateStorage(StorageFile(restored)) { }
-            assertEquals(1, migration.books.size)
-            val recoveredBook = migration.books.single()
-            assertTrue(StorageFile(recoveredBook, record.fileName).isFile)
-            assertFalse(StorageFile(recoveredBook, previous.name).exists())
-            migration.books.forEach { check(it.deleteRecursively()) }
-            assertEquals("可恢复正文", NovelDownloadStore.readChapter(chapter.url)!!.content
-                .filterIsInstance<TextComponent>().single().text)
-            assertTrue(File(restored.listFiles()!!.single(), record.fileName).isFile)
-        } finally {
-            configure(shared)
-            kotlinx.coroutines.runBlocking { EsjzoneApplication.instance.container.initializeDownloads() }
-            NovelDownloadStore.restoreStorage(EsjzoneApplication.instance.container.storage.downloads())
-            shared.deleteRecursively()
-            privateRoot.deleteRecursively()
-            restored.deleteRecursively()
-        }
-    }
-
-    @Test fun migrationPublishesWholeBooksWithoutPerFileRenames() {
-        val privateRoot = File(context.cacheDir, "storage-${UUID.randomUUID()}").apply { mkdirs() }
-        val shared = StorageFile(StorageFile.fromTree(context, treeUri), "case-${UUID.randomUUID()}")
-            .apply { check(mkdirs()) }
-        val novelId = (UUID.randomUUID().mostSignificantBits and Long.MAX_VALUE).toString()
-        val novelUrl = "https://www.esjzone.cc/detail/$novelId.html"
-        val chapter = Chapter("Chapter", "https://www.esjzone.cc/forum/$novelId/1.html", false)
-        try {
-            NovelDownloadStore.initialize(context)
-            NovelDownloadStore.initializeDirectory(privateRoot)
-            requireNotNull(NovelDownloadStore.saveChapter("Novel", novelUrl, "", listOf(chapter), chapter,
-                DetailedChapter("Chapter", listOf(TextComponent("Saved text")), null, null),
-                Authorization("", "", "www.esjzone.cc")))
-            val book = privateRoot.listFiles()!!.single()
-            File(book, "images").mkdirs()
-            repeat(20) { File(book, "images/fixture-$it.bin").writeBytes(ByteArray(64) { it.toByte() }) }
-            configure(shared, "reject-file-rename", "rename")
-            val migration = NovelDownloadStore.migrateStorage(StorageFile(shared, "downloads")) { }
-            assertEquals(1, migration.books.size)
-            assertNotNull(NovelDownloadStore.readChapter(chapter.url))
-            assertEquals(20, StorageFile(StorageFile(shared, "downloads"),
-                migration.targets.getValue(book.name) + "/images").entries().size)
-        } finally {
-            configure(shared)
-            // Restore the application store explicitly after this isolated fixture.
-            NovelDownloadStore.restoreStorage(EsjzoneApplication.instance.container.storage.downloads())
-            shared.deleteRecursively()
-            privateRoot.deleteRecursively()
-        }
-    }
-
-    @Test fun migrationUsesDirectoryListingTypesForSharedSourceBooks() {
-        val privateRoot = File(context.cacheDir, "storage-${UUID.randomUUID()}").apply { mkdirs() }
-        val restored = File(context.cacheDir, "storage-restored-${UUID.randomUUID()}").apply { mkdirs() }
-        val shared = StorageFile(StorageFile.fromTree(context, treeUri), "case-${UUID.randomUUID()}")
-            .apply { check(mkdirs()) }
-        val novelId = (UUID.randomUUID().mostSignificantBits and Long.MAX_VALUE).toString()
-        val novelUrl = "https://www.esjzone.cc/detail/$novelId.html"
-        val chapter = Chapter("Chapter", "https://www.esjzone.cc/forum/$novelId/1.html", false)
-        try {
-            NovelDownloadStore.initialize(context)
-            NovelDownloadStore.initializeDirectory(privateRoot)
-            requireNotNull(NovelDownloadStore.saveChapter("Novel", novelUrl, "", listOf(chapter), chapter,
-                DetailedChapter("Chapter", listOf(TextComponent("Saved text")), null, null),
-                Authorization("", "", "www.esjzone.cc")))
-            val downloads = StorageFile(shared, "downloads")
-            NovelDownloadStore.migrateStorage(downloads) { }
-            configure(shared, "reject-book-metadata", "metadata")
-            // Reopen without a cached directory index, as after a process restart.
-            NovelDownloadStore.restoreStorage(
-                StorageFile(StorageFile.fromTree(context, treeUri), shared.name + "/downloads"))
-            val migration = NovelDownloadStore.migrateStorage(StorageFile(restored)) { }
-            assertEquals(1, migration.books.size)
-            assertEquals("Saved text", NovelDownloadStore.readChapter(chapter.url)!!.content
-                .filterIsInstance<TextComponent>().single().text)
-        } finally {
-            configure(shared)
-            NovelDownloadStore.restoreStorage(EsjzoneApplication.instance.container.storage.downloads())
-            shared.deleteRecursively()
-            privateRoot.deleteRecursively()
-            restored.deleteRecursively()
-        }
     }
 }

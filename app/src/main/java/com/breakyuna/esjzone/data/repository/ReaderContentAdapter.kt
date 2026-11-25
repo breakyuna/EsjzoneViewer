@@ -19,7 +19,11 @@ import com.breakyuna.esjzone.novellibrary.component.UnderlineTextStyle
 
 fun Component.toReaderBlocks(): List<ReaderBlock> = when (this) {
     is ImageComponent -> listOf(ReaderBlock.Image(url))
-    is NewLineComponent -> listOf(ReaderBlock.LineBreak)
+    is NewLineComponent -> if (getExtras().isEmpty()) {
+        listOf(ReaderBlock.LineBreak)
+    } else {
+        listOf(ReaderBlock.Paragraph(flattenParagraphParts()))
+    }
     is TextComponent -> {
         ReaderBlock.Paragraph(flattenParagraphParts())
             .let(::listOf)

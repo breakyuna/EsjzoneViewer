@@ -73,7 +73,8 @@ internal fun ReaderUnderlineText(
     sourceSignature: String? = null,
     textOffsets: ReaderTextOffsets? = null,
     bookmarkPicking: Boolean = false,
-    onBookmarkSelect: (Int, Int) -> Unit = { _, _ -> }
+    onBookmarkSelect: (Int, Int) -> Unit = { _, _ -> },
+    maxLines: Int = Int.MAX_VALUE
 ) {
     var layout by remember { mutableStateOf<TextLayoutResult?>(null) }
     val sharedSelection = LocalReaderUnderlineSelection.current
@@ -160,7 +161,8 @@ internal fun ReaderUnderlineText(
     }
     val (glowText, glowStyle) = readerGlowTextAppearance(linked, style)
     Text(text = glowText, inlineContent = inlineContent, style = glowStyle, color = color,
-        overflow = TextOverflow.Visible, onTextLayout = { layout = it; segment.layout = it; onLayout(it) },
+        maxLines = maxLines, overflow = TextOverflow.Visible,
+        onTextLayout = { layout = it; segment.layout = it; onLayout(it) },
         modifier = modifier.then(if (bookmarkPicking && text.text.isNotBlank()) Modifier.clickable {
             onBookmarkSelect(blockIndex, displayOffsets?.toSource(offset) ?: 0)
         } else Modifier).then(readerGlowTextModifier(layout)).onGloballyPositioned { segment.coordinates = it }

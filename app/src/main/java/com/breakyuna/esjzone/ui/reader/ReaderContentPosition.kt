@@ -24,7 +24,7 @@ internal suspend fun restoreReaderPosition(
 internal fun readerInitialBodyIndex(document: ReaderChapterDocument, chapterKey: String,
     progress: Float?, anchor: ReaderAnchor?): Int {
     val lastIndex = document.blocks.size
-    val exact = anchor?.takeIf { it.matches(chapterKey, document) }
+    val exact = anchor?.resolveIn(chapterKey, document)
     val fallback = ((progress?.takeIf { it.isFinite() } ?: 0f).coerceIn(0f, 1f) *
         (lastIndex + 1)).toInt()
     return (if (exact == null) fallback else when (exact.kind) {

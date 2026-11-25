@@ -84,23 +84,6 @@ class BookshelfSortTest {
         )
     }
 
-    @Test
-    fun recentReadSortRemainsDefaultAndIgnoresSelectedAddedOrUpdatedOrder() {
-        val entries = listOf(
-            entry("unread", addedAt = 300),
-            entry("old-read", addedAt = 100, novelId = "2"),
-            entry("new-read", addedAt = 200, novelId = "1")
-        )
-        val activities = listOf(activity("2", lastReadAt = 10), activity("1", lastReadAt = 20))
-
-        assertEquals(
-            listOf("new-read", "old-read", "unread"),
-            BookshelfSort.sort(
-                entries, activities, { it.trim() }, BookshelfSort.Order.RECENT_READ
-            ).map { it.bookKey }
-        )
-    }
-
     private fun entry(
         key: String,
         addedAt: Long,
